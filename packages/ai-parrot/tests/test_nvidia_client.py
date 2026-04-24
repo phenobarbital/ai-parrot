@@ -1,16 +1,16 @@
 """Unit tests for NvidiaClient, NvidiaModel, and factory registration.
 
 Tests cover initialization, env-var fallback for NVIDIA_API_KEY, the
-``enable_thinking`` / ``_merge_thinking_extra_body`` helper, model enum
-values, and LLMFactory registration.
+``enable_thinking`` / ``_merge_thinking_extra_body`` helper, the full
+``ask`` / ``ask_stream`` call path with ``enable_thinking=True``, model
+enum values, and LLMFactory registration.
 
-No live Nvidia calls are made.  The AsyncOpenAI SDK client is lazy (created
-on first ``get_client()`` call), so simple attribute-state tests do not need
-any HTTP mocking.
+No live Nvidia calls are made.
 """
-import os
-
 import pytest
+from unittest.mock import MagicMock, patch
+
+from navconfig import config as _navconfig
 
 from parrot.clients.nvidia import NvidiaClient
 from parrot.models.nvidia import NvidiaModel
@@ -30,9 +30,12 @@ def client():
 
 @pytest.fixture
 def env_key(monkeypatch):
-    """Patch navconfig.config.get so NvidiaClient() (no api_key) picks up a fake key."""
+    """Patch navconfig.config.get and clear os.environ so NvidiaClient()
+    (no api_key) picks up the fake key through config, not the shell env.
+    """
     from parrot.clients import nvidia as nvidia_mod
 
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     monkeypatch.setattr(
         nvidia_mod.config,
         "get",
@@ -78,7 +81,9 @@ class TestNvidiaClientInit:
 
 
 class TestNvidiaThinkingHelper:
-    """Tests for the _merge_thinking_extra_body static helper."""
+    """Tests for the _merge_thinking_extra_body static helper and the full
+    ask / ask_stream call path when enable_thinking is active.
+    """
 
     def test_enable_thinking_injects_extra_body(self):
         """Calling with enable_thinking=True on None body returns the right dict."""
@@ -109,10 +114,85 @@ class TestNvidiaThinkingHelper:
         # None extra_body → still None
         assert NvidiaClient._merge_thinking_extra_body(None, False, False) is None
 
-        # Existing dict → returned unchanged
+        # Existing dict → returned as same object (identity, not a copy)
         existing = {"k": 1}
         result = NvidiaClient._merge_thinking_extra_body(existing, False, True)
-        assert result is existing  # same object, not a copy
+        assert result is existing
+
+    @pytest.mark.asyncio
+    async def test_ask_forwards_thinking_to_chat_completion(self, client):
+        """ask(enable_thinking=True) causes _chat_completion to receive extra_body
+        with the correct chat_template_kwargs block.
+
+        We patch OpenAIClient._chat_completion (the *parent*) so that
+        NvidiaClient._chat_completion still runs and injects extra_body before
+        delegating upward to the mock.
+        """
+        captured: dict = {}
+
+        def _make_mock_response():
+            mock_choice = MagicMock()
+            mock_choice.message.content = "ok"
+            mock_choice.message.tool_calls = None
+            mock_choice.message.role = "assistant"
+            mock_choice.finish_reason = "stop"
+            mock_choice.stop_reason = "stop"
+            mock_response = MagicMock()
+            mock_response.choices = [mock_choice]
+            mock_response.usage = MagicMock(
+                prompt_tokens=1, completion_tokens=1, total_tokens=2
+            )
+            mock_response.dict = MagicMock(return_value={})
+            return mock_response
+
+        async def fake_parent_chat_completion(model, messages, use_tools=False, **kwargs):
+            captured.update(kwargs)
+            return _make_mock_response()
+
+        # Patch the *parent* so NvidiaClient._chat_completion still runs and
+        # injects extra_body, then calls super() which hits our mock.
+        with patch(
+            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            side_effect=fake_parent_chat_completion,
+        ):
+            await client.ask("hello", enable_thinking=True, clear_thinking=False)
+
+        assert "extra_body" in captured
+        ctk = captured["extra_body"]["chat_template_kwargs"]
+        assert ctk["enable_thinking"] is True
+        assert ctk["clear_thinking"] is False
+
+    @pytest.mark.asyncio
+    async def test_ask_no_extra_body_when_thinking_off(self, client):
+        """ask(enable_thinking=False) does not inject extra_body into the parent call."""
+        captured: dict = {}
+
+        def _make_mock_response():
+            mock_choice = MagicMock()
+            mock_choice.message.content = "ok"
+            mock_choice.message.tool_calls = None
+            mock_choice.message.role = "assistant"
+            mock_choice.finish_reason = "stop"
+            mock_choice.stop_reason = "stop"
+            mock_response = MagicMock()
+            mock_response.choices = [mock_choice]
+            mock_response.usage = MagicMock(
+                prompt_tokens=1, completion_tokens=1, total_tokens=2
+            )
+            mock_response.dict = MagicMock(return_value={})
+            return mock_response
+
+        async def fake_parent_chat_completion(model, messages, use_tools=False, **kwargs):
+            captured.update(kwargs)
+            return _make_mock_response()
+
+        with patch(
+            "parrot.clients.gpt.OpenAIClient._chat_completion",
+            side_effect=fake_parent_chat_completion,
+        ):
+            await client.ask("hello")  # enable_thinking defaults to False
+
+        assert "extra_body" not in captured or captured.get("extra_body") is None
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +224,11 @@ class TestNvidiaModelEnum:
                 f"got {member.value!r}"
             )
 
+    def test_nvidia_model_importable_from_parrot_models(self):
+        """NvidiaModel is re-exported from parrot.models (not just parrot.models.nvidia)."""
+        from parrot.models import NvidiaModel as NM
+        assert NM is NvidiaModel
+
 
 # ---------------------------------------------------------------------------
 # TestNvidiaFactory
@@ -167,9 +252,10 @@ class TestNvidiaFactory:
         assert c.model == "moonshotai/kimi-k2-thinking"
 
     def test_factory_default_model(self):
-        """LLMFactory.create('nvidia') returns an NvidiaClient (no model kwarg)."""
+        """LLMFactory.create('nvidia') returns an NvidiaClient using _default_model."""
         c = LLMFactory.create("nvidia", api_key="test-key")
         assert isinstance(c, NvidiaClient)
+        assert c._default_model == NvidiaModel.KIMI_K2_INSTRUCT_0905.value
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +264,7 @@ class TestNvidiaFactory:
 
 
 @pytest.mark.skipif(
-    not os.getenv("NVIDIA_API_KEY"),
+    not _navconfig.get("NVIDIA_API_KEY"),
     reason="NVIDIA_API_KEY not set — skipping live integration test",
 )
 class TestNvidiaIntegration:

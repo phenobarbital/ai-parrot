@@ -9,15 +9,22 @@ from OpenAIClient unchanged. The only Nvidia-specific affordance is the
 ``chat_template_kwargs`` into ``extra_body`` for reasoning-capable models
 such as ``z-ai/glm-5.1``.
 """
-from typing import Any, Dict, Optional
-from logging import getLogger
+import contextvars
+from typing import Any, AsyncIterator, Dict, Optional
 
 from navconfig import config
 
+from ..models import AIMessage
 from .gpt import OpenAIClient
 from ..models.nvidia import NvidiaModel
 
-logger = getLogger(__name__)
+# Context variable that carries enable_thinking / clear_thinking flags from
+# ask / ask_stream down to _chat_completion without altering the parent's
+# call signatures.  Using a ContextVar is safe for concurrent async calls
+# because each asyncio Task inherits an isolated copy of the context.
+_thinking_ctx: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar(
+    "_nvidia_thinking_ctx", default={}
+)
 
 
 class NvidiaClient(OpenAIClient):
@@ -34,6 +41,10 @@ class NvidiaClient(OpenAIClient):
     The only Nvidia-specific affordance is the ``enable_thinking`` shortcut on
     ``ask`` / ``ask_stream`` that injects ``chat_template_kwargs`` into
     ``extra_body`` for reasoning-capable models (e.g. ``z-ai/glm-5.1``).
+
+    ``enable_thinking`` is propagated to ``_chat_completion`` via an async
+    context variable so that no changes to the parent's call signatures are
+    required.
 
     Args:
         api_key: Nvidia NIM API key. Falls back to ``NVIDIA_API_KEY`` env var
@@ -83,6 +94,9 @@ class NvidiaClient(OpenAIClient):
         key inside ``extra_body["chat_template_kwargs"]``, then adds
         ``enable_thinking`` and ``clear_thinking`` flags.
 
+        This is an internal helper; callers should use the ``enable_thinking``
+        keyword on ``ask`` / ``ask_stream`` rather than calling this directly.
+
         Args:
             extra_body: Existing ``extra_body`` dict (may be ``None``).
             enable_thinking: When ``True``, inject the reasoning flags.
@@ -101,6 +115,43 @@ class NvidiaClient(OpenAIClient):
         merged["chat_template_kwargs"] = kwargs_block
         return merged
 
+    async def _chat_completion(
+        self,
+        model: str,
+        messages: Any,
+        use_tools: bool = False,
+        **kwargs,
+    ) -> Any:
+        """Override to inject ``chat_template_kwargs`` when ``enable_thinking`` is active.
+
+        Reads the thinking flags from the async context variable set by
+        ``ask`` / ``ask_stream`` and merges them into ``extra_body`` before
+        delegating to ``OpenAIClient._chat_completion``.  When no thinking
+        flags are active the call is a transparent passthrough.
+
+        Args:
+            model: Model identifier string.
+            messages: Chat messages list.
+            use_tools: Whether tools are enabled.
+            **kwargs: Additional completion arguments forwarded to the OpenAI SDK.
+
+        Returns:
+            Raw OpenAI completion response.
+        """
+        thinking = _thinking_ctx.get()
+        if thinking.get("enable_thinking"):
+            kwargs["extra_body"] = self._merge_thinking_extra_body(
+                kwargs.get("extra_body"),
+                True,
+                thinking.get("clear_thinking", False),
+            )
+        return await super()._chat_completion(
+            model=model,
+            messages=messages,
+            use_tools=use_tools,
+            **kwargs,
+        )
+
     async def ask(
         self,
         prompt: str,
@@ -108,12 +159,15 @@ class NvidiaClient(OpenAIClient):
         enable_thinking: bool = False,
         clear_thinking: bool = False,
         **kwargs,
-    ):
+    ) -> AIMessage:
         """Submit a prompt and return the full response.
 
         Identical to ``OpenAIClient.ask`` with an additional ``enable_thinking``
         shortcut that injects ``chat_template_kwargs`` into ``extra_body`` for
         reasoning-capable models (e.g. ``z-ai/glm-5.1``).
+
+        The flags are forwarded to ``_chat_completion`` via an async context
+        variable, so the parent's call signature is preserved.
 
         Args:
             prompt: User message text.
@@ -122,15 +176,19 @@ class NvidiaClient(OpenAIClient):
             clear_thinking: Forwarded to ``clear_thinking`` in the payload
                 when ``enable_thinking`` is ``True``.
             **kwargs: All other keyword arguments delegated to
-                ``OpenAIClient.ask``.
+                ``OpenAIClient.ask`` (e.g. ``model``, ``temperature``,
+                ``system_prompt``, ``session_id``).
 
         Returns:
-            AI response (same shape as ``OpenAIClient.ask``).
+            AIMessage with the model response.
         """
-        kwargs["extra_body"] = self._merge_thinking_extra_body(
-            kwargs.get("extra_body"), enable_thinking, clear_thinking
+        token = _thinking_ctx.set(
+            {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
-        return await super().ask(prompt, **kwargs)
+        try:
+            return await super().ask(prompt, **kwargs)
+        finally:
+            _thinking_ctx.reset(token)
 
     async def ask_stream(
         self,
@@ -139,13 +197,16 @@ class NvidiaClient(OpenAIClient):
         enable_thinking: bool = False,
         clear_thinking: bool = False,
         **kwargs,
-    ):
+    ) -> AsyncIterator[str]:
         """Submit a prompt and stream response chunks.
 
         Identical to ``OpenAIClient.ask_stream`` with the same
         ``enable_thinking`` shortcut as ``ask``.  For reasoning-capable models
         (e.g. ``z-ai/glm-5.1``) each chunk may carry a
         ``delta.reasoning_content`` field in addition to ``delta.content``.
+
+        The flags are forwarded to ``_chat_completion`` via an async context
+        variable, so the parent's call signature is preserved.
 
         Args:
             prompt: User message text.
@@ -154,13 +215,17 @@ class NvidiaClient(OpenAIClient):
             clear_thinking: Forwarded to ``clear_thinking`` in the payload
                 when ``enable_thinking`` is ``True``.
             **kwargs: All other keyword arguments delegated to
-                ``OpenAIClient.ask_stream``.
+                ``OpenAIClient.ask_stream`` (e.g. ``model``, ``temperature``,
+                ``system_prompt``, ``session_id``).
 
         Yields:
-            Response chunks (same shape as ``OpenAIClient.ask_stream``).
+            Response text chunks (same shape as ``OpenAIClient.ask_stream``).
         """
-        kwargs["extra_body"] = self._merge_thinking_extra_body(
-            kwargs.get("extra_body"), enable_thinking, clear_thinking
+        token = _thinking_ctx.set(
+            {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
-        async for chunk in super().ask_stream(prompt, **kwargs):
-            yield chunk
+        try:
+            async for chunk in super().ask_stream(prompt, **kwargs):
+                yield chunk
+        finally:
+            _thinking_ctx.reset(token)
