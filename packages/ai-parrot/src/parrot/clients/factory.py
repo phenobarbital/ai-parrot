@@ -8,6 +8,7 @@ from .grok import GrokClient
 from .openrouter import OpenRouterClient
 from .localllm import LocalLLMClient
 from .vllm import vLLMClient
+from .nvidia import NvidiaClient
 
 
 def _lazy_gemma4():
@@ -24,6 +25,7 @@ SUPPORTED_CLIENTS = {
     "grok": GrokClient,
     "xai": GrokClient,
     "openrouter": OpenRouterClient,
+    "nvidia": NvidiaClient,
     "local": LocalLLMClient,
     "localllm": LocalLLMClient,
     "ollama": LocalLLMClient,

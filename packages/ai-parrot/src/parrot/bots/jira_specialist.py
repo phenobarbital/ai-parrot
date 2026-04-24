@@ -607,24 +607,20 @@ class JiraSpecialist(Agent):
                 )
             self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
 
-        if self.tool_manager is not None:
-            self.jira_toolkit.set_tool_manager(self.tool_manager)
+        try:
+            tools = self.tool_manager.register_toolkit(self.jira_toolkit)
+        except Exception as exc:  # noqa: BLE001 - mirror Agent.__init__ tolerance
+            self.logger.error(
+                "Failed to register Jira tools: %s", exc, exc_info=True
+            )
+            return
 
-        tools = self.jira_toolkit.get_tools()
         if not tools:
             return
 
         if not hasattr(self, "tools") or self.tools is None:
             self.tools = []
         self.tools.extend(tools)
-
-        try:
-            self.tool_manager.register_tools(tools)
-        except Exception as exc:  # noqa: BLE001 - mirror Agent.__init__ tolerance
-            self.logger.error(
-                "Failed to register Jira tools: %s", exc, exc_info=True
-            )
-            return
 
         # Re-sync so the LLM client sees the newly-registered tool schemas.
         if self._llm is not None and hasattr(self._llm, "tool_manager"):
@@ -653,27 +649,16 @@ class JiraSpecialist(Agent):
             return
 
         reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
-        if self.tool_manager is not None and hasattr(
-            reminder_toolkit, "set_tool_manager"
-        ):
-            reminder_toolkit.set_tool_manager(self.tool_manager)
-
-        reminder_tools = reminder_toolkit.get_tools()
-        if not reminder_tools:
-            return
-
-        self.tools.extend(reminder_tools)
         try:
-            self.tool_manager.register_tools(reminder_tools)
+            reminder_tools = self.tool_manager.register_toolkit(reminder_toolkit)
         except Exception as exc:  # noqa: BLE001 - mirror JiraToolkit tolerance
             self.logger.error(
                 "Failed to register Reminder tools: %s", exc, exc_info=True
             )
+            return
 
-        self.logger.info(
-            "JiraSpecialist: registered %d Reminder tools.",
-            len(reminder_tools),
-        )
+        if reminder_tools:
+            self.tools.extend(reminder_tools)
 
     async def clone_for_user(self, user_context: UserContext) -> "JiraSpecialist":
         """Return a fully isolated per-user clone of this agent.

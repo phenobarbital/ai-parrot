@@ -1,6 +1,11 @@
 """HTML page handlers for parrot-formdesigner.
 
 Serves the form builder UI: index, gallery, render form, submit form.
+
+Every handler reads the optional URL mount prefix from
+``request.app["_form_prefix"]`` (populated by ``setup_form_routes``) and
+forwards it to the page-template builders so that links and form
+actions match the routes registered by aiohttp.
 """
 
 from __future__ import annotations
@@ -17,6 +22,16 @@ from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
 from ..renderers.jsonschema import JsonSchemaRenderer
 from .templates import error_page, form_page, gallery_page, index_page, page_shell, schema_page
+
+
+def _prefix(request: web.Request) -> str:
+    """Return the form-designer mount prefix for this request.
+
+    Reads the value populated by ``setup_form_routes`` at registration
+    time. Falls back to ``""`` when the app was wired without a prefix
+    (legacy behaviour, routes at root).
+    """
+    return request.app.get("_form_prefix", "")
 
 
 class FormPageHandler:
@@ -49,8 +64,9 @@ class FormPageHandler:
         Returns:
             HTML page response.
         """
+        p = _prefix(request)
         return web.Response(
-            text=page_shell("Create a Form", index_page()),
+            text=page_shell("Create a Form", index_page(prefix=p), prefix=p),
             content_type="text/html",
         )
 
@@ -63,10 +79,11 @@ class FormPageHandler:
         Returns:
             HTML page response with the form gallery.
         """
+        p = _prefix(request)
         forms = await self.registry.list_forms()
 
         if not forms:
-            items_html = "<p>No forms created yet. <a href='/'>Create one!</a></p>"
+            items_html = f"<p>No forms created yet. <a href='{p}/'>Create one!</a></p>"
         else:
             items = []
             for form in forms:
@@ -77,9 +94,9 @@ class FormPageHandler:
                     f'<span><strong>{escape(title)}</strong> '
                     f'<span style="color:var(--muted);font-size:.85rem">({escape(fid)})</span></span>'
                     f'<span style="display:flex;gap:.5rem;">'
-                    f'<a href="/forms/{escape(fid)}" class="btn btn-secondary" '
+                    f'<a href="{p}/forms/{escape(fid)}" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Open</a>'
-                    f'<a href="/forms/{escape(fid)}/schema" class="btn btn-secondary" '
+                    f'<a href="{p}/forms/{escape(fid)}/schema" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Schema</a>'
                     f'</span>'
                     f'</li>'
@@ -87,7 +104,7 @@ class FormPageHandler:
             items_html = f'<ul class="form-list">{"".join(items)}</ul>'
 
         return web.Response(
-            text=page_shell("Gallery", gallery_page(items_html)),
+            text=page_shell("Gallery", gallery_page(items_html), prefix=p),
             content_type="text/html",
         )
 
@@ -100,11 +117,14 @@ class FormPageHandler:
         Returns:
             HTML page with the rendered form, or 404 if not found.
         """
+        p = _prefix(request)
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
             return web.Response(
-                text=page_shell("Not Found", error_page("Form not found.")),
+                text=page_shell(
+                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                ),
                 status=404,
                 content_type="text/html",
             )
@@ -119,18 +139,18 @@ class FormPageHandler:
         rendered = await self.renderer.render(form, style=style)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="/forms/{escape(form_id)}" method="post" ',
+            f'<form action="{p}/forms/{escape(form_id)}" method="post" ',
             1,
         )
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
         schema_link = (
             f'<div style="margin-top:1rem;">'
-            f'<a href="/forms/{escape(form_id)}/schema" class="btn btn-secondary"'
+            f'<a href="{p}/forms/{escape(form_id)}/schema" class="btn btn-secondary"'
             f' style="font-size:.85rem;">View JSON Schema</a></div>'
         )
         return web.Response(
-            text=page_shell(title, form_page(fragment) + schema_link),
+            text=page_shell(title, form_page(fragment) + schema_link, prefix=p),
             content_type="text/html",
         )
 
@@ -143,11 +163,14 @@ class FormPageHandler:
         Returns:
             HTML page with pretty-printed JSON Schema and Style Schema.
         """
+        p = _prefix(request)
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
             return web.Response(
-                text=page_shell("Not Found", error_page("Form not found.")),
+                text=page_shell(
+                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                ),
                 status=404,
                 content_type="text/html",
             )
@@ -163,7 +186,8 @@ class FormPageHandler:
         return web.Response(
             text=page_shell(
                 f"{title} - JSON Schema",
-                schema_page(form_id, title, schema_json, style_json),
+                schema_page(form_id, title, schema_json, style_json, prefix=p),
+                prefix=p,
             ),
             content_type="text/html",
         )
@@ -177,11 +201,14 @@ class FormPageHandler:
         Returns:
             HTML page showing success or re-rendered form with errors.
         """
+        p = _prefix(request)
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
             return web.Response(
-                text=page_shell("Not Found", error_page("Form not found.")),
+                text=page_shell(
+                    "Not Found", error_page("Form not found.", prefix=p), prefix=p
+                ),
                 status=404,
                 content_type="text/html",
             )
@@ -203,18 +230,18 @@ class FormPageHandler:
   <pre>{escape(sanitized_json)}</pre>
 </div>
 <div style="display:flex; gap:.75rem;">
-  <a href="/forms/{escape(form_id)}" class="btn btn-secondary">Fill again</a>
-  <a href="/" class="btn btn-primary">Create another form</a>
+  <a href="{p}/forms/{escape(form_id)}" class="btn btn-secondary">Fill again</a>
+  <a href="{p}/" class="btn btn-primary">Create another form</a>
 </div>"""
             return web.Response(
-                text=page_shell(f"{title} - Success", body),
+                text=page_shell(f"{title} - Success", body, prefix=p),
                 content_type="text/html",
             )
 
         rendered = await self.renderer.render(form, prefilled=submission, errors=result.errors)
         fragment = rendered.content.replace(
             "<form ",
-            f'<form action="/forms/{escape(form_id)}" method="post" ',
+            f'<form action="{p}/forms/{escape(form_id)}" method="post" ',
             1,
         )
         error_count = len(result.errors)
@@ -224,6 +251,8 @@ class FormPageHandler:
             f'</div>'
         )
         return web.Response(
-            text=page_shell(title, f'{banner}<div class="card">{fragment}</div>'),
+            text=page_shell(
+                title, f'{banner}<div class="card">{fragment}</div>', prefix=p
+            ),
             content_type="text/html",
         )
