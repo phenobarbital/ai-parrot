@@ -14623,7 +14623,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14633,7 +14633,8 @@
       "parallelism_notes": "Touches parrot/tools/filemanager.py only, but cannot start until the shim resolves to upstream classes (otherwise the smoke checks would still pass against the old behaviour).",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-852-adapt-filemanager-tool-and-factory.md"
+      "file": "sdd/tasks/completed/TASK-852-adapt-filemanager-tool-and-factory.md",
+      "completed_at": "2026-04-24T23:35:58.536302+00:00"
     },
     {
       "id": "TASK-853",
