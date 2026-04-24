@@ -14120,7 +14120,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14129,8 +14129,9 @@
       "parallel": false,
       "parallelism_notes": "Requires the ABC from TASK-822; must finish before TASK-825 can rewire callers.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-824-dynamodb-backend-refactor.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-824-dynamodb-backend-refactor.md",
+      "completed_at": "2026-04-22T12:15:18.180725+00:00"
     },
     {
       "id": "TASK-825",
@@ -14139,7 +14140,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14150,8 +14151,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies chat.py and artifacts.py; must land before any new backend can be selected end-to-end.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-825-chatstorage-artifactstore-abc-adoption.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-825-chatstorage-artifactstore-abc-adoption.md",
+      "completed_at": "2026-04-22T12:15:18.180725+00:00"
     },
     {
       "id": "TASK-826",
@@ -14160,7 +14162,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14169,8 +14171,9 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/sqlite.py; parallel with TASK-827 and TASK-828 in Phase B.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-826-sqlite-backend.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-826-sqlite-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-827",
@@ -14179,7 +14182,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14188,8 +14191,9 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/postgres.py; parallel with TASK-826 and TASK-828 in Phase B.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-827-postgres-backend.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-827-postgres-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-828",
@@ -14198,7 +14202,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -14207,8 +14211,9 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/mongodb.py; parallel with TASK-826 and TASK-827 in Phase B.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-828-mongodb-backend.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-828-mongodb-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-829",
@@ -14217,7 +14222,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14232,8 +14237,9 @@
       "parallel": false,
       "parallelism_notes": "Integration point \u2014 needs every backend plus the refactored ChatStorage/ArtifactStore.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-829-factory-and-config-wiring.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-829-factory-and-config-wiring.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-830",
@@ -14242,7 +14248,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14255,8 +14261,9 @@
       "parallel": false,
       "parallelism_notes": "Exercises every backend against the ABC \u2014 must come after all four backends exist.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-830-backend-contract-test-suite.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-830-backend-contract-test-suite.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-831",
@@ -14265,7 +14272,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14278,8 +14285,9 @@
       "parallel": true,
       "parallelism_notes": "Creates new files metrics.py and instrumented.py; conflicts with TASK-829 only on backends/__init__.py factory extension \u2014 prefer to land after TASK-829.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-831-observability-hooks.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-831-observability-hooks.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-832",
@@ -14288,7 +14296,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14305,8 +14313,9 @@
       "parallel": false,
       "parallelism_notes": "References final config and class names; runs last.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-832-documentation.md"
+      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "file": "sdd/tasks/completed/TASK-832-documentation.md",
+      "completed_at": "2026-04-22T16:21:42.797215+00:00"
     },
     {
       "id": "TASK-833",
