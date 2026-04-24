@@ -88,6 +88,7 @@ from .vllm import (
     VLLMServerInfo,
     pydantic_to_guided_json,
 )
+from .nvidia import NvidiaModel
 
 __all__ = (
     "OutputFormat",
@@ -166,4 +167,6 @@ __all__ = (
     "InfographicTemplate",
     "InfographicTemplateRegistry",
     "infographic_registry",
+    # Nvidia models
+    "NvidiaModel",
 )
