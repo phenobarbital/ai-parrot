@@ -34,8 +34,17 @@ dependencies = [
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
+    "markdown>=3.5",
     "markdownify>=1.2.2",
     "python-docx==1.1.2",
+]
+msword = [
+    "python-docx==1.1.2",
+    "mammoth>=1.8",
+    "markdown>=3.5",
+    "markdownify>=1.2.2",
+    "beautifulsoup4>=4.12",
+    "jinja2>=3.1",
 ]
 jira = ["jira>=3.10"]
 slack = ["slack-sdk>=3.0"]
@@ -60,7 +69,7 @@ weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
 security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 all = [
-    "ai-parrot-tools[jira,pdf,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
 ]
 
 [project.urls]
