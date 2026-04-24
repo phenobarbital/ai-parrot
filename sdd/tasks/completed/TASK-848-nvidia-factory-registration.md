@@ -191,10 +191,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (sdd-worker)
+**Date**: 2026-04-24
+**Notes**: Added `from .nvidia import NvidiaClient` import after `from .vllm import vLLMClient`
+and registered `"nvidia": NvidiaClient` in `SUPPORTED_CLIENTS` dict after `"openrouter"`.
+All acceptance criteria verified: `"nvidia" in SUPPORTED_CLIENTS`, factory creates `NvidiaClient`
+with correct model from `"nvidia:model-slug"` strings.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
