@@ -11,33 +11,51 @@ import logging
 from pydantic import Field
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from parrot.conf import OUTPUT_DIR
-from parrot.interfaces.file import FileManagerInterface, LocalFileManager, TempFileManager
+from parrot.interfaces.file import FileManagerInterface
+from navigator.utils.file import FileManagerFactory as _UpstreamFileManagerFactory
 
 
 class FileManagerFactory:
-    """Factory for creating file managers."""
+    """Factory for creating file managers.
+
+    Thin delegate over ``navigator.utils.file.FileManagerFactory``.
+    Maps the historical parrot-side key ``"fs"`` to the upstream
+    ``"local"`` key; forwards all other keys verbatim.
+    """
+
+    _PARROT_TO_UPSTREAM = {
+        "fs": "local",
+        "temp": "temp",
+        "s3": "s3",
+        "gcs": "gcs",
+    }
 
     @staticmethod
     def create(
         manager_type: Literal["fs", "temp", "s3", "gcs"],
-        **kwargs
+        **kwargs: Any,
     ) -> FileManagerInterface:
-        """Create a file manager instance."""
-        if manager_type == "fs":
-            return LocalFileManager(**kwargs)
-        elif manager_type == "temp":
-            return TempFileManager(**kwargs)
-        elif manager_type == "s3":
-            from parrot.interfaces.file import S3FileManager
-            return S3FileManager(**kwargs)
-        elif manager_type == "gcs":
-            from parrot.interfaces.file import GCSFileManager
-            return GCSFileManager(**kwargs)
-        else:
+        """Create a file manager instance via the upstream factory.
+
+        Args:
+            manager_type: One of ``"fs"`` (local disk), ``"temp"``,
+                ``"s3"``, ``"gcs"``.
+            **kwargs: Forwarded to the upstream manager constructor.
+
+        Returns:
+            A FileManagerInterface instance.
+
+        Raises:
+            ValueError: If ``manager_type`` is not recognised.
+        """
+        try:
+            upstream_key = FileManagerFactory._PARROT_TO_UPSTREAM[manager_type]
+        except KeyError:
             raise ValueError(
                 f"Unknown manager type: {manager_type}. "
-                f"Available: ['fs', 'temp', 's3', 'gcs']"
+                f"Available: {sorted(FileManagerFactory._PARROT_TO_UPSTREAM)}"
             )
+        return _UpstreamFileManagerFactory.create(upstream_key, **kwargs)
 
 
 class FileManagerToolArgs(AbstractToolArgsSchema):
@@ -450,10 +468,9 @@ class FileManagerTool(AbstractTool):
         dest = self._resolve_output_path(args.path)
         self.logger.info(f"Creating file '{dest}' ({len(content_bytes)} bytes)")
 
-        metadata = await self.manager.create_from_bytes(
-            dest,
-            BytesIO(content_bytes)
-        )
+        # Upstream create_from_bytes returns bool; fetch metadata explicitly.
+        await self.manager.create_from_bytes(dest, BytesIO(content_bytes))
+        metadata = await self.manager.get_file_metadata(dest)
 
         return {
             "created": True,
@@ -461,5 +478,5 @@ class FileManagerTool(AbstractTool):
             "path": metadata.path,
             "size": metadata.size,
             "content_type": metadata.content_type,
-            "url": metadata.url
+            "url": metadata.url,
         }
