@@ -14564,7 +14564,7 @@
       "feature_id": "FEAT-122",
       "feature": "nvidia-client",
       "spec": "sdd/specs/nvidia-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14575,7 +14575,8 @@
       "parallelism_notes": "Tests import NvidiaClient (847) and factory registration (848); must run after both.",
       "assigned_to": null,
       "started_at": "2026-04-23T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-849-nvidia-client-unit-tests.md"
+      "file": "sdd/tasks/completed/TASK-849-nvidia-client-unit-tests.md",
+      "completed_at": "2026-04-24T00:00:00+00:00"
     }
   ]
 }

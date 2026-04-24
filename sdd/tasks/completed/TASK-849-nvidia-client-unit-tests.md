@@ -211,10 +211,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (sdd-worker)
+**Date**: 2026-04-24
+**Notes**: Created `packages/ai-parrot/tests/test_nvidia_client.py` with all 11 required
+unit tests across 4 classes: `TestNvidiaClientInit` (5), `TestNvidiaThinkingHelper` (3),
+`TestNvidiaModelEnum` (1), `TestNvidiaFactory` (2). All 11 pass with 0 failures.
+Two integration tests (`TestNvidiaIntegration`) added as skipped placeholders per spec §4.
+Used `monkeypatch` fixture for env-var test isolation. No live network calls.
+`ruff check` passes clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
