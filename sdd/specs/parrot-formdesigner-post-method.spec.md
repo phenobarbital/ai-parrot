@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-121
 **Date**: 2026-04-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (parrot-formdesigner)
 
 > Source brainstorm: `sdd/proposals/parrot-formdesigner-post-method.brainstorm.md`
@@ -796,29 +796,29 @@ class FormSchema(BaseModel):
       `FormSubmissionStorage` remain the canonical submission path; operators, DLQ, typed
       Pydantic, and metadata columns are layered on top via optional `__init__` kwargs.
       (Confirmed 2026-04-23.)
-- [ ] Terminology: user's preferred convention is `formid` = form-type id, `form_id` = submission
+- [x] Terminology: user's preferred convention is `formid` = form-type id, `form_id` = submission
       UUID, but the codebase uses `form_id` for the type and `submission_id` for the UUID. Spec
       keeps codebase terminology (no rename) to avoid churn across `FormSchema`, `FormSubmission`,
-      match-info parameters, and route paths — confirm this stays the working assumption. — *Owner: jesuslara*
-- [ ] Schema migration strategy: `ALTER TABLE form_submissions ADD COLUMN … NULL` inside
+      match-info parameters, and route paths — confirm this stays the working assumption. — *Owner: jesuslara*: ok
+- [x] Schema migration strategy: `ALTER TABLE form_submissions ADD COLUMN … NULL` inside
       `initialize()` (idempotent, current pattern) vs. an out-of-band migration tool
-      (alembic / manual SQL). Spec assumes the in-`initialize()` approach. — *Owner: jesuslara*
-- [ ] Default operator catalog to ship in v1: `UserDetails` only (current spec), or also
-      `ProgramContext`, `OrgContext`, `AuditTrail`? — *Owner: jesuslara*
-- [ ] DLQ retention window (7 d? 30 d?) and whether to ship a cleanup task or leave it to ops. — *Owner: jesuslara*
+      (alembic / manual SQL). Spec assumes the in-`initialize()` approach. — *Owner: jesuslara*: simple alters inside initialize
+- [x] Default operator catalog to ship in v1: `UserDetails` only (current spec), or also
+      `ProgramContext`, `OrgContext`, `AuditTrail`? — *Owner: jesuslara*: `UserDetails`, `EmployeeHierarchy`, `AuditTrail`
+- [x] DLQ retention window (7 d? 30 d?) and whether to ship a cleanup task or leave it to ops. — *Owner: jesuslara*: 7d
 - [ ] Max body size guardrail: default (1 MB?) and whether enforced via aiohttp
-      `client_max_size` (framework-level) or inside the handler. — *Owner: jesuslara*
+      `client_max_size` (framework-level) or inside the handler. — *Owner: jesuslara*: inside the handler.
 - [ ] Pydantic model warm-up trigger: at `FormRegistry.load_from_storage()` (eager), at
       first-submission lazy per `(form_id, version)`, or both? Spec assumes **both** (eager warm-up
-      + lazy on cache miss). — *Owner: jesuslara*
-- [ ] `Idempotency-Key` header support (deduplication on retry). Out of scope for v1, revisit later. — *Owner: jesuslara*
+      + lazy on cache miss). — *Owner: jesuslara*: spec assumes both if during eager warm-up pydantic was not created.
+- [ ] `Idempotency-Key` header support (deduplication on retry). Out of scope for v1, revisit later. — *Owner: jesuslara*: out of scope v1.
 - [ ] `post_save` runs **inside** the main transaction (current spec) so side-effect failures
-      abort the save. Confirm this is desired over a fire-and-forget post-commit semantic. — *Owner: jesuslara*
+      abort the save. Confirm this is desired over a fire-and-forget post-commit semantic. — *Owner: jesuslara*: yes, confirmed.
 - [ ] Static Pydantic model registration API: decorator (`@register_form_model("db-form-10-69", "1.2")`),
       explicit kwarg on `PydanticModelResolver` (`static_models={(id, ver): Model}` — current
-      spec), or both? — *Owner: jesuslara*
+      spec), or both? — *Owner: jesuslara*: both
 - [ ] Response body shape when operators run: today's extended-200 (current spec) or switch to
-      201 Created with a minimal body `{submission_id, form_id, form_version, status, created_at}`? — *Owner: jesuslara*
+      201 Created with a minimal body `{submission_id, form_id, form_version, status, created_at}`? — *Owner: jesuslara*: extended-200
 
 ---
 
