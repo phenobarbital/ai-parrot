@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-122
 **Date**: 2026-04-23
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.x
 
 ---
@@ -590,12 +590,12 @@ No new dependencies required.
 
 - [ ] Should we expose a `stop_thinking_after_tokens` / truncation helper for
       GLM-5.1-style reasoning traces, or leave trace length entirely to the
-      caller's `max_tokens`? — *Owner: Jesus*
+      caller's `max_tokens`? — *Owner: Jesus*: add when GLM-5.1 is used
 - [ ] Do we want a `list_models()` method analogous to `OpenRouterClient.list_models()`?
       Nvidia exposes `GET /v1/models` — trivial to add, but not in the user's
-      minimal task list. — *Owner: Jesus*
+      minimal task list. — *Owner: Jesus*: Add it
 - [ ] Add `nvidia-embed-*` embedding models in a follow-up spec, or extend this
-      one? Current spec explicitly excludes embeddings (§1 Non-Goals). — *Owner: Jesus*
+      one? Current spec explicitly excludes embeddings (§1 Non-Goals). — *Owner: Jesus*: not in the scope, embed models are managed by another part of parrot (parrot.embeddings)
 
 ---
 
