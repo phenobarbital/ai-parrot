@@ -14473,7 +14473,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14486,7 +14486,8 @@
       "parallelism_notes": "End-to-end validation; runs last after every implementation task is complete.",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-841-integration-tests-postgres.md"
+      "file": "sdd/tasks/completed/TASK-841-integration-tests-postgres.md",
+      "completed_at": "2026-04-24T00:22:43.573027+00:00"
     },
     {
       "id": "TASK-846",
