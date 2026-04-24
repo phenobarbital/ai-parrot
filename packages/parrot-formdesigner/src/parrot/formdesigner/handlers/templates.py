@@ -1,5 +1,11 @@
 """HTML page templates and CSS for parrot-formdesigner HTTP handlers.
 
+All template builders accept an optional ``prefix`` argument (default
+``""``). When the form-designer routes are mounted behind a URL prefix via
+``setup_form_routes(app, prefix="/form")``, callers resolve the prefix
+with ``request.app.get("_form_prefix", "")`` and pass it through so that
+every rendered link and JS ``fetch()`` target matches the real route.
+
 Extracted from examples/forms/form_server.py.
 """
 
@@ -101,60 +107,115 @@ CSS = """\
 """
 
 
-_AUTH_SCRIPT = """\
+def _normalize_prefix(prefix: str) -> str:
+    """Normalise a URL prefix to the ``""`` or ``"/foo"`` shape.
+
+    The route registrar stores the prefix stripped of trailing slashes
+    (see ``routes.py``). This mirrors that behaviour so the templates
+    produce ``{prefix}/...`` without double slashes at runtime.
+
+    Args:
+        prefix: Raw prefix from ``request.app.get("_form_prefix", "")``.
+
+    Returns:
+        Either the empty string or a string that starts with ``/`` and
+        has no trailing ``/``.
+    """
+    if not prefix:
+        return ""
+    return "/" + prefix.strip("/")
+
+
+def _auth_script(prefix: str = "") -> str:
+    """Build the JWT auth bootstrap ``<script>`` for the admin page shell.
+
+    The script:
+    * Reads ``ai_parrot_token`` from ``localStorage`` and redirects to
+      ``/admin`` when missing (admin login is served by the host app,
+      conventionally at the site root — not under the form prefix).
+    * Monkey-patches ``window.fetch`` so that any same-origin URL
+      starting with ``{prefix}/api/`` (or plain ``/api/`` when no prefix
+      is set) is auto-decorated with ``Authorization: Bearer <token>``.
+    * Handles 401 responses by clearing the stored session and
+      redirecting to ``/admin``.
+
+    Args:
+        prefix: URL prefix where the form-designer routes are mounted
+            (e.g. ``"/form"``). Empty string preserves legacy behaviour.
+
+    Returns:
+        HTML string containing the ``<script>`` element.
+    """
+    p = _normalize_prefix(prefix)
+    api_match = f"'{p}/api/'" if p else "'/api/'"
+    return f"""\
 <script>
-(function() {
+(function() {{
   // Redirect to login if no JWT token is stored.
   var token = localStorage.getItem('ai_parrot_token');
-  if (!token) {
+  if (!token) {{
     window.location.href = '/admin';
     return;
-  }
+  }}
 
   // Monkey-patch fetch to inject Authorization header on same-origin API calls.
   var _origFetch = window.fetch;
-  window.fetch = function(input, init) {
-    init = init || {};
+  window.fetch = function(input, init) {{
+    init = init || {{}};
     var url = (typeof input === 'string') ? input : input.url;
-    if (url.startsWith('/api/')) {
-      init.headers = new Headers(init.headers || {});
-      if (!init.headers.has('Authorization')) {
+    if (url.startsWith({api_match})) {{
+      init.headers = new Headers(init.headers || {{}});
+      if (!init.headers.has('Authorization')) {{
         init.headers.set('Authorization', 'Bearer ' + token);
-      }
-    }
-    return _origFetch.call(this, input, init).then(function(resp) {
-      if (resp.status === 401) {
+      }}
+    }}
+    return _origFetch.call(this, input, init).then(function(resp) {{
+      if (resp.status === 401) {{
         localStorage.removeItem('ai_parrot_token');
         localStorage.removeItem('ai_parrot_session');
         window.location.href = '/admin';
-      }
+      }}
       return resp;
-    });
-  };
-})();
+    }});
+  }};
+}})();
 </script>"""
 
 
-def page_shell(title: str, body: str, locale: str = "en", nav: bool = True) -> str:
+def page_shell(
+    title: str,
+    body: str,
+    locale: str = "en",
+    nav: bool = True,
+    prefix: str = "",
+) -> str:
     """Wrap body HTML in a full page shell.
 
     Injects an authentication script that reads the JWT from localStorage
     and attaches it as an ``Authorization: Bearer`` header on every
-    ``fetch()`` call to ``/api/`` endpoints.  If no token is present the
-    user is redirected to ``/admin``.
+    ``fetch()`` call targeting the form-designer API. If no token is
+    present the user is redirected to ``/admin``.
 
     Args:
         title: Page title shown in the browser tab.
         body: Inner HTML content.
         locale: HTML lang attribute value.
         nav: Whether to include the top navigation links.
+        prefix: URL prefix where the form-designer is mounted. Empty
+            string = legacy behaviour (routes at root).
 
     Returns:
         Complete HTML page string.
     """
+    p = _normalize_prefix(prefix)
     nav_html = ""
     if nav:
-        nav_html = '<div class="nav"><a href="/">New Form</a><a href="/gallery">Gallery</a></div>'
+        nav_html = (
+            f'<div class="nav">'
+            f'<a href="{p}/">New Form</a>'
+            f'<a href="{p}/gallery">Gallery</a>'
+            f'</div>'
+        )
     return f"""\
 <!DOCTYPE html>
 <html lang="{escape(locale)}">
@@ -165,20 +226,28 @@ def page_shell(title: str, body: str, locale: str = "en", nav: bool = True) -> s
   <style>{CSS}</style>
 </head>
 <body>
-  {_AUTH_SCRIPT}
+  {_auth_script(p)}
   {nav_html}
   {body}
 </body>
 </html>"""
 
 
-def index_page() -> str:
+def index_page(prefix: str = "") -> str:
     """Return the HTML body for the index page (prompt builder + DB loader).
+
+    The embedded JavaScript declares a ``FORM_PREFIX`` constant so all
+    ``fetch()`` calls and ``window.location.href`` redirects respect the
+    mount point configured via ``setup_form_routes(..., prefix=...)``.
+
+    Args:
+        prefix: URL prefix where the form-designer is mounted.
 
     Returns:
         HTML body string for the landing page.
     """
-    return """\
+    p = _normalize_prefix(prefix)
+    return f"""\
 <h1>AI Form Builder</h1>
 <p>Describe the form you need in plain language, or load an existing form from the database.</p>
 
@@ -226,21 +295,22 @@ def index_page() -> str:
 </div>
 
 <script>
-function showError(container, message) {
+const FORM_PREFIX = {p!r};
+function showError(container, message) {{
   const banner = document.createElement('div');
   banner.className = 'error-banner';
   banner.textContent = message;
   container.innerHTML = '';
   container.appendChild(banner);
   container.style.display = 'block';
-}
-document.querySelectorAll('.example-chip').forEach(chip => {
-  chip.addEventListener('click', () => {
+}}
+document.querySelectorAll('.example-chip').forEach(chip => {{
+  chip.addEventListener('click', () => {{
     document.getElementById('prompt').value = chip.dataset.prompt;
     document.getElementById('prompt').focus();
-  });
-});
-document.getElementById('create-form').addEventListener('submit', async (e) => {
+  }});
+}});
+document.getElementById('create-form').addEventListener('submit', async (e) => {{
   e.preventDefault();
   const btn = document.getElementById('create-btn');
   const status = document.getElementById('create-status');
@@ -250,32 +320,32 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
   btn.innerHTML = '<span class="spinner"></span> Generating...';
   status.style.display = 'block';
   status.innerHTML = '<em>Generating form...</em>';
-  try {
-    const res = await fetch('/api/v1/forms', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt})});
+  try {{
+    const res = await fetch(FORM_PREFIX + '/api/v1/forms', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{prompt}})}});
     const data = await res.json();
-    if (!res.ok) { showError(status, data.error || 'Something went wrong'); return; }
+    if (!res.ok) {{ showError(status, data.error || 'Something went wrong'); return; }}
     window.location.href = data.url;
-  } catch (err) { showError(status, 'Network error: ' + err.message);
-  } finally { btn.disabled = false; btn.innerHTML = 'Generate Form'; }
-});
-async function loadFromDB() {
+  }} catch (err) {{ showError(status, 'Network error: ' + err.message);
+  }} finally {{ btn.disabled = false; btn.innerHTML = 'Generate Form'; }}
+}});
+async function loadFromDB() {{
   const btn = document.getElementById('db-btn');
   const status = document.getElementById('db-status');
   const formid = parseInt(document.getElementById('formid').value, 10);
   const orgid = parseInt(document.getElementById('orgid').value, 10);
-  if (!formid || !orgid) { showError(status, 'Please enter both Form ID and Org ID.'); return; }
+  if (!formid || !orgid) {{ showError(status, 'Please enter both Form ID and Org ID.'); return; }}
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Loading...';
   status.style.display = 'block'; status.innerHTML = '<em>Loading...</em>';
-  try {
-    const res = await fetch('/api/v1/forms/from-db', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({formid, orgid})});
+  try {{
+    const res = await fetch(FORM_PREFIX + '/api/v1/forms/from-db', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{formid, orgid}})}});
     const data = await res.json();
-    if (!res.ok) { showError(status, data.error || 'Failed to load'); return; }
+    if (!res.ok) {{ showError(status, data.error || 'Failed to load'); return; }}
     window.location.href = data.url;
-  } catch (err) { showError(status, 'Network error: ' + err.message);
-  } finally { btn.disabled = false; btn.innerHTML = 'Load from Database'; }
-}
+  }} catch (err) {{ showError(status, 'Network error: ' + err.message);
+  }} finally {{ btn.disabled = false; btn.innerHTML = 'Load from Database'; }}
+}}
 </script>"""
 
 
@@ -283,7 +353,10 @@ def gallery_page(form_items_html: str) -> str:
     """Return the HTML body for the gallery page.
 
     Args:
-        form_items_html: Pre-rendered HTML for the form list items.
+        form_items_html: Pre-rendered HTML for the form list items. The
+            caller (``FormPageHandler.gallery``) is responsible for
+            prefixing hrefs inside this fragment — ``gallery_page`` never
+            touches URLs.
 
     Returns:
         HTML body string for the gallery page.
@@ -317,7 +390,13 @@ def form_page(form_fragment: str) -> str:
     return f'<div class="card">{form_fragment}</div>'
 
 
-def schema_page(form_id: str, title: str, schema_json: str, style_json: str) -> str:
+def schema_page(
+    form_id: str,
+    title: str,
+    schema_json: str,
+    style_json: str,
+    prefix: str = "",
+) -> str:
     """Return the HTML body for the JSON Schema view page.
 
     Args:
@@ -325,17 +404,19 @@ def schema_page(form_id: str, title: str, schema_json: str, style_json: str) -> 
         title: Human-readable form title.
         schema_json: Pretty-printed JSON Schema string.
         style_json: Pretty-printed Style Schema string.
+        prefix: URL prefix where the form-designer is mounted.
 
     Returns:
         HTML body string with the JSON schema display.
     """
+    p = _normalize_prefix(prefix)
     return f"""\
 <h1>JSON Schema: {escape(title)}</h1>
 <p>Structural JSON Schema for form <code>{escape(form_id)}</code>.</p>
 
 <div style="display:flex; gap:.75rem; margin-bottom:1rem;">
-  <a href="/forms/{escape(form_id)}" class="btn btn-secondary">View Form</a>
-  <a href="/gallery" class="btn btn-secondary">Gallery</a>
+  <a href="{p}/forms/{escape(form_id)}" class="btn btn-secondary">View Form</a>
+  <a href="{p}/gallery" class="btn btn-secondary">Gallery</a>
 </div>
 
 <div class="card">
@@ -351,21 +432,26 @@ def schema_page(form_id: str, title: str, schema_json: str, style_json: str) -> 
 <div class="card">
   <h2 style="margin-bottom:.5rem;">API Endpoints</h2>
   <ul style="margin:0; padding-left:1.2rem;">
-    <li><code>GET /api/v1/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
-    <li><code>GET /api/v1/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
-    <li><code>GET /api/v1/forms/{escape(form_id)}/style</code> — Style Schema</li>
-    <li><code>GET /api/v1/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/style</code> — Style Schema</li>
+    <li><code>GET {p}/api/v1/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
   </ul>
 </div>"""
 
 
-def error_page(message: str) -> str:
+def error_page(message: str, prefix: str = "") -> str:
     """Return an error page body.
 
     Args:
         message: Human-readable error message.
+        prefix: URL prefix where the form-designer is mounted.
 
     Returns:
         HTML body string with the error banner.
     """
-    return f'<div class="error-banner">{escape(message)}</div><a href="/">Go back</a>'
+    p = _normalize_prefix(prefix)
+    return (
+        f'<div class="error-banner">{escape(message)}</div>'
+        f'<a href="{p}/">Go back</a>'
+    )
