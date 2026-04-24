@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-123
 **Date**: 2026-04-25
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
@@ -613,7 +613,7 @@ sub-dependencies pulled in only when S3/GCS are used.
 - [ ] **Q1 — navigator-api version pin floor.** Should
       `pyproject.toml` pin `navigator-api[uvloop,locale]>=2.14.1`
       (first published tag with the file module), or wait for /
-      align with a `3.x` release? — *Owner: Jesus*
+      align with a `3.x` release? — *Owner: Jesus*: align with 3.x release.
 - [ ] **Q2 — Hard switch vs shim.** This spec assumes a **shim**
       under `parrot.interfaces.file` that preserves all current
       import paths. Confirm this is preferred over a hard switch
@@ -622,13 +622,13 @@ sub-dependencies pulled in only when S3/GCS are used.
       tests) to import from `navigator.utils.file` directly.
       Trade-off: shim = zero downstream churn, slightly more
       indirection; hard switch = cleaner, ~10 callsite edits.
-      — *Owner: Jesus*
+      — *Owner: Jesus*: hard switch
 - [ ] **Q3 — `create_from_bytes` return-type adapter location.**
       The proposed Module 4 fix calls `get_file_metadata(dest)`
       after `create_from_bytes`. Acceptable? Alternative: file a
       PR upstream to make `create_from_bytes` return
       `FileMetadata` like `upload_file` does, and gate this
-      migration on that PR landing. — *Owner: Jesus*
+      migration on that PR landing. — *Owner: Jesus*: file a PR upstream to make `create_from_bytes` return `FileMetadata` like `upload_file` does, and gate this migration on that PR landing.
 - [ ] **Q4 — `parrot.tools.filemanager.FileManagerFactory` fate.**
       Module 5 keeps it as a thin delegating wrapper. Alternative:
       delete it entirely and have `FileManagerTool._create_manager`
@@ -636,13 +636,13 @@ sub-dependencies pulled in only when S3/GCS are used.
       with the `"fs"→"local"` mapping inlined. The wrapper is
       kept for backward compat (any external caller of
       `parrot.tools.filemanager.FileManagerFactory`?). Confirm or
-      drop. — *Owner: Jesus*
+      drop. — *Owner: Jesus*: drop it entirely.
 - [ ] **Q5 — `FileServingExtension` adoption.** Out of scope here,
       but does ai-parrot want to use the upstream
       `FileServingExtension` for any HTTP file-serving handler
       (e.g., persisted artifacts, video reels)? If yes, file a
       follow-up spec; if no, drop the line in §1 Non-Goals.
-      — *Owner: Jesus*
+      — *Owner: Jesus*: in scope, we should use it.
 
 ---
 
