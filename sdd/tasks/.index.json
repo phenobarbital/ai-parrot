@@ -14643,7 +14643,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14654,7 +14654,8 @@
       "parallelism_notes": "Tests assert behaviour from both the shim (TASK-851) and the tool/factory adapter (TASK-852); must run after both.",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-853-shim-regression-tests.md"
+      "file": "sdd/tasks/completed/TASK-853-shim-regression-tests.md",
+      "completed_at": "2026-04-24T23:38:59.445370+00:00"
     },
     {
       "id": "TASK-854",
