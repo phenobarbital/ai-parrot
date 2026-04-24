@@ -339,10 +339,11 @@ class FormAPIHandler:
                 status=500,
             )
         title = (result.result or {}).get("title", "")
+        prefix = request.app.get("_form_prefix", "")
         return web.json_response({
             "form_id": form_id,
             "title": title,
-            "url": f"/forms/{form_id}",
+            "url": f"{prefix}/forms/{form_id}",
         })
 
     async def update_form(self, request: web.Request) -> web.Response:
@@ -598,8 +599,9 @@ class FormAPIHandler:
                 status=500,
             )
         title = (result.result or {}).get("title", "")
+        prefix = request.app.get("_form_prefix", "")
         return web.json_response({
             "form_id": form_id,
             "title": title,
-            "url": f"/forms/{form_id}",
+            "url": f"{prefix}/forms/{form_id}",
         })
