@@ -14084,7 +14084,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -14092,7 +14092,8 @@
       "parallelism_notes": "Phase A foundation; shares no files with TASK-823 so the two can be done in parallel within Phase A.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-822-conversation-backend-abc.md"
+      "file": "sdd/tasks/completed/TASK-822-conversation-backend-abc.md",
+      "completed_at": "2026-04-22T00:00:00Z"
     },
     {
       "id": "TASK-823",
