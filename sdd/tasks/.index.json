@@ -14577,6 +14577,102 @@
       "started_at": "2026-04-23T12:00:00+00:00",
       "file": "sdd/tasks/completed/TASK-849-nvidia-client-unit-tests.md",
       "completed_at": "2026-04-24T00:00:00+00:00"
+    },
+    {
+      "id": "TASK-850",
+      "slug": "bump-navigator-api-version",
+      "title": "Bump navigator-api dependency floor to 2.14.1",
+      "feature_id": "FEAT-123",
+      "feature": "fileinterface-migration",
+      "spec": "sdd/specs/fileinterface-migration.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Trivial dependency bump; everything else depends on it. No parallel benefit.",
+      "assigned_to": null,
+      "started_at": "2026-04-24T23:28:48.987722+00:00",
+      "file": "sdd/tasks/active/TASK-850-bump-navigator-api-version.md"
+    },
+    {
+      "id": "TASK-851",
+      "slug": "shim-parrot-interfaces-file",
+      "title": "Replace parrot.interfaces.file with re-export shim over navigator.utils.file",
+      "feature_id": "FEAT-123",
+      "feature": "fileinterface-migration",
+      "spec": "sdd/specs/fileinterface-migration.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-850"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sole rewrite of the interfaces/file/ package; downstream tasks (852/853/854) depend on the shim being in place.",
+      "assigned_to": null,
+      "started_at": "2026-04-24T23:28:48.987722+00:00",
+      "file": "sdd/tasks/active/TASK-851-shim-parrot-interfaces-file.md"
+    },
+    {
+      "id": "TASK-852",
+      "slug": "adapt-filemanager-tool-and-factory",
+      "title": "Adapt FileManagerTool._create_file and delegate FileManagerFactory to upstream",
+      "feature_id": "FEAT-123",
+      "feature": "fileinterface-migration",
+      "spec": "sdd/specs/fileinterface-migration.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-851"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches parrot/tools/filemanager.py only, but cannot start until the shim resolves to upstream classes (otherwise the smoke checks would still pass against the old behaviour).",
+      "assigned_to": null,
+      "started_at": "2026-04-24T23:28:48.987722+00:00",
+      "file": "sdd/tasks/active/TASK-852-adapt-filemanager-tool-and-factory.md"
+    },
+    {
+      "id": "TASK-853",
+      "slug": "shim-regression-tests",
+      "title": "Add regression tests for parrot.interfaces.file shim and FileManager adapter",
+      "feature_id": "FEAT-123",
+      "feature": "fileinterface-migration",
+      "spec": "sdd/specs/fileinterface-migration.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-851",
+        "TASK-852"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests assert behaviour from both the shim (TASK-851) and the tool/factory adapter (TASK-852); must run after both.",
+      "assigned_to": null,
+      "started_at": "2026-04-24T23:28:48.987722+00:00",
+      "file": "sdd/tasks/active/TASK-853-shim-regression-tests.md"
+    },
+    {
+      "id": "TASK-854",
+      "slug": "verify-existing-storage-tests",
+      "title": "Verify existing FileManager-consuming tests after migration",
+      "feature_id": "FEAT-123",
+      "feature": "fileinterface-migration",
+      "spec": "sdd/specs/fileinterface-migration.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-851",
+        "TASK-852",
+        "TASK-853"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Verification step; run last so any failure can be diagnosed against fully-migrated code + new regression tests.",
+      "assigned_to": null,
+      "started_at": "2026-04-24T23:28:48.987722+00:00",
+      "file": "sdd/tasks/active/TASK-854-verify-existing-storage-tests.md"
     }
   ]
 }
