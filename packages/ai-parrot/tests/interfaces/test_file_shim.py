@@ -3,6 +3,7 @@ navigator.utils.file (FEAT-123 — fileinterface-migration).
 """
 import importlib
 import sys
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -23,6 +24,19 @@ def test_root_identity():
     assert shim.FileMetadata is upstream.FileMetadata
     assert shim.LocalFileManager is upstream.LocalFileManager
     assert shim.TempFileManager is upstream.TempFileManager
+
+
+def test_no_cloud_sdk_leak_on_import():
+    """Importing parrot.interfaces.file does not load aioboto3 / gcs.
+
+    This test must run before test_lazy_identity, which accesses S3FileManager
+    and GCSFileManager and thereby loads the cloud SDKs into sys.modules.
+    """
+    if "aioboto3" in sys.modules or "google.cloud.storage" in sys.modules:
+        pytest.skip("cloud SDK already loaded by a prior test")
+    importlib.reload(shim)
+    assert "aioboto3" not in sys.modules
+    assert "google.cloud.storage" not in sys.modules
 
 
 def test_lazy_identity():
@@ -50,21 +64,13 @@ def test_submodule_paths_resolve():
     assert G_GCS is upstream.GCSFileManager
 
 
-def test_no_cloud_sdk_leak_on_import():
-    """Importing parrot.interfaces.file does not load aioboto3 / gcs."""
-    if "aioboto3" in sys.modules or "google.cloud.storage" in sys.modules:
-        pytest.skip("cloud SDK already loaded by a prior test")
-    importlib.reload(shim)
-    assert "aioboto3" not in sys.modules
-    assert "google.cloud.storage" not in sys.modules
-
-
 # ── Behaviour change — create_from_bytes now returns bool ───────
 
+@pytest.mark.asyncio
 async def test_create_from_bytes_returns_bool(tmp_path: Path):
     """Upstream contract: bool return, not FileMetadata."""
     fm = LocalFileManager(base_path=tmp_path)
-    rv = await fm.create_from_bytes("foo.txt", b"hi")
+    rv = await fm.create_from_bytes("foo.txt", BytesIO(b"hi"))
     assert rv is True
     assert type(rv) is bool
 
@@ -90,6 +96,7 @@ def test_factory_unknown_type_raises_valueerror():
 
 # ── FileManagerTool.create flow uses get_file_metadata adapter ──
 
+@pytest.mark.asyncio
 async def test_filemanager_tool_create_uses_get_metadata(tmp_path: Path):
     tool = FileManagerTool(
         manager_type="fs",
@@ -106,8 +113,9 @@ async def test_filemanager_tool_create_uses_get_metadata(tmp_path: Path):
     assert body["created"] is True
     assert body["name"] == "hello.txt"
     assert body["size"] == len("hi".encode("utf-8"))
-    # The file is created somewhere under tmp_path; verify by reading via
-    # the URL or by confirming that size and name are correctly populated
-    # (proving get_file_metadata was called and returned a valid FileMetadata).
-    assert body["size"] == 2
-    assert body["content_type"] is not None or body["content_type"] is None  # field present
+    assert "content_type" in body
+    # Confirm file physically exists at the path reported by get_file_metadata.
+    # LocalFileManager resolves paths relative to base_path, so use body["path"]
+    # rather than hardcoding tmp_path / "hello.txt".
+    actual_path = tmp_path / body["path"]
+    assert actual_path.read_bytes() == b"hi"
