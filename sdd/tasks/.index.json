@@ -14692,8 +14692,8 @@
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure pyproject.toml pin change \u2014 no code files shared with other tasks. Can run in parallel with TASK-860.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-855-anthropic-sdk-pin-upgrade.md"
     },
     {
@@ -14711,8 +14711,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-855 (pin bump must be installed first). Sequential after TASK-855.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-856-anthropic-regression-validation.md"
     },
     {
@@ -14728,8 +14728,8 @@
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure conversion function in models/responses.py \u2014 no shared files with Track A tasks (TASK-855/856) or pyproject restructure (TASK-860). Can run in parallel.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-857-aimessage-factory-from-claude-agent.md"
     },
     {
@@ -14747,8 +14747,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-857 (uses AIMessageFactory.from_claude_agent). Sequential after TASK-857.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-858-claude-agent-client-core.md"
     },
     {
@@ -14766,8 +14766,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-858 (imports ClaudeAgentClient). Sequential after TASK-858.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-859-factory-registration-lazy-loader.md"
     },
     {
@@ -14783,8 +14783,8 @@
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure pyproject.toml change \u2014 no code files shared. Can run in parallel with TASK-855 and TASK-857.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-860-pyproject-extras-restructure.md"
     },
     {
@@ -14804,8 +14804,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Tests all Track B components \u2014 must wait for implementation tasks to complete.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-861-claude-agent-client-tests.md"
     },
     {
@@ -14824,8 +14824,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on client and factory being complete. Can run in parallel with TASK-861.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-862-example-and-docs.md"
     },
     {
@@ -14835,14 +14835,14 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-855-abstractloader-contract-changes.md"
     },
     {
@@ -14852,7 +14852,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -14860,8 +14860,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Touches basepdf.py and basevideo.py which are base classes for tasks 857-859; sequential to avoid merge conflicts",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-856-base-loader-helpers.md"
     },
     {
@@ -14871,7 +14871,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14879,8 +14879,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Touches different files than 858-860 but shares test fixtures and LOADER_REGISTRY integration test; sequential per spec worktree strategy",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-857-refactor-file-document-loaders.md"
     },
     {
@@ -14890,7 +14890,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14899,8 +14899,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on basevideo build_default_meta from TASK-856; shares test fixtures with TASK-859",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-858-refactor-video-audio-loaders.md"
     },
     {
@@ -14910,7 +14910,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14919,8 +14919,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on basevideo build_default_meta; touches youtube.py/vimeo.py only but shares integration test with TASK-858",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-859-refactor-youtube-vimeo-loaders.md"
     },
     {
@@ -14930,7 +14930,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14938,8 +14938,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Touches web.py/webscraping.py only but shares integration test fixtures; sequential per spec worktree strategy",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-860-refactor-web-loaders.md"
     },
     {
@@ -14949,7 +14949,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14962,8 +14962,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Must run after ALL refactors complete; validates entire feature end-to-end",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-861-tests-canonical-metadata.md"
     },
     {
@@ -14973,7 +14973,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -14986,8 +14986,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Documentation task; depends on all implementation tasks for accurate content",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/active/TASK-862-documentation-canonical-metadata.md"
     },
     {
