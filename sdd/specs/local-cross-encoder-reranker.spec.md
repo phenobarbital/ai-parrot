@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-126
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot next minor
 
 ---
@@ -586,18 +586,18 @@ class VectorInterface:
 
 ## 8. Open Questions
 
-- [ ] Should `reranker` be exposed in the `chatbot.yaml` / DB-driven bot config (the
+- [x] Should `reranker` be exposed in the `chatbot.yaml` / DB-driven bot config (the
       `_from_db` path in `parrot/bots/chatbot.py:387`) or is constructor-only acceptable
-      for the first iteration? — *Owner: Jesus Lara*
+      for the first iteration? — *Owner: Jesus Lara*: exposed in DB-driven bot config.
 - [ ] Default `rerank_oversample_factor`: 3 vs 4 vs 5. The benchmark harness should
       inform the final default; ship 4 and revisit. — *Owner: implementation*
-- [ ] Should the benchmark harness be wired into a `make benchmark-reranker` target or
-      remain a standalone script under `scripts/`? — *Owner: Jesus Lara*
+- [x] Should the benchmark harness be wired into a `make benchmark-reranker` target or
+      remain a standalone script under `scripts/`? — *Owner: Jesus Lara*: remain standalone script.
 - [ ] Do we want a `RerankerRegistry` (mirroring `register_agent`) so users can name
       rerankers in YAML, or is direct constructor injection enough for v1? — *Owner: implementation*
-- [ ] Eval set composition: 100% synthetic vs. drawn from real production logs (with
+- [x] Eval set composition: 100% synthetic vs. drawn from real production logs (with
       PII redaction). Real logs give better signal but are slower to assemble. —
-      *Owner: Jesus Lara + data-protection lead*
+      *Owner: Jesus Lara + data-protection lead*: I have real data to be used for a RAG, is clearly data with no PII.
 
 ---
 
