@@ -14827,6 +14827,168 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-862-example-and-docs.md"
+    },
+    {
+      "id": "TASK-855",
+      "slug": "abstractloader-contract-changes",
+      "title": "AbstractLoader contract changes \u2014 language, title, validate_metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-855-abstractloader-contract-changes.md"
+    },
+    {
+      "id": "TASK-856",
+      "slug": "base-loader-helpers",
+      "title": "Base loader helpers \u2014 basepdf and basevideo build_default_meta",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches basepdf.py and basevideo.py which are base classes for tasks 857-859; sequential to avoid merge conflicts",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-856-base-loader-helpers.md"
+    },
+    {
+      "id": "TASK-857",
+      "slug": "refactor-file-document-loaders",
+      "title": "Refactor file/document loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches different files than 858-860 but shares test fixtures and LOADER_REGISTRY integration test; sequential per spec worktree strategy",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-857-refactor-file-document-loaders.md"
+    },
+    {
+      "id": "TASK-858",
+      "slug": "refactor-video-audio-loaders",
+      "title": "Refactor video/audio loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on basevideo build_default_meta from TASK-856; shares test fixtures with TASK-859",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-858-refactor-video-audio-loaders.md"
+    },
+    {
+      "id": "TASK-859",
+      "slug": "refactor-youtube-vimeo-loaders",
+      "title": "Refactor YouTube and Vimeo loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on basevideo build_default_meta; touches youtube.py/vimeo.py only but shares integration test with TASK-858",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-859-refactor-youtube-vimeo-loaders.md"
+    },
+    {
+      "id": "TASK-860",
+      "slug": "refactor-web-loaders",
+      "title": "Refactor web and webscraping loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches web.py/webscraping.py only but shares integration test fixtures; sequential per spec worktree strategy",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-860-refactor-web-loaders.md"
+    },
+    {
+      "id": "TASK-861",
+      "slug": "tests-canonical-metadata",
+      "title": "Tests for canonical metadata standardization",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856",
+        "TASK-857",
+        "TASK-858",
+        "TASK-859",
+        "TASK-860"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after ALL refactors complete; validates entire feature end-to-end",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-861-tests-canonical-metadata.md"
+    },
+    {
+      "id": "TASK-862",
+      "slug": "documentation-canonical-metadata",
+      "title": "Documentation for canonical metadata shape",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856",
+        "TASK-857",
+        "TASK-858",
+        "TASK-859",
+        "TASK-860"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Documentation task; depends on all implementation tasks for accurate content",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-862-documentation-canonical-metadata.md"
     }
   ]
 }
