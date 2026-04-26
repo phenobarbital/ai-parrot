@@ -14686,15 +14686,16 @@
       "feature_id": "FEAT-124",
       "feature": "claude-sdk-migration",
       "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure pyproject.toml pin change \u2014 no code files shared with other tasks. Can run in parallel with TASK-860.",
-      "assigned_to": "sdd-worker-feat-125",
-      "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-855-anthropic-sdk-pin-upgrade.md"
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-26T23:32:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-855-anthropic-sdk-pin-upgrade.md"
     },
     {
       "id": "TASK-856",

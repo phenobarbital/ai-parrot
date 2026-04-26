@@ -138,10 +138,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-26
+**Notes**: Bumped `anthropic[aiohttp]` pin from `==0.61.0` to `>=0.97.0,<1.0.0` in
+both the `anthropic` and `llms` extras of `packages/ai-parrot/pyproject.toml`.
+The `claude-agent-sdk` lines were left unchanged (TASK-860 will restructure them).
+Verified the upgrade by running `uv pip install "anthropic[aiohttp]>=0.97.0,<1.0.0"`
+in the existing `.venv` — resolved to `anthropic==0.97.0`. Confirmed all critical
+imports still resolve: `AsyncAnthropic`, `RateLimitError`, `APIStatusError`,
+`Message`, `MessageStreamEvent`. No code changes to `claude.py` were needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
