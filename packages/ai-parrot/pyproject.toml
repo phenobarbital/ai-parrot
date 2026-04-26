@@ -343,7 +343,7 @@ images = [
 ]
 
 anthropic = [
-    "anthropic[aiohttp]==0.61.0",
+    "anthropic[aiohttp]>=0.97.0,<1.0.0",
     "claude-agent-sdk>=0.1.0,!=0.1.49",
 ]
 
@@ -367,7 +367,7 @@ llms = [
     "google-genai>=1.61.0",
     "openai==2.8.1",
     "groq==0.33.0",
-    "anthropic[aiohttp]==0.61.0",
+    "anthropic[aiohttp]>=0.97.0,<1.0.0",
     "claude-agent-sdk>=0.1.0,!=0.1.49",
     "xai-sdk>=0.1.0",
 ]
