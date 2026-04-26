@@ -14997,14 +14997,14 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; all other tasks depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-863-reranker-models-and-abstract.md"
     },
     {
@@ -15014,7 +15014,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15023,7 +15023,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-865 (LLMReranker) \u2014 both depend only on TASK-863 and touch different files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-864-local-cross-encoder-reranker.md"
     },
     {
@@ -15033,7 +15033,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -15042,7 +15042,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-864 (LocalCrossEncoderReranker) \u2014 both depend only on TASK-863 and touch different files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-865-llm-reranker.md"
     },
     {
@@ -15052,7 +15052,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15062,7 +15062,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies shared file (abstract.py) and depends on LocalCrossEncoderReranker being complete for testing.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-866-bot-reranker-integration.md"
     },
     {
@@ -15072,7 +15072,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15084,7 +15084,7 @@
       "parallel": false,
       "parallelism_notes": "Tests all prior modules \u2014 must run after all implementations are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-867-reranker-unit-tests.md"
     },
     {
@@ -15094,7 +15094,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -15106,7 +15106,7 @@
       "parallel": false,
       "parallelism_notes": "End-to-end validation \u2014 requires full pipeline including bot integration and unit tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/active/TASK-868-benchmark-harness-and-integration-tests.md"
     }
   ]
