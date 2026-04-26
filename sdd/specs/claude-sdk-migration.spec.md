@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-124
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.5.x (next minor of `ai-parrot`)
 
 ---
@@ -585,9 +585,9 @@ class ClaudeModel(Enum):                                         # line 4
 - [x] Should `ClaudeAgentClient` inherit `AbstractClient` or sit outside the client hierarchy? — *Resolved by /sdd-spec clarification (2026-04-27)*: inherit `AbstractClient`. Methods that have no SDK equivalent (`batch_ask`, `ask_to_image`, the analytic helpers) raise `NotImplementedError` with a redirect message to `AnthropicClient`. Rationale: the user explicitly framed the use case as *"ai-parrot agents dispatching tasks to Claude Code agents"* — that requires plug-in compatibility with the agent registry and `LLMFactory`.
 - [x] Should `claude-agent-sdk` ship in the base install or as an extra? — *Resolved by /sdd-spec clarification (2026-04-27)*: dedicated `[claude-agent]` extra, not bundled with `[anthropic]`. Rationale: deployment-environment limitations (the bundled CLI is heavyweight; not all consumers want it).
 - [x] Should this spec also migrate `parrot/integrations/mcp/` to `claude-agent-sdk`'s in-process MCP server? — *Resolved by /sdd-spec clarification (2026-04-27)*: explicitly **out of scope**. Track separately.
-- [ ] Which `permission_mode` default should `ClaudeAgentClient` use? `default` is safest; `acceptEdits` matches our autonomous `sdd-worker` pattern but is risky as a library default. — *Owner: Jesus*. *Decidable during implementation; not a blocker for the spec.*
-- [ ] Should `ClaudeAgentClient.invoke` (lightweight stateless) override `permission_mode='plan'` to forbid file writes for one-shot extractions? — *Owner: Jesus*. *Decidable during implementation.*
-- [ ] Is there a Compose / Docker base image where the bundled `claude` CLI from `claude-agent-sdk` is **known not to work**? If yes, document it in the README. — *Owner: Jesus*.
+- [x] Which `permission_mode` default should `ClaudeAgentClient` use? `default` is safest; `acceptEdits` matches our autonomous `sdd-worker` pattern but is risky as a library default. — *Owner: Jesus*. *Decidable during implementation; not a blocker for the spec.*: default
+- [x] Should `ClaudeAgentClient.invoke` (lightweight stateless) override `permission_mode='plan'` to forbid file writes for one-shot extractions? — *Owner: Jesus*. *Decidable during implementation.*: Let's decide during implementation.
+- [x] Is there a Compose / Docker base image where the bundled `claude` CLI from `claude-agent-sdk` is **known not to work**? If yes, document it in the README. — *Owner: Jesus*.: No, there is no Docker image yet.
 
 ---
 

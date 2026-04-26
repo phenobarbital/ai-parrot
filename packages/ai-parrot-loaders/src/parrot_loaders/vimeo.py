@@ -24,8 +24,8 @@ class VimeoLoader(YoutubeLoader):
             "source_type": self._source_type,
             "summary": '',
             "document_meta": {
-                "language": self._language,
                 "title": video_title,
+                "language": self._language,
                 "topic_tags": ""
             }
         }

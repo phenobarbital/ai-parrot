@@ -628,19 +628,19 @@ get hoisted to top level instead.
 
 ## 8. Open Questions
 
-- [ ] Should `language` be auto-detected (e.g. via `langdetect`) when
+- [x] Should `language` be auto-detected (e.g. via `langdetect`) when
       not provided by the caller, or is the `"en"` default + caller
       override sufficient? — *Owner: Jesus* (auto-detect adds a
-      runtime dependency; defer to a follow-up spec if needed).
-- [ ] Should `document_meta.title` be locale-normalized (e.g. snake_case
+      runtime dependency; defer to a follow-up spec if needed): `en` as default lang if not passed.
+- [x] Should `document_meta.title` be locale-normalized (e.g. snake_case
       vs original casing) or kept verbatim? — *Owner: Jesus*
-      (relevant once contextual-retrieval header builder lands).
-- [ ] For loaders that emit one `Document` per row/chunk/page (`csv`,
+      (relevant once contextual-retrieval header builder lands): normalized.
+- [x] For loaders that emit one `Document` per row/chunk/page (`csv`,
       `pdf` per page, `database` per row), should `title` differ per
       Document (e.g. `"plans:row-42"`) or be constant per source?
       Current decision: constant per source — per-document
       disambiguation lives in extras (`row_index`, `page`, etc.). —
-      *Owner: Jesus*.
+      *Owner: Jesus*: disambiguation lives in extras
 - [x] What goes in `document_meta`? — *Resolved by user*: `source_type`,
       `category`, `type`, `language`, `title`. Denormalized for
       contextual-retrieval embedding header. No loader-specific extras.
