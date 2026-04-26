@@ -14989,6 +14989,125 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-862-documentation-canonical-metadata.md"
+    },
+    {
+      "id": "TASK-863",
+      "slug": "reranker-models-and-abstract",
+      "title": "Reranker Data Models and Abstract Base Class",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; all other tasks depend on this.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-863-reranker-models-and-abstract.md"
+    },
+    {
+      "id": "TASK-864",
+      "slug": "local-cross-encoder-reranker",
+      "title": "LocalCrossEncoderReranker Implementation",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-865 (LLMReranker) \u2014 both depend only on TASK-863 and touch different files.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-864-local-cross-encoder-reranker.md"
+    },
+    {
+      "id": "TASK-865",
+      "slug": "llm-reranker",
+      "title": "LLMReranker Debug Implementation",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-864 (LocalCrossEncoderReranker) \u2014 both depend only on TASK-863 and touch different files.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-865-llm-reranker.md"
+    },
+    {
+      "id": "TASK-866",
+      "slug": "bot-reranker-integration",
+      "title": "Wire Reranker into AbstractBot Retrieval Pipeline",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863",
+        "TASK-864"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies shared file (abstract.py) and depends on LocalCrossEncoderReranker being complete for testing.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-866-bot-reranker-integration.md"
+    },
+    {
+      "id": "TASK-867",
+      "slug": "reranker-unit-tests",
+      "title": "Comprehensive Unit Tests for Reranker Subsystem",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863",
+        "TASK-864",
+        "TASK-865",
+        "TASK-866"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all prior modules \u2014 must run after all implementations are complete.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-867-reranker-unit-tests.md"
+    },
+    {
+      "id": "TASK-868",
+      "slug": "benchmark-harness-and-integration-tests",
+      "title": "Benchmark Harness, Eval Dataset, and Integration Tests",
+      "feature_id": "FEAT-126",
+      "feature": "local-cross-encoder-reranker",
+      "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-863",
+        "TASK-864",
+        "TASK-866",
+        "TASK-867"
+      ],
+      "parallel": false,
+      "parallelism_notes": "End-to-end validation \u2014 requires full pipeline including bot integration and unit tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-868-benchmark-harness-and-integration-tests.md"
     }
   ]
 }
