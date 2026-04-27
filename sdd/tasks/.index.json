@@ -14800,7 +14800,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -14808,7 +14808,8 @@
       "parallelism_notes": "Foundational. Every other FEAT-127 task imports build_contextual_text from this module; nothing can run before it.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-861-contextual-helper-module.md"
+      "file": "sdd/tasks/completed/TASK-861-contextual-helper-module.md",
+      "completed_at": "2026-04-27T02:29:49.707002+00:00"
     },
     {
       "id": "TASK-862",
