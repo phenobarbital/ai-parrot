@@ -181,10 +181,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-27
+**Notes**:
+- Added `_lazy_claude_agent()` to
+  `packages/ai-parrot/src/parrot/clients/factory.py`. The loader imports
+  `ClaudeAgentClient` from the new `claude_agent` module and re-raises any
+  underlying `ImportError` with the actionable hint
+  `"Install with: pip install ai-parrot[claude-agent]"`.
+- Registered both `"claude-agent"` and `"claude-code"` in
+  `SUPPORTED_CLIENTS`, mapping each to `_lazy_claude_agent` (mirrors the
+  existing `_lazy_gemma4` pattern at `factory.py:14`).
+- No top-level `from .claude_agent import …` was added — the module
+  remains lazy.
+- Verified end-to-end: the existing 24 unit tests
+  (`test_anthropic_sdk_097.py` and `test_aimessage_factory_claude_agent.py`)
+  still pass after the factory change. The factory module imports cleanly
+  under the pytest test infrastructure.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
