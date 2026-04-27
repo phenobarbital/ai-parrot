@@ -72,6 +72,60 @@ def _install_navconfig_stub() -> None:
 def _install_navigator_stubs() -> None:
     """Install minimal navigator-related modules required during imports."""
 
+    # ── navigator.utils.file stubs ─────────────────────────────────────────
+    # FEAT-124 added parrot.interfaces.file and parrot.tools.filemanager that
+    # import symbols from navigator.utils.file which only exist in
+    # navigator-api >= 2.15.  Install stubs so tests can collect without
+    # requiring that version.
+    import navigator.utils.file as _nuf  # already importable, just missing attrs
+
+    _FileManagerInterface = type(
+        "FileManagerInterface",
+        (),
+        {"__init__": lambda self, *a, **kw: None},
+    )
+    _FileMetadata = type("FileMetadata", (), {})
+    _LocalFileManager = type("LocalFileManager", (_FileManagerInterface,), {})
+    _TempFileManager = type("TempFileManager", (_FileManagerInterface,), {})
+    _FileManagerFactory = type(
+        "FileManagerFactory",
+        (),
+        {"get": staticmethod(lambda *a, **kw: _LocalFileManager())},
+    )
+
+    for _attr, _val in [
+        ("FileManagerInterface", _FileManagerInterface),
+        ("FileMetadata", _FileMetadata),
+        ("LocalFileManager", _LocalFileManager),
+        ("TempFileManager", _TempFileManager),
+        ("FileManagerFactory", _FileManagerFactory),
+    ]:
+        if not hasattr(_nuf, _attr):
+            setattr(_nuf, _attr, _val)
+
+    # navigator.utils.file.abstract — used by parrot.interfaces.file.abstract
+    _nuf_abstract = types.ModuleType("navigator.utils.file.abstract")
+    _nuf_abstract.FileManagerInterface = _FileManagerInterface
+    _nuf_abstract.FileMetadata = _FileMetadata
+    sys.modules.setdefault("navigator.utils.file.abstract", _nuf_abstract)
+
+    # parrot.interfaces.file shim — avoids re-importing the real module that
+    # would fail if navigator doesn't expose these attrs yet.
+    _parrot_interfaces_file = types.ModuleType("parrot.interfaces.file")
+    _parrot_interfaces_file.FileManagerInterface = _FileManagerInterface
+    _parrot_interfaces_file.FileMetadata = _FileMetadata
+    _parrot_interfaces_file.LocalFileManager = _LocalFileManager
+    _parrot_interfaces_file.TempFileManager = _TempFileManager
+    _parrot_interfaces_file.S3FileManager = type("S3FileManager", (_FileManagerInterface,), {})
+    _parrot_interfaces_file.GCSFileManager = type("GCSFileManager", (_FileManagerInterface,), {})
+    sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
+
+    # parrot.tools.filemanager — used by parrot.clients.google.generation
+    _parrot_tools_fm = types.ModuleType("parrot.tools.filemanager")
+    _parrot_tools_fm.FileManagerFactory = _FileManagerFactory
+    sys.modules.setdefault("parrot.tools.filemanager", _parrot_tools_fm)
+
+    # ── main navigator stubs ───────────────────────────────────────────────
     navigator_conf = types.ModuleType("navigator.conf")
     navigator_conf.default_dsn = "postgresql://user:pass@localhost/db"
     navigator_conf.CACHE_HOST = "localhost"
