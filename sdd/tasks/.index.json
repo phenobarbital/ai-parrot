@@ -15675,7 +15675,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15686,7 +15686,8 @@
       "parallelism_notes": "Depends on dispatcher (878). Sequential with later nodes that share the dispatcher fixture in tests.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-881-research-node.md"
+      "file": "sdd/tasks/completed/TASK-881-research-node.md",
+      "completed_at": "2026-04-27T13:03:06.838984+00:00"
     },
     {
       "id": "TASK-882",

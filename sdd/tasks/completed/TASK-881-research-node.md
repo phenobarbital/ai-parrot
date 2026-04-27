@@ -309,9 +309,16 @@ def node(research_out_fixture):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `ResearchNode` with the canonical sequence:
+log fetch → Jira create → dispatch → (worktree existence check +
+ResearchOutput pass-through). The Jira→dispatch ordering is pinned by
+`test_creates_jira_then_dispatches`. Verified `jira_create_issue`
+signature in `parrot_tools/jiratoolkit.py:1366` and `aws_cloudwatch_query_logs`
+in `parrot_tools/aws/cloudwatch.py:294`. 4 unit tests cover ordering,
+return value, duplicate worktree, and dispatcher-error propagation.
+**Deviations from spec**: `JiraToolkit.jira_create_issue` does not expose
+a top-level `reporter` argument; the node passes
+`fields={"reporter": {"accountId": ...}}` to honour spec G7's
+"reporter remains the original human" requirement. Documented inline.
