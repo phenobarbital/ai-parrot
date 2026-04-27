@@ -289,6 +289,14 @@ class TestToolGeneration:
         tk.manager = _InMemoryFileManager()
         assert set(tk.list_tool_names()) == {"fs_delete_file"}
 
+    def test_allowed_operations_unknown_key_raises(self):
+        """Unknown operation key raises ValueError immediately."""
+        with pytest.raises(ValueError, match="unknown operation"):
+            FileManagerToolkit(
+                manager_type="temp",
+                allowed_operations={"list", "creat"},  # typo: "creat" not "create"
+            )
+
     def test_all_operations_in_full_toolkit(self, tmp_path):
         tk = _make_toolkit(tmp_path)
         tools = tk.get_tools()
