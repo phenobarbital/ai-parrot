@@ -14686,7 +14686,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -14694,7 +14694,8 @@
       "parallelism_notes": "Module 1 of FEAT-128. Foundation that TASK-858 consumes; sequential per spec's worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-855-parent-searcher-abstraction.md"
+      "file": "sdd/tasks/completed/TASK-855-parent-searcher-abstraction.md",
+      "completed_at": "2026-04-27T02:21:27.408060+00:00"
     },
     {
       "id": "TASK-856",
@@ -14703,7 +14704,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -14711,7 +14712,8 @@
       "parallelism_notes": "Module 2 of FEAT-128. Independent at the code level from TASK-855 but spec recommends sequential implementation; touches similarity_search/mmr_search filters and add_documents normalisation.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-856-store-marker-standardisation.md"
+      "file": "sdd/tasks/completed/TASK-856-store-marker-standardisation.md",
+      "completed_at": "2026-04-27T02:21:27.408060+00:00"
     },
     {
       "id": "TASK-857",
