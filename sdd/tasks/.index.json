@@ -14796,8 +14796,8 @@
       "parallelism_notes": "Pure pyproject.toml change \u2014 no code files shared. Can run in parallel with TASK-855 and TASK-857.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T03:42:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-860-pyproject-extras-restructure.md"
+      "completed_at": "2026-04-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-860-refactor-web-loaders.md"
     },
     {
       "id": "TASK-861",
@@ -14907,7 +14907,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14919,7 +14919,6 @@
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
       "completed_at": "2026-04-27T00:10:00.000000+00:00",
-      "status": "done",
       "file": "sdd/tasks/completed/TASK-858-refactor-video-audio-loaders.md"
     },
     {
@@ -15141,7 +15140,7 @@
       "feature_id": "FEAT-127",
       "feature": "filemanagertool-migration-toolkit",
       "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -15149,7 +15148,8 @@
       "parallelism_notes": "Core implementation \u2014 all other tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:57:38.220676Z",
-      "file": "sdd/tasks/active/TASK-869-filemanager-toolkit-core.md"
+      "file": "sdd/tasks/completed/TASK-869-filemanager-toolkit-core.md",
+      "completed_at": "2026-04-27T02:22:59.983079+00:00"
     },
     {
       "id": "TASK-870",

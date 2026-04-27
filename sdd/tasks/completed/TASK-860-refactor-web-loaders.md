@@ -224,10 +224,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (session feat-125)
+**Date**: 2026-04-27
+**Notes**: Refactored both web loaders to use canonical metadata.
+  - web.py: Replaced raw doc_meta dict + metadata dict construction with
+    self.create_metadata(url, doctype="webpage", source_type=source_type, ...).
+    Trafilatura fields (author, date, sitename, etc.) now passed as **kwargs
+    so they land at top level instead of inside document_meta.
+  - webscraping.py: Replaced raw base_metadata dict with self.create_metadata().
+    Changed trafilatura enrichment from doc_meta.update(traf_metadata) to
+    base_metadata.update(traf_metadata) so fields go to top level.
+    All downstream {**base_metadata, "content_kind": ...} patterns preserved.
+  - Created test_web_loaders_metadata.py with 8 tests — all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
