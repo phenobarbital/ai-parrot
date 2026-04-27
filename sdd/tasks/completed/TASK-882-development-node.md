@@ -205,9 +205,13 @@ async def test_dispatch_arguments(research_out):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Thin node that builds the sdd-worker dispatch profile
+(`subagent="sdd-worker"`, `permission_mode="acceptEdits"`,
+allowed_tools includes Edit/Write/Bash/Read/Grep/Glob,
+`setting_sources=["project"]`) and dispatches inside
+`research_output.worktree_path`. Stores the validated DevelopmentOutput
+on `ctx["development_output"]`. 3 unit tests cover dispatch kwargs,
+error propagation, and context mutation.
+**Deviations from spec**: None.
