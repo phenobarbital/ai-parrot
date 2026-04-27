@@ -15826,7 +15826,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15849,7 +15849,8 @@
       "parallelism_notes": "Consolidation pass over the whole feature; depends on every implementation task.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-888-dev-loop-unit-tests.md"
+      "file": "sdd/tasks/completed/TASK-888-unit-tests.md",
+      "completed_at": "2026-04-27T13:57:11.702431+00:00"
     },
     {
       "id": "TASK-889",

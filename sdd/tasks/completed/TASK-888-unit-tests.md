@@ -258,9 +258,18 @@ and inspect the names match spec §4 line-for-line.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Added `conftest.py` with 5 shared fixtures
+(sample_bug_brief, sample_research_output, fake_dispatch_messages,
+mock_jira, mock_dispatcher) and a dedicated `test_lazy_import.py`
+that asserts the spec §7 R1 invariant on both
+`parrot.flows.dev_loop` and `parrot.flows.dev_loop.models`. Full
+dev-loop suite reports 94 unit tests passing in <1s. No live Redis
+and no `claude_agent_sdk` install required.
+**Deviations from spec**: `fakeredis` was not available in the project
+environment; the streaming tests use a small in-process stream stub
+instead. Existing test files were not refactored to consume the new
+fixtures (they pre-date conftest.py with their own local
+fixtures); leaving as-is to keep this task additive and avoid
+unnecessary churn.
