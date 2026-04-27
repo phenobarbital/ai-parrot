@@ -132,10 +132,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Added `"FileManagerToolkit"` to `__all__` tuple and `_LAZY_CORE_TOOLS` dict in
+`packages/ai-parrot/src/parrot/tools/__init__.py`. Both entries placed after `FileManagerFactory`
+as specified. All existing entries unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
