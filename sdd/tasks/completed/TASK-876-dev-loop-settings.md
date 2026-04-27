@@ -196,9 +196,10 @@ class TestDevLoopSettingsDefaults:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Added six module-level constants to `parrot/conf.py` using the
+existing navconfig `getint`/`get`/`getlist` helpers. The list fallback
+follows the same `getlist(...) or [defaults]` defensive pattern used by
+`JIRA_ALLOWED_REPORTERS`. 5 unit tests pin defaults.
+**Deviations from spec**: None.

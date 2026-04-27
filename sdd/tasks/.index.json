@@ -15574,7 +15574,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -15582,7 +15582,8 @@
       "parallelism_notes": "Edits parrot/conf.py only; no overlap with 874/875/877.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-876-dev-loop-settings.md"
+      "file": "sdd/tasks/completed/TASK-876-dev-loop-settings.md",
+      "completed_at": "2026-04-27T11:50:59.616840+00:00"
     },
     {
       "id": "TASK-877",
