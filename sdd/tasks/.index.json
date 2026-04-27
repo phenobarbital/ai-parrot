@@ -14818,8 +14818,8 @@
       "parallelism_notes": "Tests all Track B components \u2014 must wait for implementation tasks to complete.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T03:55:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-861-claude-agent-client-tests.md"
+      "completed_at": "2026-04-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-861-tests-canonical-metadata.md"
     },
     {
       "id": "TASK-862",
