@@ -233,9 +233,16 @@ async def test_reassigns_to_escalation():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `FailureHandlerNode` with structured comment
+construction for both `qa_failed` (renders per-criterion exit codes,
+stderr tails, lint status) and `node_error` (renders node id + exception
+class + traceback message). Calls `jira_add_comment`,
+`jira_transition_issue("Needs Human Review")`, and
+`jira_assign_issue(escalation_assignee)` in sequence. Never raises:
+returns `{"status": "escalation_failed", ...}` on Jira-side error and
+`{"status": "escalated_without_ticket"}` when research never created the
+ticket. 5 unit tests cover the QA path, node-error path, no-ticket path,
+and the Jira-failure-doesn't-propagate guarantee.
+**Deviations from spec**: None.
