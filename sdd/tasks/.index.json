@@ -14917,7 +14917,9 @@
       "parallelism_notes": "Depends on basevideo build_default_meta from TASK-856; shares test fixtures with TASK-859",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-858-refactor-video-audio-loaders.md"
+      "completed_at": "2026-04-27T00:10:00.000000+00:00",
+      "status": "done",
+      "file": "sdd/tasks/completed/TASK-858-refactor-video-audio-loaders.md"
     },
     {
       "id": "TASK-859",
