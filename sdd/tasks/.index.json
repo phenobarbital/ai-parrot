@@ -14940,7 +14940,8 @@
       "parallelism_notes": "Depends on basevideo build_default_meta; touches youtube.py/vimeo.py only but shares integration test with TASK-858",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-859-refactor-youtube-vimeo-loaders.md"
+      "completed_at": "2026-04-27T00:20:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-859-refactor-youtube-vimeo-loaders.md"
     },
     {
       "id": "TASK-860",
