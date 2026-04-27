@@ -15061,7 +15061,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15072,7 +15072,8 @@
       "parallelism_notes": "Modifies shared file (abstract.py) and depends on LocalCrossEncoderReranker being complete for testing.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-866-bot-reranker-integration.md"
+      "file": "sdd/tasks/completed/TASK-866-bot-reranker-integration.md",
+      "completed_at": "2026-04-27T01:35:40.566772+00:00"
     },
     {
       "id": "TASK-867",
