@@ -14704,7 +14704,7 @@
       "feature_id": "FEAT-124",
       "feature": "claude-sdk-migration",
       "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14712,9 +14712,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-855 (pin bump must be installed first). Sequential after TASK-855.",
-      "assigned_to": "sdd-worker-feat-125",
-      "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-856-anthropic-regression-validation.md"
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-26T23:42:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-856-anthropic-regression-validation.md"
     },
     {
       "id": "TASK-857",

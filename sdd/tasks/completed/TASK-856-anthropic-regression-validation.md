@@ -178,10 +178,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-26
+**Notes**: Created `tests/clients/test_anthropic_sdk_097.py` with 10 regression
+tests organised in three groups:
+1. SDK import/version sanity (`test_anthropic_imports_097`, `test_anthropic_version_at_least_097`).
+2. Capacity-error classification under SDK 0.97 (`TestCapacityErrorDetection097` — five cases covering `RateLimitError`, `APIStatusError(429/503/529)`, and the negative `400` case).
+3. `betas` pass-through to `messages.create` (`test_anthropic_betas_param_passthrough`, `test_anthropic_betas_param_omitted_by_default`).
+4. `@pytest.mark.live` smoke test against the real API, gated on `ANTHROPIC_API_KEY`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+All 10 tests pass against `anthropic==0.97.0`.
 
-**Deviations from spec**: none | describe if any
+**Pre-existing test failures (NOT caused by this task)**: `tests/clients/test_anthropic_fallback.py` and `tests/unit/test_anthropic_invoke.py` already
+fail on `dev` HEAD — verified that they fail identically with both
+`anthropic==0.61.0` and `anthropic==0.97.0`. The failures originate from the
+FEAT-112 `_clients_by_loop` per-loop-cache refactor (commits `771d8ced` /
+`518fe934`) which left these tests using the old `__new__()` bypass pattern
+with no `_clients_by_loop` attribute. They are tracked outside FEAT-124 and
+are out of scope per the task's "Files to Create / Modify" list.
+
+**Deviations from spec**: none. The new test file matches the §4 Test
+Specification of the spec exactly.
