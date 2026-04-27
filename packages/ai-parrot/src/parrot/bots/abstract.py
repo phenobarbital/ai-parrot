@@ -1818,15 +1818,32 @@ class AbstractBot(
 
     @staticmethod
     def _wrap_parent(parent_doc, best_child_score: float):
-        """Return the parent document in the same type as the caller expects.
+        """Return the parent as a :class:`~parrot.stores.models.SearchResult`.
 
-        Currently returns a :class:`~parrot.stores.models.SearchResult` when
-        the parent is a :class:`~parrot.stores.models.Document`, preserving
-        the score from the best child so callers can rank by it.
+        :meth:`AbstractParentSearcher.fetch` always returns
+        :class:`~parrot.stores.models.Document` objects.  The retrieval
+        pipeline (``_build_vector_context``, reranker) always works with
+        :class:`~parrot.stores.models.SearchResult` objects.  This method
+        bridges the gap by converting the fetched ``Document`` into a
+        ``SearchResult`` carrying the best child's relevance score, so
+        that rank ordering is preserved after expansion.
+
+        Args:
+            parent_doc: The fetched parent document (typically a
+                :class:`~parrot.stores.models.Document` from the searcher,
+                or a :class:`~parrot.stores.models.SearchResult` if already
+                in result form).
+            best_child_score: Score from the highest-ranked child that
+                pointed to this parent.  Used as the parent's score so
+                downstream ranking remains meaningful.
+
+        Returns:
+            A :class:`~parrot.stores.models.SearchResult` with the parent's
+            content and the best child's score.  Unknown types are returned
+            as-is.
         """
         from parrot.stores.models import SearchResult, Document
         if isinstance(parent_doc, SearchResult):
-            # Clone with updated score
             return SearchResult(
                 id=parent_doc.id,
                 content=parent_doc.content,
@@ -1834,14 +1851,15 @@ class AbstractBot(
                 score=best_child_score,
             )
         if isinstance(parent_doc, Document):
-            # Convert Document → SearchResult so callers get a uniform type
+            # The fetcher always returns Documents; normalise to SearchResult
+            # so the rest of the pipeline gets a uniform type with .score.
             return SearchResult(
                 id=parent_doc.metadata.get('document_id', ''),
                 content=parent_doc.page_content,
                 metadata=parent_doc.metadata,
                 score=best_child_score,
             )
-        # Unknown type — return as-is
+        # Unknown type (e.g. FEAT-126 RerankedDocument) — return as-is.
         return parent_doc
 
     async def _expand_to_parents(self, results: list) -> list:
@@ -1915,7 +1933,15 @@ class AbstractBot(
         parent_ids = list(groups.keys())
         try:
             fetched = await self.parent_searcher.fetch(parent_ids)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            # Re-raise cancellation so the event loop can clean up properly.
+            # All other infrastructure errors (DB down, timeout, etc.) are
+            # logged and suppressed so the bot remains functional with children.
+            if isinstance(exc, BaseException) and not isinstance(exc, Exception):
+                raise  # KeyboardInterrupt, SystemExit, etc.
+            import asyncio
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             self.logger.warning(
                 "_expand_to_parents: parent_searcher.fetch raised %s — "
                 "returning original results unchanged.",

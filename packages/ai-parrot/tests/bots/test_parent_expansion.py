@@ -64,6 +64,9 @@ class _BotStub:
 
     @staticmethod
     def _wrap_parent(parent_doc, best_child_score: float):
+        # NOTE: Keep in sync with AbstractBot._wrap_parent in parrot/bots/abstract.py.
+        # The fetcher always returns Document objects; we normalise to SearchResult
+        # so the rest of the pipeline gets a uniform type with a .score attribute.
         if isinstance(parent_doc, SearchResult):
             return SearchResult(
                 id=parent_doc.id,
@@ -120,7 +123,10 @@ class _BotStub:
         parent_ids = list(groups.keys())
         try:
             fetched = await self.parent_searcher.fetch(parent_ids)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
+            import asyncio
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             self.logger.warning(
                 "_expand_to_parents: parent_searcher.fetch raised %s — "
                 "returning original results unchanged.", exc,

@@ -26,14 +26,39 @@ This single round trip covers both 2-level parents (``is_full_document=True``)
 and 3-level intermediate parent chunks (``document_type='parent_chunk'``).
 """
 import logging
+import re
 from typing import Any, Dict, List
 
-import sqlalchemy
 from sqlalchemy import text
 
 from parrot.stores.abstract import AbstractStore
 from parrot.stores.models import Document
 from parrot.stores.parents.abstract import AbstractParentSearcher
+
+# Allowlist for SQL identifier characters — prevents SQL injection via
+# store attribute values interpolated into the query template.
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _safe_identifier(name: str, value: str) -> str:
+    """Validate that *value* is a safe SQL identifier.
+
+    Args:
+        name: Human-readable label used in the error message.
+        value: Identifier string to validate (table name, column name, etc.).
+
+    Returns:
+        The original *value* if it matches ``[a-zA-Z_][a-zA-Z0-9_]*``.
+
+    Raises:
+        ValueError: If *value* contains characters that could allow SQL injection.
+    """
+    if not _SAFE_IDENTIFIER_RE.match(value):
+        raise ValueError(
+            f"Unsafe SQL identifier for {name!r}: {value!r}. "
+            "Identifiers must match [a-zA-Z_][a-zA-Z0-9_]*."
+        )
+    return value
 
 
 class InTableParentSearcher(AbstractParentSearcher):
@@ -84,12 +109,28 @@ class InTableParentSearcher(AbstractParentSearcher):
         schema = getattr(self.store, 'schema', 'public') or 'public'
         id_col = getattr(self.store, '_id_column', 'id')
         doc_col = getattr(self.store, '_document_column', 'document')
-        meta_col = 'cmetadata'  # Standard pgvector metadata column name.
+        # Read metadata column name from the store; fall back to the pgvector default.
+        meta_col = getattr(self.store, '_metadata_column', 'cmetadata') or 'cmetadata'
 
         if not table:
             self.logger.warning(
                 "InTableParentSearcher.fetch: store has no table_name configured; "
                 "cannot fetch parents.  Returning empty dict."
+            )
+            return {}
+
+        # Validate all identifier values before interpolating them into SQL.
+        # The :ids bind parameter is safe; structural identifiers are not.
+        try:
+            table = _safe_identifier('table_name', table)
+            schema = _safe_identifier('schema', schema)
+            id_col = _safe_identifier('id_column', id_col)
+            doc_col = _safe_identifier('document_column', doc_col)
+            meta_col = _safe_identifier('metadata_column', meta_col)
+        except ValueError:
+            self.logger.exception(
+                "InTableParentSearcher.fetch: store configuration contains an "
+                "unsafe SQL identifier — aborting fetch to prevent injection."
             )
             return {}
 
@@ -110,7 +151,8 @@ class InTableParentSearcher(AbstractParentSearcher):
         results: Dict[str, Document] = {}
 
         # Ensure DB connection is established before using session().
-        if not getattr(self.store, '_connected', True):
+        # Default is False: assume disconnected if the attribute is absent.
+        if not getattr(self.store, '_connected', False):
             await self.store.connection()  # type: ignore[attr-defined]
 
         async with self.store.session() as session:  # type: ignore[attr-defined]

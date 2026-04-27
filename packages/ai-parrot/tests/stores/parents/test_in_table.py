@@ -44,6 +44,7 @@ def _make_mock_store(rows: List[tuple] = None) -> MagicMock:
     store.schema = "public"
     store._id_column = "id"
     store._document_column = "document"
+    store._metadata_column = "cmetadata"   # must be explicit — MagicMock auto-creates attrs
     store._connected = True
     store.session = _session
     return store
