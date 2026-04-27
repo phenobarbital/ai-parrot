@@ -41,9 +41,28 @@ import json
 import logging
 import uuid
 from dataclasses import is_dataclass
-from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from typing import (
+    Any,
+    AsyncIterator,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    TYPE_CHECKING,
+    Union,
+)
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, no runtime SDK import
+    from claude_agent_sdk.types import AgentDefinition
+
+    AgentsMapping = Dict[str, AgentDefinition]
+else:
+    # Runtime fallback: keep the model importable without the
+    # [claude-agent] extra. Pydantic will accept any dict-of-objects
+    # here; AgentDefinition shape validation lives upstream in the SDK.
+    AgentsMapping = Dict[str, Any]
 
 from ..exceptions import InvokeError
 from ..models import AIMessage, AIMessageFactory
@@ -139,6 +158,35 @@ class ClaudeAgentRunOptions(BaseModel):
     extra_options: Dict[str, Any] = Field(
         default_factory=dict,
         description="Escape hatch — forwarded to ClaudeAgentOptions verbatim.",
+    )
+    agents: Optional[AgentsMapping] = Field(
+        default=None,
+        description=(
+            "Programmatic subagent definitions, forwarded as "
+            "ClaudeAgentOptions.agents. Keys are subagent names "
+            "(e.g. 'sdd-worker') and values are claude_agent_sdk "
+            "AgentDefinition objects. The runtime annotation falls back "
+            "to Dict[str, Any] so this module stays importable without "
+            "the [claude-agent] extra."
+        ),
+    )
+    setting_sources: Optional[
+        List[Literal["user", "project", "local"]]
+    ] = Field(
+        default=None,
+        description=(
+            "Source folders the SDK should load .claude/agents/ "
+            "definitions from. Forwarded as ClaudeAgentOptions.setting_sources."
+        ),
+    )
+    extra_args: Optional[Dict[str, Optional[str]]] = Field(
+        default=None,
+        description=(
+            "Arbitrary CLI flags forwarded to the underlying claude CLI "
+            "via ClaudeAgentOptions.extra_args. Values may be None for "
+            "boolean flags (e.g. {'verbose': None}) or strings for "
+            "valued flags (e.g. {'output-format': 'json'})."
+        ),
     )
 
 
@@ -286,6 +334,12 @@ class ClaudeAgentClient(AbstractClient):
             kwargs["add_dirs"] = list(merged.add_dirs)
         if merged.env:
             kwargs["env"] = dict(merged.env)
+        if merged.agents is not None:
+            kwargs["agents"] = merged.agents
+        if merged.setting_sources is not None:
+            kwargs["setting_sources"] = list(merged.setting_sources)
+        if merged.extra_args is not None:
+            kwargs["extra_args"] = dict(merged.extra_args)
         if session_id is not None:
             kwargs["session_id"] = session_id
         if resume_id is not None:
