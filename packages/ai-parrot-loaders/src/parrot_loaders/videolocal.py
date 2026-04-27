@@ -68,21 +68,15 @@ class VideoLocalLoader(BaseVideoLoader):
         self.speed_factor: float = kwargs.pop('speed_factor', 1.5)
 
     async def _load(self, path: Union[str, PurePath, List[PurePath]], **kwargs) -> List[Document]:
-        metadata = {
-            "url": f"{path}",
-            "source": f"{path}",
-            "filename": f"{path.name}",
-            "question": '',
-            "answer": '',
-            'type': 'video_transcript',
-            "source_type": self._source_type,
-            "data": {},
-            "summary": '',
-            "document_meta": {
-                "language": self._language,
-                "topic_tags": ""
-            }
-        }
+        metadata = self.create_metadata(
+            path,
+            doctype='video_transcript',
+            source_type=self._source_type,
+            question='',
+            answer='',
+            data={},
+            summary='',
+        )
         documents = []
         transcript_path = path.with_suffix('.txt')
         vtt_path = path.with_suffix('.vtt')
@@ -122,14 +116,12 @@ class VideoLocalLoader(BaseVideoLoader):
             )):
                 doc = Document(
                     page_content=srt,
-                    metadata={
-                        "source": f"{srt_path}",
-                        "url": f"{srt_path.name}",
-                        "filename": f"{srt_path}",
-                        "origin": f"{path}",
-                        'type': 'srt_transcript',
-                        "source_type": 'AUDIO',
-                    }
+                    metadata=self.create_metadata(
+                        srt_path,
+                        doctype='srt_transcript',
+                        source_type='AUDIO',
+                        origin=f"{path}",
+                    )
                 )
         # Summarize the transcript
         if transcript:
@@ -158,34 +150,36 @@ class VideoLocalLoader(BaseVideoLoader):
                 documents.append(doc)
             # second is Summary
             if summary:
-                _meta = {
+                _summary_meta = {
                     **metadata,
-                    "type": 'video summary'
+                    "type": "video_summary",
+                    "document_meta": {**metadata["document_meta"], "type": "video_summary"},
                 }
                 doc = Document(
                     page_content=summary,
-                    metadata=_meta
+                    metadata=_summary_meta
                 )
             # Third is VTT:
         if transcript_whisper:
             # VTT version:
             vtt_text = self.transcript_to_vtt(transcript_whisper, vtt_path)
-            _meta = {
+            _vtt_meta = {
                 **metadata,
-                "type": 'video subte vtt'
+                "type": "video_vtt",
+                "document_meta": {**metadata["document_meta"], "type": "video_vtt"},
             }
             if len(vtt_text) > 65535:
                 transcript_chunks = split_text(vtt_text, 65535)
                 for chunk in transcript_chunks:
                     doc = Document(
                         page_content=chunk,
-                        metadata=_meta
+                        metadata=_vtt_meta
                     )
                     documents.append(doc)
             else:
                 doc = Document(
                     page_content=vtt_text,
-                    metadata=_meta
+                    metadata=_vtt_meta
                 )
                 documents.append(doc)
             # Saving every dialog chunk as a separate document
@@ -193,22 +187,18 @@ class VideoLocalLoader(BaseVideoLoader):
             docs = []
             for chunk in dialogs:
                 start_time = chunk['start_time']
-                _meta = {
-                    "source": f"{path.name}: min. {start_time}",
-                    "type": "video dialog",
-                    "document_meta": {
-                        "start": f"{start_time}",
-                        "end": f"{chunk['end_time']}",
-                        "id": f"{chunk['id']}",
-                        "language": self._language,
-                        "title": f"{path.stem}",
-                        "topic_tags": ""
-                    }
-                }
-                _info = {**metadata, **_meta}
+                _meta = self.create_metadata(
+                    path,
+                    doctype='video_dialog',
+                    source_type=self._source_type,
+                    title=path.stem,
+                    start=str(start_time),
+                    end=str(chunk['end_time']),
+                    chunk_id=str(chunk['id']),
+                )
                 doc = Document(
                     page_content=chunk['text'],
-                    metadata=_info
+                    metadata=_meta
                 )
                 docs.append(doc)
             documents.extend(docs)

@@ -165,12 +165,10 @@ class DatabaseLoader(AbstractLoader):
                 path=table_ref,
                 doctype='db_row',
                 source_type='database',
-                doc_metadata={
-                    'table': self.table,
-                    'schema': self.schema,
-                    'row_index': row_index,
-                    'driver': self.driver,
-                },
+                table=self.table,
+                schema=self.schema,
+                row_index=row_index,
+                driver=self.driver,
             )
 
             docs.append(

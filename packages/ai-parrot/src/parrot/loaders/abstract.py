@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 import uuid
 from pathlib import Path, PosixPath, PurePath
+from urllib.parse import urlparse, unquote
 import asyncio
 if TYPE_CHECKING:
     import pandas as pd
@@ -48,6 +49,7 @@ class AbstractLoader(ABC):
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'file',
+        language: str = 'en',
         **kwargs
     ):
         """
@@ -58,6 +60,9 @@ class AbstractLoader(ABC):
             tokenizer: Tokenizer to use (string model name or callable)
             text_splitter: Text splitter to use
             source_type: Type of source ('file', 'url', etc.)
+            language: Default document language ISO code (e.g. ``"en"``,
+                ``"es"``).  Propagated to every ``document_meta`` produced
+                by this loader unless overridden per call.
             **kwargs: Additional keyword arguments for configuration
         """
         self.chunk_size: int = kwargs.get('chunk_size', 512)
@@ -75,6 +80,7 @@ class AbstractLoader(ABC):
         self._recursive: bool = kwargs.get('recursive', False)
         self.category: str = kwargs.get('category', 'document')
         self.doctype: str = kwargs.get('doctype', 'text')
+        self.language: str = language
         # Chunking configuration
         self._use_markdown_splitter: bool = kwargs.get('use_markdown_splitter', True)
         self._use_huggingface_splitter: bool = kwargs.get('use_huggingface_splitter', False)
@@ -595,6 +601,14 @@ class AbstractLoader(ABC):
                             results.extend(res)
                         else:
                             results.append(res)
+
+        # Validate canonical metadata on every returned Document once.
+        # Do NOT call _validate_metadata inside chunk_documents — it would
+        # run on every chunk and duplicate the per-document work.
+        for doc in results:
+            if isinstance(doc, Document):
+                doc.metadata = self._validate_metadata(doc.metadata)
+
         return results
 
     async def load(
@@ -714,36 +728,249 @@ class AbstractLoader(ABC):
 
         return documents
 
+    # ------------------------------------------------------------------
+    # Canonical keys for the closed-shape document_meta sub-dict.
+    # Loaders MUST NOT add extra keys inside document_meta.
+    # ------------------------------------------------------------------
+    _CANONICAL_DOC_META_KEYS: frozenset = frozenset(
+        {"source_type", "category", "type", "language", "title"}
+    )
+    _CANONICAL_TOP_LEVEL_KEYS: frozenset = frozenset(
+        {"url", "source", "filename", "type", "source_type", "created_at",
+         "category", "document_meta"}
+    )
+
+    def _derive_title(self, path: Union[str, PurePath]) -> str:
+        """Derive a human-readable title from a path or URL.
+
+        Rules (in order):
+        1. ``pathlib.Path`` / ``PurePath`` → ``path.stem`` with underscores
+           and hyphens replaced by spaces, title-cased.
+        2. ``http(s)://...`` URL → last non-empty decoded path segment,
+           stripped of common file extensions.
+        3. Fallback → ``str(path)``.
+
+        Args:
+            path: A filesystem path or URL string.
+
+        Returns:
+            A non-empty title string (may still be ugly for edge cases).
+        """
+        if isinstance(path, PurePath):
+            stem = path.stem or str(path)
+            return stem.replace("_", " ").replace("-", " ").title()
+
+        if isinstance(path, str):
+            # URL detection
+            if path.startswith("http://") or path.startswith("https://"):
+                parsed = urlparse(path)
+                segments = [
+                    seg for seg in parsed.path.split("/") if seg
+                ]
+                if segments:
+                    last = unquote(segments[-1])
+                    # Strip common file extensions
+                    for ext in (
+                        ".html", ".htm", ".pdf", ".txt", ".md",
+                        ".json", ".xml", ".csv"
+                    ):
+                        if last.lower().endswith(ext):
+                            last = last[: -len(ext)]
+                            break
+                    return last.replace("_", " ").replace("-", " ").title()
+                # Fallback for bare domain URLs
+                return parsed.netloc or str(path)
+
+            # Looks like a file path string — try to derive stem
+            if "/" in path or "\\" in path:
+                try:
+                    stem = Path(path).stem
+                    if stem:
+                        return stem.replace("_", " ").replace("-", " ").title()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        return str(path)
+
+    def _validate_metadata(self, metadata: dict) -> dict:
+        """Non-fatal canonical metadata validator.
+
+        Checks that *metadata* contains all required top-level keys and that
+        ``metadata["document_meta"]`` holds exactly the five canonical keys.
+        Any missing field is auto-filled with a sensible default and a
+        ``WARNING`` is logged — this method **never raises**.
+
+        Args:
+            metadata: The metadata dict to validate (mutated in place).
+
+        Returns:
+            The (possibly patched) metadata dict.
+        """
+        # --- top-level canonical fields ---
+        defaults = {
+            "url": "",
+            "source": "",
+            "filename": "",
+            "type": self.doctype,
+            "source_type": self._source_type,
+            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+            "category": self.category,
+            "document_meta": {},
+        }
+        for key, default in defaults.items():
+            if key not in metadata:
+                self.logger.warning(
+                    "Metadata missing canonical field '%s'; auto-filling "
+                    "with default value. Loader: %s",
+                    key,
+                    self.__class__.__name__,
+                )
+                metadata[key] = default
+
+        # --- document_meta closed-shape ---
+        doc_meta = metadata.get("document_meta", {})
+        if not isinstance(doc_meta, dict):
+            self.logger.warning(
+                "document_meta is not a dict (got %s); resetting. Loader: %s",
+                type(doc_meta).__name__,
+                self.__class__.__name__,
+            )
+            doc_meta = {}
+            metadata["document_meta"] = doc_meta
+
+        doc_meta_defaults = {
+            "source_type": metadata.get("source_type", self._source_type),
+            "category": metadata.get("category", self.category),
+            "type": metadata.get("type", self.doctype),
+            "language": self.language,
+            "title": self._derive_title(metadata.get("url", "") or ""),
+        }
+        for key, default in doc_meta_defaults.items():
+            if key not in doc_meta:
+                self.logger.warning(
+                    "document_meta missing canonical key '%s'; auto-filling. "
+                    "Loader: %s",
+                    key,
+                    self.__class__.__name__,
+                )
+                doc_meta[key] = default
+
+        # Strip any non-canonical keys from document_meta (move to top level)
+        extra_keys = set(doc_meta.keys()) - self._CANONICAL_DOC_META_KEYS
+        for key in extra_keys:
+            self.logger.warning(
+                "document_meta contains non-canonical key '%s'; hoisting to "
+                "top level. Loader: %s",
+                key,
+                self.__class__.__name__,
+            )
+            metadata.setdefault(key, doc_meta.pop(key))
+
+        return metadata
+
     def create_metadata(
         self,
         path: Union[str, PurePath],
         doctype: str = 'document',
         source_type: str = 'source',
         doc_metadata: Optional[dict] = None,
+        *,
+        language: Optional[str] = None,
+        title: Optional[str] = None,
         **kwargs
-    ):
+    ) -> dict:
+        """Build a canonical ``Document.metadata`` dict.
+
+        The returned dict always contains:
+
+        * Top-level: ``url``, ``source``, ``filename``, ``type``,
+          ``source_type``, ``created_at``, ``category``, ``document_meta``,
+          plus any extra ``**kwargs`` (loader-specific extras).
+        * ``document_meta`` (closed shape): exactly
+          ``{source_type, category, type, language, title}``.
+
+        Legacy callers that pass ``doc_metadata`` continue to work:
+        canonical keys in that dict are folded into ``document_meta``;
+        non-canonical keys are hoisted to the top-level metadata.
+
+        Args:
+            path: Filesystem path or URL of the source document.
+            doctype: Document type identifier (e.g. ``"pdf"``,
+                ``"audio_transcript"``).
+            source_type: High-level source kind (e.g. ``"file"``,
+                ``"url"``, ``"video"``).
+            doc_metadata: Legacy dict of additional metadata.  Canonical
+                keys (``source_type``, ``category``, ``type``,
+                ``language``, ``title``) are merged into ``document_meta``;
+                all others become top-level metadata keys.
+            language: Document language ISO code.  Defaults to
+                ``self.language`` when ``None``.
+            title: Human-readable title.  Defaults to
+                ``self._derive_title(path)`` when ``None``.
+            **kwargs: Loader-specific extras — become top-level keys in
+                the returned metadata dict.  Must **not** be canonical
+                ``document_meta`` keys.
+
+        Returns:
+            A metadata dict with canonical top-level keys and a
+            closed-shape ``document_meta`` sub-dict.
+        """
         if not doc_metadata:
             doc_metadata = {}
+
+        # Resolve path-derived fields
         if isinstance(path, PurePath):
             origin = path.name
-            url = f'file://{path.name}'
-            filename = path
+            url = f'file://{path}'
+            filename = str(path)
         else:
             origin = path
             url = path
             filename = f'file://{path}'
+
+        # Resolve language and title
+        resolved_language = language if language is not None else self.language
+        resolved_title = title if title is not None else self._derive_title(path)
+
+        # Separate canonical keys in legacy doc_metadata from extras
+        canonical_from_legacy: dict = {}
+        extra_from_legacy: dict = {}
+        for key, val in doc_metadata.items():
+            if key in self._CANONICAL_DOC_META_KEYS:
+                canonical_from_legacy[key] = val
+            else:
+                extra_from_legacy[key] = val
+
+        # Canonical doc_metadata keys override derived values when present
+        resolved_language = canonical_from_legacy.get("language", resolved_language)
+        resolved_title = canonical_from_legacy.get("title", resolved_title)
+        resolved_doctype = canonical_from_legacy.get("type", doctype)
+        resolved_source_type = canonical_from_legacy.get(
+            "source_type", source_type or self._source_type
+        )
+        resolved_category = canonical_from_legacy.get("category", self.category)
+
+        document_meta = {
+            "source_type": resolved_source_type,
+            "category": resolved_category,
+            "type": resolved_doctype,
+            "language": resolved_language,
+            "title": resolved_title,
+        }
+
         metadata = {
             "url": url,
             "source": origin,
-            "filename": str(filename),
-            "type": doctype,
-            "source_type": source_type or self._source_type,
+            "filename": filename,
+            "type": resolved_doctype,
+            "source_type": resolved_source_type,
             "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            "category": self.category,
-            "document_meta": {
-                **doc_metadata
-            },
-            **kwargs
+            "category": resolved_category,
+            "document_meta": document_meta,
+            # Extras from legacy doc_metadata — top level
+            **extra_from_legacy,
+            # Caller-supplied extras — top level
+            **kwargs,
         }
         return metadata
 
@@ -754,11 +981,24 @@ class AbstractLoader(ABC):
         metadata: Optional[dict] = None,
         **kwargs
     ) -> Document:
-        """Create a Parrot Document from the content.
+        """Create a Parrot Document from content.
+
+        If *metadata* is ``None``, ``create_metadata`` is called with
+        *path*, ``self.doctype``, and ``self._source_type`` (plus any
+        ``**kwargs``).  The resulting metadata is validated via
+        ``_validate_metadata`` before the ``Document`` is constructed.
+
         Args:
-            content (Any): The content to create the document from.
+            content: The text content of the document.
+            path: Source path or URL (used when *metadata* is ``None``).
+            metadata: Pre-built metadata dict.  When provided it is still
+                passed through ``_validate_metadata`` so canonical fields
+                are auto-filled if missing.
+            **kwargs: Forwarded to ``create_metadata`` when *metadata* is
+                ``None``.
+
         Returns:
-            Document: A Parrot Document.
+            A ``Document`` with validated canonical metadata.
         """
         if metadata:
             _meta = metadata
@@ -769,6 +1009,7 @@ class AbstractLoader(ABC):
                 source_type=self._source_type,
                 **kwargs
             )
+        _meta = self._validate_metadata(_meta)
         return Document(
             page_content=content,
             metadata=_meta

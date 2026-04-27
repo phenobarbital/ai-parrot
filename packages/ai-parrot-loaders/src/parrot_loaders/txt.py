@@ -22,5 +22,5 @@ class TextLoader(AbstractLoader):
         """
         async with TextFile(path) as file:
             content = await file.read()
-            return self.create_document(content, path)
+            return self.create_document(content, path, **kwargs)
         return []

@@ -69,6 +69,7 @@ class BaseVideoLoader(AbstractLoader):
             tokenizer=tokenizer,
             text_splitter=text_splitter,
             source_type=source_type,
+            language=language,   # thread language to AbstractLoader
             **kwargs
         )
         if isinstance(source, str):
@@ -94,12 +95,77 @@ class BaseVideoLoader(AbstractLoader):
         self._summarizer_device = device
         self._summarizer_dtype = dtype
 
-        # language:
-        self._language = language
+        # NOTE: self.language is now set by AbstractLoader.__init__ via the
+        # language= kwarg above.  self._language is kept as a backward-compat
+        # property alias so external code that reads/writes self._language
+        # continues to work for one release.
+
         # directory:
         if isinstance(video_path, str):
             self._video_path = Path(video_path).resolve()
         self._video_path = video_path
+
+    # ------------------------------------------------------------------
+    # Backward-compat alias — self._language → self.language
+    # ------------------------------------------------------------------
+
+    @property
+    def _language(self) -> str:  # type: ignore[override]
+        """Read-only alias for :attr:`language`.
+
+        Deprecated: use ``self.language`` directly. This property exists
+        only to avoid breaking subclasses that reference ``self._language``
+        and will be removed in a future release.
+        """
+        return self.language
+
+    @_language.setter
+    def _language(self, value: str) -> None:
+        """Write-through alias — sets :attr:`language`."""
+        self.language = value
+
+    # ------------------------------------------------------------------
+    # Canonical metadata helper
+    # ------------------------------------------------------------------
+
+    def build_default_meta(
+        self,
+        path: Union[str, "Path"],
+        *,
+        language: Optional[str] = None,
+        title: Optional[str] = None,
+        **kwargs,
+    ) -> dict:
+        """Return canonical metadata for a video/audio source.
+
+        A convenience wrapper around :meth:`create_metadata` that pre-sets
+        ``doctype="video_transcript"`` and ``source_type="video"``.
+
+        Subclasses can call this instead of assembling raw metadata dicts and
+        pass variant-specific extras as ``**kwargs`` (they become top-level
+        metadata keys).
+
+        Args:
+            path: URL or filesystem path to the video/audio source.
+            language: Document language ISO code.  Defaults to
+                ``self.language`` when ``None``.
+            title: Human-readable title.  Defaults to
+                :meth:`_derive_title` when ``None``.
+            **kwargs: Loader-specific extras (e.g. ``origin``, ``vtt_path``,
+                ``start_time``, ``end_time``).
+
+        Returns:
+            A metadata dict with canonical top-level keys and a
+            closed-shape ``document_meta`` sub-dict.
+        """
+        return self.create_metadata(
+            path,
+            doctype='video_transcript',
+            source_type='video',
+            language=language or self.language,
+            title=title,
+            **kwargs,
+        )
 
     def _ensure_torch(self):
         """Ensure Torch is configured (lazy loading)."""
