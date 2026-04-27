@@ -14879,7 +14879,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14889,7 +14889,8 @@
       "parallelism_notes": "Touches different files than 858-860 but shares test fixtures and LOADER_REGISTRY integration test; sequential per spec worktree strategy",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-857-refactor-file-document-loaders.md"
+      "completed_at": "2026-04-27T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-857-refactor-file-document-loaders.md"
     },
     {
       "id": "TASK-858",

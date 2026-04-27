@@ -225,10 +225,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-04-27
+**Notes**: All 16 loader files refactored. Full-refactor loaders (txt, pdfmark,
+pdftables, imageunderstanding) now use `create_metadata()` at all emit sites.
+Light-touch loaders (csv, database, docx, doc_converter, epubloader, excel,
+image, markdown, pdf, ppt, qa) had non-canonical `doc_metadata` keys hoisted
+to explicit kwargs. epubloader now extracts `dc:language` from EPUB metadata
+when available. 17 new canonical-shape tests added in
+`test_file_loaders_metadata.py`; all 17 pass. 7 pre-existing failures (5 excel,
+2 webscraping) confirmed pre-existing via git stash — not caused by TASK-857.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
