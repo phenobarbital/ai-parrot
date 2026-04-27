@@ -15092,7 +15092,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15105,7 +15105,8 @@
       "parallelism_notes": "Tests all prior modules \u2014 must run after all implementations are complete.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-867-reranker-unit-tests.md"
+      "file": "sdd/tasks/completed/TASK-867-reranker-unit-tests.md",
+      "completed_at": "2026-04-27T02:01:08.365023+00:00"
     },
     {
       "id": "TASK-868",
