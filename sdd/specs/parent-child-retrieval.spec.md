@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-128
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot next minor
 
 ---
@@ -647,22 +647,22 @@ async def add_documents(...) -> None: ...               # line 586
 
 ## 8. Open Questions
 
-- [ ] Default `parent_chunk_threshold_tokens` (currently 8000): is 8000 the
+- [x] Default `parent_chunk_threshold_tokens` (currently 8000): is 8000 the
       right knee, or should we go higher (16000) given modern long-context
-      models? Benchmark on real handbooks before finalising. — *Owner: Jesus Lara*
-- [ ] When `expand_to_parent=True` and the parent payload pushes the prompt
+      models? Benchmark on real handbooks before finalising. — *Owner: Jesus Lara*: starts in 16000 and do some benchmarks.
+- [x] When `expand_to_parent=True` and the parent payload pushes the prompt
       over the LLM's max input, do we (a) silently truncate the parent,
       (b) drop the lowest-scored parent, or (c) raise to the caller?
       Recommendation: (b), with a WARNING log. — *Owner: implementation, decide
       after first integration test reveals real numbers.*
-- [ ] Should `expand_to_parent` be exposable in `chatbot.yaml` / DB-driven
+- [x] Should `expand_to_parent` be exposable in `chatbot.yaml` / DB-driven
       bot config (the `_from_db` path in `parrot/bots/chatbot.py:387`)?
-      Currently constructor-only. — *Owner: Jesus Lara*
-- [ ] `ParentSearcher` selection in DB-driven config: by name (`"in_table"`
+      Currently constructor-only. — *Owner: Jesus Lara*: DB-driven bot config.
+- [x] `ParentSearcher` selection in DB-driven config: by name (`"in_table"`
       → registry) or by import path string? Future work; out of scope for
       v1 but the answer informs whether we ship a registry now. — *Owner:
-      Jesus Lara*
-- [ ] List of stores that need their own `<Store>ParentSearcher` impl in v2
+      Jesus Lara*: by import.
+- [x] List of stores that need their own `<Store>ParentSearcher` impl in v2
       (milvus, faiss, bigquery, arango). v1 = postgres only. — *Owner:
       implementation*
 

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-127
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot next minor
 
 ---
@@ -499,17 +499,17 @@ class Document(BaseModel): ...        # line 21
       available. — *Owner: implementation, decided after FEAT-126 benchmark.*
 - [ ] Should `contextual_header` also be returned in `SearchResult.metadata`
       so retrieval-time code can re-build the augmented text for debugging /
-      reranking experiments? Yes is cheap; just confirming. — *Owner: Jesus Lara*
+      reranking experiments? Yes is cheap; just confirming. — *Owner: Jesus Lara*: Yes.
 - [ ] When BOTH `LateChunkingProcessor` (`store_full_document=True`) and
       `contextual_embedding=True` are configured, do we apply the metadata
       header on top of late-chunking's own contextual text? My recommendation:
-      no — the precedence is metadata-header wins. — *Owner: Jesus Lara*
+      no — the precedence is metadata-header wins. — *Owner: Jesus Lara*: No
 - [ ] List of stores to wire in v1 (postgres + milvus + faiss + arango) vs v2
       (bigquery, chroma, others). Postgres is non-negotiable; others can land
-      incrementally. — *Owner: implementation*
+      incrementally. — *Owner: implementation*: postgres is mainstream, other can be land incrementally.
 - [ ] Migration tooling: do we ship a `scripts/recompute_contextual_embeddings.py`
       that re-embeds an existing collection in place, or leave that to ops? —
-      *Owner: Jesus Lara*
+      *Owner: Jesus Lara*: create the migration tooling.
 
 ---
 

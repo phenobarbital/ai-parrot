@@ -640,28 +640,66 @@ class DecisionFlowNode(Node):
     def _extract_decision(self, response: Any) -> Any:
         """Extract decision object from agent response.
 
+        Resolution order:
+        1. Already-parsed structured output on the AIMessage
+           (``response.structured_output`` or ``response.output``).
+        2. The raw decision schema if ``response`` is a Pydantic model
+           that already matches it.
+        3. A plain dict that can be coerced into the decision schema.
+        4. Fall back to ``response.content`` (text) or the raw response.
+
+        The previous implementation returned the whole ``AIMessage`` whenever
+        the response was a Pydantic model, which caused downstream consumers
+        (``_aggregate_votes``, ``DecisionResult.final_decision``) to capture
+        the entire AIMessage repr — leaking the input prompt and any security
+        wrappers attached to it — instead of the actual decision value.
+
         Args:
-            response: The agent response.
+            response: The agent response (typically an AIMessage).
 
         Returns:
-            The extracted decision object.
+            The extracted decision object — ideally an instance of
+            ``self.config.decision_schema``.
         """
-        # Handle different response types
-        if isinstance(response, BaseModel):
-            return response
-        elif hasattr(response, "content"):
-            # AIMessage or similar
-            return response.content
-        elif isinstance(response, dict):
-            # Try to parse as decision schema
-            if self.config.decision_schema:
+        schema = self.config.decision_schema
+
+        # 1. Pre-parsed structured output on the AIMessage.
+        for attr in ("structured_output", "output"):
+            value = getattr(response, attr, None)
+            if value is None:
+                continue
+            if schema and isinstance(value, schema):
+                return value
+            if isinstance(value, BaseModel):
+                return value
+            if isinstance(value, dict) and schema:
                 try:
-                    return self.config.decision_schema(**response)
+                    return schema(**value)
+                except Exception:
+                    pass
+
+        # 2. The response itself is already the right Pydantic model.
+        if schema and isinstance(response, schema):
+            return response
+        if isinstance(response, BaseModel) and not hasattr(response, "content"):
+            # A bare Pydantic model that isn't an AIMessage-like wrapper.
+            return response
+
+        # 3. Plain dict that can be coerced into the schema.
+        if isinstance(response, dict):
+            if schema:
+                try:
+                    return schema(**response)
                 except Exception:
                     return response
             return response
-        else:
-            return response
+
+        # 4. Fall back to the textual content of the AIMessage, if any.
+        content = getattr(response, "content", None)
+        if content is not None:
+            return content
+
+        return response
 
     def _build_decision_prompt(self, question: str, ctx: Dict[str, Any]) -> str:
         """Build the decision prompt for agents.
