@@ -14929,7 +14929,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [

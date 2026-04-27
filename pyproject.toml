@@ -22,6 +22,7 @@ dependencies = [
 google = ["ai-parrot[google]"]
 openai = ["ai-parrot[openai]"]
 anthropic = ["ai-parrot[anthropic]"]
+claude-agent = ["ai-parrot[claude-agent]"]
 groq = ["ai-parrot[groq]"]
 xai = ["ai-parrot[xai]"]
 llms = ["ai-parrot[llms]"]

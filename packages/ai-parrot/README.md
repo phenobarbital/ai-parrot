@@ -67,8 +67,11 @@ uv pip install "ai-parrot[google]"
 # OpenAI / GPT
 uv pip install "ai-parrot[openai]"
 
-# Anthropic / Claude
+# Anthropic / Claude (HTTP API client)
 uv pip install "ai-parrot[anthropic]"
+
+# Claude Code agent dispatch (bundled `claude` CLI subprocess)
+uv pip install "ai-parrot[claude-agent]"
 
 # Groq
 uv pip install "ai-parrot[groq]"
@@ -85,6 +88,35 @@ Additional providers supported out of the box (no extra install needed):
 - **vLLM** (`vllm`) — connects to a local vLLM server
 - **OpenRouter** (`openrouter`) — routes to any model via OpenRouter API
 - **Ollama / Local** — via OpenAI-compatible endpoints
+
+#### Anthropic: API client vs. Claude Code agent dispatch
+
+Anthropic ships in two independent extras — pick the one(s) you need:
+
+| Extra | Installs | Use case |
+|---|---|---|
+| `ai-parrot[anthropic]` | `anthropic[aiohttp]>=0.97.0` | API client (`AnthropicClient`) — completion, vision, streaming, the Messages Batches API. Talks HTTP to `api.anthropic.com`. |
+| `ai-parrot[claude-agent]` | `claude-agent-sdk>=0.1.68` (which bundles the `claude` CLI) | Agent dispatch (`ClaudeAgentClient`) — delegates a *task* to a Claude Code sub-agent that can read files, run bash, call tools. Talks to a subprocess CLI. |
+
+The two extras are independent. Install only what you use:
+
+```bash
+# I just want to call the Anthropic API:
+uv pip install "ai-parrot[anthropic]"
+
+# I want to dispatch tasks to a Claude Code agent:
+uv pip install "ai-parrot[claude-agent]"
+
+# I want both:
+uv pip install "ai-parrot[anthropic,claude-agent]"
+```
+
+After installing `[claude-agent]`, register/authenticate the bundled CLI
+**once** — either run ``claude auth`` interactively, or export
+``ANTHROPIC_API_KEY`` in the environment. The CLI honours either path.
+
+A runnable demo lives in
+[`examples/clients/claude_agent_example.py`](../../examples/clients/claude_agent_example.py).
 
 ### Embeddings & Vector Stores
 

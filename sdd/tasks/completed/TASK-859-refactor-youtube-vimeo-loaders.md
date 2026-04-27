@@ -197,10 +197,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-04-27
+**Notes**: All emit sites in youtube.py (5: base_metadata, dialog chunks, transcript
+path, fallback, extract_video) and vimeo.py (4: load_video metadata, VTT, dialog
+chunks, extract_video) replaced with create_metadata() calls. topic_tags, video_id,
+channel, docinfo, duration now at top level. Dialog chunks use doctype='video_dialog'.
+caption language passable via language= kwarg. 8 new tests in
+test_youtube_vimeo_metadata.py — all pass. 99 total tests pass; 7 pre-existing
+failures unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
