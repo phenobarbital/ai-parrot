@@ -14838,7 +14838,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -14846,7 +14846,8 @@
       "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-855-abstractloader-contract-changes.md"
+      "file": "sdd/tasks/completed/TASK-855-abstractloader-contract-changes.md",
+      "completed_at": "2026-04-27T01:05:45.114449+00:00"
     },
     {
       "id": "TASK-856",
@@ -15038,7 +15039,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -15048,7 +15049,8 @@
       "parallelism_notes": "Can run in parallel with TASK-864 (LocalCrossEncoderReranker) \u2014 both depend only on TASK-863 and touch different files.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-865-llm-reranker.md"
+      "file": "sdd/tasks/completed/TASK-865-llm-reranker.md",
+      "completed_at": "2026-04-27T01:11:03.333334+00:00"
     },
     {
       "id": "TASK-866",
