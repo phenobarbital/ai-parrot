@@ -2644,7 +2644,7 @@ class PgVectorStore(AbstractStore):
                     page_content=document.page_content,
                     metadata=dict(document.metadata or {}),
                 )
-                [parent_text] = self._apply_contextual_augmentation([parent_view])
+                [parent_text] = self._apply_contextual_augmentation([parent_view], _log=False)
                 [full_embedding] = await self._embed_.embed_documents([parent_text])
                 full_header = parent_view.metadata.get("contextual_header", "")
 
@@ -2657,7 +2657,7 @@ class PgVectorStore(AbstractStore):
                     )
                     for ci in chunk_infos
                 ]
-                chunk_texts = self._apply_contextual_augmentation(chunk_views)
+                chunk_texts = self._apply_contextual_augmentation(chunk_views, _log=False)
                 chunk_embeds = await self._embed_.embed_documents(chunk_texts)
                 for ci, view, emb in zip(chunk_infos, chunk_views, chunk_embeds):
                     ci.chunk_embedding = emb
@@ -2703,6 +2703,14 @@ class PgVectorStore(AbstractStore):
                 stats['chunks_created'] += 1
 
             stats['documents_processed'] += 1
+
+        # Single summary log for contextual embedding (replaces the 2N per-doc
+        # lines that _apply_contextual_augmentation would emit if _log=True).
+        if self.contextual_embedding and documents:
+            self.logger.info(
+                "Contextual embedding (from_documents): processed %d source documents",
+                len(documents),
+            )
 
         # Bulk insert all data
         if all_inserts:

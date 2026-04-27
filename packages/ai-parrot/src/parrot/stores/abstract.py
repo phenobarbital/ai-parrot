@@ -294,7 +294,9 @@ class AbstractStore(ABC):
         return await self._embed_.embed_documents(documents)
 
     # ── Contextual Embedding Headers (FEAT-127) ──────────────────────────
-    def _apply_contextual_augmentation(self, documents: list) -> list[str]:
+    def _apply_contextual_augmentation(
+        self, documents: list, _log: bool = True
+    ) -> list[str]:
         """Return the list of strings to embed, with optional contextual headers.
 
         When ``self.contextual_embedding`` is **False** (default), the method
@@ -314,6 +316,11 @@ class AbstractStore(ABC):
 
         Args:
             documents: List of ``Document`` objects to process.
+            _log: Emit the per-call summary ``INFO`` log line.  Pass
+                ``False`` when calling in a tight loop (e.g. inside
+                ``from_documents``) to suppress per-document noise; the
+                caller is then responsible for emitting one aggregate log
+                line after the loop.
 
         Returns:
             A list of strings (one per document) ready to pass to
@@ -340,7 +347,7 @@ class AbstractStore(ABC):
                 total_header_chars += len(header)
             texts.append(text)
 
-        if documents:
+        if documents and _log:
             avg = total_header_chars // max(headered, 1)
             self.logger.info(
                 "Contextual embedding: %d/%d docs received header "

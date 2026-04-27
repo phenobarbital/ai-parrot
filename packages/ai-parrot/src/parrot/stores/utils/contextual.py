@@ -127,9 +127,13 @@ def build_contextual_text(
         document: The ``Document`` whose ``page_content`` will be embedded.
         template: A format-map style string (placeholders: title, section,
             category, page, language, source, content) *or* a callable that
-            receives the raw ``document_meta`` dict and returns the full text
-            to embed.  When using a callable, split the result on the first
-            ``"\\n\\n"`` to extract the header.
+            receives the raw ``document_meta`` dict and returns the **header
+            string**.  ``document.page_content`` is always appended
+            automatically after a ``"\\n\\n"`` separator, so the callable
+            must NOT include the chunk text itself.  If the callable
+            accidentally returns ``"header\\n\\ncontent"`` form, the content
+            portion is discarded and the document's original
+            ``page_content`` is used instead.
         max_header_tokens: Approximate upper bound on header length measured
             in whitespace-tokenised words.  Prevents header blow-up for
             documents with extremely long titles.
@@ -161,20 +165,22 @@ def build_contextual_text(
     # 2. Callable template path
     # ----------------------------------------------------------------
     if callable(template):
-        full_text = template(meta)
-        if not isinstance(full_text, str):
-            full_text = str(full_text)
-        if "\n\n" in full_text:
-            header, _rest = full_text.split("\n\n", 1)
-        else:
-            header = full_text
-        # Cap header tokens
-        header_words = header.split()
+        header_part = template(meta)
+        if not isinstance(header_part, str):
+            header_part = str(header_part)
+        # If the callable returns "header\n\ncontent" form, extract only the
+        # header portion — page_content is always appended from the document.
+        if "\n\n" in header_part:
+            header_part = header_part.split("\n\n", 1)[0]
+        # Cap header tokens.
+        header_words = header_part.split()
         if len(header_words) > max_header_tokens:
-            header = " ".join(header_words[:max_header_tokens])
-        if not header.strip():
+            header_part = " ".join(header_words[:max_header_tokens])
+        header_part = header_part.strip()
+        if not header_part:
             return (content, "")
-        return (full_text, header)
+        # Always append the document's own page_content so it is embedded.
+        return (header_part + "\n\n" + content, header_part)
 
     # ----------------------------------------------------------------
     # 3. String template path
@@ -211,12 +217,19 @@ def build_contextual_text(
     # ----------------------------------------------------------------
     # 4. Build the text to embed
     # ----------------------------------------------------------------
-    # If the template places {content} after a double-newline, reconstruct
-    # with the collapsed header so orphan pipes are not embedded.
-    # Otherwise use the full rendered template (custom inline layout).
-    if "\n\n{content}" in template:
+    # When the template uses " | " pipe separators AND contains {content},
+    # reconstruct from the collapsed header + raw content.  This avoids
+    # orphan pipes in the embedded text: the re-render path would produce
+    # "Title: A | Section:  | Category: B\n\ncontent" because _DefaultEmpty
+    # returns "" for missing keys.  Inline templates without "|" separators
+    # (e.g. "[{title}] {content}") are rendered directly via format_map —
+    # they have no orphan-pipe problem and the caller expects inline layout.
+    if " | " in template and "{content}" in template:
+        # Use the already-collapsed header to avoid empty pipe segments.
         text_to_embed = header + "\n\n" + content
     else:
+        # Inline template or template without content placeholder.
+        # Render fully with sanitised values + content.
         full_ctx: _DefaultEmpty = _DefaultEmpty(sanitised)
         full_ctx["content"] = content
         try:

@@ -87,11 +87,25 @@ class TestBuildContextualText:
         assert text.startswith("[Employee Handbook] ")
 
     def test_custom_callable_template(self, doc_full):
-        """Row 6 — callable receives document_meta dict; result split on \\n\\n."""
-        cb = lambda meta: f"<<{meta.get('title')}>>\n\nBODY"
+        """Row 6 — callable receives document_meta dict and returns the header.
+
+        page_content is always appended automatically.  The callable's
+        content portion (after \\n\\n) is discarded.
+        """
+        cb = lambda meta: f"<<{meta.get('title')}>>\n\nDISCARDED"
         text, header = build_contextual_text(doc_full, template=cb)
         assert "<<Employee Handbook>>" in header
-        assert text.endswith("BODY")
+        # The callable's "DISCARDED" content must be absent; real page_content used.
+        assert "DISCARDED" not in text
+        assert doc_full.page_content in text
+
+    def test_callable_template_preserves_page_content(self, doc_full):
+        """Callable always preserves document.page_content regardless of return value."""
+        cb = lambda meta: "custom-header-only"
+        text, header = build_contextual_text(doc_full, template=cb)
+        assert header == "custom-header-only"
+        assert doc_full.page_content in text
+        assert text == "custom-header-only\n\n" + doc_full.page_content
 
     def test_unknown_placeholder_renders_empty(self, doc_full):
         """Row 7 — unknown {nonexistent} renders as empty, does not raise."""
@@ -107,7 +121,7 @@ class TestBuildContextualText:
             metadata={"document_meta": {"title": long_title}},
         )
         _, header = build_contextual_text(doc, max_header_tokens=10)
-        assert len(header.split()) <= 12  # spec allows a small slack
+        assert len(header.split()) <= 10  # hard cap: max_header_tokens=10
 
     def test_is_deterministic(self, doc_full):
         """Row 9 — same (document, template) → same output across 100 calls."""
