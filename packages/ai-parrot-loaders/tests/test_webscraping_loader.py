@@ -126,10 +126,10 @@ async def test_basic_scrape_produces_documents():
     # Fragments must NOT be emitted by default.
     assert "fragment" not in kinds
 
-    # All docs should have source URL
+    # All docs should have source URL; source_type is "url" after TASK-860 refactor
     for doc in docs:
         assert doc.metadata["url"] == "https://example.com"
-        assert doc.metadata["source_type"] == "webpage"
+        assert doc.metadata["source_type"] == "url"
 
 
 @pytest.mark.asyncio
@@ -339,7 +339,9 @@ async def test_metadata_fields():
     assert doc.metadata["type"] == "webpage"
     assert doc.metadata["document_meta"]["title"] == "Test Page"
     assert doc.metadata["document_meta"]["language"] == "en"
-    assert doc.metadata["document_meta"]["description"] == "A test page for scraping"
+    # description is a top-level key after TASK-860 canonical metadata refactor
+    assert doc.metadata["description"] == "A test page for scraping"
+    assert "description" not in doc.metadata["document_meta"]
 
 
 # ── Tests: Crawling ──────────────────────────────────────────────────
