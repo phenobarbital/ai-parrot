@@ -255,9 +255,19 @@ async def test_cleanup_swallows_missing_worktree():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `register_pull_request_webhook` (calls
+`orchestrator.register_webhook(path='/github/dev-loop',
+target_type='agent', target_id='dev-loop-cleanup', secret=...,
+transform_fn=_transform_payload)`), `_transform_payload` (returns
+`"cleanup_worktree:<branch>"` for `pull_request.closed` events with a
+matching `feat-<id>(-<slug>)?` head branch; otherwise None), and
+`cleanup_worktree(branch)` (runs `git worktree remove` then
+`git worktree prune`, best-effort). 18 unit tests cover branch matching
+(4 positive + 6 negative cases), transform behaviour (4 cases),
+registration kwargs, and cleanup tolerance. The orchestrator-side
+agent that consumes `cleanup_worktree:<branch>` strings is left to the
+caller; the cleanup helper is exported so the orchestrator can wire
+it into a small target-agent.
+**Deviations from spec**: None.
