@@ -198,9 +198,24 @@ The four tests above. See spec §4 for the full descriptions.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Added the four live integration tests under
+`packages/ai-parrot/tests/flows/dev_loop/integration/`. Registered the
+`live` marker in `pytest.ini`. Added `conftest.py` with three skip
+fixtures (`skip_unless_claude_available`, `skip_unless_redis_available`,
+`temp_worktree_base`), a broken-Flowtask YAML fixture, and a README
+documenting prerequisites. Two of the four tests pass standalone
+(test_concurrency exercises the semaphore cap with a slow-mock client;
+test_websocket_replay exercises `FlowStreamMultiplexer.replay()` via an
+in-process Streams stub). The two end-to-end tests are skip-stubs
+that document the env-var prerequisites for future enablement.
+**Deviations from spec**: The spec asks for a "fixture worktree
+containing a deliberately-broken Flowtask YAML" and for ≥1 e2e test
+to pass against a live Claude. We ship the YAML fixture and the test
+skeletons but mark the e2e tests as skip-stubs because the test
+environment does not have a configured Jira sandbox or a writable
+GitHub repo. The two non-LLM integration tests pass and validate the
+two non-LLM-dependent properties: dispatcher concurrency cap, and
+WebSocket replay. Live e2e enablement is a runtime configuration
+concern, documented in the README.
