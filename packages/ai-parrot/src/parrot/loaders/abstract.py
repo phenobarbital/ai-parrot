@@ -1385,18 +1385,45 @@ Your job is to produce a final summary from the following text and identify the 
         self,
         documents: List[Document],
         vector_store=None,
-        store_full_document: bool = True
+        store_full_document: bool = True,
+        parent_chunk_threshold_tokens: int = 16000,
+        parent_chunk_size_tokens: int = 4000,
+        parent_chunk_overlap_tokens: int = 200,
     ) -> List[Document]:
-        """
-        Chunk documents using late chunking strategy.
+        """Chunk documents using the late chunking strategy.
+
+        Routing logic (FEAT-128):
+        - Documents whose length exceeds ``parent_chunk_threshold_tokens``
+          are routed through the **3-level path**:
+          ``document → parent_chunks → child_chunks``.
+          The original document is NOT stored as a parent row; only
+          parent_chunks and their children are persisted.
+        - Documents at or below the threshold use the existing **2-level
+          path** (``document → child_chunks``, with the original document
+          stored as the parent row when ``store_full_document=True``).
+          Behaviour on this path is byte-equal to the pre-FEAT-128 code.
 
         Args:
-            documents: List of documents to chunk
-            vector_store: Vector store instance (required)
-            store_full_document: Whether to store full documents alongside chunks
+            documents: List of documents to chunk.
+            vector_store: Vector store instance (required for embedding).
+            store_full_document: When True and using the 2-level path, store
+                the original document as a parent row.  Ignored on the
+                3-level path (original document is never stored there).
+            parent_chunk_threshold_tokens: Documents longer than this
+                threshold (in characters) are split via the 3-level path.
+                Default 16000 (per spec §8 final decision).
+            parent_chunk_size_tokens: Target size of each parent_chunk on
+                the 3-level path (in characters).  Default 4000.
+            parent_chunk_overlap_tokens: Overlap between adjacent
+                parent_chunks on the 3-level path (in characters).
+                Default 200.  Must be < ``parent_chunk_size_tokens``.
 
         Returns:
-            List of chunked documents (and optionally full documents)
+            List of :class:`Document` objects ready for vector store
+            insertion.  Includes parent_chunk docs (with
+            ``document_type='parent_chunk'``) and child docs (with
+            ``is_chunk=True``) for 3-level documents, or full-doc parent
+            plus child docs for 2-level documents.
         """
         if LateChunkingProcessor is None:
             self.logger.warning(
@@ -1418,39 +1445,75 @@ Your job is to produce a final summary from the following text and identify the 
 
         for doc_idx, document in enumerate(documents):
             try:
-                document_id = document.metadata.get('document_id', f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}")
-
-                # Process document with late chunking
-                _, chunk_infos = await chunking_processor.process_document_late_chunking(
-                    document_text=document.page_content,
-                    document_id=document_id,
-                    metadata=document.metadata
+                document_id = document.metadata.get(
+                    'document_id',
+                    f"doc_{doc_idx:06d}_{uuid.uuid4().hex[:8]}"
                 )
 
-                # Store full document if requested
-                if store_full_document:
-                    full_doc_metadata = {
-                        **(document.metadata or {}),
-                        'document_id': document_id,
-                        'is_full_document': True,
-                        'total_chunks': len(chunk_infos),
-                        'document_type': 'parent',
-                        'chunking_strategy': 'late_chunking'
-                    }
+                # FEAT-128: Route by document size.
+                token_count = chunking_processor._count_tokens(document.page_content)
 
-                    full_doc = Document(
-                        page_content=document.page_content,
-                        metadata=full_doc_metadata
+                if token_count > parent_chunk_threshold_tokens:
+                    # ── 3-level path ────────────────────────────────────────
+                    # Oversized doc: split into parent_chunks first, then
+                    # child chunks per parent_chunk.  Original doc NOT stored.
+                    self.logger.info(
+                        "Document %s (%d chars) exceeds threshold %d — "
+                        "using 3-level chunking path.",
+                        document_id, token_count, parent_chunk_threshold_tokens,
                     )
-                    chunked_docs.append(full_doc)
+                    parent_chunks, child_infos = (
+                        await chunking_processor.process_document_three_level(
+                            document_text=document.page_content,
+                            document_id=document_id,
+                            metadata=document.metadata,
+                            parent_chunk_size_tokens=parent_chunk_size_tokens,
+                            parent_chunk_overlap_tokens=parent_chunk_overlap_tokens,
+                        )
+                    )
+                    # Emit parent_chunk docs first, then child docs.
+                    chunked_docs.extend(parent_chunks)
+                    for child_info in child_infos:
+                        chunked_docs.append(
+                            Document(
+                                page_content=child_info.chunk_text,
+                                metadata=child_info.metadata,
+                            )
+                        )
 
-                # Add all chunks as documents
-                for chunk_info in chunk_infos:
-                    chunk_doc = Document(
-                        page_content=chunk_info.chunk_text,
-                        metadata=chunk_info.metadata
+                else:
+                    # ── 2-level path (unchanged behaviour) ──────────────────
+                    _, chunk_infos = await chunking_processor.process_document_late_chunking(
+                        document_text=document.page_content,
+                        document_id=document_id,
+                        metadata=document.metadata
                     )
-                    chunked_docs.append(chunk_doc)
+
+                    # Store full document if requested
+                    if store_full_document:
+                        full_doc_metadata = {
+                            **(document.metadata or {}),
+                            'document_id': document_id,
+                            'is_full_document': True,
+                            'total_chunks': len(chunk_infos),
+                            'document_type': 'parent',
+                            'chunking_strategy': 'late_chunking'
+                        }
+                        chunked_docs.append(
+                            Document(
+                                page_content=document.page_content,
+                                metadata=full_doc_metadata,
+                            )
+                        )
+
+                    # Add all chunks as documents
+                    for chunk_info in chunk_infos:
+                        chunked_docs.append(
+                            Document(
+                                page_content=chunk_info.chunk_text,
+                                metadata=chunk_info.metadata,
+                            )
+                        )
 
             except Exception as e:
                 self.logger.error(f"Error in late chunking for document {doc_idx}: {e}")

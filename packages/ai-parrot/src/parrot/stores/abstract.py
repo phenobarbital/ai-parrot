@@ -14,6 +14,44 @@ from ..embeddings import supported_embeddings
 
 logging.getLogger(name='datasets').setLevel(logging.WARNING)
 
+
+# ---------------------------------------------------------------------------
+# FEAT-128: chunk-marker normalisation utility
+# ---------------------------------------------------------------------------
+
+def _normalise_chunk_marker(documents: List[Any]) -> None:
+    """Set ``metadata['is_chunk'] = True`` on inputs that are clearly chunks.
+
+    This is an **idempotent normalisation**: documents that are already marked
+    (either as chunks or as parents) are untouched.  Only documents with no
+    marker at all get ``is_chunk=True``.
+
+    Rules (applied in order):
+
+    1. If the document is already a parent (``is_full_document=True`` or
+       ``document_type in ('parent', 'parent_chunk')``), do NOT touch it.
+    2. If the document already has ``is_chunk`` set (True or False), do NOT
+       overwrite it.
+    3. Otherwise set ``is_chunk=True``.
+
+    Args:
+        documents: List of Document (or any object with a ``metadata`` dict
+            attribute) to normalise in-place.
+    """
+    for doc in documents:
+        meta = getattr(doc, 'metadata', None) or {}
+        is_parent = (
+            meta.get('is_full_document') is True
+            or meta.get('document_type') in ('parent', 'parent_chunk')
+        )
+        if is_parent:
+            # Never mark a parent row as a chunk.
+            continue
+        if 'is_chunk' not in meta:
+            meta['is_chunk'] = True
+            doc.metadata = meta
+
+
 class AbstractStore(ABC):
     """AbstractStore class.
 
@@ -167,8 +205,26 @@ class AbstractStore(ABC):
         similarity_threshold: float = 0.0,
         search_strategy: str = "auto",
         metadata_filters: Union[dict, None] = None,
+        include_parents: bool = False,
         **kwargs
     ) -> list:  # noqa
+        """Perform a vector similarity search.
+
+        By default, parent rows (``is_full_document=True`` or
+        ``document_type='parent'/'parent_chunk'``) are excluded from the
+        candidate set so they never compete with child chunks on score.
+        Legacy chunks that have no marker at all ARE included (backward
+        compatibility for collections ingested before FEAT-128).
+
+        Args:
+            include_parents: When ``True``, the parent-exclusion filter is
+                bypassed and all rows — including parents — are returned.
+                Use this for internal tooling that needs the old behaviour,
+                or for explicitly fetching parent documents.
+
+        Returns:
+            List of search result objects.
+        """
         pass
 
     @abstractmethod
