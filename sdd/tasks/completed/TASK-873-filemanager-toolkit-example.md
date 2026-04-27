@@ -153,10 +153,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Updated `examples/tool/fs.py` to demonstrate `FileManagerToolkit`.
+The example shows: `list_files`, `create_file`, `file_exists`, `get_file_metadata`,
+and `delete_file` — five distinct operations with focused parameters. The old
+`FileManagerTool` usage is preserved as a commented-out legacy section for reference.
+Syntax verified via `ast.parse`. Example is runnable as a standalone script.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none
 
 **Deviations from spec**: none | describe if any

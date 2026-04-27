@@ -15220,7 +15220,7 @@
       "feature_id": "FEAT-127",
       "feature": "filemanagertool-migration-toolkit",
       "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -15231,7 +15231,8 @@
       "parallelism_notes": "Only modifies examples/ \u2014 can run in parallel with TASK-872.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:57:38.220676Z",
-      "file": "sdd/tasks/active/TASK-873-filemanager-toolkit-example.md"
+      "file": "sdd/tasks/completed/TASK-873-filemanager-toolkit-example.md",
+      "completed_at": "2026-04-27T02:34:09.665839+00:00"
     }
   ]
 }
