@@ -14790,6 +14790,179 @@
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
       "file": "sdd/tasks/active/TASK-860-parent-child-retrieval-docs.md"
+    },
+    {
+      "id": "TASK-861",
+      "slug": "contextual-helper-module",
+      "title": "Build `contextual.py` helper module",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational. Every other FEAT-127 task imports build_contextual_text from this module; nothing can run before it.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-861-contextual-helper-module.md"
+    },
+    {
+      "id": "TASK-862",
+      "slug": "abstractstore-augmentation-hook",
+      "title": "Wire `_apply_contextual_augmentation` into `AbstractStore`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-861"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies the shared base class; all store wirings (TASK-863..866) consume the new method.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-862-abstractstore-augmentation-hook.md"
+    },
+    {
+      "id": "TASK-863",
+      "slug": "pgvector-wiring",
+      "title": "Wire `PgVectorStore.add_documents` and `from_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Largest store wiring; encodes the metadata-header-wins precedence with LateChunkingProcessor. TASK-867/868/869 all reference its outputs.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-863-pgvector-wiring.md"
+    },
+    {
+      "id": "TASK-864",
+      "slug": "milvus-wiring",
+      "title": "Wire `MilvusStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only milvus.py; can run concurrently with TASK-863/865/866 in separate worktrees once TASK-862 lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-864-milvus-wiring.md"
+    },
+    {
+      "id": "TASK-865",
+      "slug": "faiss-wiring",
+      "title": "Wire `FaissStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only faiss_store.py; mutually independent of TASK-863/864/866.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-865-faiss-wiring.md"
+    },
+    {
+      "id": "TASK-866",
+      "slug": "arango-wiring",
+      "title": "Wire `ArangoStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only arango.py; mutually independent of TASK-863/864/865.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-866-arango-wiring.md"
+    },
+    {
+      "id": "TASK-867",
+      "slug": "searchresult-header-propagation",
+      "title": "Surface `contextual_header` in `SearchResult.metadata`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Audits postgres.py SearchResult constructions and asserts header round-trip; conflicts with TASK-863's edits to the same file.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-867-searchresult-header-propagation.md"
+    },
+    {
+      "id": "TASK-868",
+      "slug": "recompute-migration-script",
+      "title": "Migration script `recompute_contextual_embeddings.py`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file under scripts/; can run concurrently with TASK-867/869 once TASK-863 lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-868-recompute-migration-script.md"
+    },
+    {
+      "id": "TASK-869",
+      "slug": "contextual-embedding-docs",
+      "title": "Documentation page `docs/contextual-embedding.md`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Docs only; can run concurrently with TASK-867/868 once the API surface is stable (post TASK-863).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
     }
   ]
 }

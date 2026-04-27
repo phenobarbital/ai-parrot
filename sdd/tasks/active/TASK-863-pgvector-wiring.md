@@ -1,11 +1,11 @@
-# TASK-857: Wire `PgVectorStore` add_documents / from_documents to the augmentation hook
+# TASK-863: Wire `PgVectorStore` add_documents / from_documents to the augmentation hook
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: L (4-8h)
-**Depends-on**: TASK-855, TASK-856
+**Depends-on**: TASK-861, TASK-862
 **Assigned-to**: unassigned
 
 ---
@@ -17,7 +17,7 @@ non-negotiable wiring for v1 (per spec §8 open question 4). This task
 replaces the inline `texts = [doc.page_content for doc in documents]`
 pattern in `add_documents` and the `LateChunkingProcessor`-driven path in
 `from_documents` with the new `_apply_contextual_augmentation` hook from
-TASK-856 — and persists `contextual_header` into the metadata column atomically
+TASK-862 — and persists `contextual_header` into the metadata column atomically
 with the row.
 
 It also enforces the precedence rule (decided by author in spec §8 open
@@ -65,7 +65,7 @@ Spec sections: §3 Module 3, §5 Acceptance Criteria items 3 & 6, §7 Risk #6,
 
 **NOT in scope**:
 
-- Other stores (Milvus, Faiss, Arango) — TASK-858..860.
+- Other stores (Milvus, Faiss, Arango) — TASK-864..860.
 - Returning `contextual_header` in `SearchResult.metadata` — TASK-861.
 - Migration tooling for existing collections — TASK-862.
 - Documentation page — TASK-863.
@@ -89,7 +89,7 @@ Spec sections: §3 Module 3, §5 Acceptance Criteria items 3 & 6, §7 Risk #6,
 
 ```python
 from parrot.stores.models import Document                                  # parrot/stores/models.py:21
-from parrot.stores.utils.contextual import build_contextual_text           # CREATED by TASK-855
+from parrot.stores.utils.contextual import build_contextual_text           # CREATED by TASK-861
 # AbstractStore._apply_contextual_augmentation is inherited — no import needed.
 ```
 
@@ -173,7 +173,7 @@ self._define_collection_store(...)                                           # u
 ### Does NOT Exist
 
 - ~~`PgVectorStore.contextual_embedding`~~ — inherited from `AbstractStore`
-  (TASK-856 added it). Just read `self.contextual_embedding`.
+  (TASK-862 added it). Just read `self.contextual_embedding`.
 - ~~A `contextual_header` column~~ — no schema migration. The header lives
   inside `cmetadata` (`metadata_column`), already a JSONB blob.
 - ~~`PgVectorStore._apply_contextual_augmentation`~~ — inherited; do NOT
@@ -278,7 +278,7 @@ out explicitly.
 - `parrot/stores/postgres.py:2551` — `from_documents` call site.
 - `parrot/stores/utils/chunking.py:174` — `_create_contextual_text` (the
   late-chunking neighbour-context helper that loses precedence).
-- `parrot/stores/abstract.py` — `_apply_contextual_augmentation` (TASK-856).
+- `parrot/stores/abstract.py` — `_apply_contextual_augmentation` (TASK-862).
 
 ---
 
@@ -388,7 +388,7 @@ class TestPgVectorContextual:
 ## Agent Instructions
 
 1. **Read the spec** for the precedence rule and acceptance criteria.
-2. **Verify TASK-855 and TASK-856 are completed**.
+2. **Verify TASK-861 and TASK-862 are completed**.
 3. **Verify the Codebase Contract** — re-read `postgres.py:586..672` and
    `postgres.py:2551..2700` to confirm the inline patterns are still as listed.
 4. **Update status** in `sdd/tasks/.index.json` → `"in-progress"`.

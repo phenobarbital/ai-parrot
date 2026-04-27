@@ -1,11 +1,11 @@
-# TASK-858: Wire `MilvusStore.add_documents` to the augmentation hook
+# TASK-864: Wire `MilvusStore.add_documents` to the augmentation hook
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-855, TASK-856
+**Depends-on**: TASK-861, TASK-862
 **Assigned-to**: unassigned
 
 ---
@@ -13,7 +13,7 @@
 ## Context
 
 Module 4 sub-task. Wires Milvus into the contextual-embedding hook. Same
-pattern as TASK-857 but the diff is much smaller because Milvus has only
+pattern as TASK-863 but the diff is much smaller because Milvus has only
 `add_documents`; `from_documents` delegates to `add_documents`.
 
 Spec sections: §3 Module 4, §5 Acceptance Criteria item 4.
@@ -31,7 +31,7 @@ Spec sections: §3 Module 4, §5 Acceptance Criteria item 4.
   - `metadatas[i]` now carries `contextual_header` after the hook runs;
     pass through into `self._metadata_column` unchanged.
 - No change to `from_documents`; it delegates to `add_documents` (line 493).
-- Add a minimal unit test mirroring the postgres tests in TASK-857 but
+- Add a minimal unit test mirroring the postgres tests in TASK-863 but
   asserting against the Milvus row-build instead of SQL values.
 
 **NOT in scope**:
@@ -57,8 +57,8 @@ Spec sections: §3 Module 4, §5 Acceptance Criteria item 4.
 ### Verified Imports
 
 ```python
-from parrot.stores.utils.contextual import build_contextual_text   # CREATED by TASK-855
-# _apply_contextual_augmentation is inherited from AbstractStore (TASK-856).
+from parrot.stores.utils.contextual import build_contextual_text   # CREATED by TASK-861
+# _apply_contextual_augmentation is inherited from AbstractStore (TASK-862).
 ```
 
 ### Existing Signatures to Use
@@ -144,7 +144,7 @@ to today (modulo the UUID). Test by comparing the row passed to
 ### References in Codebase
 
 - `parrot/stores/postgres.py:586` — same pattern, the canonical example
-  (after TASK-857 is implemented).
+  (after TASK-863 is implemented).
 
 ---
 
@@ -230,7 +230,7 @@ class TestMilvusContextual:
 ## Agent Instructions
 
 1. Read the spec (just §3 Module 4 + §5 acceptance criterion 4).
-2. Verify TASK-855 and TASK-856 are completed.
+2. Verify TASK-861 and TASK-862 are completed.
 3. Update status to in-progress.
 4. Apply the small diff in `milvus.py`.
 5. Run tests; fix until green.

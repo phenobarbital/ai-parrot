@@ -1,11 +1,11 @@
-# TASK-861: Surface `contextual_header` in `SearchResult.metadata`
+# TASK-867: Surface `contextual_header` in `SearchResult.metadata`
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-857
+**Depends-on**: TASK-863
 **Assigned-to**: unassigned
 
 ---
@@ -23,7 +23,7 @@ embedded for each chunk so they can:
 
 The mechanism is cheap: `SearchResult.metadata` is already a `Dict[str, Any]`
 (`parrot/stores/models.py:13`) and the row-level metadata column already
-carries `contextual_header` (written by TASK-857). We just need to verify
+carries `contextual_header` (written by TASK-863). We just need to verify
 the search paths in `PgVectorStore` propagate the JSON metadata field
 into `SearchResult.metadata` rather than stripping or whitelisting keys.
 
@@ -60,7 +60,7 @@ into `SearchResult.metadata` rather than stripping or whitelisting keys.
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot/src/parrot/stores/postgres.py` | MODIFY (if needed) | Patch any `SearchResult(...)` construction that drops keys. |
-| `packages/ai-parrot/tests/integration/stores/test_contextual_pgvector.py` | MODIFY | Append a propagation test (file created in TASK-857). |
+| `packages/ai-parrot/tests/integration/stores/test_contextual_pgvector.py` | MODIFY | Append a propagation test (file created in TASK-863). |
 
 ---
 
@@ -173,7 +173,7 @@ metadata kwarg behaviour, not to spin up Postgres).
 ## Agent Instructions
 
 1. Read the spec §8 open question 2 (the "Yes" answer is the trigger).
-2. Verify TASK-857 is completed.
+2. Verify TASK-863 is completed.
 3. Update status to in-progress.
 4. Audit `postgres.py` `SearchResult(...)` constructions; patch any that
    drop keys.

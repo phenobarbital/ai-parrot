@@ -1,11 +1,11 @@
-# TASK-860: Wire `ArangoStore.add_document` to the augmentation hook
+# TASK-866: Wire `ArangoStore.add_document` to the augmentation hook
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-855, TASK-856
+**Depends-on**: TASK-861, TASK-862
 **Assigned-to**: unassigned
 
 ---
@@ -77,7 +77,7 @@ Spec sections: §3 Module 4, §5 Acceptance Criteria item 4.
 
 ```python
 from parrot.stores.models import Document                          # parrot/stores/models.py:21
-# _apply_contextual_augmentation inherited from AbstractStore (TASK-856).
+# _apply_contextual_augmentation inherited from AbstractStore (TASK-862).
 ```
 
 ### Existing Signatures to Use
@@ -190,7 +190,7 @@ exactly as today — the early-augment block is skipped, and
 
 ### References in Codebase
 
-- `parrot/stores/postgres.py:586` — canonical wiring example (after TASK-857).
+- `parrot/stores/postgres.py:586` — canonical wiring example (after TASK-863).
 
 ---
 
@@ -271,7 +271,7 @@ class TestArangoContextual:
 ## Agent Instructions
 
 1. Read the spec (just §3 Module 4 + §5 acceptance criterion 4).
-2. Verify TASK-855 and TASK-856 are completed.
+2. Verify TASK-861 and TASK-862 are completed.
 3. Update status to in-progress.
 4. Apply the diff in `arango.py` `add_documents` only.
 5. Run tests.

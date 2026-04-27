@@ -1,11 +1,11 @@
-# TASK-856: Wire `_apply_contextual_augmentation` into `AbstractStore`
+# TASK-862: Wire `_apply_contextual_augmentation` into `AbstractStore`
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-855
+**Depends-on**: TASK-861
 **Assigned-to**: unassigned
 
 ---
@@ -18,7 +18,7 @@ will call from their `add_documents` / `from_documents` to swap raw
 `page_content` for the metadata-augmented text — and to write the trace of
 the header back into `metadata['contextual_header']`.
 
-This task does NOT modify any concrete store. Wiring is TASK-857..860.
+This task does NOT modify any concrete store. Wiring is TASK-863..860.
 
 Spec sections: §2 Architectural Design (Component Diagram), §3 Module 2,
 §5 Acceptance Criteria items 2 & 5.
@@ -61,10 +61,10 @@ Spec sections: §2 Architectural Design (Component Diagram), §3 Module 2,
 **NOT in scope**:
 
 - Modifying any concrete store (`postgres.py`, `milvus.py`, `faiss_store.py`,
-  `arango.py`). They are TASK-857..860.
-- The pure-function helper itself — that is TASK-855.
+  `arango.py`). They are TASK-863..860.
+- The pure-function helper itself — that is TASK-861.
 - The precedence rule between `LateChunkingProcessor` and contextual headers
-  — that decision lives in TASK-857 (postgres `from_documents`).
+  — that decision lives in TASK-863 (postgres `from_documents`).
 - Returning `contextual_header` in `SearchResult.metadata` — that's TASK-861.
 
 ---
@@ -86,7 +86,7 @@ Spec sections: §2 Architectural Design (Component Diagram), §3 Module 2,
 
 ```python
 from parrot.stores.models import Document                             # verified: parrot/stores/models.py:21
-from parrot.stores.utils.contextual import (                          # CREATED by TASK-855
+from parrot.stores.utils.contextual import (                          # CREATED by TASK-861
     build_contextual_text,
     DEFAULT_TEMPLATE,
     DEFAULT_MAX_HEADER_TOKENS,
@@ -210,7 +210,7 @@ def _apply_contextual_augmentation(self, documents: list) -> list[str]:
 - `parrot/stores/abstract.py` — existing class (extend it).
 - `parrot/stores/postgres.py:621` — current call site
   `texts = [doc.page_content for doc in documents]` that store wirings
-  (TASK-857..860) will replace with `self._apply_contextual_augmentation(documents)`.
+  (TASK-863..860) will replace with `self._apply_contextual_augmentation(documents)`.
 
 ---
 
@@ -300,7 +300,7 @@ class TestApplyContextualAugmentation:
 When you pick up this task:
 
 1. **Read the spec** for context on the helper contract.
-2. **Verify TASK-855 is in `sdd/tasks/completed/`**. If not, stop and unblock that first.
+2. **Verify TASK-861 is in `sdd/tasks/completed/`**. If not, stop and unblock that first.
 3. **Verify the Codebase Contract** — re-read `abstract.py:32-90` to confirm the
    `kwargs.get(...)` pattern is still in use.
 4. **Update status** in `sdd/tasks/.index.json` → `"in-progress"`.

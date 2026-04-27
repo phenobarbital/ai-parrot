@@ -1,11 +1,11 @@
-# TASK-862: Migration script `recompute_contextual_embeddings.py`
+# TASK-868: Migration script `recompute_contextual_embeddings.py`
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-857
+**Depends-on**: TASK-863
 **Assigned-to**: unassigned
 
 ---
@@ -85,7 +85,7 @@ Spec sections: §1 Goals (4) note about backfilling, §7 Risk #3, §8 Q5.
 ```python
 from parrot.stores.models import Document                            # parrot/stores/models.py:21
 from parrot.stores.postgres import PgVectorStore                     # parrot/stores/postgres.py
-from parrot.stores.utils.contextual import (                         # CREATED by TASK-855
+from parrot.stores.utils.contextual import (                         # CREATED by TASK-861
     build_contextual_text,
     DEFAULT_TEMPLATE,
     DEFAULT_MAX_HEADER_TOKENS,
@@ -331,7 +331,7 @@ async def test_run_updates_rows_with_meta(args):
 ## Agent Instructions
 
 1. Read the spec §8 Q5 (the "create the migration tooling" answer is the trigger).
-2. Verify TASK-857 is completed (so the framework path is consistent
+2. Verify TASK-863 is completed (so the framework path is consistent
    with what the script writes).
 3. Update status to in-progress.
 4. Implement the script + its unit test.

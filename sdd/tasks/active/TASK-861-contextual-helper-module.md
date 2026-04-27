@@ -1,4 +1,4 @@
-# TASK-855: Build `contextual.py` helper module
+# TASK-861: Build `contextual.py` helper module
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
@@ -48,13 +48,13 @@ Codebase Contract.
 
 **NOT in scope**:
 
-- Touching `AbstractStore` or any concrete store. Wiring is TASK-856 / TASK-857+.
+- Touching `AbstractStore` or any concrete store. Wiring is TASK-862 / TASK-863+.
 - `_apply_contextual_augmentation` — that helper lives on `AbstractStore`
-  and belongs to TASK-856.
+  and belongs to TASK-862.
 - Replacing or modifying `LateChunkingProcessor._create_contextual_text`.
 - Any embedding-client changes.
 - Persisting `contextual_header` into `Document.metadata` — that is the
-  responsibility of `_apply_contextual_augmentation` (TASK-856).
+  responsibility of `_apply_contextual_augmentation` (TASK-862).
 
 ---
 
@@ -111,7 +111,7 @@ augmentation helper next door. The two are orthogonal — see spec §7 risk #6.
 - ~~`parrot.stores.utils.contextual`~~ — created by this task.
 - ~~`Document.contextual_header`~~ — top-level Document field, never created.
   The header lives in `metadata['contextual_header']` (and that wiring is
-  TASK-856, not here).
+  TASK-862, not here).
 - ~~`Document.document_meta`~~ — top-level field. The canonical key is
   `document.metadata["document_meta"]`.
 - ~~A `tiktoken` / `transformers` dependency~~ — explicitly NOT used.
@@ -213,7 +213,7 @@ both cases (spec §4 row 6).
 
 ### Logging
 
-None. The helper is pure. Logging happens at the store boundary (TASK-856).
+None. The helper is pure. Logging happens at the store boundary (TASK-862).
 
 ### References in Codebase
 

@@ -1,11 +1,11 @@
-# TASK-863: Documentation page `docs/contextual-embedding.md`
+# TASK-869: Documentation page `docs/contextual-embedding.md`
 
 **Feature**: FEAT-127 — Metadata-Driven Contextual Embedding Headers
 **Spec**: `sdd/specs/contextual-embedding-headers.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-857
+**Depends-on**: TASK-863
 **Assigned-to**: unassigned
 
 ---
@@ -19,11 +19,10 @@ operators / agent developers know:
 - what the default template renders,
 - how to override the template (string vs callable),
 - the precedence rule with `LateChunkingProcessor`,
-- the migration warning for existing collections (TASK-862 script
-  reference),
+- the migration warning for existing collections (TASK-868 script reference),
 - the dependency on `ai-parrot-loaders-metadata-standarization`.
 
-This task can run in parallel with TASK-858/859/860/861/862 because it
+This task can run in parallel with TASK-864/865/866/867/868 because it
 only edits a new doc file.
 
 Spec sections: §3 Module 6, §5 Acceptance Criteria items 9 & 10, §7
@@ -49,7 +48,7 @@ Known Risks, §8 Open Questions (decisions are now closed).
   - `## Precedence with late chunking` — metadata-header wins. Quote
     spec §8 Q3.
   - `## Migrating existing collections` — point at
-    `scripts/recompute_contextual_embeddings.py` (TASK-862).
+    `scripts/recompute_contextual_embeddings.py` (TASK-868).
   - `## Dependency` — note the `ai-parrot-loaders-metadata-standarization`
     dependency and the graceful-passthrough behaviour.
 - Cross-link from the existing docs index if one exists (check
@@ -80,19 +79,20 @@ Known Risks, §8 Open Questions (decisions are now closed).
 
 ### Verified Facts to Cite
 
-- `parrot.stores.utils.contextual.DEFAULT_TEMPLATE` (TASK-855):
+- `parrot.stores.utils.contextual.DEFAULT_TEMPLATE` (TASK-861):
   ```python
   "Title: {title} | Section: {section} | Category: {category}\n\n{content}"
   ```
-- Three constructor kwargs added to `AbstractStore` (TASK-856):
+- Three constructor kwargs added to `AbstractStore` (TASK-862):
   `contextual_embedding`, `contextual_template`,
   `contextual_max_header_tokens`. All default to off / sensible values.
-- Wired stores in v1: `PgVectorStore` (TASK-857), `MilvusStore` (TASK-858),
-  `FaissStore` (TASK-859), `ArangoStore` (TASK-860).
-- Migration script: `scripts/recompute_contextual_embeddings.py` (TASK-862).
+- Wired stores in v1: `PgVectorStore` (TASK-863), `MilvusStore` (TASK-864),
+  `FaissStore` (TASK-865), `ArangoStore` (TASK-866).
+- Migration script: `scripts/recompute_contextual_embeddings.py` (TASK-868).
 - Header is whitespace-tokenised and capped at
   `contextual_max_header_tokens` (default 100).
-- `contextual_header` is surfaced in `SearchResult.metadata` (TASK-861).
+- `contextual_header` is surfaced in `SearchResult.metadata` (TASK-867).
+- Documentation page itself is this task (TASK-869).
 
 ### Does NOT Exist
 
@@ -142,7 +142,7 @@ await store.add_documents(documents)
 - Do NOT promise quality numbers. The spec deliberately calls the smoke
   test in §4 "not a hard quality gate".
 - Be explicit that flipping the flag on an existing collection without
-  re-embedding produces inconsistent retrieval — point to TASK-862's
+  re-embedding produces inconsistent retrieval — point to TASK-868's
   script as the remedy.
 
 ---
@@ -176,7 +176,7 @@ mdformat --check docs/contextual-embedding.md
 ## Agent Instructions
 
 1. Read the spec end-to-end — your job is to translate it for users.
-2. Verify TASK-855..857 are completed (the API surface must match what
+2. Verify TASK-861..863 are completed (the API surface must match what
    you document).
 3. Update status to in-progress.
 4. Write the page; cross-link the docs index.
