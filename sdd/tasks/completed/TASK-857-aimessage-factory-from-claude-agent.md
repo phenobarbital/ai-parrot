@@ -233,10 +233,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-26
+**Notes**:
+- Added `AIMessageFactory.from_claude_agent` to `parrot/models/responses.py`.
+  Walks a list of `claude_agent_sdk` message objects, concatenates
+  `TextBlock.text` across `AssistantMessage`s, maps each `ToolUseBlock` to a
+  `ToolCall`, and extracts `stop_reason`, `usage`, `estimated_cost`, and
+  `num_turns` from the terminal `ResultMessage`.
+- Added the class attribute `AIMessageFactory._CLAUDE_AGENT_STOP_REASON_MAP`
+  to translate the SDK's `ResultMessage.subtype` vocabulary
+  (`success` → `end_turn`, `error_max_turns` → `max_turns`, etc.) into the
+  unified `AIMessage.stop_reason` space.
+- Added the companion `CompletionUsage.from_claude_agent` classmethod in
+  `parrot/models/basic.py`. It accepts an optional `result_usage` dict and
+  the `total_cost_usd` / `num_turns` / `model_usage` fields from
+  `ResultMessage` directly, producing a `CompletionUsage` with the cost in
+  `estimated_cost` and the SDK-specific metadata under `extra_usage`.
+- Lazy-imports `claude_agent_sdk.types` inside the method body (with a
+  duck-typing fallback if the SDK is not importable). The `responses.py`
+  module load path therefore never depends on the optional `[claude-agent]`
+  extra.
+- Created `tests/clients/test_aimessage_factory_claude_agent.py` with 14 unit
+  tests covering: text concatenation, tool-call mapping,
+  `ResultMessage.subtype` → `stop_reason` mapping (including
+  `error_max_turns`), per-turn usage aggregation when `ResultMessage.usage`
+  is missing, model inference, session-id resolution order, and
+  `CompletionUsage.from_claude_agent` zero-default + populated paths. All
+  pass against the `claude_agent_sdk==0.1.63` installed in the dev venv.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: minor — the spec test scaffold names a single
+`test_*` per concern; we expanded a few into multiple cases for stronger
+coverage (e.g. caller-vs-SDK session-id precedence; explicit-vs-inferred
+model). All originally-listed cases are covered.

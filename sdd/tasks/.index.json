@@ -14724,15 +14724,16 @@
       "feature_id": "FEAT-124",
       "feature": "claude-sdk-migration",
       "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure conversion function in models/responses.py \u2014 no shared files with Track A tasks (TASK-855/856) or pyproject restructure (TASK-860). Can run in parallel.",
-      "assigned_to": "sdd-worker-feat-125",
-      "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-857-aimessage-factory-from-claude-agent.md"
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-26T23:55:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-857-aimessage-factory-from-claude-agent.md"
     },
     {
       "id": "TASK-858",
