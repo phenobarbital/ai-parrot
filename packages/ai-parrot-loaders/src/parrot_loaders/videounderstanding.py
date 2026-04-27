@@ -192,21 +192,15 @@ Video Analysis Instructions:
         self.logger.info(f"Processing video: {path.name}")
 
         # Base metadata
-        base_metadata = {
-            "url": f"file://{path}",
-            "source": str(path),
-            "filename": path.name,
-            "type": "video_understanding",
-            "source_type": self._source_type,
-            "category": self.category,
-            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            "document_meta": {
-                "language": self._language,
-                "model_used": str(self.model.value if hasattr(self.model, 'value') else self.model),
-                "analysis_type": "video_understanding",
-                "video_title": path.stem
-            }
-        }
+        _model_used = str(self.model.value if hasattr(self.model, 'value') else self.model)
+        base_metadata = self.create_metadata(
+            path,
+            doctype='video_understanding',
+            source_type=self._source_type,
+            model_used=_model_used,
+            analysis_type="video_understanding",
+            video_title=path.stem,
+        )
 
         documents = []
 
@@ -225,11 +219,9 @@ Video Analysis Instructions:
             main_doc_metadata = {
                 **base_metadata,
                 "type": "video_analysis_full",
-                "document_meta": {
-                    **base_metadata["document_meta"],
-                    "total_scenes": len(scenes),
-                    "analysis_timestamp": datetime.now().isoformat()
-                }
+                "document_meta": {**base_metadata["document_meta"], "type": "video_analysis_full"},
+                "total_scenes": len(scenes),
+                "analysis_timestamp": datetime.now().isoformat(),
             }
 
             # Split if too long
@@ -241,9 +233,10 @@ Video Analysis Instructions:
                         "type": "video_analysis_chunk",
                         "document_meta": {
                             **main_doc_metadata["document_meta"],
-                            "chunk_number": i + 1,
-                            "total_chunks": len(chunks)
-                        }
+                            "type": "video_analysis_chunk",
+                        },
+                        "chunk_number": i + 1,
+                        "total_chunks": len(chunks),
                     }
                     doc = Document(
                         page_content=chunk,
@@ -263,13 +256,11 @@ Video Analysis Instructions:
                     **base_metadata,
                     "type": "video_scene",
                     "source": f"{path.name}: {scene.get('timestamp', 'Scene')}",
-                    "document_meta": {
-                        **base_metadata["document_meta"],
-                        "scene_number": scene.get('scene_number', 1),
-                        "timestamp": scene.get('timestamp', ''),
-                        "has_spoken_text": bool(scene.get('spoken_text', '').strip()),
-                        "has_instructions": bool(scene.get('instructions', '').strip())
-                    }
+                    "document_meta": {**base_metadata["document_meta"], "type": "video_scene"},
+                    "scene_number": scene.get('scene_number', 1),
+                    "scene_timestamp": scene.get('timestamp', ''),
+                    "has_spoken_text": bool(scene.get('spoken_text', '').strip()),
+                    "has_instructions": bool(scene.get('instructions', '').strip()),
                 }
 
                 # Create content combining instructions and spoken text
@@ -307,9 +298,10 @@ Video Analysis Instructions:
                     "type": "video_instructions_summary",
                     "document_meta": {
                         **base_metadata["document_meta"],
-                        "content_type": "instructions_only",
-                        "scene_count": len(all_instructions)
-                    }
+                        "type": "video_instructions_summary",
+                    },
+                    "content_type": "instructions_only",
+                    "scene_count": len(all_instructions),
                 }
 
                 instructions_content = "STEP-BY-STEP INSTRUCTIONS:\n\n" + "\n\n".join(all_instructions)
@@ -327,9 +319,10 @@ Video Analysis Instructions:
                     "type": "video_spoken_summary",
                     "document_meta": {
                         **base_metadata["document_meta"],
-                        "content_type": "spoken_text_only",
-                        "scene_count": len(all_spoken)
-                    }
+                        "type": "video_spoken_summary",
+                    },
+                    "content_type": "spoken_text_only",
+                    "scene_count": len(all_spoken),
                 }
 
                 spoken_content = "SPOKEN TEXT TRANSCRIPT:\n\n" + "\n\n".join(all_spoken)
@@ -348,11 +341,9 @@ Video Analysis Instructions:
             error_metadata = {
                 **base_metadata,
                 "type": "video_analysis_error",
-                "document_meta": {
-                    **base_metadata["document_meta"],
-                    "error": str(e),
-                    "error_timestamp": datetime.now().isoformat()
-                }
+                "document_meta": {**base_metadata["document_meta"], "type": "video_analysis_error"},
+                "error": str(e),
+                "error_timestamp": datetime.now().isoformat(),
             }
 
             error_doc = Document(
