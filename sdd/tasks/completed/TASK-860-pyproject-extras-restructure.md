@@ -167,10 +167,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-27
+**Notes**:
+- `packages/ai-parrot/pyproject.toml`:
+  - Removed `claude-agent-sdk>=0.1.0,!=0.1.49` from the `anthropic` extra (now contains only `anthropic[aiohttp]>=0.97.0,<1.0.0`).
+  - Added a new dedicated `claude-agent` extra: `claude-agent = ["claude-agent-sdk>=0.1.68"]`.
+  - Updated the `llms` umbrella so its `claude-agent-sdk` pin is now `>=0.1.68` (dropped the `!=0.1.49` exclusion since 0.1.68 is already past it).
+- `pyproject.toml` (workspace root): added `claude-agent = ["ai-parrot[claude-agent]"]` re-export alongside the existing `anthropic`, `openai`, `google`, `groq`, `xai`, `llms`, `embeddings` re-exports.
+- Verified the structural changes by inspecting both files; no Python source code was touched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
