@@ -16,6 +16,10 @@ from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
     flow_stream_ws,
 )
+from parrot.flows.dev_loop.webhook import (
+    cleanup_worktree,
+    register_pull_request_webhook,
+)
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     BugBrief,
@@ -47,5 +51,7 @@ __all__ = [
     "ResearchOutput",
     "ShellCriterion",
     "build_dev_loop_flow",
+    "cleanup_worktree",
     "flow_stream_ws",
+    "register_pull_request_webhook",
 ]
