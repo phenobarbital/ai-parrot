@@ -344,7 +344,10 @@ images = [
 
 anthropic = [
     "anthropic[aiohttp]>=0.97.0,<1.0.0",
-    "claude-agent-sdk>=0.1.0,!=0.1.49",
+]
+
+claude-agent = [
+    "claude-agent-sdk>=0.1.68",
 ]
 
 openai = [
@@ -368,7 +371,7 @@ llms = [
     "openai==2.8.1",
     "groq==0.33.0",
     "anthropic[aiohttp]>=0.97.0,<1.0.0",
-    "claude-agent-sdk>=0.1.0,!=0.1.49",
+    "claude-agent-sdk>=0.1.68",
     "xai-sdk>=0.1.0",
 ]
 
