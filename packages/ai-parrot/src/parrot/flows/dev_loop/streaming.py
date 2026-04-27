@@ -88,17 +88,34 @@ class FlowStreamMultiplexer:
     # ------------------------------------------------------------------
 
     async def _discover_dispatch_streams(self) -> List[str]:
-        """Return all dispatch stream keys for this run."""
-        keys = await self._redis.keys(f"{self._dispatch_prefix}*")
-        # decode_responses=True yields str; if bytes (older code paths),
-        # coerce defensively.
+        """Return all dispatch stream keys for this run.
+
+        Uses ``SCAN`` (cursor-based iteration) rather than ``KEYS`` so a
+        flow run with many dispatch streams does not block the Redis
+        server. ``KEYS`` is O(N) and discouraged for production use.
+        """
         result: List[str] = []
-        for k in keys:
-            if isinstance(k, bytes):
-                result.append(k.decode("utf-8"))
-            else:
-                result.append(k)
-        return sorted(result)
+        cursor = 0
+        scan = getattr(self._redis, "scan", None)
+        if scan is None:
+            # Fallback for stubs that only implement ``keys`` (test env).
+            keys = await self._redis.keys(f"{self._dispatch_prefix}*")
+            for k in keys:
+                result.append(k.decode("utf-8") if isinstance(k, bytes) else k)
+            return sorted(result)
+        while True:
+            cursor, keys = await scan(
+                cursor=cursor,
+                match=f"{self._dispatch_prefix}*",
+                count=100,
+            )
+            for k in keys:
+                result.append(
+                    k.decode("utf-8") if isinstance(k, bytes) else k
+                )
+            if cursor == 0:
+                break
+        return sorted(set(result))
 
     async def _subscribed_streams(self) -> List[str]:
         """Compute the active list of stream keys based on ``view``."""
@@ -153,7 +170,7 @@ class FlowStreamMultiplexer:
         """
         last_discovery = 0.0
         while not self._closed.is_set():
-            now = asyncio.get_event_loop().time()
+            now = asyncio.get_running_loop().time()
             if now - last_discovery >= self._dispatch_refresh_seconds:
                 # Refresh subscribed-streams set; new streams start at "$".
                 for key in await self._subscribed_streams():

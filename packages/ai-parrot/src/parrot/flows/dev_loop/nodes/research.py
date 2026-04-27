@@ -18,6 +18,7 @@ fails fast if the directory exists; recovery is the human's job.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -164,9 +165,19 @@ class ResearchNode(Node):
             )
             return self._tail_text(result)
         if source.kind == "attached_file":
-            with open(source.locator, "r", encoding="utf-8") as fh:
-                return [fh.read()[-4000:]]
+            # Blocking I/O off the event loop — large attached log files
+            # would otherwise stall every concurrent flow run.
+            content = await asyncio.to_thread(
+                self._read_file_tail, source.locator, 4000
+            )
+            return [content]
         raise ValueError(f"Unknown log source kind: {source.kind}")
+
+    @staticmethod
+    def _read_file_tail(path: str, max_bytes: int) -> str:
+        """Synchronous helper run via :func:`asyncio.to_thread`."""
+        with open(path, "r", encoding="utf-8") as fh:
+            return fh.read()[-max_bytes:]
 
     @staticmethod
     def _tail_text(result: Any) -> List[str]:

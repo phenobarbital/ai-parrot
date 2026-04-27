@@ -254,9 +254,10 @@ class DeploymentHandoffNode(Node):
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(
-                url, json=payload, headers=headers, timeout=30
+                url, json=payload, headers=headers
             ) as resp:
                 data = await resp.json()
                 if resp.status >= 300:

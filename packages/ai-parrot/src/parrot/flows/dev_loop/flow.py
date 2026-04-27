@@ -21,11 +21,9 @@ The factory is a pure function — no globals, no env reads.
 
 from __future__ import annotations
 
-import inspect
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Protocol, runtime_checkable
 
 from parrot.bots.flow import AgentsFlow
-from parrot.bots.flow.fsm import TransitionCondition
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
 from parrot.flows.dev_loop.nodes.deployment_handoff import (
@@ -42,6 +40,20 @@ from parrot.flows.dev_loop.nodes.research import ResearchNode
 # ---------------------------------------------------------------------------
 
 
+@runtime_checkable
+class _ExecutableNode(Protocol):
+    """Structural type the adapter accepts — every dev-loop node matches.
+
+    Mirrors :class:`parrot.bots.flow.node.Node`'s public surface plus the
+    ``execute(prompt, ctx)`` contract used by ``FlowNode.execute``
+    (``parrot/bots/flow/fsm.py:266``).
+    """
+
+    name: str
+
+    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> Any: ...
+
+
 class _NodeAgentAdapter:
     """Adapt a Node subclass into the BasicAgent-shape AgentsFlow expects.
 
@@ -51,7 +63,7 @@ class _NodeAgentAdapter:
     ``configure()`` implementation.
     """
 
-    def __init__(self, node: Any) -> None:
+    def __init__(self, node: _ExecutableNode) -> None:
         self._node = node
         self.name: str = node.name
         self.is_configured: bool = True

@@ -201,13 +201,43 @@ class ClaudeCodeDispatcher:
                 prompt = self._build_prompt(brief, output_model)
                 messages: List[Any] = []
                 try:
-                    async for msg in client.ask_stream(
-                        prompt, options=run_options
-                    ):
-                        messages.append(msg)
-                        await self._publish_message_event(
-                            stream_key, msg, run_id, node_id
-                        )
+                    # Wall-clock cap for the whole stream — spec §2 Data
+                    # Models declares ``ClaudeCodeDispatchProfile.timeout_seconds``
+                    # (default 1800, ge=60, le=7200). asyncio.timeout (Py 3.11+)
+                    # raises TimeoutError on expiry, which we surface as
+                    # ``dispatch.failed`` and re-raise as DispatchExecutionError.
+                    async with asyncio.timeout(profile.timeout_seconds):
+                        async for msg in client.ask_stream(
+                            prompt, options=run_options
+                        ):
+                            messages.append(msg)
+                            await self._publish_message_event(
+                                stream_key, msg, run_id, node_id
+                            )
+                except TimeoutError as exc:
+                    await self._publish_event(
+                        stream_key,
+                        kind="dispatch.failed",
+                        run_id=run_id,
+                        node_id=node_id,
+                        payload={
+                            "error_class": "TimeoutError",
+                            "error_message": (
+                                f"dispatch exceeded "
+                                f"{profile.timeout_seconds}s wall-clock cap"
+                            ),
+                        },
+                    )
+                    self.logger.warning(
+                        "Dispatch timeout for run=%s node=%s after %ss",
+                        run_id,
+                        node_id,
+                        profile.timeout_seconds,
+                    )
+                    raise DispatchExecutionError(
+                        f"Dispatch exceeded {profile.timeout_seconds}s "
+                        f"wall-clock cap"
+                    ) from exc
                 except Exception as exc:  # session failure
                     await self._publish_event(
                         stream_key,
@@ -291,9 +321,14 @@ class ClaudeCodeDispatcher:
         See spec §3 Module 2 and the unit tests in
         ``test_dispatch_profile_to_run_options`` /
         ``test_dispatch_profile_generic_session_fallback``.
-        """
-        self._enforce_cwd_under_worktree_base(cwd)
 
+        Note: ``dispatch()`` calls :meth:`_enforce_cwd_under_worktree_base`
+        BEFORE the semaphore acquire (and before publishing
+        ``dispatch.queued``) so a misconfigured ``cwd`` fails fast
+        without consuming a slot or polluting the audit log. This method
+        does NOT re-validate ``cwd`` — callers exercising it in
+        isolation are expected to validate the path themselves.
+        """
         agents_dict: Optional[Dict[str, Any]] = None
         system_prompt: Optional[str] = None
 

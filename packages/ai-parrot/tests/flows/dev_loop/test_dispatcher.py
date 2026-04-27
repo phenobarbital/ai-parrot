@@ -270,6 +270,62 @@ class TestDispatchValidationFailure:
         assert dispatcher._fake_redis.xadd.await_count == 5
 
 
+class TestDispatchTimeout:
+    @pytest.mark.asyncio
+    async def test_timeout_emits_dispatch_failed_and_reraises(
+        self, dispatcher, monkeypatch, _patch_worktree_base
+    ):
+        """Spec §2 — ``profile.timeout_seconds`` caps the wall clock.
+
+        With a tiny real ``asyncio.timeout`` and an ``ask_stream`` that
+        never yields, the dispatcher must publish ``dispatch.failed``
+        and raise ``DispatchExecutionError``.
+        """
+
+        class _SlowClient:
+            async def ask_stream(self, prompt: str, *, options: Any):
+                await asyncio.sleep(5)  # well past the test's timeout
+                yield  # pragma: no cover
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.LLMFactory.create",
+            lambda *a, **kw: _SlowClient(),
+        )
+
+        # Profile.timeout_seconds has a 60 s lower bound at the Pydantic
+        # layer, so we cannot pass a sub-second value directly. Override
+        # the dispatcher's call to ``asyncio.timeout`` with a much shorter
+        # real timeout — this exercises the real cancellation path.
+        real_timeout = asyncio.timeout
+
+        def _short_timeout(_seconds):
+            return real_timeout(0.05)
+
+        monkeypatch.setattr(
+            "parrot.flows.dev_loop.dispatcher.asyncio.timeout",
+            _short_timeout,
+        )
+
+        brief = ResearchOutput(
+            jira_issue_key="OPS-0",
+            spec_path="x",
+            feat_id="FEAT-0",
+            branch_name="b",
+            worktree_path=str(_patch_worktree_base),
+        )
+        with pytest.raises(DispatchExecutionError, match="wall-clock cap"):
+            await dispatcher.dispatch(
+                brief=brief,
+                profile=ClaudeCodeDispatchProfile(timeout_seconds=60),
+                output_model=ResearchOutput,
+                run_id="run-timeout",
+                node_id="research",
+                cwd=str(_patch_worktree_base),
+            )
+        # queued + started + dispatch.failed = 3
+        assert dispatcher._fake_redis.xadd.await_count == 3
+
+
 class TestDispatchSessionFailure:
     @pytest.mark.asyncio
     async def test_session_exception_emits_dispatch_failed_and_reraises(
