@@ -370,9 +370,11 @@ class BaseBot(AbstractBot):
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
 
-        # SECURITY: Sanitize question
+        # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
+        # do NOT rebind ``question`` here, otherwise the security wrapper
+        # leaks into events, conversation memory and downstream agents.
         try:
-            question = await self._sanitize_question(
+            prompt_for_llm = await self._sanitize_question(
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
@@ -384,10 +386,11 @@ class BaseBot(AbstractBot):
                 metadata={'error': 'security_block'}
             )
 
-        # Apply prompt pipeline
+        # Apply prompt pipeline (also LLM-call-only; preserves the canonical
+        # ``question`` for events/memory).
         if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            question = await self._prompt_pipeline.apply(
-                question,
+            prompt_for_llm = await self._prompt_pipeline.apply(
+                prompt_for_llm,
                 context={
                     'agent_name': self.name,
                     'user_id': user_id,
@@ -436,7 +439,7 @@ class BaseBot(AbstractBot):
             # Make the LLM call using the Claude client
             async with llm as client:
                 llm_kwargs = {
-                    "prompt": question,
+                    "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get('temperature', None),
                     "user_id": user_id,
@@ -611,9 +614,11 @@ class BaseBot(AbstractBot):
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
 
-        # Security: sanitize the user's question:
+        # Security: sanitize the user's question. The wrap is for the LLM
+        # call ONLY — keep ``question`` clean so events, conversation memory,
+        # vector retrieval and downstream agents see the canonical input.
         try:
-            question = await self._sanitize_question(
+            prompt_for_llm = await self._sanitize_question(
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
@@ -629,10 +634,11 @@ class BaseBot(AbstractBot):
                 }
             )
 
-        # Apply prompt pipeline
+        # Apply prompt pipeline (LLM-call-only; canonical ``question`` stays
+        # untouched).
         if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            question = await self._prompt_pipeline.apply(
-                question,
+            prompt_for_llm = await self._prompt_pipeline.apply(
+                prompt_for_llm,
                 context={
                     'agent_name': self.name,
                     'user_id': user_id,
@@ -797,7 +803,7 @@ class BaseBot(AbstractBot):
                     client._permission_context = permission_context
 
                 llm_kwargs = {
-                    "prompt": question,
+                    "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "temperature": kwargs.get('temperature', None),
                     "user_id": user_id,
@@ -997,7 +1003,8 @@ class BaseBot(AbstractBot):
         _turn_id = str(uuid.uuid4())
 
         try:
-            question = await self._sanitize_question(
+            # The wrap is for the LLM call ONLY; keep ``question`` clean.
+            prompt_for_llm = await self._sanitize_question(
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
@@ -1010,10 +1017,10 @@ class BaseBot(AbstractBot):
             )
             return
 
-        # Apply prompt pipeline
+        # Apply prompt pipeline (LLM-call-only; ``question`` stays untouched).
         if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
-            question = await self._prompt_pipeline.apply(
-                question,
+            prompt_for_llm = await self._prompt_pipeline.apply(
+                prompt_for_llm,
                 context={
                     'agent_name': self.name,
                     'user_id': user_id,
@@ -1099,7 +1106,7 @@ class BaseBot(AbstractBot):
 
             async with llm as client:
                 llm_kwargs = {
-                    "prompt": question,
+                    "prompt": prompt_for_llm,
                     "system_prompt": system_prompt,
                     "model": kwargs.get('model', self._llm_model),
                     "temperature": kwargs.get('temperature', 0),
