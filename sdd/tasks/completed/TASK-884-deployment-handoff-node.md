@@ -250,9 +250,21 @@ async def test_retries_pr_once(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `DeploymentHandoffNode` with async subprocess
+push, `gh pr create` primary path with REST fallback, retry-once with
+2 s backoff, Jira `transition` + `add_comment` calls (verified
+signatures `jira_transition_issue(issue, transition, ...)` at
+`jiratoolkit.py:1209` and `jira_add_comment(issue, body, ...)` at
+`jiratoolkit.py:1616`). On final PR failure the node calls Jira's
+"Deployment Blocked" transition and returns
+`{"status":"blocked", "error": ...}` rather than raising — the flow
+factory may route on the dict shape. 5 unit tests cover retry-once,
+final blocked path, push failure, and title/body formatting.
+**Deviations from spec**: The `parrot_tools.GitToolkit.create_pull_request`
+helper expects a `files: List[GitHubFileChange]` payload (it builds the
+commit + PR in one shot) which doesn't fit the "PR for an already-pushed
+branch" use case. The node implements a thin direct REST fallback via
+aiohttp (`_create_pr_via_rest`) using `GITHUB_TOKEN` and a configurable
+`target_repo`. Documented inline.
