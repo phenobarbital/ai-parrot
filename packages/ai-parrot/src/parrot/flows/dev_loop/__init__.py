@@ -11,6 +11,10 @@ from parrot.flows.dev_loop.dispatcher import (
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
+from parrot.flows.dev_loop.streaming import (
+    FlowStreamMultiplexer,
+    flow_stream_ws,
+)
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     BugBrief,
@@ -35,9 +39,11 @@ __all__ = [
     "DispatchEvent",
     "DispatchExecutionError",
     "DispatchOutputValidationError",
+    "FlowStreamMultiplexer",
     "FlowtaskCriterion",
     "LogSource",
     "QAReport",
     "ResearchOutput",
     "ShellCriterion",
+    "flow_stream_ws",
 ]
