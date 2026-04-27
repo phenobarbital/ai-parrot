@@ -15610,7 +15610,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15623,7 +15623,8 @@
       "parallelism_notes": "Hard sequential dependency on the four parallel-safe foundations above.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-878-claude-code-dispatcher.md"
+      "file": "sdd/tasks/completed/TASK-878-claude-code-dispatcher.md",
+      "completed_at": "2026-04-27T12:03:31.300460+00:00"
     },
     {
       "id": "TASK-879",

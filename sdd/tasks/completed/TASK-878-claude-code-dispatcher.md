@@ -397,9 +397,20 @@ class TestCwdSafetyCheck:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `ClaudeCodeDispatcher` with `_resolve_run_options`,
+`_enforce_cwd_under_worktree_base`, `_materialize_json_schema`,
+`_validate_output` (best-effort JSON via balanced-brace scanner that
+respects strings + escapes), and Redis publication helpers. Re-exported
+the dispatcher and exception classes from `parrot.flows.dev_loop`. The
+SDK (`claude_agent_sdk.types.AgentDefinition`) is lazy-imported inside
+`_resolve_run_options` with a dict-shape fallback when the [claude-agent]
+extra is missing. JSON-schema is materialized to a tempfile and unlinked
+in the dispatch's `finally:` block. 9 unit tests cover profile resolution,
+generic-session fallback, cwd safety, JSON extraction with embedded
+braces, happy-path event sequence, validation failure, session failure
+propagation, and semaphore concurrency cap.
+**Deviations from spec**: None functional. The brief is JSON-encoded into
+the prompt by `_build_prompt`; the spec's pseudocode left the prompt
+construction implicit, so this is an inferred but consistent decision.
