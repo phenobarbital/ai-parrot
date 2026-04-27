@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-127
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -366,9 +366,9 @@ Map: `allowed_operations` value → method name:
 
 ## 8. Open Questions
 
-- [ ] Should `FileManagerTool` be converted to a thin wrapper that instantiates `FileManagerToolkit` internally (preserving the single-tool API for users who explicitly want it), or should it remain as a standalone class? — *Owner: Jesus*
-- [ ] Should the `file_manager` key in `parrot_tools/TOOL_REGISTRY` point to the new toolkit or keep pointing to the old tool? Or should both be registered under different keys? — *Owner: Jesus*
-- [ ] For backends that don't support certain operations (e.g., S3 `copy_file`), should the toolkit skip generating those tools, or generate them and raise `NotImplementedError` at call time? — *Owner: Jesus*
+- [x] Should `FileManagerTool` be converted to a thin wrapper that instantiates `FileManagerToolkit` internally (preserving the single-tool API for users who explicitly want it), or should it remain as a standalone class? — *Owner: Jesus:*: remains alone class, in way to be deprecated.
+- [ ] Should the `file_manager` key in `parrot_tools/TOOL_REGISTRY` point to the new toolkit or keep pointing to the old tool? Or should both be registered under different keys? — *Owner: Jesus*: now points to new toolkit.
+- [ ] For backends that don't support certain operations (e.g., S3 `copy_file`), should the toolkit skip generating those tools, or generate them and raise `NotImplementedError` at call time? — *Owner: Jesus*: generates with a warning (used by LLM for information) about the error of trying to do a "copy_file" in an S3 bucket.
 
 ---
 
