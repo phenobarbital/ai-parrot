@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-129
 **Date**: 2026-04-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.6.x (`ai-parrot`, post-FEAT-124)
 
 ---
@@ -1108,25 +1108,25 @@ class ClaudeAgentOptions:
   is the source for `run_id`. The flow consumes it, does not mint its
   own.
 
-### Still Open
+### Still Open Questions
 
-- [ ] **Package placement**: should the new code live at
+- [x] **Package placement**: should the new code live at
   `parrot/flows/dev_loop/` (proposed) or `parrot/bots/flow/dev_loop/`
   (more consistent with the existing FSM location)? — *Owner: Jesus,
   before /sdd-task.* Proposed default if no objection: keep
   `parrot/flows/dev_loop/`, since this is application-level
-  orchestration distinct from the FSM primitive.
-- [ ] **JSON-schema structured output**: try `extra_args={"output-format":
+  orchestration distinct from the FSM primitive: `parrot/flows/dev_loop/` allowing creating more kind of flows.
+- [x] **JSON-schema structured output**: try `extra_args={"output-format":
   "json", "json-schema": "..."}` in v1 (alongside best-effort parsing as
   fallback), or defer entirely to v2? — *Owner: agent doing /sdd-task
-  for Module 2*.
-- [ ] **Worktree base path collision**: confirm during /sdd-task that no
+  for Module 2*: add json-schema outputs in v1 (current scope)
+- [x] **Worktree base path collision**: confirm during /sdd-task that no
   two concurrent flow runs can produce the same `feat-<id>-<slug>`
   branch (the orchestrator-level lock on FEAT-id is the proposed
-  defense). — *Owner: agent doing /sdd-task for Module 5*.
-- [ ] **PR creation transport**: `gh` CLI subprocess (proposed) or
+  defense). — *Owner: agent doing /sdd-task for Module 5*: yes,. there is no collision.
+- [x] **PR creation transport**: `gh` CLI subprocess (proposed) or
   `PyGithub` HTTP? — *Owner: agent doing /sdd-task for Module 8*.
-  Decidable during implementation; not blocking.
+  Decidable during implementation; not blocking: check first if `gh` exists or rely on pygithub (there is a Github toolkit too using pygithub as well).
 
 ---
 

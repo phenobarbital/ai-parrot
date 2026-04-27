@@ -99,6 +99,11 @@ def _make_navigator_mock() -> types.ModuleType:
 # We also purge any previously-cached (and broken) imports of
 # parrot.interfaces.file and parrot.tools.filemanager so Python re-imports
 # them fresh with the patched navigator module in place.
+#
+# ISOLATION: We save the original module reference before patching so it
+# can be restored after the test session, preventing contamination of other
+# test modules that run later in the same pytest worker.
+_original_nav_module = sys.modules.get("navigator.utils.file")
 _nav_mock = _make_navigator_mock()
 sys.modules["navigator.utils.file"] = _nav_mock  # replace, not setdefault
 
@@ -114,6 +119,26 @@ from parrot.tools.filemanager import (  # noqa: E402
 )
 from parrot.tools import FileManagerToolkit as FileManagerToolkitFromInit  # noqa: E402
 from parrot.tools.toolkit import AbstractToolkit  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# sys.modules cleanup — restore original navigator module after the session
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True, scope="session")
+def _restore_navigator_module_after_session():
+    """Restore navigator.utils.file in sys.modules when the session ends.
+
+    The module-level patch above replaces the real navigator module for the
+    lifetime of this test module.  Without this fixture, tests that happen to
+    run *after* this file in the same pytest worker (e.g. if collection order
+    changes) would silently receive the mock instead of the real module.
+    """
+    yield
+    if _original_nav_module is not None:
+        sys.modules["navigator.utils.file"] = _original_nav_module
+    else:
+        sys.modules.pop("navigator.utils.file", None)
 
 
 # ---------------------------------------------------------------------------

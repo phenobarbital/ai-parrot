@@ -313,9 +313,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker agent (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Added three `kwargs.get(...)` kwargs to `AbstractStore.__init__` —
+`contextual_embedding` (bool, default False), `contextual_template` (ContextualTemplate,
+default DEFAULT_TEMPLATE), `contextual_max_header_tokens` (int, default 100).
+Added `_apply_contextual_augmentation(documents, _log=True) -> list[str]` as a
+concrete protected method; off-path is byte-identical to the previous list-comp.
+On-path writes `metadata['contextual_header']` in place and emits a single INFO
+summary log per call. `_log` kwarg added to suppress verbose logging when called
+from `from_documents` loop (TASK-863 review finding). Created
+`tests/unit/stores/test_abstract_contextual.py` with 8 tests (all pass).
+Smoke-import of all concrete stores verified.
+**Deviations from spec**: none

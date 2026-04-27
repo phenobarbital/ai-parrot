@@ -573,6 +573,15 @@ class FileManagerToolkit(AbstractToolkit):
             **manager_kwargs: Extra keyword arguments forwarded to the
                 backend manager constructor (e.g. ``base_path``, ``bucket``).
         """
+        # Validate allowed_operations against known keys before any mutation.
+        if allowed_operations is not None:
+            unknown = set(allowed_operations) - _ALL_OPS
+            if unknown:
+                raise ValueError(
+                    f"FileManagerToolkit: unknown operation(s): {sorted(unknown)!r}. "
+                    f"Valid operations are: {sorted(_ALL_OPS)}"
+                )
+
         # Compute exclude_tools BEFORE super().__init__ so that
         # _generate_tools() sees the instance-level override.
         if allowed_operations is not None:

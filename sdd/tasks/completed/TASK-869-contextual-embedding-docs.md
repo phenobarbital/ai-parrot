@@ -186,7 +186,15 @@ mdformat --check docs/contextual-embedding.md
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker agent (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Created `docs/contextual-embedding.md` with all 8 required H2
+sections: What it does, Enabling it, The default template, Customising the
+template, What gets stored, Precedence with late chunking, Migrating existing
+collections, Dependency. Includes copy-paste examples for all four stores
+(PgVectorStore, MilvusStore, FAISSStore, ArangoDBStore), string and callable
+template forms, a Spanish-corpus template example, the before/after JSON row
+illustration, migration script CLI reference, and `SearchResult.metadata`
+usage. Verified `docs/README.md` does not exist (no cross-link needed).
+All code examples use verified API signatures from TASK-861/862/863.
+**Deviations from spec**: none

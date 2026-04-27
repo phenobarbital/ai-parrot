@@ -162,5 +162,3 @@ and `delete_file` — five distinct operations with focused parameters. The old
 Syntax verified via `ast.parse`. Example is runnable as a standalone script.
 
 **Deviations from spec**: none
-
-**Deviations from spec**: none | describe if any
