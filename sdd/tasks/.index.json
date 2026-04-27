@@ -15199,7 +15199,7 @@
       "feature_id": "FEAT-127",
       "feature": "filemanagertool-migration-toolkit",
       "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15210,7 +15210,8 @@
       "parallelism_notes": "Tests require both core implementation and exports to be in place.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:57:38.220676Z",
-      "file": "sdd/tasks/active/TASK-872-filemanager-toolkit-tests.md"
+      "file": "sdd/tasks/completed/TASK-872-filemanager-toolkit-tests.md",
+      "completed_at": "2026-04-27T02:33:05.943773+00:00"
     },
     {
       "id": "TASK-873",
