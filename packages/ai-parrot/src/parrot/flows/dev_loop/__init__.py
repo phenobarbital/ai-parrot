@@ -6,6 +6,11 @@ Jira ticket transitioned to "Ready to Deploy". See
 ``sdd/specs/dev-loop-orchestration.spec.md`` for the full spec.
 """
 
+from parrot.flows.dev_loop.dispatcher import (
+    ClaudeCodeDispatcher,
+    DispatchExecutionError,
+    DispatchOutputValidationError,
+)
 from parrot.flows.dev_loop.models import (
     AcceptanceCriterion,
     BugBrief,
@@ -23,10 +28,13 @@ from parrot.flows.dev_loop.models import (
 __all__ = [
     "AcceptanceCriterion",
     "BugBrief",
+    "ClaudeCodeDispatcher",
     "ClaudeCodeDispatchProfile",
     "CriterionResult",
     "DevelopmentOutput",
     "DispatchEvent",
+    "DispatchExecutionError",
+    "DispatchOutputValidationError",
     "FlowtaskCriterion",
     "LogSource",
     "QAReport",
