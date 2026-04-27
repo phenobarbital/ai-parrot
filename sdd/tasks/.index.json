@@ -14949,7 +14949,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14959,7 +14959,8 @@
       "parallelism_notes": "Touches web.py/webscraping.py only but shares integration test fixtures; sequential per spec worktree strategy",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-860-refactor-web-loaders.md"
+      "file": "sdd/tasks/completed/TASK-860-refactor-web-loaders.md",
+      "completed_at": "2026-04-27T00:00:00"
     },
     {
       "id": "TASK-861",
@@ -14968,7 +14969,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14983,7 +14984,8 @@
       "parallelism_notes": "Must run after ALL refactors complete; validates entire feature end-to-end",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-861-tests-canonical-metadata.md"
+      "file": "sdd/tasks/completed/TASK-861-tests-canonical-metadata.md",
+      "completed_at": "2026-04-27T00:00:00"
     },
     {
       "id": "TASK-862",
@@ -14992,7 +14994,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -15007,7 +15009,8 @@
       "parallelism_notes": "Documentation task; depends on all implementation tasks for accurate content",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-862-documentation-canonical-metadata.md"
+      "file": "sdd/tasks/completed/TASK-862-documentation-canonical-metadata.md",
+      "completed_at": "2026-04-27T00:00:00"
     },
     {
       "id": "TASK-863",
