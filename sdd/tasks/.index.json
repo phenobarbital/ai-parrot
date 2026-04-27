@@ -15592,7 +15592,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -15600,7 +15600,8 @@
       "parallelism_notes": "Adds .claude/agents/*.md and a private package_data loader; no overlap with 874-876.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-877-sdd-subagent-definitions.md"
+      "file": "sdd/tasks/completed/TASK-877-sdd-subagent-definitions.md",
+      "completed_at": "2026-04-27T11:59:06.568366+00:00"
     },
     {
       "id": "TASK-878",

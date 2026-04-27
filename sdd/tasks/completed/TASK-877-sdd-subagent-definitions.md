@@ -224,9 +224,19 @@ def test_load_unknown_name_raises():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Created sdd-research and sdd-qa subagent definition Markdown
+files at `.claude/agents/`, mirrored all three definitions
+(sdd-worker, sdd-research, sdd-qa) into
+`src/parrot/flows/dev_loop/_subagent_data/`, and added the
+`load_subagent_definition()` helper that strips frontmatter and reads
+package data via `importlib.resources`. Updated
+`packages/ai-parrot/pyproject.toml` `[tool.setuptools.package-data]` to
+ship the `.md` files in the wheel. 6 unit tests cover all three names plus
+the unknown-name `ValueError` path and content-sanity checks.
+**Deviations from spec**: `.claude/agents/` is excluded by
+`.git/info/exclude` (per-repo); the new files were added with `git add -f`.
+Worth confirming with the maintainer that committing definitions to
+`.claude/agents/` is intended (the package-data copies are the runtime
+source of truth either way).
