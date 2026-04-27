@@ -14758,8 +14758,8 @@
       "parallelism_notes": "Depends on TASK-857 (uses AIMessageFactory.from_claude_agent). Sequential after TASK-857.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T03:15:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-858-claude-agent-client-core.md"
+      "completed_at": "2026-04-27T02:46:42.437731+00:00",
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
     },
     {
       "id": "TASK-859",
@@ -14918,8 +14918,8 @@
       "parallelism_notes": "Depends on basevideo build_default_meta from TASK-856; shares test fixtures with TASK-859",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "completed_at": "2026-04-27T00:10:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-858-refactor-video-audio-loaders.md"
+      "completed_at": "2026-04-27T02:46:42.437731+00:00",
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
     },
     {
       "id": "TASK-859",
@@ -15300,7 +15300,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15311,7 +15311,8 @@
       "parallelism_notes": "Module 4 of FEAT-128. Core feature wiring; needs the searcher abstraction (TASK-855) and the marker filter (TASK-856).",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-858-bot-parent-expansion-wiring.md"
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md",
+      "completed_at": "2026-04-27T02:46:42.437731+00:00"
     },
     {
       "id": "TASK-859",
