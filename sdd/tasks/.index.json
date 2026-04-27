@@ -15018,7 +15018,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15028,7 +15028,8 @@
       "parallelism_notes": "Can run in parallel with TASK-865 (LLMReranker) \u2014 both depend only on TASK-863 and touch different files.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-864-local-cross-encoder-reranker.md"
+      "file": "sdd/tasks/completed/TASK-864-local-cross-encoder-reranker.md",
+      "completed_at": "2026-04-27T00:52:30.162886+00:00"
     },
     {
       "id": "TASK-865",
