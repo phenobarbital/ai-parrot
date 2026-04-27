@@ -11,6 +11,7 @@ from parrot.flows.dev_loop.dispatcher import (
     DispatchExecutionError,
     DispatchOutputValidationError,
 )
+from parrot.flows.dev_loop.flow import build_dev_loop_flow
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
     flow_stream_ws,
@@ -45,5 +46,6 @@ __all__ = [
     "QAReport",
     "ResearchOutput",
     "ShellCriterion",
+    "build_dev_loop_flow",
     "flow_stream_ws",
 ]
