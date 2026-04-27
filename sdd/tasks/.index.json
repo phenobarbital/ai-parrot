@@ -14828,7 +14828,7 @@
       "feature_id": "FEAT-124",
       "feature": "claude-sdk-migration",
       "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14837,9 +14837,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on client and factory being complete. Can run in parallel with TASK-861.",
-      "assigned_to": "sdd-worker-feat-125",
-      "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-862-example-and-docs.md"
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T04:04:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-862-example-and-docs.md"
     },
     {
       "id": "TASK-855",

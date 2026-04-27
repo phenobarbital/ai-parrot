@@ -175,10 +175,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-27
+**Notes**:
+- Created `examples/clients/claude_agent_example.py` — a runnable demo that
+  uses `LLMFactory.create("claude-agent:claude-sonnet-4-6")` plus
+  `ClaudeAgentRunOptions(allowed_tools=["Read", "Bash"], permission_mode="default", cwd=".")`
+  to dispatch a "list and summarise Python files" task to a Claude Code
+  sub-agent. Includes a `_check_prereqs()` helper that fails fast with a
+  clear `pip install ai-parrot[claude-agent]` hint when the bundled
+  `claude` CLI is missing, plus an informational message about
+  `ANTHROPIC_API_KEY` versus `claude auth` flows.
+- The example needed `git add -f` because the project's `.gitignore`
+  excludes `examples/**/*.py` by default (older example files that pre-date
+  the rule are still tracked, so this matches the existing convention).
+- Updated `packages/ai-parrot/README.md` in two places:
+  1. Added `ai-parrot[claude-agent]` to the LLM-providers install list with
+     a one-line description.
+  2. Added a new "Anthropic: API client vs. Claude Code agent dispatch"
+     subsection with a comparison table, side-by-side install commands
+     (including the combined `[anthropic,claude-agent]` invocation), the
+     `claude auth` / `ANTHROPIC_API_KEY` note, and a link to the new
+     example.
+- Verified syntax (`python -c "import ast; ast.parse(...)"`) and confirmed
+  the full FEAT-124 test suite (44 tests) still passes.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
