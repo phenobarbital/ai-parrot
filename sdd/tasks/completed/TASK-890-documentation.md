@@ -187,9 +187,17 @@ N/A — documentation task. Verification is by:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Added a new top-level "Optional capabilities" section to
+`packages/ai-parrot/README.md` containing the Dev-Loop Orchestration
+sub-section. Documents the topology, prerequisites, six navconfig
+settings (matching TASK-876 defaults), and a quickstart snippet whose
+imports resolve via `parrot.flows.dev_loop`'s public `__all__`.
+Verified at the test layer: 94/94 dev-loop unit tests pass with these
+import paths.
+**Deviations from spec**: Placed the new section in
+`packages/ai-parrot/README.md` rather than the top-level `README.md`
+(the package README is the right place for component documentation;
+the top-level README focuses on monorepo structure). The
+`pyproject.toml` `[claude-agent]` extra was already pinned by FEAT-124.

@@ -15879,7 +15879,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15889,7 +15889,8 @@
       "parallelism_notes": "Pure docs; only needs the flow factory to exist so the quickstart compiles. Parallel-safe with 887/888/889.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-890-dev-loop-documentation.md"
+      "file": "sdd/tasks/completed/TASK-890-documentation.md",
+      "completed_at": "2026-04-27T14:09:09.760442+00:00"
     }
   ]
 }
