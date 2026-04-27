@@ -252,10 +252,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker-feat-125
+**Date**: 2026-04-27
+**Notes**: Implemented as specified. Added `build_default_meta` to both `BasePDF` and `BaseVideoLoader`. `BaseVideoLoader` now threads `language` to `super().__init__` and provides `_language` property alias. 17 tests all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Updated root `conftest.py` to add parrot-loaders/src to sys.path and navigator stubs — needed for parrot-loaders tests to collect.

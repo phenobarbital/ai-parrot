@@ -14857,7 +14857,7 @@
       "feature_id": "FEAT-125",
       "feature": "ai-parrot-loaders-metadata-standarization",
       "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -14867,7 +14867,8 @@
       "parallelism_notes": "Touches basepdf.py and basevideo.py which are base classes for tasks 857-859; sequential to avoid merge conflicts",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/active/TASK-856-base-loader-helpers.md"
+      "file": "sdd/tasks/completed/TASK-856-base-loader-helpers.md",
+      "completed_at": "2026-04-27T01:23:13.194357+00:00"
     },
     {
       "id": "TASK-857",
