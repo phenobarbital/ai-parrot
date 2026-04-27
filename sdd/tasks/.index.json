@@ -14778,8 +14778,8 @@
       "parallelism_notes": "Depends on TASK-858 (imports ClaudeAgentClient). Sequential after TASK-858.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T03:25:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-859-factory-registration-lazy-loader.md"
+      "completed_at": "2026-04-27T02:50:33.792488+00:00",
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
     },
     {
       "id": "TASK-860",
@@ -14939,8 +14939,8 @@
       "parallelism_notes": "Depends on basevideo build_default_meta; touches youtube.py/vimeo.py only but shares integration test with TASK-858",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "completed_at": "2026-04-27T00:20:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-859-refactor-youtube-vimeo-loaders.md"
+      "completed_at": "2026-04-27T02:50:33.792488+00:00",
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
     },
     {
       "id": "TASK-860",
@@ -15321,7 +15321,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15332,7 +15332,8 @@
       "parallelism_notes": "Module 5 of FEAT-128. Validates the full pipeline; needs both ingestion (TASK-857) and bot wiring (TASK-858).",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-859-pgvector-and-bot-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md",
+      "completed_at": "2026-04-27T02:50:33.792488+00:00"
     },
     {
       "id": "TASK-860",
