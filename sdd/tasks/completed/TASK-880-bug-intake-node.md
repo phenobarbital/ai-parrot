@@ -273,9 +273,13 @@ async def test_flowtask_path_rejects_traversal(node, good_brief):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `BugIntakeNode(Node)` with three-source brief
+loading (ctx instance / ctx dict / JSON prompt fallback), allowlist
+validation against `ACCEPTANCE_CRITERION_ALLOWLIST`, and
+`flow.bug_brief_validated` event publication. Lazy Redis init keeps the
+node safe to construct without a live broker. 8 unit tests cover happy
+path, event emission, allowlist rejection, traversal/absolute path
+rejection, and the three brief-loading code paths.
+**Deviations from spec**: None.

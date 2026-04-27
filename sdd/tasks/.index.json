@@ -15654,7 +15654,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15665,7 +15665,8 @@
       "parallelism_notes": "First node, no dispatcher dependency; parallel with 879.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-880-bug-intake-node.md"
+      "file": "sdd/tasks/completed/TASK-880-bug-intake-node.md",
+      "completed_at": "2026-04-27T12:24:30.480491+00:00"
     },
     {
       "id": "TASK-881",
