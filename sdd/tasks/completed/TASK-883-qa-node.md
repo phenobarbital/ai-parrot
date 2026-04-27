@@ -251,9 +251,13 @@ async def test_returns_failure_without_raising(ctx):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `QANode` with `permission_mode="plan"` and
+`allowed_tools=["Read","Bash"]` strictly. The node never raises on
+`QAReport.passed=False` — flow routing happens in the factory.
+Configurable lint command via `__init__(lint_command=...)`. Stores the
+QAReport on `ctx["qa_report"]`. 5 unit tests cover plan permission,
+failure return, success return, dispatcher-validation propagation,
+and cwd alignment.
+**Deviations from spec**: None.
