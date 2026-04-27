@@ -1,7 +1,12 @@
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
+import logging
 import re
+import uuid
+
 import numpy as np
+
+from parrot.stores.models import Document
 
 
 @dataclass
@@ -38,6 +43,7 @@ class LateChunkingProcessor:
         self.chunk_overlap = chunk_overlap
         self.preserve_sentences = preserve_sentences
         self.min_chunk_size = min_chunk_size
+        self.logger = logging.getLogger(__name__)
 
     async def process_document_late_chunking(
         self,
@@ -105,6 +111,185 @@ class LateChunkingProcessor:
             chunk_infos.append(chunk_info)
 
         return np.array(full_embedding), chunk_infos
+
+    # -----------------------------------------------------------------------
+    # FEAT-128: 3-level hierarchy support
+    # -----------------------------------------------------------------------
+
+    def _count_tokens(self, text: str) -> int:
+        """Approximate token count.
+
+        The existing chunking infrastructure uses character counts as its
+        "token" unit (``chunk_size`` defaults to 8192 characters).  We
+        keep the same convention here so threshold comparisons are
+        consistent across the codebase.
+
+        Args:
+            text: The text whose length to estimate.
+
+        Returns:
+            Approximate number of tokens (characters in this implementation).
+        """
+        return len(text)
+
+    def _split_to_parent_chunks(
+        self,
+        text: str,
+        parent_chunk_size: int,
+        parent_chunk_overlap: int,
+    ) -> List[str]:
+        """Split text into parent-chunk sized segments with overlap.
+
+        Uses a sliding window with sentence-boundary snapping to avoid
+        cutting sentences mid-way.  The parameters are in the same unit as
+        ``chunk_size`` (characters).
+
+        This method is simpler and more direct than
+        :meth:`_sentence_aware_chunking` because parent chunks are larger
+        windows and we want to guarantee at least ``ceil(len(text) /
+        parent_chunk_size)`` chunks.
+
+        Args:
+            text: Full document text to split.
+            parent_chunk_size: Target size of each parent chunk in characters.
+            parent_chunk_overlap: Overlap between adjacent parent chunks in
+                characters.  Must be less than ``parent_chunk_size``.
+
+        Returns:
+            List of parent-chunk text strings (non-empty).
+        """
+        text_len = len(text)
+        if text_len == 0:
+            return []
+
+        chunks: List[str] = []
+        start = 0
+
+        while start < text_len:
+            end = min(start + parent_chunk_size, text_len)
+
+            # Snap to a sentence boundary near `end` to avoid mid-sentence cuts.
+            if end < text_len:
+                # Search backwards from `end` for a sentence-ending sequence.
+                snap_pos = -1
+                for pattern in ['. ', '! ', '? ', '.\n', '!\n', '?\n']:
+                    p = text.rfind(pattern, start + parent_chunk_size // 2, end)
+                    if p != -1 and p > snap_pos:
+                        snap_pos = p + len(pattern)
+                if snap_pos != -1:
+                    end = snap_pos
+
+            chunk = text[start:end].strip()
+            if chunk:
+                chunks.append(chunk)
+
+            # Advance with overlap (ensure forward progress).
+            next_start = end - parent_chunk_overlap
+            if next_start <= start:
+                next_start = start + 1  # prevent infinite loop on very small text
+            start = next_start
+
+            if start >= text_len:
+                break
+
+        return chunks if chunks else [text]
+
+    async def process_document_three_level(
+        self,
+        document_text: str,
+        document_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        parent_chunk_size_tokens: int = 4000,
+        parent_chunk_overlap_tokens: int = 200,
+    ) -> Tuple[List[Document], List[ChunkInfo]]:
+        """Split an oversized document into the 3-level hierarchy.
+
+        Architecture:
+        - Level 1: original document (NOT stored as a parent row)
+        - Level 2: parent_chunks (~``parent_chunk_size_tokens`` chars each)
+        - Level 3: child chunks (via existing late-chunking per parent_chunk)
+
+        Each child's ``parent_document_id`` points to its **parent_chunk**
+        UUID, NOT to the original document.  The original document is never
+        returned as a parent (it is too large for the LLM context).
+
+        Args:
+            document_text: Full document text.
+            document_id: Original document ID (stored as
+                ``source_document_id`` on parent_chunks for audit).
+            metadata: Optional base metadata inherited by parent_chunks.
+            parent_chunk_size_tokens: Target parent chunk size in characters
+                (the "token" unit in this code base is characters).
+            parent_chunk_overlap_tokens: Overlap between adjacent parent
+                chunks in characters.  Must be < ``parent_chunk_size_tokens``.
+
+        Returns:
+            Tuple of (parent_chunk_documents, child_chunk_infos) where:
+            - parent_chunk_documents: list of :class:`Document` objects with
+              ``metadata['document_type'] == 'parent_chunk'``,
+              ``metadata['is_chunk'] == False``,
+              ``metadata['source_document_id'] == document_id``.
+            - child_chunk_infos: list of :class:`ChunkInfo` whose
+              ``parent_document_id`` points to a parent_chunk UUID.
+
+        Raises:
+            ValueError: If ``parent_chunk_overlap_tokens >= parent_chunk_size_tokens``.
+        """
+        if parent_chunk_overlap_tokens >= parent_chunk_size_tokens:
+            raise ValueError(
+                f"parent_chunk_overlap_tokens ({parent_chunk_overlap_tokens}) "
+                f"must be less than parent_chunk_size_tokens ({parent_chunk_size_tokens})."
+            )
+
+        base_meta = metadata or {}
+        parent_chunk_texts = self._split_to_parent_chunks(
+            text=document_text,
+            parent_chunk_size=parent_chunk_size_tokens,
+            parent_chunk_overlap=parent_chunk_overlap_tokens,
+        )
+
+        parent_chunk_documents: List[Document] = []
+        all_children: List[ChunkInfo] = []
+
+        for i, parent_text in enumerate(parent_chunk_texts):
+            parent_chunk_id = str(uuid.uuid4())
+
+            parent_doc = Document(
+                page_content=parent_text,
+                metadata={
+                    **base_meta,
+                    'document_id': parent_chunk_id,
+                    'document_type': 'parent_chunk',
+                    'is_chunk': False,
+                    'source_document_id': document_id,
+                    'parent_chunk_index': i,
+                },
+            )
+            parent_chunk_documents.append(parent_doc)
+
+            # Run late chunking on each parent_chunk to produce child chunks.
+            # The children's parent_document_id will be set to parent_chunk_id.
+            _, children = await self.process_document_late_chunking(
+                document_text=parent_text,
+                document_id=parent_chunk_id,
+                metadata={
+                    **base_meta,
+                    'parent_chunk_index': i,
+                    'source_document_id': document_id,
+                },
+            )
+            all_children.extend(children)
+
+        self.logger.info(
+            "3-level hierarchy: document_id=%s split into %d parent_chunks "
+            "(avg %.0f chars each), %d child chunks total.",
+            document_id,
+            len(parent_chunk_documents),
+            len(document_text) / max(len(parent_chunk_documents), 1),
+            len(all_children),
+        )
+
+        return parent_chunk_documents, all_children
 
     def _semantic_chunk_split(self, text: str) -> List[Tuple[str, int, int]]:
         """
