@@ -205,21 +205,18 @@ Image Analysis Instructions:
 
         self.logger.info(f"Processing image: {path.name}")
 
-        base_metadata = {
-            "url": f"file://{path}",
-            "source": str(path),
-            "filename": path.name,
-            "type": "image_understanding",
-            "source_type": self._source_type,
-            "category": self.category,
-            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            "document_meta": {
-                "language": self._language,
-                "model_used": str(self.model.value if hasattr(self.model, 'value') else self.model),
-                "analysis_type": "image_understanding",
-                "image_title": path.stem
-            }
-        }
+        # Build base metadata via create_metadata for canonical shape.
+        # Non-canonical fields (model_used, analysis_type) become top-level keys.
+        _model_used = str(self.model.value if hasattr(self.model, 'value') else self.model)
+        base_metadata = self.create_metadata(
+            path,
+            doctype="image_understanding",
+            source_type=self._source_type,
+            language=self._language,
+            title=path.stem.replace("_", " ").replace("-", " ").title(),
+            model_used=_model_used,
+            analysis_type="image_understanding",
+        )
 
         documents = []
 
@@ -234,15 +231,13 @@ Image Analysis Instructions:
             # Extract sections from AI response
             sections = extract_sections_from_response(ai_response)
 
-            # Create main analysis document
+            # Create main analysis document — non-canonical extras at top level.
             main_doc_metadata = {
                 **base_metadata,
                 "type": "image_analysis_full",
-                "document_meta": {
-                    **base_metadata["document_meta"],
-                    "total_sections": len(sections),
-                    "analysis_timestamp": datetime.now().isoformat()
-                }
+                "document_meta": {**base_metadata["document_meta"], "type": "image_analysis_full"},
+                "total_sections": len(sections),
+                "analysis_timestamp": datetime.now().isoformat(),
             }
 
             # Split if too long
@@ -254,9 +249,10 @@ Image Analysis Instructions:
                         "type": "image_analysis_chunk",
                         "document_meta": {
                             **main_doc_metadata["document_meta"],
-                            "chunk_number": i + 1,
-                            "total_chunks": len(chunks)
-                        }
+                            "type": "image_analysis_chunk",
+                        },
+                        "chunk_number": i + 1,
+                        "total_chunks": len(chunks),
                     }
                     doc = Document(
                         page_content=chunk,
@@ -276,11 +272,9 @@ Image Analysis Instructions:
                     **base_metadata,
                     "type": "image_section",
                     "source": f"{path.name}: {section.get('label', 'Section')}",
-                    "document_meta": {
-                        **base_metadata["document_meta"],
-                        "section_number": section.get('section_number', 1),
-                        "label": section.get('label', ''),
-                    }
+                    "document_meta": {**base_metadata["document_meta"], "type": "image_section"},
+                    "section_number": section.get('section_number', 1),
+                    "label": section.get('label', ''),
                 }
 
                 section_content = section.get('content', '')
@@ -299,11 +293,9 @@ Image Analysis Instructions:
             error_metadata = {
                 **base_metadata,
                 "type": "image_analysis_error",
-                "document_meta": {
-                    **base_metadata["document_meta"],
-                    "error": str(e),
-                    "error_timestamp": datetime.now().isoformat()
-                }
+                "document_meta": {**base_metadata["document_meta"], "type": "image_analysis_error"},
+                "error": str(e),
+                "error_timestamp": datetime.now().isoformat(),
             }
 
             error_doc = Document(

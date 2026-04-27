@@ -180,18 +180,17 @@ class DocumentConverterLoader(AbstractLoader):
                 )
                 if sections:
                     for section in sections:
-                        section_meta = {
-                            **base_meta,
-                            'section_title': section['title'],
-                            'section_number': section['section_number'],
-                            'header_level': section['level'],
-                            'content_type': 'section',
-                        }
                         meta = self.create_metadata(
                             path=path,
                             doctype='docling',
                             source_type='docling_section',
-                            doc_metadata=section_meta,
+                            title=base_meta.get('title') or None,
+                            document_type=base_meta.get('document_type', ''),
+                            word_count=base_meta.get('word_count', 0),
+                            section_title=section['title'],
+                            section_number=section['section_number'],
+                            header_level=section['level'],
+                            content_type='section',
                         )
                         docs.append(
                             self.create_document(
@@ -219,12 +218,14 @@ class DocumentConverterLoader(AbstractLoader):
         base_meta: Dict[str, Any],
     ) -> None:
         """Append a single whole-document Document."""
-        doc_meta = {**base_meta, 'content_type': 'full_document'}
         meta = self.create_metadata(
             path=path,
             doctype='docling',
             source_type='docling_full',
-            doc_metadata=doc_meta,
+            title=base_meta.get('title') or None,
+            document_type=base_meta.get('document_type', ''),
+            word_count=base_meta.get('word_count', 0),
+            content_type='full_document',
         )
         docs.append(
             self.create_document(

@@ -221,17 +221,12 @@ class PDFLoader(AbstractLoader):
         if self.full_document and not self.use_chapters and not self.use_pages:
             try:
                 md_text = pymupdf4llm.to_markdown(str(path))
-                document_meta = {
-                    "filename": path.name,
-                    "file_path": str(path),
-                    "total_pages": total_pages,
-                    "content_type": "full_document",
-                }
                 meta = self.create_metadata(
                     path=path,
                     doctype="pdf",
                     source_type="pdf_markdown",
-                    doc_metadata=document_meta,
+                    total_pages=total_pages,
+                    content_type="full_document",
                 )
                 docs.append(
                     self.create_document(
@@ -248,9 +243,7 @@ class PDFLoader(AbstractLoader):
                         path=path,
                         doctype=self.doctype,
                         source_type=self._source_type,
-                        doc_metadata={
-                            "summary_for_pages": total_pages,
-                        },
+                        summary_for_pages=total_pages,
                     )
                     docs.append(
                         self.create_document(
@@ -274,18 +267,14 @@ class PDFLoader(AbstractLoader):
                 chapters = self.extract_chapters_from_markdown(md_text)
                 self.logger.info(f"Found {len(chapters)} chapters")
                 for chapter in chapters:
-                    document_meta = {
-                        "filename": path.name,
-                        "file_path": str(path),
-                        "chapter_title": chapter['title'],
-                        "chapter_number": chapter['chapter_number'],
-                        "content_type": "chapter"
-                    }
                     meta = self.create_metadata(
                         path=path,
                         doctype="pdf",
                         source_type="pdf_chapter",
-                        doc_metadata=document_meta,
+                        title=chapter['title'] or None,
+                        chapter_title=chapter['title'],
+                        chapter_number=chapter['chapter_number'],
+                        content_type="chapter",
                     )
                     # Combine title and content
                     full_content = f"# {chapter['title']}\n\n{chapter['content']}"
@@ -302,19 +291,13 @@ class PDFLoader(AbstractLoader):
                 self.logger.info(f"Found {len(pages)} pages")
 
                 for page in pages:
-                    document_meta = {
-                        "filename": path.name,
-                        "file_path": str(path),
-                        "page_title": page['title'],
-                        "page_number": page['page_number'],
-                        "content_type": "page"
-                    }
-
                     meta = self.create_metadata(
                         path=path,
                         doctype="pdf",
                         source_type="pdf_page",
-                        doc_metadata=document_meta,
+                        page_title=page['title'],
+                        page_number=page['page_number'],
+                        content_type="page",
                     )
 
                     # Combine title and content
@@ -329,16 +312,11 @@ class PDFLoader(AbstractLoader):
                     )
             else:
                 # Return whole markdown as single document
-                document_meta = {
-                    "filename": path.name,
-                    "file_path": str(path),
-                    "content_type": "full_document"
-                }
                 meta = self.create_metadata(
                     path=path,
                     doctype="pdf",
                     source_type="pdf_markdown",
-                    doc_metadata=document_meta,
+                    content_type="full_document",
                 )
                 docs.append(
                     self.create_document(
@@ -375,19 +353,11 @@ class PDFLoader(AbstractLoader):
                     content = (pending_title + '\n\n' if pending_title else '') + page_text
                     pending_title = None
 
-                document_meta = {
-                    "filename": path.name,
-                    "file_path": str(path),
-                    "page_number": i + 1,
-                    # "title": doc.metadata.get("title", ""),
-                    # "creationDate": doc.metadata.get("creationDate", ""),
-                    # "author": doc.metadata.get("author", ""),
-                }
                 meta = self.create_metadata(
                     path=path,
                     doctype="pdf",
                     source_type="pdf",
-                    doc_metadata=document_meta,
+                    page_number=i + 1,
                 )
                 if len(content) < 10:
                     self.logger.warning(
@@ -411,9 +381,7 @@ class PDFLoader(AbstractLoader):
                     path=path,
                     doctype=self.doctype,
                     source_type=self._source_type,
-                    doc_metadata={
-                        "summary_for_pages": len(docs),
-                    }
+                    summary_for_pages=len(docs),
                 )
                 docs.append(
                     self.create_document(
