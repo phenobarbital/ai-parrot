@@ -14839,7 +14839,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14850,7 +14850,8 @@
       "parallelism_notes": "Largest store wiring; encodes the metadata-header-wins precedence with LateChunkingProcessor. TASK-867/868/869 all reference its outputs.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-863-pgvector-wiring.md"
+      "file": "sdd/tasks/completed/TASK-863-pgvector-wiring.md",
+      "completed_at": "2026-04-27T02:37:01.910260+00:00"
     },
     {
       "id": "TASK-864",
