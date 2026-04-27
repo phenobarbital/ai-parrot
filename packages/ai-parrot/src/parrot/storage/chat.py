@@ -70,6 +70,22 @@ class ChatStorage:
 
         self._initialized = True
 
+    @property
+    def _backend_label(self) -> str:
+        """Friendly name of the active cold-storage backend for log output."""
+        if self._dynamo is None:
+            return "cold storage"
+        cls_name = type(self._dynamo).__name__
+        for token, label in (
+            ("DynamoDB", "DynamoDB"),
+            ("SQLite", "SQLite"),
+            ("Postgres", "Postgres"),
+            ("Mongo", "MongoDB"),
+        ):
+            if token in cls_name:
+                return label
+        return cls_name
+
     async def close(self) -> None:
         """Release connections."""
         if self._redis:
@@ -259,11 +275,11 @@ class ChatStorage:
                 provider=assistant_msg.provider,
             )
 
-            self.logger.debug("Chat turn saved to DynamoDB")
+            self.logger.debug("Chat turn saved to %s", self._backend_label)
         except Exception as exc:
             self.logger.warning(
-                "DynamoDB save failed for session %s: %s",
-                user_msg.session_id, exc,
+                "%s save failed for session %s: %s",
+                self._backend_label, user_msg.session_id, exc,
             )
 
     # ------------------------------------------------------------------
@@ -313,7 +329,8 @@ class ChatStorage:
                     return messages
             except Exception as exc:
                 self.logger.warning(
-                    "Redis load failed, falling back to DynamoDB: %s", exc
+                    "Redis load failed, falling back to %s: %s",
+                    self._backend_label, exc,
                 )
 
         # Fallback: DynamoDB
@@ -355,7 +372,9 @@ class ChatStorage:
                     })
                 return messages
             except Exception as exc:
-                self.logger.warning("DynamoDB load failed: %s", exc)
+                self.logger.warning(
+                    "%s load failed: %s", self._backend_label, exc
+                )
 
         return []
 
@@ -439,7 +458,7 @@ class ChatStorage:
                 metadata=metadata,
             )
             self.logger.debug(
-                "Conversation %s created in DynamoDB", session_id
+                "Conversation %s created in %s", session_id, self._backend_label
             )
             return {
                 "session_id": session_id,
@@ -527,7 +546,9 @@ class ChatStorage:
                     conv_deleted, art_deleted, session_id,
                 )
             except Exception as exc:
-                self.logger.warning("DynamoDB delete failed: %s", exc)
+                self.logger.warning(
+                    "%s delete failed: %s", self._backend_label, exc
+                )
 
         return deleted
 

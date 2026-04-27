@@ -49,6 +49,7 @@ class AWSInterface:
             **kwargs: Additional boto3 session parameters
         """
         # Get credentials from config or direct input
+        explicit_profile = credentials is None and aws_id != 'default'
         if credentials is None:
             credentials = AWS_CREDENTIALS.get(aws_id, {})
             if not credentials or credentials == 'default':
@@ -57,11 +58,28 @@ class AWSInterface:
                     'aws_secret': AWS_SECRET_KEY,
                     'region_name': AWS_REGION_NAME
                 })
-        
+                explicit_profile = False
+
+        access_key = credentials.get('aws_key') or credentials.get('aws_access_key_id')
+        secret_key = credentials.get('aws_secret') or credentials.get('aws_secret_access_key')
+
+        # Fail loudly when the caller explicitly asked for a named profile
+        # (e.g. 'cloudwatch') and its credentials are missing. Otherwise
+        # aioboto3 silently falls through to the boto3 resolution chain and
+        # picks up unrelated env vars (AWS_ACCESS_KEY_ID, ~/.aws/credentials,
+        # IMDS), masking misconfiguration with confusing AccessDenied errors
+        # against the wrong account.
+        if explicit_profile and not (access_key and secret_key):
+            raise ValueError(
+                f"AWS profile '{aws_id}' is missing credentials. "
+                f"Set the corresponding env vars (e.g. AWS_{aws_id.upper()}_KEY / "
+                f"AWS_{aws_id.upper()}_SECRET) or pass credentials= explicitly."
+            )
+
         # Build AWS config
         self.aws_config = {
-            'aws_access_key_id': credentials.get('aws_key') or credentials.get('aws_access_key_id'),
-            'aws_secret_access_key': credentials.get('aws_secret') or credentials.get('aws_secret_access_key'),
+            'aws_access_key_id': access_key,
+            'aws_secret_access_key': secret_key,
             'region_name': region_name or credentials.get('region_name', AWS_REGION_NAME),
         }
         

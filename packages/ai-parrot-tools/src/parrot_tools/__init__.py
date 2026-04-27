@@ -55,6 +55,7 @@ TOOL_REGISTRY: dict[str, str] = {
     # --- Toolkits (Batch 2 — toolkit-based tools) ---
     "jira": "parrot_tools.jiratoolkit.JiraToolkit",
     "git": "parrot_tools.gittoolkit.GitToolkit",
+    "code": "parrot_tools.code_toolkit.CodeToolkit",
     "docker": "parrot_tools.docker.toolkit.DockerToolkit",
     "pulumi": "parrot_tools.pulumi.toolkit.PulumiToolkit",
     "sitesearch": "parrot_tools.sitesearch.toolkit.SiteSearchToolkit",

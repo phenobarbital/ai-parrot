@@ -102,8 +102,12 @@ class GetLogEventsInput(BaseModel):
     log_group_name: str = Field(
         ..., description="CloudWatch log group name"
     )
-    log_stream_name: str = Field(
-        ..., description="Log stream name within the log group"
+    log_stream_name: Optional[str] = Field(
+        None,
+        description=(
+            "Log stream name within the log group. "
+            "If omitted, the most recent stream is used."
+        ),
     )
     start_time: Optional[str] = Field(
         None, description="Start time (ISO format or relative)"
@@ -210,9 +214,12 @@ class CloudWatchToolkit(AbstractToolkit):
             return datetime.now(timezone.utc)
 
         with contextlib.suppress(ValueError, AttributeError):
-            return datetime.fromisoformat(
+            parsed = datetime.fromisoformat(
                 time_str.replace("Z", "+00:00")
             )
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
 
         if time_str.startswith("-"):
             raw = time_str[1:]
@@ -535,13 +542,34 @@ class CloudWatchToolkit(AbstractToolkit):
     async def aws_cloudwatch_get_log_events(
         self,
         log_group_name: str,
-        log_stream_name: str,
+        log_stream_name: Optional[str] = None,
         start_time: Optional[str] = None,
         limit: int = 100,
     ) -> Dict[str, Any]:
-        """Get log events from a specific CloudWatch log stream."""
+        """Get log events from a CloudWatch log stream.
+
+        If ``log_stream_name`` is not provided, the most recent stream in the
+        group (ordered by ``LastEventTime``) is used.
+        """
         try:
             async with self.aws.client("logs") as logs:
+                if not log_stream_name:
+                    streams_response = await logs.describe_log_streams(
+                        logGroupName=log_group_name,
+                        orderBy="LastEventTime",
+                        descending=True,
+                        limit=1,
+                    )
+                    streams = streams_response.get("logStreams", [])
+                    if not streams:
+                        return {
+                            "log_group": log_group_name,
+                            "log_stream": None,
+                            "events": [],
+                            "count": 0,
+                        }
+                    log_stream_name = streams[0]["logStreamName"]
+
                 params: Dict[str, Any] = {
                     "logGroupName": log_group_name,
                     "logStreamName": log_stream_name,

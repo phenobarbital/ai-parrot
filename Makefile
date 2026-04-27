@@ -1,7 +1,7 @@
 # AI-Parrot Makefile
 # This Makefile provides a set of commands to manage the AI-Parrot project.
 
-.PHONY: venv install install-core install-tools install-loaders \
+.PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
 		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
@@ -19,6 +19,11 @@ HAS_PIP := $(shell command -v pip 2> /dev/null)
 HAS_NVIDIA := $(shell command -v nvidia-smi 2> /dev/null)
 HAS_FFMPEG := $(shell command -v ffmpeg 2> /dev/null)
 
+# Experimental OpenAI Codex SDK source install.
+CODEX_SDK_VERSION ?= 0.1.11
+CODEX_SDK_VENDOR_DIR ?= vendor
+CODEX_SDK_DIR ?= $(CODEX_SDK_VENDOR_DIR)/openai-codex-sdk
+
 # Detect OS
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -34,6 +39,17 @@ install-uv:
 	curl -LsSf https://astral.sh/uv/install.sh | sh
 	@echo "uv installed! You may need to restart your shell or run 'source ~/.bashrc'"
 	@echo "Then re-run make commands to use faster uv workflows"
+
+install-codex-sdk-editable:
+	@echo "Installing experimental openai-codex-sdk $(CODEX_SDK_VERSION) from source in editable mode..."
+	mkdir -p $(CODEX_SDK_VENDOR_DIR)
+	python -m pip download --no-binary=:all: --no-deps \
+		--dest $(CODEX_SDK_VENDOR_DIR) openai-codex-sdk==$(CODEX_SDK_VERSION)
+	python -c "import pathlib, shutil; p = pathlib.Path('$(CODEX_SDK_DIR)'); shutil.rmtree(p) if p.exists() else None"
+	mkdir -p $(CODEX_SDK_DIR)
+	tar -xzf $(CODEX_SDK_VENDOR_DIR)/openai_codex_sdk-$(CODEX_SDK_VERSION).tar.gz -C $(CODEX_SDK_DIR) --strip-components=1
+	uv pip install -e $(CODEX_SDK_DIR)
+	@echo "Experimental Codex SDK installed from $(CODEX_SDK_DIR)."
 
 # Create virtual environment
 venv:
@@ -644,6 +660,7 @@ help:
 	@echo ""
 	@echo "  System / External:"
 	@echo "    install-uv          - Install uv package manager"
+	@echo "    install-codex-sdk-editable - Install experimental Codex SDK from source"
 	@echo "    install-whisperx    - Install WhisperX with system deps"
 	@echo "    check-deps          - Check system dependencies (GPU, FFmpeg)"
 	@echo "    cuda-info           - Show GPU/CUDA information"
