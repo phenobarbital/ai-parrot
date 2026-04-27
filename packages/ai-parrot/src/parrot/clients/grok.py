@@ -305,14 +305,11 @@ class GrokClient(AbstractClient):
                     )
                     all_tool_calls.append(tool_call_rec)
                     
-                    # Append result to chat
-                    # xAI SDK likely has a `tool` message type
+                    # Append result to chat. xAI's API rejects ``name`` on
+                    # any role other than ``user`` — use the SDK's
+                    # ``tool_result(content, tool_call_id=...)`` signature.
                     from xai_sdk.chat import tool_result as ToolResultMsg
-                    msg = ToolResultMsg(str(tool_exec_result))
-                    # xAI SDK proto does not have tool_call_id, assuming name or order maps it.
-                    # Using name field for tool_call_id as best guess for OpenAI compatibility
-                    msg.name = tool_id
-                    chat.append(msg)
+                    chat.append(ToolResultMsg(str(tool_exec_result), tool_call_id=tool_id))
                 
                 # Loop continues to next sample()
                 continue
@@ -462,6 +459,156 @@ class GrokClient(AbstractClient):
                 session_id,
                 turn
             )
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> AIMessage:
+        """Resume a suspended Grok execution after a HandoffTool / HITL pause.
+
+        Replays the suspended message history into a fresh xAI ``chat`` object,
+        injects ``user_input`` as the resumption signal (as a ``tool_result``
+        when a ``tool_call_id`` is present in ``state``, otherwise as a normal
+        ``user`` turn) and continues the tool-call loop until a final response
+        is produced.
+
+        Args:
+            session_id: Session identifier (propagated to the AIMessage and to
+                any ``HumanInteractionInterrupt`` raised inside the loop).
+            user_input: User reply to inject into the conversation as the
+                resumption value.
+            state: Suspended state — expects keys ``messages`` (list of
+                OpenAI-style dicts with ``role`` / ``content`` / ``tool_calls``),
+                ``tool_call_id`` (optional) and ``agent_name`` / ``model``
+                (optional, used to pick the model).
+
+        Returns:
+            :class:`AIMessage` with the final assistant response and the list
+            of tool calls that ran during resumption.
+        """
+        from xai_sdk.chat import tool_result as ToolResultMsg
+        from ..models.responses import AIMessageFactory
+
+        client = await self.get_client()
+        messages: List[Dict[str, Any]] = state.get("messages", [])
+        tool_call_id = state.get("tool_call_id")
+        model = state.get("agent_name") or state.get("model") or self.model or self._default_model
+        turn_id = str(uuid.uuid4())
+
+        # Re-create a stateful chat from the suspended history.
+        chat_kwargs: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": 4096,
+            "temperature": 0.1,
+        }
+        prepared_tools = self._prepare_tools_for_grok() if self.enable_tools else []
+        if prepared_tools:
+            chat_kwargs["tools"] = prepared_tools
+            chat_kwargs["tool_choice"] = "auto"
+
+        chat = client.chat.create(**chat_kwargs)
+
+        # Replay history into the new chat object.
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content") or ""
+            if role == "system":
+                chat.append(system(content))
+            elif role == "user":
+                chat.append(user(content))
+            elif role == "assistant":
+                chat.append(assistant(content))
+            elif role == "tool":
+                chat.append(
+                    ToolResultMsg(
+                        content,
+                        tool_call_id=msg.get("tool_call_id") or msg.get("name"),
+                    )
+                )
+
+        # Inject the resumption value: as a tool_result if we paused inside a
+        # tool call, otherwise as a regular user turn.
+        if tool_call_id:
+            chat.append(ToolResultMsg(user_input, tool_call_id=tool_call_id))
+        else:
+            chat.append(user(user_input))
+
+        # Continue the tool-call loop just like ``ask()`` does.
+        all_tool_calls: List[ToolCall] = []
+        max_turns = 10
+        current_turn = 0
+        final_response = None
+
+        while current_turn < max_turns:
+            current_turn += 1
+            response = await chat.sample()
+
+            tool_calls = getattr(response, "tool_calls", []) or []
+            if not tool_calls and hasattr(response, "message"):
+                tool_calls = getattr(response.message, "tool_calls", []) or []
+
+            if not tool_calls:
+                final_response = response
+                break
+
+            for tc in tool_calls:
+                fn = tc.function
+                tool_name = fn.name
+                try:
+                    tool_args = json.loads(fn.arguments)
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+                try:
+                    tool_exec_result = await self._execute_tool(tool_name, tool_args)
+                    rec = ToolCall(
+                        id=tc.id,
+                        name=tool_name,
+                        arguments=tool_args,
+                        result=tool_exec_result,
+                    )
+                    all_tool_calls.append(rec)
+                    chat.append(ToolResultMsg(str(tool_exec_result), tool_call_id=tc.id))
+                except Exception as exc:
+                    from parrot.core.exceptions import HumanInteractionInterrupt
+
+                    if isinstance(exc, HumanInteractionInterrupt):
+                        exc.session_id = session_id
+                        exc.messages = messages.copy()
+                        exc.tool_call_id = tc.id
+                        exc.agent_name = model
+                        raise
+
+                    err_rec = ToolCall(
+                        id=tc.id,
+                        name=tool_name,
+                        arguments=tool_args,
+                        error=str(exc),
+                    )
+                    all_tool_calls.append(err_rec)
+                    chat.append(ToolResultMsg(f"Error: {exc}", tool_call_id=tc.id))
+
+        if final_response is None:
+            final_response = response
+
+        text_content = (
+            final_response.content if hasattr(final_response, "content") else str(final_response)
+        )
+        ai_message = AIMessageFactory.create_message(
+            response=final_response,
+            input_text="[Resumed Conversation]",
+            model=model,
+            user_id=state.get("user_id", "unknown"),
+            session_id=session_id,
+            usage=CompletionUsage.from_grok(final_response.usage)
+            if hasattr(final_response, "usage")
+            else None,
+            text_response=text_content,
+        )
+        ai_message.tool_calls = all_tool_calls
+        return ai_message
 
     async def batch_ask(self, requests: List[Any]) -> List[Any]:
         """Batch processing not yet implemented for Grok."""

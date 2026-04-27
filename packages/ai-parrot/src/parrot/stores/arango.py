@@ -560,18 +560,44 @@ class ArangoDBStore(AbstractStore):
         collection = collection or self.collection_name
         count = 0
 
+        # ── Contextual embedding (FEAT-127) ──────────────────────────────
+        # Pre-compute augmented embeddings for Document inputs when the flag
+        # is on.  Dict inputs are passed through unchanged (they have no
+        # document_meta to read from).
+        augmented_texts: dict[int, str] = {}
+        if self.contextual_embedding:
+            docs_only = [d for d in documents if isinstance(d, Document)]
+            if docs_only:
+                per_doc_texts = self._apply_contextual_augmentation(docs_only)
+                for doc, atext in zip(docs_only, per_doc_texts):
+                    augmented_texts[id(doc)] = atext
+
         # Process in batches
         for i in range(0, len(documents), batch_size):
             batch = documents[i:i + batch_size]
 
             for doc in batch:
                 try:
-                    await self.add_document(
-                        doc,
-                        collection=collection,
-                        upsert=upsert,
-                        **kwargs
-                    )
+                    if isinstance(doc, Document) and id(doc) in augmented_texts:
+                        # Pre-embed using augmented text; pass a dict with the
+                        # embedding pre-populated to short-circuit auto-embed.
+                        doc_dict = self._document_to_dict(doc)
+                        doc_dict[self.embedding_column] = await self._generate_embedding(
+                            augmented_texts[id(doc)]
+                        )
+                        await self.add_document(
+                            doc_dict,
+                            collection=collection,
+                            upsert=upsert,
+                            **kwargs,
+                        )
+                    else:
+                        await self.add_document(
+                            doc,
+                            collection=collection,
+                            upsert=upsert,
+                            **kwargs,
+                        )
                     count += 1
                 except Exception as e:
                     self.logger.error(f"Error adding document in batch: {e}")

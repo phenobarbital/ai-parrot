@@ -14585,7 +14585,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -14593,7 +14593,8 @@
       "parallelism_notes": "Trivial dependency bump; everything else depends on it. No parallel benefit.",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-850-bump-navigator-api-version.md"
+      "file": "sdd/tasks/completed/TASK-850-bump-navigator-api-version.md",
+      "completed_at": "2026-04-24T23:30:36.432995+00:00"
     },
     {
       "id": "TASK-851",
@@ -14602,7 +14603,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14612,7 +14613,8 @@
       "parallelism_notes": "Sole rewrite of the interfaces/file/ package; downstream tasks (852/853/854) depend on the shim being in place.",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-851-shim-parrot-interfaces-file.md"
+      "file": "sdd/tasks/completed/TASK-851-shim-parrot-interfaces-file.md",
+      "completed_at": "2026-04-24T23:33:42.443604+00:00"
     },
     {
       "id": "TASK-852",
@@ -14621,7 +14623,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14631,7 +14633,8 @@
       "parallelism_notes": "Touches parrot/tools/filemanager.py only, but cannot start until the shim resolves to upstream classes (otherwise the smoke checks would still pass against the old behaviour).",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-852-adapt-filemanager-tool-and-factory.md"
+      "file": "sdd/tasks/completed/TASK-852-adapt-filemanager-tool-and-factory.md",
+      "completed_at": "2026-04-24T23:35:58.536302+00:00"
     },
     {
       "id": "TASK-853",
@@ -14640,7 +14643,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14651,7 +14654,8 @@
       "parallelism_notes": "Tests assert behaviour from both the shim (TASK-851) and the tool/factory adapter (TASK-852); must run after both.",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-853-shim-regression-tests.md"
+      "file": "sdd/tasks/completed/TASK-853-shim-regression-tests.md",
+      "completed_at": "2026-04-24T23:38:59.445370+00:00"
     },
     {
       "id": "TASK-854",
@@ -14660,7 +14664,7 @@
       "feature_id": "FEAT-123",
       "feature": "fileinterface-migration",
       "spec": "sdd/specs/fileinterface-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14672,7 +14676,293 @@
       "parallelism_notes": "Verification step; run last so any failure can be diagnosed against fully-migrated code + new regression tests.",
       "assigned_to": null,
       "started_at": "2026-04-24T23:28:48.987722+00:00",
-      "file": "sdd/tasks/active/TASK-854-verify-existing-storage-tests.md"
+      "file": "sdd/tasks/completed/TASK-854-verify-existing-storage-tests.md",
+      "completed_at": "2026-04-24T23:40:29.544673+00:00"
+    },
+    {
+      "id": "TASK-855",
+      "slug": "parent-searcher-abstraction",
+      "title": "ParentSearcher abstraction + InTable default impl",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 1 of FEAT-128. Foundation that TASK-858 consumes; sequential per spec's worktree strategy.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-855-parent-searcher-abstraction.md"
+    },
+    {
+      "id": "TASK-856",
+      "slug": "store-marker-standardisation",
+      "title": "Marker standardisation in stores (is_chunk filter)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 2 of FEAT-128. Independent at the code level from TASK-855 but spec recommends sequential implementation; touches similarity_search/mmr_search filters and add_documents normalisation.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-856-store-marker-standardisation.md"
+    },
+    {
+      "id": "TASK-857",
+      "slug": "three-level-hierarchy",
+      "title": "3-level hierarchy in late chunking (document -> parent_chunk -> child)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 3 of FEAT-128. Depends on TASK-856 because parent_chunk rows must be filtered out of similarity search by default.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-857-three-level-hierarchy.md"
+    },
+    {
+      "id": "TASK-858",
+      "slug": "bot-parent-expansion-wiring",
+      "title": "Bot-side wiring (expand_to_parent + parent_searcher)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 4 of FEAT-128. Core feature wiring; needs the searcher abstraction (TASK-855) and the marker filter (TASK-856).",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-858-bot-parent-expansion-wiring.md"
+    },
+    {
+      "id": "TASK-859",
+      "slug": "pgvector-and-bot-integration-tests",
+      "title": "Integration tests - pgvector end-to-end + bot composition",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-857",
+        "TASK-858"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 5 of FEAT-128. Validates the full pipeline; needs both ingestion (TASK-857) and bot wiring (TASK-858).",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-859-pgvector-and-bot-integration-tests.md"
+    },
+    {
+      "id": "TASK-860",
+      "slug": "parent-child-retrieval-docs",
+      "title": "Documentation - docs/parent-child-retrieval.md",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-858"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Module 6 of FEAT-128. Docs-only; touches no source files \u2014 can run in parallel with TASK-859.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/active/TASK-860-parent-child-retrieval-docs.md"
+    },
+    {
+      "id": "TASK-861",
+      "slug": "contextual-helper-module",
+      "title": "Build `contextual.py` helper module",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational. Every other FEAT-127 task imports build_contextual_text from this module; nothing can run before it.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-861-contextual-helper-module.md"
+    },
+    {
+      "id": "TASK-862",
+      "slug": "abstractstore-augmentation-hook",
+      "title": "Wire `_apply_contextual_augmentation` into `AbstractStore`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-861"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies the shared base class; all store wirings (TASK-863..866) consume the new method.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-862-abstractstore-augmentation-hook.md"
+    },
+    {
+      "id": "TASK-863",
+      "slug": "pgvector-wiring",
+      "title": "Wire `PgVectorStore.add_documents` and `from_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Largest store wiring; encodes the metadata-header-wins precedence with LateChunkingProcessor. TASK-867/868/869 all reference its outputs.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-863-pgvector-wiring.md"
+    },
+    {
+      "id": "TASK-864",
+      "slug": "milvus-wiring",
+      "title": "Wire `MilvusStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only milvus.py; can run concurrently with TASK-863/865/866 in separate worktrees once TASK-862 lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-864-milvus-wiring.md"
+    },
+    {
+      "id": "TASK-865",
+      "slug": "faiss-wiring",
+      "title": "Wire `FaissStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only faiss_store.py; mutually independent of TASK-863/864/866.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-865-faiss-wiring.md"
+    },
+    {
+      "id": "TASK-866",
+      "slug": "arango-wiring",
+      "title": "Wire `ArangoStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only arango.py; mutually independent of TASK-863/864/865.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-866-arango-wiring.md"
+    },
+    {
+      "id": "TASK-867",
+      "slug": "searchresult-header-propagation",
+      "title": "Surface `contextual_header` in `SearchResult.metadata`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Audits postgres.py SearchResult constructions and asserts header round-trip; conflicts with TASK-863's edits to the same file.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-867-searchresult-header-propagation.md"
+    },
+    {
+      "id": "TASK-868",
+      "slug": "recompute-migration-script",
+      "title": "Migration script `recompute_contextual_embeddings.py`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file under scripts/; can run concurrently with TASK-867/869 once TASK-863 lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-868-recompute-migration-script.md"
+    },
+    {
+      "id": "TASK-869",
+      "slug": "contextual-embedding-docs",
+      "title": "Documentation page `docs/contextual-embedding.md`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Docs only; can run concurrently with TASK-867/868 once the API surface is stable (post TASK-863).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
     }
   ]
 }

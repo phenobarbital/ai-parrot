@@ -618,9 +618,14 @@ class PgVectorStore(AbstractStore):
                 "Pass table= or configure the store with a table name."
             )
 
-        texts = [doc.page_content for doc in documents]
-        embeddings = await self._embed_.embed_documents(texts)
-        metadatas = [doc.metadata for doc in documents]
+        # ── Contextual embedding (FEAT-127): swap bare page_content for
+        # metadata-header-augmented text when the flag is on.  The helper
+        # also writes metadata['contextual_header'] onto each Document.
+        texts_for_embed = self._apply_contextual_augmentation(documents)
+        embeddings = await self._embed_.embed_documents(texts_for_embed)
+        # Always persist the RAW chunk text, not the augmented text.
+        raw_texts = [doc.page_content for doc in documents]
+        metadatas = [doc.metadata for doc in documents]  # carries contextual_header now
 
         # Step 1: Ensure the ORM table matches the requested table/schema
         fq_table = f"{schema}.{table}"
@@ -649,7 +654,8 @@ class PgVectorStore(AbstractStore):
                 embedding_column: embeddings[i].tolist() if isinstance(
                     embeddings[i], np.ndarray
                 ) else embeddings[i],
-                content_column: texts[i].replace("\x00", ""),
+                # Store RAW page_content, not augmented text (FEAT-127).
+                content_column: raw_texts[i].replace("\x00", ""),
                 metadata_column: self._sanitize_metadata(metadatas[i] or {})
             }
             for i in range(len(documents))
@@ -2625,6 +2631,38 @@ class PgVectorStore(AbstractStore):
                 document_id=document_id,
                 metadata=document.metadata
             )
+
+            # ── Contextual embedding (FEAT-127): metadata-header wins ──────
+            # When both late-chunking (store_full_document) and
+            # contextual_embedding are enabled, the metadata-derived header
+            # takes precedence — late-chunking's neighbour-context embeddings
+            # are replaced by header-augmented ones (spec §8 Q3).
+            full_header: str = ""
+            if self.contextual_embedding:
+                # Re-embed the full parent document with the contextual header.
+                parent_view = Document(
+                    page_content=document.page_content,
+                    metadata=dict(document.metadata or {}),
+                )
+                [parent_text] = self._apply_contextual_augmentation([parent_view], _log=False)
+                [full_embedding] = await self._embed_.embed_documents([parent_text])
+                full_header = parent_view.metadata.get("contextual_header", "")
+
+                # Re-embed each chunk with its own contextual header.
+                # chunk_info.metadata inherits document_meta from the parent.
+                chunk_views = [
+                    Document(
+                        page_content=ci.chunk_text,
+                        metadata=dict(ci.metadata or {}),
+                    )
+                    for ci in chunk_infos
+                ]
+                chunk_texts = self._apply_contextual_augmentation(chunk_views, _log=False)
+                chunk_embeds = await self._embed_.embed_documents(chunk_texts)
+                for ci, view, emb in zip(chunk_infos, chunk_views, chunk_embeds):
+                    ci.chunk_embedding = emb
+                    ci.metadata = view.metadata  # now carries contextual_header
+
             # Store full document if requested
             if store_full_document:
                 full_doc_metadata = {
@@ -2635,27 +2673,44 @@ class PgVectorStore(AbstractStore):
                     'document_type': 'parent',
                     'chunking_strategy': 'late_chunking'
                 }
+                if self.contextual_embedding and full_header is not None:
+                    full_doc_metadata['contextual_header'] = full_header
 
+                full_emb = full_embedding.tolist() if isinstance(
+                    full_embedding, np.ndarray
+                ) else full_embedding
                 all_inserts.append({
                     self._id_column: document_id,
-                    embedding_column: full_embedding.tolist(),
-                    content_column: document.page_content,
+                    embedding_column: full_emb,
+                    content_column: document.page_content,  # always RAW
                     metadata_column: full_doc_metadata
                 })
                 stats['full_documents_stored'] += 1
 
             # Store all chunks
             for chunk_info in chunk_infos:
-                embed = chunk_info.chunk_embedding if isinstance(chunk_info.chunk_embedding, list) else chunk_info.chunk_embedding.tolist()
+                embed = (
+                    chunk_info.chunk_embedding
+                    if isinstance(chunk_info.chunk_embedding, list)
+                    else chunk_info.chunk_embedding.tolist()
+                )
                 all_inserts.append({
                     self._id_column: chunk_info.chunk_id,
                     embedding_column: embed,
-                    content_column: chunk_info.chunk_text,
+                    content_column: chunk_info.chunk_text,  # always RAW chunk text
                     metadata_column: chunk_info.metadata
                 })
                 stats['chunks_created'] += 1
 
             stats['documents_processed'] += 1
+
+        # Single summary log for contextual embedding (replaces the 2N per-doc
+        # lines that _apply_contextual_augmentation would emit if _log=True).
+        if self.contextual_embedding and documents:
+            self.logger.info(
+                "Contextual embedding (from_documents): processed %d source documents",
+                len(documents),
+            )
 
         # Bulk insert all data
         if all_inserts:
