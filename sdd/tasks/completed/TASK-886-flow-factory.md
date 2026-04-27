@@ -293,9 +293,22 @@ async def test_dispatch_error_routes_to_failure_handler(good_brief):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Implemented `build_dev_loop_flow` factory. Verified API
+against `parrot/bots/flow/fsm.py:316-700`: `AgentsFlow.__init__(name, ...
+enable_execution_memory=False)`, `add_agent(agent)`, `task_flow(source,
+targets, condition=ON_SUCCESS, predicate=...)`, `on_condition`,
+`on_error`. 10 topology unit tests inspect `flow.nodes` and
+`outgoing_transitions` directly. Both terminals (handoff + failure)
+are reachable through transitions; the test suite verifies the four
+global error routes from research/development/qa/handoff.
+**Deviations from spec**: AgentsFlow's `add_agent` API expects
+BasicAgent/AbstractBot shape, but the dev-loop nodes inherit from
+`parrot.bots.flow.node.Node`. Added a small `_NodeAgentAdapter`
+inside `flow.py` (private) that exposes `name`, `is_configured=True`,
+`ask(question, **kwargs)` and delegates back to
+`Node.execute(prompt, ctx)`. This is the minimal contract surface
+required by `AgentsFlow._ensure_agent_ready` + `FlowNode.execute`.
+Documented inline. The TASK-889 live integration test will exercise
+the full run path end-to-end.
