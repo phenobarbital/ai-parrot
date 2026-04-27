@@ -114,10 +114,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Added `"file_manager_toolkit": "parrot.tools.filemanager.FileManagerToolkit"` to
+`TOOL_REGISTRY` in `packages/ai-parrot-tools/src/parrot_tools/__init__.py`, placed directly
+after the existing `"file_manager"` entry. The `"file_manager"` entry remains unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

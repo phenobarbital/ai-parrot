@@ -15118,7 +15118,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -15131,7 +15131,8 @@
       "parallelism_notes": "End-to-end validation \u2014 requires full pipeline including bot integration and unit tests.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-868-benchmark-harness-and-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-868-benchmark-harness-and-integration-tests.md",
+      "completed_at": "2026-04-27T04:25:00.000000+00:00"
     },
     {
       "id": "TASK-869",
@@ -15178,7 +15179,7 @@
       "feature_id": "FEAT-127",
       "feature": "filemanagertool-migration-toolkit",
       "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15188,7 +15189,8 @@
       "parallelism_notes": "Only modifies parrot_tools/__init__.py \u2014 can run in parallel with TASK-870.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:57:38.220676Z",
-      "file": "sdd/tasks/active/TASK-871-filemanager-toolkit-registry.md"
+      "file": "sdd/tasks/completed/TASK-871-filemanager-toolkit-registry.md",
+      "completed_at": "2026-04-27T02:27:21.701398+00:00"
     },
     {
       "id": "TASK-872",
