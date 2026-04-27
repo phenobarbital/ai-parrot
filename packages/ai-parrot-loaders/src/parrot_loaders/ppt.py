@@ -403,12 +403,10 @@ class PowerPointLoader(AbstractLoader):
                 path=path,
                 doctype="pptx",
                 source_type="powerpoint",
-                doc_metadata={
-                    "total_slides": len(slides_data),
-                    "extraction_backend": self.backend,
-                    "output_format": self.output_format,
-                    "content_type": "full_document",
-                },
+                total_slides=len(slides_data),
+                extraction_backend=self.backend,
+                output_format=self.output_format,
+                content_type="full_document",
             )
             docs.append(
                 self.create_document(
@@ -472,11 +470,14 @@ class PowerPointLoader(AbstractLoader):
                 path=path,
                 doctype="pptx",
                 source_type="powerpoint",
-                doc_metadata={
-                    **slide_meta,
-                    "extraction_backend": self.backend,
-                    "output_format": self.output_format,
-                },
+                slide_number=slide_meta["slide_number"],
+                slide_title=slide_meta["slide_title"],
+                has_notes=slide_meta["has_notes"],
+                content_length=slide_meta["content_length"],
+                **{k: v for k, v in slide_meta.items()
+                   if k not in ("slide_number", "slide_title", "has_notes", "content_length")},
+                extraction_backend=self.backend,
+                output_format=self.output_format,
             )
 
             # Prepend semantic position markers only (filename/type/source

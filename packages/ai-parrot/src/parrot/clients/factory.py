@@ -16,6 +16,34 @@ def _lazy_gemma4():
     return Gemma4Client
 
 
+def _lazy_claude_agent():
+    """Lazy loader for :class:`ClaudeAgentClient`.
+
+    Importing :mod:`parrot.clients.claude_agent` is itself cheap (it does
+    not pull in :mod:`claude_agent_sdk` at module scope), but
+    instantiating the client and calling any of its methods will require
+    the optional ``ai-parrot[claude-agent]`` extra to be installed. This
+    loader catches a missing-SDK ``ImportError`` and re-raises it with an
+    actionable ``pip install`` hint so the failure surface at
+    :py:meth:`LLMFactory.create` time is clear.
+
+    Returns:
+        The :class:`ClaudeAgentClient` class.
+
+    Raises:
+        ImportError: When :mod:`claude_agent_sdk` cannot be imported,
+            wrapped with a hint to install the ``[claude-agent]`` extra.
+    """
+    try:
+        from .claude_agent import ClaudeAgentClient
+        return ClaudeAgentClient
+    except ImportError as exc:
+        raise ImportError(
+            "ClaudeAgentClient requires claude-agent-sdk. "
+            "Install with: pip install ai-parrot[claude-agent]"
+        ) from exc
+
+
 SUPPORTED_CLIENTS = {
     "claude": AnthropicClient,
     "anthropic": AnthropicClient,
@@ -32,6 +60,8 @@ SUPPORTED_CLIENTS = {
     "vllm": vLLMClient,
     "llamacpp": LocalLLMClient,
     "gemma4": _lazy_gemma4,
+    "claude-agent": _lazy_claude_agent,
+    "claude-code": _lazy_claude_agent,
 }
 
 

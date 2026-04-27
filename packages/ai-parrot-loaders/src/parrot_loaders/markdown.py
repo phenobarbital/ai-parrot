@@ -429,23 +429,18 @@ class MarkdownLoader(AbstractLoader):
                     for section in sections:
                         section_type = "chapter" if self.use_chapters else "section"
 
-                        document_meta = {
-                            "filename": path.name,
-                            "file_path": str(path),
-                            "document_type": doc_type,
-                            "section_title": section['title'],
-                            "section_number": section['section_number'],
-                            "header_level": section['level'],
-                            "content_type": section_type,
-                            "extracted_metadata": extracted_metadata,
-                            **extracted_metadata
-                        }
-
                         meta = self.create_metadata(
                             path=path,
                             doctype="markdown",
                             source_type=f"markitdown_{section_type}",
-                            doc_metadata=document_meta,
+                            title=extracted_metadata.get("title") or section['title'] or None,
+                            document_type=doc_type,
+                            section_title=section['title'],
+                            section_number=section['section_number'],
+                            header_level=section['level'],
+                            content_type=section_type,
+                            extracted_metadata=extracted_metadata,
+                            **{k: v for k, v in extracted_metadata.items() if k != "title"},
                         )
 
                         docs.append(
@@ -473,11 +468,11 @@ class MarkdownLoader(AbstractLoader):
                         path=path,
                         doctype="markdown",
                         source_type="markitdown_summary",
-                        doc_metadata={
-                            "summary_for_sections": len(docs),
-                            "document_type": doc_type,
-                            **extracted_metadata
-                        }
+                        title=extracted_metadata.get("title") or None,
+                        summary_for_sections=len(docs),
+                        document_type=doc_type,
+                        extracted_metadata=extracted_metadata,
+                        **{k: v for k, v in extracted_metadata.items() if k != "title"},
                     )
 
                     docs.append(
@@ -504,20 +499,15 @@ class MarkdownLoader(AbstractLoader):
         extracted_metadata: dict
     ):
         """Helper method to create a single document from markdown text."""
-        document_meta = {
-            "filename": path.name,
-            "file_path": str(path),
-            "document_type": doc_type,
-            "content_type": "full_document",
-            "extracted_metadata": extracted_metadata,
-            **extracted_metadata
-        }
-
         meta = self.create_metadata(
             path=path,
             doctype="markdown",
             source_type="markitdown_full",
-            doc_metadata=document_meta,
+            title=extracted_metadata.get("title") or None,
+            document_type=doc_type,
+            content_type="full_document",
+            extracted_metadata=extracted_metadata,
+            **{k: v for k, v in extracted_metadata.items() if k != "title"},
         )
 
         docs.append(

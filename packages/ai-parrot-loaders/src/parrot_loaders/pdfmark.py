@@ -347,22 +347,19 @@ class PDFMarkdownLoader(BasePDF):
             )
             summary = ''
 
-        # Create base metadata
-        base_metadata = {
-            "url": '',
-            "filename": path.name if hasattr(path, 'name') else str(path).rsplit('/', maxsplit=1)[-1],  # noqa
-            "source": str(path.name if hasattr(path, 'name') else path),
-            "type": 'pdf',
-            "data": {},
-            "category": self.category,
-            "source_type": self._source_type,
-            "conversion_backend": self.markdown_backend,
-            "document_meta": {
-                "title": pdf_metadata.get("title", ""),
-                "creationDate": pdf_metadata.get("creationDate", ""),
-                "author": pdf_metadata.get("author", ""),
-            }
-        }
+        # Create base metadata via create_metadata for canonical shape.
+        # pdf_metadata["title"] overrides the path-derived title when non-empty.
+        # Non-canonical PDF fields (author, creationDate, backend) go to top level.
+        _pdf_title = pdf_metadata.get("title") or None
+        base_metadata = self.create_metadata(
+            path,
+            doctype=self.doctype,
+            source_type=self._source_type,
+            title=_pdf_title,
+            conversion_backend=self.markdown_backend,
+            pdf_author=pdf_metadata.get("author", ""),
+            pdf_creation_date=pdf_metadata.get("creationDate", ""),
+        )
 
         # Add summary document if available
         if summary:

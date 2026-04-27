@@ -159,19 +159,18 @@ class ImageLoader(AbstractLoader):
         # Render Markdown
         md_text = render_markdown(layout)
 
-        # Build metadata
+        # Build metadata — language is canonical (goes to document_meta);
+        # all other fields are non-canonical extras at top level.
         meta = self.create_metadata(
             path=path,
             doctype=getattr(self, "doctype", "image"),
             source_type=getattr(self, "source_type", "image_ocr"),
-            doc_metadata={
-                "ocr_backend": self._backend.__class__.__name__,
-                "layout_model": self._layout_model or "heuristic",
-                "avg_confidence": layout.avg_confidence,
-                "image_dimensions": (image.width, image.height),
-                "table_count": len(layout.tables),
-                "language": self._language,
-            },
+            language=self._language,
+            ocr_backend=self._backend.__class__.__name__,
+            layout_model=self._layout_model or "heuristic",
+            avg_confidence=layout.avg_confidence,
+            image_dimensions=(image.width, image.height),
+            table_count=len(layout.tables),
         )
 
         return [self.create_document(content=md_text, path=path, metadata=meta)]

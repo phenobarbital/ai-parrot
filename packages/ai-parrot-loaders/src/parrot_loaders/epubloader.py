@@ -222,6 +222,16 @@ class EpubLoader(AbstractLoader):
             self.logger.error(f"Failed to open EPUB {path}: {e}")
             return docs
 
+        # Extract dc:language from EPUB metadata when available.
+        epub_language: Optional[str] = None
+        try:
+            dc_lang = book.get_metadata('DC', 'language')
+            if dc_lang:
+                epub_language = dc_lang[0][0]
+        except Exception:
+            pass
+        _language = epub_language or self.language
+
         toc_map = self._toc_title_lookup(book)
 
         # Optionally create a separate TOC document
@@ -234,10 +244,9 @@ class EpubLoader(AbstractLoader):
                 path=path,
                 doctype="epub",
                 source_type="epub_toc",
-                doc_metadata={
-                    "content_type": "toc",
-                    "entries": len(toc_map)
-                },
+                language=_language,
+                content_type="toc",
+                entries=len(toc_map),
             )
             docs.append(self.create_document(toc_content, path, toc_meta))
 
@@ -268,14 +277,14 @@ class EpubLoader(AbstractLoader):
                     path=path,
                     doctype="epub",
                     source_type="epub_section",
-                    doc_metadata={
-                        "section_order": order_idx + 1,
-                        "section_title": title,
-                        "href": href,
-                        "content_type": "chapter",
-                        "output_format": "markdown" if self.as_markdown else "text",
-                        "min_section_length": self.min_section_length
-                    },
+                    language=_language,
+                    title=title or None,
+                    section_order=order_idx + 1,
+                    section_title=title,
+                    href=href,
+                    content_type="chapter",
+                    output_format="markdown" if self.as_markdown else "text",
+                    min_section_length=self.min_section_length,
                 )
 
                 # Prepend semantic position markers only (filename/type/source
@@ -303,11 +312,10 @@ class EpubLoader(AbstractLoader):
                 path=path,
                 doctype="epub",
                 source_type="epub_full",
-                doc_metadata={
-                    "sections": len(all_sections),
-                    "content_type": "full_document",
-                    "output_format": "markdown" if self.as_markdown else "text",
-                },
+                language=_language,
+                sections=len(all_sections),
+                content_type="full_document",
+                output_format="markdown" if self.as_markdown else "text",
             )
             docs.append(self.create_document(book_text, path, full_meta))
 

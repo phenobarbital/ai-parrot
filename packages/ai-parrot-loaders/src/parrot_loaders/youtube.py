@@ -290,29 +290,22 @@ class YoutubeLoader(VideoLoader):
                     summary = ''
 
                 # Metadata
-                base_metadata = {
-                    "url": url,
-                    "source": url,
-                    "filename": video_title or video_info.get("title") or url,
-                    "question": '',
-                    "answer": '',
-                    "source_type": self._source_type,
-                    "type": "video_transcript",
-                    "summary": f"{summary!s}",
-                    "document_meta": {
-                        "language": self._language,
-                        "title": video_title or video_info.get("title") or url,
-                        "docinfo": video_info,
-                    },
-                }
-
-                if self.topics:
-                    base_metadata["document_meta"]['topic_tags'] = self.topics
+                base_metadata = self.create_metadata(
+                    url,
+                    doctype='video_transcript',
+                    source_type=self._source_type,
+                    title=video_title or video_info.get("title") or url,
+                    question='',
+                    answer='',
+                    summary=f"{summary!s}",
+                    docinfo=video_info,
+                    topic_tags=self.topics or [],
+                )
 
                 # Create main transcript document
                 doc = Document(
                     page_content=transcript_text,
-                    metadata=base_metadata.copy()
+                    metadata=base_metadata,
                 )
                 documents.append(doc)
 
@@ -321,23 +314,36 @@ class YoutubeLoader(VideoLoader):
                 if vtt_content:
                     vtt_doc = Document(
                         page_content=vtt_content,
-                        metadata=base_metadata.copy()
+                        metadata=self.create_metadata(
+                            url,
+                            doctype='video_vtt',
+                            source_type=self._source_type,
+                            title=video_title or video_info.get("title") or url,
+                            summary=f"{summary!s}",
+                            topic_tags=self.topics or [],
+                        ),
                     )
                     documents.append(vtt_doc)
 
                 # Create individual dialog chunk documents
                 dialogs = self.transcript_to_blocks(transcript_whisper)
                 for chunk in dialogs:
-                    chunk_metadata = base_metadata.copy()
-                    chunk_metadata["document_meta"].update({
-                        "start": f"{chunk['start_time']}",
-                        "end": f"{chunk['end_time']}",
-                        "id": f"{chunk['id']}",
-                    })
-
+                    _chunk_meta = self.create_metadata(
+                        url,
+                        doctype='video_dialog',
+                        source_type=self._source_type,
+                        title=video_title or video_info.get("title") or url,
+                        question='',
+                        answer='',
+                        summary=f"{summary!s}",
+                        topic_tags=self.topics or [],
+                        start=str(chunk['start_time']),
+                        end=str(chunk['end_time']),
+                        chunk_id=str(chunk['id']),
+                    )
                     doc = Document(
                         page_content=chunk['text'],
-                        metadata=chunk_metadata
+                        metadata=_chunk_meta,
                     )
                     docs.append(doc)
 
@@ -363,27 +369,19 @@ class YoutubeLoader(VideoLoader):
                     self.logger.warning(f"Error summarizing transcript for {url}: {e}")
                     summary = ''
 
-                metadata = {
-                    "source": url,
-                    "url": url,
-                    "filename": video_title,
-                    "question": '',
-                    "answer": '',
-                    "source_type": self._source_type,
-                    'type': 'video_transcript',
-                    'summary': f"{summary!s}",
-                    "document_meta": {
-                        "language": self._language,
-                        "title": video_title
-                    },
-                }
-
-                if self.topics:
-                    metadata['document_meta']['topic_tags'] = self.topics
-
+                metadata = self.create_metadata(
+                    url,
+                    doctype='video_transcript',
+                    source_type=self._source_type,
+                    title=video_title,
+                    question='',
+                    answer='',
+                    summary=f"{summary!s}",
+                    topic_tags=self.topics or [],
+                )
                 doc = Document(
                     page_content=transcript_content,
-                    metadata=metadata
+                    metadata=metadata,
                 )
                 return [doc]
 
@@ -406,20 +404,17 @@ class YoutubeLoader(VideoLoader):
                 summary = await self.summary_from_text(transcript_text)
             except Exception:
                 summary = ''
-            metadata = {
-                "source": url,
-                "url": url,
-                "source_type": self._source_type,
-                "summary": f"{summary!s}",
-                "filename": video_info.get('title', 'Unknown'),
-                "question": '',
-                "answer": '',
-                "type": "video_transcript",
-                "document_meta": video_info,
-            }
-            if self.topics:
-                metadata['document_meta']['topic_tags'] = self.topics
-
+            metadata = self.create_metadata(
+                url,
+                doctype='video_transcript',
+                source_type=self._source_type,
+                title=video_info.get('title', 'Unknown'),
+                question='',
+                answer='',
+                summary=f"{summary!s}",
+                docinfo=video_info,
+                topic_tags=self.topics or [],
+            )
             return [Document(page_content=transcript_text, metadata=metadata)]
         except Exception as e:
             self.logger.error(f"Fallback processing failed for {url}: {e}")
@@ -464,19 +459,19 @@ class YoutubeLoader(VideoLoader):
         await self.save_file_async(transcript_path, transcript_text.encode('utf-8'))
 
         # Create metadata
-        metadata = {
-            "url": f"{url}",
-            "source": f"{url}",
-            "source_type": self._source_type,
-            'type': 'video_transcript',
-            "summary": f"{summary!s}",
-            "video_info": video_info,
-            "transcript": transcript_path,
-            "summary_file": summary_path,
-            "vtt": vtt_path,
-            "audio": audio_path,
-            "video": file_path
-        }
+        metadata = self.create_metadata(
+            url,
+            doctype='video_transcript',
+            source_type=self._source_type,
+            title=video_info.get('title', url),
+            summary=f"{summary!s}",
+            video_info=video_info,
+            transcript=transcript_path,
+            summary_file=summary_path,
+            vtt=vtt_path,
+            audio=audio_path,
+            video=file_path,
+        )
 
         return metadata
 

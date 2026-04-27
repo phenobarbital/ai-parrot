@@ -231,24 +231,18 @@ class ExcelLoader(AbstractLoader):
                 body_parts = [structural_summary] + table_sections
                 full_content = context_header + "\n\n" + "\n\n".join(body_parts)
 
-                # Metadata
-                doc_meta = {
-                    "filename": path.name if hasattr(path, 'name') else str(path),
-                    "file_path": str(path),
-                    "sheet": sheet_name,
-                    "content_type": "sheet",
-                    "table_count": len(sheet_analysis.tables),
-                    "tables": table_ids,
-                    "total_rows": sheet_analysis.total_rows,
-                    "total_cols": sheet_analysis.total_cols,
-                    "output_format": self.output_format,
-                }
-
+                # Metadata — non-canonical extras as explicit kwargs.
                 meta = self.create_metadata(
                     path=path,
                     doctype="excel",
                     source_type="excel_sheet",
-                    doc_metadata=doc_meta,
+                    sheet=sheet_name,
+                    content_type="sheet",
+                    table_count=len(sheet_analysis.tables),
+                    tables=table_ids,
+                    total_rows=sheet_analysis.total_rows,
+                    total_cols=sheet_analysis.total_cols,
+                    output_format=self.output_format,
                 )
 
                 docs.append(self.create_document(full_content, path, meta))
@@ -339,22 +333,16 @@ class ExcelLoader(AbstractLoader):
 
             full_content = "\n".join(context) + "\n======\n\n" + content_body
 
-            # Metadata
-            doc_meta = {
-                "filename": path_hint.name if hasattr(path_hint, 'name') else str(path_hint),
-                "file_path": str(path_hint),
-                "sheet": sheet_name,
-                "row_index": i,
-                "columns": list(df.columns),
-                "content_type": "row",
-                "output_format": self.output_format,
-            }
-
+            # Metadata — non-canonical extras as explicit kwargs.
             meta = self.create_metadata(
                 path=path_hint,
                 doctype="excel",
                 source_type="excel_row",
-                doc_metadata=doc_meta,
+                sheet=sheet_name,
+                row_index=i,
+                columns=list(df.columns),
+                content_type="row",
+                output_format=self.output_format,
             )
 
             docs.append(

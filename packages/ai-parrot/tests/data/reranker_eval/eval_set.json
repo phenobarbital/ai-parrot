@@ -1,0 +1,532 @@
+[
+  {
+    "query": "What programming language is best for machine learning?",
+    "passages": [
+      {"id": "p1", "text": "Python is widely used in machine learning due to its extensive libraries like NumPy, Pandas, and scikit-learn.", "relevance": 2},
+      {"id": "p2", "text": "JavaScript is a popular language for web development and front-end programming.", "relevance": 0},
+      {"id": "p3", "text": "PyTorch and TensorFlow are the leading deep learning frameworks, both built on Python.", "relevance": 2},
+      {"id": "p4", "text": "R is a statistical programming language often used in data science.", "relevance": 1},
+      {"id": "p5", "text": "The best pizza restaurants in New York City serve authentic Neapolitan pies.", "relevance": 0}
+    ]
+  },
+  {
+    "query": "How do neural networks learn?",
+    "passages": [
+      {"id": "p1", "text": "Neural networks learn through backpropagation, adjusting weights based on the gradient of the loss function.", "relevance": 2},
+      {"id": "p2", "text": "The human brain contains approximately 86 billion neurons connected by synapses.", "relevance": 1},
+      {"id": "p3", "text": "Gradient descent is the optimization algorithm used to update neural network weights during training.", "relevance": 2},
+      {"id": "p4", "text": "Cooking pasta requires boiling water with a pinch of salt for best results.", "relevance": 0},
+      {"id": "p5", "text": "Overfitting occurs when a model learns the training data too well and fails to generalize.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the difference between supervised and unsupervised learning?",
+    "passages": [
+      {"id": "p1", "text": "Supervised learning uses labeled training data where the correct output is known, while unsupervised learning finds patterns in unlabeled data.", "relevance": 2},
+      {"id": "p2", "text": "Clustering algorithms like K-means are examples of unsupervised learning methods.", "relevance": 2},
+      {"id": "p3", "text": "Classification and regression are common supervised learning tasks.", "relevance": 2},
+      {"id": "p4", "text": "The stock market closed higher today driven by technology sector gains.", "relevance": 0},
+      {"id": "p5", "text": "Reinforcement learning is a third paradigm where an agent learns by interacting with an environment.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to prevent overfitting in deep learning?",
+    "passages": [
+      {"id": "p1", "text": "Dropout randomly deactivates neurons during training to prevent overfitting.", "relevance": 2},
+      {"id": "p2", "text": "Regularization techniques like L1 and L2 penalize large weights to reduce overfitting.", "relevance": 2},
+      {"id": "p3", "text": "Data augmentation increases the diversity of training data by applying transformations.", "relevance": 2},
+      {"id": "p4", "text": "Early stopping halts training when validation performance starts to deteriorate.", "relevance": 2},
+      {"id": "p5", "text": "The Great Wall of China stretches over 13,000 miles across northern China.", "relevance": 0}
+    ]
+  },
+  {
+    "query": "What is transformer architecture?",
+    "passages": [
+      {"id": "p1", "text": "The transformer architecture uses self-attention mechanisms to process sequential data in parallel.", "relevance": 2},
+      {"id": "p2", "text": "BERT and GPT are popular transformer-based language models used in NLP tasks.", "relevance": 2},
+      {"id": "p3", "text": "The attention mechanism allows models to focus on relevant parts of the input sequence.", "relevance": 2},
+      {"id": "p4", "text": "Electrical transformers step up or step down voltage in power distribution systems.", "relevance": 0},
+      {"id": "p5", "text": "Recurrent neural networks process sequences one element at a time.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "applications employees need to download",
+    "passages": [
+      {"id": "p1", "text": "Web applications to use: employees should access the HR portal, the expense tracking tool, and the project management system.", "relevance": 2},
+      {"id": "p2", "text": "The company uses Microsoft Teams, Slack, and Zoom for internal communication.", "relevance": 2},
+      {"id": "p3", "text": "Required software for new employees includes the VPN client and the company's document management system.", "relevance": 2},
+      {"id": "p4", "text": "The annual company picnic will be held on July 15th at the main campus.", "relevance": 0},
+      {"id": "p5", "text": "IT support can be reached at extension 5555 for technical assistance.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the onboarding process for new employees?",
+    "passages": [
+      {"id": "p1", "text": "New staff members should complete orientation on their first day, including HR paperwork and system access setup.", "relevance": 2},
+      {"id": "p2", "text": "The employee handbook covers all company policies and procedures for personnel joining the organization.", "relevance": 2},
+      {"id": "p3", "text": "Quarterly earnings reports show strong performance in all business segments.", "relevance": 0},
+      {"id": "p4", "text": "New hires are assigned a mentor from their team to help them get started.", "relevance": 2},
+      {"id": "p5", "text": "Building access cards are issued by the security office on the first day of employment.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How do I request time off?",
+    "passages": [
+      {"id": "p1", "text": "Vacation requests must be submitted through the HR portal at least two weeks in advance.", "relevance": 2},
+      {"id": "p2", "text": "Leave of absence forms are available in the HR section of the company intranet.", "relevance": 2},
+      {"id": "p3", "text": "The best way to spend your vacation is to visit a tropical beach resort.", "relevance": 0},
+      {"id": "p4", "text": "Sick leave can be taken without advance notice; notify your manager before the start of the workday.", "relevance": 2},
+      {"id": "p5", "text": "Annual leave is accrued at a rate of 1.5 days per month for full-time employees.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "Where is the company headquarters located?",
+    "passages": [
+      {"id": "p1", "text": "Our main office is situated at 123 Business Park Drive in downtown Chicago.", "relevance": 2},
+      {"id": "p2", "text": "Regional offices are located in New York, Los Angeles, and London.", "relevance": 1},
+      {"id": "p3", "text": "The nearest parking garage is two blocks away on Oak Street.", "relevance": 1},
+      {"id": "p4", "text": "Machine learning models require significant computational resources for training.", "relevance": 0},
+      {"id": "p5", "text": "Visitor check-in is at the front desk on the ground floor.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What health insurance options are available?",
+    "passages": [
+      {"id": "p1", "text": "The company offers three health plan options: HMO, PPO, and High Deductible Health Plan with HSA.", "relevance": 2},
+      {"id": "p2", "text": "Open enrollment for benefits takes place annually in November.", "relevance": 1},
+      {"id": "p3", "text": "Dental and vision coverage is available as an add-on to the base health insurance.", "relevance": 2},
+      {"id": "p4", "text": "The cafeteria on the 3rd floor offers healthy meal options every weekday.", "relevance": 0},
+      {"id": "p5", "text": "Employees can contact HR directly for questions about their benefits package.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How is performance review conducted?",
+    "passages": [
+      {"id": "p1", "text": "Annual performance evaluations are completed in December based on goals set at the beginning of the year.", "relevance": 2},
+      {"id": "p2", "text": "360-degree feedback is collected from peers, direct reports, and managers.", "relevance": 2},
+      {"id": "p3", "text": "Performance improvement plans are created for employees who do not meet expectations.", "relevance": 2},
+      {"id": "p4", "text": "The company's stock price reached an all-time high in the third quarter.", "relevance": 0},
+      {"id": "p5", "text": "Mid-year check-ins allow managers and employees to discuss progress and adjust goals.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is transfer learning in AI?",
+    "passages": [
+      {"id": "p1", "text": "Transfer learning involves taking a model trained on one task and fine-tuning it for a different but related task.", "relevance": 2},
+      {"id": "p2", "text": "Pre-trained models like BERT and ResNet can be fine-tuned for specific applications with minimal data.", "relevance": 2},
+      {"id": "p3", "text": "Domain adaptation is a form of transfer learning that deals with distribution shift between source and target domains.", "relevance": 1},
+      {"id": "p4", "text": "International wire transfers typically take 3-5 business days to process.", "relevance": 0},
+      {"id": "p5", "text": "Zero-shot learning enables models to perform tasks they were not explicitly trained on.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is retrieval-augmented generation?",
+    "passages": [
+      {"id": "p1", "text": "RAG combines a retrieval system with a language model, allowing the model to access external knowledge during generation.", "relevance": 2},
+      {"id": "p2", "text": "Vector databases store document embeddings for semantic similarity search in RAG pipelines.", "relevance": 2},
+      {"id": "p3", "text": "Hallucination in language models can be reduced by grounding responses in retrieved facts.", "relevance": 1},
+      {"id": "p4", "text": "The water cycle describes how water evaporates, condenses, and precipitates.", "relevance": 0},
+      {"id": "p5", "text": "Reranking retrieved documents improves the quality of context provided to the language model.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "How do embeddings work in NLP?",
+    "passages": [
+      {"id": "p1", "text": "Word embeddings map words to dense vector representations that capture semantic relationships.", "relevance": 2},
+      {"id": "p2", "text": "Word2Vec and GloVe are classical methods for learning word embeddings from large corpora.", "relevance": 2},
+      {"id": "p3", "text": "Contextual embeddings from transformers like BERT represent words differently depending on context.", "relevance": 2},
+      {"id": "p4", "text": "Embedding dimensions for production models typically range from 256 to 1536.", "relevance": 1},
+      {"id": "p5", "text": "The chef prepared an elaborate five-course meal for the restaurant's anniversary.", "relevance": 0}
+    ]
+  },
+  {
+    "query": "What is cross-entropy loss?",
+    "passages": [
+      {"id": "p1", "text": "Cross-entropy loss measures the performance of a classification model by comparing predicted probabilities with true labels.", "relevance": 2},
+      {"id": "p2", "text": "Binary cross-entropy is used for binary classification problems, while categorical cross-entropy is used for multi-class tasks.", "relevance": 2},
+      {"id": "p3", "text": "The loss function is minimized during training via gradient descent.", "relevance": 1},
+      {"id": "p4", "text": "The Golden Gate Bridge opened in 1937 and spans 1.7 miles across the San Francisco Bay.", "relevance": 0},
+      {"id": "p5", "text": "Focal loss is a variant of cross-entropy that addresses class imbalance by focusing on hard examples.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How does semantic search differ from keyword search?",
+    "passages": [
+      {"id": "p1", "text": "Semantic search uses vector embeddings to find conceptually related documents even when exact keywords don't match.", "relevance": 2},
+      {"id": "p2", "text": "Keyword-based search (BM25, TF-IDF) relies on exact word matches between query and documents.", "relevance": 2},
+      {"id": "p3", "text": "Hybrid search combines dense and sparse retrieval to leverage the benefits of both approaches.", "relevance": 2},
+      {"id": "p4", "text": "The morning yoga class starts at 7 AM in the company wellness center.", "relevance": 0},
+      {"id": "p5", "text": "Vocabulary mismatch is a key limitation of keyword search that semantic search addresses.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "What is the expense reimbursement process?",
+    "passages": [
+      {"id": "p1", "text": "Business expenses must be submitted within 30 days using the expense management system with receipts attached.", "relevance": 2},
+      {"id": "p2", "text": "Travel expenses above $500 require pre-approval from your department manager.", "relevance": 2},
+      {"id": "p3", "text": "Reimbursements are processed within 10 business days and paid via direct deposit.", "relevance": 2},
+      {"id": "p4", "text": "The company headquarters is located in the financial district.", "relevance": 0},
+      {"id": "p5", "text": "Meal expenses during business travel are capped at $75 per day.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to connect to the VPN?",
+    "passages": [
+      {"id": "p1", "text": "To access company resources remotely, install the Cisco AnyConnect VPN client from the IT portal.", "relevance": 2},
+      {"id": "p2", "text": "Enter your employee credentials and the VPN server address: vpn.company.com.", "relevance": 2},
+      {"id": "p3", "text": "Two-factor authentication is required for VPN access; use the Authenticator app on your phone.", "relevance": 2},
+      {"id": "p4", "text": "Network latency affects the performance of real-time applications.", "relevance": 0},
+      {"id": "p5", "text": "IT support can help troubleshoot VPN connectivity issues at extension 4400.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What are the steps to submit a support ticket?",
+    "passages": [
+      {"id": "p1", "text": "Log in to the IT helpdesk portal at help.company.com to create a new support ticket.", "relevance": 2},
+      {"id": "p2", "text": "Describe your issue clearly, including any error messages and the steps to reproduce the problem.", "relevance": 2},
+      {"id": "p3", "text": "Priority tickets are responded to within 4 hours; standard tickets within one business day.", "relevance": 1},
+      {"id": "p4", "text": "The break room on the 5th floor has a coffee machine and a microwave.", "relevance": 0},
+      {"id": "p5", "text": "For urgent issues, call the IT hotline at 1-800-IT-HELP.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to reset my password?",
+    "passages": [
+      {"id": "p1", "text": "Navigate to the self-service password reset portal at password.company.com and verify your identity.", "relevance": 2},
+      {"id": "p2", "text": "Passwords must be at least 12 characters and include uppercase, lowercase, numbers, and symbols.", "relevance": 1},
+      {"id": "p3", "text": "Account lockouts due to failed login attempts are automatically resolved after 30 minutes.", "relevance": 1},
+      {"id": "p4", "text": "The quarterly earnings call will be held on October 25th.", "relevance": 0},
+      {"id": "p5", "text": "Contact the IT helpdesk if you are unable to reset your password through the self-service portal.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "What is the policy for remote work?",
+    "passages": [
+      {"id": "p1", "text": "Employees in eligible roles may work remotely up to three days per week with manager approval.", "relevance": 2},
+      {"id": "p2", "text": "Remote workers must maintain a dedicated workspace and be available during core hours (9 AM - 3 PM local time).", "relevance": 2},
+      {"id": "p3", "text": "A reliable internet connection with minimum 25 Mbps download speed is required for remote work.", "relevance": 1},
+      {"id": "p4", "text": "The company cafeteria serves breakfast from 7:30 AM to 9:00 AM.", "relevance": 0},
+      {"id": "p5", "text": "Remote work requests for more than three days per week require HR approval.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "What are the conference room booking procedures?",
+    "passages": [
+      {"id": "p1", "text": "Conference rooms can be reserved through the room booking system on the company intranet.", "relevance": 2},
+      {"id": "p2", "text": "Rooms should be cancelled at least one hour before the scheduled time if no longer needed.", "relevance": 2},
+      {"id": "p3", "text": "The executive boardroom requires VP-level approval for booking.", "relevance": 1},
+      {"id": "p4", "text": "Deep learning models have achieved superhuman performance on many computer vision tasks.", "relevance": 0},
+      {"id": "p5", "text": "Meeting rooms are equipped with video conferencing capabilities.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to access the employee self-service portal?",
+    "passages": [
+      {"id": "p1", "text": "The employee self-service portal is accessible at myhr.company.com using your company credentials.", "relevance": 2},
+      {"id": "p2", "text": "In the portal, you can view payslips, update personal information, and manage benefits.", "relevance": 2},
+      {"id": "p3", "text": "New employees receive access credentials via email on their first day.", "relevance": 1},
+      {"id": "p4", "text": "Reinforcement learning from human feedback has improved language model alignment.", "relevance": 0},
+      {"id": "p5", "text": "The mobile app version of the portal is available for iOS and Android.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What training programs are available for skill development?",
+    "passages": [
+      {"id": "p1", "text": "The company provides access to Coursera and LinkedIn Learning for professional development.", "relevance": 2},
+      {"id": "p2", "text": "Technical training workshops are offered monthly by the IT department.", "relevance": 2},
+      {"id": "p3", "text": "Employees can request training budget approval from their manager for external courses.", "relevance": 2},
+      {"id": "p4", "text": "The gym membership discount is available through the HR benefits program.", "relevance": 0},
+      {"id": "p5", "text": "Leadership development programs are available for high-potential employees.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the process for software installation requests?",
+    "passages": [
+      {"id": "p1", "text": "Software installation requests must be submitted to IT through the helpdesk with business justification.", "relevance": 2},
+      {"id": "p2", "text": "Standard software listed in the approved catalog can be self-installed via the Software Center app.", "relevance": 2},
+      {"id": "p3", "text": "Non-standard software requires IT security review before installation is approved.", "relevance": 2},
+      {"id": "p4", "text": "The company parking lot is available from 7 AM to 7 PM on weekdays.", "relevance": 0},
+      {"id": "p5", "text": "All software must be properly licensed; unlicensed software installation is prohibited.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How is the annual bonus calculated?",
+    "passages": [
+      {"id": "p1", "text": "Annual bonuses are calculated based on individual performance rating and company financial performance.", "relevance": 2},
+      {"id": "p2", "text": "Target bonus percentages range from 5% to 20% of base salary depending on the role.", "relevance": 2},
+      {"id": "p3", "text": "Bonus payments are made in February following the performance review cycle.", "relevance": 1},
+      {"id": "p4", "text": "The office holiday party is scheduled for December 18th.", "relevance": 0},
+      {"id": "p5", "text": "Employees must be actively employed on the bonus payment date to receive the award.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What documents are needed for travel reimbursement?",
+    "passages": [
+      {"id": "p1", "text": "Original receipts for all expenses over $25 must be submitted along with the expense report.", "relevance": 2},
+      {"id": "p2", "text": "Flight and hotel bookings should be made through the corporate travel portal.", "relevance": 2},
+      {"id": "p3", "text": "International travel requires a completed travel request form approved by a VP at least two weeks in advance.", "relevance": 2},
+      {"id": "p4", "text": "The company has partnerships with major hotel chains for discounted rates.", "relevance": 1},
+      {"id": "p5", "text": "Autonomous vehicles are being tested in urban environments worldwide.", "relevance": 0}
+    ]
+  },
+  {
+    "query": "What is the code of conduct policy?",
+    "passages": [
+      {"id": "p1", "text": "All employees are expected to uphold the highest standards of professional behavior and ethical conduct.", "relevance": 2},
+      {"id": "p2", "text": "Conflicts of interest must be disclosed to HR and management immediately upon discovery.", "relevance": 2},
+      {"id": "p3", "text": "Harassment and discrimination in any form are strictly prohibited and subject to immediate disciplinary action.", "relevance": 2},
+      {"id": "p4", "text": "The company newsletter is published on the first Monday of each month.", "relevance": 0},
+      {"id": "p5", "text": "Employees must complete the annual ethics training course by December 31st.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to report a security incident?",
+    "passages": [
+      {"id": "p1", "text": "Security incidents including data breaches, phishing attempts, and unauthorized access must be reported immediately to the security team.", "relevance": 2},
+      {"id": "p2", "text": "Use the security incident reporting form at security.company.com or call the security hotline.", "relevance": 2},
+      {"id": "p3", "text": "Do not forward suspicious emails; instead, use the report phishing button in your email client.", "relevance": 2},
+      {"id": "p4", "text": "The company provides free annual flu vaccinations to all employees.", "relevance": 0},
+      {"id": "p5", "text": "Lost or stolen company devices must be reported within one hour of discovery.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "What is the parental leave policy?",
+    "passages": [
+      {"id": "p1", "text": "Primary caregivers are entitled to 16 weeks of fully paid parental leave.", "relevance": 2},
+      {"id": "p2", "text": "Secondary caregivers receive 4 weeks of fully paid parental leave.", "relevance": 2},
+      {"id": "p3", "text": "Parental leave can commence up to 4 weeks before the expected birth date.", "relevance": 1},
+      {"id": "p4", "text": "The company supports parents with a backup childcare benefit of 10 days per year.", "relevance": 1},
+      {"id": "p5", "text": "The annual sales conference will be held in Las Vegas this year.", "relevance": 0}
+    ]
+  },
+  {
+    "query": "How do I access company email on my phone?",
+    "passages": [
+      {"id": "p1", "text": "Install Microsoft Outlook on your iOS or Android device and configure it with your company email address.", "relevance": 2},
+      {"id": "p2", "text": "Mobile device enrollment in the MDM system is required before accessing company email on personal devices.", "relevance": 2},
+      {"id": "p3", "text": "Company email is accessible via browser at mail.company.com when away from the office.", "relevance": 2},
+      {"id": "p4", "text": "Attention mechanism in transformers allows the model to weigh the importance of different input tokens.", "relevance": 0},
+      {"id": "p5", "text": "Contact IT for assistance with mobile email configuration.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the policy on using personal devices for work?",
+    "passages": [
+      {"id": "p1", "text": "The BYOD (Bring Your Own Device) policy allows employees to use personal devices for work with MDM enrollment.", "relevance": 2},
+      {"id": "p2", "text": "Personal devices must comply with the company's security standards including encryption and screen lock.", "relevance": 2},
+      {"id": "p3", "text": "Company data on personal devices is subject to remote wipe if the device is lost or stolen.", "relevance": 2},
+      {"id": "p4", "text": "The company softball team practices every Wednesday evening.", "relevance": 0},
+      {"id": "p5", "text": "Employees are responsible for keeping personal devices updated with the latest security patches.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What happens during a fire drill?",
+    "passages": [
+      {"id": "p1", "text": "Fire drills are conducted quarterly; all employees must evacuate the building immediately when the alarm sounds.", "relevance": 2},
+      {"id": "p2", "text": "Emergency exits are located at the end of each floor corridor and are marked with illuminated signs.", "relevance": 2},
+      {"id": "p3", "text": "Assembly points are designated in the parking lot; department heads take attendance.", "relevance": 2},
+      {"id": "p4", "text": "Generative AI models can produce text, images, and code.", "relevance": 0},
+      {"id": "p5", "text": "Do not use elevators during a fire emergency; always use the stairwells.", "relevance": 2}
+    ]
+  },
+  {
+    "query": "How are promotions decided?",
+    "passages": [
+      {"id": "p1", "text": "Promotions are based on demonstrated performance, competency assessment, and business need for the higher-level role.", "relevance": 2},
+      {"id": "p2", "text": "Employees must have been in their current role for a minimum of 12 months to be eligible for promotion.", "relevance": 1},
+      {"id": "p3", "text": "Promotion decisions are reviewed by HR and senior leadership to ensure consistency and fairness.", "relevance": 2},
+      {"id": "p4", "text": "The company recycles electronics through an approved vendor program.", "relevance": 0},
+      {"id": "p5", "text": "Career development conversations with managers should occur at least twice per year.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the employee referral program?",
+    "passages": [
+      {"id": "p1", "text": "Employees who refer a candidate who is subsequently hired receive a referral bonus after the new hire completes 90 days.", "relevance": 2},
+      {"id": "p2", "text": "Referral bonuses range from $1,000 to $5,000 depending on the role level.", "relevance": 2},
+      {"id": "p3", "text": "Submit referrals through the careers portal by selecting 'Refer a Friend' on any open position.", "relevance": 2},
+      {"id": "p4", "text": "The company operates in 25 countries across 6 continents.", "relevance": 0},
+      {"id": "p5", "text": "Executives and HR personnel are not eligible to receive referral bonuses.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How does attention mechanism work?",
+    "passages": [
+      {"id": "p1", "text": "The attention mechanism computes a weighted sum of values based on the similarity between query and key vectors.", "relevance": 2},
+      {"id": "p2", "text": "Multi-head attention runs multiple attention functions in parallel to capture different types of relationships.", "relevance": 2},
+      {"id": "p3", "text": "Self-attention allows each position in a sequence to attend to all other positions.", "relevance": 2},
+      {"id": "p4", "text": "Annual eye exams are covered under the vision insurance plan.", "relevance": 0},
+      {"id": "p5", "text": "The softmax function normalizes attention weights to sum to one.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is fine-tuning a language model?",
+    "passages": [
+      {"id": "p1", "text": "Fine-tuning adapts a pre-trained language model to a specific task by training on a smaller, task-specific dataset.", "relevance": 2},
+      {"id": "p2", "text": "LoRA and QLoRA are parameter-efficient fine-tuning methods that reduce memory requirements.", "relevance": 2},
+      {"id": "p3", "text": "Instruction tuning teaches a model to follow human instructions using examples of instruction-response pairs.", "relevance": 2},
+      {"id": "p4", "text": "Fine dining restaurants typically require reservations several weeks in advance.", "relevance": 0},
+      {"id": "p5", "text": "RLHF (Reinforcement Learning from Human Feedback) is used to align language models with human preferences.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to handle confidential information?",
+    "passages": [
+      {"id": "p1", "text": "Confidential company information must not be shared externally without proper authorization and an NDA.", "relevance": 2},
+      {"id": "p2", "text": "Sensitive documents should be stored in encrypted folders on the company's secure file system.", "relevance": 2},
+      {"id": "p3", "text": "Discussions about confidential matters should not take place in public areas where they may be overheard.", "relevance": 2},
+      {"id": "p4", "text": "The company sponsors a charitable 5K run each spring.", "relevance": 0},
+      {"id": "p5", "text": "Upon leaving the company, all confidential materials must be returned or securely destroyed.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is batch normalization?",
+    "passages": [
+      {"id": "p1", "text": "Batch normalization normalizes the input to each layer by subtracting the batch mean and dividing by the batch standard deviation.", "relevance": 2},
+      {"id": "p2", "text": "Batch normalization reduces internal covariate shift and allows training with higher learning rates.", "relevance": 2},
+      {"id": "p3", "text": "Layer normalization is an alternative that normalizes across the feature dimension instead of the batch.", "relevance": 1},
+      {"id": "p4", "text": "Baking bread requires the right balance of flour, water, yeast, and salt.", "relevance": 0},
+      {"id": "p5", "text": "Batch normalization acts as a regularizer, often reducing the need for dropout.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How do I enroll in the 401k retirement plan?",
+    "passages": [
+      {"id": "p1", "text": "New employees are automatically enrolled in the 401k plan at a 3% contribution rate after 30 days.", "relevance": 2},
+      {"id": "p2", "text": "To change your contribution rate, log in to the benefits portal and update your election.", "relevance": 2},
+      {"id": "p3", "text": "The company matches 50% of employee contributions up to 6% of salary.", "relevance": 2},
+      {"id": "p4", "text": "Principal component analysis reduces the dimensionality of high-dimensional data.", "relevance": 0},
+      {"id": "p5", "text": "Investment options include index funds, target-date funds, and company stock.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is the print and copy policy?",
+    "passages": [
+      {"id": "p1", "text": "Printing should be minimized by using digital documents; color printing requires a specific cost code.", "relevance": 2},
+      {"id": "p2", "text": "All printers require authentication using your employee badge or PIN.", "relevance": 2},
+      {"id": "p3", "text": "Large print jobs (over 50 pages) should be submitted to the corporate print center.", "relevance": 1},
+      {"id": "p4", "text": "The company uses gradient descent to optimize its business processes.", "relevance": 0},
+      {"id": "p5", "text": "Confidential documents must be shredded using the designated shredder.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What are the criteria for promotion to senior engineer?",
+    "passages": [
+      {"id": "p1", "text": "Senior engineers demonstrate technical leadership, mentor junior team members, and deliver complex projects independently.", "relevance": 2},
+      {"id": "p2", "text": "The promotion criteria include strong proficiency in core technical skills and consistent high-performance ratings.", "relevance": 2},
+      {"id": "p3", "text": "Engineers typically require 3-5 years of experience and demonstrated impact beyond their immediate role.", "relevance": 2},
+      {"id": "p4", "text": "The company sponsors STEM education programs in local schools.", "relevance": 0},
+      {"id": "p5", "text": "A promotion portfolio documenting key accomplishments is required for consideration.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is vector quantization?",
+    "passages": [
+      {"id": "p1", "text": "Vector quantization maps continuous input vectors to a finite set of discrete code vectors from a codebook.", "relevance": 2},
+      {"id": "p2", "text": "VQ-VAE uses vector quantization in the latent space to learn discrete representations of data.", "relevance": 2},
+      {"id": "p3", "text": "Product quantization divides a vector into subvectors, each quantized independently to enable efficient approximate nearest neighbor search.", "relevance": 2},
+      {"id": "p4", "text": "The quarterly town hall meeting features updates from the CEO on company direction.", "relevance": 0},
+      {"id": "p5", "text": "Residual quantization applies multiple rounds of quantization to reduce approximation error.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How do I submit feedback about company policies?",
+    "passages": [
+      {"id": "p1", "text": "Employee feedback on policies can be submitted through the anonymous feedback portal or directly to HR.", "relevance": 2},
+      {"id": "p2", "text": "The employee engagement survey, conducted twice per year, captures feedback on company culture and policies.", "relevance": 2},
+      {"id": "p3", "text": "Each department has an employee representative who collects and escalates feedback to management.", "relevance": 1},
+      {"id": "p4", "text": "Convolutional neural networks are particularly effective for image recognition tasks.", "relevance": 0},
+      {"id": "p5", "text": "The open door policy encourages employees to discuss concerns directly with any manager.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What are the guidelines for social media use?",
+    "passages": [
+      {"id": "p1", "text": "Employees should not share confidential company information on personal social media accounts.", "relevance": 2},
+      {"id": "p2", "text": "Disclosure is required when posting professional content related to the company's products or services.", "relevance": 2},
+      {"id": "p3", "text": "Offensive or discriminatory content on personal social media may result in disciplinary action if it affects the company's reputation.", "relevance": 2},
+      {"id": "p4", "text": "The main campus has four coffee shops and a food truck market every Friday.", "relevance": 0},
+      {"id": "p5", "text": "The communications team manages official company social media accounts.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How can I participate in the employee wellness program?",
+    "passages": [
+      {"id": "p1", "text": "The wellness program offers gym memberships, meditation app subscriptions, and health coaching sessions.", "relevance": 2},
+      {"id": "p2", "text": "Enroll in the wellness program through the HR benefits portal during open enrollment or at any time.", "relevance": 2},
+      {"id": "p3", "text": "The wellness challenge runs from January to March, with prizes for completing fitness goals.", "relevance": 1},
+      {"id": "p4", "text": "Long short-term memory networks are a type of recurrent neural network for sequence modeling.", "relevance": 0},
+      {"id": "p5", "text": "Mental health resources including an EAP are available at no cost to all employees.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is maximum marginal relevance in search?",
+    "passages": [
+      {"id": "p1", "text": "Maximum Marginal Relevance (MMR) selects documents that are both relevant to the query and maximally diverse from already-selected documents.", "relevance": 2},
+      {"id": "p2", "text": "MMR balances relevance and redundancy by penalizing documents that are similar to already retrieved results.", "relevance": 2},
+      {"id": "p3", "text": "Diversity in retrieved documents helps cover multiple aspects of a query.", "relevance": 1},
+      {"id": "p4", "text": "The human resources department is located on the 4th floor of the main building.", "relevance": 0},
+      {"id": "p5", "text": "Lambda in MMR controls the trade-off between relevance and diversity.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to book a business flight?",
+    "passages": [
+      {"id": "p1", "text": "Business travel must be booked through the company travel portal (travel.company.com) for policy compliance and discounts.", "relevance": 2},
+      {"id": "p2", "text": "Economy class is required for flights under 6 hours; business class requires VP approval.", "relevance": 2},
+      {"id": "p3", "text": "Flights should be booked at least 14 days in advance to take advantage of lower fares.", "relevance": 1},
+      {"id": "p4", "text": "Activation functions like ReLU introduce non-linearity into neural networks.", "relevance": 0},
+      {"id": "p5", "text": "Frequent flyer miles earned on company travel are the property of the traveler.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is cosine similarity in vector search?",
+    "passages": [
+      {"id": "p1", "text": "Cosine similarity measures the cosine of the angle between two vectors, indicating how similar their directions are.", "relevance": 2},
+      {"id": "p2", "text": "A cosine similarity of 1 indicates identical direction; 0 indicates orthogonality; -1 indicates opposite directions.", "relevance": 2},
+      {"id": "p3", "text": "In vector databases, cosine similarity is commonly used as the distance metric for semantic search.", "relevance": 2},
+      {"id": "p4", "text": "The company's sustainability report outlines goals for carbon neutrality by 2030.", "relevance": 0},
+      {"id": "p5", "text": "L2 (Euclidean) distance is an alternative metric that considers both magnitude and direction.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How to handle a workplace conflict?",
+    "passages": [
+      {"id": "p1", "text": "Start by addressing conflicts directly and professionally with the other party before escalating.", "relevance": 2},
+      {"id": "p2", "text": "HR offers mediation services to help resolve workplace disputes impartially.", "relevance": 2},
+      {"id": "p3", "text": "Document the conflict including dates, times, and witnesses before filing a formal complaint.", "relevance": 2},
+      {"id": "p4", "text": "The Pythagorean theorem relates the lengths of the sides of a right triangle.", "relevance": 0},
+      {"id": "p5", "text": "Managers are trained to address and de-escalate workplace conflicts.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What is quantization in deep learning?",
+    "passages": [
+      {"id": "p1", "text": "Quantization reduces the precision of model weights from 32-bit float to 8-bit or 4-bit integers, reducing memory and speeding up inference.", "relevance": 2},
+      {"id": "p2", "text": "Dynamic quantization applies quantization at runtime, while static quantization calibrates on representative data.", "relevance": 2},
+      {"id": "p3", "text": "GPTQ and GGUF are popular quantization formats for running large language models on consumer hardware.", "relevance": 2},
+      {"id": "p4", "text": "The physics of quantum mechanics describes the behavior of particles at atomic scales.", "relevance": 0},
+      {"id": "p5", "text": "Quantization-aware training maintains quantization in the training loop to minimize accuracy loss.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "What support is available for mental health?",
+    "passages": [
+      {"id": "p1", "text": "The Employee Assistance Program provides free confidential counseling sessions for mental health support.", "relevance": 2},
+      {"id": "p2", "text": "Mental health days are recognized and can be used as sick leave without requiring a doctor's note.", "relevance": 2},
+      {"id": "p3", "text": "The company partners with Headspace and Calm to provide mental wellness app subscriptions.", "relevance": 2},
+      {"id": "p4", "text": "Stochastic gradient descent uses a random subset of training data per update step.", "relevance": 0},
+      {"id": "p5", "text": "Managers are trained to recognize signs of burnout and connect employees with resources.", "relevance": 1}
+    ]
+  },
+  {
+    "query": "How does cross-encoder reranking work?",
+    "passages": [
+      {"id": "p1", "text": "A cross-encoder scores a (query, passage) pair jointly by processing them together through a transformer model.", "relevance": 2},
+      {"id": "p2", "text": "Unlike bi-encoders that encode query and passage separately, cross-encoders see both inputs simultaneously.", "relevance": 2},
+      {"id": "p3", "text": "Cross-encoders achieve higher accuracy than bi-encoders but are slower due to the need for pairwise computation.", "relevance": 2},
+      {"id": "p4", "text": "The company annual report is available for download on the investor relations page.", "relevance": 0},
+      {"id": "p5", "text": "Reranking a candidate pool of 40 documents with a cross-encoder typically takes under 150ms on GPU.", "relevance": 1}
+    ]
+  }
+]
