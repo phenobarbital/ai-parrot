@@ -15538,7 +15538,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -15546,7 +15546,8 @@
       "parallelism_notes": "Pure type definitions; no internal imports. Parallel-safe with TASK-875/876/877.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-874-dev-loop-models.md"
+      "file": "sdd/tasks/completed/TASK-874-dev-loop-models.md",
+      "completed_at": "2026-04-27T11:29:41.045509+00:00"
     },
     {
       "id": "TASK-875",
