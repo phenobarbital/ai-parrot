@@ -15538,14 +15538,14 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure type definitions; no internal imports. Parallel-safe with TASK-875/876/877.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-874-dev-loop-models.md"
     },
     {
@@ -15555,14 +15555,14 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Edits a different file (parrot/clients/claude_agent.py) than the dev_loop tasks; safe in parallel with 874/876/877.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-875-claude-agent-options-extension.md"
     },
     {
@@ -15572,14 +15572,14 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Edits parrot/conf.py only; no overlap with 874/875/877.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-876-dev-loop-settings.md"
     },
     {
@@ -15589,14 +15589,14 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Adds .claude/agents/*.md and a private package_data loader; no overlap with 874-876.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-877-sdd-subagent-definitions.md"
     },
     {
@@ -15606,7 +15606,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15618,7 +15618,7 @@
       "parallel": false,
       "parallelism_notes": "Hard sequential dependency on the four parallel-safe foundations above.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-878-claude-code-dispatcher.md"
     },
     {
@@ -15628,7 +15628,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -15638,7 +15638,7 @@
       "parallel": true,
       "parallelism_notes": "Independent file from dispatcher/nodes; runs in parallel with TASK-878 once 874+876 land.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-879-flow-stream-multiplexer.md"
     },
     {
@@ -15648,7 +15648,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15658,7 +15658,7 @@
       "parallel": true,
       "parallelism_notes": "First node, no dispatcher dependency; parallel with 879.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-880-bug-intake-node.md"
     },
     {
@@ -15668,7 +15668,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15678,7 +15678,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on dispatcher (878). Sequential with later nodes that share the dispatcher fixture in tests.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-881-research-node.md"
     },
     {
@@ -15688,7 +15688,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15699,7 +15699,7 @@
       "parallel": false,
       "parallelism_notes": "Consumes ResearchOutput from 881.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-882-development-node.md"
     },
     {
@@ -15709,7 +15709,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15720,7 +15720,7 @@
       "parallel": false,
       "parallelism_notes": "Sequential after Development.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-883-qa-node.md"
     },
     {
@@ -15730,7 +15730,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15740,7 +15740,7 @@
       "parallel": false,
       "parallelism_notes": "Pure AI-Parrot but conceptually after QA.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-884-deployment-handoff-node.md"
     },
     {
@@ -15750,7 +15750,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15759,7 +15759,7 @@
       "parallel": true,
       "parallelism_notes": "Independent file; only depends on models. Can run in parallel with 880-884.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-885-failure-handler-node.md"
     },
     {
@@ -15769,7 +15769,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15783,7 +15783,7 @@
       "parallel": false,
       "parallelism_notes": "Wires all six nodes; must come after every node task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-886-flow-factory.md"
     },
     {
@@ -15793,7 +15793,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15802,7 +15802,7 @@
       "parallel": true,
       "parallelism_notes": "Independent file. Only depends on settings module. Parallel-safe with most other tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-887-pull-request-webhook.md"
     },
     {
@@ -15812,7 +15812,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15834,7 +15834,7 @@
       "parallel": false,
       "parallelism_notes": "Consolidation pass over the whole feature; depends on every implementation task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-888-dev-loop-unit-tests.md"
     },
     {
@@ -15844,7 +15844,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -15853,7 +15853,7 @@
       "parallel": false,
       "parallelism_notes": "Live tests build on top of the unit-test fixtures.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-889-dev-loop-integration-tests.md"
     },
     {
@@ -15863,7 +15863,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15872,7 +15872,7 @@
       "parallel": true,
       "parallelism_notes": "Pure docs; only needs the flow factory to exist so the quickstart compiles. Parallel-safe with 887/888/889.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-27T11:13:44.465510+00:00",
       "file": "sdd/tasks/active/TASK-890-dev-loop-documentation.md"
     }
   ]
