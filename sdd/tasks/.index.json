@@ -14839,8 +14839,8 @@
       "parallelism_notes": "Depends on client and factory being complete. Can run in parallel with TASK-861.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T04:04:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-862-example-and-docs.md"
+      "completed_at": "2026-04-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-862-documentation-canonical-metadata.md"
     },
     {
       "id": "TASK-855",
