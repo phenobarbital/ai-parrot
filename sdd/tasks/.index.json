@@ -14722,7 +14722,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14732,7 +14732,8 @@
       "parallelism_notes": "Module 3 of FEAT-128. Depends on TASK-856 because parent_chunk rows must be filtered out of similarity search by default.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-857-three-level-hierarchy.md"
+      "file": "sdd/tasks/completed/TASK-857-three-level-hierarchy.md",
+      "completed_at": "2026-04-27T02:32:28.902557+00:00"
     },
     {
       "id": "TASK-858",
