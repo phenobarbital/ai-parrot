@@ -14999,7 +14999,7 @@
       "feature_id": "FEAT-126",
       "feature": "local-cross-encoder-reranker",
       "spec": "sdd/specs/local-cross-encoder-reranker.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -15007,7 +15007,8 @@
       "parallelism_notes": "Foundation task; all other tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:35:48.188228+00:00",
-      "file": "sdd/tasks/active/TASK-863-reranker-models-and-abstract.md"
+      "file": "sdd/tasks/completed/TASK-863-reranker-models-and-abstract.md",
+      "completed_at": "2026-04-27T00:34:22.004330+00:00"
     },
     {
       "id": "TASK-864",
