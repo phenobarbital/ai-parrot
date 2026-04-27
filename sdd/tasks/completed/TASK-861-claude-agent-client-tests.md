@@ -224,10 +224,33 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-27
+**Notes**:
+- Created `tests/clients/conftest.py` with the `fake_claude_agent_messages`
+  pytest fixture (real `claude_agent_sdk` dataclasses when available;
+  duck-typed `SimpleNamespace` fallback otherwise) plus a
+  `_install_navigator_file_stubs()` helper that injects placeholder
+  attributes onto `navigator.utils.file` (`FileManagerInterface`,
+  `FileMetadata`, `LocalFileManager`, `TempFileManager`,
+  `FileManagerFactory`) so `parrot.clients.factory` imports cleanly in
+  environments where `navigator` predates FEAT-123. The stubs are no-ops
+  once a current `navigator` is installed.
+- Created `tests/clients/test_claude_agent.py` with 20 tests covering all 7
+  spec acceptance items plus parametrised verification of every
+  unsupported method (`ask_to_image`, `summarize_text`, `translate_text`,
+  `analyze_sentiment`, `analyze_product_review`, `extract_key_points`),
+  `ClaudeAgentRunOptions` field defaults, and `resume()`.
+- All 20 tests pass against `claude_agent_sdk==0.1.63` plus
+  `anthropic==0.97.0`. Combined with the earlier 24 FEAT-124 tests
+  (`test_anthropic_sdk_097.py` + `test_aimessage_factory_claude_agent.py`),
+  the FEAT-124 suite total is **44 passing** with zero failures.
+- The factory-import errors observed when first running these tests are
+  **pre-existing** in this venv (the installed `navigator` version is
+  older than FEAT-123 expects) and are mitigated for the FEAT-124 test
+  suite by the conftest stubs. They are not caused by this feature.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: minor — added a parametrised test that covers
+each of the six "unsupported methods" mentioned in the spec
+(NotImplementedError + AnthropicClient redirect message), beyond just
+`batch_ask`.
