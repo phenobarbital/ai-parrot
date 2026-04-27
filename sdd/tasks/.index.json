@@ -14796,8 +14796,8 @@
       "parallelism_notes": "Pure pyproject.toml change \u2014 no code files shared. Can run in parallel with TASK-855 and TASK-857.",
       "assigned_to": null,
       "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T00:00:00",
-      "file": "sdd/tasks/completed/TASK-860-refactor-web-loaders.md"
+      "completed_at": "2026-04-27T02:51:46.284943+00:00",
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md"
     },
     {
       "id": "TASK-861",
@@ -14959,8 +14959,8 @@
       "parallelism_notes": "Touches web.py/webscraping.py only but shares integration test fixtures; sequential per spec worktree strategy",
       "assigned_to": "sdd-worker-feat-125",
       "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/completed/TASK-860-refactor-web-loaders.md",
-      "completed_at": "2026-04-27T00:00:00"
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
+      "completed_at": "2026-04-27T02:51:46.284943+00:00"
     },
     {
       "id": "TASK-861",
@@ -15342,7 +15342,7 @@
       "feature_id": "FEAT-128",
       "feature": "parent-child-retrieval",
       "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15352,7 +15352,8 @@
       "parallelism_notes": "Module 6 of FEAT-128. Docs-only; touches no source files \u2014 can run in parallel with TASK-859.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/active/TASK-860-parent-child-retrieval-docs.md"
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
+      "completed_at": "2026-04-27T02:51:46.284943+00:00"
     },
     {
       "id": "TASK-861",
