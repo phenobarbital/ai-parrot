@@ -538,6 +538,85 @@ Expose your bots natively to chat platforms:
 
 ---
 
+## Optional capabilities
+
+### Dev-Loop Orchestration
+
+> _Optional. Requires the `[claude-agent]` extra:_
+> `pip install ai-parrot[claude-agent]`
+
+A 5-node `AgentsFlow` that fixes "small operational bugs" automatically:
+
+```
+BugIntake → Research → Development → QA → DeploymentHandoff
+                                       │
+                                       └─(qa failed / hard error)→ FailureHandler
+```
+
+The flow takes a Pydantic `BugBrief` (Jira ticket + log sources +
+acceptance criteria) and produces a PR plus a Jira ticket transitioned
+to "Ready to Deploy". Failures escalate back to the original reporter.
+
+**Prerequisites**
+
+- Python 3.11+ with `ai-parrot[claude-agent]` installed.
+- `claude-agent-sdk >= 0.1.68` and either `ANTHROPIC_API_KEY` or a
+  configured `claude` CLI on `PATH`.
+- Redis 6+ for two-stream observability (one stream per flow run plus
+  one per dispatch).
+- Jira service-account credentials wrapped in a
+  `parrot.auth.credentials.StaticCredentialResolver`.
+- (Optional) `gh` CLI for PR creation. Falls back to a direct GitHub
+  REST call (using `GITHUB_TOKEN` + `GITHUB_REPOSITORY`) when the CLI
+  is missing.
+
+**Configuration (navconfig)**
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES` | `3` | Cap on concurrent Claude Code dispatches (dispatcher-side semaphore). |
+| `FLOW_MAX_CONCURRENT_RUNS` | `5` | Cap on concurrent flow runs (orchestrator-side). |
+| `FLOW_BOT_JIRA_ACCOUNT_ID` | `""` | Jira `accountId` of the service-account bot. Must be set per environment. |
+| `WORKTREE_BASE_PATH` | `.claude/worktrees` | Base directory for per-feature worktrees. The dispatcher refuses any `cwd` outside this path. |
+| `FLOW_STREAM_TTL_SECONDS` | `604800` | Retention for both flow and dispatch Redis streams (7 days). |
+| `ACCEPTANCE_CRITERION_ALLOWLIST` | `["flowtask","pytest","ruff","mypy","pylint"]` | Allowed `ShellCriterion` command heads. Validated at intake. |
+
+**Quickstart**
+
+```python
+from parrot.flows.dev_loop import (
+    ClaudeCodeDispatcher,
+    build_dev_loop_flow,
+    register_pull_request_webhook,
+)
+
+dispatcher = ClaudeCodeDispatcher(
+    max_concurrent=3,
+    redis_url="redis://localhost:6379/0",
+    stream_ttl_seconds=604800,
+)
+flow = build_dev_loop_flow(
+    dispatcher=dispatcher,
+    jira_toolkit=jira,                 # already wrapping flow-bot creds
+    log_toolkits={"cloudwatch": cw, "elasticsearch": es},
+    redis_url="redis://localhost:6379/0",
+)
+register_pull_request_webhook(orchestrator, secret=GITHUB_WEBHOOK_SECRET)
+# Then run via your AutonomousOrchestrator with a BugBrief in ctx.
+```
+
+**Live observability**
+
+The dispatcher publishes per-event `DispatchEvent` envelopes (`queued`,
+`started`, `message`, `tool_use`, `tool_result`, `output_invalid`,
+`failed`, `completed`) to Redis Streams. The
+`parrot.flows.dev_loop.flow_stream_ws` aiohttp handler exposes a
+WebSocket endpoint that fans-in the flow stream and every dispatch
+stream into a single envelope per event for the UI to consume — the UI
+never speaks Redis directly.
+
+---
+
 ## Supported LLM Providers
 
 | Provider | Extra | Identifier | Example |
