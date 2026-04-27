@@ -15556,7 +15556,7 @@
       "feature_id": "FEAT-129",
       "feature": "dev-loop-orchestration",
       "spec": "sdd/specs/dev-loop-orchestration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -15564,7 +15564,8 @@
       "parallelism_notes": "Edits a different file (parrot/clients/claude_agent.py) than the dev_loop tasks; safe in parallel with 874/876/877.",
       "assigned_to": null,
       "started_at": "2026-04-27T11:13:44.465510+00:00",
-      "file": "sdd/tasks/active/TASK-875-claude-agent-options-extension.md"
+      "file": "sdd/tasks/completed/TASK-875-claude-agent-options-extension.md",
+      "completed_at": "2026-04-27T11:47:48.086695+00:00"
     },
     {
       "id": "TASK-876",

@@ -246,9 +246,15 @@ class TestExtendedRunOptions:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-27
+**Notes**: Added 3 new fields to `ClaudeAgentRunOptions` (`agents`,
+`setting_sources`, `extra_args`); `system_prompt` was already present and is
+covered by tests for parity. Wired all three through `_build_options`.
+`AgentDefinition` is forward-referenced via `TYPE_CHECKING` plus a
+`Dict[str, Any]` runtime alias so the module stays importable without the
+`[claude-agent]` extra. 8 unit tests cover defaults, literal validation, dict
+acceptance, and merge-into-kwargs behavior.
+**Deviations from spec**: The task scope mentions adding `system_prompt` as
+new — but it already existed at `claude_agent.py:111`. Tests assert its
+default-None behavior for parity. Pure additive change; no breaking changes.
