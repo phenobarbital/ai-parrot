@@ -313,10 +313,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker-feat-125
+**Date**: 2026-04-27
+**Notes**: Implemented all changes to `abstract.py`:
+- Added `language: str = "en"` kwarg to `__init__` → `self.language`
+- Extended `create_metadata` with `language` / `title` kwargs; builds closed-shape `document_meta` with exactly 5 canonical keys
+- Added `_derive_title`: handles `Path` (→ `path.stem` title-cased), HTTP URLs (→ last segment), string file paths (→ stem), fallback string
+- Added `_validate_metadata`: warns + auto-fills all missing canonical fields, never raises; also hoists non-canonical keys from `document_meta` to top level
+- Wired `_validate_metadata` into `create_document` and `_load_tasks`
+- Created 25-test suite in `packages/ai-parrot/tests/test_abstractloader_metadata.py` — all pass
+- Added navigator/parrot stubs to conftest.py to fix pre-existing FEAT-124 import breakage
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: conftest.py modified (not in task file list) to fix pre-existing test infrastructure breakage from FEAT-124 that prevented any tests from collecting.
