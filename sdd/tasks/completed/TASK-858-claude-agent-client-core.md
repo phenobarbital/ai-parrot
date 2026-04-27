@@ -218,10 +218,50 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (FEAT-124 autonomous run)
+**Date**: 2026-04-27
+**Notes**:
+Created `packages/ai-parrot/src/parrot/clients/claude_agent.py` containing:
+- `ClaudeAgentRunOptions(BaseModel)` — typed mirror of the most useful subset
+  of `claude_agent_sdk.ClaudeAgentOptions` (allowed/disallowed tools, cwd,
+  cli_path, permission_mode, system_prompt, model, max_turns / max_budget_usd,
+  add_dirs, env, plus an `extra_options` escape hatch).
+- `ClaudeAgentClient(AbstractClient)` with class-level identifiers
+  `client_type="claude_agent"`, `client_name="claude-agent"`,
+  `_default_model="claude-sonnet-4-6"`,
+  `_lightweight_model="claude-haiku-4-5-20251001"`.
+- `get_client()` builds a fresh `claude_agent_sdk.ClaudeSDKClient` (with
+  default options) — caching is delegated to the inherited `_ensure_client`.
+- `ask()` collects the entire `claude_agent_sdk.query()` message stream and
+  hands it to `AIMessageFactory.from_claude_agent` (added in TASK-857).
+- `ask_stream()` yields `TextBlock.text` chunks incrementally as
+  `AssistantMessage` events arrive from `query()`.
+- `invoke()` produces a stateless structured-output extraction by
+  embedding the JSON schema in the prompt and parsing the assistant text
+  with `_parse_structured_output`. Defaults `permission_mode="plan"` so
+  invoke can never mutate the filesystem (resolving spec Open Question 5).
+- `resume()` re-runs `query()` with `ClaudeAgentOptions.resume = session_id`.
+- `batch_ask()` raises `NotImplementedError` with a redirect to
+  `AnthropicClient` per spec.
+- `ask_to_image`, `summarize_text`, `translate_text`, `analyze_sentiment`,
+  `analyze_product_review`, `extract_key_points` all raise
+  `NotImplementedError` with redirect messages.
+- `claude_agent_sdk` is **never** imported at module scope; every method
+  that uses the SDK calls `_import_sdk()` (or imports inside the function
+  body) and surfaces `ImportError("Install with: pip install
+  ai-parrot[claude-agent]")` when the optional extra is missing.
+- Verified: `from parrot.clients.claude_agent import ClaudeAgentClient,
+  ClaudeAgentRunOptions` succeeds without `claude_agent_sdk` being eagerly
+  loaded into `sys.modules`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- The spec sketch in §2 of the parent feature spec defines
+  `ClaudeAgentRunOptions` with seven fields; the implementation expands
+  this to include `max_turns`, `max_budget_usd`, `model`,
+  `fallback_model`, `add_dirs`, `env`, and `extra_options`. These are
+  additive, fully-optional, and pass through to `ClaudeAgentOptions`
+  unchanged — they make the typed surface useful for real agent dispatch
+  scenarios (the SDK's actual `ClaudeAgentOptions` has ~30 fields).
+- Per spec Open Question 5, `invoke()` defaults to `permission_mode="plan"`
+  so a stateless extraction can never mutate the filesystem. Callers can
+  override by passing `run_options.permission_mode`.
