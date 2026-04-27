@@ -109,6 +109,66 @@ class CompletionUsage(BaseModel):
         )
 
     @classmethod
+    def from_claude_agent(
+        cls,
+        result_usage: Optional[Dict[str, Any]] = None,
+        *,
+        total_cost_usd: Optional[float] = None,
+        num_turns: Optional[int] = None,
+        model_usage: Optional[Dict[str, Any]] = None,
+    ) -> "CompletionUsage":
+        """Create from a ``claude_agent_sdk.types.ResultMessage`` payload.
+
+        The agent SDK exposes usage at two levels: a per-turn ``usage`` dict on
+        each ``AssistantMessage`` (mirroring the Anthropic Messages API
+        ``input_tokens`` / ``output_tokens`` shape) and an aggregate
+        ``ResultMessage.usage`` plus ``ResultMessage.total_cost_usd`` and
+        ``ResultMessage.num_turns``. We prefer the aggregate ``result_usage``
+        when present, falling back to zeros if the message stream produced no
+        ``ResultMessage``.
+
+        Args:
+            result_usage: ``ResultMessage.usage`` dict — may include
+                ``input_tokens``, ``output_tokens``, plus cache-related fields.
+            total_cost_usd: ``ResultMessage.total_cost_usd`` — populates
+                ``estimated_cost``.
+            num_turns: ``ResultMessage.num_turns`` — stored under
+                ``extra_usage["num_turns"]``.
+            model_usage: ``ResultMessage.model_usage`` — stored under
+                ``extra_usage["model_usage"]``.
+        """
+        result_usage = result_usage or {}
+        prompt_tokens = int(
+            result_usage.get("input_tokens")
+            or result_usage.get("prompt_tokens")
+            or 0
+        )
+        completion_tokens = int(
+            result_usage.get("output_tokens")
+            or result_usage.get("completion_tokens")
+            or 0
+        )
+        total_tokens = int(
+            result_usage.get("total_tokens", prompt_tokens + completion_tokens)
+        )
+
+        extra: Dict[str, Any] = {}
+        if result_usage:
+            extra["raw_usage"] = dict(result_usage)
+        if num_turns is not None:
+            extra["num_turns"] = num_turns
+        if model_usage:
+            extra["model_usage"] = model_usage
+
+        return cls(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            estimated_cost=total_cost_usd,
+            extra_usage=extra,
+        )
+
+    @classmethod
     def from_grok(cls, usage: Any) -> "CompletionUsage":
         """Create from Grok usage object."""
         # usage can be a dict or an object
