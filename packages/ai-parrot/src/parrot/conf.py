@@ -612,3 +612,32 @@ ODOO_USERNAME = config.get("ODOO_USERNAME", fallback=None)
 ODOO_PASSWORD = config.get("ODOO_PASSWORD", fallback=None)
 ODOO_TIMEOUT = config.getint("ODOO_TIMEOUT", fallback=30)
 ODOO_VERIFY_SSL = config.getboolean("ODOO_VERIFY_SSL", fallback=True)
+
+# ── Dev-Loop Orchestration (FEAT-129) ──
+# Two-level concurrency control: dispatcher-side and orchestrator-side caps.
+CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES: int = config.getint(
+    "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
+)
+FLOW_MAX_CONCURRENT_RUNS: int = config.getint(
+    "FLOW_MAX_CONCURRENT_RUNS", fallback=5
+)
+# Service-account Jira accountId used by the dev-loop bot when posting
+# comments / attachments / transitions. Empty string by default; downstream
+# code MUST tolerate the empty default (no error at import time).
+FLOW_BOT_JIRA_ACCOUNT_ID: str = config.get(
+    "FLOW_BOT_JIRA_ACCOUNT_ID", fallback=""
+)
+# Repo-relative path under which feature worktrees are created.
+WORKTREE_BASE_PATH: str = config.get(
+    "WORKTREE_BASE_PATH", fallback=".claude/worktrees"
+)
+# Redis stream retention for both flow and dispatch streams (default 7 days).
+FLOW_STREAM_TTL_SECONDS: int = config.getint(
+    "FLOW_STREAM_TTL_SECONDS", fallback=604800
+)
+# Allow-list of command heads acceptable in ShellCriterion.command. The
+# default covers the four lint/test command heads documented in the spec.
+ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
+    "ACCEPTANCE_CRITERION_ALLOWLIST",
+    fallback=["flowtask", "pytest", "ruff", "mypy", "pylint"],
+) or ["flowtask", "pytest", "ruff", "mypy", "pylint"]
