@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from parrot import conf
 from parrot.bots.flow.node import Node
+from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (
     BugBrief,
@@ -32,6 +33,29 @@ from parrot.flows.dev_loop.models import (
     LogSource,
     ResearchOutput,
 )
+
+
+# Atlassian caps the description field at 32 767 chars; leave a 2K
+# headroom for the rest of the JSON body and any unicode-byte expansion.
+_MAX_DESCRIPTION_CHARS = 30_000
+# Target size for the LLM-summarized excerpts block when the raw body
+# would exceed _MAX_DESCRIPTION_CHARS. Keeps the digest compact enough
+# that the surrounding sections (criteria, reporter, user description)
+# always fit.
+_SUMMARIZED_EXCERPTS_CHARS = 8_000
+
+
+def _summarizer_llm_default() -> str:
+    """Resolve the default LLM string for log-excerpt summarization.
+
+    Reads ``DEV_LOOP_SUMMARY_LLM`` from navconfig (env-overridable);
+    falls back to Anthropic Haiku 4.5 — small, fast, cheap, perfect
+    for compressing a few KB of log into a digest.
+    """
+    return conf.config.get(
+        "DEV_LOOP_SUMMARY_LLM",
+        fallback="anthropic:claude-haiku-4-5-20251001",
+    )
 
 
 class ResearchNode(Node):
@@ -54,6 +78,7 @@ class ResearchNode(Node):
         dispatcher: ClaudeCodeDispatcher,
         jira_toolkit: Any,
         log_toolkits: Optional[Dict[str, Any]] = None,
+        summarizer_llm: Optional[str] = None,
         name: str = "research",
     ) -> None:
         super().__init__()
@@ -62,6 +87,8 @@ class ResearchNode(Node):
         self._dispatcher = dispatcher
         self._jira = jira_toolkit
         self._log_toolkits = log_toolkits or {}
+        self._summarizer_llm = summarizer_llm or _summarizer_llm_default()
+        self._summarizer_client: Any = None  # lazy
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -88,10 +115,11 @@ class ResearchNode(Node):
         # resolves the assignee but not the raw fields={"reporter":…}
         # blob, so we do it explicitly so emails work in BugBrief.reporter).
         reporter_fields = await self._reporter_fields(brief.reporter)
+        description = await self._build_description(brief, excerpts)
         jira_resp = await self._jira.jira_create_issue(
             summary=brief.summary,
             issuetype="Bug",
-            description=self._build_description(brief, excerpts),
+            description=description,
             assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
             fields=reporter_fields,
         )
@@ -198,8 +226,55 @@ class ResearchNode(Node):
             return [str(x)[-4000:] for x in result[-10:]]
         return [str(result)[-4000:]]
 
+    async def _build_description(
+        self, brief: BugBrief, excerpts: List[str]
+    ) -> str:
+        """Render the Jira description, summarizing logs if it overflows.
+
+        Progressive degradation:
+
+        1. Render the full body with raw excerpts.
+        2. If the result would exceed Atlassian's 32 767-char cap, send
+           the excerpts through an LLM summarizer (Haiku by default) and
+           re-render with the digest in place of the raw text.
+        3. As a last-resort defense, hard-truncate to
+           ``_MAX_DESCRIPTION_CHARS`` with a ``... (truncated)`` marker.
+
+        The user-supplied ``brief.description`` is never summarized — it
+        is the human's own words and stays verbatim until the final
+        truncation step (which only kicks in if even the digest version
+        is too long, and is logged loudly).
+        """
+        body = self._render_body(brief, excerpts)
+        if len(body) > _MAX_DESCRIPTION_CHARS:
+            self.logger.info(
+                "Description %d chars > %d cap; summarizing log excerpts",
+                len(body), _MAX_DESCRIPTION_CHARS,
+            )
+            digest = await self._summarize_excerpts(excerpts)
+            body = self._render_body(
+                brief,
+                [
+                    "(Auto-summarized: the raw log excerpts exceeded "
+                    "Jira's 32 767-char limit. The digest below was "
+                    f"produced by {self._summarizer_llm}.)\n\n"
+                    + digest
+                ],
+            )
+        if len(body) > _MAX_DESCRIPTION_CHARS:
+            self.logger.warning(
+                "Description still %d chars after summarization; "
+                "hard-truncating to %d.",
+                len(body), _MAX_DESCRIPTION_CHARS,
+            )
+            body = (
+                body[: _MAX_DESCRIPTION_CHARS - 32].rstrip()
+                + "\n\n... (truncated)"
+            )
+        return body
+
     @staticmethod
-    def _build_description(brief: BugBrief, excerpts: List[str]) -> str:
+    def _render_body(brief: BugBrief, excerpts: List[str]) -> str:
         # Format each criterion with the salient field for human review:
         # shell command for ShellCriterion, task_path for FlowtaskCriterion,
         # raw text for ManualCriterion.
@@ -228,6 +303,53 @@ class ResearchNode(Node):
             f"Reporter: {brief.reporter}\n"
             f"Escalation assignee on failure: {brief.escalation_assignee}\n"
         )
+
+    async def _summarize_excerpts(self, excerpts: List[str]) -> str:
+        """Compress raw log excerpts into a concise incident digest.
+
+        Falls back to a deterministic tail-truncation when the LLM call
+        fails or no API key is available — the flow never crashes
+        because of the summarizer.
+        """
+        raw = "\n---\n".join(excerpts) if excerpts else ""
+        if not raw:
+            return "(no log excerpts available)"
+        target_chars = _SUMMARIZED_EXCERPTS_CHARS
+        try:
+            client = self._get_summarizer_client()
+            prompt = (
+                "You are summarising application log excerpts so a human "
+                "engineer can triage an incident from a Jira ticket.\n\n"
+                "Produce a concise digest — at most "
+                f"{target_chars // 6} words. Highlight: error messages, "
+                "stack frames, repeated symptoms, request IDs, "
+                "timestamps, and any obvious root-cause hints. Quote "
+                "the most damning lines verbatim. Do NOT add prose "
+                "beyond the digest itself.\n\n"
+                "===LOGS START===\n"
+                f"{raw}\n"
+                "===LOGS END==="
+            )
+            response = await client.ask(prompt, max_tokens=2000)
+            text = (response.response or "").strip()
+            if text:
+                return text
+        except Exception as exc:  # noqa: BLE001 - degraded fallback
+            self.logger.warning(
+                "Log summarization via %s failed (%s); "
+                "falling back to deterministic tail",
+                self._summarizer_llm, exc,
+            )
+        # Deterministic fallback: keep the tail of each excerpt up to
+        # the target budget.
+        budget = max(target_chars // max(1, len(excerpts)), 200)
+        tails = [e[-budget:] for e in excerpts]
+        return "\n---\n".join(tails)
+
+    def _get_summarizer_client(self) -> Any:
+        if self._summarizer_client is None:
+            self._summarizer_client = LLMFactory.create(self._summarizer_llm)
+        return self._summarizer_client
 
     async def _reporter_fields(
         self, reporter: str
