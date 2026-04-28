@@ -90,11 +90,22 @@ class BasePlanRegistry(Generic[T]):
             self.logger.warning("Failed to load registry: %s", exc)
             self._entries = {}
 
-    def lookup(self, url: str) -> Optional[PlanRegistryEntry]:
+    def lookup(
+        self,
+        url: str,
+        *,
+        allow_domain_fallback: bool = True,
+    ) -> Optional[PlanRegistryEntry]:
         """Three-tier lookup: exact fingerprint -> path-prefix -> domain.
 
         Args:
             url: Target URL to look up.
+            allow_domain_fallback: When ``True`` (default), Tier 3 returns
+                any plan from the same domain if Tier 1 and Tier 2 miss.
+                Set to ``False`` when the caller has a specific extraction
+                intent for this URL (e.g. an ``objective`` was supplied) —
+                returning a plan made for an unrelated path on the same
+                domain would silently scrape the wrong page.
 
         Returns:
             Matching ``PlanRegistryEntry`` or ``None`` if no match.
@@ -126,6 +137,9 @@ class BasePlanRegistry(Generic[T]):
 
         if best_match is not None:
             return best_match
+
+        if not allow_domain_fallback:
+            return None
 
         # Tier 3: domain-only match
         for entry in self._entries.values():

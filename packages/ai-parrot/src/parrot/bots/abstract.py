@@ -1951,11 +1951,6 @@ class AbstractBot(
             parent_id = meta.get('parent_document_id')
 
             if not parent_id:
-                self.logger.debug(
-                    "_expand_to_parents: result at idx=%d has no parent_document_id "
-                    "(legacy chunk) — passing through unchanged.",
-                    idx,
-                )
                 pass_through.append((idx, r))
                 continue
 
