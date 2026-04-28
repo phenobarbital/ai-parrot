@@ -114,6 +114,34 @@ The server normalises the payload into a `BugBrief`, validates the
 shell-command heads against `ACCEPTANCE_CRITERION_ALLOWLIST` (`flowtask`,
 `pytest`, `ruff`, `mypy`, `pylint`), and starts a real flow run.
 
+#### Acceptance-criterion syntax
+
+Each acceptance criterion is **one shell command per line** in the
+textarea (or one string per element in the JSON array). The first token
+must be a verb from the allowlist; the rest is forwarded to the
+subprocess verbatim by the QA node.
+
+| Form | Becomes |
+|---|---|
+| `ruff check .` | `ShellCriterion(name="ruff-criterion-1", command="ruff check .")` |
+| `mypy --no-incremental` | `ShellCriterion(name="mypy-criterion-2", command="mypy --no-incremental")` |
+| `pytest tests/loaders/test_csv.py -v` | `ShellCriterion(name="pytest-criterion-3", ...)` |
+| `flowtask etl/customers/sync.yaml` | `ShellCriterion(name="flowtask-criterion-4", ...)` |
+| `pylint parrot/` | `ShellCriterion(name="pylint-criterion-5", ...)` |
+
+Common gotchas:
+
+* **Don't use a colon after the head**: `flowtask: foo.yaml` is tolerated
+  (the parser strips the trailing `:`), but the canonical form is just a
+  space: `flowtask foo.yaml`.
+* **No shell pipes / redirections**: the QA node uses `subprocess.exec`
+  with the command split as a list, not `shell=True`. Compose pipelines
+  by writing a wrapper script and invoking it via the allowlist head
+  (e.g. `pytest scripts/check_pipeline.py`).
+* If you need a `FlowtaskCriterion` with a specific `task_path` and
+  `args` array, post the full criterion dict via curl instead of a
+  string line.
+
 ## Stream layout (for reference)
 
 ```

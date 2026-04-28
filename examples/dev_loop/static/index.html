@@ -75,6 +75,13 @@
     white-space: pre-wrap; display: none;
   }
   .form .err.show { display: block; }
+  .form .hint {
+    font-size: 11px; color: var(--muted); margin-top: -4px;
+  }
+  .form .hint code {
+    background: var(--bg); padding: 1px 5px; border-radius: 3px;
+    font-size: 11px;
+  }
 
   /* Board */
   .board {
@@ -158,8 +165,14 @@
 
     <label>Acceptance criteria — one shell command per line
       <textarea name="acceptance_criteria" class="tall" required
-                placeholder="ruff check .&#10;mypy --no-incremental"></textarea>
+                placeholder="ruff check .&#10;mypy --no-incremental&#10;pytest tests/etl/test_customers.py -v&#10;flowtask etl/customers/sync.yaml"></textarea>
     </label>
+    <div class="hint">
+      Each line must start with one of:
+      <code>flowtask</code> · <code>pytest</code> · <code>ruff</code> ·
+      <code>mypy</code> · <code>pylint</code>, followed by its args
+      (no colon). Example: <code>flowtask etl/customers/sync.yaml</code>.
+    </div>
 
     <div class="row">
       <label>CloudWatch log group (optional)

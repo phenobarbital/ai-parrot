@@ -200,7 +200,21 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
-    """Accept either ``list[str]`` (one shell command per line) or full dicts."""
+    """Accept either ``list[str]`` (one shell command per line) or full dicts.
+
+    Syntax for the string form: ``<head> <args...>``, one per line, where
+    ``<head>`` is one of ``flowtask | pytest | ruff | mypy | pylint``. The
+    parser tolerates a trailing colon on the head (``flowtask: foo.yaml``
+    is treated as ``flowtask foo.yaml``).
+
+    Examples that all parse:
+
+    * ``ruff check .``
+    * ``mypy --no-incremental``
+    * ``pytest tests/loaders/test_csv.py -v``
+    * ``flowtask etl/customers/sync.yaml``
+    * ``pylint parrot/``
+    """
     if not isinstance(raw, list):
         return []
     out: list[dict[str, Any]] = []
@@ -213,11 +227,16 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
         cmd = item.strip()
         if not cmd:
             continue
-        head = cmd.split(maxsplit=1)[0]
+        # Tolerate `head:` (with trailing colon) and re-glue the rest.
+        head, _, tail = cmd.partition(" ")
+        head = head.rstrip(":")
+        cmd = head + (f" {tail}" if tail else "")
         if head not in _ALLOWED_SHELL_HEADS:
             raise ValueError(
                 f"acceptance criterion {idx} starts with disallowed head "
-                f"{head!r}; allowed: {sorted(_ALLOWED_SHELL_HEADS)}"
+                f"{head!r}; allowed: {sorted(_ALLOWED_SHELL_HEADS)}. "
+                f"Write one shell command per line, e.g. 'ruff check .' "
+                f"or 'flowtask etl/foo.yaml'."
             )
         out.append({
             "kind": "shell",
