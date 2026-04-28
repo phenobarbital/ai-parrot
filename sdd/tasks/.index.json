@@ -16262,7 +16262,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "medium",
             "effort": "S",
             "depends_on": [],
@@ -16270,7 +16270,8 @@
             "parallelism_notes": "Read-only verification + small unit test. No shared file with the factories.",
             "assigned_to": null,
             "started_at": "2026-04-28T23:40:59.832351+00:00",
-            "file": "sdd/tasks/active/TASK-909-basebot-chatbot-kwargs-verify.md"
+            "file": "sdd/tasks/completed/TASK-909-basebot-chatbot-kwargs-verify.md",
+            "completed_at": "2026-04-28T23:55:05.728584+00:00"
         },
         {
             "id": "TASK-910",
