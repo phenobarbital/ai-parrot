@@ -100,6 +100,7 @@ also drive the same endpoint from the CLI:
 curl -X POST http://localhost:8080/api/flow/run \
   -H 'Content-Type: application/json' \
   -d '{
+    "kind": "enhancement",
     "summary": "Order webhook signature mismatch on retries",
     "affected_component": "etl/orders/webhook.yaml",
     "description": "Observed in prod 2026-04-28; only the second retry fails. See OPS-4321.",
@@ -112,7 +113,15 @@ curl -X POST http://localhost:8080/api/flow/run \
   }'
 ```
 
-The server normalises the payload into a `BugBrief`, validates the
+The `kind` field controls how the flow routes the request (FEAT-132):
+
+| UI radio | JSON value | Jira issuetype | Flow path |
+|---|---|---|---|
+| Bug (default) | `"bug"` | Bug | `IntentClassifier → BugIntake → Research → …` |
+| Enhancement | `"enhancement"` | Story | `IntentClassifier → Research → …` (skips BugIntake) |
+| New Feature | `"new_feature"` | New Feature | `IntentClassifier → Research → …` (skips BugIntake) |
+
+The server normalises the payload into a `WorkBrief`, validates the
 shell-command heads against `ACCEPTANCE_CRITERION_ALLOWLIST` (`flowtask`,
 `pytest`, `ruff`, `mypy`, `pylint`), and starts a real flow run.
 

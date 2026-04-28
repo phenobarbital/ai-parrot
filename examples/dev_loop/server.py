@@ -106,7 +106,7 @@ def _build_log_toolkits() -> dict[str, object]:
 
 
 # ---------------------------------------------------------------------------
-# BugBrief construction from form payload
+# BugBrief / WorkBrief construction from form payload
 # ---------------------------------------------------------------------------
 
 
@@ -114,9 +114,12 @@ _ALLOWED_SHELL_HEADS = {
     "task", "flowtask", "pytest", "ruff", "mypy", "pylint",
 }
 
+# FEAT-132: accepted work-kind values (snake_case, lower).
+_KIND_VALUES = {"bug", "enhancement", "new_feature"}
+
 
 def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
-    """Translate the UI form payload into a fully-formed ``BugBrief``.
+    """Translate the UI form payload into a fully-formed ``WorkBrief``.
 
     Required form fields:
 
@@ -128,6 +131,10 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
 
     Optional form fields:
 
+    * ``kind``                 — work kind: ``"Bug"``, ``"Enhancement"``, or
+                                 ``"New Feature"`` (as sent by the UI radios).
+                                 Normalised to snake_case; unknown values warn
+                                 and default to ``"bug"``. FEAT-132.
     * ``description``          — long-form incident text appended to the
                                  summary.
     * ``log_group``            — CloudWatch log group override; falls back
@@ -140,6 +147,14 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
                                  ``JIRA_ESCALATION_ACCOUNT_ID`` then
                                  ``FLOW_BOT_JIRA_ACCOUNT_ID``.
     """
+    # FEAT-132: normalise kind (label → snake_case value).
+    raw_kind = (form.get("kind") or "bug").strip().lower().replace(" ", "_")
+    if raw_kind not in _KIND_VALUES:
+        logger.warning(
+            "Unknown kind %r submitted; defaulting to 'bug'", raw_kind
+        )
+        raw_kind = "bug"
+
     summary = (form.get("summary") or "").strip()
     if not summary:
         raise ValueError("summary is required")
@@ -189,6 +204,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         )
 
     payload: dict[str, Any] = {
+        "kind": raw_kind,  # FEAT-132
         "summary": summary,
         "description": description,
         "affected_component": component,
