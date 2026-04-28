@@ -292,10 +292,22 @@ class ClaudeAgentClient(AbstractClient):
 
         merged = self.default_run_options.model_copy(deep=True)
         if run_options is not None:
-            for key, value in run_options.model_dump(exclude_none=True).items():
+            # Iterate fields directly (not via model_dump) so values that
+            # aren't trivially Pydantic-serialisable survive the merge
+            # intact — most notably dataclass instances inside
+            # ``agents: Dict[str, AgentDefinition]``. ``model_dump``
+            # would coerce them to plain dicts and the SDK's
+            # ``_process_query_inner`` then crashes calling
+            # ``asdict(agent_def)`` on a non-dataclass.
+            for key in run_options.model_fields_set:
+                value = getattr(run_options, key)
+                if value is None:
+                    continue
                 if key == "extra_options":
                     if value:
-                        merged.extra_options = {**merged.extra_options, **value}
+                        merged.extra_options = {
+                            **(merged.extra_options or {}), **value
+                        }
                 else:
                     setattr(merged, key, value)
 

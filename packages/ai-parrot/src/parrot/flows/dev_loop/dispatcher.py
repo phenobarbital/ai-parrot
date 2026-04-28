@@ -182,10 +182,16 @@ class ClaudeCodeDispatcher:
 
         async with self._semaphore:
             try:
-                # Materialize the JSON schema for the structured-output flag.
-                json_schema_path = self._materialize_json_schema(output_model)
+                # ``json_schema_path`` is intentionally not generated:
+                # the SDK's subprocess transport pins
+                # ``--output-format stream-json`` / ``--input-format
+                # stream-json`` itself, so passing
+                # ``extra_args={"output-format": "json", ...}`` causes a
+                # CLI-level conflict. Output validation falls back to
+                # best-effort JSON parsing of the final assistant text
+                # (spec §7 R2).
                 run_options = self._resolve_run_options(
-                    profile, cwd, json_schema_path=json_schema_path
+                    profile, cwd, json_schema_path=None
                 )
 
                 client = LLMFactory.create(f"claude-agent:{profile.model}")
@@ -364,12 +370,16 @@ class ClaudeCodeDispatcher:
         else:
             system_prompt = profile.system_prompt_override
 
+        # NOTE: spec §7 R2 floated using
+        # ``extra_args={"output-format":"json","json-schema":<path>}`` as
+        # a v1 enhancement, but the SDK's subprocess transport always
+        # adds ``--output-format stream-json`` / ``--input-format
+        # stream-json`` itself; overriding via ``extra_args`` produces
+        # ``--input-format=stream-json requires output-format=stream-json``
+        # at runtime. We therefore stick with the documented best-effort
+        # JSON parsing of the final ``ResultMessage`` payload — see
+        # ``_validate_output`` — and leave ``extra_args`` unset.
         extra_args: Optional[Dict[str, Optional[str]]] = None
-        if json_schema_path is not None:
-            extra_args = {
-                "output-format": "json",
-                "json-schema": json_schema_path,
-            }
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
