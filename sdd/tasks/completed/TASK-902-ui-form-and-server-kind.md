@@ -261,9 +261,7 @@ in-process via importlib, not via package import.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Added kind fieldset to index.html (radio group, Bug default), included kind in buildPayload JS, added intent_classifier panel, handled flow.intake_validated event. Added _KIND_VALUES set and normalisation logic to server.py. Updated README with kind field docs and routing table, curl example updated with "kind": "enhancement". Created test_examples_form.py with 13 tests (path correction needed: parents[5] not parents[4]). All 13 tests pass; full suite 115 passed.
+**Deviations from spec**: none
