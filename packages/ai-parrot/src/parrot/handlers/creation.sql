@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     -- Vector store and retrieval configuration
     use_vector BOOLEAN DEFAULT FALSE,
     vector_store_config JSONB DEFAULT '{}'::JSONB,
+    reranker_config        JSONB DEFAULT '{}'::JSONB,
+    parent_searcher_config JSONB DEFAULT '{}'::JSONB,
     embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}'::JSONB,
     context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
     context_score_threshold FLOAT DEFAULT 0.7 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
@@ -190,3 +192,12 @@ WHERE enabled = TRUE AND tools_enabled = TRUE;
 -- Grant appropriate permissions (adjust as needed for your setup)
 -- GRANT SELECT, INSERT, UPDATE, DELETE ON navigator.ai_bots TO your_app_user;
 -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA navigator TO your_app_user;
+
+-- FEAT-133: Add reranker_config and parent_searcher_config columns (idempotent)
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS reranker_config        JSONB DEFAULT '{}'::JSONB;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS parent_searcher_config JSONB DEFAULT '{}'::JSONB;
+
+COMMENT ON COLUMN navigator.ai_bots.reranker_config        IS 'FEAT-133 — reranker factory config (FEAT-126)';
+COMMENT ON COLUMN navigator.ai_bots.parent_searcher_config IS 'FEAT-133 — parent searcher factory config (FEAT-128)';
