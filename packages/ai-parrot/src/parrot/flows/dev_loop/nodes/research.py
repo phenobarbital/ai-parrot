@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 from typing import Any, Dict, List, Optional
 
 from parrot import conf
@@ -176,8 +177,11 @@ class ResearchNode(Node):
                 update={"jira_issue_key": issue_key}
             )
 
-        # 5. Spec §7 R5 — fail fast on duplicate worktree.
-        self._check_no_existing_worktree(research_out.branch_name)
+        # 5. Spec §7 R5 (relaxed) — reuse existing worktree if it's
+        # already a registered git worktree on the expected branch;
+        # fail fast only on the unsafe shapes (untracked directory or
+        # mismatched branch).
+        self._ensure_worktree_safe(research_out.branch_name)
 
         ctx["research_output"] = research_out
         return research_out
@@ -506,17 +510,91 @@ class ResearchNode(Node):
                 return key
         return ""
 
-    @staticmethod
-    def _check_no_existing_worktree(branch_name: str) -> None:
+    def _ensure_worktree_safe(self, branch_name: str) -> None:
+        """Verify the resolved worktree is safe to reuse, or fail loudly.
+
+        Idempotency relaxation of spec §7 R5: when the dev-loop
+        re-runs against an already-known incident, the same FEAT-id —
+        and therefore the same worktree path / branch — is expected to
+        appear again. Failing fast on every such re-run defeats the
+        re-trigger workflow.
+
+        Decision matrix:
+
+        * Path does not exist → nothing to do (subagent created it).
+        * Path is a registered git worktree on the *expected* branch →
+          log info and reuse silently.
+        * Path is a registered git worktree on a *different* branch →
+          fail fast (real conflict).
+        * Path exists but is NOT a registered git worktree → fail
+          fast (stale junk; refuse to assume).
+        * ``git worktree list`` itself failed → fail fast (cannot
+          decide safely).
+        """
         path = os.path.join(conf.WORKTREE_BASE_PATH, branch_name)
-        if os.path.exists(path):
-            # Duplicate worktree — spec §7 R5 explicitly forbids
-            # auto-recovery in v1; the human cleans up.
-            raise RuntimeError(
-                f"Worktree {path!r} already exists. Run "
-                f"`git worktree remove {path}` and retry. "
-                f"Auto-recovery is out of scope (spec R5)."
+        if not os.path.exists(path):
+            return
+
+        try:
+            proc = subprocess.run(
+                ["git", "worktree", "list", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
             )
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            raise RuntimeError(
+                f"Path {path!r} exists but `git worktree list` "
+                f"failed: {exc}. Investigate manually before retrying."
+            ) from exc
+
+        info = self._find_worktree_entry(proc.stdout, os.path.abspath(path))
+        if info is None:
+            raise RuntimeError(
+                f"Path {path!r} already exists but is not a registered "
+                f"git worktree — likely stale. Remove it (e.g. "
+                f"`rm -rf {path}`) and retry."
+            )
+        actual_branch = info.get("branch")
+        if actual_branch and actual_branch != branch_name:
+            raise RuntimeError(
+                f"Worktree {path!r} is on branch {actual_branch!r}, "
+                f"not on the expected {branch_name!r}. Run "
+                f"`git worktree remove {path}` and retry."
+            )
+        self.logger.info(
+            "Reusing existing worktree %s on branch %s",
+            path, branch_name,
+        )
+
+    @staticmethod
+    def _find_worktree_entry(
+        porcelain: str, abs_path: str
+    ) -> Optional[Dict[str, str]]:
+        """Parse ``git worktree list --porcelain`` output for a path.
+
+        Returns a dict with the entry's fields (notably ``branch``,
+        without the ``refs/heads/`` prefix) or ``None`` if the path is
+        not registered.
+        """
+        current: Dict[str, str] = {}
+        for line in porcelain.splitlines():
+            if not line:
+                # Blank line separates worktree entries.
+                if current.get("worktree") == abs_path:
+                    return current
+                current = {}
+                continue
+            if " " in line:
+                key, _, value = line.partition(" ")
+            else:
+                key, value = line, ""
+            if key == "branch" and value.startswith("refs/heads/"):
+                value = value[len("refs/heads/"):]
+            current[key] = value
+        if current.get("worktree") == abs_path:
+            return current
+        return None
 
 
 __all__ = ["ResearchNode"]
