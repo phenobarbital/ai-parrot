@@ -25,6 +25,10 @@ from typing import List, Optional
 import aiosqlite
 from navconfig.logging import logging
 
+# aiosqlite logs the full SQL + bind params at DEBUG, which leaks
+# conversation payloads into stdout/CloudWatch. Silence at import time.
+logging.getLogger("aiosqlite").setLevel(logging.INFO)
+
 from parrot.storage.backends.base import ConversationBackend
 
 
