@@ -11,6 +11,8 @@ succeeds even when the optional ``[claude-agent]`` extra is not installed.
 
 See ``sdd/specs/dev-loop-orchestration.spec.md`` §2 "Data Models" for the
 authoritative contracts.
+See ``sdd/specs/feat-129-upgrades.spec.md`` §3 Module 1 for the FEAT-132
+``WorkBrief`` rename and ``kind`` field.
 """
 
 from __future__ import annotations
@@ -87,8 +89,12 @@ AcceptanceCriterion = Annotated[
 
 
 # ─────────────────────────────────────────────────────────────────────
-# Bug brief (BugIntakeNode input → flow context)
+# Work brief (IntentClassifierNode / BugIntakeNode input → flow context)
 # ─────────────────────────────────────────────────────────────────────
+
+# Internal type alias for the kind discriminator field. Not exported
+# publicly from parrot.flows.dev_loop — internal use only. FEAT-132.
+WorkKind = Literal["bug", "enhancement", "new_feature"]
 
 
 class LogSource(BaseModel):
@@ -102,13 +108,29 @@ class LogSource(BaseModel):
     time_window_minutes: int = Field(default=60, ge=1, le=1440)
 
 
-class BugBrief(BaseModel):
+class WorkBrief(BaseModel):
     """User-facing input contract for the dev-loop flow.
 
-    Produced by the nav-admin form (or another caller) and validated by
-    ``BugIntakeNode`` before any dispatch happens.
+    Renamed from ``BugBrief`` in FEAT-132. The legacy name is preserved as
+    a module-level alias (``BugBrief = WorkBrief``) so existing
+    ``from parrot.flows.dev_loop import BugBrief`` callers keep working
+    without edits.
+
+    Field declaration order is intentional: ``kind`` is first so the JSON
+    schema rendered by the dispatcher's ``_build_prompt`` surfaces it at
+    the top of the field list.
     """
 
+    kind: WorkKind = Field(
+        default="bug",
+        description=(
+            "Intake classification: 'bug' for defect triage, "
+            "'enhancement' for changes to existing behaviour, "
+            "'new_feature' for net-new capability. Picked up by "
+            "IntentClassifierNode for routing and by ResearchNode for "
+            "Jira issuetype selection."
+        ),
+    )
     summary: str = Field(
         ...,
         min_length=10,
@@ -148,6 +170,11 @@ class BugBrief(BaseModel):
             "before falling back to creating a new one."
         ),
     )
+
+
+# Back-compat alias: existing `from parrot.flows.dev_loop import BugBrief`
+# callers keep working unchanged. FEAT-132.
+BugBrief = WorkBrief
 
 
 # ─────────────────────────────────────────────────────────────────────

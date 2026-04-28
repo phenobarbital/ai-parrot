@@ -33,6 +33,7 @@ from parrot.flows.dev_loop.models import (
     QAReport,
     ResearchOutput,
     ShellCriterion,
+    WorkBrief,
 )
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "QAReport",
     "ResearchOutput",
     "ShellCriterion",
+    "WorkBrief",
     "build_dev_loop_flow",
     "cleanup_worktree",
     "flow_stream_ws",
