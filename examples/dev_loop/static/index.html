@@ -181,7 +181,7 @@
                 placeholder="task etl/customers/sync.yaml&#10;ruff check .&#10;pytest tests/etl/test_customers.py -v&#10;The customer count must equal 1500 after a sync of a 1500-row CSV"></textarea>
     </label>
     <div class="hint">
-      Lines starting with <code>task</code> · <code>pytest</code> ·
+      Lines starting with <code>task</code> · <code>flowtask</code> · <code>pytest</code> ·
       <code>ruff</code> · <code>mypy</code> · <code>pylint</code>
       become <strong>shell criteria</strong> (run as subprocess; exit
       code 0 = pass). Anything else becomes a <strong>manual
@@ -352,6 +352,8 @@ function buildPayload(fd) {
   };
   const lg = (fd.get("log_group") || "").trim();
   if (lg) payload.log_group = lg;
+  const ek = (fd.get("existing_issue_key") || "").trim();
+  if (ek) payload.existing_issue_key = ek;
   return payload;
 }
 

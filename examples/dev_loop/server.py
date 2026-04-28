@@ -380,13 +380,9 @@ async def _on_startup(app: web.Application) -> None:
     app["redis"] = aioredis.from_url(redis_url, decode_responses=True)
 
     dispatcher = ClaudeCodeDispatcher(
-        max_concurrent=conf.config.get(
-            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
-        ),
+        max_concurrent=conf.CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES,
         redis_url=redis_url,
-        stream_ttl_seconds=conf.config.get(
-            "FLOW_STREAM_TTL_SECONDS", fallback=604800
-        ),
+        stream_ttl_seconds=conf.FLOW_STREAM_TTL_SECONDS,
     )
     app["flow"] = build_dev_loop_flow(
         dispatcher=dispatcher,

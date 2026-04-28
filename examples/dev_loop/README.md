@@ -238,7 +238,7 @@ the UI consumes verbatim:
 
 ## Troubleshooting
 
-* **UI stuck on "idle"** → check the server logs; `BugIntakeNode` raises
+* **UI stuck on "idle"** → check the server logs; `IntentClassifierNode` raises
   `ValueError` on disallowed `ShellCriterion.command` heads
   (`ACCEPTANCE_CRITERION_ALLOWLIST` defaults to
   `flowtask, pytest, ruff, mypy, pylint`).

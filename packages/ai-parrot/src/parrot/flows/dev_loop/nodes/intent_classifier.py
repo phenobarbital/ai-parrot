@@ -218,5 +218,11 @@ class IntentClassifierNode(Node):
         )
         return self._redis
 
+    async def close(self) -> None:
+        """Release the Redis client connection pool."""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
+
 
 __all__ = ["IntentClassifierNode"]

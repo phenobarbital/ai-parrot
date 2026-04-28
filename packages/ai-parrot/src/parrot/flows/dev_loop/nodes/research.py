@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import subprocess
 from typing import Any, Dict, List, Optional
 
 from parrot import conf
@@ -79,7 +78,7 @@ def _plan_llm_default() -> str:
     falls back to the same model as :func:`_summarizer_llm_default`.
     An empty ``DEV_LOOP_PLAN_LLM`` means "use the summarizer default".
     """
-    pinned = conf.config.get("DEV_LOOP_PLAN_LLM", fallback="")
+    pinned = conf.DEV_LOOP_PLAN_LLM
     if pinned:
         return pinned
     return _summarizer_llm_default()
@@ -220,7 +219,7 @@ class ResearchNode(Node):
         # already a registered git worktree on the expected branch;
         # fail fast only on the unsafe shapes (untracked directory or
         # mismatched branch).
-        self._ensure_worktree_safe(research_out.branch_name)
+        await self._ensure_worktree_safe(research_out.branch_name)
 
         ctx["research_output"] = research_out
         return research_out
@@ -556,6 +555,10 @@ class ResearchNode(Node):
         # 2. Summary search inside the configured project.
         project = conf.config.get("JIRA_PROJECT")
         if not project:
+            self.logger.warning(
+                "JIRA_PROJECT not configured; duplicate-ticket JQL search skipped "
+                "— every intake will create a new ticket even if one already exists."
+            )
             return None
         # Escape JQL string delimiters in the summary.
         safe_summary = brief.summary.replace("\\", "\\\\").replace('"', '\\"')
@@ -642,15 +645,11 @@ class ResearchNode(Node):
         """
         if not reporter:
             return None
-        try:
-            account_id = await self._jira._resolve_account_id(reporter)
-        except Exception as exc:  # noqa: BLE001 - degrade to raw value
-            self.logger.warning(
-                "Could not resolve reporter %r to an accountId (%s); "
-                "passing through verbatim",
-                reporter, exc,
-            )
-            account_id = reporter
+        # Pass the reporter email verbatim — Jira resolves it server-side
+        # via the standard accountId / email lookup. We avoid calling the
+        # private _resolve_account_id method on the toolkit because private
+        # API is not part of the toolkit's contract and may change without notice.
+        account_id = reporter
         return {"reporter": {"accountId": account_id}}
 
     @staticmethod
@@ -661,7 +660,7 @@ class ResearchNode(Node):
                 return key
         return ""
 
-    def _ensure_worktree_safe(self, branch_name: str) -> None:
+    async def _ensure_worktree_safe(self, branch_name: str) -> None:
         """Verify the resolved worktree is safe to reuse, or fail loudly.
 
         Idempotency relaxation of spec §7 R5: when the dev-loop
@@ -681,25 +680,38 @@ class ResearchNode(Node):
           fast (stale junk; refuse to assume).
         * ``git worktree list`` itself failed → fail fast (cannot
           decide safely).
+
+        Uses :func:`asyncio.create_subprocess_exec` to avoid blocking
+        the event loop while git inspects the worktree list.
         """
         path = os.path.join(conf.WORKTREE_BASE_PATH, branch_name)
         if not os.path.exists(path):
             return
 
         try:
-            proc = subprocess.run(
-                ["git", "worktree", "list", "--porcelain"],
-                capture_output=True,
-                text=True,
-                check=True,
+            proc = await asyncio.create_subprocess_exec(
+                "git", "worktree", "list", "--porcelain",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            stdout_bytes, _ = await proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError(f"git exited with code {proc.returncode}")
+            stdout = stdout_bytes.decode()
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"Path {path!r} exists but `git worktree list` "
+                f"failed: {exc}. Investigate manually before retrying."
+            ) from exc
+        except RuntimeError:
+            raise
+        except Exception as exc:
             raise RuntimeError(
                 f"Path {path!r} exists but `git worktree list` "
                 f"failed: {exc}. Investigate manually before retrying."
             ) from exc
 
-        info = self._find_worktree_entry(proc.stdout, os.path.abspath(path))
+        info = self._find_worktree_entry(stdout, os.path.abspath(path))
         if info is None:
             raise RuntimeError(
                 f"Path {path!r} already exists but is not a registered "

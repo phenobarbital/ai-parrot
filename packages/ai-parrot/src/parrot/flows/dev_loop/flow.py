@@ -25,6 +25,7 @@ from typing import Any, Dict, Protocol, runtime_checkable
 
 from parrot.bots.flow import AgentsFlow
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.models import WorkBrief
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
 from parrot.flows.dev_loop.nodes.deployment_handoff import (
     DeploymentHandoffNode,
@@ -101,13 +102,13 @@ class _NodeAgentAdapter:
 class _NoopToolManager:
     """Bare-minimum stand-in for ``parrot.tools.tool_manager.ToolManager``."""
 
-    def list_tools(self):
+    def list_tools(self) -> list:
         return []
 
-    def get_tool(self, name: str):  # noqa: ARG002
+    def get_tool(self, name: str) -> None:  # noqa: ARG002
         return None
 
-    def add_tool(self, *args, **kwargs):  # noqa: ARG002
+    def add_tool(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         return None
 
 
@@ -188,11 +189,16 @@ def build_dev_loop_flow(
     # Register "bug" first so it wins in case of evaluation-order sensitivity
     # (spec §7 R7).
     def _is_bug(result: Any) -> bool:
-        return getattr(result, "kind", "bug") == "bug"
+        """Return True only if result is a WorkBrief with kind == 'bug'."""
+        if isinstance(result, WorkBrief):
+            return result.kind == "bug"
+        return False
 
     def _is_not_bug(result: Any) -> bool:
-        kind = getattr(result, "kind", "bug")
-        return kind != "bug"
+        """Return True only if result is a WorkBrief with kind != 'bug'."""
+        if isinstance(result, WorkBrief):
+            return result.kind != "bug"
+        return False
 
     flow.on_condition(intent_classifier.name, bug_intake.name, predicate=_is_bug)
     flow.on_condition(intent_classifier.name, research.name, predicate=_is_not_bug)

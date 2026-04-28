@@ -52,6 +52,7 @@ class BugIntakeNode(Node):
 
     @property
     def name(self) -> str:
+        """Node identifier used by the flow router."""
         return self._name
 
     # ------------------------------------------------------------------
@@ -114,6 +115,13 @@ class BugIntakeNode(Node):
         )
 
     async def _emit_validated_event(self, run_id: str, brief: BugBrief) -> None:
+        """XADD one ``flow.bug_brief_validated`` event to the flow stream.
+
+        Args:
+            run_id: Identifies the Redis stream key ``flow:{run_id}:flow``.
+            brief: The validated brief whose metadata is included in the
+                event payload.
+        """
         try:
             redis_client = await self._ensure_redis()
         except Exception as exc:  # pragma: no cover - degraded path
@@ -145,6 +153,11 @@ class BugIntakeNode(Node):
             )
 
     async def _ensure_redis(self) -> Any:
+        """Return a cached async Redis client, creating it on first call.
+
+        Returns:
+            A live ``redis.asyncio`` client instance.
+        """
         if self._redis is not None:
             return self._redis
         import redis.asyncio as aioredis
@@ -153,6 +166,12 @@ class BugIntakeNode(Node):
             self._redis_url, decode_responses=True
         )
         return self._redis
+
+    async def close(self) -> None:
+        """Release the Redis client connection pool."""
+        if self._redis is not None:
+            await self._redis.aclose()
+            self._redis = None
 
 
 __all__ = ["BugIntakeNode"]
