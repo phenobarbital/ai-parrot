@@ -1,10 +1,11 @@
-"""BugIntakeNode — first node of the dev-loop flow.
+"""BugIntakeNode — bug-specific intake hook for the dev-loop flow.
 
-Pure AI-Parrot validation. Loads the incoming :class:`BugBrief`,
-sanity-checks every acceptance criterion against the
-``ACCEPTANCE_CRITERION_ALLOWLIST``, emits a
-``flow.bug_brief_validated`` event, and returns the brief for the
-downstream nodes to consume.
+FEAT-132 scope-down: universal validation (allowlist heads, path-traversal)
+has moved to :class:`IntentClassifierNode`, which runs before this node on
+the bug path. ``BugIntakeNode`` is now a thin extension hook reserved for
+future bug-only enrichment (severity classification, stack-trace parsing,
+etc.). For v1 it re-emits ``flow.bug_brief_validated`` so existing
+downstream observers keep working, and returns the brief unchanged.
 
 This node deliberately does NOT call the dispatcher; the most
 expensive thing it does is one ``XADD`` to the flow event stream.
@@ -15,19 +16,19 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from parrot.bots.flow.node import Node
-from parrot.conf import ACCEPTANCE_CRITERION_ALLOWLIST
-from parrot.flows.dev_loop.models import (
-    BugBrief,
-    FlowtaskCriterion,
-    ShellCriterion,
-)
+from parrot.flows.dev_loop.models import BugBrief
 
 
 class BugIntakeNode(Node):
-    """First node — validates a :class:`BugBrief` and emits a flow event.
+    """Bug-specific intake hook — emits ``flow.bug_brief_validated`` event.
+
+    FEAT-132 scope-down: universal validation now lives in
+    :class:`IntentClassifierNode` (which runs before this node on the
+    bug path). ``BugIntakeNode`` acts as an extension point for future
+    bug-only enrichment without requiring the flow topology to change.
 
     Args:
         redis_url: Redis URL used to publish ``flow.bug_brief_validated``.
@@ -58,7 +59,14 @@ class BugIntakeNode(Node):
     # ------------------------------------------------------------------
 
     async def execute(self, prompt: str, ctx: Dict[str, Any]) -> BugBrief:
-        """Validate and pass through the :class:`BugBrief`.
+        """Bug-specific intake hook (post FEAT-132 scope-down).
+
+        Universal validation now happens in :class:`IntentClassifierNode`
+        which runs before this node on the bug path. This node remains as
+        an extension point for bug-only enrichment (severity classification,
+        stack-trace parsing, etc.); for v1 it just re-emits
+        ``flow.bug_brief_validated`` for downstream observers that already
+        subscribe to that event.
 
         Args:
             prompt: Optional JSON string containing a serialized BugBrief.
@@ -68,15 +76,9 @@ class BugIntakeNode(Node):
                 instance or a dict).
 
         Returns:
-            The validated :class:`BugBrief` instance.
-
-        Raises:
-            ValueError: When any :class:`ShellCriterion` command head is
-                not in the allowlist or any :class:`FlowtaskCriterion`
-                ``task_path`` is absolute or contains a ``..`` segment.
+            The :class:`BugBrief` instance (already validated upstream).
         """
         brief = self._load_brief(prompt, ctx)
-        self._validate(brief)
         run_id = ctx.get("run_id", "")
         if run_id:
             await self._emit_validated_event(run_id, brief)
@@ -88,6 +90,18 @@ class BugIntakeNode(Node):
     # ------------------------------------------------------------------
 
     def _load_brief(self, prompt: str, ctx: Dict[str, Any]) -> BugBrief:
+        """Load a :class:`BugBrief` from context or JSON prompt.
+
+        Args:
+            prompt: Raw JSON string representing a ``BugBrief``.
+            ctx: Flow context dictionary.
+
+        Returns:
+            A validated :class:`BugBrief` instance.
+
+        Raises:
+            ValueError: When no source is available.
+        """
         candidate = ctx.get("bug_brief")
         if isinstance(candidate, BugBrief):
             return candidate
@@ -98,23 +112,6 @@ class BugIntakeNode(Node):
         raise ValueError(
             "BugIntakeNode requires ctx['bug_brief'] or a JSON prompt."
         )
-
-    def _validate(self, brief: BugBrief) -> None:
-        for crit in brief.acceptance_criteria:
-            if isinstance(crit, ShellCriterion):
-                tokens = crit.command.split(maxsplit=1)
-                head = tokens[0] if tokens else ""
-                if head not in ACCEPTANCE_CRITERION_ALLOWLIST:
-                    raise ValueError(
-                        f"Shell command head {head!r} not in allowlist "
-                        f"{sorted(ACCEPTANCE_CRITERION_ALLOWLIST)}"
-                    )
-            elif isinstance(crit, FlowtaskCriterion):
-                path = crit.task_path
-                if path.startswith("/") or ".." in path.split("/"):
-                    raise ValueError(
-                        f"Invalid relative task_path: {path!r}"
-                    )
 
     async def _emit_validated_event(self, run_id: str, brief: BugBrief) -> None:
         try:
