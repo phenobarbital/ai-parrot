@@ -101,7 +101,7 @@ def _build_log_toolkits() -> dict[str, object]:
             from parrot_tools.aws.cloudwatch import CloudWatchToolkit
 
             toolkits["cloudwatch"] = CloudWatchToolkit(
-                region_name=conf.config.get("AWS_REGION", default="us-east-1"),
+                region_name=conf.config.get("AWS_REGION", fallback="us-east-1"),
             )
         except Exception as exc:  # noqa: BLE001 - optional toolkit
             logger.warning("CloudWatch toolkit disabled: %s", exc)
@@ -112,7 +112,7 @@ def _build_log_toolkits() -> dict[str, object]:
 
             toolkits["elasticsearch"] = ElasticsearchTool(
                 host=conf.config.get("ELASTICSEARCH_HOST"),
-                port=conf.config.get("ELASTICSEARCH_PORT", default=9200),
+                port=conf.config.get("ELASTICSEARCH_PORT", fallback=9200),
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Elasticsearch toolkit disabled: %s", exc)
@@ -150,10 +150,10 @@ def _sample_brief_payload() -> dict[str, Any]:
              "command": "mypy --no-incremental"},
         ],
         "reporter": conf.config.get(
-            "DEMO_REPORTER_ACCOUNT_ID", default="557058:original-human"
+            "DEMO_REPORTER_ACCOUNT_ID", fallback="557058:original-human"
         ),
         "escalation_assignee": conf.config.get(
-            "FLOW_BOT_JIRA_ACCOUNT_ID", default="557058:on-call-engineer"
+            "FLOW_BOT_JIRA_ACCOUNT_ID", fallback="557058:on-call-engineer"
         ),
     }
 
@@ -241,11 +241,11 @@ async def _on_startup(app: web.Application) -> None:
 
     dispatcher = ClaudeCodeDispatcher(
         max_concurrent=conf.config.get(
-            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", default=3
+            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
         ),
         redis_url=redis_url,
         stream_ttl_seconds=conf.config.get(
-            "FLOW_STREAM_TTL_SECONDS", default=604800
+            "FLOW_STREAM_TTL_SECONDS", fallback=604800
         ),
     )
     app["flow"] = build_dev_loop_flow(

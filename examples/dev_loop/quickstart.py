@@ -69,11 +69,11 @@ def _build_jira_toolkit() -> JiraToolkit:
 def _build_log_toolkits() -> dict[str, object]:
     return {
         "cloudwatch": CloudWatchToolkit(
-            region_name=conf.config.get("AWS_REGION", default="us-east-1"),
+            region_name=conf.config.get("AWS_REGION", fallback="us-east-1"),
         ),
         "elasticsearch": ElasticsearchTool(
             host=conf.config.get("ELASTICSEARCH_HOST"),
-            port=conf.config.get("ELASTICSEARCH_PORT", default=9200),
+            port=conf.config.get("ELASTICSEARCH_PORT", fallback=9200),
         ),
     }
 
@@ -112,15 +112,15 @@ def make_sample_brief() -> BugBrief:
 
 
 async def main() -> None:
-    redis_url = conf.config.get("REDIS_URL", default="redis://localhost:6379/0")
+    redis_url = conf.config.get("REDIS_URL", fallback="redis://localhost:6379/0")
 
     dispatcher = ClaudeCodeDispatcher(
         max_concurrent=conf.config.get(
-            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", default=3
+            "CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES", fallback=3
         ),
         redis_url=redis_url,
         stream_ttl_seconds=conf.config.get(
-            "FLOW_STREAM_TTL_SECONDS", default=604800
+            "FLOW_STREAM_TTL_SECONDS", fallback=604800
         ),
     )
 
