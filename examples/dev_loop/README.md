@@ -28,7 +28,7 @@ client can start runs and visualise the merged event stream live.
 | `ANTHROPIC_API_KEY` (or any provider key the SDK accepts) | `ClaudeAgentClient` (FEAT-124) |
 | `claude` CLI on `$PATH`, authenticated | The SDK shells out to it |
 | `gh` CLI authenticated | `DeploymentHandoffNode` opens the PR |
-| Jira service account: `JIRA_SERVER_URL`, `FLOW_BOT_JIRA_TOKEN`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Tickets are created/transitioned by `flow-bot` |
+| Jira service account: `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Tickets are created/transitioned by `flow-bot` (toolkit uses `basic_auth`) |
 | At least one log toolkit's config (`AWS_REGION` for CloudWatch or `ELASTICSEARCH_HOST`/`PORT` for ES) | `ResearchNode` pulls log excerpts |
 
 Quickest local Redis:

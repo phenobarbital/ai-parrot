@@ -17,8 +17,10 @@ Required environment / navconfig settings:
 
 * ``ANTHROPIC_API_KEY``           — for the Claude Agent SDK
 * ``REDIS_URL``                   — defaults to ``redis://localhost:6379/0``
-* ``JIRA_SERVER_URL``             — Jira Cloud / Server base URL
-* ``FLOW_BOT_JIRA_TOKEN``         — service-account API token
+* ``JIRA_INSTANCE``               — Jira base URL
+* ``JIRA_USERNAME``               — service-account username (basic_auth)
+* ``JIRA_API_TOKEN``              — service-account API token / password
+* ``JIRA_PROJECT``                — default Jira project key (e.g. ``OPS``)
 * ``FLOW_BOT_JIRA_ACCOUNT_ID``    — accountId of the bot user
 * ``AWS_REGION``                  — for CloudWatch (default ``us-east-1``)
 * ``ELASTICSEARCH_URL``           — for the ES log toolkit
@@ -32,7 +34,6 @@ import logging
 import uuid
 
 from parrot import conf
-from parrot.auth.credentials import StaticCredentialResolver, StaticCredentials
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
@@ -51,18 +52,13 @@ logger = logging.getLogger("dev_loop.quickstart")
 
 
 def _build_jira_toolkit() -> JiraToolkit:
-    """Service-account JiraToolkit (flow-bot)."""
-    resolver = StaticCredentialResolver(
-        credentials=StaticCredentials(
-            token=conf.config.get("FLOW_BOT_JIRA_TOKEN"),
-            user_id="flow-bot",
-        ),
-    )
+    """Service-account JiraToolkit (flow-bot, basic_auth)."""
     return JiraToolkit(
-        server_url=conf.config.get("JIRA_SERVER_URL"),
-        auth_type="bearer",
-        user_id="flow-bot",
-        credential_resolver=resolver,
+        server_url=conf.config.get("JIRA_INSTANCE"),
+        auth_type="basic_auth",
+        username=conf.config.get("JIRA_USERNAME"),
+        password=conf.config.get("JIRA_API_TOKEN"),
+        default_project=conf.config.get("JIRA_PROJECT"),
     )
 
 

@@ -20,8 +20,9 @@ Runtime requirements:
 * Redis on ``REDIS_URL`` (default ``redis://localhost:6379/0``)
 * ``ANTHROPIC_API_KEY`` (or any provider key the Claude Agent SDK accepts)
 * ``claude`` CLI on ``$PATH`` and authenticated
-* Jira service-account token in ``FLOW_BOT_JIRA_TOKEN`` +
-  ``JIRA_SERVER_URL``
+* Jira service account: ``JIRA_INSTANCE``, ``JIRA_USERNAME``,
+  ``JIRA_API_TOKEN`` and (optionally) ``JIRA_PROJECT`` — the toolkit uses
+  ``basic_auth``
 * AWS credentials (CloudWatch) and ``ELASTICSEARCH_URL`` if you want both
   log toolkits — set ``LOG_TOOLKITS`` (comma-separated) to limit.
 * ``gh`` CLI authenticated for the DeploymentHandoff PR step
@@ -48,7 +49,6 @@ import redis.asyncio as aioredis
 from aiohttp import web
 
 from parrot import conf
-from parrot.auth.credentials import StaticCredentialResolver, StaticCredentials
 from parrot.flows.dev_loop import (
     BugBrief,
     ClaudeCodeDispatcher,
@@ -68,18 +68,13 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _build_jira_toolkit() -> JiraToolkit:
-    """Service-account JiraToolkit (flow-bot)."""
-    resolver = StaticCredentialResolver(
-        credentials=StaticCredentials(
-            token=conf.config.get("FLOW_BOT_JIRA_TOKEN"),
-            user_id="flow-bot",
-        ),
-    )
+    """Service-account JiraToolkit (flow-bot, basic_auth)."""
     return JiraToolkit(
-        server_url=conf.config.get("JIRA_SERVER_URL"),
-        auth_type="bearer",
-        user_id="flow-bot",
-        credential_resolver=resolver,
+        server_url=conf.config.get("JIRA_INSTANCE"),
+        auth_type="basic_auth",
+        username=conf.config.get("JIRA_USERNAME"),
+        password=conf.config.get("JIRA_API_TOKEN"),
+        default_project=conf.config.get("JIRA_PROJECT"),
     )
 
 
