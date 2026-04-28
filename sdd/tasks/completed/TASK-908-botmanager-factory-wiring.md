@@ -300,11 +300,8 @@ async def test_unknown_reranker_type_does_not_register(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Added imports for `create_reranker`, `create_parent_searcher`, `ConfigError`. Modified `_load_database_bots` to: (1) call `create_reranker()` before bot construction, (2) pass `reranker=` and `expand_to_parent=` to constructor, (3) patch LLM reranker client post-configure (option a), (4) call `create_parent_searcher()` after `configure()`, (5) set `bot_instance.parent_searcher`, (6) add INFO log with type names, (7) re-raise `ConfigError` (fail-loud). Tests could not import `parrot.manager` in worktree due to pre-existing missing Cython extension; the factory-level tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any (especially the LLM-client
-patch decision: option (a) or (b)).
+**Deviations from spec**: LLM-client patch decision: option (a) — pass `bot_llm_client=None` pre-construction; after configure, set `reranker.client = bot_instance.llm_client` if needed.

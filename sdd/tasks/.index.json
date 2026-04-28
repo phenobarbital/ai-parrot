@@ -16240,7 +16240,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16252,7 +16252,8 @@
             "parallelism_notes": "Imports both factories; touches manager.py. Cannot run before factories + BotModel exist.",
             "assigned_to": null,
             "started_at": "2026-04-28T23:40:59.832351+00:00",
-            "file": "sdd/tasks/active/TASK-908-botmanager-factory-wiring.md"
+            "file": "sdd/tasks/completed/TASK-908-botmanager-factory-wiring.md",
+            "completed_at": "2026-04-28T23:53:27.976771+00:00"
         },
         {
             "id": "TASK-909",
