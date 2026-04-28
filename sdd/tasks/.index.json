@@ -16136,7 +16136,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "medium",
             "effort": "S",
             "depends_on": [
@@ -16152,7 +16152,8 @@
             "parallelism_notes": "Wrap-up task \u2014 runs after every implementation task is merged.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-903-integration-smoke-and-docs.md"
+            "file": "sdd/tasks/completed/TASK-903-integration-smoke-and-docs.md",
+            "completed_at": "2026-04-29T00:15:00.000000+00:00"
         }
     ]
 }
