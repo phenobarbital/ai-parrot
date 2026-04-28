@@ -14,6 +14,10 @@ from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
 from asyncdb.exceptions import NoDataFound
+# FEAT-133: reranker + parent-searcher factories
+from ..rerankers.factory import create_reranker
+from ..stores.parents.factory import create_parent_searcher
+from ..exceptions import ConfigError
 from ..bots.abstract import AbstractBot
 from ..bots.basic import BasicBot
 from ..bots.chatbot import Chatbot
@@ -328,6 +332,22 @@ class BotManager:
                     else:
                         # Default to BasicBot or your default bot class
                         class_name = BasicBot
+
+                    # FEAT-133 Step 1: Build reranker BEFORE bot construction.
+                    # Reranker has no dependency on the store — can be resolved now.
+                    try:
+                        reranker = create_reranker(
+                            bot_model.reranker_config,
+                            bot_llm_client=None,  # patched post-construction if type=llm
+                        )
+                    except ConfigError as exc:
+                        self.logger.error(
+                            "Bot '%s': invalid reranker_config: %s",
+                            bot_model.name,
+                            exc,
+                        )
+                        raise
+
                     bot_instance = class_name(
                         chatbot_id=bot_model.chatbot_id,
                         name=bot_model.name,
@@ -372,16 +392,59 @@ class BotManager:
                         # Metadata
                         language=bot_model.language,
                         disclaimer=bot_model.disclaimer,
+                        # FEAT-133: reranker + expand_to_parent injected at construction.
+                        # parent_searcher injected AFTER configure() (needs bot.store).
+                        reranker=reranker,
+                        expand_to_parent=bool(
+                            bot_model.parent_searcher_config.get("expand_to_parent", False)
+                        ),
                     )
                     # Set the model ID reference
                     bot_instance.model_id = bot_model.chatbot_id
 
                     await bot_instance.configure(app)
+
+                    # FEAT-133 Step 2: Patch LLM reranker client now that
+                    # bot.llm_client is available (option a from spec §3 Module 5).
+                    from ..rerankers.llm import LLMReranker  # noqa: PLC0415
+                    if isinstance(reranker, LLMReranker) and reranker.client is None:
+                        reranker.client = getattr(bot_instance, 'llm_client', None)
+
+                    # FEAT-133 Step 3: Build parent_searcher AFTER configure()
+                    # because InTableParentSearcher requires bot.store.
+                    try:
+                        parent_searcher = create_parent_searcher(
+                            bot_model.parent_searcher_config,
+                            store=bot_instance.store,
+                        )
+                    except ConfigError as exc:
+                        self.logger.error(
+                            "Bot '%s': invalid parent_searcher_config: %s",
+                            bot_model.name,
+                            exc,
+                        )
+                        raise
+
+                    if parent_searcher is not None:
+                        bot_instance.parent_searcher = parent_searcher
+
+                    # FEAT-133: Operational visibility log.
+                    self.logger.info(
+                        "Bot '%s': reranker=%s, parent_searcher=%s",
+                        bot_model.name,
+                        type(reranker).__name__ if reranker else None,
+                        type(parent_searcher).__name__ if parent_searcher else None,
+                    )
+
                     self.add_bot(bot_instance)
                     self.logger.info(
                         f"Successfully loaded bot '{bot_model.name}' "
                         f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
                     )
+                except ConfigError:
+                    # ConfigError already logged above — re-raise so the bot is
+                    # NOT silently registered without its configured features.
+                    raise
                 except ValidationError as e:
                     self.logger.error(
                         f"Invalid configuration for bot '{bot_model.name}': {e}"
