@@ -143,11 +143,11 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     summary = (form.get("summary") or "").strip()
     if not summary:
         raise ValueError("summary is required")
+    if len(summary) > 255:
+        # Atlassian rejects summaries > 255 chars with a 400 — trim
+        # explicitly with a sentinel so the user notices it happened.
+        summary = summary[:252].rstrip() + "..."
     description = (form.get("description") or "").strip()
-    if description:
-        summary_block = f"{summary}\n\n{description}"
-    else:
-        summary_block = summary
 
     component = (form.get("affected_component") or "").strip()
     if not component:
@@ -189,7 +189,8 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         )
 
     return {
-        "summary": summary_block,
+        "summary": summary,
+        "description": description,
         "affected_component": component,
         "log_sources": [
             {

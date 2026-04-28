@@ -109,17 +109,33 @@ class BugBrief(BaseModel):
     ``BugIntakeNode`` before any dispatch happens.
     """
 
-    summary: str = Field(..., min_length=10)
+    summary: str = Field(
+        ...,
+        min_length=10,
+        max_length=255,
+        description=(
+            "Short human-readable headline. Becomes the Jira ticket "
+            "`summary` field, which Atlassian caps at 255 characters."
+        ),
+    )
+    description: str = Field(
+        default="",
+        description=(
+            "Long-form incident details (steps to reproduce, hypotheses, "
+            "links). Embedded in the Jira ticket description; never "
+            "forwarded to the `summary` field."
+        ),
+    )
     affected_component: str
     log_sources: List[LogSource] = Field(default_factory=list)
     acceptance_criteria: List[AcceptanceCriterion] = Field(..., min_length=1)
     escalation_assignee: str = Field(
         ...,
-        description="Jira accountId to receive the ticket on failure escalation.",
+        description="Jira accountId or email of the failure escalation assignee.",
     )
     reporter: str = Field(
         ...,
-        description="Jira accountId of the original human reporter (kept on the ticket).",
+        description="Jira accountId or email of the original human reporter.",
     )
 
 

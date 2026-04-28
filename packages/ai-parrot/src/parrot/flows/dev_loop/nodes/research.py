@@ -200,12 +200,29 @@ class ResearchNode(Node):
 
     @staticmethod
     def _build_description(brief: BugBrief, excerpts: List[str]) -> str:
+        # Format each criterion with the salient field for human review:
+        # shell command for ShellCriterion, task_path for FlowtaskCriterion,
+        # raw text for ManualCriterion.
+        def _fmt_criterion(c: Any) -> str:
+            kind = getattr(c, "kind", "?")
+            name = getattr(c, "name", "?")
+            detail = (
+                getattr(c, "command", None)
+                or getattr(c, "task_path", None)
+                or getattr(c, "text", "")
+            )
+            return f"- [{kind}] {name}: {detail}"
+
         criteria_lines = "\n".join(
-            f"- {c.kind}: {c.name}" for c in brief.acceptance_criteria
+            _fmt_criterion(c) for c in brief.acceptance_criteria
         )
         excerpts_block = "\n---\n".join(excerpts) if excerpts else "(none)"
+        details_block = (
+            f"Details:\n{brief.description}\n\n" if brief.description else ""
+        )
         return (
             f"Affected component: {brief.affected_component}\n\n"
+            f"{details_block}"
             f"Acceptance criteria:\n{criteria_lines}\n\n"
             f"Log excerpts:\n{excerpts_block}\n\n"
             f"Reporter: {brief.reporter}\n"
