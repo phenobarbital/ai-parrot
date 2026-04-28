@@ -56,7 +56,7 @@ dependencies = [
     # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
     "navigator-auth>0.20.9",
     "navigator-session>=0.6.5",
-    "navigator-api[uvloop,locale]>=2.14.1",
+    "navigator-api[uvloop,locale,google]>=2.14.1",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
     # HTTP / networking
