@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-132
 **Date**: 2026-04-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.6.x (`ai-parrot`, post-FEAT-129)
 
 ---
@@ -712,20 +712,20 @@ class JiraToolkit(AbstractToolkit):                       # line 609
 
 ### Still Open Questions
 
-- [ ] **`IntentClassifierNode` plan-summary placement** — should the plan
+- [x] **`IntentClassifierNode` plan-summary placement** — should the plan
   comment be authored by the classifier (so the human sees the plan
   before research even runs and can intervene) or by `ResearchNode`
   (current spec choice, since Research has access to log excerpts and
   has just run the summarizer)?
   *Owner: agent doing /sdd-task for Module 4.* Default if no objection:
   keep it on `ResearchNode` — the plan benefits from log context.
-- [ ] **Fallback model for `_build_plan_summary`** — when the LLM
+- [x] **Fallback model for `_build_plan_summary`** — when the LLM
   client raises, do we render a deterministic stub (current spec) or
   silently skip the comment entirely?
   *Owner: agent doing /sdd-task for Module 4.* Default if no objection:
   render a deterministic stub so the audit trail always shows that the
   agent attempted to plan.
-- [ ] **Should `BugIntakeNode` be deleted in v2?** — after this spec
+- [x] **Should `BugIntakeNode` be deleted in v2?** — after this spec
   it only emits one redis event. Keeping it adds an empty hop.
   *Owner: Jesus, post-merge.* Default: keep until a real bug-specific
   step is needed; no harm in the extra event.
