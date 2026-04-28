@@ -386,9 +386,7 @@ class TestPlanSummaryFallback:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Added _ISSUE_TYPE_BY_KIND dict, _plan_llm_default(), plan_llm param to __init__, _build_plan_summary/_compose_plan_prompt/_deterministic_plan_stub/_post_plan_summary_comment/_get_plan_client. Issuetype now derived from brief.kind. Plan-summary posted as first comment on new-ticket path only. LLM failure falls back to deterministic stub. 11 tests all pass (4 original + 7 new TASK-900 tests including 3 parametrized issuetype tests). Linting clean.
+**Deviations from spec**: none
