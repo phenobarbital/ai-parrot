@@ -1,13 +1,13 @@
-"""build_dev_loop_flow — wire the five primary nodes into an AgentsFlow.
+"""build_dev_loop_flow — wire the six primary nodes into an AgentsFlow.
 
-Implements **Module 10**. Topology:
+Implements **Module 10**. Topology (FEAT-132):
 
 .. code-block:: text
 
-    BugIntake → Research → Development → QA → DeploymentHandoff
-                                          │
-                                          └─(passed=False)→ FailureHandler
-                                          ↑(any node hard-error)
+    IntentClassifier ──(kind=="bug")──► BugIntake → Research → Development → QA → DeploymentHandoff
+                     └─(kind!="bug")──────────────► Research      │
+                                                                   └─(passed=False)→ FailureHandler
+                                                                   ↑(any node hard-error)
 
 The factory adapts each ``parrot.bots.flow.node.Node`` subclass into the
 ``BasicAgent``-shaped interface that :class:`AgentsFlow.add_agent`
@@ -25,12 +25,14 @@ from typing import Any, Dict, Protocol, runtime_checkable
 
 from parrot.bots.flow import AgentsFlow
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
+from parrot.flows.dev_loop.models import WorkBrief
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
 from parrot.flows.dev_loop.nodes.deployment_handoff import (
     DeploymentHandoffNode,
 )
 from parrot.flows.dev_loop.nodes.development import DevelopmentNode
 from parrot.flows.dev_loop.nodes.failure_handler import FailureHandlerNode
+from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.nodes.research import ResearchNode
 
@@ -100,13 +102,13 @@ class _NodeAgentAdapter:
 class _NoopToolManager:
     """Bare-minimum stand-in for ``parrot.tools.tool_manager.ToolManager``."""
 
-    def list_tools(self):
+    def list_tools(self) -> list:
         return []
 
-    def get_tool(self, name: str):  # noqa: ARG002
+    def get_tool(self, name: str) -> None:  # noqa: ARG002
         return None
 
-    def add_tool(self, *args, **kwargs):  # noqa: ARG002
+    def add_tool(self, *args: Any, **kwargs: Any) -> None:  # noqa: ARG002
         return None
 
 
@@ -123,7 +125,16 @@ def build_dev_loop_flow(
     redis_url: str,
     name: str = "dev-loop",
 ) -> AgentsFlow:
-    """Build the five-node dev-loop ``AgentsFlow``.
+    """Build the six-node dev-loop ``AgentsFlow`` (FEAT-132).
+
+    Topology:
+
+    - ``IntentClassifierNode`` routes:
+      - ``kind == "bug"`` → ``BugIntakeNode`` → ``ResearchNode``
+      - ``kind != "bug"`` → ``ResearchNode`` directly
+    - ``ResearchNode`` → ``DevelopmentNode`` → ``QANode``
+    - ``QANode`` → ``DeploymentHandoffNode`` (passed) or ``FailureHandlerNode``
+    - Any hard error from any middle node → ``FailureHandlerNode``
 
     Args:
         dispatcher: A pre-built :class:`ClaudeCodeDispatcher` (shared by
@@ -131,12 +142,15 @@ def build_dev_loop_flow(
         jira_toolkit: Service-account ``JiraToolkit`` instance.
         log_toolkits: Mapping of source kind → toolkit. Recognised keys:
             ``"cloudwatch"``, ``"elasticsearch"``.
-        redis_url: Redis URL for ``BugIntakeNode``'s flow-event publish.
+        redis_url: Redis URL for ``IntentClassifierNode`` and
+            ``BugIntakeNode``'s flow-event publish.
         name: Crew/flow name (default ``"dev-loop"``).
 
     Returns:
         A wired :class:`AgentsFlow` instance ready to run.
     """
+    # FEAT-132: IntentClassifierNode is now the entry point.
+    intent_classifier = IntentClassifierNode(redis_url=redis_url)
     bug_intake = BugIntakeNode(redis_url=redis_url)
     research = ResearchNode(
         dispatcher=dispatcher,
@@ -149,6 +163,7 @@ def build_dev_loop_flow(
     failure = FailureHandlerNode(jira_toolkit=jira_toolkit)
 
     nodes_in_order = [
+        intent_classifier,
         bug_intake,
         research,
         development,
@@ -170,8 +185,28 @@ def build_dev_loop_flow(
     for adapter in adapters.values():
         flow.add_agent(adapter)
 
-    # Linear chain BugIntake → Research → Development → QA
+    # FEAT-132: IntentClassifier branches by kind.
+    # Register "bug" first so it wins in case of evaluation-order sensitivity
+    # (spec §7 R7).
+    def _is_bug(result: Any) -> bool:
+        """Return True only if result is a WorkBrief with kind == 'bug'."""
+        if isinstance(result, WorkBrief):
+            return result.kind == "bug"
+        return False
+
+    def _is_not_bug(result: Any) -> bool:
+        """Return True only if result is a WorkBrief with kind != 'bug'."""
+        if isinstance(result, WorkBrief):
+            return result.kind != "bug"
+        return False
+
+    flow.on_condition(intent_classifier.name, bug_intake.name, predicate=_is_bug)
+    flow.on_condition(intent_classifier.name, research.name, predicate=_is_not_bug)
+
+    # Bug path keeps the linear edge to Research:
     flow.task_flow(bug_intake.name, research.name)
+
+    # Remaining linear chain: Research → Development → QA
     flow.task_flow(research.name, development.name)
     flow.task_flow(development.name, qa.name)
 
@@ -185,9 +220,9 @@ def build_dev_loop_flow(
     flow.on_condition(qa.name, handoff.name, predicate=_qa_passed)
     flow.on_condition(qa.name, failure.name, predicate=_qa_failed)
 
-    # Global error route — any hard error from research/development/qa
-    # routes to the failure handler.
-    for source in (research, development, qa, handoff):
+    # Global error route — any hard error from intent_classifier or middle
+    # nodes routes to the failure handler.
+    for source in (intent_classifier, research, development, qa, handoff):
         flow.on_error(source.name, failure.name)
 
     # Mark terminals.

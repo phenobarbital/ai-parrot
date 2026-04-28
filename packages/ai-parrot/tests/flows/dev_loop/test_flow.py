@@ -1,20 +1,23 @@
-"""Unit tests for parrot.flows.dev_loop.flow.build_dev_loop_flow (TASK-886).
+"""Unit tests for parrot.flows.dev_loop.flow.build_dev_loop_flow (TASK-886, TASK-901).
 
 These tests verify the *topology* of the assembled AgentsFlow rather
 than running it end-to-end (the full run path is exercised by the
 live integration tests in TASK-889). Topology checks: nodes registered,
-linear chain wired, QA conditional branch present (pass + fail), and
-the global error route from each middle node to the failure handler.
+branching topology (FEAT-132), linear chain wired, QA conditional
+branch present (pass + fail), and the global error route from each
+middle node to the failure handler.
 """
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from parrot.flows.dev_loop import (
     QAReport,
+    WorkBrief,
     build_dev_loop_flow,
 )
 
@@ -32,9 +35,10 @@ def flow():
 
 
 class TestNodeRegistration:
-    def test_six_nodes_registered(self, flow):
+    def test_seven_nodes_registered(self, flow):
         names = set(flow.nodes.keys())
         assert names == {
+            "intent_classifier",
             "bug_intake",
             "research",
             "development",
@@ -45,7 +49,18 @@ class TestNodeRegistration:
 
 
 class TestLinearChainTransitions:
+    def test_intent_classifier_routes_to_bug_intake(self, flow):
+        """bug path: intent_classifier → bug_intake (conditional)."""
+        targets = _outgoing_targets(flow, "intent_classifier")
+        assert "bug_intake" in targets
+
+    def test_intent_classifier_routes_to_research(self, flow):
+        """non-bug path: intent_classifier → research directly (conditional)."""
+        targets = _outgoing_targets(flow, "intent_classifier")
+        assert "research" in targets
+
     def test_bug_intake_routes_to_research(self, flow):
+        """bug path continuation: bug_intake → research (linear)."""
         targets = _outgoing_targets(flow, "bug_intake")
         assert "research" in targets
 
@@ -85,7 +100,8 @@ class TestQABranching:
 
 class TestErrorRoutes:
     @pytest.mark.parametrize(
-        "source", ["research", "development", "qa", "deployment_handoff"]
+        "source",
+        ["intent_classifier", "research", "development", "qa", "deployment_handoff"],
     )
     def test_error_transition_to_failure_handler(self, flow, source):
         transitions = flow.nodes[source].outgoing_transitions
@@ -98,6 +114,49 @@ class TestErrorRoutes:
             if t.condition == TransitionCondition.ON_ERROR:
                 error_targets.update(t.targets)
         assert "failure_handler" in error_targets
+
+
+class TestKindRouting:
+    """FEAT-132: Verify the IntentClassifier-driven on_condition routing."""
+
+    def _get_conditional_targets(self, flow, source_name: str, result: Any) -> set:
+        """Collect targets for which predicates fire with *result*."""
+        targets: set = set()
+        for t in flow.nodes[source_name].outgoing_transitions:
+            if t.predicate is not None and t.predicate(result):
+                targets.update(t.targets)
+        return targets
+
+    def test_routes_bug_through_bug_intake(self, flow):
+        """kind='bug' should route intent_classifier → bug_intake."""
+        from parrot.flows.dev_loop import ShellCriterion
+        brief = WorkBrief(
+            kind="bug",
+            summary="Customer sync drops the last row",
+            affected_component="etl/customers/sync.yaml",
+            acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+            escalation_assignee="oncall@example.com",
+            reporter="reporter@example.com",
+        )
+        targets = self._get_conditional_targets(flow, "intent_classifier", brief)
+        assert "bug_intake" in targets
+        assert "research" not in targets
+
+    @pytest.mark.parametrize("kind", ["enhancement", "new_feature"])
+    def test_routes_non_bug_skips_bug_intake(self, flow, kind):
+        """kind != 'bug' should route intent_classifier → research directly."""
+        from parrot.flows.dev_loop import ShellCriterion
+        brief = WorkBrief(
+            kind=kind,
+            summary="Add dark mode to the reporting dashboard",
+            affected_component="frontend/reporting",
+            acceptance_criteria=[ShellCriterion(name="lint", command="ruff check .")],
+            escalation_assignee="oncall@example.com",
+            reporter="reporter@example.com",
+        )
+        targets = self._get_conditional_targets(flow, "intent_classifier", brief)
+        assert "research" in targets
+        assert "bug_intake" not in targets
 
 
 # ---------------------------------------------------------------------------

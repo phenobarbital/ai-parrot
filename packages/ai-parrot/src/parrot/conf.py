@@ -641,3 +641,10 @@ ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
     "ACCEPTANCE_CRITERION_ALLOWLIST",
     fallback=["task", "flowtask", "pytest", "ruff", "mypy", "pylint"],
 ) or ["task", "flowtask", "pytest", "ruff", "mypy", "pylint"]
+# Plan-summary LLM override (FEAT-132). Empty string means "fall back to
+# DEV_LOOP_SUMMARY_LLM" — see _plan_llm_default() in nodes/research.py.
+# Set to any LLMFactory-compatible model string to pin a separate model
+# for plan-summary generation without affecting log summarisation.
+DEV_LOOP_PLAN_LLM: str = config.get(
+    "DEV_LOOP_PLAN_LLM", fallback=""
+)

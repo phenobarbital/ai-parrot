@@ -1,4 +1,10 @@
-"""Unit tests for parrot.flows.dev_loop.nodes.bug_intake (TASK-880)."""
+"""Unit tests for parrot.flows.dev_loop.nodes.bug_intake (TASK-880, TASK-899).
+
+FEAT-132 scope-down: allowlist / path-traversal validation tests removed from
+this file — they now live in test_intent_classifier.py (TASK-898). This file
+retains load/emit/pass-through coverage for BugIntakeNode's post-scope-down
+responsibilities.
+"""
 
 from __future__ import annotations
 
@@ -49,6 +55,7 @@ def node(monkeypatch):
 class TestHappyPath:
     @pytest.mark.asyncio
     async def test_returns_validated_brief(self, node, good_brief):
+        """execute() returns the brief unchanged (validation is upstream)."""
         result = await node.execute(
             prompt="",
             ctx={"run_id": "r1", "bug_brief": good_brief},
@@ -56,62 +63,29 @@ class TestHappyPath:
         assert result.summary == good_brief.summary
 
     @pytest.mark.asyncio
-    async def test_emits_validated_event(self, node, good_brief):
+    async def test_writes_brief_to_ctx(self, node, good_brief):
+        """ctx['bug_brief'] is populated with the brief after execute()."""
+        ctx = {"run_id": "", "bug_brief": good_brief}
+        result = await node.execute("", ctx)
+        assert result is good_brief
+        assert ctx["bug_brief"] is good_brief
+
+    @pytest.mark.asyncio
+    async def test_emits_bug_brief_validated_event(self, node, good_brief):
+        """Exactly one XADD per execute call when run_id is set."""
         await node.execute(
             prompt="",
             ctx={"run_id": "r1", "bug_brief": good_brief},
         )
         node._fake_redis.xadd.assert_awaited_once()
-        # First positional arg is the stream key
         call_args = node._fake_redis.xadd.await_args
         assert call_args.args[0] == "flow:r1:flow"
 
-
-class TestValidationErrors:
     @pytest.mark.asyncio
-    async def test_shell_command_must_be_in_allowlist(self, node, good_brief):
-        bad = good_brief.model_copy(
-            update={
-                "acceptance_criteria": [
-                    ShellCriterion(name="x", command="rm -rf /"),
-                ]
-            }
-        )
-        with pytest.raises(ValueError):
-            await node.execute(
-                prompt="",
-                ctx={"run_id": "r1", "bug_brief": bad},
-            )
-
-    @pytest.mark.asyncio
-    async def test_flowtask_path_rejects_traversal(self, node, good_brief):
-        bad = good_brief.model_copy(
-            update={
-                "acceptance_criteria": [
-                    FlowtaskCriterion(name="x", task_path="../etc/passwd"),
-                ]
-            }
-        )
-        with pytest.raises(ValueError):
-            await node.execute(
-                prompt="",
-                ctx={"run_id": "r1", "bug_brief": bad},
-            )
-
-    @pytest.mark.asyncio
-    async def test_flowtask_path_rejects_absolute(self, node, good_brief):
-        bad = good_brief.model_copy(
-            update={
-                "acceptance_criteria": [
-                    FlowtaskCriterion(name="x", task_path="/abs/path.yaml"),
-                ]
-            }
-        )
-        with pytest.raises(ValueError):
-            await node.execute(
-                prompt="",
-                ctx={"run_id": "r1", "bug_brief": bad},
-            )
+    async def test_does_not_emit_without_run_id(self, node, good_brief):
+        """No XADD when run_id is empty."""
+        await node.execute("", {"run_id": "", "bug_brief": good_brief})
+        assert node._fake_redis.xadd.call_count == 0
 
 
 class TestBriefLoading:

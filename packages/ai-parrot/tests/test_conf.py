@@ -1,7 +1,7 @@
-"""Default-value tests for parrot.conf settings (TASK-876).
+"""Default-value tests for parrot.conf settings (TASK-876, TASK-897).
 
-Verifies that the six dev-loop settings introduced by FEAT-129 resolve to
-their documented defaults when no environment overrides are set.
+Verifies that the dev-loop settings introduced by FEAT-129 and FEAT-132
+resolve to their documented defaults when no environment overrides are set.
 """
 
 from __future__ import annotations
@@ -35,3 +35,7 @@ class TestDevLoopSettingsDefaults:
             "mypy",
             "pylint",
         ]
+
+    def test_plan_llm_default_empty(self):
+        # Empty string means "use DEV_LOOP_SUMMARY_LLM" — FEAT-132.
+        assert conf.DEV_LOOP_PLAN_LLM == ""

@@ -148,6 +148,19 @@
   <form class="form" id="incident-form">
     <h2>Open an incident</h2>
 
+    <fieldset class="kind-group" style="border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 0;">
+      <legend style="font-size: 12px; color: var(--muted); padding: 0 4px;">Kind</legend>
+      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
+        <input type="radio" name="kind" value="Bug" checked /> Bug
+      </label>
+      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
+        <input type="radio" name="kind" value="Enhancement" /> Enhancement
+      </label>
+      <label style="flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: var(--text);">
+        <input type="radio" name="kind" value="New Feature" /> New Feature
+      </label>
+    </fieldset>
+
     <label>Summary <span style="color: var(--muted); font-weight: normal;">(max 255 chars — Jira limit)</span>
       <input name="summary" required minlength="10" maxlength="255"
              placeholder="Customer sync drops the last row on >1000 records" />
@@ -168,7 +181,7 @@
                 placeholder="task etl/customers/sync.yaml&#10;ruff check .&#10;pytest tests/etl/test_customers.py -v&#10;The customer count must equal 1500 after a sync of a 1500-row CSV"></textarea>
     </label>
     <div class="hint">
-      Lines starting with <code>task</code> · <code>pytest</code> ·
+      Lines starting with <code>task</code> · <code>flowtask</code> · <code>pytest</code> ·
       <code>ruff</code> · <code>mypy</code> · <code>pylint</code>
       become <strong>shell criteria</strong> (run as subprocess; exit
       code 0 = pass). Anything else becomes a <strong>manual
@@ -214,11 +227,12 @@
 
 <script type="module">
 const NODES = [
-  { id: "bug_intake",         label: "1. Bug Intake" },
-  { id: "research",           label: "2. Research"   },
-  { id: "development",        label: "3. Development"},
-  { id: "qa",                 label: "4. QA"         },
-  { id: "deployment_handoff", label: "5. Handoff"    },
+  { id: "intent_classifier",  label: "1. Classify"   },  // FEAT-132
+  { id: "bug_intake",         label: "2. Bug Intake" },
+  { id: "research",           label: "3. Research"   },
+  { id: "development",        label: "4. Development"},
+  { id: "qa",                 label: "5. QA"         },
+  { id: "deployment_handoff", label: "6. Handoff"    },
 ];
 
 const board    = document.getElementById("board");
@@ -281,6 +295,7 @@ function classify(env) {
   if (k.endsWith(".failed") || k.endsWith(".output_invalid")) return "failed";
   if (k.endsWith(".completed")) return "passed";
   if (k === "flow.bug_brief_validated") return "passed";
+  if (k === "flow.intake_validated") return "passed";   // FEAT-132
   if (k === "flow.pr_opened" || k === "flow.completed") return "passed";
   return null;
 }
@@ -328,6 +343,7 @@ function buildPayload(fd) {
     .split("\n").map(s => s.trim()).filter(Boolean);
   const window = parseInt(fd.get("time_window_minutes") || "60", 10);
   const payload = {
+    kind: fd.get("kind") || "Bug",   // FEAT-132: server normalises to snake_case
     summary: fd.get("summary").trim(),
     affected_component: fd.get("affected_component").trim(),
     description: (fd.get("description") || "").trim(),
@@ -336,6 +352,8 @@ function buildPayload(fd) {
   };
   const lg = (fd.get("log_group") || "").trim();
   if (lg) payload.log_group = lg;
+  const ek = (fd.get("existing_issue_key") || "").trim();
+  if (ek) payload.existing_issue_key = ek;
   return payload;
 }
 
