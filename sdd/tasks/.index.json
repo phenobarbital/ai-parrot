@@ -15997,7 +15997,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
@@ -16005,7 +16005,8 @@
             "parallelism_notes": "Foundation task \u2014 every other task in this feature reads WorkBrief.kind. Must land first.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-896-workbrief-rename-and-kind.md"
+            "file": "sdd/tasks/completed/TASK-896-workbrief-rename-and-kind.md",
+            "completed_at": "2026-04-28T21:15:02.676950+00:00"
         },
         {
             "id": "TASK-897",
