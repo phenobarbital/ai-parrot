@@ -16168,14 +16168,14 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "S",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "Pure SQL change in creation.sql \u2014 no shared imports with any other task.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-904-creation-sql-reranker-and-parent-columns.md"
         },
         {
@@ -16185,14 +16185,14 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "New file under parrot/rerankers/. Independent of TASK-906/907.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-905-rerankers-factory.md"
         },
         {
@@ -16202,14 +16202,14 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "New file under parrot/stores/parents/. Independent of TASK-905/907.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-906-parents-factory.md"
         },
         {
@@ -16219,14 +16219,14 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "S",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "Touches handlers/models/bots.py only. Independent of TASK-905/906.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-907-botmodel-fields.md"
         },
         {
@@ -16236,7 +16236,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16247,7 +16247,7 @@
             "parallel": false,
             "parallelism_notes": "Imports both factories; touches manager.py. Cannot run before factories + BotModel exist.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-908-botmanager-factory-wiring.md"
         },
         {
@@ -16257,14 +16257,14 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "medium",
             "effort": "S",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "Read-only verification + small unit test. No shared file with the factories.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-909-basebot-chatbot-kwargs-verify.md"
         },
         {
@@ -16274,7 +16274,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "medium",
             "effort": "M",
             "depends_on": [
@@ -16284,7 +16284,7 @@
             "parallel": false,
             "parallelism_notes": "Needs DDL + BotModel fields to roundtrip a payload.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-910-handler-endpoints-validation.md"
         },
         {
@@ -16294,7 +16294,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "L",
             "depends_on": [
@@ -16309,7 +16309,7 @@
             "parallel": false,
             "parallelism_notes": "End-to-end coverage; depends on every other task.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-911-integration-db-loaded-bot.md"
         },
         {
@@ -16319,7 +16319,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "low",
             "effort": "S",
             "depends_on": [
@@ -16333,7 +16333,7 @@
             "parallel": false,
             "parallelism_notes": "Docs reference the landed code paths.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/active/TASK-912-docs-and-changelog.md"
         }
     ]
