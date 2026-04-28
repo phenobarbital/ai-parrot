@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dev-Loop Console — FEAT-129</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel2: #1d222d;
+    --text: #e6e9ef;
+    --muted: #8a93a6;
+    --accent: #5b9dff;
+    --ok: #4ade80;
+    --warn: #facc15;
+    --err: #f87171;
+    --queued: #64748b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 22px; border-bottom: 1px solid #20242f;
+    background: var(--panel); position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .run { color: var(--muted); font-family: ui-monospace, monospace; }
+  header .grow { flex: 1; }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+    padding: 8px 14px; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost {
+    background: transparent; color: var(--text); border: 1px solid #2a3040;
+  }
+  main {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px; padding: 18px 22px;
+  }
+  .node {
+    background: var(--panel); border: 1px solid #20242f;
+    border-radius: 10px; min-height: 320px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .node header {
+    padding: 10px 12px; border-bottom: 1px solid #20242f;
+    background: var(--panel2); position: static;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .node h2 { font-size: 13px; margin: 0; font-weight: 600; }
+  .pill {
+    padding: 2px 8px; border-radius: 999px; font-size: 11px;
+    font-weight: 600; background: var(--queued); color: #0b0d12;
+  }
+  .pill.running  { background: var(--accent); color: #fff; }
+  .pill.passed   { background: var(--ok); color: #052; }
+  .pill.failed   { background: var(--err); color: #200; }
+  .pill.queued   { background: var(--queued); color: #0b0d12; }
+  .events {
+    flex: 1; overflow: auto; padding: 8px 10px;
+    font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12px;
+  }
+  .ev { padding: 4px 0; border-bottom: 1px dashed #1f2330; }
+  .ev:last-child { border-bottom: 0; }
+  .ev .k { color: var(--accent); }
+  .ev .ts { color: var(--muted); margin-right: 6px; }
+  .ev pre {
+    margin: 4px 0 0; padding: 6px 8px; background: #0b0e15;
+    border-radius: 4px; max-height: 110px; overflow: auto;
+    color: var(--muted); font-size: 11px;
+  }
+  footer {
+    padding: 10px 22px; color: var(--muted); font-size: 12px;
+    border-top: 1px solid #20242f;
+  }
+  .legend { display: flex; gap: 14px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dev-Loop Console</h1>
+  <span class="run" id="run-label">no run yet</span>
+  <span class="grow"></span>
+  <button id="run-btn">Start dev-loop run</button>
+  <button class="ghost" id="reconnect-btn" disabled>Reconnect</button>
+</header>
+
+<main id="board"></main>
+
+<footer>
+  <div class="legend">
+    <span><i class="swatch" style="background: var(--queued)"></i> idle / queued</span>
+    <span><i class="swatch" style="background: var(--accent)"></i> running</span>
+    <span><i class="swatch" style="background: var(--ok)"></i> passed</span>
+    <span><i class="swatch" style="background: var(--err)"></i> failed</span>
+  </div>
+</footer>
+
+<script type="module">
+const NODES = [
+  { id: "bug_intake",         label: "1. Bug Intake" },
+  { id: "research",           label: "2. Research"   },
+  { id: "development",        label: "3. Development"},
+  { id: "qa",                 label: "4. QA"         },
+  { id: "deployment_handoff", label: "5. Handoff"    },
+];
+
+const board    = document.getElementById("board");
+const runBtn   = document.getElementById("run-btn");
+const reBtn    = document.getElementById("reconnect-btn");
+const runLabel = document.getElementById("run-label");
+
+const cards = new Map();
+for (const n of NODES) {
+  const card = document.createElement("section");
+  card.className = "node";
+  card.innerHTML = `
+    <header>
+      <h2>${n.label}</h2>
+      <span class="grow"></span>
+      <span class="pill queued" data-status>idle</span>
+    </header>
+    <div class="events" data-events></div>`;
+  board.appendChild(card);
+  cards.set(n.id, {
+    pill: card.querySelector("[data-status]"),
+    events: card.querySelector("[data-events]"),
+  });
+}
+
+let ws = null;
+let runId = null;
+
+function setStatus(nodeId, status, label = status) {
+  const card = cards.get(nodeId);
+  if (!card) return;
+  card.pill.className = `pill ${status}`;
+  card.pill.textContent = label;
+}
+
+function appendEvent(nodeId, env) {
+  const card = cards.get(nodeId);
+  if (!card) return;
+  const time = new Date(env.ts * 1000).toLocaleTimeString();
+  const row = document.createElement("div");
+  row.className = "ev";
+  row.innerHTML = `
+    <span class="ts">${time}</span>
+    <span class="k">${env.event_kind}</span>
+    <pre>${escapeHtml(JSON.stringify(env.payload, null, 2))}</pre>`;
+  card.events.appendChild(row);
+  card.events.scrollTop = card.events.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"})[c]);
+}
+
+function classify(env) {
+  const k = env.event_kind || "";
+  if (k.endsWith(".queued"))    return "queued";
+  if (k.endsWith(".started"))   return "running";
+  if (k.endsWith(".failed") || k.endsWith(".output_invalid")) return "failed";
+  if (k.endsWith(".completed")) return "passed";
+  if (k === "flow.bug_brief_validated") return "passed";
+  if (k === "flow.pr_opened" || k === "flow.completed") return "passed";
+  return null;
+}
+
+function handleEnvelope(env) {
+  const node = env.node_id;
+  if (!node) return;
+  appendEvent(node, env);
+  const status = classify(env);
+  if (status) setStatus(node, status, status);
+}
+
+function resetBoard() {
+  for (const [, c] of cards) {
+    c.events.innerHTML = "";
+    c.pill.className = "pill queued";
+    c.pill.textContent = "idle";
+  }
+}
+
+function connectWs(rid) {
+  if (ws) ws.close();
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/api/flow/${rid}/ws?view=both&replay=true`);
+  ws.addEventListener("open",   () => reBtn.disabled = true);
+  ws.addEventListener("close",  () => reBtn.disabled = false);
+  ws.addEventListener("error",  () => reBtn.disabled = false);
+  ws.addEventListener("message", (e) => {
+    try { handleEnvelope(JSON.parse(e.data)); }
+    catch (err) { console.error("bad envelope", err, e.data); }
+  });
+}
+
+runBtn.addEventListener("click", async () => {
+  runBtn.disabled = true;
+  resetBoard();
+  try {
+    const res = await fetch("/api/flow/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    runId = data.run_id;
+    runLabel.textContent = `run_id = ${runId}`;
+    connectWs(runId);
+  } catch (err) {
+    runLabel.textContent = `error: ${err.message}`;
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+
+reBtn.addEventListener("click", () => { if (runId) connectWs(runId); });
+</script>
+</body>
+</html>
