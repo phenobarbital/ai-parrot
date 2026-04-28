@@ -1,7 +1,15 @@
-# Dev-Loop Orchestration — Examples (FEAT-129)
+# Dev-Loop Orchestration — Examples (FEAT-129 + FEAT-132)
 
-Runnable examples for the five-node `AgentsFlow`
-(`BugIntake → Research → Development → QA → DeploymentHandoff`)
+> **FEAT-132 upgrades** (2026-04-28): The flow now starts with an
+> `IntentClassifierNode` that validates the incoming brief and routes
+> by `WorkBrief.kind`: `"bug"` briefs go through `BugIntakeNode` before
+> Research; `"enhancement"` and `"new_feature"` briefs skip directly to
+> `ResearchNode`. The Jira issuetype is now derived from the kind field
+> (Bug / Story / New Feature). A plan-summary comment is posted on newly
+> created tickets. See **Routing by kind** below.
+
+Runnable examples for the six-node `AgentsFlow`
+(`IntentClassifier → [BugIntake →] Research → Development → QA → DeploymentHandoff`)
 defined in `sdd/specs/dev-loop-orchestration.spec.md` and implemented
 under `parrot/flows/dev_loop/`.
 
@@ -38,6 +46,34 @@ Quickest local Redis:
 ```bash
 docker run --rm -p 6379:6379 redis:7
 ```
+
+## Routing by kind
+
+`FEAT-132` introduces `IntentClassifierNode` as the flow entry point. It
+validates the brief and routes execution based on `WorkBrief.kind`:
+
+```
+ WorkBrief.kind
+      │
+      ├─ "bug"          ─► IntentClassifier ─► BugIntake ─► Research ─► ...
+      │
+      └─ "enhancement"  ─►
+         "new_feature"  ─► IntentClassifier ──────────────► Research ─► ...
+```
+
+The Jira issuetype is derived from the kind:
+
+| `kind` | Jira issuetype |
+|---|---|
+| `bug` (default) | Bug |
+| `enhancement` | Story |
+| `new_feature` | New Feature |
+
+Additionally, when a **new** ticket is created (not reused), `ResearchNode`
+posts a plan-summary as the first Jira comment. The LLM used for plan
+generation is controlled by `DEV_LOOP_PLAN_LLM` (see Prerequisites table).
+On the **reuse** path (`existing_issue_key` is set), no plan-summary comment
+is posted — only the standard re-trigger comment.
 
 ## Programmatic example — `quickstart.py`
 
@@ -80,7 +116,8 @@ python examples/dev_loop/server.py
 
 The UI is a single static file with no build step:
 
-* Five panels, one per node, with status pills
+* Six panels, one per node (IntentClassifier, BugIntake, Research,
+  Development, QA, Handoff), with status pills
   (`idle / queued / running / passed / failed`).
 * "Start dev-loop run" POSTs to `/api/flow/run`, gets back a `run_id`,
   then opens a WebSocket to `/api/flow/{run_id}/ws?view=both&replay=true`.
@@ -109,9 +146,16 @@ curl -X POST http://localhost:8080/api/flow/run \
       "mypy --no-incremental"
     ],
     "log_group": "fluent-bit-cloudwatch",
-    "time_window_minutes": 90
+    "time_window_minutes": 90,
+    "existing_issue_key": "NAV-8241"
   }'
 ```
+
+Omit `existing_issue_key` to auto-detect duplicates or create a new ticket.
+Set it to force re-use of a specific Jira issue — Research will append a
+re-triggered comment instead of opening a new one, and no plan-summary
+comment will be posted (the plan was already commented when the ticket was
+first created).
 
 The `kind` field controls how the flow routes the request (FEAT-132):
 
