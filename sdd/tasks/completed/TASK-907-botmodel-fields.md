@@ -193,8 +193,8 @@ def test_payload_with_configs_roundtrips():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Added `reranker_config` and `parent_searcher_config` dict fields to BotModel immediately after `vector_store_config`. Extended `to_bot_config()` to include both keys. Tests written correctly but could not be run via pytest in the worktree due to a pre-existing missing compiled Cython extension (`parrot.utils.types`). Fields verified correct via direct Python invocation.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
