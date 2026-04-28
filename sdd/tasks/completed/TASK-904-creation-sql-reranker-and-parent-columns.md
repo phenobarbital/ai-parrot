@@ -151,10 +151,8 @@ WHERE table_schema = 'navigator'
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Added `reranker_config` and `parent_searcher_config` JSONB columns to `CREATE TABLE navigator.ai_bots` (after `vector_store_config`) and appended idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements with `COMMENT ON COLUMN` entries at the end of the file.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

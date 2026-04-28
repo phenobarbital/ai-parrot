@@ -16168,7 +16168,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "S",
             "depends_on": [],
@@ -16176,7 +16176,8 @@
             "parallelism_notes": "Pure SQL change in creation.sql \u2014 no shared imports with any other task.",
             "assigned_to": null,
             "started_at": "2026-04-28T23:40:59.832351+00:00",
-            "file": "sdd/tasks/active/TASK-904-creation-sql-reranker-and-parent-columns.md"
+            "file": "sdd/tasks/completed/TASK-904-creation-sql-reranker-and-parent-columns.md",
+            "completed_at": "2026-04-28T23:42:27.654104+00:00"
         },
         {
             "id": "TASK-905",
