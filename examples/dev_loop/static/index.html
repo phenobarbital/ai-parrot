@@ -185,6 +185,17 @@
       </label>
     </div>
 
+    <label>Existing Jira ticket (optional)
+      <input name="existing_issue_key"
+             placeholder="e.g. NAV-8241 — leave empty to auto-detect or create" />
+    </label>
+    <div class="hint">
+      Leave blank to let Research auto-detect duplicates (open tickets in
+      <code>JIRA_PROJECT</code> with the same summary). Set this to force
+      re-use of a specific ticket — Research will append a "re-triggered"
+      comment instead of opening a new one.
+    </div>
+
     <div class="err" id="form-err"></div>
     <button type="submit" id="submit-btn">Submit incident</button>
   </form>

@@ -109,21 +109,42 @@ class ResearchNode(Node):
         # become part of the Jira description.
         excerpts = await self._collect_log_excerpts(brief.log_sources)
 
-        # 2. Create the Jira ticket BEFORE dispatching. Unit tests pin
+        # 2. Resolve the Jira ticket BEFORE dispatching. Unit tests pin
         # this ordering (spec §4 test_research_node_creates_jira_then_dispatches).
-        # Reporter is resolved to an accountId here (the toolkit auto-
-        # resolves the assignee but not the raw fields={"reporter":…}
-        # blob, so we do it explicitly so emails work in BugBrief.reporter).
-        reporter_fields = await self._reporter_fields(brief.reporter)
+        # Idempotency: reuse an existing ticket when one already tracks
+        # this incident (caller-supplied ``existing_issue_key`` or an
+        # open ticket whose summary matches verbatim). Otherwise, fall
+        # back to creating a new one. Reporter is resolved to an
+        # accountId here (the toolkit auto-resolves the assignee but
+        # not the raw fields={"reporter":…} blob, so we do it
+        # explicitly so emails work in BugBrief.reporter).
         description = await self._build_description(brief, excerpts)
-        jira_resp = await self._jira.jira_create_issue(
-            summary=brief.summary,
-            issuetype="Bug",
-            description=description,
-            assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
-            fields=reporter_fields,
-        )
-        issue_key = self._extract_issue_key(jira_resp)
+        existing_key = await self._find_existing_issue(brief)
+        if existing_key:
+            issue_key = existing_key
+            self.logger.info(
+                "Re-using existing Jira ticket %s for run_id=%s",
+                issue_key, ctx.get("run_id", "?"),
+            )
+            await self._comment_retriggered(
+                issue_key=issue_key,
+                run_id=ctx.get("run_id", ""),
+                description=description,
+            )
+        else:
+            reporter_fields = await self._reporter_fields(brief.reporter)
+            jira_resp = await self._jira.jira_create_issue(
+                summary=brief.summary,
+                issuetype="Bug",
+                description=description,
+                assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
+                fields=reporter_fields,
+            )
+            issue_key = self._extract_issue_key(jira_resp)
+            self.logger.info(
+                "Created new Jira ticket %s for run_id=%s",
+                issue_key, ctx.get("run_id", "?"),
+            )
         ctx["jira_issue_key"] = issue_key
 
         # 3. Dispatch the sdd-research subagent.
@@ -350,6 +371,109 @@ class ResearchNode(Node):
         if self._summarizer_client is None:
             self._summarizer_client = LLMFactory.create(self._summarizer_llm)
         return self._summarizer_client
+
+    async def _find_existing_issue(self, brief: BugBrief) -> Optional[str]:
+        """Look up a Jira ticket that already tracks this incident.
+
+        Two-tier lookup:
+
+        1. Caller-provided ``brief.existing_issue_key`` — verified via
+           ``jira_get_issue`` so we don't trust a stale value.
+        2. JQL search by exact summary in the configured project,
+           filtered to tickets that aren't ``Done``. Multiple matches
+           pick the most recent (the JQL orders by ``created DESC``).
+
+        Returns:
+            The Jira issue key on hit, ``None`` otherwise.
+        """
+        # 1. Caller override.
+        if brief.existing_issue_key:
+            try:
+                await self._jira.jira_get_issue(brief.existing_issue_key)
+                return brief.existing_issue_key
+            except Exception as exc:  # noqa: BLE001 - degrade to lookup
+                self.logger.warning(
+                    "existing_issue_key=%r could not be fetched (%s); "
+                    "falling back to summary search",
+                    brief.existing_issue_key, exc,
+                )
+
+        # 2. Summary search inside the configured project.
+        project = conf.config.get("JIRA_PROJECT")
+        if not project:
+            return None
+        # Escape JQL string delimiters in the summary.
+        safe_summary = brief.summary.replace("\\", "\\\\").replace('"', '\\"')
+        jql = (
+            f'project = "{project}" '
+            f'AND summary ~ "\\"{safe_summary}\\"" '
+            f"AND statusCategory != Done "
+            f"ORDER BY created DESC"
+        )
+        try:
+            result = await self._jira.jira_search_issues(
+                jql=jql,
+                max_results=10,
+                fields="key,summary,status",
+            )
+        except Exception as exc:  # noqa: BLE001 - degrade to create-new
+            self.logger.warning(
+                "Jira lookup failed (%s); will create a new ticket", exc,
+            )
+            return None
+
+        issues = (
+            result.get("issues")
+            or result.get("results")
+            or result.get("data")
+            or []
+        )
+        # JQL `~` is fuzzy — verify the exact summary post-fetch so we
+        # don't mistakenly merge unrelated tickets that share keywords.
+        exact_matches = [
+            issue for issue in issues
+            if (
+                (issue.get("fields") or {}).get("summary") == brief.summary
+                or issue.get("summary") == brief.summary
+            )
+        ]
+        if not exact_matches:
+            return None
+        if len(exact_matches) > 1:
+            self.logger.warning(
+                "Found %d open Jira tickets with summary=%r; reusing "
+                "the most recently created one",
+                len(exact_matches), brief.summary,
+            )
+        chosen = exact_matches[0]
+        return chosen.get("key") or chosen.get("issue_key")
+
+    async def _comment_retriggered(
+        self,
+        *,
+        issue_key: str,
+        run_id: str,
+        description: str,
+    ) -> None:
+        """Append a re-triggered comment to a reused Jira ticket.
+
+        Keeps the audit trail intact when the dev-loop runs against an
+        already-known incident: the original ticket gets a comment with
+        the new run_id and the freshly-collected log digest, so the
+        human reviewer sees that the agent re-attacked the same issue.
+        """
+        body = (
+            f"Dev-loop re-triggered for this ticket "
+            f"(run_id=`{run_id or 'unknown'}`).\n\n"
+            f"Refreshed context attached:\n\n{description}"
+        )
+        try:
+            await self._jira.jira_add_comment(issue=issue_key, body=body)
+        except Exception as exc:  # noqa: BLE001 - non-fatal
+            self.logger.warning(
+                "Could not post re-trigger comment on %s: %s",
+                issue_key, exc,
+            )
 
     async def _reporter_fields(
         self, reporter: str

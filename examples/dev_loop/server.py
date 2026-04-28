@@ -188,7 +188,7 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
             "in the form payload."
         )
 
-    return {
+    payload: dict[str, Any] = {
         "summary": summary,
         "description": description,
         "affected_component": component,
@@ -203,6 +203,10 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
         "reporter": reporter,
         "escalation_assignee": escalation,
     }
+    existing = (form.get("existing_issue_key") or "").strip()
+    if existing:
+        payload["existing_issue_key"] = existing
+    return payload
 
 
 def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:

@@ -137,6 +137,17 @@ class BugBrief(BaseModel):
         ...,
         description="Jira accountId or email of the original human reporter.",
     )
+    existing_issue_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional Jira issue key (e.g. 'NAV-8241') the caller knows "
+            "tracks this incident already. When set, ResearchNode skips "
+            "the create-issue step and posts a re-triggered comment on "
+            "the named ticket instead. When unset, ResearchNode searches "
+            "the project for an open ticket with a matching summary "
+            "before falling back to creating a new one."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────
