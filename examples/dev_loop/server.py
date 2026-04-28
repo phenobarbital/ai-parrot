@@ -79,78 +79,152 @@ def _build_jira_toolkit() -> JiraToolkit:
 
 
 def _build_log_toolkits() -> dict[str, object]:
-    """Build only the log toolkits whose env config is present.
+    """Real-mode log toolkits.
 
-    Set ``LOG_TOOLKITS=cloudwatch`` or ``=elasticsearch`` to force a
-    subset; default tries both and skips missing config.
+    The CloudWatch toolkit is configured with a fixed ``aws_id`` profile
+    and ``default_log_group`` per project policy — the per-source log
+    group from each :class:`LogSource` is no longer forwarded as a
+    per-query kwarg.
     """
-    requested = {
-        s.strip()
-        for s in os.environ.get("LOG_TOOLKITS", "cloudwatch,elasticsearch").split(",")
-        if s.strip()
+    from parrot_tools.aws.cloudwatch import CloudWatchToolkit
+
+    aws_id = conf.config.get("AWS_PROFILE", fallback="cloudwatch")
+    log_group = conf.config.get(
+        "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
+    )
+    toolkits: dict[str, object] = {
+        "cloudwatch": CloudWatchToolkit(
+            aws_id=aws_id,
+            default_log_group=log_group,
+        ),
     }
-    toolkits: dict[str, object] = {}
-
-    if "cloudwatch" in requested:
-        try:
-            from parrot_tools.aws.cloudwatch import CloudWatchToolkit
-
-            toolkits["cloudwatch"] = CloudWatchToolkit(
-                region_name=conf.config.get("AWS_REGION", fallback="us-east-1"),
-            )
-        except Exception as exc:  # noqa: BLE001 - optional toolkit
-            logger.warning("CloudWatch toolkit disabled: %s", exc)
-
-    if "elasticsearch" in requested:
-        try:
-            from parrot_tools.elasticsearch import ElasticsearchTool
-
-            toolkits["elasticsearch"] = ElasticsearchTool(
-                host=conf.config.get("ELASTICSEARCH_HOST"),
-                port=conf.config.get("ELASTICSEARCH_PORT", fallback=9200),
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Elasticsearch toolkit disabled: %s", exc)
-
+    logger.info(
+        "CloudWatch toolkit ready (profile=%s, log_group=%s)",
+        aws_id, log_group,
+    )
     return toolkits
 
 
-def _sample_brief_payload() -> dict[str, Any]:
-    """Default BugBrief used when the UI sends an empty body."""
+# ---------------------------------------------------------------------------
+# BugBrief construction from form payload
+# ---------------------------------------------------------------------------
+
+
+_ALLOWED_SHELL_HEADS = {"flowtask", "pytest", "ruff", "mypy", "pylint"}
+
+
+def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
+    """Translate the UI form payload into a fully-formed ``BugBrief``.
+
+    Required form fields:
+
+    * ``summary``              — short title (becomes the Jira summary)
+    * ``affected_component``   — file path or component slug
+    * ``acceptance_criteria``  — list of shell commands (``ruff check .`` …)
+                                 OR list of objects matching the criterion
+                                 schema if the UI builds them client-side.
+
+    Optional form fields:
+
+    * ``description``          — long-form incident text appended to the
+                                 summary.
+    * ``log_group``            — CloudWatch log group override; falls back
+                                 to ``CLOUDWATCH_LOG_GROUP``.
+    * ``time_window_minutes``  — CloudWatch lookback window (default 60).
+    * ``reporter``             — Jira accountId; falls back to
+                                 ``JIRA_REPORTER_ACCOUNT_ID`` then
+                                 ``FLOW_BOT_JIRA_ACCOUNT_ID``.
+    * ``escalation_assignee``  — Jira accountId; falls back to
+                                 ``JIRA_ESCALATION_ACCOUNT_ID`` then
+                                 ``FLOW_BOT_JIRA_ACCOUNT_ID``.
+    """
+    summary = (form.get("summary") or "").strip()
+    if not summary:
+        raise ValueError("summary is required")
+    description = (form.get("description") or "").strip()
+    if description:
+        summary_block = f"{summary}\n\n{description}"
+    else:
+        summary_block = summary
+
+    component = (form.get("affected_component") or "").strip()
+    if not component:
+        raise ValueError("affected_component is required")
+
+    log_group = (
+        form.get("log_group")
+        or conf.config.get("CLOUDWATCH_LOG_GROUP",
+                           fallback="fluent-bit-cloudwatch")
+    )
+    window = int(form.get("time_window_minutes") or 60)
+
+    raw_criteria = form.get("acceptance_criteria") or []
+    criteria = _normalise_criteria(raw_criteria)
+    if not criteria:
+        raise ValueError(
+            "at least one acceptance criterion is required (shell head "
+            f"must be in {sorted(_ALLOWED_SHELL_HEADS)})"
+        )
+
+    bot_account = conf.config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
+    reporter = (
+        form.get("reporter")
+        or conf.config.get("JIRA_REPORTER_ACCOUNT_ID", fallback=bot_account)
+    )
+    escalation = (
+        form.get("escalation_assignee")
+        or conf.config.get("JIRA_ESCALATION_ACCOUNT_ID", fallback=bot_account)
+    )
+    if not reporter or not escalation:
+        raise ValueError(
+            "reporter and escalation_assignee are required; set "
+            "FLOW_BOT_JIRA_ACCOUNT_ID, JIRA_REPORTER_ACCOUNT_ID and "
+            "JIRA_ESCALATION_ACCOUNT_ID in the environment, or pass them "
+            "in the form payload."
+        )
+
     return {
-        "summary": (
-            "Customer sync flowtask drops the last row when input has "
-            ">1000 records. Reproduce: run etl/customers/sync.yaml against "
-            "a 1500-row CSV; the resulting Postgres table has 1499 rows."
-        ),
-        "affected_component": "etl/customers/sync.yaml",
+        "summary": summary_block,
+        "affected_component": component,
         "log_sources": [
             {
                 "kind": "cloudwatch",
-                "locator": "/etl/prod/customers",
-                "time_window_minutes": 120,
+                "locator": log_group,
+                "time_window_minutes": window,
             }
         ],
-        "acceptance_criteria": [
-            {
-                "kind": "flowtask",
-                "name": "customers-sync-no-row-drop",
-                "task_path": "etl/customers/sync.yaml",
-                "args": ["--input", "tests/fixtures/customers_1500.csv"],
-                "expected_exit_code": 0,
-                "timeout_seconds": 600,
-            },
-            {"kind": "shell", "name": "ruff-clean", "command": "ruff check ."},
-            {"kind": "shell", "name": "mypy-clean",
-             "command": "mypy --no-incremental"},
-        ],
-        "reporter": conf.config.get(
-            "DEMO_REPORTER_ACCOUNT_ID", fallback="557058:original-human"
-        ),
-        "escalation_assignee": conf.config.get(
-            "FLOW_BOT_JIRA_ACCOUNT_ID", fallback="557058:on-call-engineer"
-        ),
+        "acceptance_criteria": criteria,
+        "reporter": reporter,
+        "escalation_assignee": escalation,
     }
+
+
+def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
+    """Accept either ``list[str]`` (one shell command per line) or full dicts."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw, start=1):
+        if isinstance(item, dict):
+            out.append(item)
+            continue
+        if not isinstance(item, str):
+            continue
+        cmd = item.strip()
+        if not cmd:
+            continue
+        head = cmd.split(maxsplit=1)[0]
+        if head not in _ALLOWED_SHELL_HEADS:
+            raise ValueError(
+                f"acceptance criterion {idx} starts with disallowed head "
+                f"{head!r}; allowed: {sorted(_ALLOWED_SHELL_HEADS)}"
+            )
+        out.append({
+            "kind": "shell",
+            "name": f"{head}-criterion-{idx}",
+            "command": cmd,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -165,19 +239,31 @@ async def handle_index(request: web.Request) -> web.FileResponse:
 async def handle_run(request: web.Request) -> web.Response:
     """Start a real ``flow.run_flow(...)`` invocation.
 
-    Body is an optional JSON ``BugBrief``; missing fields fall back to
-    :func:`_sample_brief_payload`.
+    Body must be the JSON form payload described in
+    :func:`_build_brief_from_form`. The UI client at ``/`` posts it from
+    the incident form.
     """
-    payload: dict[str, Any] = {}
-    if request.can_read_body:
-        try:
-            payload = await request.json()
-        except Exception:  # noqa: BLE001
-            payload = {}
-    payload = {**_sample_brief_payload(), **(payload or {})}
+    if not request.can_read_body:
+        return web.json_response(
+            {"error": "JSON body required"}, status=400
+        )
     try:
-        brief = BugBrief.model_validate(payload)
+        form = await request.json()
     except Exception as exc:  # noqa: BLE001
+        return web.json_response(
+            {"error": f"invalid JSON: {exc}"}, status=400
+        )
+    if not isinstance(form, dict):
+        return web.json_response(
+            {"error": "body must be a JSON object"}, status=400
+        )
+
+    try:
+        payload = _build_brief_from_form(form)
+        brief = BugBrief.model_validate(payload)
+    except (ValueError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - validation surface
         return web.json_response({"error": str(exc)}, status=400)
 
     run_id = f"run-{uuid.uuid4().hex[:8]}"

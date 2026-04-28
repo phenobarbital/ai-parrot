@@ -20,10 +20,11 @@ Required environment / navconfig settings:
 * ``JIRA_INSTANCE``               — Jira base URL
 * ``JIRA_USERNAME``               — service-account username (basic_auth)
 * ``JIRA_API_TOKEN``              — service-account API token / password
-* ``JIRA_PROJECT``                — default Jira project key (e.g. ``OPS``)
+* ``JIRA_PROJECT``                — default Jira project key (e.g. ``NAV``)
 * ``FLOW_BOT_JIRA_ACCOUNT_ID``    — accountId of the bot user
-* ``AWS_REGION``                  — for CloudWatch (default ``us-east-1``)
-* ``ELASTICSEARCH_URL``           — for the ES log toolkit
+* ``AWS_PROFILE``                 — boto3 profile (default ``cloudwatch``)
+* ``CLOUDWATCH_LOG_GROUP``        — default log group (default
+  ``fluent-bit-cloudwatch``)
 * ``WORKTREE_BASE_PATH``          — defaults to ``.claude/worktrees``
 * ``CLAUDE_CODE_MAX_CONCURRENT_DISPATCHES`` — defaults to ``3``
 """
@@ -43,7 +44,6 @@ from parrot.flows.dev_loop import (
     build_dev_loop_flow,
 )
 from parrot_tools.aws.cloudwatch import CloudWatchToolkit
-from parrot_tools.elasticsearch import ElasticsearchTool
 from parrot_tools.jiratoolkit import JiraToolkit
 
 
@@ -63,13 +63,13 @@ def _build_jira_toolkit() -> JiraToolkit:
 
 
 def _build_log_toolkits() -> dict[str, object]:
+    """Real-mode CloudWatch toolkit. Add Elasticsearch here if needed."""
     return {
         "cloudwatch": CloudWatchToolkit(
-            region_name=conf.config.get("AWS_REGION", fallback="us-east-1"),
-        ),
-        "elasticsearch": ElasticsearchTool(
-            host=conf.config.get("ELASTICSEARCH_HOST"),
-            port=conf.config.get("ELASTICSEARCH_PORT", fallback=9200),
+            aws_id=conf.config.get("AWS_PROFILE", fallback="cloudwatch"),
+            default_log_group=conf.config.get(
+                "CLOUDWATCH_LOG_GROUP", fallback="fluent-bit-cloudwatch"
+            ),
         ),
     }
 

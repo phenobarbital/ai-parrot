@@ -9,6 +9,7 @@
     --bg: #0f1115;
     --panel: #161a22;
     --panel2: #1d222d;
+    --border: #20242f;
     --text: #e6e9ef;
     --muted: #8a93a6;
     --accent: #5b9dff;
@@ -22,14 +23,14 @@
     margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif;
     background: var(--bg); color: var(--text);
   }
-  header {
+  header.app {
     display: flex; align-items: center; gap: 16px;
-    padding: 14px 22px; border-bottom: 1px solid #20242f;
+    padding: 14px 22px; border-bottom: 1px solid var(--border);
     background: var(--panel); position: sticky; top: 0; z-index: 10;
   }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  header .run { color: var(--muted); font-family: ui-monospace, monospace; }
-  header .grow { flex: 1; }
+  header.app h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header.app .run { color: var(--muted); font-family: ui-monospace, monospace; }
+  header.app .grow { flex: 1; }
   button {
     background: var(--accent); color: #fff; border: 0; border-radius: 6px;
     padding: 8px 14px; font-weight: 600; cursor: pointer;
@@ -38,17 +39,61 @@
   button.ghost {
     background: transparent; color: var(--text); border: 1px solid #2a3040;
   }
+
+  /* Layout */
   main {
-    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    display: grid; grid-template-columns: 380px 1fr;
     gap: 14px; padding: 18px 22px;
   }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  /* Form */
+  .form {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px; display: flex; flex-direction: column;
+    gap: 10px; min-width: 320px;
+  }
+  .form h2 { margin: 0 0 4px; font-size: 14px; color: var(--muted); font-weight: 600; }
+  .form label {
+    display: flex; flex-direction: column; gap: 4px; font-size: 12px;
+    color: var(--muted);
+  }
+  .form input, .form textarea {
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; font: inherit; font-size: 13px;
+  }
+  .form textarea { resize: vertical; min-height: 64px; font-family: ui-monospace, monospace; }
+  .form textarea.tall { min-height: 110px; }
+  .form .row { display: grid; grid-template-columns: 1fr 110px; gap: 8px; }
+  .form button { align-self: flex-start; }
+  .form .err {
+    background: #2b1517; border: 1px solid #5a2228; color: var(--err);
+    border-radius: 6px; padding: 6px 10px; font-size: 12px;
+    white-space: pre-wrap; display: none;
+  }
+  .form .err.show { display: block; }
+
+  /* Board */
+  .board {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 1500px) {
+    .board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 700px) {
+    .board { grid-template-columns: 1fr; }
+  }
   .node {
-    background: var(--panel); border: 1px solid #20242f;
+    background: var(--panel); border: 1px solid var(--border);
     border-radius: 10px; min-height: 320px;
     display: flex; flex-direction: column; overflow: hidden;
   }
   .node header {
-    padding: 10px 12px; border-bottom: 1px solid #20242f;
+    padding: 10px 12px; border-bottom: 1px solid var(--border);
     background: var(--panel2); position: static;
     display: flex; align-items: center; gap: 8px;
   }
@@ -61,6 +106,7 @@
   .pill.passed   { background: var(--ok); color: #052; }
   .pill.failed   { background: var(--err); color: #200; }
   .pill.queued   { background: var(--queued); color: #0b0d12; }
+
   .events {
     flex: 1; overflow: auto; padding: 8px 10px;
     font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 12px;
@@ -76,7 +122,7 @@
   }
   footer {
     padding: 10px 22px; color: var(--muted); font-size: 12px;
-    border-top: 1px solid #20242f;
+    border-top: 1px solid var(--border);
   }
   .legend { display: flex; gap: 14px; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -84,15 +130,52 @@
 </style>
 </head>
 <body>
-<header>
+<header class="app">
   <h1>Dev-Loop Console</h1>
   <span class="run" id="run-label">no run yet</span>
   <span class="grow"></span>
-  <button id="run-btn">Start dev-loop run</button>
   <button class="ghost" id="reconnect-btn" disabled>Reconnect</button>
 </header>
 
-<main id="board"></main>
+<main>
+  <form class="form" id="incident-form">
+    <h2>Open an incident</h2>
+
+    <label>Summary
+      <input name="summary" required maxlength="160"
+             placeholder="Customer sync drops the last row on >1000 records" />
+    </label>
+
+    <label>Affected component
+      <input name="affected_component" required
+             placeholder="etl/customers/sync.yaml" />
+    </label>
+
+    <label>Detailed description (optional)
+      <textarea name="description" class="tall"
+                placeholder="What did you observe? Steps to reproduce, error messages, ticket links…"></textarea>
+    </label>
+
+    <label>Acceptance criteria — one shell command per line
+      <textarea name="acceptance_criteria" class="tall" required
+                placeholder="ruff check .&#10;mypy --no-incremental"></textarea>
+    </label>
+
+    <div class="row">
+      <label>CloudWatch log group (optional)
+        <input name="log_group" placeholder="(default: fluent-bit-cloudwatch)" />
+      </label>
+      <label>Window (min)
+        <input name="time_window_minutes" type="number" min="1" max="1440" value="60" />
+      </label>
+    </div>
+
+    <div class="err" id="form-err"></div>
+    <button type="submit" id="submit-btn">Submit incident</button>
+  </form>
+
+  <section class="board" id="board"></section>
+</main>
 
 <footer>
   <div class="legend">
@@ -113,7 +196,9 @@ const NODES = [
 ];
 
 const board    = document.getElementById("board");
-const runBtn   = document.getElementById("run-btn");
+const form     = document.getElementById("incident-form");
+const formErr  = document.getElementById("form-err");
+const submitBtn= document.getElementById("submit-btn");
 const reBtn    = document.getElementById("reconnect-btn");
 const runLabel = document.getElementById("run-label");
 
@@ -124,7 +209,7 @@ for (const n of NODES) {
   card.innerHTML = `
     <header>
       <h2>${n.label}</h2>
-      <span class="grow"></span>
+      <span class="grow" style="flex:1"></span>
       <span class="pill queued" data-status>idle</span>
     </header>
     <div class="events" data-events></div>`;
@@ -203,14 +288,42 @@ function connectWs(rid) {
   });
 }
 
-runBtn.addEventListener("click", async () => {
-  runBtn.disabled = true;
+function showError(msg) {
+  formErr.textContent = msg;
+  formErr.classList.add("show");
+}
+function clearError() {
+  formErr.textContent = "";
+  formErr.classList.remove("show");
+}
+
+function buildPayload(fd) {
+  const criteria = (fd.get("acceptance_criteria") || "")
+    .split("\n").map(s => s.trim()).filter(Boolean);
+  const window = parseInt(fd.get("time_window_minutes") || "60", 10);
+  const payload = {
+    summary: fd.get("summary").trim(),
+    affected_component: fd.get("affected_component").trim(),
+    description: (fd.get("description") || "").trim(),
+    acceptance_criteria: criteria,
+    time_window_minutes: window,
+  };
+  const lg = (fd.get("log_group") || "").trim();
+  if (lg) payload.log_group = lg;
+  return payload;
+}
+
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  clearError();
+  submitBtn.disabled = true;
   resetBoard();
   try {
+    const payload = buildPayload(new FormData(form));
     const res = await fetch("/api/flow/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || res.statusText);
@@ -218,9 +331,9 @@ runBtn.addEventListener("click", async () => {
     runLabel.textContent = `run_id = ${runId}`;
     connectWs(runId);
   } catch (err) {
-    runLabel.textContent = `error: ${err.message}`;
+    showError(err.message);
   } finally {
-    runBtn.disabled = false;
+    submitBtn.disabled = false;
   }
 });
 

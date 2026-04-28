@@ -86,6 +86,7 @@ class ResearchNode(Node):
         # this ordering (spec §4 test_research_node_creates_jira_then_dispatches).
         jira_resp = await self._jira.jira_create_issue(
             summary=brief.summary,
+            issuetype="Bug",
             description=self._build_description(brief, excerpts),
             assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
             fields=self._reporter_fields(brief.reporter),
@@ -150,10 +151,16 @@ class ResearchNode(Node):
             toolkit = self._log_toolkits.get("cloudwatch")
             if toolkit is None:
                 raise ValueError("CloudWatch toolkit not configured")
-            result = await toolkit.aws_cloudwatch_query_logs(
-                log_group=source.locator,
-                start_time=f"-{source.time_window_minutes}m",
-            )
+            # Per project policy the log group is configured at toolkit
+            # construction time (default_log_group); the per-source
+            # locator is informational and only forwarded if a non-empty
+            # override is provided.
+            kwargs: Dict[str, Any] = {
+                "start_time": f"-{source.time_window_minutes}m",
+            }
+            if source.locator and source.locator != toolkit.default_log_group:
+                kwargs["log_group_name"] = source.locator
+            result = await toolkit.aws_cloudwatch_query_logs(**kwargs)
             return self._tail_text(result)
         if source.kind == "elasticsearch":
             toolkit = self._log_toolkits.get("elasticsearch")

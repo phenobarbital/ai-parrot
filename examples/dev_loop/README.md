@@ -28,8 +28,9 @@ client can start runs and visualise the merged event stream live.
 | `ANTHROPIC_API_KEY` (or any provider key the SDK accepts) | `ClaudeAgentClient` (FEAT-124) |
 | `claude` CLI on `$PATH`, authenticated | The SDK shells out to it |
 | `gh` CLI authenticated | `DeploymentHandoffNode` opens the PR |
-| Jira service account: `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Tickets are created/transitioned by `flow-bot` (toolkit uses `basic_auth`) |
-| At least one log toolkit's config (`AWS_REGION` for CloudWatch or `ELASTICSEARCH_HOST`/`PORT` for ES) | `ResearchNode` pulls log excerpts |
+| Jira service account: `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Tickets are created/transitioned by `flow-bot` (toolkit uses `basic_auth`); tickets are always opened as `Bug` |
+| Reporter / escalation accountIds: `JIRA_REPORTER_ACCOUNT_ID`, `JIRA_ESCALATION_ACCOUNT_ID` (fall back to `FLOW_BOT_JIRA_ACCOUNT_ID`) | Reporter stays the original human; escalation gets the ticket on failure |
+| `AWS_PROFILE` (default `cloudwatch`) and `CLOUDWATCH_LOG_GROUP` (default `fluent-bit-cloudwatch`) | `ResearchNode` pulls log excerpts; the log group is bound at toolkit construction, not per query |
 
 Quickest local Redis:
 ```bash
@@ -88,38 +89,30 @@ The UI is a single static file with no build step:
 * "Reconnect" replays history before resuming the live tail (useful after
   a network blip).
 
-### Sending a custom brief
+### Form payload (and equivalent curl)
+
+The UI builds and posts this JSON shape to `POST /api/flow/run`. You can
+also drive the same endpoint from the CLI:
 
 ```bash
 curl -X POST http://localhost:8080/api/flow/run \
   -H 'Content-Type: application/json' \
-  -d @my-brief.json
+  -d '{
+    "summary": "Order webhook signature mismatch on retries",
+    "affected_component": "etl/orders/webhook.yaml",
+    "description": "Observed in prod 2026-04-28; only the second retry fails. See OPS-4321.",
+    "acceptance_criteria": [
+      "ruff check .",
+      "mypy --no-incremental"
+    ],
+    "log_group": "fluent-bit-cloudwatch",
+    "time_window_minutes": 90
+  }'
 ```
 
-`my-brief.json` matches the `BugBrief` Pydantic schema. Any fields you
-omit are filled in from the bundled sample brief, so a minimal payload
-is fine for smoke-testing:
-
-```json
-{
-  "summary": "Order webhook signature mismatch on retries",
-  "affected_component": "etl/orders/webhook.yaml",
-  "acceptance_criteria": [
-    {"kind": "shell", "name": "ruff", "command": "ruff check ."}
-  ]
-}
-```
-
-### Limiting log toolkits
-
-```bash
-LOG_TOOLKITS=cloudwatch python examples/dev_loop/server.py
-# or
-LOG_TOOLKITS=elasticsearch python examples/dev_loop/server.py
-```
-
-Missing config for a requested toolkit is logged as a warning rather than
-crashing the boot.
+The server normalises the payload into a `BugBrief`, validates the
+shell-command heads against `ACCEPTANCE_CRITERION_ALLOWLIST` (`flowtask`,
+`pytest`, `ruff`, `mypy`, `pylint`), and starts a real flow run.
 
 ## Stream layout (for reference)
 
