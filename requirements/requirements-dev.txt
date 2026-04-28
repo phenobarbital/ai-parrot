@@ -6,7 +6,7 @@ flit==3.9.0
 hypothesis==6.111.0
 ipython==8.32.0
 lint==1.2.1
-mypy==1.7.1
+mypy==1.19.1
 pylint==3.2.6
 pyperf==2.6.2
 pytest>=6.0.0
