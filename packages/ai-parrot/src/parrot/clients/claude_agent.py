@@ -463,6 +463,54 @@ class ClaudeAgentClient(AbstractClient):
             structured_output=structured_output,
         )
 
+    async def stream_messages(
+        self,
+        prompt: str,
+        *,
+        run_options: Optional[ClaudeAgentRunOptions] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> AsyncIterator[Any]:
+        """Yield raw Claude Agent SDK messages as they arrive.
+
+        Unlike :meth:`ask_stream` (which yields only ``TextBlock`` text
+        strings for end-user UIs), this yields every SDK message object
+        the agent loop produces — ``AssistantMessage`` with full
+        content blocks (``TextBlock`` / ``ToolUseBlock`` /
+        ``ToolResultBlock``), plus ``UserMessage``, ``SystemMessage``,
+        and the terminal ``ResultMessage``. Callers that need to
+        inspect message structure (e.g.
+        :class:`parrot.flows.dev_loop.dispatcher.ClaudeCodeDispatcher`,
+        which publishes per-event Redis envelopes and parses the final
+        JSON payload) consume this generator without buffering.
+
+        Args:
+            prompt: User prompt to send to the agent.
+            run_options: Optional :class:`ClaudeAgentRunOptions` for
+                this call (cwd, agents, allowed_tools, permission_mode,
+                ...).
+            model: Optional model override.
+            system_prompt: Optional system-prompt override.
+            session_id: Optional session id for replay/resume.
+
+        Yields:
+            Raw SDK message instances as the agent loop produces them.
+
+        Raises:
+            ImportError: When ``claude_agent_sdk`` is not installed.
+        """
+        query, _, _ = _import_sdk()
+        resolved_model = self._resolve_model(model, self._default_model)
+        options = self._build_options(
+            run_options=run_options,
+            model=resolved_model,
+            system_prompt=system_prompt,
+            session_id=session_id,
+        )
+        async for msg in query(prompt=prompt, options=options):
+            yield msg
+
     async def ask_stream(  # type: ignore[override]
         self,
         prompt: str,

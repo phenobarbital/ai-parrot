@@ -71,9 +71,9 @@ class _FakeClient:
         self.last_prompt: str = ""
         self.last_options: Any = None
 
-    async def ask_stream(self, prompt: str, *, options: Any):
+    async def stream_messages(self, prompt: str, *, run_options: Any):
         self.last_prompt = prompt
-        self.last_options = options
+        self.last_options = run_options
         for msg in self._messages:
             yield msg
 
@@ -277,13 +277,13 @@ class TestDispatchTimeout:
     ):
         """Spec §2 — ``profile.timeout_seconds`` caps the wall clock.
 
-        With a tiny real ``asyncio.timeout`` and an ``ask_stream`` that
+        With a tiny real ``asyncio.timeout`` and a ``stream_messages`` that
         never yields, the dispatcher must publish ``dispatch.failed``
         and raise ``DispatchExecutionError``.
         """
 
         class _SlowClient:
-            async def ask_stream(self, prompt: str, *, options: Any):
+            async def stream_messages(self, prompt: str, *, run_options: Any):
                 await asyncio.sleep(5)  # well past the test's timeout
                 yield  # pragma: no cover
 
@@ -332,7 +332,7 @@ class TestDispatchSessionFailure:
         self, dispatcher, monkeypatch, _patch_worktree_base
     ):
         class _BoomClient:
-            async def ask_stream(self, prompt: str, *, options: Any):
+            async def stream_messages(self, prompt: str, *, run_options: Any):
                 raise RuntimeError("transport lost")
                 yield  # pragma: no cover - unreachable, makes this an async gen
 
@@ -388,7 +388,7 @@ class TestSemaphore:
         gate = asyncio.Event()
 
         class _SlowClient:
-            async def ask_stream(self, prompt: str, *, options: Any):
+            async def stream_messages(self, prompt: str, *, run_options: Any):
                 active["n"] += 1
                 active["max"] = max(active["max"], active["n"])
                 await gate.wait()
@@ -421,9 +421,9 @@ class TestSemaphore:
                 cwd=str(_patch_worktree_base),
             )
 
-        # Start 4 dispatches but only 2 should be in ask_stream at once.
+        # Start 4 dispatches but only 2 should be in stream_messages at once.
         tasks = [asyncio.create_task(_dispatch_one(i)) for i in range(4)]
-        # Give the event loop time to enter ask_stream for the first 2.
+        # Give the event loop time to enter stream_messages for the first 2.
         for _ in range(20):
             await asyncio.sleep(0)
         assert active["n"] <= 2

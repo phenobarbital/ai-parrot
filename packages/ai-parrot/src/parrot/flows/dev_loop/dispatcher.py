@@ -207,8 +207,8 @@ class ClaudeCodeDispatcher:
                     # raises TimeoutError on expiry, which we surface as
                     # ``dispatch.failed`` and re-raise as DispatchExecutionError.
                     async with asyncio.timeout(profile.timeout_seconds):
-                        async for msg in client.ask_stream(
-                            prompt, options=run_options
+                        async for msg in client.stream_messages(
+                            prompt, run_options=run_options
                         ):
                             messages.append(msg)
                             await self._publish_message_event(
