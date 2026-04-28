@@ -12,6 +12,7 @@ from parrot.flows.dev_loop.dispatcher import (
     DispatchOutputValidationError,
 )
 from parrot.flows.dev_loop.flow import build_dev_loop_flow
+from parrot.flows.dev_loop.nodes.intent_classifier import IntentClassifierNode
 from parrot.flows.dev_loop.streaming import (
     FlowStreamMultiplexer,
     flow_stream_ws,
@@ -48,6 +49,7 @@ __all__ = [
     "DispatchOutputValidationError",
     "FlowStreamMultiplexer",
     "FlowtaskCriterion",
+    "IntentClassifierNode",
     "LogSource",
     "ManualCriterion",
     "QAReport",
