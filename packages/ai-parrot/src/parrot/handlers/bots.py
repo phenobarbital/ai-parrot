@@ -726,6 +726,14 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     async def _put_database(self, payload: dict):
         """Create agent in database and register into BotManager."""
+        # FEAT-133: Shallow validation for new JSONB config fields.
+        for _key in ("reranker_config", "parent_searcher_config"):
+            if _key in payload and not isinstance(payload[_key], dict):
+                return self.error(
+                    response={"message": f"{_key} must be a JSON object"},
+                    status=400,
+                )
+
         # Set created_by from session
         try:
             payload['created_by'] = await self.get_userid(
@@ -955,6 +963,14 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
 
     async def _post_database(self, agent: BotModel, payload: dict):
         """Update a database-backed agent."""
+        # FEAT-133: Shallow validation for new JSONB config fields.
+        for _key in ("reranker_config", "parent_searcher_config"):
+            if _key in payload and not isinstance(payload[_key], dict):
+                return self.error(
+                    response={"message": f"{_key} must be a JSON object"},
+                    status=400,
+                )
+
         db = self.handler
         try:
             async with await db(self.request) as conn:
