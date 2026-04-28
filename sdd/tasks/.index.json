@@ -16186,7 +16186,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
@@ -16194,7 +16194,8 @@
             "parallelism_notes": "New file under parrot/rerankers/. Independent of TASK-906/907.",
             "assigned_to": null,
             "started_at": "2026-04-28T23:40:59.832351+00:00",
-            "file": "sdd/tasks/active/TASK-905-rerankers-factory.md"
+            "file": "sdd/tasks/completed/TASK-905-rerankers-factory.md",
+            "completed_at": "2026-04-28T23:45:05.432617+00:00"
         },
         {
             "id": "TASK-906",
