@@ -24,7 +24,11 @@ class TestDevLoopSettingsDefaults:
         assert conf.FLOW_STREAM_TTL_SECONDS == 604800
 
     def test_acceptance_allowlist_default(self):
+        # `task` is the canonical Navigator binary; `flowtask` is kept
+        # alongside for backward compatibility with the spec's original
+        # head name.
         assert conf.ACCEPTANCE_CRITERION_ALLOWLIST == [
+            "task",
             "flowtask",
             "pytest",
             "ruff",

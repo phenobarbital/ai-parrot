@@ -388,6 +388,7 @@ class WebScrapingToolkit(AbstractToolkit):
         self,
         url: str,
         plan: Optional[Union[ScrapingPlan, Dict[str, Any]]] = None,
+        objective: Optional[str] = None,
     ) -> Optional[ScrapingPlan]:
         """Return an explicit or cached plan WITHOUT calling the LLM.
 
@@ -395,6 +396,11 @@ class WebScrapingToolkit(AbstractToolkit):
         is needed (in which case we capture a driver-based DOM snapshot
         before invoking the LLM). Returns ``None`` when the LLM would be
         needed, so the caller can handle that case explicitly.
+
+        When ``objective`` is supplied the caller has a specific extraction
+        intent for this URL — domain-only registry fallback (Tier 3) is
+        suppressed so an unrelated cached plan from the same domain cannot
+        silently scrape the wrong page.
         """
         if plan is not None:
             if isinstance(plan, dict):
@@ -402,7 +408,7 @@ class WebScrapingToolkit(AbstractToolkit):
             return plan
 
         registry = await self._ensure_registry()
-        entry = registry.lookup(url)
+        entry = registry.lookup(url, allow_domain_fallback=objective is None)
         if entry is None:
             return None
 
@@ -445,9 +451,12 @@ class WebScrapingToolkit(AbstractToolkit):
                 return ScrapingPlan.model_validate(plan)
             return plan
 
-        # 2. Registry cache lookup
+        # 2. Registry cache lookup. When the caller provided an objective
+        # for a specific URL, suppress Tier 3 (domain-only) fallback so an
+        # unrelated cached plan from the same domain cannot silently take
+        # over — re-generate via the LLM instead.
         registry = await self._ensure_registry()
-        entry = registry.lookup(url)
+        entry = registry.lookup(url, allow_domain_fallback=objective is None)
         if entry is not None:
             plan_path = self._plans_dir / entry.path
             try:
@@ -508,7 +517,10 @@ class WebScrapingToolkit(AbstractToolkit):
         """
         if not force_regenerate:
             registry = await self._ensure_registry()
-            entry = registry.lookup(url)
+            # plan_create() always carries a specific objective for a
+            # specific URL — domain-only fallback is unsafe here because
+            # it would return a plan generated for an unrelated path.
+            entry = registry.lookup(url, allow_domain_fallback=False)
             if entry is not None:
                 plan_path = self._plans_dir / entry.path
                 try:
@@ -552,9 +564,11 @@ class WebScrapingToolkit(AbstractToolkit):
         """
         registry = await self._ensure_registry()
 
-        # Check for existing entry
+        # Check for existing entry — must be an exact / path-prefix match,
+        # not a domain-only fallback, otherwise a plan for an unrelated
+        # path on the same domain would block saving this one.
         if not overwrite:
-            existing = registry.lookup(plan.url)
+            existing = registry.lookup(plan.url, allow_domain_fallback=False)
             if existing is not None:
                 return PlanSaveResult(
                     success=False,
@@ -743,7 +757,9 @@ class WebScrapingToolkit(AbstractToolkit):
                 )
 
         # Try resolving from cache / explicit plan FIRST — no driver needed.
-        resolved = await self._try_resolve_cached_plan(url, plan)
+        # Pass `objective` so domain-only registry fallback is skipped when
+        # the caller has a specific extraction intent for this URL.
+        resolved = await self._try_resolve_cached_plan(url, plan, objective)
         plan_was_generated = resolved is None
 
         async with driver_context(config, session_driver=self._session_driver) as drv:

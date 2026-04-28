@@ -639,5 +639,5 @@ FLOW_STREAM_TTL_SECONDS: int = config.getint(
 # default covers the four lint/test command heads documented in the spec.
 ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
     "ACCEPTANCE_CRITERION_ALLOWLIST",
-    fallback=["flowtask", "pytest", "ruff", "mypy", "pylint"],
-) or ["flowtask", "pytest", "ruff", "mypy", "pylint"]
+    fallback=["task", "flowtask", "pytest", "ruff", "mypy", "pylint"],
+) or ["task", "flowtask", "pytest", "ruff", "mypy", "pylint"]

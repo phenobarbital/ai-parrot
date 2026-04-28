@@ -108,6 +108,54 @@ class TestBasePlanRegistryLookup:
         await registry.load()
         assert registry.lookup("https://unknown.example.com/page") is None
 
+    @pytest.mark.asyncio
+    async def test_tier3_disabled_returns_none(self, tmp_path: Path) -> None:
+        """Tier 3 fallback is suppressed when allow_domain_fallback=False."""
+        plan = _make_scraping_plan("https://shop.example.com/products")
+        registry: BasePlanRegistry[ScrapingPlan] = BasePlanRegistry(plans_dir=tmp_path)
+        await registry.register(plan, "plan.json")
+
+        # Same domain, unrelated path: would match via Tier 3 by default,
+        # but caller has explicit intent (e.g. an objective) so we must
+        # not silently return a plan made for /products.
+        result = registry.lookup(
+            "https://shop.example.com/deals",
+            allow_domain_fallback=False,
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_tier3_disabled_does_not_block_tier1(
+        self, tmp_path: Path,
+    ) -> None:
+        """Disabling Tier 3 still allows exact fingerprint matches."""
+        plan = _make_scraping_plan("https://shop.example.com/products")
+        registry: BasePlanRegistry[ScrapingPlan] = BasePlanRegistry(plans_dir=tmp_path)
+        await registry.register(plan, "plan.json")
+
+        result = registry.lookup(
+            "https://shop.example.com/products",
+            allow_domain_fallback=False,
+        )
+        assert result is not None
+        assert result.fingerprint == plan.fingerprint
+
+    @pytest.mark.asyncio
+    async def test_tier3_disabled_does_not_block_tier2(
+        self, tmp_path: Path,
+    ) -> None:
+        """Disabling Tier 3 still allows path-prefix matches."""
+        plan = _make_scraping_plan("https://shop.example.com/products")
+        registry: BasePlanRegistry[ScrapingPlan] = BasePlanRegistry(plans_dir=tmp_path)
+        await registry.register(plan, "plan.json")
+
+        result = registry.lookup(
+            "https://shop.example.com/products/widget-123",
+            allow_domain_fallback=False,
+        )
+        assert result is not None
+        assert result.fingerprint == plan.fingerprint
+
 
 class TestBasePlanRegistryRegister:
     """Tests for BasePlanRegistry.register()."""

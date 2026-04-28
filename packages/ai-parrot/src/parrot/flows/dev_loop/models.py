@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 # ─────────────────────────────────────────────────────────────────────
 # Acceptance criteria (discriminated union)
@@ -58,8 +58,30 @@ class ShellCriterion(_AcceptanceCriterionBase):
     )
 
 
+class ManualCriterion(BaseModel):
+    """Human-readable acceptance statement that the QA subagent must NOT run.
+
+    Used for criteria that are inherently subjective or require human
+    judgement ("the dashboard renders without flicker", "the migration
+    note in the PR mentions both downtime and rollback"). The
+    :class:`QANode` filters these out before dispatch, then re-appends a
+    synthesized :class:`CriterionResult` with ``kind="manual"`` and
+    ``passed=True`` so the deterministic gate does not block the flow.
+    The text is also embedded in the Jira ticket description and in
+    ``QAReport.notes`` so the human reviewer can sign off explicitly.
+    """
+
+    kind: Literal["manual"] = "manual"
+    name: str = Field(..., description="Short identifier for the criterion.")
+    text: str = Field(
+        ...,
+        min_length=1,
+        description="Human-readable statement the reviewer must verify.",
+    )
+
+
 AcceptanceCriterion = Annotated[
-    Union[FlowtaskCriterion, ShellCriterion],
+    Union[FlowtaskCriterion, ShellCriterion, ManualCriterion],
     Field(discriminator="kind"),
 ]
 
@@ -87,17 +109,44 @@ class BugBrief(BaseModel):
     ``BugIntakeNode`` before any dispatch happens.
     """
 
-    summary: str = Field(..., min_length=10)
+    summary: str = Field(
+        ...,
+        min_length=10,
+        max_length=255,
+        description=(
+            "Short human-readable headline. Becomes the Jira ticket "
+            "`summary` field, which Atlassian caps at 255 characters."
+        ),
+    )
+    description: str = Field(
+        default="",
+        description=(
+            "Long-form incident details (steps to reproduce, hypotheses, "
+            "links). Embedded in the Jira ticket description; never "
+            "forwarded to the `summary` field."
+        ),
+    )
     affected_component: str
     log_sources: List[LogSource] = Field(default_factory=list)
     acceptance_criteria: List[AcceptanceCriterion] = Field(..., min_length=1)
     escalation_assignee: str = Field(
         ...,
-        description="Jira accountId to receive the ticket on failure escalation.",
+        description="Jira accountId or email of the failure escalation assignee.",
     )
     reporter: str = Field(
         ...,
-        description="Jira accountId of the original human reporter (kept on the ticket).",
+        description="Jira accountId or email of the original human reporter.",
+    )
+    existing_issue_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional Jira issue key (e.g. 'NAV-8241') the caller knows "
+            "tracks this incident already. When set, ResearchNode skips "
+            "the create-issue step and posts a re-triggered comment on "
+            "the named ticket instead. When unset, ResearchNode searches "
+            "the project for an open ticket with a matching summary "
+            "before falling back to creating a new one."
+        ),
     )
 
 
@@ -111,13 +160,45 @@ class ResearchOutput(BaseModel):
 
     The research subagent creates the Jira ticket, the spec, the worktree
     and (optionally) initial task artifacts, then emits this payload.
+
+    The model accepts a small set of common aliases under
+    ``populate_by_name=True`` so subagent outputs that drift on field
+    names (``jira_key``, ``feature_id``, ``branch``, ``worktree``) still
+    validate. Pydantic's serialiser keeps the canonical names on
+    output.
     """
 
-    jira_issue_key: str = Field(..., description="e.g. 'OPS-4321'")
-    spec_path: str = Field(..., description="Path to the spec, inside the worktree.")
-    feat_id: str = Field(..., description="e.g. 'FEAT-130'")
-    branch_name: str = Field(..., description="e.g. 'feat-130-fix-customer-sync'")
-    worktree_path: str = Field(..., description="Absolute on-disk worktree path.")
+    model_config = ConfigDict(populate_by_name=True)
+
+    jira_issue_key: str = Field(
+        ...,
+        description="e.g. 'OPS-4321'",
+        validation_alias=AliasChoices(
+            "jira_issue_key", "jira_key", "issue_key", "ticket_key"
+        ),
+    )
+    spec_path: str = Field(
+        ...,
+        description="Path to the spec, inside the worktree.",
+        validation_alias=AliasChoices("spec_path", "spec"),
+    )
+    feat_id: str = Field(
+        ...,
+        description="e.g. 'FEAT-130'",
+        validation_alias=AliasChoices(
+            "feat_id", "feature_id", "feat", "feature"
+        ),
+    )
+    branch_name: str = Field(
+        ...,
+        description="e.g. 'feat-130-fix-customer-sync'",
+        validation_alias=AliasChoices("branch_name", "branch"),
+    )
+    worktree_path: str = Field(
+        ...,
+        description="Absolute on-disk worktree path.",
+        validation_alias=AliasChoices("worktree_path", "worktree"),
+    )
     log_excerpts: List[str] = Field(
         default_factory=list,
         description="Short, redacted log excerpts gathered during research.",
@@ -136,7 +217,7 @@ class CriterionResult(BaseModel):
     """Result of running a single acceptance criterion in QA."""
 
     name: str
-    kind: Literal["flowtask", "shell"]
+    kind: Literal["flowtask", "shell", "manual"]
     exit_code: int
     duration_seconds: float
     stdout_tail: str = Field("", max_length=4000)

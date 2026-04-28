@@ -456,6 +456,42 @@ class TestPlanResolution:
         toolkit._llm_client.complete.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_objective_suppresses_domain_fallback(
+        self, toolkit, sample_plan,
+    ):
+        """A cached plan for one path must not be reused for a different
+        path on the same domain when the caller passes a fresh objective.
+
+        Regression: previously, the registry's Tier 3 (domain-only)
+        fallback would return ANY plan from the same domain, so a second
+        scrape on /deals would silently execute the navigate-to-/products
+        steps from the cached plan.
+        """
+        await toolkit.plan_save(sample_plan)  # plan for /products
+
+        resolved = await toolkit._resolve_plan(
+            "https://example.com/deals",
+            objective="Extract deals",
+        )
+        # New plan must be generated, not reused from /products
+        assert isinstance(resolved, ScrapingPlan)
+        toolkit._llm_client.complete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_objective_keeps_domain_fallback(
+        self, toolkit, sample_plan,
+    ):
+        """Without an objective, callers still benefit from the existing
+        domain-only fallback (a deliberate "share a plan across a site"
+        affordance for callers that own their plan strategy)."""
+        await toolkit.plan_save(sample_plan)  # plan for /products
+
+        resolved = await toolkit._resolve_plan("https://example.com/deals")
+        assert resolved.url == sample_plan.url
+        # No LLM call — cache hit via Tier 3
+        toolkit._llm_client.complete.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_no_plan_raises(self, toolkit_no_llm):
         with pytest.raises(ValueError, match="No plan available"):
             await toolkit_no_llm._resolve_plan("https://example.com")

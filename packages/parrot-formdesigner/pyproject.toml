@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.24.34",
+    "ai-parrot>=0.24.36",
 ]
 
 [project.urls]

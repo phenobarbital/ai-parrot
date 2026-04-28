@@ -57,7 +57,7 @@ async def test_concurrent_flows_respect_dispatcher_cap(
     gate = asyncio.Event()
 
     class _SlowClient:
-        async def ask_stream(self, prompt: str, *, options: Any):
+        async def stream_messages(self, prompt: str, *, run_options: Any):
             active["n"] += 1
             active["max"] = max(active["max"], active["n"])
             await gate.wait()

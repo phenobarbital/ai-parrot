@@ -182,10 +182,16 @@ class ClaudeCodeDispatcher:
 
         async with self._semaphore:
             try:
-                # Materialize the JSON schema for the structured-output flag.
-                json_schema_path = self._materialize_json_schema(output_model)
+                # ``json_schema_path`` is intentionally not generated:
+                # the SDK's subprocess transport pins
+                # ``--output-format stream-json`` / ``--input-format
+                # stream-json`` itself, so passing
+                # ``extra_args={"output-format": "json", ...}`` causes a
+                # CLI-level conflict. Output validation falls back to
+                # best-effort JSON parsing of the final assistant text
+                # (spec §7 R2).
                 run_options = self._resolve_run_options(
-                    profile, cwd, json_schema_path=json_schema_path
+                    profile, cwd, json_schema_path=None
                 )
 
                 client = LLMFactory.create(f"claude-agent:{profile.model}")
@@ -207,8 +213,8 @@ class ClaudeCodeDispatcher:
                     # raises TimeoutError on expiry, which we surface as
                     # ``dispatch.failed`` and re-raise as DispatchExecutionError.
                     async with asyncio.timeout(profile.timeout_seconds):
-                        async for msg in client.ask_stream(
-                            prompt, options=run_options
+                        async for msg in client.stream_messages(
+                            prompt, run_options=run_options
                         ):
                             messages.append(msg)
                             await self._publish_message_event(
@@ -364,12 +370,16 @@ class ClaudeCodeDispatcher:
         else:
             system_prompt = profile.system_prompt_override
 
+        # NOTE: spec §7 R2 floated using
+        # ``extra_args={"output-format":"json","json-schema":<path>}`` as
+        # a v1 enhancement, but the SDK's subprocess transport always
+        # adds ``--output-format stream-json`` / ``--input-format
+        # stream-json`` itself; overriding via ``extra_args`` produces
+        # ``--input-format=stream-json requires output-format=stream-json``
+        # at runtime. We therefore stick with the documented best-effort
+        # JSON parsing of the final ``ResultMessage`` payload — see
+        # ``_validate_output`` — and leave ``extra_args`` unset.
         extra_args: Optional[Dict[str, Optional[str]]] = None
-        if json_schema_path is not None:
-            extra_args = {
-                "output-format": "json",
-                "json-schema": json_schema_path,
-            }
 
         return ClaudeAgentRunOptions(
             cwd=cwd,
@@ -410,16 +420,55 @@ class ClaudeCodeDispatcher:
     ) -> str:
         """Compose the prompt body for a dispatch.
 
-        The brief is JSON-encoded so the subagent gets a structured input;
-        an explicit instruction line tells the subagent to respond with a
-        JSON object matching ``output_model``.
+        Embeds:
+
+        * The JSON-encoded brief.
+        * A compact field-list extracted from
+          ``output_model.model_json_schema()`` so the subagent sees
+          the canonical field names + types + descriptions (subagents
+          drift on field names when given only a class name —
+          ``jira_key`` instead of ``jira_issue_key`` was the trigger).
+        * A required-field allowlist so the subagent knows what cannot
+          be omitted.
+        * A no-prose / no-markdown-fence instruction so
+          :func:`_validate_output`'s best-effort JSON extractor finds
+          a clean object.
         """
         brief_json = brief.model_dump_json()
+        schema = output_model.model_json_schema()
+        properties = schema.get("properties", {}) or {}
+        required = schema.get("required", []) or []
+        field_lines: List[str] = []
+        for fname, fmeta in properties.items():
+            ftype = (
+                fmeta.get("type")
+                or fmeta.get("$ref", "").rsplit("/", 1)[-1]
+                or "any"
+            )
+            fdesc = (fmeta.get("description") or "").strip()
+            mandatory = " (required)" if fname in required else ""
+            line = f"  - {fname}: {ftype}{mandatory}"
+            if fdesc:
+                line += f" — {fdesc}"
+            field_lines.append(line)
+        fields_block = "\n".join(field_lines) or "  (no fields)"
+        required_block = (
+            ", ".join(required) if required else "(none)"
+        )
+
         return (
             f"Input brief:\n{brief_json}\n\n"
-            f"Respond with a single JSON object matching the "
-            f"`{output_model.__name__}` schema. Do not wrap the JSON in "
-            f"markdown fences and do not add prose around it."
+            f"Respond with a single JSON object that matches the "
+            f"`{output_model.__name__}` schema. Use these EXACT field "
+            f"names — do not invent shorter aliases:\n"
+            f"{fields_block}\n\n"
+            f"Required fields (must be present and non-empty): "
+            f"{required_block}.\n\n"
+            f"Output rules:\n"
+            f"  1. Emit ONE JSON object — no surrounding prose.\n"
+            f"  2. No markdown fences around the JSON.\n"
+            f"  3. All required fields above must appear under their "
+            f"exact names."
         )
 
     def _validate_output(
