@@ -186,9 +186,7 @@ class TestBugIntakeExecute:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Removed _validate method from BugIntakeNode and removed its call from execute(). Removed FlowtaskCriterion, ShellCriterion, ACCEPTANCE_CRITERION_ALLOWLIST imports (no longer needed). Updated docstrings to reflect new scoped-down role. Rewrote test_bug_intake.py to focus on load/emit only (7 tests, all pass). Linting clean.
+**Deviations from spec**: none

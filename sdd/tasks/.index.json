@@ -16053,7 +16053,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "medium",
             "effort": "S",
             "depends_on": [
@@ -16063,7 +16063,8 @@
             "parallelism_notes": "Sequential: removes the duplicate validation only after TASK-898 owns it.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-899-bug-intake-scope-down.md"
+            "file": "sdd/tasks/completed/TASK-899-bug-intake-scope-down.md",
+            "completed_at": "2026-04-28T21:24:06.194229+00:00"
         },
         {
             "id": "TASK-900",
