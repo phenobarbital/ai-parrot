@@ -16094,7 +16094,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16106,7 +16106,8 @@
             "parallelism_notes": "Integration node \u2014 needs all three implementation tasks in place.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-901-flow-factory-rewire-routing.md"
+            "file": "sdd/tasks/completed/TASK-901-flow-factory-rewire-routing.md",
+            "completed_at": "2026-04-28T23:55:00.000000+00:00"
         },
         {
             "id": "TASK-902",

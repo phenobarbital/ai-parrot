@@ -244,9 +244,7 @@ underlying nodes, copy that pattern.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Added IntentClassifierNode import, inserted as entry point, added _is_bug/_is_not_bug predicates, two on_condition edges from intent_classifier, on_error for intent_classifier. Updated test_flow.py: 7-node registration, topology tests, TestKindRouting with valid WorkBrief data (WorkBrief requires summary>=10 chars and non-empty acceptance_criteria). All 16 flow tests pass; full dev_loop suite 102 passed.
+**Deviations from spec**: none
