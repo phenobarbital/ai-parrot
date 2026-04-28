@@ -235,6 +235,8 @@ class Chatbot(BaseBot):
         # Context and retrieval settings
         self.context_search_limit = getattr(self, 'context_search_limit', 10)
         self.context_score_threshold = getattr(self, 'context_score_threshold', 0.7)
+        # FEAT-128: parent-child retrieval flag (constructor injection only for parent_searcher)
+        self.expand_to_parent = getattr(self, 'expand_to_parent', False)
 
         # Security and permissions
         self._permissions = getattr(self, '_permissions', {})
@@ -386,6 +388,11 @@ class Chatbot(BaseBot):
         # Context and retrieval settings
         self.context_search_limit = self._from_db(bot, 'context_search_limit', default=10)
         self.context_score_threshold = self._from_db(bot, 'context_score_threshold', default=0.7)
+        # FEAT-128: parent-child retrieval — read expand_to_parent from DB config.
+        # parent_searcher is NOT DB-driven in v1 (constructor injection only).
+        self.expand_to_parent = self._from_db(
+            bot, 'expand_to_parent', default=getattr(self, 'expand_to_parent', False)
+        )
 
         # Security and permissions
         self._permissions = self._from_db(bot, 'permissions', default={})

@@ -605,6 +605,237 @@ class AIMessageFactory:
             response=content if isinstance(content, str) else str(content)
         )
 
+    # ------------------------------------------------------------------
+    # Stop-reason mapping for claude-agent-sdk ResultMessage.subtype
+    # ------------------------------------------------------------------
+    # ``ResultMessage.subtype`` describes how a ``query()`` run terminated.
+    # We translate the SDK's vocabulary to the unified ``AIMessage.stop_reason``
+    # space so downstream code (Agent loops, observability) does not need to
+    # know about provider-specific tokens.
+    _CLAUDE_AGENT_STOP_REASON_MAP: Dict[str, str] = {
+        "success": "end_turn",
+        "error_max_turns": "max_turns",
+        "error_during_execution": "error",
+        "error": "error",
+    }
+
+    @staticmethod
+    def from_claude_agent(
+        messages: List[Any],
+        input_text: str,
+        model: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
+        structured_output: Any = None,
+    ) -> AIMessage:
+        """Create an ``AIMessage`` from a ``claude_agent_sdk`` message stream.
+
+        The agent SDK yields a sequence of message objects from
+        ``claude_agent_sdk.query()`` / ``ClaudeSDKClient`` —
+        ``AssistantMessage`` (with ``content`` blocks: ``TextBlock``,
+        ``ToolUseBlock``, ``ToolResultBlock``, ``ThinkingBlock``),
+        ``UserMessage``, ``SystemMessage``, and a terminal ``ResultMessage``
+        carrying aggregate metadata (``subtype``, ``num_turns``,
+        ``total_cost_usd``, ``usage``).
+
+        This factory walks that list and assembles a unified ``AIMessage`` by
+        concatenating ``TextBlock.text`` from every ``AssistantMessage`` and
+        mapping each ``ToolUseBlock`` to a ``ToolCall``. Metadata (model,
+        usage, stop reason) is sourced from the terminal ``ResultMessage``
+        when present, falling back to the last ``AssistantMessage`` otherwise.
+
+        The function uses **duck typing** (attribute / class-name checks)
+        rather than ``isinstance`` so that ``claude_agent_sdk`` does not need
+        to be importable at this module's load time. This keeps the optional
+        ``[claude-agent]`` extra strictly optional.
+
+        Args:
+            messages: List of message objects produced by ``query()`` /
+                ``ClaudeSDKClient``. May include ``AssistantMessage``,
+                ``UserMessage``, ``SystemMessage``, ``ResultMessage``.
+            input_text: The original user prompt that produced this stream.
+            model: Optional model id. If ``None``, inferred from the last
+                ``AssistantMessage.model``.
+            user_id: Optional user identifier.
+            session_id: Optional session identifier (overrides any
+                ``ResultMessage.session_id`` if provided).
+            turn_id: Optional turn identifier.
+            structured_output: Optional pre-parsed structured output that
+                replaces the concatenated text in ``AIMessage.output``.
+
+        Returns:
+            A populated ``AIMessage`` with ``provider="claude-agent"``.
+        """
+        # Lazy import — never required at module load time. We only need the
+        # types for isinstance checks; if the SDK is not installed, fall back
+        # to duck typing on class names and attributes.
+        try:  # pragma: no cover - import side effect varies by env
+            from claude_agent_sdk.types import (  # noqa: F401
+                AssistantMessage,
+                ResultMessage,
+                TextBlock,
+                ToolUseBlock,
+            )
+            _SDK_AVAILABLE = True
+        except Exception:  # pragma: no cover
+            AssistantMessage = ResultMessage = TextBlock = ToolUseBlock = None  # type: ignore
+            _SDK_AVAILABLE = False
+
+        def _is_assistant_message(obj: Any) -> bool:
+            if _SDK_AVAILABLE and isinstance(obj, AssistantMessage):  # type: ignore[arg-type]
+                return True
+            return type(obj).__name__ == "AssistantMessage" and hasattr(
+                obj, "content"
+            )
+
+        def _is_result_message(obj: Any) -> bool:
+            if _SDK_AVAILABLE and isinstance(obj, ResultMessage):  # type: ignore[arg-type]
+                return True
+            return type(obj).__name__ == "ResultMessage"
+
+        def _is_text_block(obj: Any) -> bool:
+            if _SDK_AVAILABLE and isinstance(obj, TextBlock):  # type: ignore[arg-type]
+                return True
+            return type(obj).__name__ == "TextBlock" and hasattr(obj, "text")
+
+        def _is_tool_use_block(obj: Any) -> bool:
+            if _SDK_AVAILABLE and isinstance(obj, ToolUseBlock):  # type: ignore[arg-type]
+                return True
+            return (
+                type(obj).__name__ == "ToolUseBlock"
+                and hasattr(obj, "id")
+                and hasattr(obj, "name")
+                and hasattr(obj, "input")
+            )
+
+        text_chunks: List[str] = []
+        tool_calls: List[ToolCall] = []
+        last_assistant: Optional[Any] = None
+        result_msg: Optional[Any] = None
+        per_turn_usages: List[Dict[str, Any]] = []
+
+        for msg in messages or []:
+            if _is_assistant_message(msg):
+                last_assistant = msg
+                if getattr(msg, "usage", None):
+                    per_turn_usages.append(dict(msg.usage))
+                for block in getattr(msg, "content", []) or []:
+                    if _is_text_block(block):
+                        text_chunks.append(getattr(block, "text", "") or "")
+                    elif _is_tool_use_block(block):
+                        tool_input = getattr(block, "input", {}) or {}
+                        if not isinstance(tool_input, dict):
+                            # Be defensive — never crash the converter on a
+                            # malformed input field.
+                            tool_input = {"input": tool_input}
+                        tool_calls.append(
+                            ToolCall(
+                                id=str(getattr(block, "id", "")),
+                                name=str(getattr(block, "name", "")),
+                                arguments=tool_input,
+                            )
+                        )
+            elif _is_result_message(msg):
+                result_msg = msg
+
+        text_output = "".join(text_chunks)
+
+        # Derive metadata from ResultMessage first, then fall back to the
+        # last AssistantMessage we saw.
+        resolved_model = (
+            model
+            or (getattr(last_assistant, "model", None) if last_assistant else None)
+            or "claude-agent"
+        )
+
+        result_usage: Optional[Dict[str, Any]] = None
+        total_cost_usd: Optional[float] = None
+        num_turns: Optional[int] = None
+        model_usage: Optional[Dict[str, Any]] = None
+        sdk_stop_reason: Optional[str] = None
+        result_subtype: Optional[str] = None
+        result_session_id: Optional[str] = None
+
+        if result_msg is not None:
+            result_usage = getattr(result_msg, "usage", None)
+            total_cost_usd = getattr(result_msg, "total_cost_usd", None)
+            num_turns = getattr(result_msg, "num_turns", None)
+            model_usage = getattr(result_msg, "model_usage", None)
+            sdk_stop_reason = getattr(result_msg, "stop_reason", None)
+            result_subtype = getattr(result_msg, "subtype", None)
+            result_session_id = getattr(result_msg, "session_id", None)
+
+        # Stop-reason resolution order:
+        # 1. Explicit ResultMessage.stop_reason (rare but authoritative).
+        # 2. Last AssistantMessage.stop_reason.
+        # 3. Mapped ResultMessage.subtype.
+        # 4. None.
+        stop_reason: Optional[str] = sdk_stop_reason
+        if stop_reason is None and last_assistant is not None:
+            stop_reason = getattr(last_assistant, "stop_reason", None)
+        if stop_reason is None and result_subtype is not None:
+            stop_reason = AIMessageFactory._CLAUDE_AGENT_STOP_REASON_MAP.get(
+                result_subtype, result_subtype
+            )
+
+        # Aggregate per-turn usage when no ResultMessage.usage is present.
+        if result_usage is None and per_turn_usages:
+            agg: Dict[str, Any] = {"input_tokens": 0, "output_tokens": 0}
+            for u in per_turn_usages:
+                agg["input_tokens"] += int(
+                    u.get("input_tokens") or u.get("prompt_tokens") or 0
+                )
+                agg["output_tokens"] += int(
+                    u.get("output_tokens") or u.get("completion_tokens") or 0
+                )
+            result_usage = agg
+
+        usage = CompletionUsage.from_claude_agent(
+            result_usage=result_usage,
+            total_cost_usd=total_cost_usd,
+            num_turns=num_turns,
+            model_usage=model_usage,
+        )
+
+        # Prefer the explicit session_id passed in by the caller; only fall
+        # back to the SDK ResultMessage.session_id when none was supplied.
+        effective_session_id = session_id or result_session_id
+
+        # Raw response: keep a serialisable echo of the SDK stream so callers
+        # can introspect it. Use vars() / __dict__ for dataclasses; fall back
+        # to repr() for unknown types.
+        def _serialise(obj: Any) -> Any:
+            if hasattr(obj, "__dict__"):
+                try:
+                    return AIMessageFactory._sanitize_for_json(obj.__dict__)
+                except Exception:
+                    return repr(obj)
+            return repr(obj)
+
+        raw_response = {
+            "messages": [_serialise(m) for m in (messages or [])],
+            "subtype": result_subtype,
+        }
+
+        return AIMessage(
+            input=input_text,
+            output=structured_output if structured_output is not None else text_output,
+            is_structured=structured_output is not None,
+            structured_output=structured_output,
+            model=resolved_model,
+            provider="claude-agent",
+            usage=usage,
+            stop_reason=stop_reason,
+            finish_reason=stop_reason,
+            tool_calls=tool_calls,
+            user_id=user_id,
+            session_id=effective_session_id,
+            turn_id=turn_id,
+            raw_response=raw_response,
+            response=text_output,
+        )
+
     @staticmethod
     def _sanitize_for_json(data: Any) -> Any:
         """Recursively sanitize data for JSON serialization."""

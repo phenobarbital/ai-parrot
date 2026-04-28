@@ -15,7 +15,9 @@ from sqlalchemy import (
     func,
     event,
     JSON,
-    Index
+    Index,
+    or_,
+    and_,
 )
 from sqlalchemy.sql import literal_column
 from sqlalchemy import bindparam
@@ -41,7 +43,7 @@ from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 # Datamodel
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navconfig.logging import logging
-from .abstract import AbstractStore
+from .abstract import AbstractStore, _normalise_chunk_marker
 from ..conf import default_sqlalchemy_pg
 from .models import SearchResult, Document, DistanceStrategy
 from .utils.chunking import LateChunkingProcessor
@@ -618,6 +620,10 @@ class PgVectorStore(AbstractStore):
                 "Pass table= or configure the store with a table name."
             )
 
+        # FEAT-128: Idempotent normalisation — mark every non-parent input
+        # as is_chunk=True if it doesn't already carry a marker.
+        _normalise_chunk_marker(documents)
+
         # ── Contextual embedding (FEAT-127): swap bare page_content for
         # metadata-header-augmented text when the flag is on.  The helper
         # also writes metadata['contextual_header'] onto each Document.
@@ -746,10 +752,16 @@ class PgVectorStore(AbstractStore):
         content_column: str = 'document',
         metadata_column: str = 'cmetadata',
         id_column: str = 'id',
-        additional_columns: Optional[List[str]] = None
+        additional_columns: Optional[List[str]] = None,
+        include_parents: bool = False,
     ) -> List[SearchResult]:
         """
         Perform similarity search with optional threshold filtering.
+
+        By default, parent rows (``is_full_document=True`` or
+        ``document_type='parent'/'parent_chunk'``) are excluded from the
+        candidate set (FEAT-128).  Pass ``include_parents=True`` to restore
+        the legacy behaviour where all rows are returned.
 
         Args:
             query: The search query text
@@ -863,6 +875,29 @@ class PgVectorStore(AbstractStore):
                     stmt = stmt.where(
                         metadata_col[key].astext == str(val)
                     )
+
+        # FEAT-128: Default parent-exclusion filter.
+        # By default, exclude parent rows so they never compete with chunks
+        # in the vector neighbourhood.  Pass include_parents=True to bypass.
+        #
+        # Predicate logic:
+        #   (is_chunk = True)                   → explicit chunk rows
+        #   OR (is_full_document IS NULL         → key absent: no parent marker
+        #       AND document_type IS NULL)       → key absent: no parent_chunk marker
+        #
+        # The NULL-check branch preserves backward compat for legacy collections
+        # where is_chunk was never set.  Rows with is_full_document=True or
+        # document_type='parent'/'parent_chunk' are excluded.
+        if not include_parents:
+            stmt = stmt.where(
+                or_(
+                    metadata_col['is_chunk'].astext.cast(sqlalchemy.Boolean) == True,  # noqa: E712
+                    and_(
+                        metadata_col['is_full_document'].astext.is_(None),
+                        metadata_col['document_type'].astext.is_(None),
+                    ),
+                )
+            )
 
         try:
             # Execute query
@@ -1815,13 +1850,17 @@ class PgVectorStore(AbstractStore):
         content_column: str = 'document',
         metadata_column: str = 'cmetadata',
         id_column: str = 'id',
-        additional_columns: Optional[List[str]] = None
+        additional_columns: Optional[List[str]] = None,
+        include_parents: bool = False,
     ) -> List[SearchResult]:
         """
         Perform Maximal Marginal Relevance (MMR) search to balance relevance and diversity.
 
         MMR helps avoid redundant results by selecting documents that are relevant to the query
         but diverse from each other.
+
+        By default, parent rows are excluded from the candidate set (FEAT-128).
+        Pass ``include_parents=True`` to restore legacy behaviour.
 
         Args:
             query: The search query text
@@ -1841,6 +1880,8 @@ class PgVectorStore(AbstractStore):
             metadata_column: Name of the metadata column
             id_column: Name of the ID column
             additional_columns: Additional columns to include in results
+            include_parents: When True, include parent rows in the candidate
+                set (bypasses FEAT-128 default filter).
 
         Returns:
             List of SearchResult objects selected via MMR algorithm
@@ -1852,7 +1893,8 @@ class PgVectorStore(AbstractStore):
         if fetch_k is None:
             fetch_k = max(k * 3, 20)
 
-        # Step 1: Get initial candidates using similarity search
+        # Step 1: Get initial candidates using similarity search.
+        # Pass include_parents through so MMR inherits the same filter (FEAT-128).
         candidates = await self.similarity_search(
             query=query,
             table=table,
@@ -1865,7 +1907,8 @@ class PgVectorStore(AbstractStore):
             content_column=content_column,
             metadata_column=metadata_column,
             id_column=id_column,
-            additional_columns=additional_columns
+            additional_columns=additional_columns,
+            include_parents=include_parents,
         )
 
         if len(candidates) <= k:

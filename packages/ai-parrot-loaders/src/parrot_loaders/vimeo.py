@@ -13,24 +13,16 @@ class VimeoLoader(YoutubeLoader):
         video_title: str,
         transcript: Optional[Union[str, None]] = None
     ) -> list:
-        metadata = {
-            "source": url,
-            "url": url,
-            # "index": url,
-            "filename": video_title,
-            "question": '',
-            "answer": '',
-            'type': 'video_transcript',
-            "source_type": self._source_type,
-            "summary": '',
-            "document_meta": {
-                "title": video_title,
-                "language": self._language,
-                "topic_tags": ""
-            }
-        }
-        if self.topics:
-            metadata['document_meta']['topic_tags'] = self.topics
+        metadata = self.create_metadata(
+            url,
+            doctype='video_transcript',
+            source_type=self._source_type,
+            title=video_title,
+            question='',
+            answer='',
+            summary='',
+            topic_tags=self.topics or [],
+        )
         if transcript is None:
             documents = []
             docs = []
@@ -66,27 +58,31 @@ class VimeoLoader(YoutubeLoader):
                 documents.append(doc)
             if transcript_whisper:
                 # VTT version:
-                transcript = self.transcript_to_vtt(transcript_whisper, transcript_path)
+                vtt_text = self.transcript_to_vtt(transcript_whisper, transcript_path)
                 doc = Document(
-                    page_content=transcript,
-                    metadata=metadata
+                    page_content=vtt_text,
+                    metadata=self.create_metadata(
+                        url,
+                        doctype='video_vtt',
+                        source_type=self._source_type,
+                        title=video_title,
+                        topic_tags=self.topics or [],
+                    )
                 )
                 documents.append(doc)
                 # Saving every dialog chunk as a separate document
                 dialogs = self.transcript_to_blocks(transcript_whisper)
                 for chunk in dialogs:
-                    _meta = {
-                        # "index": f"{video_title}:{chunk['id']}",
-                        "document_meta": {
-                            "start": f"{chunk['start_time']}",
-                            "end": f"{chunk['end_time']}",
-                            "id": f"{chunk['id']}",
-                            "language": self._language,
-                            "title": video_title,
-                            "topic_tags": ""
-                        }
-                    }
-                    _info = {**metadata, **_meta}
+                    _info = self.create_metadata(
+                        url,
+                        doctype='video_dialog',
+                        source_type=self._source_type,
+                        title=video_title,
+                        topic_tags=self.topics or [],
+                        start=str(chunk['start_time']),
+                        end=str(chunk['end_time']),
+                        chunk_id=str(chunk['id']),
+                    )
                     doc = Document(
                         page_content=chunk['text'],
                         metadata=_info
@@ -112,16 +108,12 @@ class VimeoLoader(YoutubeLoader):
         self,
         url: str
     ) -> list:
-        metadata = {
-            "source": url,
-            "url": url,
-            'type': 'video_transcript',
-            "source_type": self._source_type,
-            "summary": '',
-            "document_meta": {
-                "language": self._language
-            }
-        }
+        metadata = self.create_metadata(
+            url,
+            doctype='video_transcript',
+            source_type=self._source_type,
+            summary='',
+        )
         # first: download video
         try:
             file_path = self.download_video(url, self._video_path)
@@ -150,7 +142,6 @@ class VimeoLoader(YoutubeLoader):
                 metadata['summary'] = summary
                 self.saving_file(summary_path, summary.encode('utf-8'))
         # VTT version:
-        transcript = self.transcript_to_vtt(transcript_whisper, vtt_path)
         metadata['transcript'] = transcript_path
         metadata['summary_file'] = summary_path
         metadata["vtt"] = vtt_path

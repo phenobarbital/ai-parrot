@@ -301,20 +301,21 @@ class CSVLoader(AbstractLoader):
                     "empty_columns": len([v for v in row_dict.values() if pd.isna(v)]),
                 }
 
-                # Create document metadata
+                # Create document metadata — non-canonical extras as explicit kwargs.
                 metadata = self.create_metadata(
                     path=path,
                     doctype="csv_row",
                     source_type="csv",
-                    doc_metadata={
-                        **row_metadata,
-                        "csv_info": csv_metadata,
-                        "content_type": "application/json",
-                        "processing_options": {
-                            "skip_empty_rows": self.skip_empty_rows,
-                            "skip_na_rows": self.skip_na_rows,
-                            "fill_na_value": self.fill_na_value,
-                        }
+                    row_index=row_metadata["row_index"],
+                    row_number=row_metadata["row_number"],
+                    column_count=row_metadata["column_count"],
+                    empty_columns=row_metadata["empty_columns"],
+                    csv_info=csv_metadata,
+                    content_type="application/json",
+                    processing_options={
+                        "skip_empty_rows": self.skip_empty_rows,
+                        "skip_na_rows": self.skip_na_rows,
+                        "fill_na_value": self.fill_na_value,
                     },
                 )
 

@@ -369,10 +369,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker agent
+**Date**: 2026-04-27
+**Notes**: Created parrot/stores/utils/contextual.py with build_contextual_text(), DEFAULT_TEMPLATE, DEFAULT_MAX_HEADER_TOKENS, KNOWN_PLACEHOLDERS, ContextualTemplate. Updated utils/__init__.py to re-export. 14/14 unit tests pass.
+**Deviations from spec**: none

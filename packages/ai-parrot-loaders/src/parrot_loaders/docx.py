@@ -83,16 +83,14 @@ class MSWordLoader(AbstractLoader):
         doc = docx.Document(str(path))
         properties = doc.core_properties
         md_text = self.docx_to_markdown(path)
-        document_meta = {
-            "author": properties.author,
-            "version": properties.version,
-            "title": properties.title,
-        }
+        # title is a canonical document_meta key; author/version are extras at top level.
         metadata = self.create_metadata(
             path=path,
             doctype=self.doctype,
             source_type=self._source_type,
-            doc_metadata=document_meta
+            title=properties.title or None,
+            author=properties.author,
+            version=properties.version,
         )
         # Return single Document with full content — let chunk_documents()
         # in the standard pipeline handle all splitting (fixes double-chunking).

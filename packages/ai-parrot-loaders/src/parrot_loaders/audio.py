@@ -15,18 +15,11 @@ class AudioLoader(BaseVideoLoader):
         return
 
     async def load_audio(self, path: PurePath) -> list:
-        metadata = {
-            "source": f"{path}",
-            "url": f"{path.name}",
-            # "index": path.stem,
-            "filename": f"{path}",
-            'type': 'audio_transcript',
-            "source_type": self._source_type,
-            "document_meta": {
-                "language": self._language,
-                "topic_tags": ""
-            }
-        }
+        metadata = self.create_metadata(
+            path,
+            doctype='audio_transcript',
+            source_type=self._source_type,
+        )
         documents = []
 
         # Paths for outputs
@@ -47,14 +40,12 @@ class AudioLoader(BaseVideoLoader):
         if transcript:
             doc = Document(
                 page_content=transcript,
-                metadata={
-                    "source": f"{txt_path}",
-                    "url": f"{txt_path.name}",
-                    "filename": f"{txt_path}",
-                    "origin": f"{path}",
-                    'type': 'audio_transcript',
-                    "source_type": 'AUDIO',
-                }
+                metadata=self.create_metadata(
+                    txt_path,
+                    doctype='audio_transcript',
+                    source_type='AUDIO',
+                    origin=f"{path}",
+                )
             )
         # diarization:
         if self._diarization:
@@ -68,14 +59,12 @@ class AudioLoader(BaseVideoLoader):
             )):
                 doc = Document(
                     page_content=srt,
-                    metadata={
-                        "source": f"{srt_path}",
-                        "url": f"{srt_path.name}",
-                        "filename": f"{srt_path}",
-                        "origin": f"{path}",
-                        'type': 'srt_transcript',
-                        "source_type": 'AUDIO',
-                    }
+                    metadata=self.create_metadata(
+                        srt_path,
+                        doctype='srt_transcript',
+                        source_type='AUDIO',
+                        origin=f"{path}",
+                    )
                 )
         # Summarize the transcript (only if enabled)
         if self._summarization and transcript:
@@ -84,14 +73,12 @@ class AudioLoader(BaseVideoLoader):
                 # Create Two Documents, one is for transcript, second is VTT:
                 doc = Document(
                     page_content=summary,
-                    metadata={
-                        "source": f"{path}",
-                        "url": f"{path.name}",
-                        "filename": f"{path}",
-                        "origin": f"{path}",
-                        'type': 'summary',
-                        "source_type": 'TEXT',
-                    }
+                    metadata=self.create_metadata(
+                        path,
+                        doctype='audio_summary',
+                        source_type='TEXT',
+                        origin=f"{path}",
+                    )
                 )
                 documents.append(doc)
             except Exception as exc:
@@ -101,32 +88,27 @@ class AudioLoader(BaseVideoLoader):
             vtt_text = self.transcript_to_vtt(transcript_whisper, vtt_path)
             doc = Document(
                 page_content=vtt_text,
-                metadata={
-                    "source": f"{vtt_path}",
-                    "url": f"{vtt_path.name}",
-                    "filename": f"{vtt_path}",
-                    "origin": f"{path}",
-                    'type': 'vtt_transcript',
-                    "source_type": 'TEXT',
-                }
+                metadata=self.create_metadata(
+                    vtt_path,
+                    doctype='vtt_transcript',
+                    source_type='TEXT',
+                    origin=f"{path}",
+                )
             )
             documents.append(doc)
             # Saving every dialog chunk as a separate document
             dialogs = self.transcript_to_blocks(transcript_whisper)
             docs = []
             for chunk in dialogs:
-                _meta = {
-                    # "index": f"{path.stem}:{chunk['id']}",
-                    "document_meta": {
-                        "start": f"{chunk['start_time']}",
-                        "end": f"{chunk['end_time']}",
-                        "id": f"{chunk['id']}",
-                        "language": self._language,
-                        "title": f"{path.stem}",
-                        "topic_tags": ""
-                    }
-                }
-                _info = {**metadata, **_meta}
+                _info = self.create_metadata(
+                    path,
+                    doctype='audio_dialog',
+                    source_type=self._source_type,
+                    title=path.stem,
+                    start=str(chunk['start_time']),
+                    end=str(chunk['end_time']),
+                    chunk_id=str(chunk['id']),
+                )
                 doc = Document(
                     page_content=chunk['text'],
                     metadata=_info
@@ -143,20 +125,15 @@ class AudioLoader(BaseVideoLoader):
         transcript_path = path.with_suffix('.txt')
         srt_path = path.with_suffix('.srt')
         summary_path = path.with_suffix('.summary')
-        metadata = {
-            "source": f"{path}",
-            "url": f"{path.name}",
-            "filename": f"{path}",
-            'type': 'audio_transcript',
-            "source_type": self._source_type,
-            "vtt_path": f"{vtt_path}",
-            "transcript_path": f"{transcript_path}",
-            "srt_path": f"{srt_path}",
-            "summary_path": f"{summary_path}",
-            "document_meta": {
-                "language": self._language,
-            }
-        }
+        metadata = self.create_metadata(
+            path,
+            doctype='audio_transcript',
+            source_type=self._source_type,
+            vtt_path=f"{vtt_path}",
+            transcript_path=f"{transcript_path}",
+            srt_path=f"{srt_path}",
+            summary_path=f"{summary_path}",
+        )
         # get the Whisper parser
         # ensure a clean 16k Hz mono wav file for whisper
         wav_path = self.ensure_wav_16k_mono(path)

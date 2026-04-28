@@ -401,9 +401,19 @@ class TestPgVectorContextual:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker agent (Claude claude-sonnet-4-5)
+**Date**: 2026-04-27
+**Notes**: Replaced the inline `texts = [doc.page_content for doc in documents]`
+in `add_documents` with `texts_for_embed = self._apply_contextual_augmentation(documents)`.
+Added `raw_texts = [doc.page_content for doc in documents]` and updated the
+values list-comp to use `raw_texts[i]` for `content_column` (RAW content stored,
+not augmented text). In `from_documents`, added the contextual-embedding block:
+re-embeds parent document and all chunks when `contextual_embedding=True` (metadata-
+header-wins precedence over late-chunking per spec §8 Q3). Both
+`_apply_contextual_augmentation` calls in `from_documents` pass `_log=False`; a
+single summary log is emitted after the loop instead (review fix). Created
+integration test file `tests/integration/stores/test_contextual_pgvector.py`
+(4 tests: off-baseline, on-uses-header, raw-content-stored, round-trip).
+`ruff check` passes.
+**Deviations from spec**: `_log=False` added to suppress 2N per-doc log lines
+(identified in code review — improves production observability).

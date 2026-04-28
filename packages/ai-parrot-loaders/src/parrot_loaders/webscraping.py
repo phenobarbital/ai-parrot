@@ -669,20 +669,18 @@ class WebScrapingLoader(AbstractLoader):
         page_language = self._extract_page_language(soup)
         meta_description = self._extract_meta_description(soup)
 
-        base_metadata: Dict[str, Any] = {
-            "source": url,
-            "url": result.url or url,
-            "filename": page_title,
-            "source_type": "webpage",
-            "type": "webpage",
-            "category": self.category,
-            "created_at": datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            "document_meta": {
-                "language": page_language,
-                "title": page_title,
-                "description": meta_description,
-            },
-        }
+        actual_url = result.url or url
+        base_metadata = self.create_metadata(
+            actual_url,
+            doctype="webpage",
+            source_type="url",
+            title=page_title,
+            language=page_language,
+            source=url,
+            url=actual_url,
+            filename=page_title,
+            description=meta_description,
+        )
         if crawl_depth is not None:
             base_metadata["crawl_depth"] = crawl_depth
 
@@ -752,11 +750,9 @@ class WebScrapingLoader(AbstractLoader):
                 )
 
         if use_trafilatura:
-            # Use trafilatura extracted content
-            # Enrich document_meta with trafilatura metadata
-            doc_meta = base_metadata.get("document_meta", {})
-            doc_meta.update(traf_metadata)
-            base_metadata["document_meta"] = doc_meta
+            # Enrich base_metadata with trafilatura fields at top level;
+            # document_meta stays closed-shape (set by create_metadata)
+            base_metadata.update(traf_metadata)
 
             docs.append(Document(
                 page_content=extracted_text,

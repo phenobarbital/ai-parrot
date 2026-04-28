@@ -56,7 +56,7 @@ dependencies = [
     # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
     "navigator-auth>0.20.9",
     "navigator-session>=0.6.5",
-    "navigator-api[uvloop,locale]>=2.14.1",
+    "navigator-api[uvloop,locale,google]>=2.14.1",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
     # HTTP / networking
@@ -343,8 +343,11 @@ images = [
 ]
 
 anthropic = [
-    "anthropic[aiohttp]==0.61.0",
-    "claude-agent-sdk>=0.1.0,!=0.1.49",
+    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+]
+
+claude-agent = [
+    "claude-agent-sdk>=0.1.68",
 ]
 
 openai = [
@@ -367,8 +370,8 @@ llms = [
     "google-genai>=1.61.0",
     "openai==2.8.1",
     "groq==0.33.0",
-    "anthropic[aiohttp]==0.61.0",
-    "claude-agent-sdk>=0.1.0,!=0.1.49",
+    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+    "claude-agent-sdk>=0.1.68",
     "xai-sdk>=0.1.0",
 ]
 
@@ -475,6 +478,7 @@ parrot = ["py.typed", "templates/*.tpl"]
 "parrot.openapi" = ["*.yaml"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
+"parrot.flows.dev_loop" = ["_subagent_data/*.md"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)

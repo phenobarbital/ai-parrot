@@ -49,11 +49,13 @@ TOOL_REGISTRY: dict[str, str] = {
     "eda_report": "parrot_tools.edareport.EdaReportTool",
     "calculator": "parrot_tools.calculator.tool.CalculatorTool",
     "file_manager": "parrot.tools.filemanager.FileManagerTool",
+    "file_manager_toolkit": "parrot.tools.filemanager.FileManagerToolkit",
     "shell": "parrot_tools.shell_tool.tool.ShellTool",
     "system_health": "parrot_tools.system_health.tool.SystemHealthTool",
     # --- Toolkits (Batch 2 — toolkit-based tools) ---
     "jira": "parrot_tools.jiratoolkit.JiraToolkit",
     "git": "parrot_tools.gittoolkit.GitToolkit",
+    "code": "parrot_tools.code_toolkit.CodeToolkit",
     "docker": "parrot_tools.docker.toolkit.DockerToolkit",
     "pulumi": "parrot_tools.pulumi.toolkit.PulumiToolkit",
     "sitesearch": "parrot_tools.sitesearch.toolkit.SiteSearchToolkit",

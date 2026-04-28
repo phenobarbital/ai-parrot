@@ -1,0 +1,18 @@
+# Sample broken Flowtask used by dev-loop e2e tests.
+#
+# The "bug": the task drops the last row when the input has more than
+# 1000 records (off-by-one in the pagination loop).
+name: customers-sync
+type: etl
+input:
+  source: prod_customers
+  page_size: 1000
+steps:
+  - name: paginate
+    # BUG: pagination loop terminates on `len(rows) < page_size`, which
+    # under-counts when the final page has exactly `page_size` records.
+    while: "len(rows) < page_size"
+    action: fetch_next_page
+  - name: write
+    target: warehouse
+    table: customers

@@ -432,38 +432,34 @@ class PDFTablesLoader(BasePDF):
                 content = json.dumps(table_data, ensure_ascii=False, indent=2)
                 content_type = "application/json"
 
-            # Create metadata
-            metadata = {
-                "filename": path.name if hasattr(path, 'name') else str(path).split('/')[-1],
-                "source": str(path),
-                "type": "pdf_table",
-                "category": self.category,
-                "source_type": self._source_type,
-                "content_type": content_type,
-                "output_format": self.output_format,
-
-                # Table-specific metadata
-                "table_info": {
-                    "page_number": table_info["page_number"],
-                    "table_index": table_info["table_index"],
-                    "global_table_index": table_info["global_table_index"],
-                    "dimensions": table_info["dimensions"],
-                    "extraction_backend": table_info["extraction_backend"]
-                },
-
-                # PDF metadata
-                "document_meta": {
-                    "title": pdf_metadata.get("title", ""),
-                    "author": pdf_metadata.get("author", ""),
-                    "creationDate": pdf_metadata.get("creationDate", ""),
-                }
+            # Build table_info dict (top-level loader-specific extra).
+            _table_info: dict = {
+                "page_number": table_info["page_number"],
+                "table_index": table_info["table_index"],
+                "global_table_index": table_info["global_table_index"],
+                "dimensions": table_info["dimensions"],
+                "extraction_backend": table_info["extraction_backend"],
             }
-
-            # Add backend-specific metadata
             if "bbox" in table_info:
-                metadata["table_info"]["bbox"] = table_info["bbox"]
+                _table_info["bbox"] = table_info["bbox"]
             if "extraction_settings" in table_info:
-                metadata["table_info"]["extraction_settings"] = table_info["extraction_settings"]
+                _table_info["extraction_settings"] = table_info["extraction_settings"]
+
+            # Create metadata via create_metadata for canonical shape.
+            # pdf_metadata["title"] overrides the path-derived title when non-empty.
+            # Non-canonical fields become top-level metadata keys.
+            _pdf_title = pdf_metadata.get("title") or None
+            metadata = self.create_metadata(
+                path,
+                doctype="pdf_table",
+                source_type=self._source_type,
+                title=_pdf_title,
+                content_type=content_type,
+                output_format=self.output_format,
+                table_info=_table_info,
+                pdf_author=pdf_metadata.get("author", ""),
+                pdf_creation_date=pdf_metadata.get("creationDate", ""),
+            )
 
             docs.append(
                 Document(

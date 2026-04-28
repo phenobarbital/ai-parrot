@@ -663,23 +663,23 @@ class WebLoader(AbstractLoader):
             if not page_title:
                 page_title = url
 
-            # Build document_meta with trafilatura metadata if available
-            doc_meta: Dict[str, Any] = {
-                "language": "en",
-                "title": page_title,
-            }
-            if self._last_trafilatura_meta:
-                doc_meta.update(self._last_trafilatura_meta)
+            # Build canonical metadata via create_metadata;
+            # trafilatura fields are hoisted to top-level (not stuffed into document_meta)
+            traf_meta = dict(self._last_trafilatura_meta) if self._last_trafilatura_meta else {}
+            traf_lang = traf_meta.pop("language", None) or "en"
+            traf_title = traf_meta.pop("title", None)
 
-            metadata = {
-                "source": url,
-                "url": url,
-                "filename": page_title,
-                "source_type": source_type,
-                "type": "webpage",
-                "content_extraction": self._last_extraction_method,
-                "document_meta": doc_meta,
-            }
+            metadata = self.create_metadata(
+                url,
+                doctype="webpage",
+                source_type=source_type,
+                title=traf_title or page_title,
+                language=traf_lang,
+                url=url,
+                filename=page_title,
+                content_extraction=self._last_extraction_method,
+                **traf_meta,
+            )
 
             # Determine content_kind based on extraction method
             content_kind = (

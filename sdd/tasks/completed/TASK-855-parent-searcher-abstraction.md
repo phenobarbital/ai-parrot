@@ -344,10 +344,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-27
+**Notes**: Implemented Approach A (direct connection access via store.session()). All 13 unit tests pass. Package exports AbstractParentSearcher and InTableParentSearcher from parrot.stores.parents.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

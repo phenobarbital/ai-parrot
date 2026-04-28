@@ -42,15 +42,11 @@ class QAFileLoader(AbstractLoader):
             # Question Document
             qs = row[q]
             answer = row[a]
-            document_meta = {
-                "question": qs,
-                "answer": answer,
-            }
+            # question and answer are non-canonical extras that live at top level.
             metadata = self.create_metadata(
                 path=path,
                 doctype=self.doctype,
                 source_type=self._source_type,
-                doc_metadata=document_meta,
                 type="FAQ",
                 question=qs,
                 answer=answer,

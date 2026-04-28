@@ -223,6 +223,7 @@ __all__ = (
     "OpenAPIToolkit",
     "FileManagerTool",
     "FileManagerFactory",
+    "FileManagerToolkit",
     "MCPToolManagerMixin",
     "ToJsonTool",
     "AgentTool",
@@ -237,6 +238,7 @@ _LAZY_CORE_TOOLS = {
     "OpenAPIToolkit": ".openapitoolkit",
     "FileManagerTool": ".filemanager",
     "FileManagerFactory": ".filemanager",
+    "FileManagerToolkit": ".filemanager",
     "DatasetManager": ".dataset_manager",
 }
 

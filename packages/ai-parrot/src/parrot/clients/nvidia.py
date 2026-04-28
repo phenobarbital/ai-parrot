@@ -13,6 +13,13 @@ import contextvars
 from typing import Any, AsyncIterator, Dict, Optional
 
 from navconfig import config
+from openai import APIConnectionError, APIError, RateLimitError
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from ..models import AIMessage
 from .gpt import OpenAIClient
@@ -122,21 +129,25 @@ class NvidiaClient(OpenAIClient):
         use_tools: bool = False,
         **kwargs,
     ) -> Any:
-        """Override to inject ``chat_template_kwargs`` when ``enable_thinking`` is active.
+        """Run a chat completion against NVIDIA NIM via ``create()``.
 
-        Reads the thinking flags from the async context variable set by
-        ``ask`` / ``ask_stream`` and merges them into ``extra_body`` before
-        delegating to ``OpenAIClient._chat_completion``.  When no thinking
-        flags are active the call is a transparent passthrough.
+        Two NVIDIA-specific differences from ``OpenAIClient._chat_completion``:
+
+        1. Always uses ``client.chat.completions.create``. NIM rejects the
+           OpenAI SDK's ``parse()`` shortcut (returns 5xx / "page not found"),
+           so we never route through it — even when ``use_tools`` is ``False``.
+        2. Reads the thinking flags from the async context variable set by
+           ``ask`` / ``ask_stream`` and merges them into ``extra_body`` for
+           reasoning-capable models (e.g. ``z-ai/glm-5.1``).
 
         Args:
             model: Model identifier string.
             messages: Chat messages list.
-            use_tools: Whether tools are enabled.
+            use_tools: Whether tools are enabled (kept for parity with parent).
             **kwargs: Additional completion arguments forwarded to the OpenAI SDK.
 
         Returns:
-            Raw OpenAI completion response.
+            Raw OpenAI ``ChatCompletion`` response.
         """
         thinking = _thinking_ctx.get()
         if thinking.get("enable_thinking"):
@@ -145,12 +156,21 @@ class NvidiaClient(OpenAIClient):
                 True,
                 thinking.get("clear_thinking", False),
             )
-        return await super()._chat_completion(
-            model=model,
-            messages=messages,
-            use_tools=use_tools,
-            **kwargs,
+        retry_policy = AsyncRetrying(
+            retry=retry_if_exception_type(
+                (APIConnectionError, RateLimitError, APIError)
+            ),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            stop=stop_after_attempt(3),
+            reraise=True,
         )
+        async for attempt in retry_policy:
+            with attempt:
+                return await self.client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **kwargs,
+                )
 
     async def ask(
         self,
@@ -182,6 +202,7 @@ class NvidiaClient(OpenAIClient):
         Returns:
             AIMessage with the model response.
         """
+        kwargs.setdefault("model", self.model or self._default_model)
         token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
@@ -221,6 +242,7 @@ class NvidiaClient(OpenAIClient):
         Yields:
             Response text chunks (same shape as ``OpenAIClient.ask_stream``).
         """
+        kwargs.setdefault("model", self.model or self._default_model)
         token = _thinking_ctx.set(
             {"enable_thinking": enable_thinking, "clear_thinking": clear_thinking}
         )
