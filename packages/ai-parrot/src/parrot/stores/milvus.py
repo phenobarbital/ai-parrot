@@ -443,9 +443,11 @@ class MilvusStore(AbstractStore):
             await self.connection()
         collection = collection or self.collection_name
 
-        texts = [doc.page_content for doc in documents]
-        embeddings = await self._embed_.embed_documents(texts)
-        metadatas = [doc.metadata for doc in documents]
+        # ── Contextual embedding (FEAT-127): use augmented text for embedding;
+        # persist RAW page_content in the document/text columns.
+        texts_for_embed = self._apply_contextual_augmentation(documents)
+        embeddings = await self._embed_.embed_documents(texts_for_embed)
+        metadatas = [doc.metadata for doc in documents]  # carries contextual_header
 
         rows: List[Dict[str, Any]] = []
         for i, doc in enumerate(documents):
@@ -455,8 +457,8 @@ class MilvusStore(AbstractStore):
             rows.append({
                 self._id_column: str(uuid.uuid4()),
                 self._embedding_column: emb,
-                self._document_column: doc.page_content,
-                self._text_column: doc.page_content,
+                self._document_column: doc.page_content,  # RAW content (FEAT-127)
+                self._text_column: doc.page_content,      # RAW content (FEAT-127)
                 self._metadata_column: metadatas[i] or {},
             })
 

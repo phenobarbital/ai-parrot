@@ -10,6 +10,12 @@ from ..conf import (
 )
 from ..exceptions import ConfigError
 from ..embeddings import supported_embeddings
+from .utils.contextual import (
+    build_contextual_text,
+    DEFAULT_TEMPLATE,
+    DEFAULT_MAX_HEADER_TOKENS,
+    ContextualTemplate,
+)
 
 
 logging.getLogger(name='datasets').setLevel(logging.WARNING)
@@ -126,6 +132,17 @@ class AbstractStore(ABC):
         self._context_depth = 0
         # JSON parser (based on orjson):
         self._json = JSONContent()
+        # ── Contextual embedding headers (FEAT-127) ──────────────────────
+        # Opt-in via contextual_embedding=True at store construction time.
+        # When True, _apply_contextual_augmentation prepends a metadata-
+        # derived header to each chunk's text before embedding.
+        self.contextual_embedding: bool = kwargs.get("contextual_embedding", False)
+        self.contextual_template: ContextualTemplate = kwargs.get(
+            "contextual_template", DEFAULT_TEMPLATE
+        )
+        self.contextual_max_header_tokens: int = kwargs.get(
+            "contextual_max_header_tokens", DEFAULT_MAX_HEADER_TOKENS
+        )
 
     def __json__(self) -> dict:
         """
@@ -331,6 +348,70 @@ class AbstractStore(ABC):
 
         # Using the Embed Model to Generate Embeddings:
         return await self._embed_.embed_documents(documents)
+
+    # ── Contextual Embedding Headers (FEAT-127) ──────────────────────────
+    def _apply_contextual_augmentation(
+        self, documents: list, _log: bool = True
+    ) -> list[str]:
+        """Return the list of strings to embed, with optional contextual headers.
+
+        When ``self.contextual_embedding`` is **False** (default), the method
+        returns ``[d.page_content for d in documents]`` unchanged and does
+        **not** touch any document's metadata — behaviour is byte-identical to
+        the previous inline list-comprehension.
+
+        When **True**, for each document:
+
+        1. Calls :func:`~parrot.stores.utils.contextual.build_contextual_text`
+           to obtain the augmented text and the header string.
+        2. Writes ``doc.metadata["contextual_header"] = header`` in place.
+        3. Appends the augmented text to the result list.
+
+        A single summary log line is emitted at ``INFO`` level per call
+        (not per chunk) to avoid flooding logs at field scale.
+
+        Args:
+            documents: List of ``Document`` objects to process.
+            _log: Emit the per-call summary ``INFO`` log line.  Pass
+                ``False`` when calling in a tight loop (e.g. inside
+                ``from_documents``) to suppress per-document noise; the
+                caller is then responsible for emitting one aggregate log
+                line after the loop.
+
+        Returns:
+            A list of strings (one per document) ready to pass to
+            ``_embed_.embed_documents``.
+        """
+        if not self.contextual_embedding:
+            return [d.page_content for d in documents]
+
+        texts: list[str] = []
+        headered = 0
+        total_header_chars = 0
+
+        for doc in documents:
+            text, header = build_contextual_text(
+                doc,
+                self.contextual_template,
+                self.contextual_max_header_tokens,
+            )
+            if doc.metadata is None:
+                doc.metadata = {}
+            doc.metadata["contextual_header"] = header
+            if header:
+                headered += 1
+                total_header_chars += len(header)
+            texts.append(text)
+
+        if documents and _log:
+            avg = total_header_chars // max(headered, 1)
+            self.logger.info(
+                "Contextual embedding: %d/%d docs received header "
+                "(avg header len %d chars)",
+                headered, len(documents), avg,
+            )
+
+        return texts
 
     @abstractmethod
     async def prepare_embedding_table(

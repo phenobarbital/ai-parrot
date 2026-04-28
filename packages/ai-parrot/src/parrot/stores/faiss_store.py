@@ -395,12 +395,14 @@ class FAISSStore(AbstractStore):
 
         collection_data = self._collections[collection]
 
-        # Extract texts and metadata
-        texts = [doc.page_content for doc in documents]
-        metadatas = [doc.metadata for doc in documents]
+        # ── Contextual embedding (FEAT-127): use augmented text for embedding;
+        # always persist RAW page_content in collection_data['documents'].
+        texts_for_embed = self._apply_contextual_augmentation(documents)
+        raw_texts = [doc.page_content for doc in documents]  # stored verbatim
+        metadatas = [doc.metadata for doc in documents]       # carries contextual_header
 
         # Generate embeddings
-        embeddings = await self._embed_.embed_documents(texts)
+        embeddings = await self._embed_.embed_documents(texts_for_embed)
 
         # Convert to numpy array
         if isinstance(embeddings, list):
@@ -439,8 +441,8 @@ class FAISSStore(AbstractStore):
         # Add to FAISS index
         collection_data['index'].add(embeddings)
 
-        # Store documents, metadata, and embeddings
-        for i, (text, metadata, embedding) in enumerate(zip(texts, metadatas, embeddings)):
+        # Store documents, metadata, and embeddings (always use RAW text — FEAT-127)
+        for i, (text, metadata, embedding) in enumerate(zip(raw_texts, metadatas, embeddings)):
             doc_id = str(uuid.uuid4())
             idx = current_idx + i
 
