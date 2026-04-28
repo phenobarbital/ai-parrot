@@ -1,9 +1,15 @@
 {
-    "feature": "wm-assembly-purchase-orders-date-sanitization",
-    "feature_id": "FEAT-130",
-    "spec": "sdd/specs/wm-assembly-purchase-orders-date-sanitization.spec.md",
-    "created_at": "2026-04-28T16:02:00.000000+00:00",
+    "feature": "feat-129-upgrades",
+    "feature_id": "FEAT-132",
+    "spec": "sdd/specs/feat-129-upgrades.spec.md",
+    "created_at": "2026-04-28T19:25:37.143447+00:00",
     "previous_features": [
+        {
+            "feature": "wm-assembly-purchase-orders-date-sanitization",
+            "feature_id": "FEAT-130",
+            "spec": "sdd/specs/wm-assembly-purchase-orders-date-sanitization.spec.md",
+            "created_at": "2026-04-28T16:02:00.000000+00:00"
+        },
         {
             "feature": "dev-loop-orchestration",
             "feature_id": "FEAT-129",
@@ -15983,6 +15989,163 @@
             "assigned_to": null,
             "file": "sdd/tasks/active/TASK-895-att-concierge-bot-migration-verify.md",
             "created_at": "2026-04-28T17:00:00.000000+00:00"
+        },
+        {
+            "id": "TASK-896",
+            "slug": "workbrief-rename-and-kind",
+            "title": "Rename BugBrief -> WorkBrief and add kind field",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [],
+            "parallel": false,
+            "parallelism_notes": "Foundation task \u2014 every other task in this feature reads WorkBrief.kind. Must land first.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-896-workbrief-rename-and-kind.md"
+        },
+        {
+            "id": "TASK-897",
+            "slug": "conf-dev-loop-plan-llm",
+            "title": "Add DEV_LOOP_PLAN_LLM navconfig setting",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "low",
+            "effort": "S",
+            "depends_on": [],
+            "parallel": true,
+            "parallelism_notes": "Independent of all other tasks \u2014 only touches parrot/conf.py + a tiny test + a README row.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-897-conf-dev-loop-plan-llm.md"
+        },
+        {
+            "id": "TASK-898",
+            "slug": "intent-classifier-node",
+            "title": "Implement IntentClassifierNode (validation + routing)",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-896"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Sequential: needs WorkBrief.kind from TASK-896.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-898-intent-classifier-node.md"
+        },
+        {
+            "id": "TASK-899",
+            "slug": "bug-intake-scope-down",
+            "title": "Scope down BugIntakeNode (validation moves to IntentClassifier)",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "medium",
+            "effort": "S",
+            "depends_on": [
+                "TASK-898"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Sequential: removes the duplicate validation only after TASK-898 owns it.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-899-bug-intake-scope-down.md"
+        },
+        {
+            "id": "TASK-900",
+            "slug": "research-issuetype-and-plan-comment",
+            "title": "ResearchNode: issuetype routing + plan-summary comment",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "L",
+            "depends_on": [
+                "TASK-896",
+                "TASK-897"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Sequential against TASK-896 and TASK-897. Independent of TASK-898/TASK-899 in code, but tested together.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-900-research-issuetype-and-plan-comment.md"
+        },
+        {
+            "id": "TASK-901",
+            "slug": "flow-factory-rewire-routing",
+            "title": "Rewire build_dev_loop_flow for kind-based routing",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-898",
+                "TASK-899",
+                "TASK-900"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Integration node \u2014 needs all three implementation tasks in place.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-901-flow-factory-rewire-routing.md"
+        },
+        {
+            "id": "TASK-902",
+            "slug": "ui-form-and-server-kind",
+            "title": "Examples: UI form kind radio + server form-builder",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "medium",
+            "effort": "M",
+            "depends_on": [
+                "TASK-896"
+            ],
+            "parallel": true,
+            "parallelism_notes": "Touches only examples/dev_loop/ + form tests; can run alongside TASK-898..901 once TASK-896 lands.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-902-ui-form-and-server-kind.md"
+        },
+        {
+            "id": "TASK-903",
+            "slug": "integration-smoke-and-docs",
+            "title": "Integration smoke (live) + README updates for FEAT-132",
+            "feature_id": "FEAT-132",
+            "feature": "feat-129-upgrades",
+            "spec": "sdd/specs/feat-129-upgrades.spec.md",
+            "status": "pending",
+            "priority": "medium",
+            "effort": "S",
+            "depends_on": [
+                "TASK-896",
+                "TASK-897",
+                "TASK-898",
+                "TASK-899",
+                "TASK-900",
+                "TASK-901",
+                "TASK-902"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Wrap-up task \u2014 runs after every implementation task is merged.",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-903-integration-smoke-and-docs.md"
         }
     ]
 }
