@@ -16033,7 +16033,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16043,7 +16043,8 @@
             "parallelism_notes": "Sequential: needs WorkBrief.kind from TASK-896.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-898-intent-classifier-node.md"
+            "file": "sdd/tasks/completed/TASK-898-intent-classifier-node.md",
+            "completed_at": "2026-04-28T21:22:01.305916+00:00"
         },
         {
             "id": "TASK-899",

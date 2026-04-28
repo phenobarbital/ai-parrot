@@ -363,9 +363,7 @@ extend if missing.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Created IntentClassifierNode at nodes/intent_classifier.py. Migrated _validate verbatim from BugIntakeNode. Event kind changed to 'flow.intake_validated' with payload including 'kind'. Writes both ctx['bug_brief'] and ctx['work_brief']. Added IntentClassifierNode to package __init__.py exports and __all__. 21 new tests all pass. Full dev_loop suite 118 passed, 2 skipped.
+**Deviations from spec**: none
