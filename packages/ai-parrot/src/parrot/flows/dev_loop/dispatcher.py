@@ -420,16 +420,55 @@ class ClaudeCodeDispatcher:
     ) -> str:
         """Compose the prompt body for a dispatch.
 
-        The brief is JSON-encoded so the subagent gets a structured input;
-        an explicit instruction line tells the subagent to respond with a
-        JSON object matching ``output_model``.
+        Embeds:
+
+        * The JSON-encoded brief.
+        * A compact field-list extracted from
+          ``output_model.model_json_schema()`` so the subagent sees
+          the canonical field names + types + descriptions (subagents
+          drift on field names when given only a class name —
+          ``jira_key`` instead of ``jira_issue_key`` was the trigger).
+        * A required-field allowlist so the subagent knows what cannot
+          be omitted.
+        * A no-prose / no-markdown-fence instruction so
+          :func:`_validate_output`'s best-effort JSON extractor finds
+          a clean object.
         """
         brief_json = brief.model_dump_json()
+        schema = output_model.model_json_schema()
+        properties = schema.get("properties", {}) or {}
+        required = schema.get("required", []) or []
+        field_lines: List[str] = []
+        for fname, fmeta in properties.items():
+            ftype = (
+                fmeta.get("type")
+                or fmeta.get("$ref", "").rsplit("/", 1)[-1]
+                or "any"
+            )
+            fdesc = (fmeta.get("description") or "").strip()
+            mandatory = " (required)" if fname in required else ""
+            line = f"  - {fname}: {ftype}{mandatory}"
+            if fdesc:
+                line += f" — {fdesc}"
+            field_lines.append(line)
+        fields_block = "\n".join(field_lines) or "  (no fields)"
+        required_block = (
+            ", ".join(required) if required else "(none)"
+        )
+
         return (
             f"Input brief:\n{brief_json}\n\n"
-            f"Respond with a single JSON object matching the "
-            f"`{output_model.__name__}` schema. Do not wrap the JSON in "
-            f"markdown fences and do not add prose around it."
+            f"Respond with a single JSON object that matches the "
+            f"`{output_model.__name__}` schema. Use these EXACT field "
+            f"names — do not invent shorter aliases:\n"
+            f"{fields_block}\n\n"
+            f"Required fields (must be present and non-empty): "
+            f"{required_block}.\n\n"
+            f"Output rules:\n"
+            f"  1. Emit ONE JSON object — no surrounding prose.\n"
+            f"  2. No markdown fences around the JSON.\n"
+            f"  3. All required fields above must appear under their "
+            f"exact names."
         )
 
     def _validate_output(

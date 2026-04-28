@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 # ─────────────────────────────────────────────────────────────────────
 # Acceptance criteria (discriminated union)
@@ -149,13 +149,45 @@ class ResearchOutput(BaseModel):
 
     The research subagent creates the Jira ticket, the spec, the worktree
     and (optionally) initial task artifacts, then emits this payload.
+
+    The model accepts a small set of common aliases under
+    ``populate_by_name=True`` so subagent outputs that drift on field
+    names (``jira_key``, ``feature_id``, ``branch``, ``worktree``) still
+    validate. Pydantic's serialiser keeps the canonical names on
+    output.
     """
 
-    jira_issue_key: str = Field(..., description="e.g. 'OPS-4321'")
-    spec_path: str = Field(..., description="Path to the spec, inside the worktree.")
-    feat_id: str = Field(..., description="e.g. 'FEAT-130'")
-    branch_name: str = Field(..., description="e.g. 'feat-130-fix-customer-sync'")
-    worktree_path: str = Field(..., description="Absolute on-disk worktree path.")
+    model_config = ConfigDict(populate_by_name=True)
+
+    jira_issue_key: str = Field(
+        ...,
+        description="e.g. 'OPS-4321'",
+        validation_alias=AliasChoices(
+            "jira_issue_key", "jira_key", "issue_key", "ticket_key"
+        ),
+    )
+    spec_path: str = Field(
+        ...,
+        description="Path to the spec, inside the worktree.",
+        validation_alias=AliasChoices("spec_path", "spec"),
+    )
+    feat_id: str = Field(
+        ...,
+        description="e.g. 'FEAT-130'",
+        validation_alias=AliasChoices(
+            "feat_id", "feature_id", "feat", "feature"
+        ),
+    )
+    branch_name: str = Field(
+        ...,
+        description="e.g. 'feat-130-fix-customer-sync'",
+        validation_alias=AliasChoices("branch_name", "branch"),
+    )
+    worktree_path: str = Field(
+        ...,
+        description="Absolute on-disk worktree path.",
+        validation_alias=AliasChoices("worktree_path", "worktree"),
+    )
     log_excerpts: List[str] = Field(
         default_factory=list,
         description="Short, redacted log excerpts gathered during research.",
