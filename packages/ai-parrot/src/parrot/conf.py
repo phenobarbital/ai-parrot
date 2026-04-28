@@ -22,6 +22,7 @@ os.environ['GRPC_VERBOSITY'] = 'ERROR'
 # setting it here kills the noise at the earliest possible moment.
 logging.getLogger("botocore").setLevel(logging.INFO)
 logging.getLogger("aiobotocore").setLevel(logging.INFO)
+logging.getLogger("aiosqlite").setLevel(logging.INFO)
 # logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # # Suppress tiktoken warnings
 # logging.getLogger("tiktoken").setLevel(logging.ERROR)
