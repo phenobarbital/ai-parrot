@@ -61,10 +61,22 @@ class _NodeAgentAdapter:
     method. We also expose ``is_configured = True`` so the
     ``_ensure_agent_ready`` hook short-circuits without needing a real
     ``configure()`` implementation.
+
+    Every adapter built by :func:`build_dev_loop_flow` shares the same
+    ``shared_ctx`` dict so writes performed by one node (e.g.
+    ``ResearchNode`` setting ``ctx["research_output"]``) survive into
+    the next node's call. Without this, AgentsFlow's per-call
+    ``**kwargs`` would copy-fork the dict and mutations would be lost.
     """
 
-    def __init__(self, node: _ExecutableNode) -> None:
+    def __init__(
+        self,
+        node: _ExecutableNode,
+        *,
+        shared_ctx: Dict[str, Any],
+    ) -> None:
         self._node = node
+        self._shared_ctx = shared_ctx
         self.name: str = node.name
         self.is_configured: bool = True
         # Minimal tool_manager so add_agent's tool-sharing branch is
@@ -76,8 +88,13 @@ class _NodeAgentAdapter:
         return None
 
     async def ask(self, question: str = "", **kwargs: Any) -> Any:
-        ctx = dict(kwargs)
-        return await self._node.execute(question, ctx)
+        # Merge per-call kwargs into the shared context (last write
+        # wins) so callers can still inject ad-hoc keys per agent —
+        # but persistent state (bug_brief, research_output, qa_report)
+        # is the same dict object across nodes.
+        for key, value in kwargs.items():
+            self._shared_ctx[key] = value
+        return await self._node.execute(question, self._shared_ctx)
 
 
 class _NoopToolManager:
@@ -143,8 +160,12 @@ def build_dev_loop_flow(
     # Disable execution memory so we don't trigger the registry-tool
     # branch on adapters that lack `register_tool`.
     flow = AgentsFlow(name=name, enable_execution_memory=False)
+    # Single shared dict — ResearchNode writes ctx["research_output"]
+    # which DevelopmentNode and QANode then read.
+    shared_ctx: Dict[str, Any] = {}
     adapters = {
-        node.name: _NodeAgentAdapter(node) for node in nodes_in_order
+        node.name: _NodeAgentAdapter(node, shared_ctx=shared_ctx)
+        for node in nodes_in_order
     }
     for adapter in adapters.values():
         flow.add_agent(adapter)
