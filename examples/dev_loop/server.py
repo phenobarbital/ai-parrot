@@ -380,14 +380,33 @@ async def _on_startup(app: web.Application) -> None:
 
 
 async def _on_cleanup(app: web.Application) -> None:
-    for task in list(app.get("flow_tasks", [])):
+    """Graceful Ctrl-C / SIGTERM cleanup.
+
+    Cancels every in-flight flow task and waits for them to settle (so
+    we don't leave zombies that scribble on Redis after the loop is
+    teared down), then closes the shared Redis client. Each step
+    swallows its own exceptions because shutdown errors should never
+    mask each other.
+    """
+    tasks = list(app.get("flow_tasks", []))
+    for task in tasks:
         task.cancel()
+    if tasks:
+        # gather(return_exceptions=True) collects CancelledError silently.
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     redis = app.get("redis")
     if redis is not None:
         try:
             await redis.aclose()
         except AttributeError:  # pragma: no cover - older redis-py
-            await redis.close()
+            try:
+                await redis.close()
+            except Exception:  # pragma: no cover
+                logger.debug("redis close raised during shutdown",
+                             exc_info=True)
+        except Exception:  # pragma: no cover
+            logger.debug("redis aclose raised during shutdown", exc_info=True)
 
 
 def build_app(redis_url: str = "redis://localhost:6379/0") -> web.Application:

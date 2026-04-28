@@ -348,18 +348,42 @@ async def flow_stream_ws(request: web.Request) -> web.WebSocketResponse:
                 break
             await ws.send_json(envelope)
     except asyncio.CancelledError:  # pragma: no cover - shutdown path
-        raise
+        # Ctrl-C / aiohttp GracefulExit / client disconnect all surface
+        # as CancelledError here. We deliberately do NOT re-raise:
+        # aiohttp 3.x's RequestHandler races on _handler_waiter.set_result
+        # during shutdown and produces an `InvalidStateError` wall of
+        # red if we propagate. The cancel is honored implicitly by
+        # returning normally — the surrounding cleanup (finally block)
+        # still runs.
+        logger.debug("flow_stream_ws cancelled for run=%s", run_id)
     except Exception as exc:  # pragma: no cover - log and swallow
         logger.exception("flow_stream_ws error for run=%s: %s", run_id, exc)
     finally:
-        await mux.close()
+        # Each await here is wrapped because the loop may already be
+        # tearing down on Ctrl-C — losing one cleanup step shouldn't
+        # mask the others.
+        try:
+            await mux.close()
+        except Exception:  # pragma: no cover
+            logger.debug("mux.close() raised during shutdown", exc_info=True)
         if owns_redis:
             try:
                 await redis_client.aclose()
             except AttributeError:  # pragma: no cover - older redis-py
-                await redis_client.close()
+                try:
+                    await redis_client.close()
+                except Exception:  # pragma: no cover
+                    logger.debug(
+                        "redis close raised during shutdown", exc_info=True
+                    )
+            except Exception:  # pragma: no cover
+                logger.debug("redis aclose raised during shutdown",
+                             exc_info=True)
         if not ws.closed:
-            await ws.close()
+            try:
+                await ws.close()
+            except Exception:  # pragma: no cover
+                logger.debug("ws.close raised during shutdown", exc_info=True)
     return ws
 
 
