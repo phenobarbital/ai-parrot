@@ -116,31 +116,51 @@ shell-command heads against `ACCEPTANCE_CRITERION_ALLOWLIST` (`flowtask`,
 
 #### Acceptance-criterion syntax
 
-Each acceptance criterion is **one shell command per line** in the
-textarea (or one string per element in the JSON array). The first token
-must be a verb from the allowlist; the rest is forwarded to the
-subprocess verbatim by the QA node.
+Each acceptance criterion is **one line** in the textarea (or one
+element in the JSON array). The parser classifies it by inspecting the
+first whitespace-separated token:
 
-| Form | Becomes |
-|---|---|
-| `ruff check .` | `ShellCriterion(name="ruff-criterion-1", command="ruff check .")` |
-| `mypy --no-incremental` | `ShellCriterion(name="mypy-criterion-2", command="mypy --no-incremental")` |
-| `pytest tests/loaders/test_csv.py -v` | `ShellCriterion(name="pytest-criterion-3", ...)` |
-| `flowtask etl/customers/sync.yaml` | `ShellCriterion(name="flowtask-criterion-4", ...)` |
-| `pylint parrot/` | `ShellCriterion(name="pylint-criterion-5", ...)` |
+| Line | Classified as | Behaviour |
+|---|---|---|
+| `task etl/customers/sync.yaml` | `ShellCriterion` | QA runs `task etl/customers/sync.yaml`, asserts exit code 0 |
+| `ruff check .` | `ShellCriterion` | idem |
+| `mypy --no-incremental` | `ShellCriterion` | idem |
+| `pytest tests/loaders/test_csv.py -v` | `ShellCriterion` | idem |
+| `pylint parrot/` | `ShellCriterion` | idem |
+| `The customer count must equal 1500 after a sync of a 1500-row CSV` | `ManualCriterion` | text only — attached to the Jira ticket; QA auto-passes; human reviewer signs off |
+
+Allowed shell heads (configurable via `ACCEPTANCE_CRITERION_ALLOWLIST`):
+`task`, `flowtask`, `pytest`, `ruff`, `mypy`, `pylint`. Lines that don't
+start with one of those are treated as manual criteria — there is no
+"unknown command" error any more.
+
+##### How do I syntax-check a Flowtask YAML?
+
+The `task` binary doesn't expose a `--check` / `--syntax` flag, so pick
+one of:
+
+1. **Pytest fixture (preferred)** — write a tiny test that loads the
+   YAML and asserts it parses + every component class resolves, then add
+   `pytest tests/etl/test_yaml_syntax.py::test_customers_sync` as a
+   shell criterion.
+2. **Manual criterion** — drop a sentence like
+   `The etl/customers/sync.yaml file parses cleanly and references existing components`
+   in the textarea; it lands in the Jira description for the reviewer
+   to verify.
+3. **Run the task in dry mode** — `task -p <program> -t <task> --no-worker`
+   still executes, so this is only safe if your task is idempotent /
+   side-effect-free.
 
 Common gotchas:
 
-* **Don't use a colon after the head**: `flowtask: foo.yaml` is tolerated
-  (the parser strips the trailing `:`), but the canonical form is just a
-  space: `flowtask foo.yaml`.
-* **No shell pipes / redirections**: the QA node uses `subprocess.exec`
-  with the command split as a list, not `shell=True`. Compose pipelines
-  by writing a wrapper script and invoking it via the allowlist head
-  (e.g. `pytest scripts/check_pipeline.py`).
-* If you need a `FlowtaskCriterion` with a specific `task_path` and
-  `args` array, post the full criterion dict via curl instead of a
-  string line.
+* **Trailing colon on the head is tolerated** (`task: foo.yaml` parses
+  the same as `task foo.yaml`), but the canonical form has no colon.
+* **No shell pipes / redirections**: QA runs commands via
+  `subprocess.exec` with the args split as a list, not `shell=True`. To
+  compose pipelines, write a wrapper script and invoke it via an
+  allowlisted head (e.g. `pytest scripts/check_pipeline.py`).
+* If you need a `FlowtaskCriterion` with a specific `task_path` /
+  structured `args` array, post the full criterion dict via curl.
 
 ## Stream layout (for reference)
 

@@ -110,7 +110,9 @@ def _build_log_toolkits() -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
-_ALLOWED_SHELL_HEADS = {"flowtask", "pytest", "ruff", "mypy", "pylint"}
+_ALLOWED_SHELL_HEADS = {
+    "task", "flowtask", "pytest", "ruff", "mypy", "pylint",
+}
 
 
 def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
@@ -162,8 +164,11 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
     criteria = _normalise_criteria(raw_criteria)
     if not criteria:
         raise ValueError(
-            "at least one acceptance criterion is required (shell head "
-            f"must be in {sorted(_ALLOWED_SHELL_HEADS)})"
+            "at least one acceptance criterion is required — write one "
+            "per line. Lines starting with an allowlisted head "
+            f"({sorted(_ALLOWED_SHELL_HEADS)}) become executable shell "
+            "criteria; any other prose becomes a manual criterion that "
+            "the human reviewer signs off in Jira."
         )
 
     bot_account = conf.config.get("FLOW_BOT_JIRA_ACCOUNT_ID", fallback="")
@@ -200,20 +205,32 @@ def _build_brief_from_form(form: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
-    """Accept either ``list[str]`` (one shell command per line) or full dicts.
+    """Translate textarea lines into a list of acceptance-criterion dicts.
 
-    Syntax for the string form: ``<head> <args...>``, one per line, where
-    ``<head>`` is one of ``flowtask | pytest | ruff | mypy | pylint``. The
-    parser tolerates a trailing colon on the head (``flowtask: foo.yaml``
-    is treated as ``flowtask foo.yaml``).
+    Each line is classified by inspecting its first whitespace-separated
+    token (with a trailing colon stripped):
 
-    Examples that all parse:
+    * **First token in the allowlist** → :class:`ShellCriterion`. The
+      QA subagent runs the command via subprocess and asserts exit
+      code 0. Allowed heads:
+      ``task | flowtask | pytest | ruff | mypy | pylint``.
+    * **Anything else** → :class:`ManualCriterion`. The line text is
+      attached to the Jira ticket description; the QA gate auto-passes
+      it (``passed=True`` in the report) and the human reviewer signs
+      off as part of the PR review.
 
-    * ``ruff check .``
-    * ``mypy --no-incremental``
-    * ``pytest tests/loaders/test_csv.py -v``
-    * ``flowtask etl/customers/sync.yaml``
-    * ``pylint parrot/``
+    Tolerated quirks:
+
+    * Trailing colon on the head: ``task: foo.yaml`` → ``task foo.yaml``.
+    * Leading bullet markers (``- `` or ``* ``) are stripped so users
+      can paste prose lists.
+
+    Examples (mixed: shell + manual)::
+
+        task etl/customers/sync.yaml
+        ruff check .
+        - The customer count must equal 1500 after a sync of a 1500-row CSV
+        PR description references the original Jira ticket
     """
     if not isinstance(raw, list):
         return []
@@ -224,25 +241,27 @@ def _normalise_criteria(raw: Any) -> list[dict[str, Any]]:
             continue
         if not isinstance(item, str):
             continue
-        cmd = item.strip()
-        if not cmd:
+        line = item.strip()
+        # Trim leading bullet/dash so prose lists work too.
+        if line.startswith(("- ", "* ")):
+            line = line[2:].lstrip()
+        if not line:
             continue
-        # Tolerate `head:` (with trailing colon) and re-glue the rest.
-        head, _, tail = cmd.partition(" ")
-        head = head.rstrip(":")
-        cmd = head + (f" {tail}" if tail else "")
-        if head not in _ALLOWED_SHELL_HEADS:
-            raise ValueError(
-                f"acceptance criterion {idx} starts with disallowed head "
-                f"{head!r}; allowed: {sorted(_ALLOWED_SHELL_HEADS)}. "
-                f"Write one shell command per line, e.g. 'ruff check .' "
-                f"or 'flowtask etl/foo.yaml'."
-            )
-        out.append({
-            "kind": "shell",
-            "name": f"{head}-criterion-{idx}",
-            "command": cmd,
-        })
+        head_token, _, tail = line.partition(" ")
+        head = head_token.rstrip(":")
+        if head in _ALLOWED_SHELL_HEADS:
+            cmd = head + (f" {tail}" if tail else "")
+            out.append({
+                "kind": "shell",
+                "name": f"{head}-criterion-{idx}",
+                "command": cmd,
+            })
+        else:
+            out.append({
+                "kind": "manual",
+                "name": f"manual-criterion-{idx}",
+                "text": line,
+            })
     return out
 
 

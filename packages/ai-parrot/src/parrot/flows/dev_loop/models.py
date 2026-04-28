@@ -58,8 +58,30 @@ class ShellCriterion(_AcceptanceCriterionBase):
     )
 
 
+class ManualCriterion(BaseModel):
+    """Human-readable acceptance statement that the QA subagent must NOT run.
+
+    Used for criteria that are inherently subjective or require human
+    judgement ("the dashboard renders without flicker", "the migration
+    note in the PR mentions both downtime and rollback"). The
+    :class:`QANode` filters these out before dispatch, then re-appends a
+    synthesized :class:`CriterionResult` with ``kind="manual"`` and
+    ``passed=True`` so the deterministic gate does not block the flow.
+    The text is also embedded in the Jira ticket description and in
+    ``QAReport.notes`` so the human reviewer can sign off explicitly.
+    """
+
+    kind: Literal["manual"] = "manual"
+    name: str = Field(..., description="Short identifier for the criterion.")
+    text: str = Field(
+        ...,
+        min_length=1,
+        description="Human-readable statement the reviewer must verify.",
+    )
+
+
 AcceptanceCriterion = Annotated[
-    Union[FlowtaskCriterion, ShellCriterion],
+    Union[FlowtaskCriterion, ShellCriterion, ManualCriterion],
     Field(discriminator="kind"),
 ]
 
@@ -136,7 +158,7 @@ class CriterionResult(BaseModel):
     """Result of running a single acceptance criterion in QA."""
 
     name: str
-    kind: Literal["flowtask", "shell"]
+    kind: Literal["flowtask", "shell", "manual"]
     exit_code: int
     duration_seconds: float
     stdout_tail: str = Field("", max_length=4000)
