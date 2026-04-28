@@ -15997,14 +15997,14 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
             "parallel": false,
             "parallelism_notes": "Foundation task \u2014 every other task in this feature reads WorkBrief.kind. Must land first.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-896-workbrief-rename-and-kind.md"
         },
         {
@@ -16014,14 +16014,14 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "low",
             "effort": "S",
             "depends_on": [],
             "parallel": true,
             "parallelism_notes": "Independent of all other tasks \u2014 only touches parrot/conf.py + a tiny test + a README row.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-897-conf-dev-loop-plan-llm.md"
         },
         {
@@ -16031,7 +16031,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16040,7 +16040,7 @@
             "parallel": false,
             "parallelism_notes": "Sequential: needs WorkBrief.kind from TASK-896.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-898-intent-classifier-node.md"
         },
         {
@@ -16050,7 +16050,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "medium",
             "effort": "S",
             "depends_on": [
@@ -16059,7 +16059,7 @@
             "parallel": false,
             "parallelism_notes": "Sequential: removes the duplicate validation only after TASK-898 owns it.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-899-bug-intake-scope-down.md"
         },
         {
@@ -16069,7 +16069,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "L",
             "depends_on": [
@@ -16079,7 +16079,7 @@
             "parallel": false,
             "parallelism_notes": "Sequential against TASK-896 and TASK-897. Independent of TASK-898/TASK-899 in code, but tested together.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-900-research-issuetype-and-plan-comment.md"
         },
         {
@@ -16089,7 +16089,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "high",
             "effort": "M",
             "depends_on": [
@@ -16100,7 +16100,7 @@
             "parallel": false,
             "parallelism_notes": "Integration node \u2014 needs all three implementation tasks in place.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-901-flow-factory-rewire-routing.md"
         },
         {
@@ -16110,7 +16110,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "medium",
             "effort": "M",
             "depends_on": [
@@ -16119,7 +16119,7 @@
             "parallel": true,
             "parallelism_notes": "Touches only examples/dev_loop/ + form tests; can run alongside TASK-898..901 once TASK-896 lands.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-902-ui-form-and-server-kind.md"
         },
         {
@@ -16129,7 +16129,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "pending",
+            "status": "in-progress",
             "priority": "medium",
             "effort": "S",
             "depends_on": [
@@ -16144,7 +16144,7 @@
             "parallel": false,
             "parallelism_notes": "Wrap-up task \u2014 runs after every implementation task is merged.",
             "assigned_to": null,
-            "started_at": null,
+            "started_at": "2026-04-28T21:12:24.488995+00:00",
             "file": "sdd/tasks/active/TASK-903-integration-smoke-and-docs.md"
         }
     ]
