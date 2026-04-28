@@ -179,9 +179,7 @@ runs without env overrides.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-28
+**Notes**: Added DEV_LOOP_PLAN_LLM = config.get("DEV_LOOP_PLAN_LLM", fallback="") to conf.py in the FEAT-129 settings block. Added test_plan_llm_default_empty to test_conf.py. Added README row for DEV_LOOP_PLAN_LLM. The test passes (pre-existing test_jira_account_default_empty failure is a shell-env issue, not caused by this task).
+**Deviations from spec**: none

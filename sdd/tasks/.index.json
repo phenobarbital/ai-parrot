@@ -16015,7 +16015,7 @@
             "feature_id": "FEAT-132",
             "feature": "feat-129-upgrades",
             "spec": "sdd/specs/feat-129-upgrades.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "low",
             "effort": "S",
             "depends_on": [],
@@ -16023,7 +16023,8 @@
             "parallelism_notes": "Independent of all other tasks \u2014 only touches parrot/conf.py + a tiny test + a README row.",
             "assigned_to": null,
             "started_at": "2026-04-28T21:12:24.488995+00:00",
-            "file": "sdd/tasks/active/TASK-897-conf-dev-loop-plan-llm.md"
+            "file": "sdd/tasks/completed/TASK-897-conf-dev-loop-plan-llm.md",
+            "completed_at": "2026-04-28T21:16:52.541696+00:00"
         },
         {
             "id": "TASK-898",
