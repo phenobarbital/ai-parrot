@@ -84,12 +84,16 @@ class ResearchNode(Node):
 
         # 2. Create the Jira ticket BEFORE dispatching. Unit tests pin
         # this ordering (spec §4 test_research_node_creates_jira_then_dispatches).
+        # Reporter is resolved to an accountId here (the toolkit auto-
+        # resolves the assignee but not the raw fields={"reporter":…}
+        # blob, so we do it explicitly so emails work in BugBrief.reporter).
+        reporter_fields = await self._reporter_fields(brief.reporter)
         jira_resp = await self._jira.jira_create_issue(
             summary=brief.summary,
             issuetype="Bug",
             description=self._build_description(brief, excerpts),
             assignee=conf.FLOW_BOT_JIRA_ACCOUNT_ID or None,
-            fields=self._reporter_fields(brief.reporter),
+            fields=reporter_fields,
         )
         issue_key = self._extract_issue_key(jira_resp)
         ctx["jira_issue_key"] = issue_key
@@ -208,12 +212,28 @@ class ResearchNode(Node):
             f"Escalation assignee on failure: {brief.escalation_assignee}\n"
         )
 
-    @staticmethod
-    def _reporter_fields(reporter: str) -> Optional[Dict[str, Any]]:
+    async def _reporter_fields(
+        self, reporter: str
+    ) -> Optional[Dict[str, Any]]:
+        """Build the ``fields={"reporter": {...}}`` blob for create_issue.
+
+        Accepts either an email or an accountId. Emails are resolved via
+        the toolkit's user lookup so callers can keep BugBrief.reporter
+        in human-readable form (e.g. ``jane@example.com``) rather than
+        the Jira-internal ``557058:abc`` accountId.
+        """
         if not reporter:
             return None
-        # Jira REST v3 — reporter is a user object: {"accountId": "..."}
-        return {"reporter": {"accountId": reporter}}
+        try:
+            account_id = await self._jira._resolve_account_id(reporter)
+        except Exception as exc:  # noqa: BLE001 - degrade to raw value
+            self.logger.warning(
+                "Could not resolve reporter %r to an accountId (%s); "
+                "passing through verbatim",
+                reporter, exc,
+            )
+            account_id = reporter
+        return {"reporter": {"accountId": account_id}}
 
     @staticmethod
     def _extract_issue_key(resp: Any) -> str:
