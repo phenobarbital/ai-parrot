@@ -58,20 +58,6 @@ PromptBuilder = Callable[[AgentContext, DependencyResults], Union[str, Awaitable
 
 
 @dataclass
-class AgentTask:
-    """Represents a task to be executed by an agent in the Crew."""
-    task_id: str
-    agent_name: str
-    input_data: Any
-    dependencies: Set[str] = field(default_factory=set)
-    context: Dict[str, Any] = field(default_factory=dict)
-    completed: bool = False
-    result: Optional[str] = None
-    error: Optional[str] = None
-    execution_time: float = 0.0
-    status: Literal["pending", "running", "completed", "failed"] = "pending"
-
-@dataclass
 class FlowContext:
     """
     Maintains the execution context across the workflow.
