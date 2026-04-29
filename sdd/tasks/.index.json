@@ -16741,7 +16741,7 @@
       "feature_id": "FEAT-136",
       "feature": "database-toolkit-parity",
       "spec": "sdd/specs/database-toolkit-parity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16751,7 +16751,8 @@
       "parallelism_notes": "Modifies all source files and the interface; TASK-934 and TASK-935 depend on this",
       "assigned_to": null,
       "started_at": "2026-04-29T11:12:40.106414Z",
-      "file": "sdd/tasks/active/TASK-932-interface-credential-resolution.md"
+      "file": "sdd/tasks/completed/TASK-932-interface-credential-resolution.md",
+      "completed_at": "2026-04-29T11:23:22.685164Z"
     },
     {
       "id": "TASK-933",
