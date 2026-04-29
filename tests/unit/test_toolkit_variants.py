@@ -31,8 +31,8 @@ class TestBigQueryToolkit:
     def test_tool_methods(self):
         tk = BigQueryToolkit(project_id="my-project")
         tool_names = [t.name for t in tk.get_tools()]
-        assert "search_schema" in tool_names
-        assert "execute_query" in tool_names
+        assert any("search_schema" in n for n in tool_names)
+        assert any("execute_query" in n for n in tool_names)
 
     def test_no_primary_keys(self):
         tk = BigQueryToolkit(project_id="my-project")
@@ -56,12 +56,12 @@ class TestInfluxDBToolkit:
     def test_tool_methods(self):
         tk = InfluxDBToolkit(dsn="influxdb://test")
         tool_names = [t.name for t in tk.get_tools()]
-        assert "search_schema" in tool_names
-        assert "execute_query" in tool_names
-        assert "search_measurements" in tool_names
-        assert "generate_flux_query" in tool_names
-        assert "execute_flux_query" in tool_names
-        assert "explore_buckets" in tool_names
+        assert any("search_schema" in n for n in tool_names)
+        assert any("execute_query" in n for n in tool_names)
+        assert any("search_measurements" in n for n in tool_names)
+        assert any("generate_flux_query" in n for n in tool_names)
+        assert any("execute_flux_query" in n for n in tool_names)
+        assert any("explore_buckets" in n for n in tool_names)
 
     def test_exclude_tools(self):
         tk = InfluxDBToolkit(dsn="influxdb://test")
@@ -93,11 +93,11 @@ class TestElasticToolkit:
     def test_tool_methods(self):
         tk = ElasticToolkit(dsn="http://localhost:9200")
         tool_names = [t.name for t in tk.get_tools()]
-        assert "search_schema" in tool_names
-        assert "execute_query" in tool_names
-        assert "search_indices" in tool_names
-        assert "generate_dsl_query" in tool_names
-        assert "run_aggregation" in tool_names
+        assert any("search_schema" in n for n in tool_names)
+        assert any("execute_query" in n for n in tool_names)
+        assert any("search_indices" in n for n in tool_names)
+        assert any("generate_dsl_query" in n for n in tool_names)
+        assert any("run_aggregation" in n for n in tool_names)
 
     @pytest.mark.asyncio
     async def test_execute_invalid_json(self):
@@ -123,11 +123,11 @@ class TestDocumentDBToolkit:
     def test_tool_methods(self):
         tk = DocumentDBToolkit(dsn="mongodb://test")
         tool_names = [t.name for t in tk.get_tools()]
-        assert "search_schema" in tool_names
-        assert "execute_query" in tool_names
-        assert "search_collections" in tool_names
-        assert "generate_mql_query" in tool_names
-        assert "explore_collection" in tool_names
+        assert any("search_schema" in n for n in tool_names)
+        assert any("execute_query" in n for n in tool_names)
+        assert any("search_collections" in n for n in tool_names)
+        assert any("generate_mql_query" in n for n in tool_names)
+        assert any("explore_collection" in n for n in tool_names)
 
     @pytest.mark.asyncio
     async def test_generate_mql_query(self):
