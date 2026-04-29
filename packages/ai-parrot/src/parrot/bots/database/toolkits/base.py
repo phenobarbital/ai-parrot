@@ -377,26 +377,34 @@ class DatabaseToolkit(AbstractToolkit, ABC):
 
     @asynccontextmanager
     async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]:
-        """Yield a usable asyncdb connection, abstracting pool vs single.
+        """Yield a raw driver connection, abstracting pool vs single.
 
-        Pooled mode: ``acquire()`` a connection and ``release()`` it on exit.
-        Single mode: enter the driver as its own async context manager, which
-        opens a fresh connection and closes it on exit (current behavior).
+        Unwraps the asyncdb driver wrapper once at the boundary via
+        ``wrapper.engine()`` (alias for ``get_connection()``) so every
+        downstream consumer works against the raw native connection object
+        (e.g. raw ``asyncpg.Connection`` for PostgreSQL).
+
+        Pooled mode: acquires the asyncdb wrapper, unwraps it, yields the
+        raw connection, then releases the **wrapper** (not the raw conn)
+        back to the pool on exit.
+
+        Single mode: enters the driver as its own async context manager,
+        unwraps the resulting wrapper, and yields the raw connection.
         """
         if self._connection is None:
             raise RuntimeError("Not connected (call start() first)")
         if self.use_pool:
-            conn = await self._connection.acquire()
+            wrapper = await self._connection.acquire()
             try:
-                yield conn
+                yield wrapper.engine()  # raw asyncpg.Connection (or dialect equiv.)
             finally:
                 try:
-                    await self._connection.release(conn)
+                    await self._connection.release(wrapper)  # release the WRAPPER
                 except Exception as exc:  # pylint: disable=broad-except
                     self.logger.debug("Pool release failed: %s", exc)
         else:
-            async with await self._connection.connection() as conn:
-                yield conn
+            async with await self._connection.connection() as wrapper:
+                yield wrapper.engine()  # raw asyncpg.Connection (or dialect equiv.)
 
     async def _connect_sqlalchemy(self) -> None:
         """Connect using ``sqlalchemy.ext.asyncio.create_async_engine``."""
