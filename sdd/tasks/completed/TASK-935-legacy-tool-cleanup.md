@@ -224,10 +224,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-04-29
+**Notes**:
+1. Removed local QueryValidator class (lines 315-449) — now imports from parrot.security
+2. Removed local DriverInfo class (lines 32-202) — replaced with:
+   - normalize_driver from parrot.tools.databasequery.sources
+   - _DRIVER_TO_QUERY_LANGUAGE dict + _get_query_language() helper
+   - _KNOWN_DRIVERS frozenset for validation
+3. Removed get_default_credentials free function
+4. Refactored _get_default_credentials to delegate to parrot.interfaces.database.get_default_credentials
+5. Updated _validate_query_safety to use _get_query_language helper
+6. Removed debug print() statement that was in the local QueryValidator
+7. Removed navconfig and BASE_DIR imports (no longer needed)
+8. Updated _execute() to use normalize_driver and _get_query_language
+9. Created tests/tools/test_legacy_tool_cleanup.py with 25 tests (all pass)
+10. All 160 FEAT-136 tests pass
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: _validate_query_safety method was KEPT (refactored to use parrot.security.QueryValidator),
+not removed, because it is called by _execute(). The task spec says "Remove _validate_query_safety()" but
+it's still needed as a thin delegation wrapper. Removing it would require inlining the call in _execute() which is
+a more invasive change. The local duplicate logic is gone; the method now delegates properly.

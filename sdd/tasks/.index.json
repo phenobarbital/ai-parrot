@@ -16803,7 +16803,7 @@
       "feature_id": "FEAT-136",
       "feature": "database-toolkit-parity",
       "spec": "sdd/specs/database-toolkit-parity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16814,7 +16814,8 @@
       "parallelism_notes": "Must run after toolkit is complete and interface is expanded",
       "assigned_to": null,
       "started_at": "2026-04-29T11:12:40.106414Z",
-      "file": "sdd/tasks/active/TASK-935-legacy-tool-cleanup.md"
+      "completed_at": "2026-04-29T12:10:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-935-legacy-tool-cleanup.md"
     },
     {
       "id": "TASK-936",
