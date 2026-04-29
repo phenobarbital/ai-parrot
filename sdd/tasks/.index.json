@@ -16402,7 +16402,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16412,7 +16412,8 @@
       "parallelism_notes": "Depends only on types; could parallel with TASK-914 but per-spec strategy is sequential",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-915-flow-primitives-result.md"
+      "file": "sdd/tasks/completed/TASK-915-flow-primitives-result.md",
+      "completed_at": "2026-04-29T11:30:00.000000+00:00"
     },
     {
       "id": "TASK-916",

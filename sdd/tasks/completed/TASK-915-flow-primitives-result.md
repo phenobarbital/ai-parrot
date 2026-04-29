@@ -231,4 +231,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created `parrot/bots/flows/core/result.py` with:
+- `NodeExecutionInfo` dataclass: primary fields `node_id`/`node_name`, backward-compat `@property` aliases `agent_id`/`agent_name`, `to_dict()`.
+- `FlowResult` dataclass: primary field `nodes` (replacing `agents`), `status: FlowStatus`, backward-compat aliases (`.agents`, `.agent_results`, `.content`, `.success`, `.completed`, `.failed`), `__getitem__`, `to_dict()`, `__str__`, `__repr__`, `__setattr__`.
+- `build_node_metadata()` adapted from `build_agent_metadata()` returning `NodeExecutionInfo`.
+- `determine_run_status()` copied from `parrot.models.crew`.
+All 31 unit tests pass.
