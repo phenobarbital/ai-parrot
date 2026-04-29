@@ -182,4 +182,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created `parrot/bots/flows/core/transition.py` with `FlowTransition` dataclass:
+- Fields: `source`, `targets: Set[str]`, `condition: TransitionCondition`, `instruction`, `prompt_builder`, `predicate`, `priority: int`, `metadata: Optional[NodeExecutionInfo]`.
+- `should_activate()`: ALWAYS/ON_SUCCESS/ON_ERROR/ON_CONDITION logic preserved exactly; handles sync and async predicates.
+- `build_prompt()`: priority order (prompt_builder > instruction > default fallback); accepts `Any` context via duck-typing.
+All 20 unit tests pass.

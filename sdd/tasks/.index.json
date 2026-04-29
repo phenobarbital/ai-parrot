@@ -16464,7 +16464,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -16476,7 +16476,8 @@
       "parallelism_notes": "Needs types + FSM (TransitionCondition) + result (NodeExecutionInfo)",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-918-flow-primitives-transition.md"
+      "file": "sdd/tasks/completed/TASK-918-flow-primitives-transition.md",
+      "completed_at": "2026-04-29T11:45:00.000000+00:00"
     },
     {
       "id": "TASK-919",
