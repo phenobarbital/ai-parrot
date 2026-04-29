@@ -238,10 +238,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-04-29
+**Notes**: Implemented all scope items in toolkit.py:
+1. Renamed validate_database_query → validate_query; removed credentials parameter
+2. Added get_table_metadata(driver, table, credentials?) → MetadataResult
+3. Added test_connection(driver, credentials?) → {"status": "success"} or {"status": "error", ...}
+4. Added save_result(result, filename?, file_format?) with CSV/JSON/Excel support
+5. Added max_rows (default=10000) to execute_database_query, max_rows (default=1) to fetch_database_row
+6. Tool methods now return Pydantic models directly (no inline .model_dump())
+7. Overrode _post_execute to serialize BaseModel → dict
+8. Added output_dir and static_dir to __init__; save_result excluded when no output_dir
+9. Created tests/tools/test_database_toolkit_parity.py with 40 tests (all pass)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

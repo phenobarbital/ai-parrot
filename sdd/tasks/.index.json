@@ -16781,7 +16781,7 @@
       "feature_id": "FEAT-136",
       "feature": "database-toolkit-parity",
       "spec": "sdd/specs/database-toolkit-parity.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16793,7 +16793,8 @@
       "parallelism_notes": "Core toolkit.py refactor; depends on all prior tasks",
       "assigned_to": null,
       "started_at": "2026-04-29T11:12:40.106414Z",
-      "file": "sdd/tasks/active/TASK-934-toolkit-refactor.md"
+      "completed_at": "2026-04-29T11:50:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-934-toolkit-refactor.md"
     },
     {
       "id": "TASK-935",
