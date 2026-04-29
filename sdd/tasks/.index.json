@@ -16543,7 +16543,7 @@
       "feature_id": "FEAT-135",
       "feature": "netsuite-mcp-integration",
       "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -16551,7 +16551,8 @@
       "parallelism_notes": "Foundation task \u2014 VaultTokenStore is imported by factory (TASK-923)",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-922-vault-token-store.md"
+      "file": "sdd/tasks/completed/TASK-922-vault-token-store.md",
+      "completed_at": "2026-04-29T11:12:51.058598+00:00"
     },
     {
       "id": "TASK-923",
