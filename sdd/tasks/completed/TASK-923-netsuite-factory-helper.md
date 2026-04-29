@@ -313,8 +313,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-04-29
+**Notes**: Added VaultTokenStore to import in integration.py. Added NETSUITE_MCP_URL, NETSUITE_AUTH_URL, NETSUITE_TOKEN_URL constants and NETSUITE_SCOPES=["mcp"]. Implemented create_netsuite_mcp_server() factory and add_netsuite_mcp_server() mixin method after add_alphavantage_mcp_server(). _ensure_oauth_token and token_supplier both wired correctly.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
