@@ -190,10 +190,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-04-29
+**Notes**:
+- `__init__.py` already had `add_row_limit` exported from TASK-931 (no change needed)
+- Created `tests/tools/test_database_toolkit_integration.py` with 32 tests covering:
+  exports, tool names, full lifecycle (metadata→query→save), test_connection,
+  validate_query DDL blocking, max_rows injection, _post_execute serialization,
+  DatabaseQueryTool backward compatibility
+- Fixed lint issues in tool.py (removed unused `os`, `TYPE_CHECKING`, `lazy_import` imports;
+  removed f-string prefix on plain string literal)
+- Fixed lint issue in toolkit.py (removed unused `logging` import)
+- All 167 database tests pass; ruff reports only 2 pre-existing E402 errors in bigquery.py
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — __init__.py was already correct from TASK-931
