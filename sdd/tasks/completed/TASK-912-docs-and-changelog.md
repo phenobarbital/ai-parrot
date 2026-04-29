@@ -177,10 +177,8 @@ Unknown `type` values raise `ConfigError` at bot startup.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Created `packages/ai-parrot/CHANGELOG.md` (no project-level CHANGELOG existed; confirmed with `find . -maxdepth 4 -iname "CHANGELOG*"`). Added a detailed FEAT-133 entry covering new JSONB columns, factory modules, BotManager wiring, handler validation, back-compat, and the spec reference. Added an 81-line "DB-Persisted Bot Configuration (FEAT-133)" section to `packages/ai-parrot/README.md` with both config JSON shapes, factory signatures, order-of-operations diagram, and error handling notes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: No project-level CHANGELOG existed so one was created at `packages/ai-parrot/CHANGELOG.md`. The optional `examples/chatbots/att/bot.py` comment was not added (minimal impact, outside core scope).

@@ -204,10 +204,8 @@ def test_unknown_type_raises(fake_store):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Created `parrot/stores/parents/factory.py` with `create_parent_searcher()`, `_build_in_table()`, and `PARENT_SEARCHER_TYPES` registry. Lazy import for `InTableParentSearcher` inside builder. Empty-dict guard short-circuits before store check. Created `tests/stores/parents/test_factory.py` with 8 tests (all passed). ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

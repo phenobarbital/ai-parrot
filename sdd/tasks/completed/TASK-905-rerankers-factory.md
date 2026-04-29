@@ -272,10 +272,8 @@ def test_factory_import_does_not_load_torch():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Created `parrot/rerankers/factory.py` with `create_reranker()`, `_build_local_cross_encoder()`, `_build_llm_reranker()`, and `RERANKER_TYPES` registry. All lazy imports are inside builder functions. Created `tests/rerankers/test_factory.py` with 9 tests (8 passed, 1 skipped because torch was already loaded by another test in the session — the skip logic is correct). ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -73,6 +73,8 @@ class BotModel(Model):
         -- Vector store and retrieval configuration
         use_vector_context BOOLEAN DEFAULT FALSE,
         vector_store_config JSONB DEFAULT '{}'::JSONB,
+        reranker_config        JSONB DEFAULT '{}'::JSONB,
+        parent_searcher_config JSONB DEFAULT '{}'::JSONB,
         embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}',
         context_search_limit INTEGER DEFAULT 10,
         context_score_threshold FLOAT DEFAULT 0.7,
@@ -210,6 +212,16 @@ class BotModel(Model):
         required=False,
         ui_help="The bot’s vector store configuration."
     )
+    reranker_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help="The bot’s reranker config (FEAT-133). See sdd/specs/bot-reranker-and-parent-searcher-config.spec.md.",
+    )
+    parent_searcher_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help="The bot’s parent-searcher config (FEAT-128).",
+    )
     embedding_model: dict = Field(
         default=default_embed_model,
         required=False,
@@ -328,6 +340,8 @@ class BotModel(Model):
             'operation_mode': self.operation_mode,
             'use_vector': self.use_vector,
             'vector_store_config': self.vector_store_config,
+            'reranker_config': self.reranker_config,
+            'parent_searcher_config': self.parent_searcher_config,
             'embedding_model': self.embedding_model,
             'context_search_limit': self.context_search_limit,
             'context_score_threshold': self.context_score_threshold,

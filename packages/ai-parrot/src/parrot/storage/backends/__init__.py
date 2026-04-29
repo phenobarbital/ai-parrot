@@ -34,6 +34,64 @@ __all__ = [
 ]
 
 
+def _resolve_dynamodb_credentials() -> Optional[dict]:
+    """Resolve credentials for the DynamoDB backend.
+
+    Resolution order:
+      1. ``DYNAMODB_AWS_PROFILE`` — name of an entry in ``AWS_CREDENTIALS``.
+      2. ``BACKEND_AWS_ACCESS_KEY`` + ``BACKEND_AWS_SECRET_KEY`` env vars.
+      3. ``None`` — let aioboto3 use the default credential chain
+         (IAM role, ``~/.aws/credentials``, etc.).
+
+    The general ``AWS_ACCESS_KEY`` / ``AWS_SECRET_KEY`` are intentionally NOT
+    consulted, so the conversation backend cannot clobber the credentials used
+    by S3 and other services that share the default profile.
+
+    Why: parrot.conf snapshots env vars at import time, and tests rely on
+    monkeypatch.setenv — read directly from os.environ for that reason.
+
+    Returns:
+        Dict with ``aws_key``, ``aws_secret``, and optional ``region_name``,
+        or ``None`` to defer to boto3's resolution chain.
+
+    Raises:
+        RuntimeError: If ``DYNAMODB_AWS_PROFILE`` references a missing or
+            incomplete profile.
+    """
+    profile_name = os.environ.get("DYNAMODB_AWS_PROFILE")
+    if profile_name:
+        from parrot.conf import AWS_CREDENTIALS  # noqa: E501 pylint: disable=import-outside-toplevel
+        profile = AWS_CREDENTIALS.get(profile_name)
+        if not profile:
+            raise RuntimeError(
+                f"DYNAMODB_AWS_PROFILE={profile_name!r} not found in "
+                "AWS_CREDENTIALS."
+            )
+        aws_key = profile.get("aws_key") or profile.get("aws_access_key_id")
+        aws_secret = profile.get("aws_secret") or profile.get("aws_secret_access_key")
+        if not (aws_key and aws_secret):
+            raise RuntimeError(
+                f"AWS_CREDENTIALS profile {profile_name!r} is missing "
+                "aws_key/aws_secret."
+            )
+        return {
+            "aws_key": aws_key,
+            "aws_secret": aws_secret,
+            "region_name": profile.get("region_name"),
+        }
+
+    backend_key = os.environ.get("BACKEND_AWS_ACCESS_KEY")
+    backend_secret = os.environ.get("BACKEND_AWS_SECRET_KEY")
+    if backend_key and backend_secret:
+        return {
+            "aws_key": backend_key,
+            "aws_secret": backend_secret,
+            "region_name": os.environ.get("BACKEND_AWS_REGION"),
+        }
+
+    return None
+
+
 async def build_conversation_backend(
     override: Optional[str] = None,
 ) -> ConversationBackend:
@@ -58,8 +116,6 @@ async def build_conversation_backend(
         DYNAMODB_ARTIFACTS_TABLE,
         DYNAMODB_REGION,
         DYNAMODB_ENDPOINT_URL,
-        AWS_ACCESS_KEY,
-        AWS_SECRET_KEY,
     )
     # Read runtime-configurable values from os.environ first so that
     # monkeypatch.setenv works in tests (conf.py caches at import time).
@@ -90,10 +146,12 @@ async def build_conversation_backend(
         params = {"region_name": DYNAMODB_REGION}
         if DYNAMODB_ENDPOINT_URL:
             params["endpoint_url"] = DYNAMODB_ENDPOINT_URL
-        if AWS_ACCESS_KEY:
-            params["aws_access_key_id"] = AWS_ACCESS_KEY
-        if AWS_SECRET_KEY:
-            params["aws_secret_access_key"] = AWS_SECRET_KEY
+        creds = _resolve_dynamodb_credentials()
+        if creds:
+            params["aws_access_key_id"] = creds["aws_key"]
+            params["aws_secret_access_key"] = creds["aws_secret"]
+            if creds.get("region_name"):
+                params["region_name"] = creds["region_name"]
         backend = ConversationDynamoDB(
             conversations_table=DYNAMODB_CONVERSATIONS_TABLE,
             artifacts_table=DYNAMODB_ARTIFACTS_TABLE,

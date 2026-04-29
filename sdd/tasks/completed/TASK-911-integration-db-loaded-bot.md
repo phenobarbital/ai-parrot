@@ -264,10 +264,8 @@ async def test_unknown_reranker_type_fails_loud(tmp_pg, app):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (SDD Worker)
+**Date**: 2026-04-29
+**Notes**: Implemented two-layer approach. Layer 1 (10 tests, all pass): pure-Python stub tests that exercise the exact factory-wiring sequence from `_load_database_bots` — covering AC6 (non-empty configs produce wired bot), AC7 (empty configs produce None reranker/parent_searcher), and AC8 (unknown type raises ConfigError). Also includes 3 tests against the real `parrot.rerankers.factory` and `parrot.stores.parents.factory` modules. Layer 2 (3 tests, all skipped): live-DB integration test stubs marked `@pytest.mark.integration` and `@pytest.mark.skip`, with full implementation documented in comments for CI runners that have the compiled Cython extension + a live PostgreSQL database. SQL fixtures created at `tests/fixtures/bot_rows/with_reranker.sql` and `tests/fixtures/bot_rows/empty_configs.sql`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Full `BotManager._load_database_bots` test skipped in worktree due to missing compiled Cython extension; the exact wiring logic is exercised via inline stubs. Live-DB tests documented for CI execution.
