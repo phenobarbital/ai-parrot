@@ -214,4 +214,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created:
+- `conftest.py`: shared fixtures `mock_agent`, `agent_node`, `flow_context`, `node_execution_info`.
+- `test_contract.py`: 216 tests total across all modules (cross-module integration, FSM invariants, Node contract, Result contract, Context contract, Transition contract, Protocol conformance, Import compatibility).
+
+All 216 tests pass. 0 regressions.

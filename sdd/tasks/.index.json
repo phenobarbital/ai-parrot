@@ -16532,7 +16532,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16542,7 +16542,8 @@
       "parallelism_notes": "Needs full package wired up before running cross-module tests",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-921-flow-primitives-contract-tests.md"
+      "file": "sdd/tasks/completed/TASK-921-flow-primitives-contract-tests.md",
+      "completed_at": "2026-04-29T12:00:00.000000+00:00"
     },
     {
       "id": "TASK-922",
