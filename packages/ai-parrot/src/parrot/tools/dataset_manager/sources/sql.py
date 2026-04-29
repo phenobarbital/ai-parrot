@@ -55,11 +55,16 @@ class SQLQuerySource(DataSource):
         self.cache_ttl = cache_ttl
         self.logger = logging.getLogger(__name__)
 
-        # Only try the pg-only default DSN resolver when the caller didn't
-        # supply either a dsn or a credentials dict. For non-pg drivers this
-        # returns None and we fall back to navconfig at fetch() time.
+        # Try the default credential resolver when the caller didn't supply
+        # either a dsn or a credentials dict. The interface now returns a
+        # dict[str, Any] for all drivers (FEAT-136); extract the DSN string
+        # if present, otherwise let fetch() resolve via navconfig.
         if dsn is None and credentials is None:
-            dsn = get_default_credentials(driver)
+            default_creds = get_default_credentials(driver)
+            if isinstance(default_creds, dict):
+                dsn = default_creds.get("dsn")  # may be None for non-PG drivers
+            elif isinstance(default_creds, str):
+                dsn = default_creds  # legacy path, should not occur after FEAT-136
 
         self.dsn = dsn
         self._credentials = credentials

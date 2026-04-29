@@ -484,25 +484,205 @@ class DBInterface:
 # Default credential helpers (used by DatabaseQueryTool, DatasetManager, etc.)
 # ---------------------------------------------------------------------------
 
-_PG_ALIASES = frozenset({"pg", "postgres", "postgresql"})
+# Driver alias → canonical name map for credential resolution
+_CRED_ALIASES: dict[str, str] = {
+    "postgres": "pg",
+    "postgresql": "pg",
+    "mariadb": "mysql",
+    "bq": "bigquery",
+    "sqlserver": "mssql",
+    "influxdb": "influx",
+    "mongodb": "mongo",
+    "elasticsearch": "elastic",
+    "opensearch": "elastic",
+}
 
 
-def get_default_credentials(driver: str) -> Optional[str]:
-    """Return the default DSN for a database driver, if available.
+def get_default_credentials(driver: str) -> dict[str, Any]:
+    """Return default credentials for a database driver from environment variables.
 
-    Currently returns a DSN only for PostgreSQL drivers, using
-    ``querysource.conf.default_dsn``. Returns ``None`` for all others.
+    Reads from ``navconfig.config`` using the same environment variable names
+    as the legacy ``DatabaseQueryTool._get_default_credentials()`` (the
+    authoritative reference). Returns ``{}`` when no env vars are set.
+    Guards ``querysource.conf`` imports with ``try/except ImportError``.
+
+    This is the single source of truth for env-var-based credential resolution
+    across the toolkit layer (``AbstractDatabaseSource.get_default_credentials``)
+    and the legacy tool layer (``DatabaseQueryTool._get_default_credentials``).
 
     Args:
-        driver: Database driver name (e.g. ``'pg'``, ``'mysql'``).
+        driver: Database driver name or alias
+            (e.g. ``'pg'``, ``'postgresql'``, ``'mysql'``, ``'elastic'``).
 
     Returns:
-        DSN string or ``None``.
+        A ``dict[str, Any]`` with driver-specific credential keys. Returns
+        ``{}`` if the driver is unknown or no environment variables are set.
+        ``None`` values are stripped from the returned dict.
+
+    Examples:
+        >>> get_default_credentials("pg")
+        {'host': 'localhost', 'port': '5432', 'database': 'postgres', ...}
+        >>> get_default_credentials("unknowndriver")
+        {}
     """
-    try:
-        from querysource.conf import default_dsn  # type: ignore[import]
-        if driver.lower() in _PG_ALIASES:
-            return default_dsn
-    except ImportError:
-        pass
-    return None
+    from navconfig import config, BASE_DIR  # type: ignore[import]
+
+    canonical = _CRED_ALIASES.get(driver.lower().strip(), driver.lower().strip())
+
+    if canonical == "pg":
+        pg_password = config.get("PG_PWD") or config.get("PG_PASSWORD")
+        creds: dict[str, Any] = {
+            "host": config.get("PG_HOST", fallback="localhost"),
+            "port": config.get("PG_PORT", fallback="5432"),
+            "database": config.get("PG_DATABASE", fallback="postgres"),
+            "user": config.get("PG_USER", fallback="postgres"),
+            "password": pg_password,
+        }
+        # Also include a DSN if querysource is available
+        try:
+            from querysource.conf import default_dsn  # type: ignore[import]
+            if default_dsn:
+                creds["dsn"] = default_dsn
+        except ImportError:
+            pass
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "mysql":
+        creds = {
+            "host": config.get("MYSQL_HOST", fallback="localhost"),
+            "port": config.get("MYSQL_PORT", fallback="3306"),
+            "database": config.get("MYSQL_DATABASE", fallback="mysql"),
+            "user": config.get("MYSQL_USER", fallback="root"),
+            "password": config.get("MYSQL_PASSWORD"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "bigquery":
+        bigquery_creds_path = config.get("BIGQUERY_CREDENTIALS") or config.get(
+            "BIGQUERY_CREDENTIALS_PATH"
+        )
+        from pathlib import Path  # noqa: PLC0415
+
+        creds = {
+            "credentials": Path(bigquery_creds_path).resolve()
+            if bigquery_creds_path
+            else None,
+            "project_id": config.get("BIGQUERY_PROJECT_ID"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "sqlite":
+        creds = {
+            "database": config.get("SQLITE_DATABASE", fallback=":memory:"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "oracle":
+        creds = {
+            "host": config.get("ORACLE_HOST", fallback="localhost"),
+            "port": config.get("ORACLE_PORT", fallback="1521"),
+            "service_name": config.get("ORACLE_SERVICE_NAME", fallback="xe"),
+            "user": config.get("ORACLE_USER"),
+            "password": config.get("ORACLE_PASSWORD"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "mssql":
+        creds = {
+            "host": config.get("MSSQL_HOST", fallback="localhost"),
+            "port": config.get("MSSQL_PORT", fallback="1433"),
+            "database": config.get("MSSQL_DATABASE", fallback="master"),
+            "user": config.get("MSSQL_USER"),
+            "password": config.get("MSSQL_PASSWORD"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "clickhouse":
+        creds = {
+            "host": config.get("CLICKHOUSE_HOST", fallback="localhost"),
+            "port": config.get("CLICKHOUSE_PORT", fallback="9000"),
+            "database": config.get("CLICKHOUSE_DATABASE", fallback="default"),
+            "user": config.get("CLICKHOUSE_USER", fallback="default"),
+            "password": config.get("CLICKHOUSE_PASSWORD"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "duckdb":
+        # DuckDB defaults to in-memory; no env vars needed
+        return {}
+
+    if canonical == "influx":
+        influx_token = None
+        try:
+            from querysource.conf import INFLUX_TOKEN  # type: ignore[import]
+            influx_token = INFLUX_TOKEN
+        except (ImportError, AttributeError):
+            influx_token = config.get("INFLUX_TOKEN")
+        creds = {
+            "host": config.get("INFLUX_HOST", fallback="localhost"),
+            "port": config.get("INFLUX_PORT", fallback="8086"),
+            "database": config.get("INFLUX_DATABASE", fallback="default"),
+            "username": config.get("INFLUX_USERNAME"),
+            "password": config.get("INFLUX_PASSWORD"),
+            "token": influx_token,
+            "org": config.get("INFLUX_ORG", fallback="my-org"),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "mongo":
+        creds = {
+            "driver": "mongo",
+            "host": config.get("MONGODB_HOST", fallback="localhost"),
+            "port": config.get("MONGODB_PORT", fallback="27017"),
+            "database": config.get("MONGODB_DATABASE", fallback="test"),
+            "username": config.get("MONGODB_USER"),
+            "password": config.get("MONGODB_PASSWORD"),
+            "dbtype": "mongodb",
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "atlas":
+        creds = {
+            "driver": "mongo",
+            "host": config.get("ATLAS_HOST"),
+            "port": config.get("ATLAS_PORT", fallback="27017"),
+            "database": config.get("ATLAS_DATABASE", fallback="test"),
+            "username": config.get("ATLAS_USER"),
+            "password": config.get("ATLAS_PASSWORD"),
+            "dbtype": "atlas",
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "documentdb":
+        creds = {
+            "driver": "mongo",
+            "host": config.get("DOCUMENTDB_HOSTNAME", fallback="localhost"),
+            "port": config.get("DOCUMENTDB_PORT", fallback="27017"),
+            "database": config.get("DOCUMENTDB_DATABASE", fallback="test"),
+            "username": config.get("DOCUMENTDB_USERNAME"),
+            "password": config.get("DOCUMENTDB_PASSWORD"),
+            "tlsCAFile": str(BASE_DIR.joinpath("env", "global-bundle.pem")),
+            "ssl": config.get("DOCUMENTDB_USE_SSL", fallback=True),
+            "collection_name": config.get(
+                "DOCUMENTDB_COLLECTION", fallback="mycollection"
+            ),
+            "dbtype": "documentdb",
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    if canonical == "elastic":
+        creds = {
+            "host": config.get("ELASTICSEARCH_HOST", fallback="localhost"),
+            "port": config.get("ELASTICSEARCH_PORT", fallback="9200"),
+            "db": config.get("ELASTICSEARCH_INDEX", fallback="logstash-*"),
+            "user": config.get("ELASTICSEARCH_USER"),
+            "password": config.get("ELASTICSEARCH_PASSWORD"),
+            "protocol": config.get("ELASTICSEARCH_PROTOCOL", fallback="http"),
+            "client_type": config.get(
+                "ELASTICSEARCH_CLIENT_TYPE", fallback="auto"
+            ),
+        }
+        return {k: v for k, v in creds.items() if v is not None}
+
+    # Unknown driver
+    return {}

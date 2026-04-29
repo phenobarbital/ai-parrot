@@ -46,14 +46,18 @@ class MSSQLSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.MSSQL")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default MSSQL credentials.
+        """Return default MSSQL credentials from environment variables.
+
+        Reads ``MSSQL_HOST``, ``MSSQL_PORT``, ``MSSQL_DATABASE``,
+        ``MSSQL_USER``, ``MSSQL_PASSWORD`` from navconfig via the
+        expanded interface function.
 
         Returns:
-            Empty dict (no default MSSQL credentials configured).
+            Dict with MSSQL connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("mssql")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("mssql")
 
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate a T-SQL query, including EXEC/EXECUTE statements.
