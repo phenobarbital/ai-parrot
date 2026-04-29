@@ -4,15 +4,13 @@ Database Query Tool migrated to use AbstractTool framework.
 from __future__ import annotations
 import re
 import json
-import os
 import asyncio
-from typing import Dict, Optional, Any, Tuple, Union, Literal, List, TYPE_CHECKING
+from typing import Dict, Optional, Any, Tuple, Union, Literal, List
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
-from parrot._imports import lazy_import
 from parrot.security import QueryLanguage, QueryValidator
 from parrot.tools.databasequery.sources import normalize_driver
 # querysource is optional — imported lazily when needed (extra="db")
@@ -515,7 +513,7 @@ class DatabaseQueryTool(AbstractTool):
                     error_str = str(errors)
                     if "Empty Data" in error_str and driver in ('elastic', 'elasticsearch', 'opensearch'):
                         self.logger.info(
-                            f"OpenSearch/Elasticsearch query returned 0 hits (empty result)"
+                            "OpenSearch/Elasticsearch query returned 0 hits (empty result)"
                         )
                         # Return an empty DataFrame or empty JSON instead of raising an error
                         if output_format == 'pandas':
