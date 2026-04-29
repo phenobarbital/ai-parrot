@@ -1,11 +1,11 @@
-# TASK-917: Partition `LLMClient._get_supported_models` into active/deprecated
+# TASK-941: Partition `LLMClient._get_supported_models` into active/deprecated
 
-**Feature**: FEAT-134 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-913
+**Depends-on**: TASK-937
 **Assigned-to**: unassigned
 
 ---
@@ -13,7 +13,7 @@
 ## Context
 
 `parrot/handlers/llm.py` exposes `GET /api/v1/ai/clients/models` which
-returns a flat list of model IDs per provider. Once TASK-913 lands the
+returns a flat list of model IDs per provider. Once TASK-937 lands the
 OpenAI enum no longer contains deprecated IDs, but downstream UIs may
 still need to recognise legacy IDs that customers have saved in their
 configurations. The spec (Module 6) calls for a partitioned response:
@@ -44,7 +44,7 @@ Implements Module 6 of §3.
   feature.
 - Changing the URL or auth decorators on the endpoint.
 - Adding pagination, filtering, or any other feature.
-- Writing tests (TASK-918).
+- Writing tests (TASK-942).
 
 ---
 
@@ -220,7 +220,7 @@ after editing; do not refactor it.
 
 ## Test Specification
 
-Tests live in TASK-918. Smoke check:
+Tests live in TASK-942. Smoke check:
 
 ```bash
 source .venv/bin/activate
@@ -245,7 +245,7 @@ helper.)
 
 ## Agent Instructions
 
-1. Verify TASK-913 in `sdd/tasks/completed/`.
+1. Verify TASK-937 in `sdd/tasks/completed/`.
 2. Update `.index.json` → `"in-progress"`.
 3. Implement; run smoke check.
 4. Move file to `sdd/tasks/completed/`, update index → `"done"`.

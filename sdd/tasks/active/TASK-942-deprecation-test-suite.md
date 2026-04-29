@@ -1,11 +1,11 @@
-# TASK-918: Test suite for OpenAIModel catalog refresh + deprecation registry
+# TASK-942: Test suite for OpenAIModel catalog refresh + deprecation registry
 
-**Feature**: FEAT-134 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-913, TASK-914, TASK-915, TASK-916, TASK-917
+**Depends-on**: TASK-937, TASK-938, TASK-939, TASK-940, TASK-941
 **Assigned-to**: unassigned
 
 ---
@@ -61,7 +61,7 @@ Implements §3 Module 7.
 ### Verified Imports
 
 ```python
-# After TASK-913 these all exist:
+# After TASK-937 these all exist:
 from parrot.models.openai import (
     OpenAIModel,
     DeprecationInfo,
@@ -71,7 +71,7 @@ from parrot.models.openai import (
     resolve_alias,
 )
 
-# After TASK-914 / TASK-915:
+# After TASK-938 / TASK-939:
 from parrot.clients.gpt import (
     OpenAIClient,
     RESPONSES_ONLY_MODELS,
@@ -79,7 +79,7 @@ from parrot.clients.gpt import (
     DEFAULT_STRUCTURED_OUTPUT_MODEL,
 )
 
-# After TASK-917:
+# After TASK-941:
 from parrot.handlers.llm import LLMClient
 ```
 
@@ -321,7 +321,7 @@ The tests ARE the specification. Run them.
 
 ## Agent Instructions
 
-1. Verify TASK-913 through TASK-917 are all in `sdd/tasks/completed/`.
+1. Verify TASK-937 through TASK-941 are all in `sdd/tasks/completed/`.
 2. Read each completion note for any deviations that affect tests.
 3. Update `.index.json` → `"in-progress"`.
 4. Implement; run all tests.

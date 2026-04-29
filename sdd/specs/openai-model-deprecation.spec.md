@@ -1,6 +1,6 @@
 # Feature Specification: OpenAI Model Deprecation Refresh
 
-**Feature ID**: FEAT-134
+**Feature ID**: FEAT-137
 **Date**: 2026-04-29
 **Author**: Jesus Lara
 **Status**: approved
@@ -637,8 +637,8 @@ No new dependencies are introduced.
 Worktree command:
 
 ```bash
-git worktree add -b feat-134-openai-model-deprecation \
-  .claude/worktrees/feat-134-openai-model-deprecation HEAD
+git worktree add -b feat-137-openai-model-deprecation \
+  .claude/worktrees/feat-137-openai-model-deprecation HEAD
 ```
 
 ---

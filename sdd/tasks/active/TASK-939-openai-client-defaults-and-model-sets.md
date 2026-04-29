@@ -1,18 +1,18 @@
-# TASK-915: Bump OpenAIClient defaults to gpt-5-mini + refresh model sets
+# TASK-939: Bump OpenAIClient defaults to gpt-5-mini + refresh model sets
 
-**Feature**: FEAT-134 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-913, TASK-914
+**Depends-on**: TASK-937, TASK-938
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-After TASK-913 (catalog + helpers) and TASK-914 (warning chokepoint),
+After TASK-937 (catalog + helpers) and TASK-938 (warning chokepoint),
 `OpenAIClient` still defaults to `OpenAIModel.GPT4_TURBO` (shutoff
 2026-10-23) and references several deprecated members in its
 `STRUCTURED_OUTPUT_COMPATIBLE_MODELS` and `RESPONSES_ONLY_MODELS` sets.
@@ -51,9 +51,9 @@ Implements Modules 3 and 4 of §3.
   answered. **DO NOT delete the branch in this task.**
 
 **NOT in scope**:
-- Adding the `_normalize_model` helper or `_warned` cache (TASK-914).
-- Touching `handlers/`, `loaders/` (TASK-916 / TASK-917).
-- Writing tests (TASK-918).
+- Adding the `_normalize_model` helper or `_warned` cache (TASK-938).
+- Touching `handlers/`, `loaders/` (TASK-940 / TASK-941).
+- Writing tests (TASK-942).
 - Resolving the search/deep-research code path (spec §8 Q1).
 
 ---
@@ -72,7 +72,7 @@ Implements Modules 3 and 4 of §3.
 
 ```python
 # Already present at packages/ai-parrot/src/parrot/clients/gpt.py:38
-# After TASK-914 it reads:
+# After TASK-938 it reads:
 from ..models.openai import (
     OpenAIModel,
     is_deprecated,
@@ -94,21 +94,21 @@ RESPONSES_ONLY_MODELS = {
 
 # STRUCTURED_OUTPUT_COMPATIBLE_MODELS              line 69
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
-    OpenAIModel.GPT_4O_MINI.value,   # NOTE: enum was renamed to GPT4O_MINI in TASK-913
-    OpenAIModel.GPT_O4.value,        # REMOVED in TASK-913
-    OpenAIModel.GPT_4O.value,        # REMOVED in TASK-913
+    OpenAIModel.GPT_4O_MINI.value,   # NOTE: enum was renamed to GPT4O_MINI in TASK-937
+    OpenAIModel.GPT_O4.value,        # REMOVED in TASK-937
+    OpenAIModel.GPT_4O.value,        # REMOVED in TASK-937
     OpenAIModel.GPT4_1.value,
-    OpenAIModel.GPT_4_1_MINI.value,  # NOTE: was renamed to GPT4_1_MINI in TASK-913
-    OpenAIModel.GPT_4_1_NANO.value,  # NOTE: was renamed to GPT4_1_NANO in TASK-913
+    OpenAIModel.GPT_4_1_MINI.value,  # NOTE: was renamed to GPT4_1_MINI in TASK-937
+    OpenAIModel.GPT_4_1_NANO.value,  # NOTE: was renamed to GPT4_1_NANO in TASK-937
     OpenAIModel.GPT5_4.value,
     OpenAIModel.GPT5_4_MINI.value,
     OpenAIModel.GPT5_4_NANO.value,
     OpenAIModel.GPT5_MINI.value,
     OpenAIModel.GPT5.value,
-    OpenAIModel.GPT5_2.value,        # REMOVED in TASK-913
-    OpenAIModel.GPT5_1.value,        # REMOVED in TASK-913
-    OpenAIModel.GPT5_CHAT.value,     # REMOVED in TASK-913
-    OpenAIModel.GPT5_PRO.value,      # REMOVED in TASK-913
+    OpenAIModel.GPT5_2.value,        # REMOVED in TASK-937
+    OpenAIModel.GPT5_1.value,        # REMOVED in TASK-937
+    OpenAIModel.GPT5_CHAT.value,     # REMOVED in TASK-937
+    OpenAIModel.GPT5_PRO.value,      # REMOVED in TASK-937
 }
 
 DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT_4O_MINI.value   # line 87
@@ -173,8 +173,8 @@ def _resolve_deep_research_model(model_str: str) -> str:
     """Resolve the deep research model based on the requested model."""
     normalized = (model_str or "").strip()
     if normalized in {
-        OpenAIModel.O4_MINI.value,            # REMOVED in TASK-913 → use literal
-        OpenAIModel.O4_MINI_DEEP_RESEARCH.value,  # REMOVED in TASK-913 → use literal
+        OpenAIModel.O4_MINI.value,            # REMOVED in TASK-937 → use literal
+        OpenAIModel.O4_MINI_DEEP_RESEARCH.value,  # REMOVED in TASK-937 → use literal
     }:
         return OpenAIModel.O4_MINI_DEEP_RESEARCH.value   # REMOVED → literal
     return OpenAIModel.O3_DEEP_RESEARCH.value             # REMOVED → literal
@@ -208,11 +208,11 @@ DeprecationWarning at branch entry.
 
 ### Does NOT Exist
 
-- ~~`OpenAIModel.GPT4_TURBO`~~ — removed by TASK-913. Do NOT reintroduce.
-- ~~`OpenAIModel.GPT_4O_MINI`~~ — renamed to `GPT4O_MINI` in TASK-913.
+- ~~`OpenAIModel.GPT4_TURBO`~~ — removed by TASK-937. Do NOT reintroduce.
+- ~~`OpenAIModel.GPT_4O_MINI`~~ — renamed to `GPT4O_MINI` in TASK-937.
 - ~~`OpenAIModel.GPT_4_1_MINI`~~ — renamed to `GPT4_1_MINI`.
 - ~~`OpenAIModel.GPT_4_1_NANO`~~ — renamed to `GPT4_1_NANO`.
-- ~~`OpenAIModel.GPT_O4`~~, ~~`OpenAIModel.GPT_4O`~~, ~~`OpenAIModel.GPT5_2`~~, ~~`OpenAIModel.GPT5_1`~~, ~~`OpenAIModel.GPT5_CHAT`~~, ~~`OpenAIModel.GPT5_PRO`~~, ~~`OpenAIModel.O4_MINI`~~, ~~`OpenAIModel.O4_MINI_DEEP_RESEARCH`~~, ~~`OpenAIModel.O3_DEEP_RESEARCH`~~, ~~`OpenAIModel.GPT_4O_MINI_SEARCH`~~, ~~`OpenAIModel.GPT_4O_SEARCH`~~ — all removed by TASK-913. Use raw strings via the `DEPRECATIONS` dict if needed.
+- ~~`OpenAIModel.GPT_O4`~~, ~~`OpenAIModel.GPT_4O`~~, ~~`OpenAIModel.GPT5_2`~~, ~~`OpenAIModel.GPT5_1`~~, ~~`OpenAIModel.GPT5_CHAT`~~, ~~`OpenAIModel.GPT5_PRO`~~, ~~`OpenAIModel.O4_MINI`~~, ~~`OpenAIModel.O4_MINI_DEEP_RESEARCH`~~, ~~`OpenAIModel.O3_DEEP_RESEARCH`~~, ~~`OpenAIModel.GPT_4O_MINI_SEARCH`~~, ~~`OpenAIModel.GPT_4O_SEARCH`~~ — all removed by TASK-937. Use raw strings via the `DEPRECATIONS` dict if needed.
 
 ---
 
@@ -243,19 +243,19 @@ class OpenAIClient(AbstractClient):
 ### Key Constraints
 
 - Run the `grep` from the call-site map FIRST, then edit. Line numbers
-  in this task file are guideposts — TASK-914 inserts code that may have
+  in this task file are guideposts — TASK-938 inserts code that may have
   shifted them.
 - Do NOT rename methods. Only edit defaults, set bodies, and the two
   internal branches that reference removed enum members.
 - After editing, repo-grep for `GPT4_TURBO` and confirm zero hits in
   `parrot/clients/gpt.py`.
 - After editing, repo-grep for `GPT_4O_MINI` (with the underscore-O) and
-  confirm zero hits — TASK-913 dropped that name.
+  confirm zero hits — TASK-937 dropped that name.
 
 ### References in Codebase
 
 - `packages/ai-parrot/src/parrot/clients/gpt.py` — all edits land here.
-- TASK-913 completion note will list the final enum member names; consult
+- TASK-937 completion note will list the final enum member names; consult
   it if there is doubt about renames.
 
 ---
@@ -283,7 +283,7 @@ class OpenAIClient(AbstractClient):
 
 ## Test Specification
 
-Tests live in TASK-918. Smoke check:
+Tests live in TASK-942. Smoke check:
 
 ```bash
 source .venv/bin/activate
@@ -305,7 +305,7 @@ print('OK')
 
 ## Agent Instructions
 
-1. Verify TASK-913 and TASK-914 are in `sdd/tasks/completed/`.
+1. Verify TASK-937 and TASK-938 are in `sdd/tasks/completed/`.
 2. Re-grep call sites; line numbers will have shifted.
 3. Update `.index.json` → `"in-progress"`.
 4. Implement; run smoke check.
