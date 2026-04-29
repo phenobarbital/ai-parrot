@@ -63,6 +63,10 @@ class AtlasSource(MongoSource):
                 password = creds.get("password", "")
                 database = creds.get("database", "test")
                 if username and password:
+                    # SECURITY NOTE: The password is embedded in the DSN string
+                    # as required by the asyncdb ``mongo`` driver.  Never log
+                    # ``creds`` or ``creds["dsn"]`` at INFO/DEBUG level — doing
+                    # so would expose the plaintext password in log output.
                     creds["dsn"] = (
                         f"mongodb+srv://{username}:{password}@{host}/{database}"
                     )

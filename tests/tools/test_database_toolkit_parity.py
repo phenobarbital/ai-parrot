@@ -287,6 +287,17 @@ class TestSaveResult:
         assert "file_path" in output
         assert Path(output["file_path"]).exists()
 
+    @pytest.mark.asyncio
+    async def test_excel_export(self, toolkit: DatabaseQueryToolkit) -> None:
+        openpyxl = pytest.importorskip("openpyxl", reason="openpyxl not installed")  # noqa: F841
+        result = {"rows": [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]}
+        output = await toolkit.save_result(result, filename="test_excel", file_format="excel")
+        assert "file_path" in output
+        assert output["file_path"].endswith(".xlsx")
+        assert output["row_count"] == 2
+        assert output["file_format"] == "excel"
+        assert Path(output["file_path"]).exists()
+
 
 # ---------------------------------------------------------------------------
 # execute_database_query with max_rows
@@ -304,7 +315,7 @@ class TestExecuteWithMaxRows:
         mock_source.query = AsyncMock(return_value=qr)
 
         with patch.object(toolkit, "get_source", return_value=mock_source):
-            result = await toolkit.execute_database_query("pg", "SELECT * FROM users")
+            await toolkit.execute_database_query("pg", "SELECT * FROM users")
 
         # The query passed to source.query should contain LIMIT
         called_query = mock_source.query.call_args[0][1]

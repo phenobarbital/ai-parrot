@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import contextlib
 import os
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -358,7 +359,7 @@ class DatabaseQueryToolkit(AbstractToolkit):
         credentials: Optional[dict[str, Any]] = None,
         params: Optional[dict[str, Any]] = None,
         max_rows: int = 10000,
-    ) -> QueryResult:
+    ) -> Union[QueryResult, ValidationResult]:
         """Execute a validated query and return all matching rows or documents.
 
         Re-applies the ``QueryValidator`` DDL/DML guard before contacting the
@@ -378,9 +379,10 @@ class DatabaseQueryToolkit(AbstractToolkit):
                 Pass ``0`` to disable the limit.
 
         Returns:
-            ``QueryResult`` with a ``rows`` list and optional ``error``.
-            When the DDL guard blocks the query the return value is a
-            ``ValidationResult`` with ``valid=False``.
+            ``QueryResult`` with a ``rows`` list and execution metadata on
+            success. When the DDL/DML guard blocks the query, returns a
+            ``ValidationResult`` with ``valid=False`` instead — callers that
+            rely on type narrowing should account for both types.
             Serialized to dict via ``_post_execute``.
         """
         language = _resolve_query_language(driver)
@@ -399,7 +401,7 @@ class DatabaseQueryToolkit(AbstractToolkit):
         credentials: Optional[dict[str, Any]] = None,
         params: Optional[dict[str, Any]] = None,
         max_rows: int = 1,
-    ) -> RowResult:
+    ) -> Union[RowResult, ValidationResult]:
         """Execute a query and return at most one matching row or document.
 
         Use this instead of ``execute_database_query`` when you expect a single
@@ -414,9 +416,10 @@ class DatabaseQueryToolkit(AbstractToolkit):
                 to ``add_row_limit()`` before delegating to the source.
 
         Returns:
-            ``RowResult`` with a single ``row`` dict (or ``None``) and optional
-            ``error``.  When the DDL guard blocks the query the return value is a
-            ``ValidationResult`` with ``valid=False``.
+            ``RowResult`` with a single ``row`` dict (or ``None``) on success.
+            When the DDL/DML guard blocks the query, returns a
+            ``ValidationResult`` with ``valid=False`` instead — callers that
+            rely on type narrowing should account for both types.
             Serialized to dict via ``_post_execute``.
         """
         language = _resolve_query_language(driver)
@@ -467,8 +470,7 @@ class DatabaseQueryToolkit(AbstractToolkit):
 
         # Generate filename if not provided
         if not filename:
-            import time as _time
-            filename = f"result_{int(_time.time())}"
+            filename = f"result_{datetime.now():%Y%m%d_%H%M%S}"
 
         fmt = file_format.lower().strip()
         ext_map = {"csv": ".csv", "json": ".json", "excel": ".xlsx"}

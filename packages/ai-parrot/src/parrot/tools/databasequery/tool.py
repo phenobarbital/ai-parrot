@@ -12,6 +12,7 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
 from parrot.security import QueryLanguage, QueryValidator
+from parrot.tools.databasequery.base import add_row_limit as _add_row_limit_free
 from parrot.tools.databasequery.sources import normalize_driver
 # querysource is optional — imported lazily when needed (extra="db")
 from parrot.tools.abstract import AbstractTool
@@ -281,57 +282,14 @@ class DatabaseQueryTool(AbstractTool):
             )
 
     def _add_row_limit(self, query: str, max_rows: int, driver: str) -> str:
-        """Add row limit to query based on query language."""
-        if not max_rows or max_rows <= 0:
-            return query
+        """Add row limit to query based on query language.
 
-        query_language = _get_query_language(driver)
-
-        if query_language == QueryLanguage.SQL:
-            if not isinstance(query, str):
-                return query
-
-            # Check if LIMIT is already present
-            if re.search(r'\bLIMIT\b', query, re.IGNORECASE):
-                return query
-
-            # Regex to identify the "tail" consisting of semicolons, whitespace, and comments
-            # We strip this tail from the end of the string.
-            tail_pattern = r'(?:\s+|;|--[^\n]*|/\*[\s\S]*?\*/)*$'
-            clean_query = re.sub(tail_pattern, '', query)
-
-            if not clean_query:
-                return query
-
-            return f"{clean_query} LIMIT {max_rows}"
-
-        elif query_language == QueryLanguage.FLUX:
-            if not isinstance(query, str):
-                return query
-            # For Flux, add limit() to the pipeline if not present
-            if '|> limit(' not in query.lower():
-                return f"{query.rstrip()} |> limit(n: {max_rows})"
-            return query
-
-        elif query_language == QueryLanguage.JSON:
-            # For Elasticsearch/OpenSearch JSON DSL
-            try:
-                query_dict = json.loads(query) if isinstance(query, str) else query
-                # Add size parameter if not present
-                if 'size' not in query_dict or query_dict['size'] > max_rows:
-                    query_dict['size'] = max_rows
-
-                return json.dumps(query_dict)
-            except Exception:
-                # If parsing fails, return original query
-                return query
-        else:
-            # For unknown query languages, return as-is
-            return query
-
-    def get_driver_info_list(self) -> List[Dict[str, Any]]:
-        """Get detailed information about all supported drivers."""
-        return [{"driver": d, "query_language": ql.value} for d, ql in _DRIVER_TO_QUERY_LANGUAGE.items()]
+        Delegates to the shared ``add_row_limit`` free function in
+        ``parrot.tools.databasequery.base`` so dialect logic is maintained
+        in a single place.  See that function for full dialect documentation,
+        including the MSSQL/Oracle no-bare-LIMIT behaviour.
+        """
+        return _add_row_limit_free(query, max_rows, driver)
 
     async def _execute_database_query(
         self,

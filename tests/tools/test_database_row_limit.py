@@ -5,7 +5,7 @@ Part of FEAT-136 — database-toolkit-parity, TASK-931.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -67,13 +67,28 @@ class TestAddRowLimit:
         result = add_row_limit("SELECT * FROM t", 20, "sqlite")
         assert "LIMIT 20" in result
 
-    def test_oracle_driver(self) -> None:
-        result = add_row_limit("SELECT * FROM t", 15, "oracle")
-        assert "LIMIT 15" in result
+    def test_oracle_driver_unchanged(self) -> None:
+        # Oracle does not support bare LIMIT — query must be returned unchanged.
+        # Use FETCH FIRST N ROWS ONLY (Oracle 12c+) or WHERE ROWNUM <= N directly.
+        query = "SELECT * FROM t"
+        result = add_row_limit(query, 15, "oracle")
+        assert result == query
+        assert "LIMIT" not in result
 
-    def test_mssql_driver(self) -> None:
-        result = add_row_limit("SELECT * FROM t", 7, "mssql")
-        assert "LIMIT 7" in result
+    def test_mssql_driver_unchanged(self) -> None:
+        # T-SQL (MSSQL) does not support bare LIMIT — query must be returned unchanged.
+        # Use SELECT TOP N or FETCH FIRST N ROWS ONLY directly in the query.
+        query = "SELECT * FROM t"
+        result = add_row_limit(query, 7, "mssql")
+        assert result == query
+        assert "LIMIT" not in result
+
+    def test_sqlserver_alias_unchanged(self) -> None:
+        # 'sqlserver' is an alias for mssql — same no-limit behaviour.
+        query = "SELECT * FROM t"
+        result = add_row_limit(query, 10, "sqlserver")
+        assert result == query
+        assert "LIMIT" not in result
 
     def test_clickhouse_driver(self) -> None:
         result = add_row_limit("SELECT * FROM t", 50, "clickhouse")

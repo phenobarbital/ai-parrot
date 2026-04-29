@@ -55,7 +55,11 @@ class TestMongoTestConnection:
         mock_db = MagicMock()
         mock_db.connection = _make_async_context_manager(conn_mock)
 
-        with patch.object(source, "_get_db", return_value=mock_db):
+        # Patch _get_connection — the method test_connection() calls directly.
+        # (Do NOT patch _get_db here; test_connection calls _get_connection,
+        # which internally calls _get_db. Patching the wrong layer makes the
+        # test fragile and will silently miss future indirection.)
+        with patch.object(source, "_get_connection", return_value=mock_db):
             result = await source.test_connection({"host": "localhost"})
 
         assert result is True
@@ -66,7 +70,7 @@ class TestMongoTestConnection:
         from parrot.tools.databasequery.sources.mongodb import MongoSource
 
         source = MongoSource()
-        with patch.object(source, "_get_db", side_effect=Exception("connection refused")):
+        with patch.object(source, "_get_connection", side_effect=Exception("connection refused")):
             result = await source.test_connection({"host": "badhost"})
 
         assert result is False
@@ -85,7 +89,7 @@ class TestMongoTestConnection:
         mock_db = MagicMock()
         mock_db.connection = _make_async_context_manager(conn_mock)
 
-        with patch.object(source, "_get_db", return_value=mock_db):
+        with patch.object(source, "_get_connection", return_value=mock_db):
             result = await source.test_connection({"host": "localhost"})
 
         assert result is False
@@ -95,7 +99,7 @@ class TestMongoTestConnection:
         from parrot.tools.databasequery.sources.mongodb import MongoSource
 
         source = MongoSource()
-        with patch.object(source, "_get_db", side_effect=RuntimeError("crash")):
+        with patch.object(source, "_get_connection", side_effect=RuntimeError("crash")):
             # Must not raise
             result = await source.test_connection({})
 
@@ -106,7 +110,7 @@ class TestMongoTestConnection:
         from parrot.tools.databasequery.sources.mongodb import MongoSource
 
         source = MongoSource()
-        with patch.object(source, "_get_db", side_effect=Exception("fail")):
+        with patch.object(source, "_get_connection", side_effect=Exception("fail")):
             result = await source.test_connection({})
 
         assert isinstance(result, bool)
@@ -124,7 +128,6 @@ class TestDocumentDBTestConnection:
     async def test_inherits_mongo_test_connection(self) -> None:
         """DocumentDBSource should have test_connection from MongoSource."""
         from parrot.tools.databasequery.sources.documentdb import DocumentDBSource
-        from parrot.tools.databasequery.sources.mongodb import MongoSource
 
         src = DocumentDBSource()
         # Verify test_connection is inherited (not directly defined on DocumentDBSource)
@@ -139,7 +142,7 @@ class TestDocumentDBTestConnection:
         from parrot.tools.databasequery.sources.documentdb import DocumentDBSource
 
         src = DocumentDBSource()
-        with patch.object(src, "_get_db", side_effect=Exception("ssl error")):
+        with patch.object(src, "_get_connection", side_effect=Exception("ssl error")):
             result = await src.test_connection({"host": "docdb.host", "ssl": True})
 
         assert result is False
@@ -158,7 +161,7 @@ class TestDocumentDBTestConnection:
         mock_db = MagicMock()
         mock_db.connection = _make_async_context_manager(conn_mock)
 
-        with patch.object(src, "_get_db", return_value=mock_db):
+        with patch.object(src, "_get_connection", return_value=mock_db):
             result = await src.test_connection({"host": "docdb.host"})
 
         assert result is True
@@ -188,7 +191,7 @@ class TestAtlasTestConnection:
         from parrot.tools.databasequery.sources.atlas import AtlasSource
 
         src = AtlasSource()
-        with patch.object(src, "_get_db", side_effect=Exception("network error")):
+        with patch.object(src, "_get_connection", side_effect=Exception("network error")):
             result = await src.test_connection({"dsn": "mongodb+srv://bad.host/db"})
 
         assert result is False
@@ -207,7 +210,7 @@ class TestAtlasTestConnection:
         mock_db = MagicMock()
         mock_db.connection = _make_async_context_manager(conn_mock)
 
-        with patch.object(src, "_get_db", return_value=mock_db):
+        with patch.object(src, "_get_connection", return_value=mock_db):
             result = await src.test_connection({"dsn": "mongodb+srv://cluster.mongodb.net/db"})
 
         assert result is True

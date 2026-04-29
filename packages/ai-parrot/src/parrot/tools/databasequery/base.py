@@ -183,12 +183,28 @@ class RowResult(BaseModel):
 # Row-limit injection helper (FEAT-136 G6)
 # ---------------------------------------------------------------------------
 
-#: Maps canonical driver names to query language strings for add_row_limit.
+#: Drivers that use bare ``LIMIT N`` (standard SQL dialects).
+#:
+#: NOTE: ``oracle`` and ``mssql``/``sqlserver`` are intentionally EXCLUDED.
+#: - T-SQL (MSSQL) requires ``SELECT TOP N ...`` or ``FETCH FIRST N ROWS ONLY``.
+#: - Oracle 11g and below requires ``WHERE ROWNUM <= N``; 12c+ uses ``FETCH FIRST``.
+#: Injecting bare ``LIMIT`` into either dialect produces a syntax error at runtime.
+#: Callers that target MSSQL or Oracle must include the row-limit clause in the
+#: query string directly (e.g. ``SELECT TOP 100 ...`` or
+#: ``FETCH FIRST 100 ROWS ONLY``).
+#:
+#: NOTE on alias duplication: ``normalize_driver()`` lives in
+#: ``parrot.tools.databasequery.sources``, which imports from this module.
+#: Importing it here would create a circular dependency, so canonical aliases
+#: are maintained inline. If a new alias is added to ``normalize_driver``,
+#: update these frozensets as well.
 _SQL_DRIVERS: frozenset[str] = frozenset({
-    "pg", "mysql", "bigquery", "sqlite", "oracle", "mssql", "clickhouse", "duckdb",
+    "pg", "mysql", "bigquery", "sqlite", "clickhouse", "duckdb",
     # Common aliases that normalize_driver resolves:
-    "postgres", "postgresql", "mariadb", "bq", "sqlserver",
+    "postgres", "postgresql", "mariadb", "bq",
 })
+#: Drivers that do NOT support bare ``LIMIT`` — return query unchanged.
+_SQL_NO_LIMIT_DRIVERS: frozenset[str] = frozenset({"oracle", "mssql", "sqlserver"})
 _FLUX_DRIVERS: frozenset[str] = frozenset({"influx", "influxdb"})
 _MQL_DRIVERS: frozenset[str] = frozenset({"mongo", "atlas", "documentdb", "mongodb"})
 _JSON_DRIVERS: frozenset[str] = frozenset({"elastic", "elasticsearch", "opensearch"})
@@ -202,8 +218,13 @@ def add_row_limit(query: str, max_rows: int, driver: str) -> str:
 
     Supported query languages:
 
-    - **SQL** (pg, mysql, sqlite, oracle, mssql, clickhouse, duckdb, bigquery):
+    - **SQL** (pg, mysql, sqlite, clickhouse, duckdb, bigquery):
       Appends ``LIMIT N`` unless a ``LIMIT`` clause is already present.
+    - **SQL (no bare LIMIT)** (oracle, mssql, sqlserver): Returns query
+      unchanged. These dialects require ``SELECT TOP N`` (T-SQL) or
+      ``FETCH FIRST N ROWS ONLY`` (Oracle 12c+) which cannot be injected
+      safely without full query parsing. Callers must embed the limit
+      in the query string itself.
     - **Flux** (influx): Appends ``|> limit(n: N)`` unless already present.
     - **JSON/Elasticsearch** (elastic): Sets ``"size": N`` in the JSON body
       unless ``"size"`` already exists with a smaller-or-equal value.
@@ -237,6 +258,10 @@ def add_row_limit(query: str, max_rows: int, driver: str) -> str:
         return query
 
     driver_lower = driver.lower().strip()
+
+    # Dialects that do not support bare LIMIT — return unchanged.
+    if driver_lower in _SQL_NO_LIMIT_DRIVERS:
+        return query
 
     if driver_lower in _SQL_DRIVERS:
         if not isinstance(query, str):
