@@ -59,6 +59,30 @@ class InfluxSource(AbstractDatabaseSource):
         from parrot.interfaces.database import get_default_credentials
         return get_default_credentials("influx")
 
+    async def test_connection(self, credentials: dict[str, Any]) -> bool:
+        """Test InfluxDB connectivity using the ``buckets()`` Flux query.
+
+        Overrides the base class ``SELECT 1`` default because InfluxDB uses
+        Flux, not SQL. Executes ``buckets()`` — a lightweight Flux system
+        query — to verify connectivity.
+
+        Args:
+            credentials: Connection credentials (token, org, url).
+
+        Returns:
+            ``True`` if the ``buckets()`` query succeeds, ``False`` on any
+            exception. Never raises.
+        """
+        try:
+            dsn = credentials.get("dsn")
+            conn_params = {k: v for k, v in credentials.items() if k != "dsn"} or None
+            db = self._get_db("influx", dsn, conn_params)
+            async with await db.connection() as conn:
+                await conn.query("buckets()")
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate a Flux query string.
 

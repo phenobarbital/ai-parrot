@@ -3,8 +3,11 @@
 Extends ``MongoSource`` for MongoDB Atlas cloud service, which uses the
 ``mongodb+srv://`` connection string format and ``dbtype="atlas"``.
 
+Inherits ``test_connection()`` from ``MongoSource`` (MongoDB ping command).
+
 Part of FEAT-062 — DatabaseToolkit.
-Part of FEAT-136 — database-toolkit-parity (G8 credential resolution).
+Part of FEAT-136 — database-toolkit-parity (G8 credential resolution,
+TASK-933 test_connection inheritance).
 """
 from __future__ import annotations
 

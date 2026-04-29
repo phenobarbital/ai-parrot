@@ -4,7 +4,11 @@ Extends ``MongoSource`` for AWS DocumentDB, which uses the MongoDB wire protocol
 with ``dbtype="documentdb"``. Adds SSL-by-default credential defaults required
 for AWS DocumentDB connections.
 
+Inherits ``test_connection()`` from ``MongoSource`` (MongoDB ping command via
+the asyncdb mongo driver).
+
 Part of FEAT-062 — DatabaseToolkit.
+Part of FEAT-136 — database-toolkit-parity (TASK-933 test_connection inheritance).
 """
 from __future__ import annotations
 
