@@ -16605,7 +16605,7 @@
       "feature_id": "FEAT-135",
       "feature": "netsuite-mcp-integration",
       "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16617,7 +16617,8 @@
       "parallelism_notes": "Tests all prior tasks \u2014 must run after all are complete",
       "assigned_to": null,
       "started_at": "2026-04-29T11:05:44.537480+00:00",
-      "file": "sdd/tasks/active/TASK-925-netsuite-mcp-tests.md"
+      "file": "sdd/tasks/completed/TASK-925-netsuite-mcp-tests.md",
+      "completed_at": "2026-04-29T11:36:47.090023+00:00"
     },
     {
       "id": "TASK-926",
