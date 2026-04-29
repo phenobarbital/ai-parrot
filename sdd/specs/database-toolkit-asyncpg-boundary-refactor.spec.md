@@ -3,14 +3,9 @@
 **Feature ID**: FEAT-118
 **Date**: 2026-04-21
 **Author**: Javier León
-**Status**: **draft — awaiting lead review (Jesús Lara)**
+**Status**: approved
 **Target version**: TBD (not scheduled)
-
-> ⚠️ **DO NOT IMPLEMENT YET.** This spec captures a framework-level
-> refactor proposal discovered while fixing FEAT-117. It is frozen as a
-> design document pending explicit sign-off from the lead developer.
-> Autonomous agents MUST NOT pick up tasks from this spec until the
-> status is changed to `approved`.
+**Approved by**: Jesús Lara (2026-04-29)
 
 ---
 
@@ -68,11 +63,10 @@ Verified defects (all as of `dev` @ commit `e36acaa0`, 2026-04-21):
 
 - Non-SQL toolkits (InfluxDB, Elasticsearch, DocumentDB, MongoDB).
   Their connection abstractions are separate.
-- BigQuery — per user directive (2026-04-21): *"solo usaremos
-  postgresql no necesitamos bigquery"*. Treat `BigQueryToolkit` as
-  **not-in-scope**. It may remain on the existing SQLAlchemy/asyncdb
-  paths OR be deleted in a follow-up; that decision is explicitly
-  deferred.
+- BigQuery — `BigQueryToolkit` is **in scope** for the SQLAlchemy
+  removal. It MUST be migrated to asyncdb-pure (asyncdb already
+  supports BigQuery natively). No SQLAlchemy path should remain for
+  any toolkit after this refactor. Decision by Jesús Lara (2026-04-29).
 - New public APIs. All signature changes are to private helpers or to
   the `DatabaseToolkit.__init__` kwarg `backend` (which currently has
   zero production callers — see D4).
@@ -163,8 +157,7 @@ and leaves a migration note in the Navigator docstring.
   (`asyncdb/drivers/pg.py:364-366`).
 
 ### Module 2 — Delete SQLAlchemy backend
-- **Path**: `base.py`, `sql.py`, `postgres.py` (and `bigquery.py` if
-  kept — TBD, see Non-Goals).
+- **Path**: `base.py`, `sql.py`, `postgres.py`, `bigquery.py`.
 - **Responsibility**:
   - Drop `backend` field + constructor kwarg.
   - Delete `_connect_sqlalchemy`, `_build_sqlalchemy_dsn`, `_engine` attr.
@@ -356,8 +349,10 @@ tests/unit/test_postgres_toolkit.py:81, 85     init-only test
 - **`pgPool.release` receiving the raw conn instead of wrapper**:
   `pgPool.release` handles both (checks `isinstance(conn, pg)` at
   `pg.py:364`), but verify with a pool-path test.
-- **BigQuery divergence**: if we decide to keep BigQuery, it may require
-  a different placeholder style. Per Non-Goals, punt.
+- **BigQuery divergence**: BigQuery uses asyncdb natively (no
+  SQLAlchemy). Its placeholder style may differ from asyncpg `$N`;
+  verify asyncdb BigQuery driver's parameter convention during
+  implementation.
 
 ### External Dependencies
 
@@ -369,25 +364,18 @@ tests/unit/test_postgres_toolkit.py:81, 85     init-only test
 
 ---
 
-## 8. Open Questions (for lead review)
+## 8. Open Questions — Resolved (2026-04-29, Jesús Lara)
 
-- [ ] **Q-A**: BigQueryToolkit — keep, delete, or defer? User said
-      postgres-only is fine; if BigQuery is truly unused, deleting it
-      would remove the last obstacle to full SQLAlchemy removal. —
-      *Owner: jleon + Jesús*
-- [ ] **Q-B**: Remove `backend=` kwarg without a deprecation cycle, or
-      keep a one-release grace with a `DeprecationWarning`? Jesús'
-      preference seemed absolute ("one for everything") — implies hard
-      remove. — *Owner: Jesús*
-- [ ] **Q-C**: Should `transaction()` return the raw asyncpg conn
-      directly, or wrap it in a lightweight `Transaction` helper that
-      intercepts `execute_sql(conn=tx)` calls and auto-routes? Current
-      code paths pass the `conn` through unchanged, so raw is simpler.
-      — *Owner: Jesús*
-- [ ] **Q-D**: Convert SDD task generation for this spec only after
-      approval (current state: frozen as draft). No tasks should exist
-      in `sdd/tasks/active/` for FEAT-118 until `status: approved`.
-      — *Owner: jleon*
+- [x] **Q-A**: BigQueryToolkit — **keep and migrate to asyncdb-pure**.
+      asyncdb already supports BigQuery natively, so no SQLAlchemy
+      dependency is needed. Migrate it alongside PostgresToolkit.
+- [x] **Q-B**: **Hard remove** of `backend=` kwarg. No deprecation
+      cycle, no `DeprecationWarning`. If external callers break, they
+      stop passing the kwarg.
+- [x] **Q-C**: `transaction()` returns **raw `asyncpg.Connection`
+      directly** via `conn.engine()`. No wrapper. asyncdb supports
+      this natively.
+- [x] **Q-D**: Tasks generated after approval (2026-04-29).
 
 ---
 
@@ -417,3 +405,4 @@ Module 1 (boundary unwrap)
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-21 | Javier León | Initial draft — captures the framework-wide proposal that was considered and deferred during FEAT-117. Frozen as `draft — awaiting lead review` pending Jesús Lara sign-off. Includes verbatim Telegram feedback. |
+| 1.0 | 2026-04-29 | Jesús Lara | Approved. Resolved all open questions: BigQueryToolkit in scope (migrate to asyncdb-pure), hard remove `backend=` kwarg, raw asyncpg via `conn.engine()` for transactions, tasks generated. |
