@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-134
 **Date**: 2026-04-29
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -69,7 +69,7 @@ parrot/bots/flows/
     fsm.py                        # AgentTaskMachine (states + transitions)
     context.py                    # FlowContext (workflow state tracking)
     transition.py                 # FlowTransition, TransitionCondition enum
-    result.py                     # FlowResult, NodeExecutionInfo, NodeResult, FlowStatus, utilities
+    result.py                     # FlowResult, NodeExecutionInfo, FlowStatus, utilities
     storage/
       __init__.py                 # re-exports
       memory.py                   # ExecutionMemory (with VectorStoreMixin)
@@ -159,26 +159,6 @@ class FlowStatus(str, Enum):
     FAILED = "failed"
 
 
-# NodeResult (replaces AgentResult)
-@dataclass
-class NodeResult:
-    node_id: str
-    node_name: str
-    task: str
-    result: Any
-    ai_message: Optional[AIMessage] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    execution_time: float = 0.0
-    timestamp: datetime = field(default_factory=...)
-    parent_execution_id: Optional[str] = None
-    execution_id: str = field(default_factory=...)
-    def to_text(self) -> str: ...
-
-    # Backward-compat aliases
-    @property
-    def agent_id(self) -> str: ...
-    @property
-    def agent_name(self) -> str: ...
 ```
 
 ### New Public Interfaces
@@ -281,7 +261,7 @@ class FlowContext:
 
 ### Module 4: Result models (`result.py`)
 - **Path**: `parrot/bots/flows/core/result.py`
-- **Responsibility**: `FlowResult` (replacing `CrewResult`), `NodeExecutionInfo` (replacing `AgentExecutionInfo`), `NodeResult` (replacing `AgentResult`), `build_node_metadata()`, `determine_run_status()`. All with backward-compatible aliases.
+- **Responsibility**: `FlowResult` (replacing `CrewResult`), `NodeExecutionInfo` (replacing `AgentExecutionInfo`), `build_node_metadata()`, `determine_run_status()`. All with backward-compatible aliases. `AgentResult` stays in `parrot/models/crew.py` (not moved to core — resolved in brainstorm D11).
 - **Depends on**: Module 1 (types)
 
 ### Module 5: FlowContext (`context.py`)
@@ -297,7 +277,7 @@ class FlowContext:
 ### Module 7: Storage (`storage/`)
 - **Path**: `parrot/bots/flows/core/storage/`
 - **Responsibility**: `ExecutionMemory` (FAISS-based semantic search over agent results), `PersistenceMixin` (DocumentDB persistence), `SynthesisMixin` (LLM-based result synthesis), `VectorStoreMixin`.
-- **Depends on**: Module 4 (result — for `NodeResult`)
+- **Depends on**: `parrot.models.crew.AgentResult` (stays in models — D11), Module 4 (result — for `NodeExecutionInfo`)
 
 ### Module 8: Package init + re-exports
 - **Path**: `parrot/bots/flows/__init__.py`, `parrot/bots/flows/core/__init__.py`
@@ -627,7 +607,7 @@ class EndNode(Node):
 - ~~`parrot.bots.flows.core`~~ — does not exist yet
 - ~~`FlowResult`~~ — does not exist yet; will be created from `CrewResult`
 - ~~`NodeExecutionInfo`~~ — does not exist yet; will be created from `AgentExecutionInfo`
-- ~~`NodeResult`~~ — does not exist yet; will be created from `AgentResult`
+- ~~`NodeResult`~~ — does not exist and will NOT be created; `AgentResult` stays in `parrot/models/crew.py` (brainstorm D11)
 - ~~`AgentLike` Protocol~~ — does not exist yet; will be created
 - ~~`FlowStatus` enum~~ — does not exist yet; will replace string literals
 - ~~`parrot.bots.orchestration.crew.AgentTask`~~ — exists as dead code (line 61) but never used/imported/exported; delete it
@@ -651,8 +631,8 @@ class EndNode(Node):
 ### Known Risks / Gotchas
 
 - **`parrot.flows` namespace collision**: `parrot/flows/` already exists (dev_loop). The new module is `parrot/bots/flows/` — different namespace, no collision. Implementation agents must not confuse the two.
-- **Storage mixin move**: `ExecutionMemory` references `AgentResult`. After this spec, it will reference `NodeResult`. The backward-compat alias (`AgentResult` = `NodeResult`) must be in place before `ExecutionMemory` is moved, or imports will break.
-- **`SynthesisMixin` references `CrewResult`**: Same concern — `FlowResult` alias must exist before moving `SynthesisMixin`.
+- **Storage mixin move**: `ExecutionMemory` references `AgentResult` from `parrot.models.crew`. Since `AgentResult` stays in models (D11), the moved `ExecutionMemory` must import it from `parrot.models.crew` — verify this import works from the new location.
+- **`SynthesisMixin` references `CrewResult`**: `FlowResult` alias in `parrot.models.crew` must exist before moving `SynthesisMixin`, or update imports to use `FlowResult` directly from core.
 - **FSM library compatibility**: `python-statemachine` v2.x API is used. Verify the installed version matches before implementing.
 - **Circular import risk**: `result.py` and `context.py` both need each other's types (`FlowContext` references `NodeExecutionInfo`; `FlowResult` is independent). Resolve by having `context.py` import from `result.py` (one-way dependency).
 
@@ -675,8 +655,8 @@ class EndNode(Node):
 - [x] D7 — `FlowContext.get_input_for_agent` — *Resolved in brainstorm*: Stays as a primitive (renamed `get_input_for_node`); both engines need to build agent input from dependencies
 - [x] D8 — Re-export strategy — *Resolved in brainstorm*: Re-export from old locations for backward compat; no deprecation warnings in Spec 1
 - [x] D9 — Observable invariants — *Resolved in brainstorm*: Enumerated explicitly; migration testing deferred to Spec 2
-- [ ] D10 — `FlowResult` field rename for `agents` — *Owner: Jesus*: Should the primary field be `nodes: List[NodeExecutionInfo]` with `agents` as a backward-compat property, or keep `agents` as primary? Recommendation: `nodes` as primary, `agents` as alias property.
-- [ ] D11 — `AgentResult` placement — *Owner: Jesus*: `AgentResult` (in `parrot/models/crew.py`) is used by `ExecutionMemory`. Should it move to core too (as `NodeResult`), or stay in models? Recommendation: move to core as `NodeResult` since `ExecutionMemory` moves to core and is its primary consumer.
+- [x] D10 — `FlowResult` field rename for `agents` — *Resolved in brainstorm*: `nodes` as primary field, `agents` as backward-compat alias property
+- [x] D11 — `AgentResult` placement — *Resolved in brainstorm*: `AgentResult` stays in `parrot/models/crew.py`; it is not moved to core
 
 ---
 
@@ -694,3 +674,4 @@ class EndNode(Node):
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-29 | Jesus | Initial draft from brainstorm |
+| 0.2 | 2026-04-29 | Jesus | Fix D10/D11 carry-forward: mark resolved, remove NodeResult from core (AgentResult stays in models) |
