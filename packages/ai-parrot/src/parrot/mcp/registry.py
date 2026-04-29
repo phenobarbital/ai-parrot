@@ -340,6 +340,37 @@ _REGISTRY: List[MCPServerDescriptor] = [
             ),
         ],
     ),
+    MCPServerDescriptor(
+        name="netsuite",
+        display_name="NetSuite (Oracle)",
+        description=(
+            "NetSuite ERP record CRUD, reports, saved searches, and SuiteQL "
+            "queries via the NetSuite AI Connector Service (MCP). "
+            "Requires OAuth2 Authorization Code + PKCE."
+        ),
+        method_name="add_netsuite_mcp_server",
+        category="erp",
+        params=[
+            MCPServerParam(
+                name="account_id",
+                type=MCPParamType.STRING,
+                required=True,
+                description="NetSuite account ID (e.g. '4984231')",
+            ),
+            MCPServerParam(
+                name="client_id",
+                type=MCPParamType.SECRET,
+                required=True,
+                description="OAuth2 client ID from NetSuite integration record",
+            ),
+            MCPServerParam(
+                name="user_id",
+                type=MCPParamType.STRING,
+                required=True,
+                description="User identifier for token storage scoping",
+            ),
+        ],
+    ),
 ]
 
 
@@ -447,17 +478,19 @@ def get_factory_map() -> Dict[str, Any]:
         create_chrome_devtools_mcp_server,
         create_fireflies_mcp_server,
         create_google_maps_mcp_server,
+        create_netsuite_mcp_server,
         create_perplexity_mcp_server,
         create_quic_mcp_server,
         create_websocket_mcp_server,
     )
 
     return {
-        "perplexity": create_perplexity_mcp_server,
-        "fireflies": create_fireflies_mcp_server,
-        "chrome-devtools": create_chrome_devtools_mcp_server,
-        "google-maps": create_google_maps_mcp_server,
         "alphavantage": create_alphavantage_mcp_server,
+        "chrome-devtools": create_chrome_devtools_mcp_server,
+        "fireflies": create_fireflies_mcp_server,
+        "google-maps": create_google_maps_mcp_server,
+        "netsuite": create_netsuite_mcp_server,
+        "perplexity": create_perplexity_mcp_server,
         "quic": create_quic_mcp_server,
         "websocket": create_websocket_mcp_server,
     }
