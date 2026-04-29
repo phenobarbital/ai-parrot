@@ -12,7 +12,8 @@ parameters via ``conn.fetch()``.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from .sql import SQLToolkit
 
@@ -79,8 +80,11 @@ class BigQueryToolkit(SQLToolkit):
         """
         dataset = schemas[0] if schemas else "default"
         safe_dataset = self._validate_identifier(dataset)
-        # Escape the search term for safe inline use (no SQL injection risk
-        # with LIKE; single-quote escaping prevents string termination).
+        # Escape the search term for safe inline use.  Single-quote
+        # doubling prevents string-termination injection.  LIKE wildcards
+        # (% and _) are intentionally left unescaped: searching for % or _
+        # is permissive matching that is consistent with the search_schema
+        # "show all available tables" semantics.
         safe_term = search_term.replace("'", "''")
         sql = f"""
             SELECT
@@ -151,3 +155,26 @@ class BigQueryToolkit(SQLToolkit):
 
     def _get_asyncdb_driver(self) -> str:
         return "bigquery"
+
+    # ------------------------------------------------------------------
+    # Connection boundary — BigQuery-specific override
+    # ------------------------------------------------------------------
+
+    @asynccontextmanager
+    async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]:
+        """Yield the asyncdb BigQuery driver wrapper, not the raw BQ client.
+
+        The base-class implementation calls ``wrapper.engine()`` to unwrap
+        to the native connection object.  For the ``pg`` driver that is a
+        raw ``asyncpg.Connection`` — correct.  For the ``bigquery`` driver,
+        ``engine()`` exposes ``google.cloud.bigquery.Client``, which has no
+        ``.fetch()`` method and cannot be used as a query executor.
+
+        BigQuery's asyncdb driver wrapper IS the query executor, so we
+        yield it directly without calling ``engine()``.
+        """
+        if self._connection is None:
+            raise RuntimeError("Not connected (call start() first)")
+        # BigQuery asyncdb driver does not support pooling; always single.
+        async with await self._connection.connection() as wrapper:
+            yield wrapper  # asyncdb bigquery driver object, not wrapper.engine()

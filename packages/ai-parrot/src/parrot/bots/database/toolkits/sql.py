@@ -523,10 +523,8 @@ class SQLToolkit(DatabaseToolkit):
             return None, "Not connected (call start() first)"
         try:
             async with self._acquire_asyncdb_connection() as conn:
-                if params:
-                    rows = await conn.fetch(sql, *params)
-                else:
-                    rows = await conn.fetch(sql)
+                # conn.fetch(sql, *()) is identical to conn.fetch(sql) in asyncpg.
+                rows = await conn.fetch(sql, *params)
                 if rows is None:
                     return [], None
                 data = [dict(row) for row in rows]

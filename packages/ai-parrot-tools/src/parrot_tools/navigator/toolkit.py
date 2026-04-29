@@ -100,8 +100,8 @@ class NavigatorToolkit(PostgresToolkit):
         # CRITICAL: must be set before super().__init__ which calls _generate_tools().
         _raw_inherited: tuple[str, ...] = (
             "insert_row", "upsert_row", "update_row", "delete_row", "select_rows",
-            "execute_query", "search_schema", "explain_query", "generate_query",
-            "validate_query", "reload_metadata",
+            "execute_query", "execute_sql", "search_schema", "explain_query",
+            "generate_query", "validate_query", "reload_metadata",
         )
         self.exclude_tools = (
             *getattr(type(self), "exclude_tools", ()),

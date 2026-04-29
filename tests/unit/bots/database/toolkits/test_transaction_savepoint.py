@@ -178,34 +178,84 @@ class TestTransactionYieldsRaw:
         assert ("UPDATE t SET x=$1 WHERE id=$2", (1, 99)) in raw.execute_calls
 
     @pytest.mark.asyncio
-    async def test_nested_transaction_no_runtime_error(self):
-        """Nested transaction() calls do not raise RuntimeError.
+    async def test_sequential_transaction_calls_not_blocked(self):
+        """Two sequential transaction() calls both succeed (no reentrant guard).
 
-        After TASK-929 the guard is removed; asyncpg handles nesting as
-        savepoints natively. Here we simulate a nested call with fake stubs.
+        After TASK-929 the _in_transaction boolean guard is removed.
+        Sequential (non-nested) calls must work without error.
         """
-        class _NestedTx:
+        class _SimpleTx:
             async def __aenter__(self): return self
             async def __aexit__(self, *a): pass
 
-        class _NestedRaw(FakeRawConn):
+        class _SimpleRaw(FakeRawConn):
             def transaction(self):
-                return _NestedTx()
+                return _SimpleTx()
 
-        class _NestedWrapper(FakeWrapper):
+        class _SimpleWrapper(FakeWrapper):
             def __init__(self):
-                self._raw = _NestedRaw()
+                self._raw = _SimpleRaw()
 
-        class _NestedSingle(FakeSingleConnection):
+        class _SimpleSingle(FakeSingleConnection):
             def __init__(self):
-                self._wrapper = _NestedWrapper()
+                self._wrapper = _SimpleWrapper()
 
         tk = make_toolkit()
-        tk._connection = _NestedSingle()
+        tk._connection = _SimpleSingle()
 
-        # Calling transaction() twice sequentially is fine (not blocked by guard)
         async with tk.transaction() as tx1:
             assert tx1 is tk._connection._wrapper._raw
 
         async with tk.transaction() as tx2:
             assert tx2 is tk._connection._wrapper._raw
+
+    @pytest.mark.asyncio
+    async def test_savepoint_via_tx_transaction(self):
+        """Savepoints use tx.transaction() on the yielded raw connection.
+
+        The correct pattern for nested transactions (savepoints) is:
+            async with toolkit.transaction() as tx:       # outer tx
+                async with tx.transaction():              # SAVEPOINT
+                    await tx.fetch(...)
+
+        This test verifies the yielded ``tx`` object supports
+        ``.transaction()`` as an async context manager (the asyncpg
+        savepoint protocol), distinct from calling ``toolkit.transaction()``
+        a second time (which would acquire a new connection).
+        """
+        class _SavepointTx:
+            def __init__(self):
+                self.entered = False
+                self.exited = False
+
+            async def __aenter__(self):
+                self.entered = True
+                return self
+
+            async def __aexit__(self, *a):
+                self.exited = True
+
+        savepoint = _SavepointTx()
+
+        class _SavepointRaw(FakeRawConn):
+            def transaction(self):
+                return savepoint  # outer tx also returns this for simplicity
+
+        class _SavepointWrapper(FakeWrapper):
+            def __init__(self):
+                self._raw = _SavepointRaw()
+
+        class _SavepointSingle(FakeSingleConnection):
+            def __init__(self):
+                self._wrapper = _SavepointWrapper()
+
+        tk = make_toolkit()
+        tk._connection = _SavepointSingle()
+
+        async with tk.transaction() as tx:
+            # tx is the raw asyncpg connection; tx.transaction() creates a SAVEPOINT
+            async with tx.transaction():
+                await tx.fetch("SELECT 1")
+
+        assert savepoint.entered, "Savepoint context manager was not entered"
+        assert savepoint.exited, "Savepoint context manager was not exited"

@@ -19,7 +19,6 @@ from conftest_db import setup_worktree_imports  # noqa: E402
 setup_worktree_imports()
 
 import pytest  # noqa: E402
-from contextlib import asynccontextmanager  # noqa: E402
 
 from parrot.bots.database.toolkits.base import DatabaseToolkit  # noqa: E402
 from parrot.bots.database.models import QueryExecutionResponse  # noqa: E402
@@ -54,13 +53,6 @@ class FakeWrapper:
     def engine(self) -> FakeRawConn:
         """Return the underlying raw connection."""
         return self._raw
-
-    @asynccontextmanager
-    async def __aenter__(self):
-        yield self
-
-    async def __aexit__(self, *args):
-        pass
 
 
 class FakeSingleConnection:

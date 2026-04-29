@@ -237,3 +237,52 @@ class TestExecuteAsyncdbParamForwarding:
 
         assert err is None
         assert fetch_calls[0] == ("SELECT ... WHERE schema = ANY($1)", (schemas,))
+
+
+# ---------------------------------------------------------------------------
+# _get_sample_data_query — identifier validation
+# ---------------------------------------------------------------------------
+
+class TestSampleDataQueryIdentifierValidation:
+    """_get_sample_data_query raises ValueError for unsafe SQL identifiers.
+
+    Both schema and table are passed through _validate_identifier which
+    enforces the regex ``^[a-zA-Z_][a-zA-Z0-9_]*$``.  Any identifier that
+    contains spaces, hyphens, SQL meta-characters, or starts with a digit
+    must raise ``ValueError`` before any SQL is produced.
+    """
+
+    def setup_method(self):
+        self.tk = SQLToolkit(dsn="postgresql://test")
+
+    def test_valid_schema_and_table_returns_sql(self):
+        """A well-formed schema.table pair produces a SELECT statement."""
+        sql = self.tk._get_sample_data_query("public", "orders")
+        assert "SELECT" in sql.upper()
+        assert "public" in sql
+        assert "orders" in sql
+
+    def test_invalid_schema_raises_value_error(self):
+        """Schema names with SQL-unsafe characters raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            self.tk._get_sample_data_query("public; DROP TABLE users--", "orders")
+
+    def test_invalid_table_raises_value_error(self):
+        """Table names with SQL-unsafe characters raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            self.tk._get_sample_data_query("public", "orders; DROP TABLE users--")
+
+    def test_schema_with_hyphen_raises(self):
+        """Hyphens are not valid SQL identifier characters."""
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            self.tk._get_sample_data_query("my-schema", "orders")
+
+    def test_table_starting_with_digit_raises(self):
+        """Identifiers starting with a digit are rejected."""
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            self.tk._get_sample_data_query("public", "1bad_table")
+
+    def test_table_with_space_raises(self):
+        """Spaces in identifiers are rejected (SQL injection vector)."""
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            self.tk._get_sample_data_query("public", "my table")

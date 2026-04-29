@@ -377,7 +377,9 @@ class DatabaseToolkit(AbstractToolkit, ABC):
                 try:
                     await self._connection.release(wrapper)  # release the WRAPPER
                 except Exception as exc:  # pylint: disable=broad-except
-                    self.logger.debug("Pool release failed: %s", exc)
+                    self.logger.warning(
+                        "Pool release failed — possible connection leak: %s", exc
+                    )
         else:
             async with await self._connection.connection() as wrapper:
                 yield wrapper.engine()  # raw asyncpg.Connection (or dialect equiv.)
