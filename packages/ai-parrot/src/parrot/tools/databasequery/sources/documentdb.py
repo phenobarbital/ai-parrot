@@ -31,19 +31,22 @@ class DocumentDBSource(MongoSource):
     async def get_default_credentials(self) -> dict[str, Any]:
         """Return default DocumentDB credentials with SSL enabled.
 
-        DocumentDB on AWS requires TLS connections. Default credentials
-        include ``ssl=True`` and the standard AWS TLS CA bundle path.
+        Delegates to ``parrot.interfaces.database.get_default_credentials("documentdb")``
+        which reads ``DOCUMENTDB_HOSTNAME``, ``DOCUMENTDB_PORT``,
+        ``DOCUMENTDB_DATABASE``, ``DOCUMENTDB_USERNAME``, ``DOCUMENTDB_PASSWORD``,
+        ``DOCUMENTDB_USE_SSL``, ``DOCUMENTDB_COLLECTION`` from navconfig.
+
+        Applies ``ssl=True`` and a default ``tlsCAFile`` path as safety
+        defaults if the interface does not return them (e.g., env vars not set).
 
         Returns:
-            Dict with SSL defaults appropriate for AWS DocumentDB.
+            Dict with DocumentDB connection parameters including SSL defaults.
         """
         from parrot.interfaces.database import get_default_credentials
-        base = get_default_credentials("documentdb") or {}
-        if isinstance(base, str):
-            base = {"dsn": base}
-        elif not isinstance(base, dict):
-            base = {}
-        # Ensure SSL defaults for AWS DocumentDB
-        base.setdefault("ssl", True)
-        base.setdefault("tlsCAFile", "/etc/ssl/certs/global-bundle.pem")
-        return base
+        creds = get_default_credentials("documentdb")
+        if not isinstance(creds, dict):
+            creds = {}
+        # Ensure SSL is always enabled for AWS DocumentDB
+        creds.setdefault("ssl", True)
+        creds.setdefault("tlsCAFile", "/etc/ssl/certs/global-bundle.pem")
+        return creds

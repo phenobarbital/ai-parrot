@@ -45,14 +45,19 @@ class InfluxSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.InfluxDB")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default InfluxDB credentials.
+        """Return default InfluxDB credentials from environment variables.
+
+        Reads ``INFLUX_HOST``, ``INFLUX_PORT``, ``INFLUX_DATABASE``,
+        ``INFLUX_USERNAME``, ``INFLUX_PASSWORD``, ``INFLUX_ORG`` from
+        navconfig, and ``INFLUX_TOKEN`` from ``querysource.conf`` (with
+        navconfig fallback) via the expanded interface function.
 
         Returns:
-            Empty dict (no default InfluxDB credentials configured).
+            Dict with InfluxDB connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("influx")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("influx")
 
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate a Flux query string.

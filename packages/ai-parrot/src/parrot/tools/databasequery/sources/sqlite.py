@@ -41,12 +41,16 @@ class SQLiteSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.SQLite")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default SQLite credentials.
+        """Return default SQLite credentials from environment variables.
+
+        Reads ``SQLITE_DATABASE`` from navconfig (default: ``:memory:``).
 
         Returns:
-            Empty dict (SQLite uses file paths, no default configured).
+            Dict with ``database`` key for the SQLite file path or
+            ``:memory:`` for in-memory operation.
         """
-        return {}
+        from parrot.interfaces.database import get_default_credentials
+        return get_default_credentials("sqlite")
 
     async def get_metadata(
         self,

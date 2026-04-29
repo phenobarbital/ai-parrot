@@ -47,14 +47,19 @@ class MongoSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.MongoDB")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default MongoDB credentials.
+        """Return default MongoDB credentials from environment variables.
+
+        Reads ``MONGODB_HOST``, ``MONGODB_PORT``, ``MONGODB_DATABASE``,
+        ``MONGODB_USER``, ``MONGODB_PASSWORD`` from navconfig via the
+        expanded interface function. Returns a dict with ``dbtype: "mongodb"``
+        already set for asyncdb driver-type disambiguation.
 
         Returns:
-            Empty dict (no default MongoDB credentials configured).
+            Dict with MongoDB connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("mongo")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("mongo")
 
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate a MongoDB query string (JSON format).

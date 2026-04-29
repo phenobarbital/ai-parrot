@@ -68,14 +68,17 @@ class BigQuerySource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.BigQuery")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default BigQuery credentials.
+        """Return default BigQuery credentials from environment variables.
+
+        Reads ``BIGQUERY_CREDENTIALS``/``BIGQUERY_CREDENTIALS_PATH`` and
+        ``BIGQUERY_PROJECT_ID`` from navconfig via the expanded interface.
 
         Returns:
-            Empty dict (BigQuery credentials from environment/service account).
+            Dict with ``credentials`` (Path) and ``project_id`` keys,
+            or empty dict if no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("bigquery")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("bigquery")
 
     async def get_metadata(
         self,

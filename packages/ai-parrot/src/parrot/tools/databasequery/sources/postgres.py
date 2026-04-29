@@ -39,14 +39,20 @@ class PostgresSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.Postgres")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default PostgreSQL credentials from querysource config.
+        """Return default PostgreSQL credentials from environment variables.
+
+        Delegates to ``parrot.interfaces.database.get_default_credentials("pg")``
+        which reads ``PG_HOST``, ``PG_PORT``, ``PG_DATABASE``, ``PG_USER``,
+        ``PG_PWD``/``PG_PASSWORD`` from navconfig, and optionally includes a
+        ``dsn`` key from ``querysource.conf.default_dsn``.
 
         Returns:
-            Dict with ``dsn`` key if a default DSN is configured, else empty dict.
+            Dict with PostgreSQL connection parameters. May include ``host``,
+            ``port``, ``database``, ``user``, ``password``, and ``dsn`` keys.
+            Empty dict if no credentials are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("pg")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("pg")
 
     # Maximum number of tables returned by an unfiltered get_metadata call.
     # Prevents the 4-table information_schema JOIN from scanning the entire

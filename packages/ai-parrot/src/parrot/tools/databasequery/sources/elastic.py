@@ -53,14 +53,20 @@ class ElasticSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.Elasticsearch")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default Elasticsearch credentials.
+        """Return default Elasticsearch credentials from environment variables.
+
+        Reads ``ELASTICSEARCH_HOST``, ``ELASTICSEARCH_PORT``,
+        ``ELASTICSEARCH_INDEX``, ``ELASTICSEARCH_USER``,
+        ``ELASTICSEARCH_PASSWORD``, ``ELASTICSEARCH_PROTOCOL``,
+        ``ELASTICSEARCH_CLIENT_TYPE`` from navconfig via the expanded
+        interface function.
 
         Returns:
-            Empty dict (no default Elasticsearch credentials configured).
+            Dict with Elasticsearch connection parameters, or empty dict
+            if no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("elastic")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("elastic")
 
     @staticmethod
     def _get_es_client(conn: Any) -> Any:

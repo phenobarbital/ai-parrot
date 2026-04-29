@@ -39,14 +39,18 @@ class OracleSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.Oracle")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default Oracle credentials.
+        """Return default Oracle credentials from environment variables.
+
+        Reads ``ORACLE_HOST``, ``ORACLE_PORT``, ``ORACLE_SERVICE_NAME``,
+        ``ORACLE_USER``, ``ORACLE_PASSWORD`` from navconfig via the
+        expanded interface function.
 
         Returns:
-            Empty dict (no default Oracle credentials configured).
+            Dict with Oracle connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("oracle")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("oracle")
 
     async def get_metadata(
         self,
