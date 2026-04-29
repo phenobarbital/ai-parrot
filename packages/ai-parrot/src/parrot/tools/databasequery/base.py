@@ -4,6 +4,7 @@ Defines all Pydantic v2 result models and the AbstractDatabaseSource ABC
 that every database source must implement.
 
 Part of FEAT-062 — DatabaseToolkit.
+Part of FEAT-136 — database-toolkit-parity (add_row_limit, test_connection).
 """
 from __future__ import annotations
 
@@ -179,6 +180,98 @@ class RowResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Row-limit injection helper (FEAT-136 G6)
+# ---------------------------------------------------------------------------
+
+#: Maps canonical driver names to query language strings for add_row_limit.
+_SQL_DRIVERS: frozenset[str] = frozenset({
+    "pg", "mysql", "bigquery", "sqlite", "oracle", "mssql", "clickhouse", "duckdb",
+    # Common aliases that normalize_driver resolves:
+    "postgres", "postgresql", "mariadb", "bq", "sqlserver",
+})
+_FLUX_DRIVERS: frozenset[str] = frozenset({"influx", "influxdb"})
+_MQL_DRIVERS: frozenset[str] = frozenset({"mongo", "atlas", "documentdb", "mongodb"})
+_JSON_DRIVERS: frozenset[str] = frozenset({"elastic", "elasticsearch", "opensearch"})
+
+
+def add_row_limit(query: str, max_rows: int, driver: str) -> str:
+    """Inject a dialect-specific row limit into a query string.
+
+    Ported from ``DatabaseQueryTool._add_row_limit()`` (tool.py:692-739) as a
+    shared free function so both the toolkit and the legacy tool can reuse it.
+
+    Supported query languages:
+
+    - **SQL** (pg, mysql, sqlite, oracle, mssql, clickhouse, duckdb, bigquery):
+      Appends ``LIMIT N`` unless a ``LIMIT`` clause is already present.
+    - **Flux** (influx): Appends ``|> limit(n: N)`` unless already present.
+    - **JSON/Elasticsearch** (elastic): Sets ``"size": N`` in the JSON body
+      unless ``"size"`` already exists with a smaller-or-equal value.
+    - **MQL/MongoDB** (mongo, atlas, documentdb): Returns the query unchanged
+      (MongoDB limits are passed as a parameter to the connection, not in the
+      query string).
+
+    Args:
+        query: The original query string.
+        max_rows: Maximum number of rows/documents to return. If ``0`` or
+            negative, the query is returned unchanged.
+        driver: Canonical driver name or alias (e.g. ``'pg'``, ``'postgres'``,
+            ``'influx'``, ``'elastic'``, ``'mongo'``).
+
+    Returns:
+        The modified query string with a row limit injected, or the original
+        query if already limited or the driver does not support string-level
+        limit injection.
+
+    Examples:
+        >>> add_row_limit("SELECT * FROM t", 100, "pg")
+        'SELECT * FROM t LIMIT 100'
+        >>> add_row_limit("SELECT * FROM t LIMIT 50", 100, "pg")
+        'SELECT * FROM t LIMIT 50'
+        >>> add_row_limit('from(bucket:"b") |> range(start:-1h)', 10, "influx")
+        'from(bucket:"b") |> range(start:-1h) |> limit(n: 10)'
+        >>> add_row_limit('{"status":"active"}', 10, "mongo")
+        '{"status":"active"}'
+    """
+    if not max_rows or max_rows <= 0:
+        return query
+
+    driver_lower = driver.lower().strip()
+
+    if driver_lower in _SQL_DRIVERS:
+        if not isinstance(query, str):
+            return query
+        # Check if LIMIT is already present (case-insensitive word boundary)
+        if re.search(r'\bLIMIT\b', query, re.IGNORECASE):
+            return query
+        # Strip trailing semicolons, whitespace, and comments before appending
+        tail_pattern = r'(?:\s+|;|--[^\n]*|/\*[\s\S]*?\*/)*$'
+        clean_query = re.sub(tail_pattern, '', query)
+        if not clean_query:
+            return query
+        return f"{clean_query} LIMIT {max_rows}"
+
+    if driver_lower in _FLUX_DRIVERS:
+        if not isinstance(query, str):
+            return query
+        if '|> limit(' not in query.lower():
+            return f"{query.rstrip()} |> limit(n: {max_rows})"
+        return query
+
+    if driver_lower in _JSON_DRIVERS:
+        try:
+            query_dict = json.loads(query) if isinstance(query, str) else query
+            if 'size' not in query_dict or query_dict['size'] > max_rows:
+                query_dict['size'] = max_rows
+            return json.dumps(query_dict)
+        except Exception:  # noqa: BLE001
+            return query
+
+    # MQL and unknown drivers: return unchanged
+    return query
+
+
+# ---------------------------------------------------------------------------
 # AbstractDatabaseSource
 # ---------------------------------------------------------------------------
 
@@ -267,6 +360,26 @@ class AbstractDatabaseSource(ABC):
                 error=f"Validation error: {exc}",
                 dialect=self.sqlglot_dialect,
             )
+
+    async def test_connection(self, credentials: dict[str, Any]) -> bool:
+        """Test database connectivity by executing a trivial query.
+
+        SQL sources run ``SELECT 1`` via ``self.query()``. Non-SQL sources
+        (MongoDB, Elasticsearch, InfluxDB) should override this method with
+        a driver-appropriate health check (e.g. ping, cluster-info, buckets()).
+
+        Args:
+            credentials: Connection credentials to test.
+
+        Returns:
+            ``True`` if the connection succeeds, ``False`` on any exception.
+            Never raises.
+        """
+        try:
+            await self.query(credentials, "SELECT 1")
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     @abstractmethod
     async def get_metadata(
