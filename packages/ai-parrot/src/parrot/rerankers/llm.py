@@ -64,7 +64,7 @@ class LLMReranker(AbstractReranker):
 
     def __init__(
         self,
-        client: AbstractClient,
+        client: Optional[AbstractClient],
         model_name: str = "llm-reranker",
         **kwargs,
     ) -> None:
@@ -72,6 +72,10 @@ class LLMReranker(AbstractReranker):
 
         Args:
             client: An ``AbstractClient`` instance used to call the LLM.
+                May be ``None`` when the factory is called before the bot's
+                LLM client is available; the manager patches it post-configure.
+                A ``None`` client causes ``rerank()`` to return the original
+                document order with a logged error.
             model_name: Label used in the ``rerank_model`` field of each
                 ``RerankedDocument``.  Defaults to ``"llm-reranker"``.
             **kwargs: Reserved for future extension.
@@ -100,6 +104,12 @@ class LLMReranker(AbstractReranker):
             ``RerankedDocument`` list sorted by descending ``rerank_score``.
             On failure, returns the original ordering with ``rerank_score=NaN``.
         """
+        if self.client is None:
+            self.logger.error(
+                "LLMReranker: client not set; returning original document order."
+            )
+            return self._fallback_result(documents)
+
         if not documents:
             return []
 
