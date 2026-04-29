@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-135
 **Date**: 2026-04-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -438,11 +438,11 @@ async def delete_vault_credential(user_id: str, vault_name: str) -> None: ...  #
 
 ## 8. Open Questions
 
-- [ ] Should `HttpMCPSession` protocol version be upgraded from `2024-11-05` to `2025-06-18` as part of this feature, or as a separate follow-up? — *Owner: Jesus Lara*
-- [ ] Does the `VaultTokenStore` need a TTL-based cleanup mechanism, or should tokens remain until explicitly deleted? — *Owner: Jesus Lara*
-- [ ] Should we support the `/v1/all` URL variant (all SuiteApps) in addition to the standard tools URL, or just standard tools? — *Owner: Jesus Lara*
-- [ ] What `client_id` should be used for the integration record? Does the user create one in NetSuite's UI, or is there a shared one? — *Owner: Jesus Lara*
-- [ ] Should the `add_netsuite_mcp_server` helper live in `MCPEnabledMixin` (integration.py, alongside `add_perplexity_mcp_server`) or elsewhere? — *Owner: Jesus Lara*
+- [x] Should `HttpMCPSession` protocol version be upgraded from `2024-11-05` to `2025-06-18` as part of this feature, or as a separate follow-up? — *Owner: Jesus Lara*: be upgraded
+- [x] Does the `VaultTokenStore` need a TTL-based cleanup mechanism, or should tokens remain until explicitly deleted? — *Owner: Jesus Lara*: remains without ttl.
+- [x] Should we support the `/v1/all` URL variant (all SuiteApps) in addition to the standard tools URL, or just standard tools? — *Owner: Jesus Lara*: just standard tools
+- [ ] What `client_id` should be used for the integration record? Does the user create one in NetSuite's UI, or is there a shared one? — *Owner: Jesus Lara*: add documentation how to generate or obtain the client_id
+- [ ] Should the `add_netsuite_mcp_server` helper live in `MCPEnabledMixin` (integration.py, alongside `add_perplexity_mcp_server`) or elsewhere? — *Owner: Jesus Lara*: in `MCPEnabledMixin`
 
 ---
 
