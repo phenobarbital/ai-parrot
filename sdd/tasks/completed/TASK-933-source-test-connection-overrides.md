@@ -187,10 +187,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-04-29
+**Notes**: Implemented test_connection() overrides for all non-SQL drivers:
+- MongoSource: added ping command override using `_get_mongo_client(conn).admin.command("ping")`
+- ElasticSource: added info() call override using `_get_es_client(conn).info()`
+- InfluxSource: added buckets() Flux query override via `conn.query("buckets()")`
+- DocumentDBSource: docstring updated to document inheritance from MongoSource (no override needed)
+- AtlasSource: docstring updated to document inheritance from MongoSource (no override needed)
+- Created tests/tools/test_database_test_connection.py with 23 tests (all pass)
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: DocumentDBSource and AtlasSource files were modified with
+docstring updates (not code overrides) since inheritance from MongoSource is sufficient per
+task spec ("inherit from MongoSource or implement ping").
