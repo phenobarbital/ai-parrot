@@ -1,5 +1,11 @@
 """Unit tests for PostgresToolkit — dialect hooks + CRUD tools (TASK-743 / FEAT-106).
 
+Updated in FEAT-118:
+- Removed backend=sqlalchemy tests (kwarg removed)
+- Removed _in_transaction tests (flag removed; asyncpg handles nesting natively)
+- Updated transaction tests to match new asyncpg-native implementation
+- Updated dialect hook tests to check $N placeholders (TASK-928)
+
 Uses conftest_db.py to load the worktree's source so changes under
 packages/ai-parrot/src/ are visible rather than the installed package.
 """
@@ -53,7 +59,7 @@ def fake_meta() -> TableMetadata:
 
 
 # ---------------------------------------------------------------------------
-# Dialect hooks (pre-existing tests preserved)
+# Dialect hooks (pre-existing tests preserved, updated for FEAT-118)
 # ---------------------------------------------------------------------------
 
 class TestPostgresToolkit:
@@ -61,29 +67,43 @@ class TestPostgresToolkit:
         tk = PostgresToolkit(dsn="postgresql://test")
         assert tk._get_explain_prefix() == "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)"
 
-    def test_information_schema_query(self):
+    def test_information_schema_query_dollar_placeholders(self):
+        """PG override emits $N placeholders and returns tuple params."""
         tk = PostgresToolkit(dsn="postgresql://test")
         sql, params = tk._get_information_schema_query("orders", ["public"])
         assert "pg_class" in sql.lower()
         assert "pg_namespace" in sql.lower()
         assert "obj_description" in sql.lower()
+        assert "$1" in sql and "$2" in sql and "$3" in sql
+        assert ":schemas" not in sql
+        assert isinstance(params, tuple)
+        assert params[0] == ["public"]
 
-    def test_columns_query_has_col_description(self):
+    def test_columns_query_has_col_description_and_dollar_placeholders(self):
+        """PG columns query uses col_description() and $N placeholders."""
         tk = PostgresToolkit(dsn="postgresql://test")
         sql, params = tk._get_columns_query("public", "orders")
         assert "col_description" in sql.lower()
+        assert "$1" in sql and "$2" in sql
+        assert ":schema" not in sql
+        assert ":table" not in sql
+        assert params == ("public", "orders")
 
     def test_asyncdb_driver(self):
         tk = PostgresToolkit(dsn="postgresql://test")
         assert tk._get_asyncdb_driver() == "pg"
 
-    def test_sqlalchemy_dsn(self):
-        tk = PostgresToolkit(dsn="postgresql://u:p@host/db", backend="sqlalchemy")
-        assert tk._build_sqlalchemy_dsn(tk.dsn) == "postgresql+asyncpg://u:p@host/db"
+    def test_backend_kwarg_removed(self):
+        """backend= kwarg no longer accepted (hard removed in FEAT-118)."""
+        with pytest.raises(TypeError):
+            PostgresToolkit(dsn="postgresql://u:p@host/db", backend="sqlalchemy")
 
-    def test_postgres_dsn(self):
-        tk = PostgresToolkit(dsn="postgres://u:p@host/db", backend="sqlalchemy")
-        assert tk._build_sqlalchemy_dsn(tk.dsn) == "postgresql+asyncpg://u:p@host/db"
+    def test_no_build_sqlalchemy_dsn(self):
+        """_build_sqlalchemy_dsn was deleted in FEAT-118."""
+        tk = PostgresToolkit(dsn="postgresql://test")
+        assert not hasattr(tk, "_build_sqlalchemy_dsn"), (
+            "_build_sqlalchemy_dsn should be removed in FEAT-118"
+        )
 
     def test_tool_methods_inherited(self):
         tk = PostgresToolkit(dsn="postgresql://test")
@@ -129,7 +149,10 @@ class TestReadOnlyGating:
         tk = make_toolkit()
         assert hasattr(tk, "_prepared_cache") and isinstance(tk._prepared_cache, dict)
         assert hasattr(tk, "_json_cols_cache") and isinstance(tk._json_cols_cache, dict)
-        assert hasattr(tk, "_in_transaction") and tk._in_transaction is False
+        # _in_transaction flag was removed in FEAT-118 (TASK-929)
+        assert not hasattr(tk, "_in_transaction"), (
+            "_in_transaction was removed in FEAT-118; asyncpg handles nesting natively"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -255,12 +278,7 @@ class TestUpsertRow:
 
     @pytest.mark.asyncio
     async def test_upsert_row_uses_cached_template_on_second_call(self, fake_meta):
-        """Second upsert_row call for the same table must hit _prepared_cache.
-
-        The template (sql, param_order) built during the first call is stored
-        in _prepared_cache. The second call must reuse it without invoking the
-        builder again.
-        """
+        """Second upsert_row call for the same table must hit _prepared_cache."""
         tk = make_toolkit(read_only=False)
 
         mock_conn = AsyncMock()
@@ -340,73 +358,84 @@ class TestPkInWhereEnforcement:
 
 
 # ---------------------------------------------------------------------------
-# transaction()
+# transaction() — FEAT-118 rewrite (asyncpg native)
 # ---------------------------------------------------------------------------
 
 class TestTransaction:
     @pytest.mark.asyncio
-    async def test_transaction_nested_raises(self):
-        """Nested transaction() must raise RuntimeError."""
+    async def test_transaction_yields_raw_conn(self):
+        """transaction() yields the raw asyncpg conn (with fetch/execute)."""
         tk = make_toolkit(read_only=False)
 
-        mock_conn = AsyncMock()
-        mock_tx_cm = MagicMock()
-        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
-        mock_tx_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
+        class FakeTx:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        class FakeRaw:
+            def transaction(self): return FakeTx()
+            async def fetch(self, sql, *a): return []
+            async def execute(self, sql, *a): return "ok"
+            async def fetchrow(self, sql, *a): return None
 
         @asynccontextmanager
         async def fake_acquire():
-            yield mock_conn
+            yield FakeRaw()
 
         with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
-            with pytest.raises(RuntimeError, match="Nested"):
-                async with tk.transaction():
-                    async with tk.transaction():
-                        pass
-
-    @pytest.mark.asyncio
-    async def test_transaction_flag_reset_after_success(self):
-        """_in_transaction must be False after a successful transaction."""
-        tk = make_toolkit(read_only=False)
-
-        mock_conn = AsyncMock()
-        mock_tx_cm = MagicMock()
-        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
-        mock_tx_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
-
-        @asynccontextmanager
-        async def fake_acquire():
-            yield mock_conn
-
-        with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
-            assert tk._in_transaction is False
             async with tk.transaction() as tx:
-                assert tk._in_transaction is True
-                assert tx is mock_conn
-            assert tk._in_transaction is False
+                assert hasattr(tx, "fetch")
+                assert hasattr(tx, "execute")
 
     @pytest.mark.asyncio
-    async def test_transaction_flag_reset_after_exception(self):
-        """_in_transaction must be False even when the block raises."""
+    async def test_no_in_transaction_flag(self):
+        """_in_transaction flag removed in FEAT-118."""
+        tk = make_toolkit(read_only=False)
+        assert not hasattr(tk, "_in_transaction")
+
+    @pytest.mark.asyncio
+    async def test_transaction_rollback_on_exception(self):
+        """transaction() propagates exceptions."""
         tk = make_toolkit(read_only=False)
 
-        mock_conn = AsyncMock()
-        mock_tx_cm = MagicMock()
-        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
-        mock_tx_cm.__aexit__ = AsyncMock(return_value=False)
-        mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
+        class FakeTx:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        class FakeRaw:
+            def transaction(self): return FakeTx()
 
         @asynccontextmanager
         async def fake_acquire():
-            yield mock_conn
+            yield FakeRaw()
 
         with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match="rollback me"):
                 async with tk.transaction():
                     raise ValueError("rollback me")
-            assert tk._in_transaction is False
+
+    @pytest.mark.asyncio
+    async def test_sequential_transactions_work(self):
+        """Multiple sequential transaction() calls work (no _in_transaction guard)."""
+        tk = make_toolkit(read_only=False)
+
+        class FakeTx:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): pass
+
+        class FakeRaw:
+            def transaction(self): return FakeTx()
+
+        @asynccontextmanager
+        async def fake_acquire():
+            yield FakeRaw()
+
+        with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
+            # First transaction
+            async with tk.transaction():
+                pass
+            # Second transaction — should not raise
+            async with tk.transaction():
+                pass
 
 
 # ---------------------------------------------------------------------------

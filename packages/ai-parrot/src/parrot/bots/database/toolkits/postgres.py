@@ -45,7 +45,6 @@ class PostgresToolkit(SQLToolkit):
         primary_schema: Optional[str] = None,
         tables: Optional[List[str]] = None,
         read_only: bool = True,
-        backend: str = "asyncdb",
         use_pool: bool = False,
         pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
@@ -79,7 +78,6 @@ class PostgresToolkit(SQLToolkit):
             primary_schema=primary_schema,
             tables=tables,
             read_only=read_only,
-            backend=backend,
             database_type="postgresql",
             use_pool=use_pool,
             pool_params=pool_params,
@@ -97,8 +95,16 @@ class PostgresToolkit(SQLToolkit):
         self,
         search_term: str,
         schemas: List[str],
-    ) -> tuple[str, Dict[str, Any]]:
-        """Use ``pg_class``/``pg_namespace`` joins for comment support."""
+    ) -> tuple[str, tuple]:
+        """Use ``pg_class``/``pg_namespace`` joins for comment support.
+
+        Args:
+            search_term: Term to match against table names.
+            schemas: List of schema names to restrict the search.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schemas, $2=term, $3=limit``.
+        """
         sql = """
             SELECT DISTINCT
                 ist.table_schema,
@@ -109,25 +115,29 @@ class PostgresToolkit(SQLToolkit):
             LEFT JOIN pg_namespace pgn ON pgn.nspname = ist.table_schema
             LEFT JOIN pg_class pgc ON pgc.relname = ist.table_name
                 AND pgc.relnamespace = pgn.oid
-            WHERE ist.table_schema = ANY(:schemas)
+            WHERE ist.table_schema = ANY($1)
             AND (
-                ist.table_name ILIKE :term
-                OR (ist.table_schema || '.' || ist.table_name) ILIKE :term
+                ist.table_name ILIKE $2
+                OR (ist.table_schema || '.' || ist.table_name) ILIKE $2
             )
             AND ist.table_type IN ('BASE TABLE', 'VIEW')
             ORDER BY ist.table_name
-            LIMIT :limit
+            LIMIT $3
         """
-        return sql, {
-            "schemas": schemas,
-            "term": f"%{search_term}%",
-            "limit": 20,
-        }
+        return sql, (schemas, f"%{search_term}%", 20)
 
     def _get_columns_query(
         self, schema: str, table: str
-    ) -> tuple[str, Dict[str, Any]]:
-        """Include ``col_description()`` for column comments."""
+    ) -> tuple[str, tuple]:
+        """Include ``col_description()`` for column comments.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
         sql = """
             SELECT
                 c.column_name,
@@ -136,23 +146,15 @@ class PostgresToolkit(SQLToolkit):
                 c.column_default,
                 c.ordinal_position,
                 col_description(
-                    (SELECT oid FROM pg_class WHERE relname = :table
-                     AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = :schema)),
+                    (SELECT oid FROM pg_class WHERE relname = $2
+                     AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)),
                     c.ordinal_position
                 ) AS column_comment
             FROM information_schema.columns c
-            WHERE c.table_schema = :schema AND c.table_name = :table
+            WHERE c.table_schema = $1 AND c.table_name = $2
             ORDER BY c.ordinal_position
         """
-        return sql, {"schema": schema, "table": table}
-
-    def _build_sqlalchemy_dsn(self, raw_dsn: str) -> str:
-        """Ensure ``postgresql+asyncpg://`` prefix."""
-        if raw_dsn.startswith("postgresql://"):
-            return raw_dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
-        if raw_dsn.startswith("postgres://"):
-            return raw_dsn.replace("postgres://", "postgresql+asyncpg://", 1)
-        return raw_dsn
+        return sql, (schema, table)
 
     def _get_asyncdb_driver(self) -> str:
         return "pg"

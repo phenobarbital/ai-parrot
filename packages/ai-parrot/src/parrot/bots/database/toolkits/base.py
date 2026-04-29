@@ -55,13 +55,12 @@ class DatabaseToolkitConfig(BaseModel):
             "WHERE clause."
         ),
     )
-    backend: str = Field(default="asyncdb", description="'asyncdb' or 'sqlalchemy'")
     database_type: str = Field(default="postgresql")
     use_pool: bool = Field(
         default=False,
         description=(
-            "When True and backend='asyncdb', connect via ``asyncdb.AsyncPool`` "
-            "(pool-based) instead of ``asyncdb.AsyncDB`` (single connection). "
+            "When True, connect via ``asyncdb.AsyncPool`` (pool-based) "
+            "instead of ``asyncdb.AsyncDB`` (single connection). "
             "Connections are acquired/released per query. Only supported by "
             "drivers that ship a ``<driver>Pool`` class (e.g. ``pg``)."
         ),
@@ -112,7 +111,6 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         primary_schema: Optional[str] = None,
         tables: Optional[List[str]] = None,
         read_only: bool = True,
-        backend: str = "asyncdb",
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
         database_type: str = "postgresql",
@@ -120,6 +118,14 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
+        # Hard-fail if caller passes the removed `backend=` kwarg.
+        # (FEAT-118: SQLAlchemy backend was deleted; zero production callers.)
+        if "backend" in kwargs:
+            raise TypeError(
+                f"{type(self).__name__}.__init__() got an unexpected keyword "
+                "argument 'backend'. The 'backend' parameter was removed in "
+                "FEAT-118. All connections now use asyncdb exclusively."
+            )
         super().__init__(**kwargs)
 
         # Connection config (lazy — no I/O in __init__)
@@ -130,7 +136,6 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         )
         self.tables = tables
         self.read_only = read_only
-        self.backend = backend
         self.database_type = database_type
         self.use_pool = use_pool
         self.pool_params = pool_params or {}
@@ -141,7 +146,6 @@ class DatabaseToolkit(AbstractToolkit, ABC):
 
         # Connection state (populated by start())
         self._connection: Any = None
-        self._engine: Any = None
         self._connected: bool = False
 
     # ------------------------------------------------------------------
@@ -207,27 +211,16 @@ class DatabaseToolkit(AbstractToolkit, ABC):
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Connect to the database.
-
-        Uses ``asyncdb.AsyncDB`` when ``backend='asyncdb'``, or
-        ``sqlalchemy.ext.asyncio.create_async_engine`` when
-        ``backend='sqlalchemy'``.
-        """
+        """Connect to the database using asyncdb."""
         if self._connected:
             return
 
-        if self.backend == "asyncdb":
-            await self._connect_asyncdb()
-        elif self.backend == "sqlalchemy":
-            await self._connect_sqlalchemy()
-        else:
-            raise ValueError(f"Unknown backend: {self.backend!r}")
+        await self._connect_asyncdb()
         self._connected = True
         self.logger.info(
-            "%s connected to %s (backend=%s)",
+            "%s connected to %s",
             self.__class__.__name__,
             self.database_type,
-            self.backend,
         )
 
         # Pre-warm metadata cache for the configured tables (fully lazy if
@@ -245,13 +238,6 @@ class DatabaseToolkit(AbstractToolkit, ABC):
                 self.logger.debug("Error closing connection: %s", exc)
             self._connection = None
 
-        if self._engine is not None:
-            try:
-                await self._engine.dispose()
-            except Exception as exc:
-                self.logger.debug("Error disposing engine: %s", exc)
-            self._engine = None
-
         self._connected = False
         self.logger.info("%s disconnected", self.__class__.__name__)
 
@@ -268,19 +254,9 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         if not self._connected:
             return False
         try:
-            if self.backend == "asyncdb" and self._connection is not None:
-                # asyncdb connections usually have a test_connection method
+            if self._connection is not None:
                 if hasattr(self._connection, "test_connection"):
                     return await self._connection.test_connection()
-                return True
-            elif self.backend == "sqlalchemy" and self._engine is not None:
-                from sqlalchemy import text
-                from sqlalchemy.ext.asyncio import AsyncSession
-                from sqlalchemy.orm import sessionmaker
-
-                async_session = sessionmaker(self._engine, class_=AsyncSession, expire_on_commit=False)
-                async with async_session() as session:
-                    await session.execute(text("SELECT 1"))
                 return True
         except Exception as exc:
             self.logger.debug("Health check failed: %s", exc)
@@ -406,13 +382,6 @@ class DatabaseToolkit(AbstractToolkit, ABC):
             async with await self._connection.connection() as wrapper:
                 yield wrapper.engine()  # raw asyncpg.Connection (or dialect equiv.)
 
-    async def _connect_sqlalchemy(self) -> None:
-        """Connect using ``sqlalchemy.ext.asyncio.create_async_engine``."""
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        sa_dsn = self._build_sqlalchemy_dsn(self.dsn)
-        self._engine = create_async_engine(sa_dsn, echo=False)
-
     def _get_asyncdb_driver(self) -> str:
         """Map ``database_type`` to an asyncdb driver name.
 
@@ -428,12 +397,3 @@ class DatabaseToolkit(AbstractToolkit, ABC):
             "mongodb": "motor",
         }
         return _DRIVER_MAP.get(self.database_type, self.database_type)
-
-    def _build_sqlalchemy_dsn(self, raw_dsn: str) -> str:
-        """Ensure the DSN uses an async-capable SQLAlchemy driver.
-
-        Override in subclasses for dialect-specific handling.
-        """
-        if raw_dsn.startswith("postgresql://"):
-            return raw_dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return raw_dsn

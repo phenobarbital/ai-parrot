@@ -4,6 +4,9 @@ Inherits ``DatabaseToolkit`` and implements schema search, query generation,
 execution, explain, and validation for SQL databases.  Dialect differences
 (PostgreSQL vs BigQuery vs MySQL) are handled via overridable ``_get_*``
 hook methods.
+
+All execution goes through asyncdb — the asyncpg-native path is the only
+supported backend. Query builders emit ``$1, $2, …`` positional placeholders.
 """
 from __future__ import annotations
 
@@ -63,7 +66,6 @@ class SQLToolkit(DatabaseToolkit):
         primary_schema: Optional[str] = None,
         tables: Optional[List[str]] = None,
         read_only: bool = True,
-        backend: str = "asyncdb",
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
         database_type: str = "postgresql",
@@ -75,7 +77,6 @@ class SQLToolkit(DatabaseToolkit):
             primary_schema=primary_schema,
             tables=tables,
             read_only=read_only,
-            backend=backend,
             cache_partition=cache_partition,
             retry_config=retry_config,
             database_type=database_type,
@@ -192,10 +193,7 @@ class SQLToolkit(DatabaseToolkit):
 
         start = time.monotonic()
         try:
-            if self.backend == "asyncdb":
-                data, error = await self._execute_asyncdb(query, limit, timeout)
-            else:
-                data, error = await self._execute_sqlalchemy(query, limit, timeout)
+            data, error = await self._execute_asyncdb(query, limit=limit, timeout=timeout)
 
             elapsed = (time.monotonic() - start) * 1000
 
@@ -239,11 +237,7 @@ class SQLToolkit(DatabaseToolkit):
         prefix = self._get_explain_prefix()
         explain_sql = f"{prefix} {query}"
         try:
-            if self.backend == "asyncdb":
-                data, error = await self._execute_asyncdb(explain_sql, limit=0, timeout=60)
-            else:
-                data, error = await self._execute_sqlalchemy(explain_sql, limit=0, timeout=60)
-
+            data, error = await self._execute_asyncdb(explain_sql, limit=0, timeout=60)
             if error:
                 return f"EXPLAIN failed: {error}"
             if data:
@@ -372,7 +366,7 @@ class SQLToolkit(DatabaseToolkit):
         )
 
     # ------------------------------------------------------------------
-    # Overridable dialect hooks (private �� not exposed as tools)
+    # Overridable dialect hooks (private — not exposed as tools)
     # ------------------------------------------------------------------
 
     def _get_explain_prefix(self) -> str:
@@ -383,10 +377,18 @@ class SQLToolkit(DatabaseToolkit):
         self,
         search_term: str,
         schemas: List[str],
-    ) -> tuple[str, Dict[str, Any]]:
-        """Return (SQL, params) for table discovery via information_schema.
+    ) -> tuple[str, tuple]:
+        """Return ``(sql, params)`` for table discovery via information_schema.
 
+        Emits ``$1, $2, …`` asyncpg positional placeholders.
         Override in subclasses for dialect-specific introspection.
+
+        Args:
+            search_term: Term to match against table names.
+            schemas: List of schema names to search.
+
+        Returns:
+            ``(sql, params_tuple)`` ready for :meth:`_execute_asyncdb`.
         """
         sql = """
             SELECT DISTINCT
@@ -394,35 +396,46 @@ class SQLToolkit(DatabaseToolkit):
                 table_name,
                 table_type
             FROM information_schema.tables
-            WHERE table_schema = ANY(:schemas)
+            WHERE table_schema = ANY($1)
             AND (
-                table_name ILIKE :term
-                OR (table_schema || '.' || table_name) ILIKE :term
+                table_name ILIKE $2
+                OR (table_schema || '.' || table_name) ILIKE $2
             )
             AND table_type IN ('BASE TABLE', 'VIEW')
             ORDER BY table_name
-            LIMIT :limit
+            LIMIT $3
         """
-        params = {
-            "schemas": schemas,
-            "term": f"%{search_term}%",
-            "limit": 20,
-        }
-        return sql, params
+        return sql, (schemas, f"%{search_term}%", 20)
 
-    def _get_columns_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]:
-        """Return (SQL, params) for column metadata."""
+    def _get_columns_query(self, schema: str, table: str) -> tuple[str, tuple]:
+        """Return ``(sql, params)`` for column metadata.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
         sql = """
             SELECT column_name, data_type, is_nullable, column_default,
                    ordinal_position
             FROM information_schema.columns
-            WHERE table_schema = :schema AND table_name = :table
+            WHERE table_schema = $1 AND table_name = $2
             ORDER BY ordinal_position
         """
-        return sql, {"schema": schema, "table": table}
+        return sql, (schema, table)
 
-    def _get_primary_keys_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]:
-        """Return (SQL, params) for primary key columns."""
+    def _get_primary_keys_query(self, schema: str, table: str) -> tuple[str, tuple]:
+        """Return ``(sql, params)`` for primary key columns.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
         sql = """
             SELECT kcu.column_name
             FROM information_schema.table_constraints tc
@@ -430,16 +443,16 @@ class SQLToolkit(DatabaseToolkit):
                 ON tc.constraint_name = kcu.constraint_name
                 AND tc.table_schema = kcu.table_schema
             WHERE tc.constraint_type = 'PRIMARY KEY'
-            AND tc.table_schema = :schema
-            AND tc.table_name = :table
+            AND tc.table_schema = $1
+            AND tc.table_name = $2
             ORDER BY kcu.ordinal_position
         """
-        return sql, {"schema": schema, "table": table}
+        return sql, (schema, table)
 
     def _get_unique_constraints_query(
         self, schema: str, table: str
-    ) -> tuple[str, Dict[str, Any]]:
-        """Return (SQL, params) for UNIQUE constraint columns of (schema, table).
+    ) -> tuple[str, tuple]:
+        """Return ``(sql, params)`` for UNIQUE constraint columns of (schema, table).
 
         Queries ``information_schema.table_constraints`` joined with
         ``information_schema.key_column_usage`` to list each UNIQUE
@@ -465,12 +478,12 @@ class SQLToolkit(DatabaseToolkit):
                 ON kcu.constraint_name = tc.constraint_name
                AND kcu.table_schema   = tc.table_schema
                AND kcu.table_name     = tc.table_name
-            WHERE tc.table_schema   = :schema
-              AND tc.table_name     = :table
+            WHERE tc.table_schema   = $1
+              AND tc.table_name     = $2
               AND tc.constraint_type = 'UNIQUE'
             ORDER BY tc.constraint_name, kcu.ordinal_position
         """
-        return sql, {"schema": schema, "table": table}
+        return sql, (schema, table)
 
     def _get_sample_data_query(
         self, schema: str, table: str, limit: int = 3
@@ -487,48 +500,36 @@ class SQLToolkit(DatabaseToolkit):
     async def _execute_asyncdb(
         self,
         sql: str,
+        params: tuple = (),
         limit: int = 1000,
         timeout: int = 30,
     ) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Execute SQL via asyncdb and return (data, error)."""
+        """Execute SQL via asyncdb and return ``(data, error)``.
+
+        Uses the raw ``asyncpg.Connection`` obtained from
+        :meth:`_acquire_asyncdb_connection` (boundary-unwrapped).
+
+        Args:
+            sql: SQL query with ``$N`` positional placeholders.
+            params: Positional parameters tuple (default: empty).
+            limit: Maximum rows to return (0 = no limit).
+            timeout: Query timeout in seconds (unused by asyncpg fetch,
+                kept for interface compatibility).
+
+        Returns:
+            ``(data, None)`` on success or ``(None, error_str)`` on failure.
+        """
         if self._connection is None:
             return None, "Not connected (call start() first)"
         try:
             async with self._acquire_asyncdb_connection() as conn:
-                result, error = await conn.query(sql)
-                if error:
-                    return None, str(error)
-                if result is None:
+                if params:
+                    rows = await conn.fetch(sql, *params)
+                else:
+                    rows = await conn.fetch(sql)
+                if rows is None:
                     return [], None
-                data = [dict(row) for row in result] if result else []
-                if limit and len(data) > limit:
-                    data = data[:limit]
-                return data, None
-        except Exception as exc:
-            return None, str(exc)
-
-    async def _execute_sqlalchemy(
-        self,
-        sql: str,
-        limit: int = 1000,
-        timeout: int = 30,
-    ) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Execute SQL via sqlalchemy-async and return (data, error)."""
-        if self._engine is None:
-            return None, "Not connected (call start() first)"
-        try:
-            from sqlalchemy import text
-            from sqlalchemy.ext.asyncio import AsyncSession
-            from sqlalchemy.orm import sessionmaker
-
-            async_session = sessionmaker(
-                self._engine, class_=AsyncSession, expire_on_commit=False
-            )
-            async with async_session() as session:
-                result = await session.execute(text(sql))
-                rows = result.fetchall()
-                columns = list(result.keys())
-                data = [dict(zip(columns, row)) for row in rows]
+                data = [dict(row) for row in rows]
                 if limit and len(data) > limit:
                     data = data[:limit]
                 return data, None
@@ -547,18 +548,11 @@ class SQLToolkit(DatabaseToolkit):
 
         results: List[TableMetadata] = []
         try:
-            if self.backend == "asyncdb":
-                data, error = await self._execute_asyncdb(info_sql, limit=limit, timeout=30)
-                if error or not data:
-                    return results
-                rows = data
-            else:
-                data, error = await self._execute_sqlalchemy(info_sql, limit=limit, timeout=30)
-                if error or not data:
-                    return results
-                rows = data
+            data, error = await self._execute_asyncdb(info_sql, params=params, limit=limit, timeout=30)
+            if error or not data:
+                return results
 
-            for row in rows:
+            for row in data:
                 schema = row.get("table_schema", self.primary_schema)
                 table = row.get("table_name", "")
                 table_type = row.get("table_type", "BASE TABLE")
@@ -589,10 +583,7 @@ class SQLToolkit(DatabaseToolkit):
         try:
             # Columns
             col_sql, col_params = self._get_columns_query(schema, table)
-            if self.backend == "asyncdb":
-                col_data, _ = await self._execute_asyncdb(col_sql, limit=0, timeout=15)
-            else:
-                col_data, _ = await self._execute_sqlalchemy(col_sql, limit=0, timeout=15)
+            col_data, _ = await self._execute_asyncdb(col_sql, params=col_params, limit=0, timeout=15)
 
             columns = []
             if col_data:
@@ -606,10 +597,7 @@ class SQLToolkit(DatabaseToolkit):
 
             # Primary keys
             pk_sql, pk_params = self._get_primary_keys_query(schema, table)
-            if self.backend == "asyncdb":
-                pk_data, _ = await self._execute_asyncdb(pk_sql, limit=0, timeout=15)
-            else:
-                pk_data, _ = await self._execute_sqlalchemy(pk_sql, limit=0, timeout=15)
+            pk_data, _ = await self._execute_asyncdb(pk_sql, params=pk_params, limit=0, timeout=15)
 
             primary_keys = [
                 row.get("column_name", "") for row in (pk_data or [])
@@ -619,10 +607,7 @@ class SQLToolkit(DatabaseToolkit):
             unique_constraints: List[List[str]] = []
             try:
                 uq_sql, uq_params = self._get_unique_constraints_query(schema, table)
-                if self.backend == "asyncdb":
-                    uq_data, uq_error = await self._execute_asyncdb(uq_sql, limit=0, timeout=15)
-                else:
-                    uq_data, uq_error = await self._execute_sqlalchemy(uq_sql, limit=0, timeout=15)
+                uq_data, uq_error = await self._execute_asyncdb(uq_sql, params=uq_params, limit=0, timeout=15)
                 if uq_data:
                     grouped: Dict[str, List[str]] = {}
                     for row in uq_data:
