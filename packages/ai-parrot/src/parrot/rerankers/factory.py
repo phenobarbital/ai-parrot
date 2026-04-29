@@ -62,17 +62,22 @@ def _build_llm_reranker(
 ) -> AbstractReranker:
     """Build an ``LLMReranker`` from a config dict.
 
+    ``client=None`` is allowed here.  The manager patches the client
+    post-configure (after ``bot.llm_client`` is available), so the guard
+    lives in ``LLMReranker.rerank()`` rather than here.
+
     Args:
         config: Reranker config dict (without the ``type`` key).
             ``client_ref`` key is consumed here; remaining keys are forwarded.
         bot_llm_client: The bot's already-instantiated LLM client, reused
-            when ``client_ref`` is ``"bot"`` (or absent).
+            when ``client_ref`` is ``"bot"`` (or absent).  May be ``None``
+            when called before the bot's LLM client is configured.
 
     Returns:
-        A configured ``LLMReranker`` instance.
+        A configured ``LLMReranker`` instance (``client`` may be ``None``).
 
     Raises:
-        ConfigError: If no usable client is available.
+        ConfigError: If ``client_ref`` refers to an unsupported source.
     """
     # Lazy import to avoid unnecessary LLM client deps at import time.
     from parrot.rerankers.llm import LLMReranker  # noqa: PLC0415
@@ -83,12 +88,8 @@ def _build_llm_reranker(
     if client_ref == "bot" or client_ref is None:
         client = bot_llm_client
     else:
-        # Future: resolve named client from a registry.
-        client = bot_llm_client
-
-    if client is None:
         raise ConfigError(
-            "LLMReranker requires a client; pass bot_llm_client= or set client_ref."
+            f"client_ref='{client_ref}' is not yet supported; use 'bot'"
         )
 
     return LLMReranker(client=client, **cfg)
@@ -138,8 +139,8 @@ def create_reranker(
         None
         >>> create_reranker({"type": "local_cross_encoder",
         ...                   "model_name": "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        ...                   "device": "cpu"})
-        <LocalCrossEncoderReranker ...>
+        ...                   "device": "cpu"})  # doctest: +ELLIPSIS
+        <parrot.rerankers.local.LocalCrossEncoderReranker object at 0x...>
     """
     if not config:
         logger.debug("reranker_config is empty — no reranker will be used.")

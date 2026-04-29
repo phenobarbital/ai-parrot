@@ -33,6 +33,10 @@ from .models import (
 )
 from ..tools.discovery import discover_all
 from ..registry.registry import BotConfig
+# FEAT-133: reranker + parent-searcher factories (used in _register_bot_into_manager)
+from ..exceptions import ConfigError
+from ..rerankers.factory import create_reranker
+from ..stores.parents.factory import create_parent_searcher
 
 
 class _PBACHandlerMixin:
@@ -429,6 +433,10 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
     ):
         """Create bot instance, configure it, and add to BotManager.
 
+        Applies the FEAT-133 factory sequence so that ``reranker_config`` and
+        ``parent_searcher_config`` are resolved into live objects on the bot
+        instance, both during creation (PUT) and updates (POST).
+
         Returns:
             The configured bot instance, or None on failure.
         """
@@ -441,10 +449,28 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         botclass = manager.get_bot_class(clsname)
         name = bot_data.pop('name', 'NoName')
 
+        # FEAT-133 Step 1: Build reranker BEFORE bot construction.
+        # Extract the configs before passing **bot_data to create_bot so the
+        # constructor does not receive unknown kwargs.
+        reranker_config = bot_data.pop('reranker_config', {}) or {}
+        parent_searcher_config = bot_data.pop('parent_searcher_config', {}) or {}
+
+        expand_to_parent = bool(parent_searcher_config.get("expand_to_parent", False))
+
+        try:
+            reranker = create_reranker(reranker_config, bot_llm_client=None)
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid reranker_config: %s", name, exc
+            )
+            return None
+
         try:
             bot = manager.create_bot(
                 class_name=botclass,
                 name=name,
+                reranker=reranker,
+                expand_to_parent=expand_to_parent,
                 **bot_data
             )
         except Exception as exc:
@@ -465,8 +491,33 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
             self.logger.error(f"Error configuring bot {name}: {exc}")
             return None
 
+        # FEAT-133 Step 2: Patch LLM reranker client post-configure.
+        from ..rerankers.llm import LLMReranker  # noqa: PLC0415
+        if isinstance(reranker, LLMReranker) and reranker.client is None:
+            reranker.client = getattr(bot, 'llm_client', None)
+
+        # FEAT-133 Step 3: Build parent_searcher AFTER configure() (needs bot.store).
+        try:
+            parent_searcher = create_parent_searcher(
+                parent_searcher_config,
+                store=getattr(bot, 'store', None),
+            )
+        except ConfigError as exc:
+            self.logger.error(
+                "Bot '%s': invalid parent_searcher_config: %s", name, exc
+            )
+            return None
+
+        if parent_searcher is not None:
+            bot.parent_searcher = parent_searcher
+
         manager.add_bot(bot)
-        self.logger.info(f"Bot '{name}' registered into BotManager")
+        self.logger.info(
+            "Bot '%s' registered into BotManager (reranker=%s, parent_searcher=%s)",
+            name,
+            type(reranker).__name__ if reranker else None,
+            type(parent_searcher).__name__ if parent_searcher else None,
+        )
 
         # PBAC: register class-declared policy_rules for dynamically created bots.
         # Bots created at runtime via PUT /api/v1/bots bypass AgentRegistry.register(),

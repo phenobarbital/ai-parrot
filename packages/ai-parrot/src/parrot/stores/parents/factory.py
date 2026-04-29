@@ -64,6 +64,11 @@ def _build_in_table(
             "call create_parent_searcher() AFTER bot.configure(app)."
         )
 
+    # Remove manager-level keys that are NOT InTableParentSearcher constructor
+    # params.  ``expand_to_parent`` is consumed by the manager (forwarded as a
+    # bot constructor kwarg) and must not be passed to the searcher.
+    config.pop("expand_to_parent", None)
+
     # Lazy import — keeps this module cheap and avoids circular deps.
     from parrot.stores.parents.in_table import InTableParentSearcher  # noqa: PLC0415
 

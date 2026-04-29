@@ -235,9 +235,9 @@ class BotManager:
     async def _process_startup_results(self, startup_results: Dict[str, Any]) -> None:
         """Process startup instantiation results."""
         for agent_name, result in startup_results.items():
-            print('===========================================')
-            print('Agent startup result:', agent_name, result)
-            print('===========================================')
+            self.logger.debug(
+                "Agent startup result: %s -> %s", agent_name, result
+            )
             if result["status"] == "success":
                 if instance := result.get("instance"):
                     self._bots[agent_name] = instance
@@ -451,7 +451,10 @@ class BotManager:
                     )
                 except Exception as e:
                     self.logger.error(
-                        f"Failed to load database bot {bot_model.name}: {str(e)}"
+                        "Failed to load database bot %s: %s",
+                        bot_model.name,
+                        e,
+                        exc_info=True,
                     )
             self.logger.info(
                 f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
@@ -460,66 +463,6 @@ class BotManager:
             self.logger.error(
                 f"Database bot loading failed: {str(e)}"
             )
-
-    # Alternative approach using the factory function from models.py
-    async def load_bots_with_factory(self, app: web.Application) -> None:
-        """Load all bots from DB using the factory function."""
-        self.logger.info("Loading bots from DB...")
-        db = app['database']
-        async with await db.acquire() as conn:
-            BotModel.Meta.connection = conn
-            try:
-                bot_models = await BotModel.filter(enabled=True)
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to load bots from DB: {e}"
-                )
-                return
-
-            for bot_model in bot_models:
-                self.logger.notice(
-                    f"Loading bot '{bot_model.name}' (mode: {bot_model.operation_mode})..."
-                )
-
-                try:
-                    # Use the factory function from models.py
-                    # Determine bot class if you have custom classes
-                    bot_class = None
-                    if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
-                        bot_class = self.get_bot_class(getattr(bot_model, 'bot_class', None))
-                    else:
-                        # Default to BasicBot or your default bot class
-                        bot_class = BasicBot
-
-                    # Create bot using factory function
-                    chatbot = bot_class(bot_model, bot_class)
-
-                    # Configure the bot
-                    try:
-                        await chatbot.configure(app=app)
-                        self.add_bot(chatbot)
-                        self.logger.info(
-                            f"Successfully loaded bot '{bot_model.name}' "
-                            f"with {len(bot_model.tools) if bot_model.tools else 0} tools"
-                        )
-                    except ValidationError as e:
-                        self.logger.error(
-                            f"Invalid configuration for bot '{bot_model.name}': {e}"
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            f"Failed to configure bot '{bot_model.name}': {e}"
-                        )
-
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to create bot instance for '{bot_model.name}': {e}"
-                    )
-                    continue
-
-        self.logger.info(
-            f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
-        )
 
     @staticmethod
     def _build_prompt_builder(prompt_config: dict) -> 'PromptBuilder':

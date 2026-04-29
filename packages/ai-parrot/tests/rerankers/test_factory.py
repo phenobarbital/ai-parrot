@@ -66,10 +66,23 @@ def test_llm_reranker_with_client_ref_bot() -> None:
     assert r.client is fake
 
 
-def test_llm_reranker_without_client_raises() -> None:
-    """type=llm without any client must raise ConfigError."""
-    with pytest.raises(ConfigError):
-        create_reranker({"type": "llm"})
+def test_llm_reranker_without_client_defers() -> None:
+    """type=llm without any client must return an LLMReranker (client patched later).
+
+    The factory no longer raises ConfigError when client=None; the guard lives
+    in LLMReranker.rerank() so the manager can patch the client post-configure.
+    """
+    from parrot.rerankers.llm import LLMReranker
+
+    r = create_reranker({"type": "llm"})
+    assert isinstance(r, LLMReranker)
+    assert r.client is None
+
+
+def test_llm_reranker_unknown_client_ref_raises() -> None:
+    """An unrecognised client_ref must raise ConfigError immediately."""
+    with pytest.raises(ConfigError, match="not yet supported"):
+        create_reranker({"type": "llm", "client_ref": "registry:my-client"})
 
 
 def test_missing_type_raises_config_error() -> None:

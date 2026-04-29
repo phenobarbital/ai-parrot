@@ -1,4 +1,5 @@
--- Drop existing table if it exists (uncomment if needed)
+-- WARNING: Initial setup DDL only. DO NOT run against production.
+-- For migrations, use the ALTER TABLE ADD COLUMN IF NOT EXISTS statements at the bottom.
 DROP TABLE IF EXISTS navigator.ai_bots CASCADE;
 
 -- Create the unified AI bots table
@@ -199,5 +200,11 @@ ALTER TABLE navigator.ai_bots
 ALTER TABLE navigator.ai_bots
     ADD COLUMN IF NOT EXISTS parent_searcher_config JSONB DEFAULT '{}'::JSONB;
 
-COMMENT ON COLUMN navigator.ai_bots.reranker_config        IS 'FEAT-133 — reranker factory config (FEAT-126)';
-COMMENT ON COLUMN navigator.ai_bots.parent_searcher_config IS 'FEAT-133 — parent searcher factory config (FEAT-128)';
+COMMENT ON COLUMN navigator.ai_bots.reranker_config        IS 'FEAT-133 — reranker factory config';
+COMMENT ON COLUMN navigator.ai_bots.parent_searcher_config IS 'FEAT-133 — parent searcher factory config';
+
+CREATE INDEX IF NOT EXISTS idx_ai_bots_reranker_config
+    ON navigator.ai_bots USING GIN (reranker_config);
+
+CREATE INDEX IF NOT EXISTS idx_ai_bots_parent_searcher_config
+    ON navigator.ai_bots USING GIN (parent_searcher_config);
