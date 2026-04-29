@@ -16301,7 +16301,7 @@
             "feature_id": "FEAT-133",
             "feature": "bot-reranker-and-parent-searcher-config",
             "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-            "status": "in-progress",
+            "status": "done",
             "priority": "high",
             "effort": "L",
             "depends_on": [
@@ -16317,7 +16317,8 @@
             "parallelism_notes": "End-to-end coverage; depends on every other task.",
             "assigned_to": null,
             "started_at": "2026-04-28T23:40:59.832351+00:00",
-            "file": "sdd/tasks/active/TASK-911-integration-db-loaded-bot.md"
+            "file": "sdd/tasks/completed/TASK-911-integration-db-loaded-bot.md",
+            "completed_at": "2026-04-29T00:45:00.000000+00:00"
         },
         {
             "id": "TASK-912",
