@@ -49,6 +49,29 @@ def _get_query_language(driver: str) -> QueryLanguage:
     return _DRIVER_TO_QUERY_LANGUAGE.get(driver, QueryLanguage.SQL)
 
 
+class DriverInfo:
+    """Driver metadata wrapper preserved for back-compat (FEAT-105).
+
+    Pre-FEAT-105, this class lived in ``parrot_tools.databasequery`` and exposed
+    classmethods used by external plugins. The migration moved its internals to
+    module-level helpers (``_DRIVER_TO_QUERY_LANGUAGE``, ``_get_query_language``,
+    ``normalize_driver``). This thin wrapper restores the legacy surface so the
+    ``parrot_tools.databasequery`` shim keeps working.
+    """
+
+    DRIVER_MAP: Dict[str, QueryLanguage] = _DRIVER_TO_QUERY_LANGUAGE
+
+    @classmethod
+    def normalize_driver(cls, driver: str) -> str:
+        """Normalize a driver alias to its canonical name."""
+        return normalize_driver(driver)
+
+    @classmethod
+    def get_query_language(cls, driver: str) -> QueryLanguage:
+        """Return the QueryLanguage for a driver alias or canonical name."""
+        return _get_query_language(cls.normalize_driver(driver))
+
+
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
