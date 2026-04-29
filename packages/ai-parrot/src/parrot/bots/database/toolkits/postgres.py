@@ -55,7 +55,6 @@ class PostgresToolkit(SQLToolkit):
         self._prepared_cache: Dict[str, tuple[str, List[str]]] = {}
         self._json_cols_cache: Dict[str, FrozenSet[str]] = {}
         self._hstore_cols_cache: Dict[str, FrozenSet[str]] = {}
-        self._in_transaction: bool = False
 
         # Gate write tools when read_only=True.
         # CRITICAL: must happen BEFORE super().__init__ (which calls
@@ -829,40 +828,35 @@ class PostgresToolkit(SQLToolkit):
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[Any]:
-        """Yield an asyncdb connection inside a transaction block.
+        """Yield a raw asyncpg connection inside a transaction block.
 
-        Commits on normal exit, rolls back on exception.  Only top-level
-        transactions are supported — nested calls raise ``RuntimeError``.
+        Commits on normal exit, rolls back on exception.  Supports nested
+        savepoints: callers can open an inner ``async with conn.transaction():``
+        block inside the yielded context — asyncpg automatically uses a
+        ``SAVEPOINT`` for the inner block and rolls back only that savepoint
+        on exception without aborting the outer transaction.
 
         Yields:
-            A connection object that can be passed as ``conn=`` to CRUD
-            methods to share a single transaction.
-
-        Raises:
-            RuntimeError: When called while already inside a transaction.
+            Raw ``asyncpg.Connection`` that can be passed as ``conn=`` to
+            CRUD methods or used directly for ``fetch``/``execute``.
 
         Example::
 
             async with toolkit.transaction() as tx:
                 await toolkit.insert_row("auth.programs", data, conn=tx)
                 await toolkit.upsert_row("auth.program_clients", pc, conn=tx)
+
+            # Nested savepoint (inner rollback preserves outer):
+            async with toolkit.transaction() as tx:
+                await toolkit.insert_row("auth.programs", data, conn=tx)
+                async with tx.transaction():   # SAVEPOINT
+                    await toolkit.insert_row("auth.clients", c, conn=tx)
+                    raise SomeError()          # ROLLBACK TO SAVEPOINT
+                # outer transaction still active — will COMMIT
         """
-        if self._in_transaction:
-            raise RuntimeError(
-                "Nested transactions are not supported. "
-                "Complete the current transaction before starting a new one."
-            )
-        self._in_transaction = True
-        try:
-            async with self._acquire_asyncdb_connection() as conn:
-                async with conn.transaction():
-                    try:
-                        yield conn
-                    except Exception:
-                        self._in_transaction = False
-                        raise
-        finally:
-            self._in_transaction = False
+        async with self._acquire_asyncdb_connection() as raw_conn:
+            async with raw_conn.transaction():
+                yield raw_conn
 
     # ------------------------------------------------------------------
     # Metadata reload

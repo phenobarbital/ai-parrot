@@ -10,12 +10,9 @@ import os
 import sys
 
 # Load worktree source (must precede any parrot imports)
-sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir)))
-sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)))
-sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)))
-sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), os.pardir)))
+# __file__ is tests/unit/bots/database/toolkits/ — go 3 levels up to tests/unit/
 _UNIT_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, os.pardir)
+    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)
 )
 sys.path.insert(0, _UNIT_DIR)
 from conftest_db import setup_worktree_imports  # noqa: E402
