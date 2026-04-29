@@ -245,4 +245,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created `parrot/bots/flows/core/node.py` with:
+- `Node(ABC)`: extended base with `node_id: str` + `name` abstract property + action hooks (pre/post, sync/async). `_init_node(node_id, name)` initialises both fields.
+- `AgentNode(Node)` dataclass: wraps `AgentLike` agent + auto-created `AgentTaskMachine` FSM; distinct `node_id` vs `agent.name`; `dependencies: Set[str]`, `successors: Set[str]`.
+- `StartNode(Node)` / `EndNode(Node)`: virtual entry/exit nodes with `is_configured`, `ask()`, `configure()` duck-typing attrs. `node_id` equals `name` for these.
+All 31 unit tests pass.
