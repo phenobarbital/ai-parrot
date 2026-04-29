@@ -194,4 +194,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created `parrot/bots/flows/core/storage/` package with 5 files:
+- `__init__.py`: re-exports ExecutionMemory, VectorStoreMixin, PersistenceMixin, SynthesisMixin.
+- `memory.py`: ExecutionMemory dataclass (imports AgentResult from `parrot.models.crew` via `from .....models.crew`).
+- `mixin.py`: VectorStoreMixin (FAISS-based; absolute import `from parrot._imports import lazy_import`).
+- `persistence.py`: PersistenceMixin (DocumentDB persistence; 5-level relative import for DocumentDb).
+- `synthesis.py`: SynthesisMixin (references CrewResult for now per D11; 5-level relative import).
+All 19 unit tests pass.

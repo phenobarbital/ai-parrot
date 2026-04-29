@@ -16486,7 +16486,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16496,7 +16496,8 @@
       "parallelism_notes": "Only needs types for ActionCallback; could parallel with FSM/result but sequential is simpler",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-919-flow-primitives-storage.md"
+      "file": "sdd/tasks/completed/TASK-919-flow-primitives-storage.md",
+      "completed_at": "2026-04-29T11:50:00.000000+00:00"
     },
     {
       "id": "TASK-920",
