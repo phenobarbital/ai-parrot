@@ -11,7 +11,8 @@ from ..tools.abstract import AbstractTool, ToolResult
 from .oauth import (
     OAuthManager,
     InMemoryTokenStore,
-    RedisTokenStore
+    RedisTokenStore,
+    VaultTokenStore,
 )
 from .client import (
     MCPClientConfig as MCPServerConfig,
@@ -741,6 +742,105 @@ def create_oauth_mcp_server(
     cfg._ensure_oauth_token = oauth.ensure_token  # attribute on purpose
     return cfg
 
+
+# ---------------------------------------------------------------------------
+# NetSuite MCP server factory
+# ---------------------------------------------------------------------------
+
+NETSUITE_MCP_URL = (
+    "https://{account_id}.suitetalk.api.netsuite.com"
+    "/services/mcp/v1/suiteapp/com.netsuite.mcpstandardtools"
+)
+NETSUITE_AUTH_URL = (
+    "https://{account_id}.app.netsuite.com/app/login/oauth2/authorize.nl"
+)
+NETSUITE_TOKEN_URL = (
+    "https://{account_id}.suitetalk.api.netsuite.com"
+    "/services/rest/auth/oauth2/v1/token"
+)
+NETSUITE_SCOPES = ["mcp"]
+
+
+def create_netsuite_mcp_server(
+    *,
+    account_id: str,
+    client_id: str,
+    user_id: str,
+    token_store: Optional["Any"] = None,
+    redirect_host: str = "127.0.0.1",
+    redirect_port: int = 8765,
+    redirect_path: str = "/mcp/oauth/callback",
+    headers: Optional[Dict[str, Any]] = None,
+) -> MCPServerConfig:
+    """Create a NetSuite MCP server configuration using OAuth2 Authorization Code + PKCE.
+
+    Constructs NetSuite-specific auth/token URLs from the given ``account_id``
+    and wires an :class:`~parrot.mcp.oauth.OAuthManager` for the full OAuth2
+    flow. Scope is fixed to ``["mcp"]`` as required by the NetSuite AI Connector.
+
+    Args:
+        account_id: NetSuite account ID (e.g. ``"4984231"``).
+        client_id: OAuth2 client ID from the NetSuite integration record.
+        user_id: Caller's user identifier used to scope token storage.
+        token_store: Optional :class:`~parrot.mcp.oauth.TokenStore` instance.
+            Defaults to :class:`~parrot.mcp.oauth.InMemoryTokenStore` when
+            ``None``. Pass a :class:`~parrot.mcp.oauth.VaultTokenStore` for
+            persistent, encrypted token storage.
+        redirect_host: Local callback host (default ``"127.0.0.1"``).
+        redirect_port: Local callback port (default ``8765``).
+        redirect_path: Local callback path (default ``"/mcp/oauth/callback"``).
+        headers: Extra HTTP headers to include with every MCP request.
+
+    Returns:
+        :class:`~parrot.mcp.client.MCPClientConfig` configured for NetSuite.
+
+    Example:
+        >>> from parrot.mcp.integration import create_netsuite_mcp_server
+        >>> cfg = create_netsuite_mcp_server(
+        ...     account_id="4984231",
+        ...     client_id="my-client-id",
+        ...     user_id="user@co.com",
+        ... )
+    """
+    url = NETSUITE_MCP_URL.format(account_id=account_id)
+    auth_url = NETSUITE_AUTH_URL.format(account_id=account_id)
+    token_url = NETSUITE_TOKEN_URL.format(account_id=account_id)
+
+    if token_store is None:
+        token_store = InMemoryTokenStore()
+
+    oauth = OAuthManager(
+        user_id=user_id,
+        server_name="netsuite",
+        client_id=client_id,
+        auth_url=auth_url,
+        token_url=token_url,
+        scopes=NETSUITE_SCOPES,
+        redirect_host=redirect_host,
+        redirect_port=redirect_port,
+        redirect_path=redirect_path,
+        token_store=token_store,
+    )
+
+    cfg = MCPServerConfig(
+        name="netsuite",
+        transport="http",
+        url=url,
+        headers=headers or {"Content-Type": "application/json"},
+        auth_type="oauth",
+        auth_config={
+            "auth_url": auth_url,
+            "token_url": token_url,
+            "scopes": NETSUITE_SCOPES,
+            "client_id": client_id,
+            "redirect_uri": oauth.redirect_uri,
+        },
+        token_supplier=oauth.token_supplier,
+    )
+    cfg._ensure_oauth_token = oauth.ensure_token
+    return cfg
+
+
 def create_unix_mcp_server(
     name: str,
     socket_path: str,
@@ -1365,6 +1465,44 @@ class MCPEnabledMixin:
             List of registered tool names
         """
         config = create_alphavantage_mcp_server(api_key, name=name, **kwargs)
+        return await self.add_mcp_server(config)
+
+    async def add_netsuite_mcp_server(
+        self,
+        account_id: str,
+        client_id: str,
+        user_id: str,
+        **kwargs,
+    ) -> List[str]:
+        """Add NetSuite MCP server capability via OAuth2 Authorization Code + PKCE.
+
+        Constructs the NetSuite MCP configuration from the given credentials and
+        registers it with this agent. Scope is fixed to ``["mcp"]``.
+
+        Args:
+            account_id: NetSuite account ID (e.g. ``"4984231"``).
+            client_id: OAuth2 client ID from the NetSuite integration record.
+            user_id: Caller's user identifier for token storage scoping.
+            **kwargs: Additional keyword arguments forwarded to
+                :func:`create_netsuite_mcp_server` (e.g. ``token_store``,
+                ``redirect_host``, ``redirect_port``).
+
+        Returns:
+            List of registered tool names from the NetSuite MCP server.
+
+        Example:
+            >>> tools = await agent.add_netsuite_mcp_server(
+            ...     account_id="4984231",
+            ...     client_id="my-client-id",
+            ...     user_id="user@co.com",
+            ... )
+        """
+        config = create_netsuite_mcp_server(
+            account_id=account_id,
+            client_id=client_id,
+            user_id=user_id,
+            **kwargs,
+        )
         return await self.add_mcp_server(config)
 
     async def add_genmedia_mcp_servers(
