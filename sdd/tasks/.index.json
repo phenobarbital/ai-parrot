@@ -16619,14 +16619,14 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundational change \u2014 all other tasks depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
       "file": "sdd/tasks/active/TASK-926-asyncpg-boundary-unwrap.md"
     },
     {
@@ -16636,7 +16636,7 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16645,7 +16645,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-926 (boundary unwrap must land first)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
       "file": "sdd/tasks/active/TASK-927-delete-sqlalchemy-backend.md"
     },
     {
@@ -16655,7 +16655,7 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16665,7 +16665,7 @@
       "parallel": false,
       "parallelism_notes": "Needs boundary unwrap + SQLAlchemy removal before changing param style",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
       "file": "sdd/tasks/active/TASK-928-query-builder-param-normalisation.md"
     },
     {
@@ -16675,7 +16675,7 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16684,7 +16684,7 @@
       "parallel": true,
       "parallelism_notes": "Only depends on TASK-926; can run in parallel with TASK-927",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
       "file": "sdd/tasks/active/TASK-929-transaction-asyncpg-native.md"
     },
     {
@@ -16694,7 +16694,7 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16706,7 +16706,7 @@
       "parallel": false,
       "parallelism_notes": "Final cleanup \u2014 depends on ALL prior tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
       "file": "sdd/tasks/active/TASK-930-cleanup-feat117-override-tests-deps.md"
     }
   ]
