@@ -775,6 +775,87 @@ Each package has its own version number in its `pyproject.toml`. All three are b
 
 ---
 
+## DB-Persisted Bot Configuration (FEAT-133)
+
+> Added in FEAT-133. Spec: `sdd/specs/bot-reranker-and-parent-searcher-config.spec.md`.
+
+`BotManager._load_database_bots` reads two new JSONB columns on
+`navigator.ai_bots` and wires the resulting objects into every DB-loaded bot
+at startup.  Both columns default to `'{}'::JSONB`, so existing rows are
+unaffected.
+
+### Reranker config (`reranker_config`)
+
+Controls cross-encoder or LLM-based reranking of vector-store candidates
+(FEAT-126).  Empty `{}` means no reranking.
+
+**Local cross-encoder** (no live LLM call; requires `sentence-transformers`):
+
+```jsonc
+{
+  "type": "local_cross_encoder",
+  "model_name": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+  "device": "cpu",
+  "rerank_oversample_factor": 4
+}
+```
+
+**LLM reranker** (uses the bot's own LLM client):
+
+```jsonc
+{
+  "type": "llm",
+  "client_ref": "bot",
+  "rerank_oversample_factor": 4
+}
+```
+
+Factory: `parrot.rerankers.factory.create_reranker(config, *, bot_llm_client=None)`
+
+### Parent-searcher config (`parent_searcher_config`)
+
+Controls parent-document expansion after vector search (FEAT-128).
+Empty `{}` means no expansion.
+
+**In-table parent search** (chunk row has a `parent_id` FK in the same table):
+
+```jsonc
+{
+  "type": "in_table",
+  "expand_to_parent": true
+}
+```
+
+`expand_to_parent` is also forwarded as a constructor kwarg so the bot's
+retrieval logic can branch on it before calling the searcher.
+
+Factory: `parrot.stores.parents.factory.create_parent_searcher(config, *, store)`
+
+> `store` (`bot.store`) becomes available only **after** `await bot.configure(app)`.
+> The factory is therefore called after `configure()`, not before.
+
+### Error handling
+
+An unknown `type` value raises `parrot.exceptions.ConfigError` at bot startup.
+The bot is **not** silently registered without its configured features.
+
+```python
+# A row with {"type": "magic"} in reranker_config will raise:
+# ConfigError: unknown reranker type 'magic'; supported: local_cross_encoder, llm
+```
+
+### Order of operations
+
+```
+create_reranker(reranker_config)           # before bot construction
+bot = BotClass(..., reranker=reranker, expand_to_parent=...)
+await bot.configure(app)                   # store becomes available
+create_parent_searcher(config, store=bot.store)
+bot.parent_searcher = parent_searcher
+```
+
+---
+
 ## License
 
 MIT
