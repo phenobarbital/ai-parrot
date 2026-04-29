@@ -16364,7 +16364,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -16372,7 +16372,8 @@
       "parallelism_notes": "Foundation task \u2014 all other tasks depend on types",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-913-flow-primitives-types.md"
+      "file": "sdd/tasks/completed/TASK-913-flow-primitives-types.md",
+      "completed_at": "2026-04-29T11:12:52.677175+00:00"
     },
     {
       "id": "TASK-914",
