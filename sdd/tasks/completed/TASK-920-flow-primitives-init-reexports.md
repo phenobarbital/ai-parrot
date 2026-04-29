@@ -234,4 +234,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29.
+- Populated `parrot/bots/flows/core/__init__.py` with full `__all__` covering all 20 public symbols from TASK-913–919.
+- Populated `parrot/bots/flows/__init__.py` to re-export everything from `core`.
+- Deleted `AgentTask` dataclass (lines 60-73) from `parrot/bots/orchestration/crew.py` — confirmed it was not imported anywhere outside its definition.
+- All existing imports from `parrot.models.crew`, `parrot.bots.flow`, and `parrot.bots.orchestration.crew` continue to work.
+All 17 unit tests pass; 0 regressions.
