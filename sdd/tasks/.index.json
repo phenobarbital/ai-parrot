@@ -1,8 +1,8 @@
 {
-    "feature": "bot-reranker-and-parent-searcher-config",
-    "feature_id": "FEAT-133",
-    "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
-    "created_at": "2026-04-28T22:59:12.144338+00:00",
+    "feature": "flow-primitives",
+    "feature_id": "FEAT-134",
+    "spec": "sdd/specs/flow-primitives.spec.md",
+    "created_at": "2026-04-29T09:52:06.115775+00:00",
     "previous_features": [
         {
             "feature": "feat-129-upgrades",
@@ -248,6 +248,12 @@
             "feature_id": "FEAT-108",
             "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
             "created_at": "2026-04-19T12:00:00+00:00"
+        },
+        {
+            "feature_id": "FEAT-133",
+            "feature": "bot-reranker-and-parent-searcher-config",
+            "spec": "sdd/specs/bot-reranker-and-parent-searcher-config.spec.md",
+            "created_at": "2026-04-28T22:59:12.144338+00:00"
         }
     ],
     "tasks": [
@@ -16344,6 +16350,185 @@
             "started_at": "2026-04-28T23:40:59.832351+00:00",
             "file": "sdd/tasks/completed/TASK-912-docs-and-changelog.md",
             "completed_at": "2026-04-29T01:00:00.000000+00:00"
+        },
+        {
+            "id": "TASK-913",
+            "slug": "flow-primitives-types",
+            "title": "Types Module — AgentLike Protocol, Type Aliases, FlowStatus",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "S",
+            "depends_on": [],
+            "parallel": false,
+            "parallelism_notes": "Foundation task — all other tasks depend on types",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-913-flow-primitives-types.md"
+        },
+        {
+            "id": "TASK-914",
+            "slug": "flow-primitives-fsm",
+            "title": "FSM Module — AgentTaskMachine and TransitionCondition",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "S",
+            "depends_on": [
+                "TASK-913"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Depends on types; could parallel with TASK-915 but sequential is simpler for this scope",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-914-flow-primitives-fsm.md"
+        },
+        {
+            "id": "TASK-915",
+            "slug": "flow-primitives-result",
+            "title": "Result Models — FlowResult, NodeExecutionInfo, FlowStatus Utilities",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-913"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Depends only on types; could parallel with TASK-914 but per-spec strategy is sequential",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-915-flow-primitives-result.md"
+        },
+        {
+            "id": "TASK-916",
+            "slug": "flow-primitives-node",
+            "title": "Node Hierarchy — Node ABC, AgentNode, StartNode, EndNode",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-913",
+                "TASK-914"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Needs types + FSM; must be sequential after them",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-916-flow-primitives-node.md"
+        },
+        {
+            "id": "TASK-917",
+            "slug": "flow-primitives-context",
+            "title": "FlowContext — Workflow Execution State Tracking",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "S",
+            "depends_on": [
+                "TASK-913",
+                "TASK-915"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Needs types + result models for NodeExecutionInfo",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-917-flow-primitives-context.md"
+        },
+        {
+            "id": "TASK-918",
+            "slug": "flow-primitives-transition",
+            "title": "Transitions — FlowTransition Dataclass",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "medium",
+            "effort": "S",
+            "depends_on": [
+                "TASK-913",
+                "TASK-914",
+                "TASK-915"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Needs types + FSM (TransitionCondition) + result (NodeExecutionInfo)",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-918-flow-primitives-transition.md"
+        },
+        {
+            "id": "TASK-919",
+            "slug": "flow-primitives-storage",
+            "title": "Storage Migration — ExecutionMemory, PersistenceMixin, SynthesisMixin",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "medium",
+            "effort": "M",
+            "depends_on": [
+                "TASK-913"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Only needs types for ActionCallback; could parallel with FSM/result but sequential is simpler",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-919-flow-primitives-storage.md"
+        },
+        {
+            "id": "TASK-920",
+            "slug": "flow-primitives-init-reexports",
+            "title": "Package Init + Re-Exports + Dead Code Cleanup",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-913",
+                "TASK-914",
+                "TASK-915",
+                "TASK-916",
+                "TASK-917",
+                "TASK-918",
+                "TASK-919"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Integration task — needs all modules before wiring",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-920-flow-primitives-init-reexports.md"
+        },
+        {
+            "id": "TASK-921",
+            "slug": "flow-primitives-contract-tests",
+            "title": "Contract Tests — FSM Invariants, Serialization, Protocol Conformance",
+            "feature_id": "FEAT-134",
+            "feature": "flow-primitives",
+            "spec": "sdd/specs/flow-primitives.spec.md",
+            "status": "pending",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": [
+                "TASK-920"
+            ],
+            "parallel": false,
+            "parallelism_notes": "Needs full package wired up before running cross-module tests",
+            "assigned_to": null,
+            "started_at": null,
+            "file": "sdd/tasks/active/TASK-921-flow-primitives-contract-tests.md"
         }
     ]
 }
