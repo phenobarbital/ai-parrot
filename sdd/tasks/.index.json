@@ -16685,7 +16685,7 @@
       "feature_id": "FEAT-118",
       "feature": "database-toolkit-asyncpg-boundary-refactor",
       "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16695,7 +16695,8 @@
       "parallelism_notes": "Only depends on TASK-926; can run in parallel with TASK-927",
       "assigned_to": null,
       "started_at": "2026-04-29T11:05:50.343171+00:00",
-      "file": "sdd/tasks/active/TASK-929-transaction-asyncpg-native.md"
+      "file": "sdd/tasks/completed/TASK-929-transaction-asyncpg-native.md",
+      "completed_at": "2026-04-29T11:47:55.241940+00:00"
     },
     {
       "id": "TASK-930",
