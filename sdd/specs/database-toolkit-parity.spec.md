@@ -58,6 +58,28 @@ the toolkit is missing several capabilities that the original tool provides:
    instead of importing from `parrot.security` and
    `parrot.tools.databasequery.sources`.
 
+8. **Source-layer credential resolution is a PG-only stub.** Every source's
+   `get_default_credentials()` delegates to
+   `parrot.interfaces.database.get_default_credentials(driver)`, which only
+   supports PostgreSQL (returns `querysource.conf.default_dsn` for `pg` aliases,
+   `None` for everything else). All non-PG sources effectively return `{}`
+   — meaning the toolkit **cannot connect without explicit credentials** to
+   MySQL, BigQuery, MongoDB, Atlas, DocumentDB, InfluxDB, Oracle, MSSQL,
+   Elastic, ClickHouse, or DuckDB.
+
+   Meanwhile, `DatabaseQueryTool._get_default_credentials()` (tool.py:533-675)
+   has a rich 140-line method that reads `navconfig.config` env vars for
+   **every** driver (e.g. `MYSQL_HOST`, `BIGQUERY_CREDENTIALS`,
+   `MONGODB_HOST`, `INFLUX_TOKEN`, `DOCUMENTDB_HOSTNAME`, etc.). This is a
+   critical functional regression: the toolkit path is broken for 11 of 13
+   drivers when no credentials are provided.
+
+   The fix is to migrate the per-driver credential logic from `tool.py` into
+   each source's `get_default_credentials()` override, since each source
+   already knows its driver-specific env var names. The interface function
+   stays as a thin DSN-only helper. Then `DatabaseQueryTool` can also
+   delegate to the sources, removing its own 140-line duplicate.
+
 ### Goals
 
 - **G1** — Add `test_connection` tool to `DatabaseQueryToolkit`.
@@ -74,6 +96,14 @@ the toolkit is missing several capabilities that the original tool provides:
   the source layer (or a shared helper).
 - **G7** — Clean up `tool.py` unused imports; reuse `parrot.security.QueryValidator`
   and `sources.normalize_driver` instead of local duplicates.
+- **G8** — Expand `parrot.interfaces.database.get_default_credentials(driver)`
+  to return a full credential `dict[str, Any]` for every supported driver
+  (not just a DSN string for PG). This becomes the single source of truth
+  for env-var-based credential resolution. Each source's
+  `get_default_credentials()` calls the interface and applies driver-specific
+  post-processing (e.g. DocumentDB adds SSL, Atlas normalizes DSN scheme).
+  `DatabaseQueryTool._get_default_credentials()` also delegates to the
+  interface, eliminating its 140-line inline dict.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -101,6 +131,12 @@ plain dicts.
 Add a `max_rows` parameter to query methods and implement a shared
 `add_row_limit()` helper in `base.py` that sources can call before
 executing queries.
+
+Migrate the per-driver default credential resolution from the legacy tool's
+monolithic `_get_default_credentials()` into each source's
+`get_default_credentials()` override, reading from `navconfig.config` env
+vars. This closes the critical 11-of-13-driver credential gap in the toolkit
+and removes 140 lines of duplicate code from `tool.py`.
 
 ### Component Diagram
 
@@ -213,7 +249,65 @@ class AbstractDatabaseSource(ABC):
 - **Depends on**: `sources.normalize_driver` (for dialect detection in
   `add_row_limit`).
 
-### Module 2: Source-layer test_connection overrides
+### Module 2: Credential resolution — interface + source migration
+
+- **Path**:
+  - `packages/ai-parrot/src/parrot/interfaces/database.py` (expand interface)
+  - All files in `packages/ai-parrot/src/parrot/tools/databasequery/sources/`
+- **Responsibility**:
+
+  **Step 2a — Expand `parrot.interfaces.database.get_default_credentials()`.**
+
+  The current function (database.py:490-508) is a PG-only stub that returns
+  `Optional[str]`. Expand it to:
+  - Accept all supported drivers.
+  - Return `dict[str, Any]` (full credential dict), not just a DSN string.
+  - Read from `navconfig.config` env vars, using the same var names and
+    fallback values as `DatabaseQueryTool._get_default_credentials()` (the
+    authoritative reference at tool.py:554-660).
+  - Return `{}` (not raise) when env vars are not set.
+  - Signature change: `def get_default_credentials(driver: str) -> dict[str, Any]`
+
+  Per-driver env var reference (from tool.py):
+
+  | Driver | Env vars | Notes |
+  |---|---|---|
+  | `pg` | `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PWD`/`PG_PASSWORD` | Also return `dsn` from `querysource.conf.default_dsn` |
+  | `mysql` | `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` | |
+  | `bigquery` | `BIGQUERY_CREDENTIALS`/`BIGQUERY_CREDENTIALS_PATH`, `BIGQUERY_PROJECT_ID` | `credentials` value is a resolved `Path` |
+  | `sqlite` | `SQLITE_DATABASE` | Fallback `:memory:` |
+  | `oracle` | `ORACLE_HOST`, `ORACLE_PORT`, `ORACLE_SERVICE_NAME`, `ORACLE_USER`, `ORACLE_PASSWORD` | |
+  | `mssql` | `MSSQL_HOST`, `MSSQL_PORT`, `MSSQL_DATABASE`, `MSSQL_USER`, `MSSQL_PASSWORD` | |
+  | `clickhouse` | `CLICKHOUSE_HOST`, `CLICKHOUSE_PORT`, `CLICKHOUSE_DATABASE`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` | New — not in legacy tool |
+  | `duckdb` | (none) | Defaults to `:memory:` |
+  | `influx` | `INFLUX_HOST`, `INFLUX_PORT`, `INFLUX_DATABASE`, `INFLUX_USERNAME`, `INFLUX_PASSWORD`, `INFLUX_TOKEN` (from `querysource.conf`), `INFLUX_ORG` | |
+  | `mongo` | `MONGODB_HOST`, `MONGODB_PORT`, `MONGODB_DATABASE`, `MONGODB_USER`, `MONGODB_PASSWORD` | Add `dbtype: "mongodb"` |
+  | `atlas` | `ATLAS_HOST`, `ATLAS_PORT`, `ATLAS_DATABASE`, `ATLAS_USER`, `ATLAS_PASSWORD` | Add `dbtype: "atlas"` |
+  | `documentdb` | `DOCUMENTDB_HOSTNAME`, `DOCUMENTDB_PORT`, `DOCUMENTDB_DATABASE`, `DOCUMENTDB_USERNAME`, `DOCUMENTDB_PASSWORD`, `DOCUMENTDB_USE_SSL`, `DOCUMENTDB_COLLECTION` | Add `ssl`, `tlsCAFile`, `dbtype: "documentdb"` |
+  | `elastic` | `ELASTICSEARCH_HOST`, `ELASTICSEARCH_PORT`, `ELASTICSEARCH_INDEX`, `ELASTICSEARCH_USER`, `ELASTICSEARCH_PASSWORD`, `ELASTICSEARCH_PROTOCOL`, `ELASTICSEARCH_CLIENT_TYPE` | |
+
+  **Step 2b — Update each source's `get_default_credentials()` override.**
+
+  Each source calls the expanded interface and applies any driver-specific
+  post-processing:
+
+  | Source | Post-processing needed |
+  |---|---|
+  | `PostgresSource` | Also include `dsn` key from `querysource.conf.default_dsn` |
+  | `DocumentDBSource` | `setdefault("ssl", True)`, `setdefault("tlsCAFile", ...)` |
+  | `AtlasSource` | Normalize DSN to `mongodb+srv://` scheme |
+  | All others | Call interface, return as-is (strip `None` values) |
+
+  Implementation pattern:
+  ```python
+  async def get_default_credentials(self) -> dict[str, Any]:
+      from parrot.interfaces.database import get_default_credentials
+      return get_default_credentials("mysql")
+  ```
+
+- **Depends on**: Module 1 (base.py changes)
+
+### Module 3: Source-layer test_connection overrides
 
 - **Path**: All files in `packages/ai-parrot/src/parrot/tools/databasequery/sources/`
 - **Responsibility**: Override `test_connection` on non-SQL sources where
@@ -221,7 +315,7 @@ class AbstractDatabaseSource(ABC):
   InfluxDB → `buckets()`).
 - **Depends on**: Module 1
 
-### Module 3: Toolkit refactor (toolkit.py)
+### Module 4: Toolkit refactor (toolkit.py)
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py`
 - **Responsibility**:
@@ -240,9 +334,9 @@ class AbstractDatabaseSource(ABC):
     so the LLM still receives plain dicts.
   - Accept `output_dir` / `static_dir` in `__init__` kwargs for `save_result`.
   - Update `exclude_tools` if needed.
-- **Depends on**: Module 1, Module 2
+- **Depends on**: Module 1, Module 2, Module 3
 
-### Module 4: Legacy tool cleanup (tool.py)
+### Module 5: Legacy tool cleanup (tool.py)
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/databasequery/tool.py`
 - **Responsibility**:
@@ -253,23 +347,30 @@ class AbstractDatabaseSource(ABC):
     `QueryLanguage` from `parrot.security`.
   - Remove `get_default_credentials` free function (lines 202-208) —
     unused after source layer handles defaults.
-  - Clean up unused imports.
-  - Keep `DatabaseQueryTool` functional — it remains the legacy entry point.
-  - **Note**: `_add_row_limit`, `_get_default_credentials`,
-    `_execute_database_query` stay as-is (they are internal to the legacy tool).
-    Only the duplicated *classes* are removed.
-- **Depends on**: Module 3 (to verify toolkit is complete before trimming legacy)
+  - Refactor `_get_default_credentials()` (lines 533-675) to delegate to
+    `parrot.interfaces.database.get_default_credentials(driver)` (now expanded
+    to all drivers). Merge result with `provided_credentials`. This removes
+    ~140 lines of duplicated credential dicts. The DSN resolution for PG
+    can also come from the interface dict's `dsn` key.
+  - Remove `_validate_query_safety()` — use `QueryValidator` directly.
+  - Clean up unused imports (`Enum`, redundant `json`, `Path`, etc.).
+  - Keep `DatabaseQueryTool._execute()` functional — it remains the legacy
+    entry point.
+- **Depends on**: Module 2 (sources must have full credentials first),
+  Module 4 (to verify toolkit is complete before trimming legacy)
 
-### Module 5: Update __init__.py exports and tests
+### Module 6: Update __init__.py exports and tests
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/databasequery/__init__.py`
   and `tests/`
 - **Responsibility**:
   - Export `add_row_limit` from `__init__.py` if useful to external callers.
   - Add unit tests for each new toolkit method.
+  - Add unit tests for source-level `get_default_credentials()` (verify each
+    source reads from the expected env vars when configured).
   - Add a deprecation test that `validate_database_query` still works
     (if we keep a compat alias) or verify it's gone.
-- **Depends on**: Module 3, Module 4
+- **Depends on**: Module 4, Module 5
 
 ---
 
@@ -283,18 +384,27 @@ class AbstractDatabaseSource(ABC):
 | `test_add_row_limit_flux` | M1 | Injects `\|> limit(n: N)` for InfluxDB |
 | `test_add_row_limit_elastic` | M1 | Sets `size` in JSON body for Elastic |
 | `test_add_row_limit_already_present` | M1 | Does not double-limit |
-| `test_source_test_connection_pg` | M2 | PostgresSource.test_connection returns True |
-| `test_source_test_connection_mongo` | M2 | MongoSource.test_connection uses ping |
-| `test_toolkit_validate_query` | M3 | Renamed method works, no credentials param |
-| `test_toolkit_get_table_metadata` | M3 | Returns metadata for single table |
-| `test_toolkit_test_connection` | M3 | Delegates to source.test_connection |
-| `test_toolkit_save_result_csv` | M3 | Writes CSV, returns file info |
-| `test_toolkit_save_result_excel` | M3 | Writes Excel, returns file info |
-| `test_toolkit_save_result_json` | M3 | Writes JSON, returns file info |
-| `test_toolkit_max_rows` | M3 | execute_database_query injects limit |
-| `test_post_execute_serializes_models` | M3 | BaseModel results become dicts |
-| `test_legacy_tool_still_works` | M4 | DatabaseQueryTool._execute unchanged |
-| `test_legacy_tool_no_local_queryvalidator` | M4 | Uses parrot.security import |
+| `test_pg_source_default_creds` | M2 | PostgresSource reads PG_HOST etc. from navconfig |
+| `test_mysql_source_default_creds` | M2 | MySQLSource reads MYSQL_HOST etc. from navconfig |
+| `test_bigquery_source_default_creds` | M2 | BigQuerySource reads BIGQUERY_CREDENTIALS etc. |
+| `test_mongo_source_default_creds` | M2 | MongoSource reads MONGODB_HOST etc. from navconfig |
+| `test_elastic_source_default_creds` | M2 | ElasticSource reads ELASTICSEARCH_HOST etc. |
+| `test_influx_source_default_creds` | M2 | InfluxSource reads INFLUX_HOST, INFLUX_TOKEN etc. |
+| `test_documentdb_source_default_creds` | M2 | DocumentDBSource reads DOCUMENTDB_HOSTNAME + SSL |
+| `test_source_default_creds_empty_when_no_env` | M2 | Sources return {} when no env vars set |
+| `test_source_test_connection_pg` | M3 | PostgresSource.test_connection returns True |
+| `test_source_test_connection_mongo` | M3 | MongoSource.test_connection uses ping |
+| `test_toolkit_validate_query` | M4 | Renamed method works, no credentials param |
+| `test_toolkit_get_table_metadata` | M4 | Returns metadata for single table |
+| `test_toolkit_test_connection` | M4 | Delegates to source.test_connection |
+| `test_toolkit_save_result_csv` | M4 | Writes CSV, returns file info |
+| `test_toolkit_save_result_excel` | M4 | Writes Excel, returns file info |
+| `test_toolkit_save_result_json` | M4 | Writes JSON, returns file info |
+| `test_toolkit_max_rows` | M4 | execute_database_query injects limit |
+| `test_post_execute_serializes_models` | M4 | BaseModel results become dicts |
+| `test_legacy_tool_still_works` | M5 | DatabaseQueryTool._execute unchanged |
+| `test_legacy_tool_delegates_creds` | M5 | _get_default_credentials delegates to source layer |
+| `test_legacy_tool_no_local_queryvalidator` | M5 | Uses parrot.security import |
 
 ### Integration Tests
 
@@ -334,6 +444,11 @@ def sample_query_result():
 - [ ] Toolkit methods return Pydantic model instances internally; `_post_execute` serialises them to dicts for the LLM
 - [ ] `tool.py` no longer contains a local `QueryValidator` class — imports from `parrot.security`
 - [ ] `tool.py` no longer contains a local `DriverInfo` class — imports from `parrot.tools.databasequery.sources`
+- [ ] `parrot.interfaces.database.get_default_credentials(driver)` returns `dict[str, Any]` for all supported drivers (PG, MySQL, BigQuery, SQLite, Oracle, MSSQL, ClickHouse, DuckDB, Influx, Mongo, Atlas, DocumentDB, Elastic)
+- [ ] Every source's `get_default_credentials()` delegates to the interface and applies driver-specific post-processing
+- [ ] `PostgresSource` returns both DSN and param dict (host/port/db/user/pw)
+- [ ] `MySQLSource`, `BigQuerySource`, `MongoSource`, `ElasticSource`, `InfluxSource`, `OracleSource`, `MSSQLSource`, `DocumentDBSource` return non-empty credential dicts when env vars are set
+- [ ] `DatabaseQueryTool._get_default_credentials()` delegates to the source layer — no longer contains inline credential dicts
 - [ ] `DatabaseQueryTool._execute()` still works (legacy compat)
 - [ ] All new unit tests pass: `pytest tests/tools/test_database_toolkit_parity.py -v`
 - [ ] No breaking changes to `DatabaseQueryToolkit.get_tools()` output (tool names may change for renamed method)
@@ -373,6 +488,14 @@ from parrot.conf import STATIC_DIR                        # verified: used by Ab
 
 # Legacy tool
 from parrot.tools.abstract import AbstractTool            # verified: abstract.py
+
+# Configuration (env var access for source credentials)
+from navconfig import config                              # verified: used by tool.py:15
+from navconfig import BASE_DIR                            # verified: used by tool.py:15
+
+# Interface — DSN-only helper (PG only)
+from parrot.interfaces.database import get_default_credentials  # verified: database.py:490
+# NOTE: returns str|None, supports PG aliases only (_PG_ALIASES at line 487)
 ```
 
 ### Existing Class Signatures
@@ -448,6 +571,32 @@ class QueryValidator:                                      # line 29
 | `DatabaseQueryToolkit._post_execute` | `AbstractToolkit._post_execute` | override | toolkit.py:276 |
 | `add_row_limit()` | `normalize_driver()` | function call | sources/__init__.py:45 |
 | `add_row_limit()` | `_DRIVER_TO_QUERY_LANGUAGE` | dict lookup | toolkit.py:36 |
+| Source `get_default_credentials()` | `navconfig.config` | env var reads | navconfig (external) |
+| `DatabaseQueryTool._get_default_credentials()` | `source.get_default_credentials()` | delegation (after M5) | sources/*.py |
+
+### Credential Flow (current vs. target)
+
+```
+CURRENT (broken for non-PG):
+  Toolkit → source.resolve_credentials(None)
+          → source.get_default_credentials()
+          → parrot.interfaces.database.get_default_credentials(driver)
+          → returns None for non-PG → source returns {} → connection fails
+
+  Legacy tool → DatabaseQueryTool._get_default_credentials(driver)
+              → reads navconfig.config directly (140-line dict) → works
+
+TARGET (after Module 2 + Module 5):
+  parrot.interfaces.database.get_default_credentials(driver) → dict[str, Any]
+    → reads navconfig.config for ALL drivers → returns full credential dict
+
+  Toolkit → source.resolve_credentials(None)
+          → source.get_default_credentials()
+          → calls interface → applies driver-specific post-processing → works
+
+  Legacy tool → DatabaseQueryTool._get_default_credentials(driver)
+              → calls interface → merges with provided_credentials → works
+```
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -456,9 +605,10 @@ class QueryValidator:                                      # line 29
 - ~~`AbstractToolkit.to_static_url()`~~ — does not exist; only `AbstractTool` has it
 - ~~`AbstractDatabaseSource.test_connection()`~~ — does not exist yet (Module 1 adds it)
 - ~~`base.add_row_limit()`~~ — does not exist yet (Module 1 adds it)
-- ~~`DatabaseQueryToolkit.validate_query()`~~ — does not exist yet (Module 3 renames it)
-- ~~`DatabaseQueryToolkit.save_result()`~~ — does not exist yet (Module 3 adds it)
+- ~~`DatabaseQueryToolkit.validate_query()`~~ — does not exist yet (Module 4 renames it)
+- ~~`DatabaseQueryToolkit.save_result()`~~ — does not exist yet (Module 4 adds it)
 - ~~`parrot.tools.databasequery.DriverInfo`~~ — exists only in `tool.py` locally, not exported from the package
+- ~~`parrot.interfaces.database.get_default_credentials("mysql")`~~ — returns `None` (PG-only stub)
 
 ---
 
@@ -498,6 +648,24 @@ class QueryValidator:                                      # line 29
   `QueryValidator` is identical to `parrot.security.QueryValidator` except
   for a `print()` debug statement (tool.py:351). Remove the `print` and
   switch to the shared import.
+- **Interface return type change.** `get_default_credentials()` currently
+  returns `Optional[str]` (DSN). Changing it to `dict[str, Any]` is a
+  breaking change for any caller that treats the return value as a string.
+  Check all call sites (`grep -rn "get_default_credentials"`) before
+  changing. The sources already handle both `str` (DocumentDB) and `dict`
+  returns, but other callers may not.
+- **Env var naming must match existing deployments.** The legacy tool reads
+  `config.get('PG_PWD') or config.get('PG_PASSWORD')` with fallback chains.
+  The interface must replicate the same env var names and fallback order.
+  Use `DatabaseQueryTool._get_default_credentials()` (tool.py:554-660) as
+  the authoritative reference.
+- **`querysource.conf` imports.** The legacy tool imports `default_dsn` and
+  `INFLUX_TOKEN` from `querysource.conf` (tool.py:542). The interface must
+  guard these with `try/except ImportError` since `querysource` is optional.
+- **`DatabaseQueryTool._get_default_credentials` is sync.** The interface
+  function is sync too, so delegation is straightforward. The source's
+  `get_default_credentials()` is `async` but the interface call inside it is
+  sync — no issue.
 
 ### External Dependencies
 
@@ -507,6 +675,8 @@ class QueryValidator:                                      # line 29
 | `openpyxl` | `>=3.0` | Excel export in `save_result` (optional, lazy import) |
 | `pydantic` | `>=2.0` | Result models |
 | `sqlglot` | `>=20.0` | SQL validation (already present) |
+| `navconfig` | `>=1.0` | Env var access for default credentials (already present) |
+| `querysource` | (optional) | `default_dsn` for PG, `INFLUX_TOKEN` for InfluxDB |
 
 ---
 
@@ -541,3 +711,4 @@ class QueryValidator:                                      # line 29
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-29 | Jesus Lara | Initial draft |
+| 0.2 | 2026-04-29 | Jesus Lara | G8: expand interface + credential migration; Module 2 split into interface + source steps |
