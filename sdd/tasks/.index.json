@@ -16443,7 +16443,7 @@
       "feature_id": "FEAT-134",
       "feature": "flow-primitives",
       "spec": "sdd/specs/flow-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -16454,7 +16454,8 @@
       "parallelism_notes": "Needs types + result models for NodeExecutionInfo",
       "assigned_to": null,
       "started_at": "2026-04-29T09:54:17.518008+00:00",
-      "file": "sdd/tasks/active/TASK-917-flow-primitives-context.md"
+      "file": "sdd/tasks/completed/TASK-917-flow-primitives-context.md",
+      "completed_at": "2026-04-29T11:40:00.000000+00:00"
     },
     {
       "id": "TASK-918",

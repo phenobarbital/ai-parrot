@@ -193,4 +193,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-29. Created `parrot/bots/flows/core/context.py` with `FlowContext` dataclass:
+- Primary fields: `initial_task`, `results`, `responses`, `node_metadata: Dict[str, NodeExecutionInfo]`, `completion_order`, `errors`, `active_tasks`, `completed_tasks`.
+- Methods: `can_execute()`, `mark_completed()`, `get_input_for_node()`.
+- Backward-compat: `agent_metadata` property alias → `node_metadata`; `get_input_for_agent()` alias → `get_input_for_node()`.
+All 27 unit tests pass.
