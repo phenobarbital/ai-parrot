@@ -127,8 +127,16 @@ class FlowContext:
             }
         }
 
-class AgentNode:
-    """Represents a node in the workflow graph (an agent with its dependencies)."""
+class _CrewAgentNode:
+    """Represents a node in the workflow graph (an agent with its dependencies).
+
+    .. deprecated::
+        The public name ``AgentNode`` in this module is now ambiguous because
+        ``parrot.bots.flows.core`` exports a different (FSM-backed)
+        ``AgentNode``.  Internal crew code uses ``_CrewAgentNode`` to make
+        the distinction explicit; the ``AgentNode`` alias below preserves
+        backward compatibility for external callers.
+    """
 
     def __init__(self, agent: Union[BasicAgent, AbstractBot], dependencies: Optional[Set[str]] = None):
         self.agent = agent
@@ -228,6 +236,10 @@ class AgentNode:
             raise
 
 
+# Backward-compatibility alias.  New code should use
+# ``parrot.bots.flows.core.AgentNode`` (FSM-backed) instead.
+AgentNode = _CrewAgentNode
+
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
     """
@@ -319,7 +331,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
         self.truncate_context_summary = truncate_context_summary
         # Workflow graph for flow-based execution
-        self.workflow_graph: Dict[str, AgentNode] = {}
+        self.workflow_graph: Dict[str, _CrewAgentNode] = {}
         self.initial_agent: Optional[str] = None
         self.final_agents: Set[str] = set()
         self.use_tqdm: bool = kwargs.get('use_tqdm', True)
@@ -355,7 +367,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         if agents:
             for agent in agents:
                 self.add_agent(agent)
-                self.workflow_graph[agent.name] = AgentNode(agent)
+                self.workflow_graph[agent.name] = _CrewAgentNode(agent)
 
     @property
     def agent_statuses(self) -> Dict[str, Dict[str, Any]]:

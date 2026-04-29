@@ -63,11 +63,11 @@ class FlowContext:
 
     # ── Dependency checking ───────────────────────────────────────────────
 
-    def can_execute(self, node_id: str, dependencies: Set[str]) -> bool:
+    def can_execute(self, _node_id: str, dependencies: Set[str]) -> bool:
         """Return True if all ``dependencies`` are in ``completed_tasks``.
 
         Args:
-            node_id: The node being evaluated (unused but kept for symmetry).
+            _node_id: The node being evaluated (unused; kept for API symmetry).
             dependencies: Set of node_ids that must complete first.
 
         Returns:
@@ -103,6 +103,27 @@ class FlowContext:
             self.results[node_id] = result
         if response is not None:
             self.responses[node_id] = response
+        if metadata is not None:
+            self.node_metadata[node_id] = metadata
+
+    def mark_failed(
+        self,
+        node_id: str,
+        error: Exception,
+        metadata: Optional[NodeExecutionInfo] = None,
+    ) -> None:
+        """Record that a node has failed and store the error.
+
+        Removes ``node_id`` from ``active_tasks`` and writes the exception into
+        ``errors``.  Optionally stores execution metadata in ``node_metadata``.
+
+        Args:
+            node_id: The failed node's unique identifier.
+            error: The exception raised during execution.
+            metadata: Optional execution metadata (stored in ``self.node_metadata``).
+        """
+        self.active_tasks.discard(node_id)
+        self.errors[node_id] = error
         if metadata is not None:
             self.node_metadata[node_id] = metadata
 

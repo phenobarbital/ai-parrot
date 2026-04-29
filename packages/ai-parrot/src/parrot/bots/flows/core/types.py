@@ -64,6 +64,15 @@ class AgentLike(Protocol):
 
     Methods:
         invoke: Async call that processes a prompt and returns a result.
+
+    .. warning:: ``runtime_checkable`` limitation
+
+        ``isinstance(obj, AgentLike)`` only checks for *attribute existence*,
+        not whether ``invoke`` is a coroutine function.  An object with a
+        *synchronous* ``invoke`` method will pass the check but will raise a
+        ``TypeError`` at runtime when the engine does ``await agent.invoke(...)``.
+        Callers that need strict enforcement should additionally verify
+        ``asyncio.iscoroutinefunction(obj.invoke)``.
     """
 
     @property

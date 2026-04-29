@@ -125,6 +125,36 @@ class TestFlowContextBackwardCompat:
         assert via_agent == via_node
 
 
+class TestFlowContextMarkFailed:
+    def test_stores_error(self):
+        ctx = FlowContext(initial_task="test")
+        exc = RuntimeError("boom")
+        ctx.mark_failed("node-1", exc)
+        assert ctx.errors["node-1"] is exc
+
+    def test_removes_from_active_tasks(self):
+        ctx = FlowContext(initial_task="test")
+        ctx.active_tasks.add("node-1")
+        ctx.mark_failed("node-1", ValueError("err"))
+        assert "node-1" not in ctx.active_tasks
+
+    def test_does_not_add_to_completed_tasks(self):
+        ctx = FlowContext(initial_task="test")
+        ctx.mark_failed("node-1", ValueError("err"))
+        assert "node-1" not in ctx.completed_tasks
+
+    def test_stores_metadata_when_provided(self):
+        ctx = FlowContext(initial_task="test")
+        info = NodeExecutionInfo(node_id="node-1", node_name="agent-1", status="failed")
+        ctx.mark_failed("node-1", RuntimeError("err"), metadata=info)
+        assert ctx.node_metadata["node-1"] is info
+
+    def test_no_metadata_when_none(self):
+        ctx = FlowContext(initial_task="test")
+        ctx.mark_failed("node-1", RuntimeError("err"))
+        assert "node-1" not in ctx.node_metadata
+
+
 class TestFlowContextDefaults:
     def test_empty_results_on_init(self):
         ctx = FlowContext(initial_task="test")

@@ -114,6 +114,10 @@ class FlowTransition:
                 return await pred_result
             return bool(pred_result)
 
+        if self.condition == TransitionCondition.ON_TIMEOUT:
+            # Fires when the source node timed out (error is a TimeoutError).
+            return isinstance(error, (asyncio.TimeoutError, TimeoutError))
+
         return False
 
     # ── Prompt building ───────────────────────────────────────────────────

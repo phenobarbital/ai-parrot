@@ -89,18 +89,20 @@ class AgentTaskMachine(StateMachine):
             **kwargs: Forwarded to ``StateMachine.__init__``.
         """
         self.agent_name = agent_name
+        # Per-instance scoped logger so FSM events can be filtered by component.
+        self.logger = logging.getLogger(f"parrot.fsm.{agent_name}")
         super().__init__(**kwargs)
 
     # ── State-entry hooks (logging) ──────────────────────────────────────
 
     def on_enter_running(self) -> None:
         """Called when entering the ``running`` state."""
-        logging.debug("Agent %s started execution", self.agent_name)
+        self.logger.debug("Agent %s started execution", self.agent_name)
 
     def on_enter_completed(self) -> None:
         """Called when entering the ``completed`` state."""
-        logging.info("Agent %s completed successfully", self.agent_name)
+        self.logger.info("Agent %s completed successfully", self.agent_name)
 
     def on_enter_failed(self) -> None:
         """Called when entering the ``failed`` state."""
-        logging.error("Agent %s execution failed", self.agent_name)
+        self.logger.error("Agent %s execution failed", self.agent_name)

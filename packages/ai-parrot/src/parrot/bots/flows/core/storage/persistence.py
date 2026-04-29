@@ -5,8 +5,9 @@ core storage location.  Relative imports updated for the new package depth.
 """
 from __future__ import annotations
 
-import logging
 import time
+
+from navconfig.logging import logging
 from typing import Any
 
 

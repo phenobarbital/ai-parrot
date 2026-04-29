@@ -65,7 +65,13 @@ class ExecutionMemory(VectorStoreMixin):
             self.execution_graph[result.parent_execution_id].append(result.execution_id)
 
         if vectorize and self.embedding_model:
-            asyncio.create_task(self._vectorize_result_async(result))
+            # create_task requires a running event loop; guard so sync callers
+            # (e.g. test setup, __init__) don't raise RuntimeError.
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._vectorize_result_async(result))
+            except RuntimeError:
+                pass  # No running loop; vectorization skipped in sync context
 
     def get_results_by_agent(self, agent_id: str) -> Optional[AgentResult]:
         """Retrieve result from a specific agent.
@@ -94,13 +100,19 @@ class ExecutionMemory(VectorStoreMixin):
             agent_id: Agent identifier.
 
         Returns:
-            Initial query for the first agent; previous agent's result otherwise.
+            Initial query for the first agent, previous agent's result when
+            available, or ``original_query`` if either look-up fails.
         """
-        idx = self.execution_order.index(agent_id)
+        try:
+            idx = self.execution_order.index(agent_id)
+        except ValueError:
+            # agent_id not recorded in execution_order yet; fall back gracefully.
+            return self.original_query
         if idx == 0:
             return self.original_query
         prev_agent_id = self.execution_order[idx - 1]
-        return self.results[prev_agent_id].result
+        prev_result = self.results.get(prev_agent_id)
+        return prev_result.result if prev_result is not None else self.original_query
 
     def clear(self, keep_query: bool = False) -> None:
         """Clear execution memory.

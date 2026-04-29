@@ -40,8 +40,10 @@ def determine_run_status(
         failure_count: Number of nodes that failed.
 
     Returns:
-        - ``"completed"`` if no failures.
-        - ``"failed"`` if no successes.
+        - ``"completed"`` if no failures (including the ``(0, 0)`` case where
+          no nodes ran — callers that consider an empty run an error should
+          check ``success_count > 0`` themselves).
+        - ``"failed"`` if no successes (all nodes failed).
         - ``"partial"`` if there are both successes and failures.
     """
     if failure_count == 0:
@@ -190,7 +192,7 @@ class FlowResult:
     # ── String representations ────────────────────────────────────────────
 
     def __str__(self) -> str:
-        return str(self.content)
+        return str(self.output) if self.output is not None else ""
 
     def __repr__(self) -> str:
         return (

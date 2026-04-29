@@ -3,16 +3,21 @@
 Copied from ``parrot.bots.flow.storage.synthesis`` into the shared core
 storage location.  Relative imports updated for the new package depth.
 
-Note: References ``CrewResult`` for now — will be updated to ``FlowResult``
-in Spec 2 (per brainstorm D11).
+Accepts both ``CrewResult`` and ``FlowResult`` via duck-typing: only the
+``.agents`` (iterable of info objects) and ``.responses`` (dict) attributes
+are used. Full migration to ``FlowResult`` will happen in Spec 2.
 """
 from __future__ import annotations
 
-import logging
 import uuid
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Union
+
+from navconfig.logging import logging
 
 from .....models.crew import CrewResult
+
+if TYPE_CHECKING:
+    from ..result import FlowResult
 
 
 SYNTHESIS_PROMPT = """Based on the research findings from our specialist agents above,
@@ -36,7 +41,7 @@ class SynthesisMixin:
 
     async def _synthesize_results(
         self,
-        crew_result: CrewResult,
+        crew_result: Union[CrewResult, "FlowResult"],
         synthesis_prompt: Optional[str] = None,
         *,
         llm: Any = None,
@@ -49,7 +54,8 @@ class SynthesisMixin:
         """Synthesize crew/flow results using an LLM.
 
         Args:
-            crew_result: Result from any execution mode.
+            crew_result: Result from any execution mode (``CrewResult`` or
+                ``FlowResult`` — both expose ``.agents`` and ``.responses``).
             synthesis_prompt: Prompt instructing the LLM how to synthesize.
                 If ``None`` the method returns ``None`` immediately.
             llm: An ``AbstractClient`` instance. If ``None`` the method

@@ -5,6 +5,7 @@ storage location.  Relative imports updated for the new package depth.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, List, Optional, Tuple
 
 from parrot._imports import lazy_import
@@ -98,7 +99,11 @@ class VectorStoreMixin:
         return chunks
 
     async def _vectorize_result_async(self, result: AgentResult):
-        """Async task to vectorize and index a result."""
+        """Async task to vectorize and index a result.
+
+        Uses ``asyncio.to_thread`` to offload the CPU-bound
+        ``SentenceTransformer.encode`` call so the event loop is not blocked.
+        """
         if not self._faiss_available or not self.embedding_model or self._faiss_index is None:
             return
 
@@ -108,7 +113,11 @@ class VectorStoreMixin:
             self._vector_chunks.append((chunk, result.agent_id))
 
         all_texts = [chunk for chunk, _ in self._vector_chunks]
-        embeddings = self.embedding_model.encode(all_texts, convert_to_numpy=True)
+        # Offload blocking CPU-bound encode to a thread pool to avoid blocking
+        # the event loop.
+        embeddings = await asyncio.to_thread(
+            self.embedding_model.encode, all_texts, convert_to_numpy=True
+        )
         embeddings = embeddings.astype("float32")
 
         self._faiss_index.reset()
@@ -117,7 +126,13 @@ class VectorStoreMixin:
     def search_similar(
         self, query: str, top_k: int = 5
     ) -> List[Tuple[str, AgentResult, float]]:
-        """Search for semantically similar result chunks."""
+        """Search for semantically similar result chunks.
+
+        Note: This is a synchronous method — the underlying ``encode`` call is
+        CPU-bound.  Callers running inside an async context should use
+        ``asyncio.to_thread(memory.search_similar, query, top_k)`` to avoid
+        blocking the event loop.
+        """
         if (
             not self._faiss_available
             or self._faiss_index is None

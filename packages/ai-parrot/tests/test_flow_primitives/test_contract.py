@@ -4,6 +4,8 @@ Tests here span multiple core modules and validate the spec §4 invariants.
 Per-module unit tests live in their respective test_*.py files; this file
 focuses on cross-module integration and protocol conformance.
 """
+import asyncio
+
 import pytest
 from statemachine.exceptions import TransitionNotAllowed
 
@@ -235,6 +237,12 @@ class TestResultContract:
         assert FlowResult(output="ok", status=FlowStatus.PARTIAL).success is False
         assert FlowResult(output="ok", status=FlowStatus.FAILED).success is False
 
+    def test_str_none_output_returns_empty_string(self):
+        assert str(FlowResult(output=None)) == ""
+
+    def test_str_with_output_returns_str(self):
+        assert str(FlowResult(output="hello")) == "hello"
+
 
 # ---------------------------------------------------------------------------
 # Context contract
@@ -275,6 +283,14 @@ class TestContextContract:
         assert flow_context.get_input_for_agent("x", set()) == \
                flow_context.get_input_for_node("x", set())
 
+    def test_mark_failed_encapsulates_error(self, flow_context):
+        exc = RuntimeError("execution error")
+        flow_context.active_tasks.add("n1")
+        flow_context.mark_failed("n1", exc)
+        assert flow_context.errors["n1"] is exc
+        assert "n1" not in flow_context.active_tasks
+        assert "n1" not in flow_context.completed_tasks
+
 
 # ---------------------------------------------------------------------------
 # Transition contract
@@ -311,6 +327,14 @@ class TestTransitionContract:
         )
         assert await t.should_activate(result=10) is True
         assert await t.should_activate(result=3) is False
+
+    @pytest.mark.asyncio
+    async def test_on_timeout_fires_on_timeout_error(self):
+        t = FlowTransition(source="a", targets={"b"}, condition=TransitionCondition.ON_TIMEOUT)
+        assert await t.should_activate(result=None, error=asyncio.TimeoutError()) is True
+        assert await t.should_activate(result=None, error=TimeoutError()) is True
+        assert await t.should_activate(result=None, error=ValueError("other")) is False
+        assert await t.should_activate(result="ok", error=None) is False
 
     @pytest.mark.asyncio
     async def test_on_condition_async_predicate(self):
@@ -354,6 +378,24 @@ class TestProtocolConformance:
 
         # AgentLike requires both name AND invoke
         assert not isinstance(JustName(), AgentLike)
+
+    def test_sync_invoke_passes_isinstance_but_not_runtime_safe(self):
+        """Document known Protocol limitation: sync invoke passes isinstance.
+
+        ``runtime_checkable`` only checks attribute existence, not whether
+        ``invoke`` is a coroutine function.  An object with a synchronous
+        ``invoke`` will pass ``isinstance`` but fail at ``await agent.invoke()``.
+        """
+        class SyncAgent:
+            @property
+            def name(self) -> str:
+                return "sync-agent"
+
+            def invoke(self, prompt: str, **kwargs):  # sync — NOT a coroutine
+                return "ok"
+
+        # Known limitation: passes because the attribute exists.
+        assert isinstance(SyncAgent(), AgentLike)
 
 
 # ---------------------------------------------------------------------------
