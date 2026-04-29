@@ -8,207 +8,46 @@ import os
 import asyncio
 from typing import Dict, Optional, Any, Tuple, Union, Literal, List, TYPE_CHECKING
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
-from navconfig import config, BASE_DIR
 from parrot._imports import lazy_import
+from parrot.security import QueryLanguage, QueryValidator
+from parrot.tools.databasequery.sources import normalize_driver
 # querysource is optional — imported lazily when needed (extra="db")
 from parrot.tools.abstract import AbstractTool
 
 
-class QueryLanguage(str, Enum):
-    """Supported query languages."""
-    SQL = "sql"
-    FLUX = "flux"  # InfluxDB
-    MQL = "mql"    # MongoDB Query Language
-    CYPHER = "cypher"  # Neo4j
-    JSON = "json"  # Elasticsearch/OpenSearch JSON DSL
-    AQL = "aql"  # ArangoDB Query Language
+# ---------------------------------------------------------------------------
+# Driver → QueryLanguage mapping (mirrors toolkit.py; kept local for compat)
+# ---------------------------------------------------------------------------
+
+_DRIVER_TO_QUERY_LANGUAGE: Dict[str, QueryLanguage] = {
+    "pg": QueryLanguage.SQL,
+    "mysql": QueryLanguage.SQL,
+    "bigquery": QueryLanguage.SQL,
+    "sqlite": QueryLanguage.SQL,
+    "oracle": QueryLanguage.SQL,
+    "mssql": QueryLanguage.SQL,
+    "clickhouse": QueryLanguage.SQL,
+    "duckdb": QueryLanguage.SQL,
+    "influx": QueryLanguage.FLUX,
+    "mongo": QueryLanguage.MQL,
+    "atlas": QueryLanguage.MQL,
+    "documentdb": QueryLanguage.MQL,
+    "elastic": QueryLanguage.JSON,
+    "elasticsearch": QueryLanguage.JSON,
+    "opensearch": QueryLanguage.JSON,
+}
+
+# Set of all known canonical driver names (for validation)
+_KNOWN_DRIVERS: frozenset = frozenset(_DRIVER_TO_QUERY_LANGUAGE.keys())
 
 
-class DriverInfo:
-    """Information about database drivers and their characteristics."""
-
-    DRIVER_MAP = {
-        # SQL-based databases
-        'pg': {
-            'name': 'PostgreSQL',
-            'query_language': QueryLanguage.SQL,
-            'description': 'PostgreSQL database',
-            'aliases': ['postgres', 'postgresql'],
-            'asyncdb_driver': 'pg'
-        },
-        'mysql': {
-            'name': 'MySQL',
-            'query_language': QueryLanguage.SQL,
-            'description': 'MySQL/MariaDB database',
-            'aliases': ['mariadb'],
-            'asyncdb_driver': 'mysql'
-        },
-        'bigquery': {
-            'name': 'Google BigQuery',
-            'query_language': QueryLanguage.SQL,
-            'description': 'Google BigQuery data warehouse',
-            'aliases': ['bq'],
-            'asyncdb_driver': 'bigquery'
-        },
-        'sqlite': {
-            'name': 'SQLite',
-            'query_language': QueryLanguage.SQL,
-            'description': 'SQLite embedded database',
-            'aliases': [],
-            'asyncdb_driver': 'sqlite'
-        },
-        'oracle': {
-            'name': 'Oracle Database',
-            'query_language': QueryLanguage.SQL,
-            'description': 'Oracle Database',
-            'aliases': [],
-            'asyncdb_driver': 'oracle'
-        },
-        'mssql': {
-            'name': 'Microsoft SQL Server',
-            'query_language': QueryLanguage.SQL,
-            'description': 'Microsoft SQL Server database',
-            'aliases': ['sqlserver'],
-            'asyncdb_driver': 'mssql'
-        },
-        'clickhouse': {
-            'name': 'ClickHouse',
-            'query_language': QueryLanguage.SQL,
-            'description': 'ClickHouse OLAP database',
-            'aliases': [],
-            'asyncdb_driver': 'clickhouse'
-        },
-        'duckdb': {
-            'name': 'DuckDB',
-            'query_language': QueryLanguage.SQL,
-            'description': 'DuckDB embedded analytical database',
-            'aliases': [],
-            'asyncdb_driver': 'duckdb'
-        },
-        # Non-SQL databases
-        'influx': {
-            'name': 'InfluxDB',
-            'query_language': QueryLanguage.FLUX,
-            'description': 'InfluxDB time-series database (uses Flux query language)',
-            'aliases': ['influxdb'],
-            'asyncdb_driver': 'influx'
-        },
-        # MongoDB and compatible databases (both use 'mongo' driver in asyncdb)
-        'mongo': {
-            'name': 'MongoDB',
-            'query_language': QueryLanguage.MQL,
-            'description': 'MongoDB document-oriented database',
-            'aliases': ['mongo'],
-            'asyncdb_driver': 'mongo',
-            'dbtype': 'mongodb'
-        },
-        'atlas': {
-            'name': 'MongoDB Atlas',
-            'query_language': QueryLanguage.MQL,
-            'description': 'MongoDB Atlas cloud database',
-            'aliases': [],
-            'asyncdb_driver': 'mongo',
-            'dbtype': 'atlas'
-        },
-        'documentdb': {
-            'name': 'DocumentDB',
-            'query_language': QueryLanguage.MQL,
-            'description': 'AWS DocumentDB (MongoDB-compatible) document database',
-            'aliases': [],
-            'asyncdb_driver': 'mongo',  # Uses mongo driver with dbtype parameter
-            'dbtype': 'documentdb'
-        },
-        # Elasticsearch:
-        'elastic': {
-            'name': 'Elasticsearch/OpenSearch',
-            'query_language': QueryLanguage.JSON,
-            'supports_limit': True
-        },
-        'elasticsearch': {
-            'name': 'Elasticsearch',
-            'query_language': QueryLanguage.JSON,
-            'supports_limit': True
-        },
-        'opensearch': {
-            'name': 'OpenSearch',
-            'query_language': QueryLanguage.JSON,
-            'supports_limit': True
-        },
-    }
-
-    @classmethod
-    def normalize_driver(cls, driver: str) -> str:
-        """Normalize driver name from aliases."""
-        driver_lower = driver.lower()
-
-        # Check if it's already a canonical name
-        if driver_lower in cls.DRIVER_MAP:
-            return driver_lower
-
-        # Check aliases
-        for canonical_name, info in cls.DRIVER_MAP.items():
-            if driver_lower in info.get('aliases', []):
-                return canonical_name
-
-        return driver_lower
-
-    @classmethod
-    def get_asyncdb_driver(cls, driver: str) -> str:
-        """Get the actual asyncdb driver name."""
-        driver = cls.normalize_driver(driver)
-        driver_info = cls.DRIVER_MAP.get(driver, {})
-        return driver_info.get('asyncdb_driver', driver)
-
-    @classmethod
-    def get_dbtype(cls, driver: str) -> Optional[str]:
-        """Get the dbtype parameter for drivers that need it (mongo-based)."""
-        driver = cls.normalize_driver(driver)
-        driver_info = cls.DRIVER_MAP.get(driver, {})
-        return driver_info.get('dbtype')
-
-    @classmethod
-    def get_query_language(cls, driver: str) -> QueryLanguage:
-        """Get the query language for a driver."""
-        driver = cls.normalize_driver(driver)
-        driver_info = cls.DRIVER_MAP.get(driver, {})
-        return driver_info.get('query_language', QueryLanguage.SQL)
-
-    @classmethod
-    def get_driver_info(cls, driver: str) -> Dict[str, Any]:
-        """Get full information about a driver."""
-        driver = cls.normalize_driver(driver)
-        return cls.DRIVER_MAP.get(driver, {
-            'name': driver,
-            'query_language': QueryLanguage.SQL,
-            'description': f'{driver} database',
-            'aliases': [],
-            'asyncdb_driver': driver
-        })
-
-    @classmethod
-    def list_drivers(cls) -> List[Dict[str, Any]]:
-        """List all supported drivers with their info."""
-        return [
-            {
-                'driver': driver,
-                **info
-            }
-            for driver, info in cls.DRIVER_MAP.items()
-        ]
-
-
-def get_default_credentials(driver: str) -> Optional[str]:
-    """Return the default DSN for a database driver.
-
-    Delegates to ``parrot.interfaces.database.get_default_credentials``.
-    """
-    from parrot.interfaces.database import get_default_credentials as _get
-    return _get(driver)
+def _get_query_language(driver: str) -> QueryLanguage:
+    """Return the QueryLanguage for a canonical driver name."""
+    return _DRIVER_TO_QUERY_LANGUAGE.get(driver, QueryLanguage.SQL)
 
 
 class DatabaseQueryArgs(BaseModel):
@@ -296,10 +135,10 @@ class DatabaseQueryArgs(BaseModel):
     @field_validator('driver')
     @classmethod
     def validate_driver(cls, v):
-        # Normalize and validate driver
-        normalized = DriverInfo.normalize_driver(v)
-        if normalized not in DriverInfo.DRIVER_MAP:
-            supported = list(DriverInfo.DRIVER_MAP.keys())
+        # Normalize and validate driver using shared normalize_driver function
+        normalized = normalize_driver(v)
+        if normalized not in _KNOWN_DRIVERS:
+            supported = sorted(_KNOWN_DRIVERS)
             raise ValueError(f"Database driver must be one of: {supported}")
         return normalized
 
@@ -311,142 +150,6 @@ class DatabaseQueryArgs(BaseModel):
             v = { "dsn": v }
         return v
 
-
-class QueryValidator:
-    """Validates queries based on query language."""
-
-    @staticmethod
-    def validate_sql_query(query: str) -> Dict[str, Any]:
-        """Validate SQL query for safety."""
-        query_upper = query.upper().strip()
-
-        # Remove comments and extra whitespace
-        query_cleaned = re.sub(r'--.*?\n', '', query_upper)
-        query_cleaned = re.sub(r'/\*.*?\*/', '', query_cleaned, flags=re.DOTALL)
-        query_cleaned = ' '.join(query_cleaned.split())
-
-        # Dangerous operations to block
-        dangerous_operations = [
-            'CREATE', 'ALTER', 'DROP', 'TRUNCATE',
-            'INSERT', 'UPDATE', 'DELETE', 'MERGE',
-            'GRANT', 'REVOKE', 'EXEC', 'EXECUTE',
-            'CALL', 'DECLARE', 'SET @'
-        ]
-
-        # Check for dangerous operations
-        for operation in dangerous_operations:
-            if re.search(rf'\b{operation}\b', query_cleaned):
-                return {
-                    'is_safe': False,
-                    'message': f"SQL query contains dangerous operation: {operation}",
-                    'suggestions': [
-                        "Use SELECT statements for data retrieval",
-                        "Use aggregate functions (COUNT, SUM, AVG) for analysis",
-                        "Use WHERE clauses to filter data"
-                    ]
-                }
-
-        # Check if query starts with SELECT or other safe operations
-        safe_starts = ['SELECT', 'WITH', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']
-        if not any(query_cleaned.startswith(safe_op) for safe_op in safe_starts):
-            print(f"DEBUG: Query validation failed. Cleaned query: '{query_cleaned[:100]}...'")
-            return {
-                'is_safe': False,
-                'message': "SQL query should start with SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN",
-                'suggestions': [
-                    "Start queries with SELECT for data retrieval",
-                    "Use WITH clauses for complex queries with CTEs",
-                    "Use EXPLAIN for query analysis"
-                ]
-            }
-
-        return {'is_safe': True, 'message': 'SQL query validation passed'}
-
-    @staticmethod
-    def validate_flux_query(query: str) -> Dict[str, Any]:
-        """Validate InfluxDB Flux query for safety."""
-        query_lower = query.lower().strip()
-
-        # Flux queries typically start with from() or import
-        if not (query_lower.startswith('from(') or query_lower.startswith('import')):
-            return {
-                'is_safe': False,
-                'message': "Flux query should typically start with from() or import",
-                'suggestions': [
-                    "Use from(bucket: \"...\") to query data",
-                    "Chain with |> range() to specify time range",
-                    "Use |> filter() to filter data"
-                ]
-            }
-
-        # Check for potentially dangerous Flux operations
-        # Flux write operations
-        dangerous_patterns = [
-            r'\bto\s*\(',  # to() function writes data
-            r'\bdelete\s*\(',  # delete() function
-        ]
-
-        for pattern in dangerous_patterns:
-            if re.search(pattern, query_lower):
-                return {
-                    'is_safe': False,
-                    'message': "Flux query contains write/delete operation",
-                    'suggestions': [
-                        "Use queries for data retrieval only",
-                        "Use from() |> range() |> filter() for reading data"
-                    ]
-                }
-
-        return {'is_safe': True, 'message': 'Flux query validation passed'}
-
-    @classmethod
-    def validate_query(cls, query: str, query_language: QueryLanguage) -> Dict[str, Any]:
-        """Validate query based on its language."""
-        if query_language == QueryLanguage.SQL:
-            return cls.validate_sql_query(query)
-        elif query_language == QueryLanguage.FLUX:
-            return cls.validate_flux_query(query)
-        elif query_language == QueryLanguage.JSON:
-            return cls.validate_elasticsearch_query(query)
-        else:
-            # For unknown query languages, do minimal validation
-            return {
-                'is_safe': True,
-                'message': f'Basic validation passed for {query_language.value}'
-            }
-
-    @staticmethod
-    def validate_elasticsearch_query(query: str) -> Dict[str, Any]:
-        """Validate Elasticsearch query (JSON DSL format)."""
-        try:
-            # Parse the query to ensure it's valid JSON
-            query_dict = json.loads(query) if isinstance(query, str) else query
-
-            # Basic validation
-            if not isinstance(query_dict, dict):
-                return {
-                    'is_safe': False,
-                    'message': 'Query must be a valid JSON object',
-                    'suggestions': ['Ensure query is a valid JSON object']
-                }
-            # Check for unsafe operations (if needed)
-            # For now, we allow all queries as Elasticsearch is primarily read-only
-            return {
-                'is_safe': True,
-                'message': 'Elasticsearch query validation passed'
-            }
-        except json.JSONDecodeError as e:
-            return {
-                'is_safe': False,
-                'message': f'Invalid JSON: {str(e)}',
-                'suggestions': ['Fix JSON syntax errors']
-            }
-        except Exception as e:
-            return {
-                'is_safe': False,
-                'message': f'Query validation failed: {str(e)}',
-                'suggestions': []
-            }
 
 class DatabaseQueryTool(AbstractTool):
     """
@@ -528,7 +231,7 @@ class DatabaseQueryTool(AbstractTool):
 
     def _validate_query_safety(self, query: str, driver: str) -> Dict[str, Any]:
         """Validate query safety based on driver's query language."""
-        query_language = DriverInfo.get_query_language(driver)
+        query_language = _get_query_language(driver)
         return QueryValidator.validate_query(query, query_language)
 
     def _get_default_credentials(
@@ -536,142 +239,31 @@ class DatabaseQueryTool(AbstractTool):
         driver: str,
         provided_credentials: Optional[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], Optional[str]]:
+        """Get default credentials for the specified database driver.
+
+        Delegates to ``parrot.interfaces.database.get_default_credentials``
+        (expanded in FEAT-136 TASK-932 to return a full dict for all drivers).
+        Extracts and returns the ``dsn`` key separately per the legacy contract.
+
+        Args:
+            driver: Canonical or alias driver name.
+            provided_credentials: Optional caller-supplied credentials that
+                override the defaults.
+
+        Returns:
+            Tuple of (credentials_dict, dsn_or_None).
         """
-        Get default credentials for the specified database driver.
-        Handles mongo-based drivers (mongodb, atlas, documentdb) correctly.
-        """
-        from querysource.conf import default_dsn, INFLUX_TOKEN
-        dsn = None
-        normalized_driver = DriverInfo.normalize_driver(driver)
-        if driver == 'postgresql':
-            driver = 'pg'
-        if driver == 'pg':
-            dsn = default_dsn
-
-        # Get dbtype for mongo-based drivers
-        dbtype = DriverInfo.get_dbtype(normalized_driver)
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS') or config.get('BIGQUERY_CREDENTIALS_PATH')
-        pg_password = config.get('PG_PWD') or config.get('PG_PASSWORD')
-        default_credentials = {
-            'bigquery': {
-                'credentials': Path(bigquery_creds_path).resolve() if bigquery_creds_path else None,
-                'project_id': config.get('BIGQUERY_PROJECT_ID'),
-            },
-            'pg': {
-                'host': config.get('PG_HOST', fallback='localhost'),
-                'port': config.get('PG_PORT', fallback='5432'),
-                'database': config.get('PG_DATABASE', fallback='postgres'),
-                'user': config.get('PG_USER', fallback='postgres'),
-                'password': pg_password,
-            },
-            'mysql': {
-                'host': config.get('MYSQL_HOST', fallback='localhost'),
-                'port': config.get('MYSQL_PORT', fallback='3306'),
-                'database': config.get('MYSQL_DATABASE', fallback='mysql'),
-                'user': config.get('MYSQL_USER', fallback='root'),
-                'password': config.get('MYSQL_PASSWORD'),
-            },
-            'sqlite': {
-                'database': config.get('SQLITE_DATABASE', fallback=':memory:'),
-            },
-            'influx': {
-                'host': config.get('INFLUX_HOST', fallback='localhost'),
-                'port': config.get('INFLUX_PORT', fallback='8086'),
-                'database': config.get('INFLUX_DATABASE', fallback='default'),
-                'username': config.get('INFLUX_USERNAME'),
-                'password': config.get('INFLUX_PASSWORD'),
-                'token': INFLUX_TOKEN,
-                'org': config.get('INFLUX_ORG', fallback='my-org'),
-            },
-            'oracle': {
-                'host': config.get('ORACLE_HOST', fallback='localhost'),
-                'port': config.get('ORACLE_PORT', fallback='1521'),
-                'service_name': config.get('ORACLE_SERVICE_NAME', fallback='xe'),
-                'user': config.get('ORACLE_USER'),
-                'password': config.get('ORACLE_PASSWORD'),
-            },
-            'mssql': {
-                'host': config.get('MSSQL_HOST', fallback='localhost'),
-                'port': config.get('MSSQL_PORT', fallback='1433'),
-                'database': config.get('MSSQL_DATABASE', fallback='master'),
-                'user': config.get('MSSQL_USER'),
-                'password': config.get('MSSQL_PASSWORD'),
-            },
-            # MongoDB - standard configuration
-            'mongo': {
-                'driver': 'mongo',
-                'host': config.get('MONGODB_HOST', fallback='localhost'),
-                'port': config.get('MONGODB_PORT', fallback='27017'),
-                'database': config.get('MONGODB_DATABASE', fallback='test'),
-                'username': config.get('MONGODB_USER'),
-                'password': config.get('MONGODB_PASSWORD'),
-                'dbtype': 'mongodb'
-            },
-            # MongoDB Atlas - cloud configuration
-            'atlas': {
-                'driver': 'mongo',
-                'host': config.get('ATLAS_HOST'),
-                'port': config.get('ATLAS_PORT', fallback='27017'),
-                'database': config.get('ATLAS_DATABASE', fallback='test'),
-                'username': config.get('ATLAS_USER'),
-                'password': config.get('ATLAS_PASSWORD'),
-                'dbtype': 'atlas'
-            },
-            # AWS DocumentDB - MongoDB-compatible with SSL
-            'documentdb': {
-                'driver': 'mongo',
-                'host': config.get('DOCUMENTDB_HOSTNAME', fallback='localhost'),
-                'port': config.get('DOCUMENTDB_PORT', fallback='27017'),
-                'database': config.get('DOCUMENTDB_DATABASE', fallback='test'),
-                'username': config.get('DOCUMENTDB_USERNAME'),
-                'password': config.get('DOCUMENTDB_PASSWORD'),
-                'tlsCAFile': BASE_DIR.joinpath('env', "global-bundle.pem"),
-                'ssl': config.get('DOCUMENTDB_USE_SSL', fallback=True),
-                'collection_name': config.get('DOCUMENTDB_COLLECTION', fallback='mycollection'),
-                'dbtype': 'documentdb'
-            },
-            # Elasticsearch/OpenSearch
-            'elastic': {
-                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
-                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
-                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
-                'user': config.get('ELASTICSEARCH_USER'),
-                'password': config.get('ELASTICSEARCH_PASSWORD'),
-                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
-                'client_type': config.get('ELASTICSEARCH_CLIENT_TYPE', fallback='auto')
-            },
-            'elasticsearch': {
-                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
-                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
-                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
-                'user': config.get('ELASTICSEARCH_USER'),
-                'password': config.get('ELASTICSEARCH_PASSWORD'),
-                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
-                'client_type': config.get('ELASTICSEARCH_CLIENT_TYPE', fallback='elasticsearch')
-            },
-            'opensearch': {
-                'host': config.get('ELASTICSEARCH_HOST', fallback='localhost'),
-                'port': config.get('ELASTICSEARCH_PORT', fallback='9200'),
-                'db': config.get('ELASTICSEARCH_INDEX', fallback='logstash-*'),
-                'user': config.get('ELASTICSEARCH_USER'),
-                'password': config.get('ELASTICSEARCH_PASSWORD'),
-                'protocol': config.get('ELASTICSEARCH_PROTOCOL', fallback='http'),
-                'client_type': 'opensearch'
-            },
-        }
-
-        if normalized_driver not in default_credentials:
-            raise ValueError(
-                f"No default credentials configured for database driver: {normalized_driver}"
-            )
-
-        creds = default_credentials[normalized_driver].copy()
-
-        # Override with provided credentials if any
+        from parrot.interfaces.database import get_default_credentials as _iface_creds
+        normalized_driver = normalize_driver(driver)
+        creds = _iface_creds(normalized_driver)
+        # Extract DSN separately — legacy callers expect a tuple (creds, dsn)
+        dsn = creds.pop("dsn", None) if isinstance(creds, dict) else None
+        if not isinstance(creds, dict):
+            creds = {}
+        # Merge provided credentials on top
         if provided_credentials:
             creds.update(provided_credentials)
-
-        # Remove None values
+        # Strip None values
         creds = {k: v for k, v in creds.items() if v is not None}
         return creds, dsn
 
@@ -695,7 +287,7 @@ class DatabaseQueryTool(AbstractTool):
         if not max_rows or max_rows <= 0:
             return query
 
-        query_language = DriverInfo.get_query_language(driver)
+        query_language = _get_query_language(driver)
 
         if query_language == QueryLanguage.SQL:
             if not isinstance(query, str):
@@ -741,7 +333,7 @@ class DatabaseQueryTool(AbstractTool):
 
     def get_driver_info_list(self) -> List[Dict[str, Any]]:
         """Get detailed information about all supported drivers."""
-        return DriverInfo.list_drivers()
+        return [{"driver": d, "query_language": ql.value} for d, ql in _DRIVER_TO_QUERY_LANGUAGE.items()]
 
     async def _execute_database_query(
         self,
@@ -992,12 +584,12 @@ class DatabaseQueryTool(AbstractTool):
 
         try:
             # Normalize driver name
-            driver = DriverInfo.normalize_driver(driver)
-            driver_info = DriverInfo.get_driver_info(driver)
+            driver = normalize_driver(driver)
+            driver_query_language = _get_query_language(driver)
 
             self.logger.info(
-                f"Starting query on {driver_info['name']} "
-                f"(language: {driver_info['query_language'].value})"
+                f"Starting query on {driver} "
+                f"(language: {driver_query_language.value})"
             )
 
             # Validate query safety based on query language
@@ -1036,12 +628,12 @@ class DatabaseQueryTool(AbstractTool):
                 self.logger.info(
                     f"Query executed successfully in {execution_time:.2f}s. "
                     f"Retrieved {len(result)} rows, {len(result.columns)} columns "
-                    f"from {driver_info['name']}."
+                    f"from {driver}."
                 )
             else:
                 self.logger.info(
                     f"Query executed successfully in {execution_time:.2f}s "
-                    f"on {driver_info['name']}."
+                    f"on {driver}."
                 )
 
             rows_returned = len(result) if isinstance(result, pd.DataFrame) else None
@@ -1051,7 +643,7 @@ class DatabaseQueryTool(AbstractTool):
                 "result": result,
                 'metadata': {
                     "query": modified_query,
-                    "driver": driver_info['name'],
+                    "driver": driver,
                     'rows_returned': rows_returned,
                     'columns_returned': len(result.columns) if isinstance(result, pd.DataFrame) else None,
                     'execution_time_seconds': execution_time,
