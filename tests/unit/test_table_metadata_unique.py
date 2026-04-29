@@ -89,13 +89,12 @@ class TestSqlToolkitUniqueHook:
     """SQLToolkit._get_unique_constraints_query dialect hook."""
 
     def test_get_unique_constraints_query_shape(self) -> None:
-        """Hook returns (str, dict) with UNIQUE keyword and schema param."""
+        """Hook returns (str, tuple) with UNIQUE keyword and positional params."""
         sql, params = SQLToolkit._get_unique_constraints_query(None, "public", "t")  # type: ignore[arg-type]
         assert isinstance(sql, str)
         assert "UNIQUE" in sql.upper()
-        assert isinstance(params, dict)
-        assert params.get("schema") == "public"
-        assert params.get("table") == "t"
+        assert isinstance(params, tuple), f"Expected tuple, got {type(params)}"
+        assert params == ("public", "t")
 
     def test_unique_query_contains_information_schema(self) -> None:
         """Default query targets information_schema."""
@@ -109,7 +108,6 @@ class TestSqlToolkitUniqueHook:
 
         toolkit = SQLToolkit.__new__(SQLToolkit)
         toolkit.logger = MagicMock()
-        toolkit.backend = "asyncdb"
         toolkit._connection = MagicMock()
 
         col_rows = [
@@ -127,7 +125,8 @@ class TestSqlToolkitUniqueHook:
             (uq_rows, None),
         ]
 
-        async def fake_execute(sql: str, limit: int = 0, timeout: int = 15):
+        # Updated signature: params: tuple = () is new in TASK-928
+        async def fake_execute(sql: str, params: tuple = (), limit: int = 0, timeout: int = 15):
             return call_results.pop(0)
 
         toolkit._execute_asyncdb = fake_execute
@@ -143,7 +142,6 @@ class TestSqlToolkitUniqueHook:
 
         toolkit = SQLToolkit.__new__(SQLToolkit)
         toolkit.logger = MagicMock()
-        toolkit.backend = "asyncdb"
         toolkit._connection = MagicMock()
 
         col_rows = [
@@ -155,7 +153,8 @@ class TestSqlToolkitUniqueHook:
             ([], None),
         ]
 
-        async def fake_execute(sql: str, limit: int = 0, timeout: int = 15):
+        # Updated signature: params: tuple = () is new in TASK-928
+        async def fake_execute(sql: str, params: tuple = (), limit: int = 0, timeout: int = 15):
             return call_results.pop(0)
 
         toolkit._execute_asyncdb = fake_execute
