@@ -3,7 +3,11 @@
 Extends ``MongoSource`` for MongoDB Atlas cloud service, which uses the
 ``mongodb+srv://`` connection string format and ``dbtype="atlas"``.
 
+Inherits ``test_connection()`` from ``MongoSource`` (MongoDB ping command).
+
 Part of FEAT-062 — DatabaseToolkit.
+Part of FEAT-136 — database-toolkit-parity (G8 credential resolution,
+TASK-933 test_connection inheritance).
 """
 from __future__ import annotations
 
@@ -27,22 +31,50 @@ class AtlasSource(MongoSource):
     dbtype = "atlas"
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default MongoDB Atlas credentials.
+        """Return default MongoDB Atlas credentials from environment variables.
 
-        Atlas connections use ``mongodb+srv://`` URI format.
-        If a DSN is configured, it should use this scheme.
+        Delegates to ``parrot.interfaces.database.get_default_credentials("atlas")``
+        which reads ``ATLAS_HOST``, ``ATLAS_PORT``, ``ATLAS_DATABASE``,
+        ``ATLAS_USER``, ``ATLAS_PASSWORD`` from navconfig.
+
+        If the ``host`` field looks like a full ``mongodb+srv://`` URI or an
+        Atlas cluster hostname (ending in ``.mongodb.net``), converts it to a
+        proper ``dsn`` and removes individual host/port fields.
 
         Returns:
-            Dict with Atlas connection credentials, or empty dict if
-            no defaults are configured.
+            Dict with Atlas connection parameters. Falls back to empty dict
+            if no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("atlas")
-        if not dsn:
-            dsn = get_default_credentials("mongo")
-        if dsn and isinstance(dsn, str):
-            # Ensure atlas DSN uses mongodb+srv:// format
-            if not dsn.startswith("mongodb+srv://") and not dsn.startswith("mongodb://"):
-                dsn = f"mongodb+srv://{dsn}"
-            return {"dsn": dsn}
-        return {}
+        creds = get_default_credentials("atlas")
+        if not creds:
+            return {}
+
+        # If ATLAS_HOST is a full SRV URI, normalise it to a dsn key
+        host = creds.get("host", "")
+        if isinstance(host, str) and host:
+            if host.startswith("mongodb+srv://") or host.startswith("mongodb://"):
+                creds["dsn"] = host
+                creds.pop("host", None)
+                creds.pop("port", None)
+            elif ".mongodb.net" in host:
+                # Bare SRV hostname — convert to mongodb+srv:// DSN
+                username = creds.get("username", "")
+                password = creds.get("password", "")
+                database = creds.get("database", "test")
+                if username and password:
+                    # SECURITY NOTE: The password is embedded in the DSN string
+                    # as required by the asyncdb ``mongo`` driver.  Never log
+                    # ``creds`` or ``creds["dsn"]`` at INFO/DEBUG level — doing
+                    # so would expose the plaintext password in log output.
+                    creds["dsn"] = (
+                        f"mongodb+srv://{username}:{password}@{host}/{database}"
+                    )
+                else:
+                    creds["dsn"] = f"mongodb+srv://{host}/{database}"
+                creds.pop("host", None)
+                creds.pop("port", None)
+                creds.pop("username", None)
+                creds.pop("password", None)
+
+        return creds

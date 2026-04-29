@@ -40,14 +40,18 @@ class ClickHouseSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.ClickHouse")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default ClickHouse credentials.
+        """Return default ClickHouse credentials from environment variables.
+
+        Reads ``CLICKHOUSE_HOST``, ``CLICKHOUSE_PORT``, ``CLICKHOUSE_DATABASE``,
+        ``CLICKHOUSE_USER``, ``CLICKHOUSE_PASSWORD`` from navconfig via the
+        expanded interface function.
 
         Returns:
-            Empty dict (no default ClickHouse credentials configured).
+            Dict with ClickHouse connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("clickhouse")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("clickhouse")
 
     async def get_metadata(
         self,

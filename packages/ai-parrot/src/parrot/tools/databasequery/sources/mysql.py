@@ -39,14 +39,18 @@ class MySQLSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.MySQL")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default MySQL credentials.
+        """Return default MySQL credentials from environment variables.
+
+        Reads ``MYSQL_HOST``, ``MYSQL_PORT``, ``MYSQL_DATABASE``,
+        ``MYSQL_USER``, ``MYSQL_PASSWORD`` from navconfig via the
+        expanded interface function.
 
         Returns:
-            Empty dict (no default MySQL credentials are configured).
+            Dict with MySQL connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("mysql")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("mysql")
 
     async def get_metadata(
         self,

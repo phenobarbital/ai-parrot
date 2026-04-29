@@ -47,14 +47,19 @@ class MongoSource(AbstractDatabaseSource):
         self.logger = logging.getLogger("Parrot.Toolkits.Database.MongoDB")
 
     async def get_default_credentials(self) -> dict[str, Any]:
-        """Return default MongoDB credentials.
+        """Return default MongoDB credentials from environment variables.
+
+        Reads ``MONGODB_HOST``, ``MONGODB_PORT``, ``MONGODB_DATABASE``,
+        ``MONGODB_USER``, ``MONGODB_PASSWORD`` from navconfig via the
+        expanded interface function. Returns a dict with ``dbtype: "mongodb"``
+        already set for asyncdb driver-type disambiguation.
 
         Returns:
-            Empty dict (no default MongoDB credentials configured).
+            Dict with MongoDB connection parameters, or empty dict if
+            no env vars are configured.
         """
         from parrot.interfaces.database import get_default_credentials
-        dsn = get_default_credentials("mongo")
-        return {"dsn": dsn} if dsn else {}
+        return get_default_credentials("mongo")
 
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate a MongoDB query string (JSON format).
@@ -113,6 +118,29 @@ class MongoSource(AbstractDatabaseSource):
             "asyncdb may have been upgraded — check its changelog for the "
             "new attribute name or the public API for accessing the pymongo client."
         )
+
+    async def test_connection(self, credentials: dict[str, Any]) -> bool:
+        """Test MongoDB connectivity using the ``ping`` command.
+
+        Overrides the base class ``SELECT 1`` default because MongoDB does
+        not support SQL. Runs a ``ping`` command against the server using
+        the asyncdb ``mongo`` driver connection.
+
+        Args:
+            credentials: Connection credentials for the MongoDB server.
+
+        Returns:
+            ``True`` if the ping succeeds, ``False`` on any exception.
+            Never raises.
+        """
+        try:
+            db = self._get_connection(credentials)
+            async with await db.connection() as conn:
+                client = self._get_mongo_client(conn)
+                await client.admin.command("ping")
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def _get_connection(self, credentials: dict[str, Any]) -> Any:
         """Get or create a cached MongoDB AsyncDB pool instance.
