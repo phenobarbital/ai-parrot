@@ -622,15 +622,19 @@ class VaultTokenStore(TokenStore):
     _logger = logging.getLogger(__name__)
 
     @staticmethod
-    def _vault_name(server_name: str, user_id: str) -> str:
-        """Return the vault credential name for the given server and user.
+    def _vault_name(user_id: str, server_name: str) -> str:
+        """Return the vault credential name for the given user and server.
+
+        Argument order mirrors the ``TokenStore`` interface convention
+        ``(user_id, server_name)`` used by ``get``/``set``/``delete``.
 
         Args:
-            server_name: MCP server slug (e.g. ``"netsuite"``).
             user_id: Caller's user identifier.
+            server_name: MCP server slug (e.g. ``"netsuite"``).
 
         Returns:
-            Vault credential name string.
+            Vault credential name string following the pattern
+            ``mcp_oauth_{server_name}_{user_id}``.
         """
         return f"mcp_oauth_{server_name}_{user_id}"
 
@@ -644,7 +648,7 @@ class VaultTokenStore(TokenStore):
         Returns:
             Decrypted token dict, or ``None`` if not found or vault unavailable.
         """
-        vault_name = self._vault_name(server_name, user_id)
+        vault_name = self._vault_name(user_id, server_name)
         try:
             return await retrieve_vault_credential(user_id, vault_name)
         except KeyError:
@@ -661,23 +665,45 @@ class VaultTokenStore(TokenStore):
     async def set(self, user_id: str, server_name: str, token: Dict[str, Any]) -> None:
         """Encrypt and persist an OAuth token in the Vault.
 
+        Degrades gracefully when vault keys are unavailable: logs a warning
+        and returns without raising so the in-memory token remains usable.
+
         Args:
             user_id: Owner's user identifier.
             server_name: MCP server slug.
             token: Token dict to store (e.g. access_token, refresh_token, expires_at).
         """
-        vault_name = self._vault_name(server_name, user_id)
-        await store_vault_credential(user_id, vault_name, token)
+        vault_name = self._vault_name(user_id, server_name)
+        try:
+            await store_vault_credential(user_id, vault_name, token)
+        except RuntimeError as exc:
+            self._logger.warning(
+                "VaultTokenStore.set: vault keys unavailable for %s/%s — %s",
+                user_id,
+                server_name,
+                exc,
+            )
 
     async def delete(self, user_id: str, server_name: str) -> None:
         """Remove a stored OAuth token from the Vault.
+
+        Tolerates a missing credential (already deleted) and vault
+        unavailability — both are logged at warning level without raising.
 
         Args:
             user_id: Owner's user identifier.
             server_name: MCP server slug.
         """
-        vault_name = self._vault_name(server_name, user_id)
-        await delete_vault_credential(user_id, vault_name)
+        vault_name = self._vault_name(user_id, server_name)
+        try:
+            await delete_vault_credential(user_id, vault_name)
+        except (KeyError, RuntimeError) as exc:
+            self._logger.warning(
+                "VaultTokenStore.delete: could not delete token for %s/%s — %s",
+                user_id,
+                server_name,
+                exc,
+            )
 
 
 # ---- Simple Dynamic Client Registration ----

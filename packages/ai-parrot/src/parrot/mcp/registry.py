@@ -213,6 +213,37 @@ _REGISTRY: List[MCPServerDescriptor] = [
         params=[],
     ),
     MCPServerDescriptor(
+        name="netsuite",
+        display_name="NetSuite (Oracle)",
+        description=(
+            "NetSuite ERP record CRUD, reports, saved searches, and SuiteQL "
+            "queries via the NetSuite AI Connector Service (MCP). "
+            "Requires OAuth2 Authorization Code + PKCE."
+        ),
+        method_name="add_netsuite_mcp_server",
+        category="erp",
+        params=[
+            MCPServerParam(
+                name="account_id",
+                type=MCPParamType.STRING,
+                required=True,
+                description="NetSuite account ID (e.g. '4984231')",
+            ),
+            MCPServerParam(
+                name="client_id",
+                type=MCPParamType.SECRET,
+                required=True,
+                description="OAuth2 client ID from NetSuite integration record",
+            ),
+            MCPServerParam(
+                name="user_id",
+                type=MCPParamType.STRING,
+                required=True,
+                description="User identifier for token storage scoping",
+            ),
+        ],
+    ),
+    MCPServerDescriptor(
         name="alphavantage",
         display_name="Alpha Vantage",
         description=(
@@ -337,37 +368,6 @@ _REGISTRY: List[MCPServerDescriptor] = [
                     "JSON-encoded dict of extra HTTP headers to send "
                     "during the WebSocket handshake"
                 ),
-            ),
-        ],
-    ),
-    MCPServerDescriptor(
-        name="netsuite",
-        display_name="NetSuite (Oracle)",
-        description=(
-            "NetSuite ERP record CRUD, reports, saved searches, and SuiteQL "
-            "queries via the NetSuite AI Connector Service (MCP). "
-            "Requires OAuth2 Authorization Code + PKCE."
-        ),
-        method_name="add_netsuite_mcp_server",
-        category="erp",
-        params=[
-            MCPServerParam(
-                name="account_id",
-                type=MCPParamType.STRING,
-                required=True,
-                description="NetSuite account ID (e.g. '4984231')",
-            ),
-            MCPServerParam(
-                name="client_id",
-                type=MCPParamType.SECRET,
-                required=True,
-                description="OAuth2 client ID from NetSuite integration record",
-            ),
-            MCPServerParam(
-                name="user_id",
-                type=MCPParamType.STRING,
-                required=True,
-                description="User identifier for token storage scoping",
             ),
         ],
     ),

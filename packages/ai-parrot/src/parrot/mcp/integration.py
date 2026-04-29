@@ -12,6 +12,7 @@ from .oauth import (
     OAuthManager,
     InMemoryTokenStore,
     RedisTokenStore,
+    TokenStore,
     VaultTokenStore,
 )
 from .client import (
@@ -766,7 +767,8 @@ def create_netsuite_mcp_server(
     account_id: str,
     client_id: str,
     user_id: str,
-    token_store: Optional["Any"] = None,
+    name: str = "netsuite",
+    token_store: Optional[TokenStore] = None,
     redirect_host: str = "127.0.0.1",
     redirect_port: int = 8765,
     redirect_path: str = "/mcp/oauth/callback",
@@ -782,6 +784,9 @@ def create_netsuite_mcp_server(
         account_id: NetSuite account ID (e.g. ``"4984231"``).
         client_id: OAuth2 client ID from the NetSuite integration record.
         user_id: Caller's user identifier used to scope token storage.
+        name: Server name used as the registry key and token-store scope
+            (default ``"netsuite"``). Override when connecting two NetSuite
+            accounts simultaneously (e.g. ``"netsuite-sandbox"``).
         token_store: Optional :class:`~parrot.mcp.oauth.TokenStore` instance.
             Defaults to :class:`~parrot.mcp.oauth.InMemoryTokenStore` when
             ``None``. Pass a :class:`~parrot.mcp.oauth.VaultTokenStore` for
@@ -811,7 +816,7 @@ def create_netsuite_mcp_server(
 
     oauth = OAuthManager(
         user_id=user_id,
-        server_name="netsuite",
+        server_name=name,
         client_id=client_id,
         auth_url=auth_url,
         token_url=token_url,
@@ -823,7 +828,7 @@ def create_netsuite_mcp_server(
     )
 
     cfg = MCPServerConfig(
-        name="netsuite",
+        name=name,
         transport="http",
         url=url,
         headers=headers or {"Content-Type": "application/json"},

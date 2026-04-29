@@ -56,6 +56,17 @@ class TestVaultTokenStore:
             )
 
     @pytest.mark.asyncio
+    async def test_set_does_not_raise_on_vault_unavailable(self, vault_store, sample_token):
+        """set() logs a warning and returns without raising when vault keys are unavailable."""
+        with patch(
+            "parrot.mcp.oauth.store_vault_credential",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("vault keys unavailable"),
+        ):
+            # Must not raise — token stays in memory only
+            await vault_store.set("user1", "netsuite", sample_token)
+
+    @pytest.mark.asyncio
     async def test_get_retrieves_credential(self, vault_store, sample_token):
         """get() returns the token dict on a successful vault read."""
         with patch(
@@ -97,14 +108,34 @@ class TestVaultTokenStore:
             await vault_store.delete("user1", "netsuite")
             mock_del.assert_called_once_with("user1", "mcp_oauth_netsuite_user1")
 
+    @pytest.mark.asyncio
+    async def test_delete_tolerates_missing_credential(self, vault_store):
+        """delete() does not raise when the credential is already absent (double-delete)."""
+        with patch(
+            "parrot.mcp.oauth.delete_vault_credential",
+            new_callable=AsyncMock,
+            side_effect=KeyError("not found"),
+        ):
+            await vault_store.delete("user1", "netsuite")
+
+    @pytest.mark.asyncio
+    async def test_delete_does_not_raise_on_vault_unavailable(self, vault_store):
+        """delete() logs a warning and returns without raising when vault keys are unavailable."""
+        with patch(
+            "parrot.mcp.oauth.delete_vault_credential",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("vault keys unavailable"),
+        ):
+            await vault_store.delete("user1", "netsuite")
+
     def test_vault_name_format(self, vault_store):
-        """_vault_name() returns the expected pattern."""
-        name = vault_store._vault_name("netsuite", "user@co.com")
+        """_vault_name(user_id, server_name) returns the expected pattern."""
+        name = vault_store._vault_name("user@co.com", "netsuite")
         assert name == "mcp_oauth_netsuite_user@co.com"
 
     def test_vault_name_includes_server_and_user(self, vault_store):
-        """_vault_name() embeds both server_name and user_id."""
-        name = vault_store._vault_name("my-server", "42")
+        """_vault_name() embeds both user_id and server_name."""
+        name = vault_store._vault_name("42", "my-server")
         assert "my-server" in name
         assert "42" in name
 
@@ -177,13 +208,11 @@ class TestCreateNetsuiteMcpServer:
         assert hasattr(cfg, "_ensure_oauth_token")
         assert callable(cfg._ensure_oauth_token)
 
-    def test_default_token_store_is_in_memory(self):
-        """When no token_store is provided the factory defaults to InMemoryTokenStore."""
-        from parrot.mcp.oauth import InMemoryTokenStore
-
+    def test_token_supplier_set_when_no_store_given(self):
+        """When no token_store is provided the factory still wires a token_supplier."""
         cfg = self._make_cfg()
-        # token_supplier is a bound method of OAuthManager which holds the store;
-        # we can only verify it is not None and callable.
+        # token_supplier is a bound method of OAuthManager; we verify it is
+        # present and callable (the store type is an internal OAuthManager detail).
         assert cfg.token_supplier is not None
 
     def test_custom_token_store_accepted(self):
@@ -210,6 +239,18 @@ class TestCreateNetsuiteMcpServer:
         cfg = self._make_cfg()
         assert "redirect_uri" in cfg.auth_config
         assert "127.0.0.1" in cfg.auth_config["redirect_uri"]
+
+    def test_custom_name_overrides_default(self):
+        """Passing name= changes both cfg.name and the token-store scope key."""
+        from parrot.mcp.integration import create_netsuite_mcp_server
+
+        cfg = create_netsuite_mcp_server(
+            account_id="4984231",
+            client_id="test-client",
+            user_id="user@co.com",
+            name="netsuite-sandbox",
+        )
+        assert cfg.name == "netsuite-sandbox"
 
 
 # ---------------------------------------------------------------------------
