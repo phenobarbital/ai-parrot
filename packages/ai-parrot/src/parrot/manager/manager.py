@@ -348,10 +348,17 @@ class BotManager:
                         )
                         raise
 
+                    # Prompt preset: optional, declared in ai_bots.prompt_config.
+                    # Mutations (remove/add/customize) are applied post-init,
+                    # before configure(), to mirror the YAML registry flow.
+                    prompt_config_dict = bot_model.prompt_config or {}
+                    prompt_preset_name = prompt_config_dict.get("preset") or None
+
                     bot_instance = class_name(
                         chatbot_id=bot_model.chatbot_id,
                         name=bot_model.name,
                         description=bot_model.description,
+                        prompt_preset=prompt_preset_name,
                         # LLM configuration
                         use_llm=bot_model.llm,
                         model_name=bot_model.model_name,
@@ -401,6 +408,11 @@ class BotManager:
                     )
                     # Set the model ID reference
                     bot_instance.model_id = bot_model.chatbot_id
+
+                    # Apply prompt-layer mutations BEFORE configure() so
+                    # newly-added layers also resolve their CONFIGURE-phase
+                    # variables in the same pass.
+                    self._apply_prompt_config(bot_instance, prompt_config_dict)
 
                     await bot_instance.configure(app)
 
@@ -465,27 +477,35 @@ class BotManager:
             )
 
     @staticmethod
-    def _build_prompt_builder(prompt_config: dict) -> 'PromptBuilder':
-        """Build a PromptBuilder from a declarative prompt config dict.
+    def _apply_prompt_config(bot: AbstractBot, prompt_config: dict) -> None:
+        """Apply remove/add/customize mutations to ``bot._prompt_builder``.
+
+        The builder itself is constructed by ``AbstractBot.__init__`` from the
+        ``prompt_preset`` kwarg, so this helper only handles the post-init
+        mutations. Mirrors the YAML path in
+        ``parrot.registry.BotRegistry._apply_prompt_config`` for the
+        DB-loaded-bots flow.
 
         Args:
-            prompt_config: Dict with keys: preset, remove, add, customize.
+            bot: The bot instance whose ``_prompt_builder`` is mutated in place.
+            prompt_config: Dict with keys ``remove``, ``add``, ``customize``
+                (``preset`` is consumed at construction time, not here).
 
-        Returns:
-            Configured PromptBuilder instance.
+        No-op if ``prompt_config`` is empty or the bot has no
+        ``_prompt_builder``.
         """
-        from ..bots.prompts.presets import get_preset
+        if not prompt_config:
+            return
+        builder = getattr(bot, "_prompt_builder", None)
+        if builder is None:
+            return
+
         from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
         from ..bots.prompts.domain_layers import get_domain_layer
 
-        preset_name = prompt_config.get("preset", "default")
-        builder = get_preset(preset_name)
-
-        # Remove layers
         for layer_name in prompt_config.get("remove", []):
             builder.remove(layer_name)
 
-        # Add layers
         for item in prompt_config.get("add", []):
             if isinstance(item, str):
                 builder.add(get_domain_layer(item))
@@ -496,29 +516,30 @@ class BotManager:
                     if phase_str == "configure"
                     else RenderPhase.REQUEST
                 )
-                layer = PromptLayer(
-                    name=item["name"],
-                    priority=item.get("priority", LayerPriority.CUSTOM),
-                    phase=phase,
-                    template=item.get("template", ""),
+                builder.add(
+                    PromptLayer(
+                        name=item["name"],
+                        priority=item.get("priority", LayerPriority.CUSTOM),
+                        phase=phase,
+                        template=item.get("template", ""),
+                    )
                 )
-                builder.add(layer)
 
-        # Customize existing layers
         for layer_name, overrides in prompt_config.get("customize", {}).items():
             existing = builder.get(layer_name)
-            if existing:
-                replacement = PromptLayer(
+            if existing is None:
+                continue
+            builder.replace(
+                layer_name,
+                PromptLayer(
                     name=existing.name,
                     priority=existing.priority,
                     phase=existing.phase,
                     template=overrides.get("template", existing.template),
                     condition=existing.condition,
                     required_vars=existing.required_vars,
-                )
-                builder.replace(layer_name, replacement)
-
-        return builder
+                ),
+            )
 
     def create_bot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         """Create a Bot and add it to the manager."""

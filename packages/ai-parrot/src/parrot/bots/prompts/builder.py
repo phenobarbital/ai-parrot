@@ -95,6 +95,22 @@ $rationale
         builder.add(STRICT_GROUNDING_LAYER)
         return builder
 
+    @classmethod
+    def rag(cls) -> PromptBuilder:
+        """RAG-only stack: anchors the agent to <knowledge_context> and the
+        backstory-declared KB scope, forbids out-of-context knowledge.
+
+        Tools layer is removed because RAG-only agents have no callable
+        tools beyond the retriever (whose output already lands in the
+        knowledge layer).
+        """
+        from .domain_layers import KNOWLEDGE_SCOPE_LAYER, RAG_GROUNDING_LAYER
+        builder = cls.default()
+        builder.remove("tools")
+        builder.add(KNOWLEDGE_SCOPE_LAYER)
+        builder.add(RAG_GROUNDING_LAYER)
+        return builder
+
     # ── Mutation API ────────────────────────────────────────────
 
     def add(self, layer: PromptLayer) -> PromptBuilder:

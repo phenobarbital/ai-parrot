@@ -118,60 +118,76 @@ class TestApplyPromptConfig:
         assert "Custom" in identity.template
 
 
-class TestBotManagerBuildPromptBuilder:
-    """Test BotManager._build_prompt_builder static method."""
+class TestBotManagerApplyPromptConfig:
+    """Test BotManager._apply_prompt_config (DB-loaded bots flow)."""
 
-    def test_default_preset(self):
-        from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "default"})
-        assert isinstance(builder, PromptBuilder)
-        assert builder.get("identity") is not None
-        assert builder.get("security") is not None
+    def _make_mock_bot(self, preset="default"):
+        from unittest.mock import MagicMock
+        from parrot.bots.prompts.presets import get_preset
+        bot = MagicMock()
+        bot._prompt_builder = get_preset(preset)
+        return bot
 
-    def test_minimal_preset(self):
+    def test_noop_when_config_empty(self):
         from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({"preset": "minimal"})
-        assert builder.get("identity") is not None
-        assert builder.get("tools") is None
+        bot = self._make_mock_bot()
+        before = list(bot._prompt_builder.layer_names)
+        BotManager._apply_prompt_config(bot, {})
+        assert list(bot._prompt_builder.layer_names) == before
+
+    def test_noop_when_builder_missing(self):
+        from parrot.manager.manager import BotManager
+        from unittest.mock import MagicMock
+        bot = MagicMock()
+        bot._prompt_builder = None
+        BotManager._apply_prompt_config(bot, {"remove": ["tools"]})
 
     def test_remove_layers(self):
         from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
-            "preset": "default",
-            "remove": ["tools", "output"],
-        })
-        assert builder.get("tools") is None
-        assert builder.get("output") is None
-        assert builder.get("identity") is not None
+        bot = self._make_mock_bot()
+        assert bot._prompt_builder.get("tools") is not None
+        BotManager._apply_prompt_config(bot, {"remove": ["tools", "output"]})
+        assert bot._prompt_builder.get("tools") is None
+        assert bot._prompt_builder.get("output") is None
+        assert bot._prompt_builder.get("identity") is not None
 
     def test_add_domain_layer(self):
         from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
-            "preset": "default",
-            "add": ["dataframe_context"],
-        })
-        assert builder.get("dataframe_context") is not None
+        bot = self._make_mock_bot()
+        BotManager._apply_prompt_config(bot, {"add": ["dataframe_context"]})
+        assert bot._prompt_builder.get("dataframe_context") is not None
 
     def test_add_inline_layer(self):
         from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
-            "preset": "default",
-            "add": [{"name": "my_layer", "priority": 55, "template": "<my>hello</my>"}],
+        bot = self._make_mock_bot()
+        BotManager._apply_prompt_config(bot, {
+            "add": [{"name": "my_layer", "priority": 55, "template": "<my>hello</my>"}]
         })
-        layer = builder.get("my_layer")
+        layer = bot._prompt_builder.get("my_layer")
         assert layer is not None
         assert "<my>" in layer.template
 
     def test_customize_layer(self):
         from parrot.manager.manager import BotManager
-        builder = BotManager._build_prompt_builder({
-            "preset": "default",
+        bot = self._make_mock_bot()
+        BotManager._apply_prompt_config(bot, {
             "customize": {
                 "behavior": {"template": "<response_style>Be empathetic.</response_style>"}
-            },
+            }
         })
-        behavior = builder.get("behavior")
+        behavior = bot._prompt_builder.get("behavior")
         assert "empathetic" in behavior.template
+
+    def test_rag_preset_via_mock_bot(self):
+        from parrot.manager.manager import BotManager
+        bot = self._make_mock_bot(preset="rag")
+        assert bot._prompt_builder.get("rag_grounding") is not None
+        assert bot._prompt_builder.get("knowledge_scope") is not None
+        assert bot._prompt_builder.get("tools") is None
+        BotManager._apply_prompt_config(bot, {"customize": {
+            "rag_grounding": {"template": "<rag_policy>Custom rag rules</rag_policy>"}
+        }})
+        assert "Custom rag rules" in bot._prompt_builder.get("rag_grounding").template
 
 
 class TestLegacyPathUnchanged:

@@ -53,6 +53,7 @@ class BotModel(Model):
         system_prompt_template TEXT,
         human_prompt_template VARCHAR,
         pre_instructions JSONB DEFAULT '[]'::JSONB,
+        prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB,
 
         -- LLM configuration
         llm VARCHAR DEFAULT 'google',
@@ -167,6 +168,17 @@ class BotModel(Model):
         default_factory=list,
         required=False,
         ui_help="Guidelines for consistent behavior and proper use of context. These ensure the bot uses only the predefined context to generate responses."
+    )
+    prompt_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help=(
+            "Declarative prompt-layer configuration. Keys: "
+            "'preset' (default|minimal|voice|agent|rag), "
+            "'remove' (list of layer names), "
+            "'add' (domain-layer names or inline layer dicts), "
+            "'customize' (per-layer template overrides)."
+        ),
     )
 
     # LLM configuration
@@ -326,6 +338,7 @@ class BotModel(Model):
             'system_prompt': self.system_prompt_template,
             'human_prompt': self.human_prompt_template,
             'pre_instructions': self.pre_instructions,
+            'prompt_config': self.prompt_config,
             'llm': self.llm,
             'model': self.model_name,
             'temperature': self.temperature,

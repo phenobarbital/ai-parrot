@@ -28,6 +28,41 @@ class TestGetPreset:
         builder = get_preset("agent")
         assert builder.get("strict_grounding") is not None
 
+    def test_get_rag_preset_has_grounding_and_scope(self):
+        builder = get_preset("rag")
+        assert builder.get("knowledge_scope") is not None
+        assert builder.get("rag_grounding") is not None
+        assert builder.get("knowledge") is not None
+
+    def test_get_rag_preset_drops_tools_layer(self):
+        builder = get_preset("rag")
+        assert builder.get("tools") is None
+
+    def test_rag_preset_projects_backstory_into_scope(self):
+        builder = get_preset("rag")
+        builder.configure({
+            "name": "att_concierge",
+            "role": "AT&T support concierge",
+            "goal": "Answer customer questions from the support KB.",
+            "backstory": "Knows AT&T fiber and wireless plans for US residential customers.",
+            "rationale": "",
+            "capabilities": "",
+            "pre_instructions_content": "",
+            "extra_security_rules": "",
+            "extra_rag_rules": "",
+            "has_tools": False,
+        })
+        prompt = builder.build({
+            "knowledge_content": "Plan A: $50/mo.",
+            "user_context": "",
+            "chat_history": "",
+            "output_instructions": "",
+        })
+        assert "<knowledge_scope>" in prompt
+        assert "AT&T fiber and wireless plans" in prompt
+        assert "<rag_policy>" in prompt
+        assert "<tool_policy>" not in prompt
+
     def test_get_unknown_preset_raises(self):
         with pytest.raises(KeyError, match="Unknown preset"):
             get_preset("nonexistent")
@@ -76,9 +111,10 @@ class TestListPresets:
         assert "minimal" in names
         assert "voice" in names
         assert "agent" in names
+        assert "rag" in names
 
-    def test_lists_at_least_four(self):
-        assert len(list_presets()) >= 4
+    def test_lists_at_least_five(self):
+        assert len(list_presets()) >= 5
 
     def test_registered_preset_appears_in_list(self):
         register_preset("list_test_preset", PromptBuilder.minimal)

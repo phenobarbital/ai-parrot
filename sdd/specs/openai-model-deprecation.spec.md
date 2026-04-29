@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-134
 **Date**: 2026-04-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -611,11 +611,11 @@ No new dependencies are introduced.
       search and deep-research code paths in `parrot/clients/gpt.py`
       entirely, (b) leave them but `warnings.warn` on every call, or
       (c) repoint them to the closest current model (which is undefined
-      upstream)? — *Owner: Jesus Lara*
+      upstream)? — *Owner: Jesus Lara*: leave them with warning.
 - [ ] **Q2 — Default for `loaders/abstract.py` token counter.** I picked
       `"gpt-4.1-mini"` over `"gpt-5-mini"` to keep token-counting cheap.
       Is that the right call, or should the loader inherit the
-      client-wide `gpt-5-mini` default for consistency? — *Owner: Jesus Lara*
+      client-wide `gpt-5-mini` default for consistency? — *Owner: Jesus Lara*: yes.
 - [ ] **Q3 — Should `resolve_alias()` map to the ALIAS or to the
       MIGRATION TARGET?** Two interpretations: (a) `resolve_alias("gpt-4-turbo-2024-04-09")
       == "gpt-4-turbo"` (canonical alias), versus (b)
