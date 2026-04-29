@@ -401,6 +401,14 @@ AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
     fallback="/parrot/logs"
 )
 
+# Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
+# AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
+# different AWS account/role than S3 and other services. See storage backend
+# factory for the resolution order.
+BACKEND_AWS_ACCESS_KEY = config.get("BACKEND_AWS_ACCESS_KEY", fallback=None)
+BACKEND_AWS_SECRET_KEY = config.get("BACKEND_AWS_SECRET_KEY", fallback=None)
+BACKEND_AWS_REGION = config.get("BACKEND_AWS_REGION", fallback=aws_region)
+
 AWS_CREDENTIALS = {
     "default": {
         "use_credentials": config.get("aws_credentials", fallback=False),
@@ -420,7 +428,13 @@ AWS_CREDENTIALS = {
         "aws_key": config.get("AWS_CLOUDWATCH_KEY"),
         "aws_secret": config.get("AWS_CLOUDWATCH_SECRET"),
         "region_name": config.get("AWS_CLOUDWATCH_REGION", fallback="us-east-1"),
-    }
+    },
+    "backend": {
+        "use_credentials": bool(BACKEND_AWS_ACCESS_KEY and BACKEND_AWS_SECRET_KEY),
+        "aws_key": BACKEND_AWS_ACCESS_KEY,
+        "aws_secret": BACKEND_AWS_SECRET_KEY,
+        "region_name": BACKEND_AWS_REGION,
+    },
 }
 
 """
@@ -432,8 +446,12 @@ DYNAMODB_CONVERSATIONS_TABLE = config.get(
 DYNAMODB_ARTIFACTS_TABLE = config.get(
     "DYNAMODB_ARTIFACTS_TABLE", fallback="parrot-artifacts"
 )
-DYNAMODB_REGION = config.get("DYNAMODB_REGION", fallback=AWS_REGION_NAME)
+DYNAMODB_REGION = config.get("DYNAMODB_REGION", fallback=BACKEND_AWS_REGION)
 DYNAMODB_ENDPOINT_URL = config.get("DYNAMODB_ENDPOINT_URL", fallback=None)
+# Optional: name a profile in AWS_CREDENTIALS to use for DynamoDB. When unset,
+# the backend factory falls back to BACKEND_AWS_* env vars, then to boto3's
+# default credential chain (IAM role / ~/.aws/credentials).
+DYNAMODB_AWS_PROFILE = config.get("DYNAMODB_AWS_PROFILE", fallback=None)
 S3_ARTIFACT_BUCKET = config.get("S3_ARTIFACT_BUCKET", fallback=aws_bucket)
 
 # --- Pluggable Storage Backends (FEAT-116) ---

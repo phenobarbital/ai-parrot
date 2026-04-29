@@ -120,6 +120,36 @@ def _install_navigator_stubs() -> None:
     _parrot_interfaces_file.GCSFileManager = type("GCSFileManager", (_FileManagerInterface,), {})
     sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
 
+    # parrot.interfaces.file.{abstract,s3,gcs,local,tmp} — concrete submodules
+    # used by parrot.storage.overflow / s3_overflow and the backend factory.
+    _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
+    _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
+    _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
+    sys.modules.setdefault(
+        "parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract
+    )
+    _parrot_interfaces_file.abstract = _parrot_interfaces_file_abstract
+
+    _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
+    _parrot_interfaces_file_s3.S3FileManager = _parrot_interfaces_file.S3FileManager
+    sys.modules.setdefault("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
+    _parrot_interfaces_file.s3 = _parrot_interfaces_file_s3
+
+    _parrot_interfaces_file_gcs = types.ModuleType("parrot.interfaces.file.gcs")
+    _parrot_interfaces_file_gcs.GCSFileManager = _parrot_interfaces_file.GCSFileManager
+    sys.modules.setdefault("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
+    _parrot_interfaces_file.gcs = _parrot_interfaces_file_gcs
+
+    _parrot_interfaces_file_local = types.ModuleType("parrot.interfaces.file.local")
+    _parrot_interfaces_file_local.LocalFileManager = _LocalFileManager
+    sys.modules.setdefault("parrot.interfaces.file.local", _parrot_interfaces_file_local)
+    _parrot_interfaces_file.local = _parrot_interfaces_file_local
+
+    _parrot_interfaces_file_tmp = types.ModuleType("parrot.interfaces.file.tmp")
+    _parrot_interfaces_file_tmp.TempFileManager = _TempFileManager
+    sys.modules.setdefault("parrot.interfaces.file.tmp", _parrot_interfaces_file_tmp)
+    _parrot_interfaces_file.tmp = _parrot_interfaces_file_tmp
+
     # parrot.tools.filemanager — used by parrot.clients.google.generation
     _parrot_tools_fm = types.ModuleType("parrot.tools.filemanager")
     _parrot_tools_fm.FileManagerFactory = _FileManagerFactory
