@@ -251,8 +251,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-04-29
+**Notes**: Added MCPServerDescriptor for netsuite to _REGISTRY with 3 params (account_id STRING, client_id SECRET, user_id STRING), category=erp, method_name=add_netsuite_mcp_server. Added create_netsuite_mcp_server to get_factory_map() with alphabetically sorted imports.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

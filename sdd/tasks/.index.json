@@ -16583,7 +16583,7 @@
       "feature_id": "FEAT-135",
       "feature": "netsuite-mcp-integration",
       "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -16593,7 +16593,8 @@
       "parallelism_notes": "Imports create_netsuite_mcp_server from TASK-923 in factory map",
       "assigned_to": null,
       "started_at": "2026-04-29T11:05:44.537480+00:00",
-      "file": "sdd/tasks/active/TASK-924-netsuite-registry-entry.md"
+      "file": "sdd/tasks/completed/TASK-924-netsuite-registry-entry.md",
+      "completed_at": "2026-04-29T11:19:34.063470+00:00"
     },
     {
       "id": "TASK-925",
