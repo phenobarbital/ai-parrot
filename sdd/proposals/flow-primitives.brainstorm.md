@@ -1,4 +1,4 @@
-# Brainstorm: Flow Primitives — Shared Base for AgentCrew & AgentsFlow
+# Brainstorm: Flow Primitives — Shared Core for AgentCrew & AgentsFlow
 
 **Date**: 2026-04-29
 **Author**: Jesus
@@ -36,7 +36,7 @@ The dead `AgentTask` class in crew.py (never instantiated, never imported) is a 
 - `FlowResult` (renamed from `CrewResult`) must preserve all observable properties: `output`, `content`, `status`, `agents`, `errors`, `metadata`, `success`, `agent_results`, `completed`, `failed`, `to_dict()`.
 - `node_id` must be separated from `agent.name` to support multiple instances of the same agent.
 - Agent references in primitives use a Protocol (`AgentLike`), not concrete imports of `BasicAgent`/`AbstractBot`.
-- Storage mixins (`PersistenceMixin`, `SynthesisMixin`, `ExecutionMemory`) move into the new base module.
+- Storage mixins (`PersistenceMixin`, `SynthesisMixin`, `ExecutionMemory`) move into the new core module.
 
 ---
 
@@ -44,12 +44,12 @@ The dead `AgentTask` class in crew.py (never instantiated, never imported) is a 
 
 ### Option A: Single `parrot.bots.flows.base` Module with Protocol-Based Contracts
 
-Create `parrot/bots/flows/base/` as a flat package containing all shared primitives. Agent coupling is via an `AgentLike` Protocol. Both engines import from this base. `CrewResult` is replaced by `FlowResult` in the base module; `AgentExecutionInfo` becomes `NodeExecutionInfo`. The existing `Node` ABC is adopted in a leaner form (keeping action hooks but as optional mixin). `AgentCrew` and `AgentsFlow` eventually migrate into `parrot.bots.flows/` (Spec 2 and Spec 3 respectively).
+Create `parrot/bots/flows/core/` as a flat package containing all shared primitives. Agent coupling is via an `AgentLike` Protocol. Both engines import from this core. `CrewResult` is replaced by `FlowResult` in the core module; `AgentExecutionInfo` becomes `NodeExecutionInfo`. The existing `Node` ABC is adopted in a leaner form (keeping action hooks but as optional mixin). `AgentCrew` and `AgentsFlow` eventually migrate into `parrot.bots.flows/` (Spec 2 and Spec 3 respectively).
 
 **Module layout:**
 ```
 parrot/bots/flows/
-  base/
+  core/
     __init__.py          # public API surface
     types.py             # AgentRef, AgentLike Protocol, PromptBuilder, DependencyResults
     node.py              # Node ABC, AgentNode (with FSM), StartNode, EndNode
@@ -62,6 +62,7 @@ parrot/bots/flows/
 
 Pros:
 - Clean namespace that doesn't tie to either `orchestration` or `flow`.
+- `core` communicates "foundational, stable, shared" — better semantics than `base`.
 - Protocol-based agent reference eliminates import cycles.
 - Single source of truth for all shared abstractions.
 - `node_id` vs `agent.name` separation built in from day one.
@@ -147,11 +148,11 @@ Existing Code to Reuse:
 
 **Option A** is recommended because:
 
-- It creates a neutral namespace (`parrot.bots.flows.base`) that neither engine "owns," eliminating the semantic confusion of Option B where AgentCrew would import from `flow.core`.
+- It creates a neutral namespace (`parrot.bots.flows.core`) that neither engine "owns," eliminating the semantic confusion of Option B where AgentCrew would import from `flow.core`.
 - The `flows/` namespace naturally becomes the future home for both engines (AgentCrew as `flows/crew.py`, AgentsFlow as `flows/engine.py` or similar), providing a clear migration path for Specs 2 and 3.
 - The effort is medium (not high like Option C) because it stays within `bots/` — consistent with the existing mental model that orchestration is a bot concern.
 - Protocol-based agent references solve import cycles cleanly without over-abstracting.
-- Co-locating storage mixins with primitives makes the dependency graph tighter and more discoverable.
+- Co-locating storage mixins with the core primitives makes the dependency graph tighter and more discoverable.
 
 The main tradeoff is the re-export shims in old locations, but these are explicitly temporary (removed in Spec 2/3) and protect existing consumers.
 
@@ -165,7 +166,7 @@ For consumers of `AgentCrew` — **nothing changes**. All public APIs, imports, 
 
 For new code and framework developers, canonical imports shift to:
 ```python
-from parrot.bots.flows.base import (
+from parrot.bots.flows.core import (
     Node, AgentNode, StartNode, EndNode,
     AgentTaskMachine,
     FlowContext,
@@ -216,7 +217,7 @@ All fields preserved with more generic naming:
 ## Capabilities
 
 ### New Capabilities
-- `flow-primitives`: Shared base module (`parrot.bots.flows.base`) containing `Node` ABC, `AgentNode`, `StartNode`, `EndNode`, `AgentTaskMachine`, `FlowContext`, `FlowTransition`, `TransitionCondition`, `FlowResult`, `NodeExecutionInfo`, `AgentLike` Protocol, type aliases, and storage mixins. Includes contract test suite (pure unit tests, no LLM) validating FSM invariants, ready-set computation, transition semantics, and FlowResult serialization round-trips.
+- `flow-primitives`: Shared core module (`parrot.bots.flows.core`) containing `Node` ABC, `AgentNode`, `StartNode`, `EndNode`, `AgentTaskMachine`, `FlowContext`, `FlowTransition`, `TransitionCondition`, `FlowResult`, `NodeExecutionInfo`, `AgentLike` Protocol, type aliases, and storage mixins. Includes contract test suite (pure unit tests, no LLM) validating FSM invariants, ready-set computation, transition semantics, and FlowResult serialization round-trips.
 
 ### Modified Capabilities
 - `parrot.models.crew`: `CrewResult` and `AgentExecutionInfo` get re-export aliases pointing to `FlowResult` and `NodeExecutionInfo` from the new base module. The actual classes move. `AgentResult`, `build_agent_metadata`, `determine_run_status` remain here (they are result-building utilities, not flow primitives).
@@ -227,13 +228,13 @@ All fields preserved with more generic naming:
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `parrot/bots/flows/base/` (NEW) | new module | All shared primitives live here |
+| `parrot/bots/flows/core/` (NEW) | new module | All shared primitives live here |
 | `parrot/bots/flow/node.py` | superseded | `Node` ABC moves to base; old path re-exports |
 | `parrot/bots/flow/nodes/` | superseded | `StartNode`, `EndNode` move to base; old path re-exports |
 | `parrot/bots/flow/fsm.py` | depends on | Imports `AgentTaskMachine`, `FlowTransition`, `TransitionCondition` from base |
 | `parrot/bots/orchestration/crew.py` | depends on | Imports `FlowContext`, `AgentNode` types from base (Spec 2 migration) |
 | `parrot/models/crew.py` | modifies | `CrewResult` -> alias for `FlowResult`; `AgentExecutionInfo` -> alias for `NodeExecutionInfo` |
-| `parrot/bots/flow/storage/` | moves | Entire storage subpackage relocates to base; old path re-exports |
+| `parrot/bots/flow/storage/` | moves | Entire storage subpackage relocates to core; old path re-exports |
 | `examples/crew/*` | no change | Imports via `parrot.bots.orchestration.crew` still work |
 | `parrot/handlers/crew/` | no change | Imports via existing paths still work |
 | Tests (`test_fsm.py`, `test_agent_crew_examples.py`, etc.) | no change | Existing import paths preserved via re-exports |
@@ -396,7 +397,7 @@ from statemachine import State, StateMachine  # used in fsm.py:23, verify.py:18
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot.bots.flows`~~ — this namespace does not exist yet; it will be created by this feature
-- ~~`parrot.bots.flows.base`~~ — does not exist yet
+- ~~`parrot.bots.flows.core`~~ — does not exist yet
 - ~~`FlowResult`~~ — does not exist yet; will be created from `CrewResult`
 - ~~`NodeExecutionInfo`~~ — does not exist yet; will be created from `AgentExecutionInfo`
 - ~~`AgentLike` Protocol~~ — does not exist yet; will be created
@@ -409,7 +410,7 @@ from statemachine import State, StateMachine  # used in fsm.py:23, verify.py:18
 ## Parallelism Assessment
 
 - **Internal parallelism**: Limited. The primitives form a dependency chain: types -> Node ABC -> FSM -> context -> transition -> result. However, `result.py` (FlowResult/NodeExecutionInfo) and `types.py` (Protocol/aliases) can be developed independently of the node hierarchy. Storage migration is also independent. Estimate: 2-3 parallel tracks possible.
-- **Cross-feature independence**: This feature creates a new package (`parrot.bots.flows.base`) and only adds re-export shims to existing modules. No conflicts with in-flight specs unless someone is simultaneously modifying `parrot/bots/flow/fsm.py` or `parrot/models/crew.py`.
+- **Cross-feature independence**: This feature creates a new package (`parrot.bots.flows.core`) and only adds re-export shims to existing modules. No conflicts with in-flight specs unless someone is simultaneously modifying `parrot/bots/flow/fsm.py` or `parrot/models/crew.py`.
 - **Recommended isolation**: `per-spec` — tasks are tightly coupled (each builds on the previous layer of the type hierarchy) and the total scope is medium. A single worktree with sequential task execution is simpler and avoids merge conflicts between primitive layers.
 - **Rationale**: The dependency chain between types, nodes, FSM, context, and transitions means most tasks need to see the output of previous tasks. The independent tracks (result models, storage migration) are small enough that the overhead of separate worktrees isn't justified.
 
@@ -417,7 +418,7 @@ from statemachine import State, StateMachine  # used in fsm.py:23, verify.py:18
 
 ## Open Questions
 
-- [x] D1 — Module naming — *Owner: Jesus*: `parrot.bots.flows.base`, with future migration of both engines into `parrot.bots.flows/`
+- [x] D1 — Module naming — *Owner: Jesus*: `parrot.bots.flows.core` — "core" has better semantics than "base"; future migration of both engines into `parrot.bots.flows/`
 - [x] D2 — Fate of `AgentTask` — *Owner: Jesus*: Delete it (confirmed dead code, never used)
 - [x] D3 — `node_id` vs `agent.name` — *Owner: Jesus*: Resolve in this spec; separate `node_id` from `agent.name`
 - [x] D4 — Node hierarchy — *Owner: Jesus*: Adopt existing `Node` ABC (lean version preserving action hooks for future use)
