@@ -111,6 +111,13 @@ override-dependencies = [
     "numba>=0.57.0",
     "llvmlite>=0.40.0",
     "openpyxl>=3.1.2,<=3.1.5",
+    # Lightning AI removed `lightning` from PyPI on 2026-04-30, breaking
+    # any version of pyannote-audio>=3.x. whisperx 3.8.5 transitively
+    # requires pyannote-audio>=4.0.0, which propagates the failure.
+    # Override the pyannote-audio dep to a marker that never matches so
+    # whisperx can still resolve. Diarization features are unavailable
+    # at runtime until upstream republishes `lightning`.
+    "pyannote-audio ; sys_platform == 'never'",
 ]
 
 [tool.uv.sources]

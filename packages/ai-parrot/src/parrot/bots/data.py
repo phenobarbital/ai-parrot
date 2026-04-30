@@ -20,7 +20,7 @@ from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable
 from navconfig.logging import logging
 from ..tools import AbstractTool
 from ..tools.dataset_manager import DatasetManager
-from ..tools.prophetforecast import ProphetForecastTool
+from parrot_tools.prophetforecast import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
@@ -31,7 +31,7 @@ from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
 from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
 from ..bots.prompts.domain_layers import DATAFRAME_CONTEXT_LAYER, STRICT_GROUNDING_LAYER
-from ..tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
+from parrot_tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
 if TYPE_CHECKING:
     from querysource.queries.qs import QS
     from querysource.queries.multi import MultiQS
