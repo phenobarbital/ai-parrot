@@ -715,6 +715,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             await self._ensure_agent_ready(agent)
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
+                # Wire FSM: schedule + start before execution
+                if node.fsm and str(node.fsm.current_state.id) == "idle":
+                    node.fsm.schedule()
+                if node.fsm and str(node.fsm.current_state.id) == "ready":
+                    node.fsm.start()
                 context.active_tasks.add(agent_name)
                 tasks.append(node.execute_in_context(context, timeout=self.agent_execution_timeout))
                 agent_name_map.append(agent_name)
@@ -729,6 +734,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
                 context.active_tasks.discard(agent_name)
+                # Transition FSM to failed (guard against double-transition)
+                if node.fsm and str(node.fsm.current_state.id) != "failed":
+                    node.fsm.fail()
                 self.logger.error(
                     f"Error executing {agent_name}: {result}"
                 )
@@ -789,6 +797,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     raw_response,
                     metadata
                 )
+                # Transition FSM to completed
+                if node.fsm and str(node.fsm.current_state.id) == "running":
+                    node.fsm.succeed()
                 context.active_tasks.discard(agent_name)
                 execution_results[agent_name] = output
                 self.execution_log.append({
@@ -846,6 +857,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             if (
                 agent_name not in context.completed_tasks
                 and agent_name not in context.active_tasks
+                and agent_name not in context.errors
                 and context.can_execute(agent_name, node.dependencies)
             )
         }
@@ -2237,6 +2249,17 @@ Current task: {current_input}"""
 
                 # Check if we're stuck - no ready agents but also no active agents
                 if not context.active_tasks:
+                    # If there are errors, the workflow is partial/failed —
+                    # downstream agents are blocked by failed dependencies.
+                    if context.errors:
+                        self.logger.warning(
+                            "Workflow stopped: failed agents %s block downstream. "
+                            "Completed: %s, Expected final: %s",
+                            set(context.errors.keys()),
+                            context.completed_tasks,
+                            self.final_agents,
+                        )
+                        break
                     raise RuntimeError(
                         f"Workflow is stuck. Completed: {context.completed_tasks}, "
                         f"Expected final: {self.final_agents}. "
