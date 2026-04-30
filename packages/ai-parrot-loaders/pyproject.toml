@@ -42,15 +42,23 @@ audio = [
     "whisperx==3.8.5",
     "av==16.1.0",
     "resemblyzer==0.1.4",
-    "pyannote-audio==4.0.4",
-    "pyannote-core==6.0.1",
-    "pyannote-database==6.1.1",
-    "pyannote-metrics==4.0.0",
-    "pyannote-pipeline==4.0.0",
     "torch-audiomentations==0.12.0",
     "torch-pitch-shift==1.2.5",
     "torchmetrics==1.8.2",
 ]
+# Speaker diarization is temporarily unavailable as a declared extra.
+# Lightning AI removed the `lightning` package from PyPI on 2026-04-30,
+# and pyannote-audio 4.x declares `lightning>=2.4` as a transitive dep,
+# which makes `uv lock` universally unsatisfiable. Even declaring a
+# `diarization` extra (out of `all`) breaks the lock because uv resolves
+# all workspace-member extras for the universal lock.
+#
+# Until upstream republishes `lightning` (or pyannote-audio pivots to
+# pytorch-lightning), install diarization deps manually:
+#
+#     uv pip install pyannote-audio==4.0.4 pyannote-core==6.0.1 \
+#         pyannote-database==6.1.1 pyannote-metrics==4.0.0 \
+#         pyannote-pipeline==4.0.0
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
