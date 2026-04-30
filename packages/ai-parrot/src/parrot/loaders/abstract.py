@@ -153,7 +153,7 @@ class AbstractLoader(ABC):
 
     def _get_token_splitter(
         self,
-        model_name: str = "gpt-3.5-turbo",
+        model_name: str = "gpt-4.1-mini",
         chunk_size: int = 4000,
         chunk_overlap: int = 200
     ) -> TokenTextSplitter:
