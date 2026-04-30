@@ -20,7 +20,7 @@ class SQLAgent(AbstractDBAgent):
     ):
         if dsn is None:
             _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
-            dsn = _qs_conf.async_default_dsn
+            dsn = _qs_conf.default_dsn
         super().__init__(
             name=name,
             dsn=dsn,

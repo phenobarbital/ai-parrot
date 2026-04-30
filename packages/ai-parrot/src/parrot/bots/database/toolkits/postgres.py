@@ -38,6 +38,26 @@ class PostgresToolkit(SQLToolkit):
     SQL templates per instance.
     """
 
+    @staticmethod
+    def _normalize_pg_dsn(dsn: Optional[str]) -> Optional[str]:
+        """Strip SQLAlchemy ``+driver`` suffix from a PostgreSQL DSN.
+
+        asyncdb/asyncpg only accept ``postgresql://`` or ``postgres://``
+        schemes; SQLAlchemy callers commonly pass ``postgresql+asyncpg://``.
+        Normalizing here lets the same env-supplied DSN serve both pools.
+        """
+        if not dsn:
+            return dsn
+        for prefix, replacement in (
+            ("postgresql+", "postgresql"),
+            ("postgres+", "postgres"),
+        ):
+            if dsn.startswith(prefix):
+                idx = dsn.find("://", len(prefix))
+                if idx != -1:
+                    return replacement + dsn[idx:]
+        return dsn
+
     def __init__(
         self,
         dsn: str,
@@ -49,6 +69,7 @@ class PostgresToolkit(SQLToolkit):
         pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
+        dsn = self._normalize_pg_dsn(dsn)
         # --- CRUD instance state (before super().__init__ so exclude_tools is
         #     set before AbstractToolkit._generate_tools() runs) ---
         self._prepared_cache: Dict[str, tuple[str, List[str]]] = {}

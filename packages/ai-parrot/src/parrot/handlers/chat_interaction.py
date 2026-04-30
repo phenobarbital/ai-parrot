@@ -60,6 +60,35 @@ class ChatInteractionHandler(BaseView):
                 return str(user_id)
         return None
 
+    async def _resolve_agent_id(
+        self,
+        storage,
+        user_id: str,
+        session_id: str,
+        agent_id: Optional[str],
+    ) -> Optional[str]:
+        """Return ``agent_id`` for ``session_id``.
+
+        DynamoDB PK is ``user_id + agent_id``; clients that don't pass
+        ``agent_id`` force us to scan the user's threads.
+        """
+        if agent_id:
+            return agent_id
+        try:
+            threads = await storage.list_user_conversations(
+                user_id=user_id, limit=200
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Could not list threads to resolve agent_id for %s: %s",
+                session_id, exc,
+            )
+            return None
+        for t in threads:
+            if t.get("session_id") == session_id:
+                return t.get("agent_id")
+        return None
+
     async def get(self) -> web.Response:
         """List conversations or load a specific session's messages."""
         storage = self._get_storage()
@@ -208,21 +237,47 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        try:
-            body = await self.json_data()
-        except Exception:
+        body = await self.json_data() or {}
+        if not isinstance(body, dict):
             body = {}
 
         title = body.get("title")
         if not title:
+            self.logger.warning(
+                "PUT /chat/interactions/%s: missing 'title' in body=%r",
+                session_id, body,
+            )
             self.error(
                 response={"message": "title is required"},
+                status=400,
+            )
+
+        agent_id = body.get("agent_id") or self.get_arguments(
+            self.request
+        ).get("agent_id")
+        agent_id = await self._resolve_agent_id(
+            storage, user_id, session_id, agent_id
+        )
+        if not agent_id:
+            self.logger.warning(
+                "PUT /chat/interactions/%s: cannot resolve agent_id for user=%s",
+                session_id, user_id,
+            )
+            self.error(
+                response={
+                    "message": (
+                        "agent_id is required (send in body or as query "
+                        "param); the conversation could not be located."
+                    ),
+                },
                 status=400,
             )
 
         updated = await storage.update_conversation_title(
             session_id=session_id,
             title=title,
+            user_id=user_id,
+            agent_id=agent_id,
         )
 
         if updated:
@@ -231,6 +286,10 @@ class ChatInteractionHandler(BaseView):
                 "session_id": session_id,
                 "title": title,
             })
+        self.logger.error(
+            "update_conversation_title returned False for session=%s "
+            "user=%s agent=%s", session_id, user_id, agent_id,
+        )
         self.error(
             response={"message": f"Failed to update conversation {session_id}"},
             status=500,
@@ -261,6 +320,23 @@ class ChatInteractionHandler(BaseView):
 
         qs = self.get_arguments(self.request)
         agent_id = qs.get("agent_id")
+        agent_id = await self._resolve_agent_id(
+            storage, user_id, session_id, agent_id
+        )
+        if not agent_id:
+            self.logger.warning(
+                "DELETE /chat/interactions/%s: cannot resolve agent_id for "
+                "user=%s", session_id, user_id,
+            )
+            self.error(
+                response={
+                    "message": (
+                        "agent_id is required (send as query param); "
+                        "the conversation could not be located."
+                    ),
+                },
+                status=400,
+            )
 
         deleted = await storage.delete_conversation(
             user_id=user_id,
@@ -301,9 +377,8 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        try:
-            body = await self.json_data()
-        except Exception:
+        body = await self.json_data() or {}
+        if not isinstance(body, dict):
             body = {}
 
         action = body.get("action")
@@ -320,9 +395,32 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
+        agent_id = body.get("agent_id") or self.get_arguments(
+            self.request
+        ).get("agent_id")
+        agent_id = await self._resolve_agent_id(
+            storage, user_id, session_id, agent_id
+        )
+        if not agent_id:
+            self.logger.warning(
+                "PATCH /chat/interactions/%s delete_turn: cannot resolve "
+                "agent_id for user=%s", session_id, user_id,
+            )
+            self.error(
+                response={
+                    "message": (
+                        "agent_id is required (send in body or as query "
+                        "param)."
+                    ),
+                },
+                status=400,
+            )
+
         deleted = await storage.delete_turn(
             session_id=session_id,
             turn_id=turn_id,
+            user_id=user_id,
+            agent_id=agent_id,
         )
 
         if deleted:
