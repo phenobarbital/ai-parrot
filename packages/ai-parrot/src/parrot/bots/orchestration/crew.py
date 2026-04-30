@@ -1944,6 +1944,13 @@ Current task: {current_input}"""
                 metadata={'mode': 'parallel'}
             )
 
+        # Wire FSM transitions: schedule + start all nodes before gather
+        for meta in task_metadata:
+            node = self.workflow_graph.get(meta['agent_id'])
+            if node and node.fsm:
+                node.fsm.schedule()
+                node.fsm.start()
+
         # Execute all tasks in parallel using asyncio.gather()
         # This is the key to parallel execution - all coroutines run concurrently
         start_time = asyncio.get_event_loop().time()
@@ -1965,6 +1972,10 @@ Current task: {current_input}"""
                 error_msg = f"Error: {str(result)}"
                 parallel_results[agent_id] = error_msg
                 errors[agent_id] = str(result)
+                # Transition FSM to failed (guard against double-transition)
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm and str(node.fsm.current_state.id) != "failed":
+                    node.fsm.fail()
                 # Save failed execution to memory
                 agent_result = AgentResult(
                     agent_id=agent_id,
@@ -2062,6 +2073,10 @@ Current task: {current_input}"""
                 responses[agent_id] = result
                 last_output = extracted_result
                 success_count += 1
+                # Transition FSM to completed
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm:
+                    node.fsm.succeed()
 
             self.execution_log.append(log_entry)
         status = determine_run_status(success_count, failure_count)
