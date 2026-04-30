@@ -1532,6 +1532,14 @@ Current task: {current_input}"""
                 f'Starting iteration {iteration_index + 1}/{max_iterations}'
             )
             iterations_run = iteration_index + 1
+
+            # Fresh FSM per iteration (completed is a final state, so
+            # we cannot reuse the same FSM across iterations)
+            for agent_id in agent_sequence:
+                node = self.workflow_graph.get(agent_id)
+                if node:
+                    node.fsm = AgentTaskMachine(agent_name=node.agent.name)
+
             crew_context = AgentContext(
                 user_id=user_id,
                 session_id=session_id,
@@ -1607,6 +1615,12 @@ Current task: {current_input}"""
 
                 agent = self.agents[agent_id]
                 await self._ensure_agent_ready(agent)
+
+                # Wire FSM: schedule + start before execution
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm:
+                    node.fsm.schedule()
+                    node.fsm.start()
 
                 if agent_position == 0:
                     agent_input = self._build_loop_first_agent_prompt(
@@ -1702,8 +1716,14 @@ Current task: {current_input}"""
                     )
 
                     success_count += 1
+                    # Transition FSM to completed
+                    if node and node.fsm and str(node.fsm.current_state.id) == "running":
+                        node.fsm.succeed()
                 except Exception as exc:
                     execution_id = f"{agent_id}#iteration{iterations_run}"
+                    # Transition FSM to failed
+                    if node and node.fsm and str(node.fsm.current_state.id) != "failed":
+                        node.fsm.fail()
                     error_msg = f"Error executing agent {agent_id}: {exc}"
                     self.logger.error(error_msg, exc_info=True)
                     self.execution_log.append({
