@@ -50,6 +50,14 @@ from ...models.status import AgentStatus
 from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
 from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
 from ..flows.core.node import AgentNode as _CoreAgentNode
+from ..flows.core.context import FlowContext as _CoreFlowContext
+from ..flows.core.types import (
+    AgentRef as _CoreAgentRef,
+    DependencyResults as _CoreDependencyResults,
+    PromptBuilder as _CorePromptBuilder,
+)
+from ..flows.core.result import determine_run_status as _core_determine_run_status
+from ..flows.core.fsm import AgentTaskMachine
 from ..flow.tools import ResultRetrievalTool
 
 
@@ -1197,6 +1205,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
             agent = self.agents[agent_id]
 
+            # Wire FSM transitions for this node
+            node = self.workflow_graph.get(agent_id)
+            if node and node.fsm:
+                node.fsm.schedule()
+                node.fsm.start()
+
             try:
                 agent_start_time = asyncio.get_event_loop().time()
 
@@ -1277,11 +1291,19 @@ Current task: {current_input}"""
                     vectorize=True
                 )
 
+                # FSM: mark node as completed
+                if node and node.fsm:
+                    node.fsm.succeed()
+
                 success_count += 1
 
             except Exception as e:
                 error_msg = f"Error executing agent {agent_id}: {str(e)}"
                 self.logger.error(error_msg, exc_info=True)
+
+                # FSM: mark node as failed
+                if node and node.fsm:
+                    node.fsm.fail()
 
                 log_entry = {
                     'agent_id': agent_id,
