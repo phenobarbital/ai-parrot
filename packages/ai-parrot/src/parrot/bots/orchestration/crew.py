@@ -50,91 +50,14 @@ from ...models.status import AgentStatus
 from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
 from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
 from ..flows.core.node import AgentNode as _CoreAgentNode
-from ..flows.core.context import FlowContext as _CoreFlowContext
+from ..flows.core.context import FlowContext  # noqa: F401 — re-export for backward compat
 from ..flows.core.types import (
-    AgentRef as _CoreAgentRef,
-    DependencyResults as _CoreDependencyResults,
-    PromptBuilder as _CorePromptBuilder,
+    AgentRef,  # noqa: F401 — re-export for backward compat
+    DependencyResults,  # noqa: F401 — re-export for backward compat
+    PromptBuilder,  # noqa: F401 — re-export for backward compat
 )
-from ..flows.core.result import determine_run_status as _core_determine_run_status
 from ..flows.core.fsm import AgentTaskMachine
 from ..flow.tools import ResultRetrievalTool
-
-
-AgentRef = Union[str, BasicAgent, AbstractBot]
-DependencyResults = Dict[str, str]
-PromptBuilder = Callable[[AgentContext, DependencyResults], Union[str, Awaitable[str]]]
-
-
-@dataclass
-class FlowContext:
-    """
-    Maintains the execution context across the workflow.
-
-    This context object tracks the state of the entire workflow execution,
-    including which agents have completed, their results, and any errors.
-    It serves as the "memory" of the workflow as it progresses.
-    """
-    initial_task: str
-    results: Dict[str, Any] = field(default_factory=dict)
-    responses: Dict[str, Any] = field(default_factory=dict)
-    agent_metadata: Dict[str, AgentExecutionInfo] = field(default_factory=dict)
-    completion_order: List[str] = field(default_factory=list)
-    errors: Dict[str, Exception] = field(default_factory=dict)
-    active_tasks: Set[str] = field(default_factory=set)
-    completed_tasks: Set[str] = field(default_factory=set)
-
-    def can_execute(self, agent_name: str, dependencies: Set[str]) -> bool:
-        """
-        Check if all dependencies are satisfied for an agent to execute.
-
-        An agent can only execute when all the agents it depends on have
-        successfully completed their execution.
-        """
-        return dependencies.issubset(self.completed_tasks)
-
-    def mark_completed(
-        self,
-        agent_name: str,
-        result: Any = None,
-        response: Any = None,
-        metadata: Optional[AgentExecutionInfo] = None
-    ):
-        """
-        Mark an agent as completed and store its result.
-
-        This updates the workflow state to reflect that an agent has finished,
-        making it possible for dependent agents to begin execution.
-        """
-        self.completed_tasks.add(agent_name)
-        self.completion_order.append(agent_name)
-        self.active_tasks.discard(agent_name)
-        if result is not None:
-            self.results[agent_name] = result
-        if response is not None:
-            self.responses[agent_name] = response
-        if metadata is not None:
-            self.agent_metadata[agent_name] = metadata
-
-    def get_input_for_agent(self, agent_name: str, dependencies: Set[str]) -> Dict[str, Any]:
-        """
-        Prepare input data for an agent based on its dependencies.
-
-        This method aggregates the results from all dependency agents and
-        packages them in a way that the target agent can use. If the agent
-        has no dependencies, it receives the initial task.
-        """
-        if not dependencies:
-            return {"task": self.initial_task}
-
-        return {
-            "task": self.initial_task,
-            "dependencies": {
-                dep: self.results.get(dep)
-                for dep in dependencies
-                if dep in self.results
-            }
-        }
 
 @dataclass
 class _CrewAgentNode(_CoreAgentNode):
