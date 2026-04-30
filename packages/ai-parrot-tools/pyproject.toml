@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.36",
+    "ai-parrot>=0.24.37",
 ]
 
 [project.optional-dependencies]

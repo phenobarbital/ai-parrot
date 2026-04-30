@@ -60,34 +60,18 @@ class ChatInteractionHandler(BaseView):
                 return str(user_id)
         return None
 
-    async def _resolve_agent_id(
-        self,
-        storage,
-        user_id: str,
-        session_id: str,
-        agent_id: Optional[str],
-    ) -> Optional[str]:
-        """Return ``agent_id`` for ``session_id``.
+    @staticmethod
+    def _client_agent_id(body: Optional[dict], qs: dict) -> Optional[str]:
+        """Return ``agent_id`` from request body or query string.
 
-        DynamoDB PK is ``user_id + agent_id``; clients that don't pass
-        ``agent_id`` force us to scan the user's threads.
+        DynamoDB PK is ``user_id + agent_id``. We require the client to send
+        it — no server-side fallback (a Scan would be billable and slow).
         """
-        if agent_id:
-            return agent_id
-        try:
-            threads = await storage.list_user_conversations(
-                user_id=user_id, limit=200
-            )
-        except Exception as exc:
-            self.logger.warning(
-                "Could not list threads to resolve agent_id for %s: %s",
-                session_id, exc,
-            )
-            return None
-        for t in threads:
-            if t.get("session_id") == session_id:
-                return t.get("agent_id")
-        return None
+        if isinstance(body, dict):
+            value = body.get("agent_id")
+            if value:
+                return value
+        return qs.get("agent_id")
 
     async def get(self) -> web.Response:
         """List conversations or load a specific session's messages."""
@@ -252,22 +236,17 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        agent_id = body.get("agent_id") or self.get_arguments(
-            self.request
-        ).get("agent_id")
-        agent_id = await self._resolve_agent_id(
-            storage, user_id, session_id, agent_id
-        )
+        agent_id = self._client_agent_id(body, self.get_arguments(self.request))
         if not agent_id:
             self.logger.warning(
-                "PUT /chat/interactions/%s: cannot resolve agent_id for user=%s",
-                session_id, user_id,
+                "PUT /chat/interactions/%s: client did not send agent_id "
+                "(user=%s, body=%r)", session_id, user_id, body,
             )
             self.error(
                 response={
                     "message": (
                         "agent_id is required (send in body or as query "
-                        "param); the conversation could not be located."
+                        "param)."
                     ),
                 },
                 status=400,
@@ -319,21 +298,15 @@ class ChatInteractionHandler(BaseView):
             )
 
         qs = self.get_arguments(self.request)
-        agent_id = qs.get("agent_id")
-        agent_id = await self._resolve_agent_id(
-            storage, user_id, session_id, agent_id
-        )
+        agent_id = self._client_agent_id(None, qs)
         if not agent_id:
             self.logger.warning(
-                "DELETE /chat/interactions/%s: cannot resolve agent_id for "
-                "user=%s", session_id, user_id,
+                "DELETE /chat/interactions/%s: client did not send agent_id "
+                "(user=%s)", session_id, user_id,
             )
             self.error(
                 response={
-                    "message": (
-                        "agent_id is required (send as query param); "
-                        "the conversation could not be located."
-                    ),
+                    "message": "agent_id is required (send as query param).",
                 },
                 status=400,
             )
@@ -395,16 +368,12 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        agent_id = body.get("agent_id") or self.get_arguments(
-            self.request
-        ).get("agent_id")
-        agent_id = await self._resolve_agent_id(
-            storage, user_id, session_id, agent_id
-        )
+        agent_id = self._client_agent_id(body, self.get_arguments(self.request))
         if not agent_id:
             self.logger.warning(
-                "PATCH /chat/interactions/%s delete_turn: cannot resolve "
-                "agent_id for user=%s", session_id, user_id,
+                "PATCH /chat/interactions/%s delete_turn: client did not "
+                "send agent_id (user=%s, body=%r)",
+                session_id, user_id, body,
             )
             self.error(
                 response={
