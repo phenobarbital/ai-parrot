@@ -112,7 +112,7 @@ db = [
     "querysource>=4.1.11",
     "psycopg-binary==3.2.6",
     "jq==1.7.0",
-    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
+    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.12.0",
 ]
 
 # Google BigQuery specific

@@ -1,7 +1,7 @@
 from __future__ import annotations
+from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable, TYPE_CHECKING
 import functools
 from io import BytesIO
 import tempfile
@@ -11,12 +11,11 @@ from aiohttp import web
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 # AsyncDB (core dep):
 from asyncdb import AsyncDB
-from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 # Requirements from Notify API (lazy imports for optional providers):
 from notify import Notify  # para envio local
 from notify.models import Actor, Chat, TeamsCard, TeamsChannel
 # Navigator:
-from navconfig import config, BASE_DIR
+from navconfig import config
 from navconfig.logging import logging
 from navigator_session import get_session
 # Auth
@@ -40,9 +39,7 @@ from navigator.conf import CACHE_URL, default_dsn
 from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
-from ...clients.gpt import OpenAIClient
-from ...clients.claude import ClaudeClient
-from ...conf import STATIC_DIR, AGENTS_BOTS_PROMPT_DIR, AGENTS_DIR
+from ...conf import AGENTS_DIR
 
 
 class RedisWriter:
@@ -154,7 +151,7 @@ def auth_by_attribute(
                     },
                     status=403
                 )
-            if not attr in allowed:
+            if attr not in allowed:
                 self.error(
                     response={
                         "error": "Forbidden",
@@ -212,7 +209,9 @@ class AgentHandler(BaseView):
         # Temporal Agent Uploader
         self.temp_dir = self.create_temp_directory()
         self.app = app
-        self._program: str = kwargs.pop('program_slug', 'parrot')  # Default program slug
+        # Default program slug
+        self._program: str = kwargs.pop('program_slug', 'parrot')
+        self._tasker_name = f"{self.agent_name}_tasker"
 
     def set_program(self, program_slug: str) -> None:
         """Set the program slug for the agent."""
@@ -396,7 +395,8 @@ class AgentHandler(BaseView):
         if not req:
             raise RuntimeError("Request is not available.")
         service: BackgroundService = BackgroundService.from_app(
-            request.app, name=self._tasker_name
+            request.app,
+            name=self._tasker_name
         )
         try:
             job = await service.record(task_id)
@@ -795,14 +795,12 @@ class AgentHandler(BaseView):
     ) -> BasicAgent:
         """Create and configure a BasicAgent instance."""
         try:
-            print('AGENTE > ', self._use_llm, self._use_model)
             agent = self._agent_class(
                 name=self.agent_name,
                 tools=self._tools,
                 llm=self._use_llm,
                 model=self._use_model
             )
-            print('AGENTE 2 > ', agent)
             agent.set_response(self._agent_response)
             await agent.configure()
             # define the main agent:
