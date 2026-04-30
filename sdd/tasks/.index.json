@@ -16868,14 +16868,14 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; all subsequent tasks depend on it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-937-prep-test-audit-infrastructure.md"
     },
@@ -16886,7 +16886,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16895,7 +16895,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies flows/core/node.py and crew.py; foundation for all mode migrations",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-938-core-agentnode-execute.md"
     },
@@ -16906,7 +16906,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16915,7 +16915,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies crew.py; sequential dependency on TASK-938",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-939-migrate-run-sequential.md"
     },
@@ -16926,7 +16926,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16935,7 +16935,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies crew.py; builds on sequential migration pattern",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-940-migrate-run-parallel.md"
     },
@@ -16946,7 +16946,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -16955,7 +16955,7 @@
       "parallel": false,
       "parallelism_notes": "Most complex mode; modifies crew.py with DAG + callback wiring",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-941-migrate-run-flow.md"
     },
@@ -16966,7 +16966,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16975,7 +16975,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies crew.py; depends on flow migration pattern",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-942-migrate-run-loop.md"
     },
@@ -16986,7 +16986,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16995,7 +16995,7 @@
       "parallel": false,
       "parallelism_notes": "Final task; removes dead code and runs full regression",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-943-cleanup-final-regression.md"
     }
