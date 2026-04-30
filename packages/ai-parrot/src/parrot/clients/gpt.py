@@ -5,6 +5,7 @@ import io
 import json
 import mimetypes
 import uuid
+import warnings
 from pathlib import Path
 import time
 import asyncio
@@ -35,7 +36,12 @@ from ..models import (
 )
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
-from ..models.openai import OpenAIModel
+from ..models.openai import (
+    OpenAIModel,
+    is_deprecated,
+    get_shutoff_date,
+    resolve_alias,
+)
 from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
@@ -48,52 +54,50 @@ from ..models.detections import (
 
 
 getLogger('httpx').setLevel('WARNING')
+
+# Module-level deduplication cache for deprecation warnings (spec §3 Module 2).
+# set.add is atomic under the GIL; no async lock needed.
+_warned: set[str] = set()
 getLogger('httpcore').setLevel('WARNING')
 getLogger('openai').setLevel('INFO')
 
-# Reasoning models like o3 / o3-pro / o3-mini and o4-mini
-# (including deep-research variants) are Responses-only.
+# Reasoning models available via the Responses API only.
+# NOTE: spec §8 Q1 open — search-preview / deep-research IDs are
+# DEPRECATED (shutoff 2026-07-23) and NOT listed here; their code
+# paths are preserved with DeprecationWarnings until Q1 is resolved.
 RESPONSES_ONLY_MODELS = {
     "o3",
     "o3-pro",
-    "o3-mini",
-    "o3-deep-research",
-    "o4-mini",
-    "o4-mini-deep-research",
-    "gpt-5.4-pro",
-    "gpt-5-pro",
-    "gpt-5.2-pro",
-    "gpt-5-mini",
 }
 
 STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
-    OpenAIModel.GPT_4O_MINI.value,
-    OpenAIModel.GPT_O4.value,
-    OpenAIModel.GPT_4O.value,
-    OpenAIModel.GPT4_1.value,
-    OpenAIModel.GPT_4_1_MINI.value,
-    OpenAIModel.GPT_4_1_NANO.value,
+    OpenAIModel.GPT5_5.value,
+    OpenAIModel.GPT5_5_PRO.value,
     OpenAIModel.GPT5_4.value,
+    OpenAIModel.GPT5_4_PRO.value,
     OpenAIModel.GPT5_4_MINI.value,
     OpenAIModel.GPT5_4_NANO.value,
-    OpenAIModel.GPT5_MINI.value,
+    OpenAIModel.GPT5_3_CHAT.value,
+    OpenAIModel.GPT5_2_CHAT.value,
     OpenAIModel.GPT5.value,
-    OpenAIModel.GPT5_2.value,
-    OpenAIModel.GPT5_1.value,
-    OpenAIModel.GPT5_CHAT.value,
-    OpenAIModel.GPT5_PRO.value,
+    OpenAIModel.GPT5_MINI.value,
+    OpenAIModel.GPT5_NANO.value,
+    OpenAIModel.GPT4_1.value,
+    OpenAIModel.GPT4_1_MINI.value,
+    OpenAIModel.GPT4_1_NANO.value,
+    OpenAIModel.GPT4O_MINI.value,
 }
 
-DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT_4O_MINI.value
+DEFAULT_STRUCTURED_OUTPUT_MODEL = OpenAIModel.GPT5_MINI.value
 
 
 class OpenAIClient(AbstractClient):
     """Client for interacting with OpenAI's API."""
 
     client_type: str = 'openai'
-    model: str = OpenAIModel.GPT4_TURBO.value
+    model: str = OpenAIModel.GPT5_MINI.value
     client_name: str = 'openai'
-    _default_model: str = 'gpt-4o-mini'
+    _default_model: str = "gpt-5-mini"
     _fallback_model: str = 'gpt-4.1-nano'
     _lightweight_model: str = "gpt-4.1"
 
@@ -109,7 +113,29 @@ class OpenAIClient(AbstractClient):
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
+        if "model" in kwargs:
+            kwargs["model"] = self._normalize_model(kwargs["model"])
         super().__init__(**kwargs)
+
+    def _normalize_model(self, model: Union[str, OpenAIModel]) -> str:
+        """Coerce model to str and emit a one-shot DeprecationWarning if deprecated.
+
+        The warning is emitted exactly once per (model, process) using the
+        module-level ``_warned`` cache. ``stacklevel=3`` so the warning points
+        at user code (e.g. the caller of ``ask()``), not at this helper.
+        """
+        s = model.value if isinstance(model, OpenAIModel) else model
+        if is_deprecated(s) and s not in _warned:
+            shutoff = get_shutoff_date(s)
+            target = resolve_alias(s)
+            warnings.warn(
+                f"OpenAI model '{s}' is deprecated; shutoff {shutoff}. "
+                f"Migrate to '{target}'.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            _warned.add(s)
+        return s
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect OpenAI capacity errors.
@@ -254,14 +280,19 @@ class OpenAIClient(AbstractClient):
 
     @staticmethod
     def _resolve_deep_research_model(model_str: str) -> str:
-        """Resolve the deep research model based on the requested model."""
+        """Resolve the deep research model. NOTE: spec §8 Q1 open — these IDs
+        are deprecated upstream (shutoff 2026-07-23). Branch retained until
+        the question is resolved."""
+        warnings.warn(
+            "Deep-research models are deprecated (shutoff 2026-07-23). "
+            "Pending decision in spec §8 Q1.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         normalized = (model_str or "").strip()
-        if normalized in {
-            OpenAIModel.O4_MINI.value,
-            OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
-        }:
-            return OpenAIModel.O4_MINI_DEEP_RESEARCH.value
-        return OpenAIModel.O3_DEEP_RESEARCH.value
+        if normalized in {"o4-mini", "o4-mini-deep-research"}:
+            return "o4-mini-deep-research"
+        return "o3-deep-research"
 
 
     def _prepare_responses_args(self, *, messages, args):
@@ -616,7 +647,7 @@ class OpenAIClient(AbstractClient):
 
         Args:
             prompt (str): The prompt to send to the model.
-            model (Union[str, OpenAIModel], optional): The model to use. Defaults to GPT4_TURBO.
+            model (Union[str, OpenAIModel], optional): The model to use. Defaults to GPT5_MINI.
             max_tokens (Optional[int], optional): Maximum tokens for the response. Defaults to None.
             temperature (Optional[float], optional): Sampling temperature. Defaults to None.
             files (Optional[List[Union[str, Path]]], optional): Files to upload. Defaults to None.
@@ -644,15 +675,14 @@ class OpenAIClient(AbstractClient):
         original_prompt = prompt
         _use_tools = use_tools if use_tools is not None else self.enable_tools
 
+        model = self._normalize_model(model)
         model_str = model.value if isinstance(model, Enum) else str(model)
 
         # Deep research routing: switch to deep research model if requested
         if deep_research:
-            # Use o3-deep-research as default deep research model
-            if model_str not in {
-                OpenAIModel.O3_DEEP_RESEARCH.value,
-                OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
-            }:
+            # Use o3-deep-research as default deep research model.
+            # NOTE: these model IDs are deprecated (shutoff 2026-07-23); see spec §8 Q1.
+            if model_str not in {"o3-deep-research", "o4-mini-deep-research"}:
                 model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research enabled: switching to {model_str}")
 
@@ -725,10 +755,20 @@ class OpenAIClient(AbstractClient):
                  prepared_tools = self._prepare_tools()
 
         args = {}
+        # NOTE: spec §8 Q1 open — search-preview IDs deprecated (shutoff 2026-07-23).
+        # Branch retained until Q1 is resolved.
         if model_str in {
-            OpenAIModel.GPT_4O_MINI_SEARCH.value,
-            OpenAIModel.GPT_4O_SEARCH.value
+            "gpt-4o-mini-search-preview",
+            "gpt-4o-search-preview",
+            "gpt-4o-mini-search-preview-2025-03-11",
+            "gpt-4o-search-preview-2025-03-11",
         }:
+            warnings.warn(
+                f"OpenAI model '{model_str}' is a search-preview model deprecated "
+                "upstream (shutoff 2026-07-23). See spec §8 Q1.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             args['web_search_options'] = {
                 "web_search": True,
                 "web_search_model": "gpt-4o-mini"
@@ -1108,7 +1148,7 @@ class OpenAIClient(AbstractClient):
     async def ask_stream(
         self,
         prompt: str,
-        model: Union[str, OpenAIModel] = OpenAIModel.GPT4_TURBO,
+        model: Union[str, OpenAIModel] = OpenAIModel.GPT5_MINI,
         max_tokens: int = None,
         temperature: float = None,
         files: Optional[List[Union[str, Path]]] = None,
@@ -1137,15 +1177,14 @@ class OpenAIClient(AbstractClient):
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
+        model = self._normalize_model(model)
         # Extract model value if it's an enum
         model_str = model.value if isinstance(model, Enum) else model
 
-        # Deep research routing (same as in ask method)
+        # Deep research routing (same as in ask method).
+        # NOTE: these model IDs are deprecated (shutoff 2026-07-23); see spec §8 Q1.
         if deep_research:
-            if model_str not in {
-                OpenAIModel.O3_DEEP_RESEARCH.value,
-                OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
-            }:
+            if model_str not in {"o3-deep-research", "o4-mini-deep-research"}:
                 model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
 
@@ -1407,7 +1446,7 @@ class OpenAIClient(AbstractClient):
         prompt: str,
         image: Union[Path, bytes, Image.Image],
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
-        model: str = "gpt-4-turbo",
+        model: str = OpenAIModel.GPT5_MINI.value,
         max_tokens: int = None,
         temperature: float = None,
         structured_output: Optional[type] = None,
@@ -1417,6 +1456,7 @@ class OpenAIClient(AbstractClient):
         low_quality: bool = False
     ) -> AIMessage:
         """Ask OpenAI a question about an image with optional conversation memory."""
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         if no_memory:
@@ -1540,7 +1580,7 @@ class OpenAIClient(AbstractClient):
         text: str,
         max_length: int = 500,
         min_length: int = 100,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: Optional[float] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1548,6 +1588,7 @@ class OpenAIClient(AbstractClient):
         """
         Generate a concise summary of *text* (single paragraph, stateless).
         """
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         system_prompt = (
@@ -1591,7 +1632,7 @@ class OpenAIClient(AbstractClient):
         text: str,
         target_lang: str,
         source_lang: Optional[str] = None,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: float = 0.2,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1599,6 +1640,7 @@ class OpenAIClient(AbstractClient):
         """
         Translate *text* from *source_lang* (auto‑detected if None) into *target_lang*.
         """
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         if source_lang:
@@ -1648,7 +1690,7 @@ class OpenAIClient(AbstractClient):
         self,
         text: str,
         num_points: int = 5,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: float = 0.3,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1656,6 +1698,7 @@ class OpenAIClient(AbstractClient):
         """
         Extract *num_points* bullet‑point key ideas from *text* (stateless).
         """
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         system_prompt = (
@@ -1691,7 +1734,7 @@ class OpenAIClient(AbstractClient):
     async def analyze_sentiment(
         self,
         text: str,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: float = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1699,6 +1742,7 @@ class OpenAIClient(AbstractClient):
         """
         Perform sentiment analysis on *text* and return a structured explanation.
         """
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         system_prompt = (
@@ -1738,7 +1782,7 @@ class OpenAIClient(AbstractClient):
         review_text: str,
         product_id: str,
         product_name: str,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_TURBO,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT5_MINI,
         temperature: float = 0.1,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -1755,6 +1799,7 @@ class OpenAIClient(AbstractClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
+        model = self._normalize_model(model)
         turn_id = str(uuid.uuid4())
 
         system_prompt = (
@@ -1803,7 +1848,7 @@ class OpenAIClient(AbstractClient):
         detections: List[DetectionBox],          # from parrot.models.detections
         shelf_regions: List[ShelfRegion],        # "
         reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
-        model: Union[OpenAIModel, str] = OpenAIModel.GPT_4_1_MINI,
+        model: Union[OpenAIModel, str] = OpenAIModel.GPT4_1_MINI,
         prompt: Optional[str] = None,
         temperature: float = 0.0,
         ocr_hints: bool = True,
@@ -1817,6 +1862,7 @@ class OpenAIClient(AbstractClient):
         Returns a list[IdentifiedProduct] with bbox, type, model, confidence, features,
         reference_match, shelf_location, and position_on_shelf.
         """
+        model = self._normalize_model(model)
         try:
             _pytesseract = lazy_import("pytesseract", extra="ocr")
             _has_tesseract = True
