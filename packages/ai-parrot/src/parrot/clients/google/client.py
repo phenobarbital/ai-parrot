@@ -1,4 +1,5 @@
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
+from collections import defaultdict
 import re
 import asyncio
 import logging
@@ -20,7 +21,6 @@ from google.oauth2 import service_account
 from google.genai import types
 from navconfig import config
 import pandas as pd
-from collections import defaultdict
 from ..base import (
     AbstractClient,
     ToolDefinition,
@@ -43,7 +43,7 @@ from ...models.google import (
     VoiceRegistry,
 )
 from ...tools.abstract import AbstractTool, ToolResult
-from parrot.core.exceptions import HumanInteractionInterrupt
+from ...core.exceptions import HumanInteractionInterrupt
 from .analysis import GoogleAnalysis
 from .generation import GoogleGeneration
 
@@ -3344,12 +3344,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         state: Dict[str, Any]
     ) -> AIMessage:
         """Resume a suspended model execution.
-        
+
         Args:
             session_id: The session ID
             user_input: The user's input to inject as tool result
             state: The suspended state containing messages and tool_call_id
-            
+
         Returns:
             AIMessage: The response from the LLM
         """
@@ -3361,7 +3361,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
         model_str = state.get("agent_name", self.model or getattr(self, "default_model", self._default_model))
-        
+
         # We need to rebuild the Google GenAI history format from `messages` array
         history = []
         if messages:
@@ -3369,7 +3369,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             # or rather we map everything to UserContent/ModelContent.
             for msg in messages:
                 role = msg.get('role', 'user').lower()
-                
+
                 if role == 'user':
                     parts = []
                     # We might have various content types here
@@ -3378,10 +3378,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             parts.append(Part(text=part_content.get('text', '')))
                         elif isinstance(part_content, dict) and part_content.get('type') == 'image_url':
                             # Basic string fallback for images in history if needed, though usually omitted
-                            pass 
+                            pass
                     if parts:
                         history.append(UserContent(parts=parts))
-                        
+
                 elif role in ['assistant', 'model']:
                     parts = []
                     # Handle text output
@@ -3413,13 +3413,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 response={"result": user_input}
             )
         )
-        
+
         generation_config = {
             "temperature": getattr(self, "temperature", 0.0)
         }
         final_config = GenerateContentConfig(**generation_config)
 
-        # 3. Send the response back to the model 
+        # 3. Send the response back to the model
         retry_count = 0
         max_retries = 3
         while retry_count < max_retries:
