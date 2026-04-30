@@ -16946,7 +16946,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -16956,8 +16956,8 @@
       "parallelism_notes": "Most complex mode; modifies crew.py with DAG + callback wiring",
       "assigned_to": null,
       "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-941-migrate-run-flow.md"
+      "completed_at": "2026-04-30T19:20:03.211332+00:00",
+      "file": "sdd/tasks/completed/TASK-941-migrate-run-flow.md"
     },
     {
       "id": "TASK-942",
