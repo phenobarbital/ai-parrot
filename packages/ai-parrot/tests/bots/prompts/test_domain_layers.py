@@ -6,6 +6,8 @@ from parrot.bots.prompts.domain_layers import (
     COMPANY_CONTEXT_LAYER,
     CREW_CONTEXT_LAYER,
     STRICT_GROUNDING_LAYER,
+    KNOWLEDGE_SCOPE_LAYER,
+    RAG_GROUNDING_LAYER,
     get_domain_layer,
 )
 from parrot.bots.prompts.layers import LayerPriority, RenderPhase
@@ -113,6 +115,54 @@ class TestStrictGroundingLayer:
         assert STRICT_GROUNDING_LAYER.phase == RenderPhase.CONFIGURE
 
 
+class TestKnowledgeScopeLayer:
+
+    def test_renders_when_backstory_present(self):
+        result = KNOWLEDGE_SCOPE_LAYER.render(
+            {"backstory": "Knows AT&T fiber and wireless plans."}
+        )
+        assert "<knowledge_scope>" in result
+        assert "AT&T fiber and wireless plans" in result
+        assert "EXCLUSIVELY" in result
+
+    def test_skipped_when_empty(self):
+        assert KNOWLEDGE_SCOPE_LAYER.render({"backstory": ""}) is None
+
+    def test_skipped_when_missing(self):
+        assert KNOWLEDGE_SCOPE_LAYER.render({}) is None
+
+    def test_priority_before_knowledge(self):
+        assert KNOWLEDGE_SCOPE_LAYER.priority < LayerPriority.KNOWLEDGE
+        assert KNOWLEDGE_SCOPE_LAYER.priority > LayerPriority.SECURITY
+
+    def test_phase_is_configure(self):
+        assert KNOWLEDGE_SCOPE_LAYER.phase == RenderPhase.CONFIGURE
+
+
+class TestRagGroundingLayer:
+
+    def test_renders_always(self):
+        result = RAG_GROUNDING_LAYER.render({"extra_rag_rules": ""})
+        assert "<rag_policy>" in result
+        assert "single source of truth" in result
+        assert "<knowledge_context>" in result
+
+    def test_no_condition(self):
+        assert RAG_GROUNDING_LAYER.condition is None
+
+    def test_priority_before_behavior(self):
+        assert RAG_GROUNDING_LAYER.priority < LayerPriority.BEHAVIOR
+
+    def test_phase_is_configure(self):
+        assert RAG_GROUNDING_LAYER.phase == RenderPhase.CONFIGURE
+
+    def test_extra_rag_rules_substituted(self):
+        result = RAG_GROUNDING_LAYER.render(
+            {"extra_rag_rules": "- Always answer in Spanish."}
+        )
+        assert "Always answer in Spanish" in result
+
+
 class TestGetDomainLayer:
 
     def test_lookup_dataframe_context(self):
@@ -130,6 +180,12 @@ class TestGetDomainLayer:
 
     def test_lookup_strict_grounding(self):
         assert get_domain_layer("strict_grounding") is STRICT_GROUNDING_LAYER
+
+    def test_lookup_knowledge_scope(self):
+        assert get_domain_layer("knowledge_scope") is KNOWLEDGE_SCOPE_LAYER
+
+    def test_lookup_rag_grounding(self):
+        assert get_domain_layer("rag_grounding") is RAG_GROUNDING_LAYER
 
     def test_unknown_raises_keyerror(self):
         with pytest.raises(KeyError, match="Unknown domain layer"):

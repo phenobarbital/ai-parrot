@@ -17,6 +17,7 @@ _PRESETS: Dict[str, Callable[[], PromptBuilder]] = {
     "minimal": PromptBuilder.minimal,
     "voice": PromptBuilder.voice,
     "agent": PromptBuilder.agent,
+    "rag": PromptBuilder.rag,
 }
 
 

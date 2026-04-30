@@ -102,6 +102,71 @@ If information is missing, state "Data not available" rather than estimating.
 )
 
 
+# ── Knowledge scope (RAG-only agents) ──────────────────────────
+# Reuses $backstory as the canonical declaration of WHAT the KB covers,
+# so RAG agents do not need an extra DB column. The backstory text is
+# projected verbatim into <knowledge_scope> as the authoritative scope.
+KNOWLEDGE_SCOPE_LAYER = PromptLayer(
+    name="knowledge_scope",
+    priority=LayerPriority.KNOWLEDGE - 5,
+    phase=RenderPhase.CONFIGURE,
+    template="""<knowledge_scope>
+Your knowledge base covers EXCLUSIVELY the topics described below:
+$backstory
+
+Anything outside this scope is OUT OF SCOPE: state so explicitly and
+route the user according to <pre_instructions> or the channel referenced
+in <agent_identity>.
+</knowledge_scope>""",
+    condition=lambda ctx: bool(ctx.get("backstory", "").strip()),
+)
+
+
+# ── RAG grounding (replaces strict_grounding for RAG-only agents) ──
+RAG_GROUNDING_LAYER = PromptLayer(
+    name="rag_grounding",
+    priority=LayerPriority.BEHAVIOR - 5,
+    phase=RenderPhase.CONFIGURE,
+    template="""<rag_policy>
+You are a RAG agent: your single source of truth is <knowledge_context>.
+
+## Source-of-truth rules
+1. Answer EXCLUSIVELY with information present in <knowledge_context>.
+   Do not use general/world knowledge, training data, or analogical
+   inference to extend the answer.
+2. The scope of your KB is declared in <knowledge_scope> and
+   <agent_identity>. If the question falls outside that scope, say so
+   explicitly and refuse to answer from outside knowledge.
+3. If <knowledge_context> is empty or does not contain enough evidence,
+   reply literally that the information is not in your knowledge base —
+   do not guess.
+
+## Citation and exactness
+4. Reproduce names, prices, codes, dates, IDs, and policy text VERBATIM
+   from the retrieved chunks. Do not paraphrase numbers, do not normalize
+   entity names, do not translate values unless asked.
+5. When two chunks disagree, surface the conflict instead of silently
+   picking one.
+6. Never invent links, file names, emails, phone numbers, or document IDs.
+
+## Allowed conversational behaviors
+- Greetings, small talk, and clarifying questions.
+- Summarizing, comparing, translating, or reformatting content already
+  present in <knowledge_context>.
+- Acknowledging that you cannot answer and routing the user to the
+  correct channel.
+
+## Hard prohibitions
+- Filling gaps with "reasonable" or default values.
+- Speculating about future state, availability, prices, or policies.
+- Approximating figures that do not appear in the retrieved chunks.
+- Repeating numbers from prior turns without re-checking the current
+  retrieval.
+$extra_rag_rules
+</rag_policy>""",
+)
+
+
 # ── Domain layer registry ──────────────────────────────────────
 
 _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
@@ -110,6 +175,8 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "company_context": COMPANY_CONTEXT_LAYER,
     "crew_context": CREW_CONTEXT_LAYER,
     "strict_grounding": STRICT_GROUNDING_LAYER,
+    "knowledge_scope": KNOWLEDGE_SCOPE_LAYER,
+    "rag_grounding": RAG_GROUNDING_LAYER,
 }
 
 

@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 import asyncio
@@ -10,6 +11,11 @@ import secrets
 import json
 from urllib.parse import urlencode
 from aiohttp import web, ClientSession
+from parrot.handlers.vault_utils import (
+    store_vault_credential,
+    retrieve_vault_credential,
+    delete_vault_credential,
+)
 
 
 def _b64url(data: bytes) -> str:
@@ -596,6 +602,108 @@ class RedisTokenStore(TokenStore):
 
     async def delete(self, user_id, server_name):
         await self.redis.delete(self._key(user_id, server_name))
+
+
+class VaultTokenStore(TokenStore):
+    """Vault-backed token store that encrypts OAuth tokens using AES-GCM.
+
+    Persists tokens in the DocumentDB Vault (via vault_utils) so they survive
+    agent restarts. Falls back gracefully when the credential is not found or
+    vault keys are unavailable.
+
+    The credential name follows the pattern ``mcp_oauth_{server_name}_{user_id}``.
+
+    Example:
+        >>> store = VaultTokenStore()
+        >>> await store.set("user@co.com", "netsuite", token_dict)
+        >>> token = await store.get("user@co.com", "netsuite")
+    """
+
+    _logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def _vault_name(user_id: str, server_name: str) -> str:
+        """Return the vault credential name for the given user and server.
+
+        Argument order mirrors the ``TokenStore`` interface convention
+        ``(user_id, server_name)`` used by ``get``/``set``/``delete``.
+
+        Args:
+            user_id: Caller's user identifier.
+            server_name: MCP server slug (e.g. ``"netsuite"``).
+
+        Returns:
+            Vault credential name string following the pattern
+            ``mcp_oauth_{server_name}_{user_id}``.
+        """
+        return f"mcp_oauth_{server_name}_{user_id}"
+
+    async def get(self, user_id: str, server_name: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a stored OAuth token from the Vault.
+
+        Args:
+            user_id: Owner's user identifier.
+            server_name: MCP server slug.
+
+        Returns:
+            Decrypted token dict, or ``None`` if not found or vault unavailable.
+        """
+        vault_name = self._vault_name(user_id, server_name)
+        try:
+            return await retrieve_vault_credential(user_id, vault_name)
+        except KeyError:
+            return None
+        except RuntimeError as exc:
+            self._logger.warning(
+                "VaultTokenStore.get: vault keys unavailable for %s/%s — %s",
+                user_id,
+                server_name,
+                exc,
+            )
+            return None
+
+    async def set(self, user_id: str, server_name: str, token: Dict[str, Any]) -> None:
+        """Encrypt and persist an OAuth token in the Vault.
+
+        Degrades gracefully when vault keys are unavailable: logs a warning
+        and returns without raising so the in-memory token remains usable.
+
+        Args:
+            user_id: Owner's user identifier.
+            server_name: MCP server slug.
+            token: Token dict to store (e.g. access_token, refresh_token, expires_at).
+        """
+        vault_name = self._vault_name(user_id, server_name)
+        try:
+            await store_vault_credential(user_id, vault_name, token)
+        except RuntimeError as exc:
+            self._logger.warning(
+                "VaultTokenStore.set: vault keys unavailable for %s/%s — %s",
+                user_id,
+                server_name,
+                exc,
+            )
+
+    async def delete(self, user_id: str, server_name: str) -> None:
+        """Remove a stored OAuth token from the Vault.
+
+        Tolerates a missing credential (already deleted) and vault
+        unavailability — both are logged at warning level without raising.
+
+        Args:
+            user_id: Owner's user identifier.
+            server_name: MCP server slug.
+        """
+        vault_name = self._vault_name(user_id, server_name)
+        try:
+            await delete_vault_credential(user_id, vault_name)
+        except (KeyError, RuntimeError) as exc:
+            self._logger.warning(
+                "VaultTokenStore.delete: could not delete token for %s/%s — %s",
+                user_id,
+                server_name,
+                exc,
+            )
 
 
 # ---- Simple Dynamic Client Registration ----

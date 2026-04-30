@@ -11,6 +11,7 @@ Example:
     >>> agent = Agent(tools=toolkit.get_tools())
 
 Part of FEAT-105 — databasetoolkit-clash.
+Part of FEAT-136 — database-toolkit-parity.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from parrot.tools.databasequery.base import (
     RowResult,
     TableMeta,
     ValidationResult,
+    add_row_limit,
 )
 from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
 from parrot.tools.databasequery.tool import DatabaseQueryTool
@@ -40,4 +42,6 @@ __all__ = [
     "MetadataResult",
     "QueryResult",
     "RowResult",
+    # Utility helpers (FEAT-136)
+    "add_row_limit",
 ]

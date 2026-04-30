@@ -53,6 +53,7 @@ class BotModel(Model):
         system_prompt_template TEXT,
         human_prompt_template VARCHAR,
         pre_instructions JSONB DEFAULT '[]'::JSONB,
+        prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB,
 
         -- LLM configuration
         llm VARCHAR DEFAULT 'google',
@@ -73,6 +74,8 @@ class BotModel(Model):
         -- Vector store and retrieval configuration
         use_vector_context BOOLEAN DEFAULT FALSE,
         vector_store_config JSONB DEFAULT '{}'::JSONB,
+        reranker_config        JSONB DEFAULT '{}'::JSONB,
+        parent_searcher_config JSONB DEFAULT '{}'::JSONB,
         embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}',
         context_search_limit INTEGER DEFAULT 10,
         context_score_threshold FLOAT DEFAULT 0.7,
@@ -166,6 +169,17 @@ class BotModel(Model):
         required=False,
         ui_help="Guidelines for consistent behavior and proper use of context. These ensure the bot uses only the predefined context to generate responses."
     )
+    prompt_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help=(
+            "Declarative prompt-layer configuration. Keys: "
+            "'preset' (default|minimal|voice|agent|rag), "
+            "'remove' (list of layer names), "
+            "'add' (domain-layer names or inline layer dicts), "
+            "'customize' (per-layer template overrides)."
+        ),
+    )
 
     # LLM configuration
     llm: str = Field(default='google', required=False, ui_help="Large Language Model powering the bot. ")
@@ -209,6 +223,16 @@ class BotModel(Model):
         default_factory=dict,
         required=False,
         ui_help="The bot’s vector store configuration."
+    )
+    reranker_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help="The bot’s reranker config (FEAT-133). See sdd/specs/bot-reranker-and-parent-searcher-config.spec.md.",
+    )
+    parent_searcher_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help="The bot’s parent-searcher config (FEAT-128).",
     )
     embedding_model: dict = Field(
         default=default_embed_model,
@@ -314,6 +338,7 @@ class BotModel(Model):
             'system_prompt': self.system_prompt_template,
             'human_prompt': self.human_prompt_template,
             'pre_instructions': self.pre_instructions,
+            'prompt_config': self.prompt_config,
             'llm': self.llm,
             'model': self.model_name,
             'temperature': self.temperature,
@@ -328,6 +353,8 @@ class BotModel(Model):
             'operation_mode': self.operation_mode,
             'use_vector': self.use_vector,
             'vector_store_config': self.vector_store_config,
+            'reranker_config': self.reranker_config,
+            'parent_searcher_config': self.parent_searcher_config,
             'embedding_model': self.embedding_model,
             'context_search_limit': self.context_search_limit,
             'context_score_threshold': self.context_score_threshold,

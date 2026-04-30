@@ -248,13 +248,14 @@ class AgentHandler(BaseView):
         self._register_additional_routes()
 
         # Tasker: Background Task Manager (if not already registered):
-        if 'background_service' not in app:
+        self._tasker_name = f"{self.agent_name}_tasker"
+        if not BackgroundService.exists(app, name=self._tasker_name):
             BackgroundService(
                 app=self.app,
                 max_workers=10,
                 queue_size=10,
                 tracker_type='redis',  # Use 'redis' for Redis-based tracking
-                service_name=f"{self.agent_name}_tasker"
+                name=self._tasker_name,
             )
         # Tool definition:
         self.define_tools()
@@ -322,7 +323,9 @@ class AgentHandler(BaseView):
         if not request:
             raise RuntimeError("Request is not available.")
         # Get the BackgroundService instance
-        service: BackgroundService = request.app['background_service']
+        service: BackgroundService = BackgroundService.from_app(
+            request.app, name=self._tasker_name
+        )
         # Create a TaskWrapper instance
         task = TaskWrapper(
             *args,
@@ -341,7 +344,9 @@ class AgentHandler(BaseView):
     async def find_jobs(self, request: web.Request) -> web.Response:
         """Return Jobs by User."""
         # Get the BackgroundService instance
-        service: BackgroundService = request.app['background_service']
+        service: BackgroundService = BackgroundService.from_app(
+            request.app, name=self._tasker_name
+        )
         # get service tracker:
         tracker = service.tracker
         session = await self.get_user_session()
@@ -390,7 +395,9 @@ class AgentHandler(BaseView):
         req = request or self.request
         if not req:
             raise RuntimeError("Request is not available.")
-        service: BackgroundService = req.app['background_service']
+        service: BackgroundService = BackgroundService.from_app(
+            request.app, name=self._tasker_name
+        )
         try:
             job = await service.record(task_id)
             if job:

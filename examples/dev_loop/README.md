@@ -1,7 +1,15 @@
-# Dev-Loop Orchestration — Examples (FEAT-129)
+# Dev-Loop Orchestration — Examples (FEAT-129 + FEAT-132)
 
-Runnable examples for the five-node `AgentsFlow`
-(`BugIntake → Research → Development → QA → DeploymentHandoff`)
+> **FEAT-132 upgrades** (2026-04-28): The flow now starts with an
+> `IntentClassifierNode` that validates the incoming brief and routes
+> by `WorkBrief.kind`: `"bug"` briefs go through `BugIntakeNode` before
+> Research; `"enhancement"` and `"new_feature"` briefs skip directly to
+> `ResearchNode`. The Jira issuetype is now derived from the kind field
+> (Bug / Story / New Feature). A plan-summary comment is posted on newly
+> created tickets. See **Routing by kind** below.
+
+Runnable examples for the six-node `AgentsFlow`
+(`IntentClassifier → [BugIntake →] Research → Development → QA → DeploymentHandoff`)
 defined in `sdd/specs/dev-loop-orchestration.spec.md` and implemented
 under `parrot/flows/dev_loop/`.
 
@@ -32,11 +40,40 @@ client can start runs and visualise the merged event stream live.
 | Reporter / escalation identities: `JIRA_REPORTER_ACCOUNT_ID`, `JIRA_ESCALATION_ACCOUNT_ID`, `FLOW_BOT_JIRA_ACCOUNT_ID` | Each accepts **either an email or a Jira accountId** — emails are resolved server-side via `jira_find_user`. `FLOW_BOT_JIRA_ACCOUNT_ID` is the fallback when reporter/escalation are unset. |
 | `AWS_PROFILE` (default `cloudwatch`) and `CLOUDWATCH_LOG_GROUP` (default `fluent-bit-cloudwatch`) | `ResearchNode` pulls log excerpts; the log group is bound at toolkit construction, not per query |
 | `DEV_LOOP_SUMMARY_LLM` (default `anthropic:claude-haiku-4-5-20251001`) | Model used by `ResearchNode` to summarize log excerpts when the raw Jira description would exceed Atlassian's 32 767-char cap |
+| `DEV_LOOP_PLAN_LLM` (default `""` → falls back to `DEV_LOOP_SUMMARY_LLM`) | Optional override for the model used by `ResearchNode` to generate the plan-summary comment posted on newly-created tickets. When unset, the same model as `DEV_LOOP_SUMMARY_LLM` is used. FEAT-132. |
 
 Quickest local Redis:
 ```bash
 docker run --rm -p 6379:6379 redis:7
 ```
+
+## Routing by kind
+
+`FEAT-132` introduces `IntentClassifierNode` as the flow entry point. It
+validates the brief and routes execution based on `WorkBrief.kind`:
+
+```
+ WorkBrief.kind
+      │
+      ├─ "bug"          ─► IntentClassifier ─► BugIntake ─► Research ─► ...
+      │
+      └─ "enhancement"  ─►
+         "new_feature"  ─► IntentClassifier ──────────────► Research ─► ...
+```
+
+The Jira issuetype is derived from the kind:
+
+| `kind` | Jira issuetype |
+|---|---|
+| `bug` (default) | Bug |
+| `enhancement` | Story |
+| `new_feature` | New Feature |
+
+Additionally, when a **new** ticket is created (not reused), `ResearchNode`
+posts a plan-summary as the first Jira comment. The LLM used for plan
+generation is controlled by `DEV_LOOP_PLAN_LLM` (see Prerequisites table).
+On the **reuse** path (`existing_issue_key` is set), no plan-summary comment
+is posted — only the standard re-trigger comment.
 
 ## Programmatic example — `quickstart.py`
 
@@ -79,7 +116,8 @@ python examples/dev_loop/server.py
 
 The UI is a single static file with no build step:
 
-* Five panels, one per node, with status pills
+* Six panels, one per node (IntentClassifier, BugIntake, Research,
+  Development, QA, Handoff), with status pills
   (`idle / queued / running / passed / failed`).
 * "Start dev-loop run" POSTs to `/api/flow/run`, gets back a `run_id`,
   then opens a WebSocket to `/api/flow/{run_id}/ws?view=both&replay=true`.
@@ -99,6 +137,7 @@ also drive the same endpoint from the CLI:
 curl -X POST http://localhost:8080/api/flow/run \
   -H 'Content-Type: application/json' \
   -d '{
+    "kind": "enhancement",
     "summary": "Order webhook signature mismatch on retries",
     "affected_component": "etl/orders/webhook.yaml",
     "description": "Observed in prod 2026-04-28; only the second retry fails. See OPS-4321.",
@@ -107,11 +146,26 @@ curl -X POST http://localhost:8080/api/flow/run \
       "mypy --no-incremental"
     ],
     "log_group": "fluent-bit-cloudwatch",
-    "time_window_minutes": 90
+    "time_window_minutes": 90,
+    "existing_issue_key": "NAV-8241"
   }'
 ```
 
-The server normalises the payload into a `BugBrief`, validates the
+Omit `existing_issue_key` to auto-detect duplicates or create a new ticket.
+Set it to force re-use of a specific Jira issue — Research will append a
+re-triggered comment instead of opening a new one, and no plan-summary
+comment will be posted (the plan was already commented when the ticket was
+first created).
+
+The `kind` field controls how the flow routes the request (FEAT-132):
+
+| UI radio | JSON value | Jira issuetype | Flow path |
+|---|---|---|---|
+| Bug (default) | `"bug"` | Bug | `IntentClassifier → BugIntake → Research → …` |
+| Enhancement | `"enhancement"` | Story | `IntentClassifier → Research → …` (skips BugIntake) |
+| New Feature | `"new_feature"` | New Feature | `IntentClassifier → Research → …` (skips BugIntake) |
+
+The server normalises the payload into a `WorkBrief`, validates the
 shell-command heads against `ACCEPTANCE_CRITERION_ALLOWLIST` (`flowtask`,
 `pytest`, `ruff`, `mypy`, `pylint`), and starts a real flow run.
 
@@ -184,7 +238,7 @@ the UI consumes verbatim:
 
 ## Troubleshooting
 
-* **UI stuck on "idle"** → check the server logs; `BugIntakeNode` raises
+* **UI stuck on "idle"** → check the server logs; `IntentClassifierNode` raises
   `ValueError` on disallowed `ShellCriterion.command` heads
   (`ACCEPTANCE_CRITERION_ALLOWLIST` defaults to
   `flowtask, pytest, ruff, mypy, pylint`).

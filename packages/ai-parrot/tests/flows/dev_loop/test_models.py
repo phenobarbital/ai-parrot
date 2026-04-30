@@ -1,4 +1,4 @@
-"""Unit tests for parrot.flows.dev_loop.models (TASK-874)."""
+"""Unit tests for parrot.flows.dev_loop.models (TASK-874, TASK-896)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,9 @@ from parrot.flows.dev_loop import (
     FlowtaskCriterion,
     LogSource,
     ShellCriterion,
+    WorkBrief,
 )
+from parrot.flows.dev_loop.models import WorkKind  # internal alias — verified import path
 
 
 class TestBugBrief:
@@ -77,6 +79,50 @@ class TestDiscriminatedUnion:
             }
         )
         assert isinstance(brief.acceptance_criteria[0], ShellCriterion)
+
+
+_SAMPLE_BRIEF_KWARGS: dict = {
+    "summary": "Customer sync drops the last row when input has >1000 rows",
+    "affected_component": "etl/customers/sync.yaml",
+    "log_sources": [],
+    "acceptance_criteria": [
+        ShellCriterion(name="ruff-1", command="ruff check ."),
+    ],
+    "reporter": "reporter@example.com",
+    "escalation_assignee": "oncall@example.com",
+}
+
+
+class TestWorkBriefKind:
+    """TASK-896 — WorkBrief rename + kind field contract tests."""
+
+    def test_workbrief_default_kind_is_bug(self):
+        """WorkBrief without explicit kind defaults to 'bug' (back-compat)."""
+        brief = WorkBrief(**_SAMPLE_BRIEF_KWARGS)
+        assert brief.kind == "bug"
+
+    def test_workbrief_kind_literal_rejects_invalid(self):
+        """Invalid kind value raises ValidationError."""
+        with pytest.raises(ValueError):
+            WorkBrief(kind="story", **_SAMPLE_BRIEF_KWARGS)
+
+    def test_bugbrief_alias_is_workbrief(self):
+        """BugBrief is exactly WorkBrief (same class object, not a subclass)."""
+        assert BugBrief is WorkBrief
+
+    def test_workbrief_kind_accepts_enhancement(self):
+        """'enhancement' is a valid kind value."""
+        brief = WorkBrief(kind="enhancement", **_SAMPLE_BRIEF_KWARGS)
+        assert brief.kind == "enhancement"
+
+    def test_workbrief_kind_accepts_new_feature(self):
+        """'new_feature' is a valid kind value."""
+        brief = WorkBrief(kind="new_feature", **_SAMPLE_BRIEF_KWARGS)
+        assert brief.kind == "new_feature"
+
+    def test_workkind_type_alias_importable(self):
+        """WorkKind type alias is importable from models (internal use)."""
+        assert WorkKind is not None
 
 
 class TestDispatchProfile:

@@ -393,6 +393,10 @@ class Chatbot(BaseBot):
         self.expand_to_parent = self._from_db(
             bot, 'expand_to_parent', default=getattr(self, 'expand_to_parent', False)
         )
+        # RAG retrieval debug flag — env var PARROT_DEBUG_RAG=1 overrides this.
+        self.debug_retrieval = self._from_db(
+            bot, 'debug_retrieval', default=getattr(self, 'debug_retrieval', False)
+        )
 
         # Security and permissions
         self._permissions = self._from_db(bot, 'permissions', default={})

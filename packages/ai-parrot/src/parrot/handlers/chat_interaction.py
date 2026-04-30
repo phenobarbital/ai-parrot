@@ -60,6 +60,19 @@ class ChatInteractionHandler(BaseView):
                 return str(user_id)
         return None
 
+    @staticmethod
+    def _client_agent_id(body: Optional[dict], qs: dict) -> Optional[str]:
+        """Return ``agent_id`` from request body or query string.
+
+        DynamoDB PK is ``user_id + agent_id``. We require the client to send
+        it — no server-side fallback (a Scan would be billable and slow).
+        """
+        if isinstance(body, dict):
+            value = body.get("agent_id")
+            if value:
+                return value
+        return qs.get("agent_id")
+
     async def get(self) -> web.Response:
         """List conversations or load a specific session's messages."""
         storage = self._get_storage()
@@ -208,21 +221,42 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        try:
-            body = await self.json_data()
-        except Exception:
+        body = await self.json_data() or {}
+        if not isinstance(body, dict):
             body = {}
 
         title = body.get("title")
         if not title:
+            self.logger.warning(
+                "PUT /chat/interactions/%s: missing 'title' in body=%r",
+                session_id, body,
+            )
             self.error(
                 response={"message": "title is required"},
+                status=400,
+            )
+
+        agent_id = self._client_agent_id(body, self.get_arguments(self.request))
+        if not agent_id:
+            self.logger.warning(
+                "PUT /chat/interactions/%s: client did not send agent_id "
+                "(user=%s, body=%r)", session_id, user_id, body,
+            )
+            self.error(
+                response={
+                    "message": (
+                        "agent_id is required (send in body or as query "
+                        "param)."
+                    ),
+                },
                 status=400,
             )
 
         updated = await storage.update_conversation_title(
             session_id=session_id,
             title=title,
+            user_id=user_id,
+            agent_id=agent_id,
         )
 
         if updated:
@@ -231,6 +265,10 @@ class ChatInteractionHandler(BaseView):
                 "session_id": session_id,
                 "title": title,
             })
+        self.logger.error(
+            "update_conversation_title returned False for session=%s "
+            "user=%s agent=%s", session_id, user_id, agent_id,
+        )
         self.error(
             response={"message": f"Failed to update conversation {session_id}"},
             status=500,
@@ -260,7 +298,18 @@ class ChatInteractionHandler(BaseView):
             )
 
         qs = self.get_arguments(self.request)
-        agent_id = qs.get("agent_id")
+        agent_id = self._client_agent_id(None, qs)
+        if not agent_id:
+            self.logger.warning(
+                "DELETE /chat/interactions/%s: client did not send agent_id "
+                "(user=%s)", session_id, user_id,
+            )
+            self.error(
+                response={
+                    "message": "agent_id is required (send as query param).",
+                },
+                status=400,
+            )
 
         deleted = await storage.delete_conversation(
             user_id=user_id,
@@ -301,9 +350,8 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
-        try:
-            body = await self.json_data()
-        except Exception:
+        body = await self.json_data() or {}
+        if not isinstance(body, dict):
             body = {}
 
         action = body.get("action")
@@ -320,9 +368,28 @@ class ChatInteractionHandler(BaseView):
                 status=400,
             )
 
+        agent_id = self._client_agent_id(body, self.get_arguments(self.request))
+        if not agent_id:
+            self.logger.warning(
+                "PATCH /chat/interactions/%s delete_turn: client did not "
+                "send agent_id (user=%s, body=%r)",
+                session_id, user_id, body,
+            )
+            self.error(
+                response={
+                    "message": (
+                        "agent_id is required (send in body or as query "
+                        "param)."
+                    ),
+                },
+                status=400,
+            )
+
         deleted = await storage.delete_turn(
             session_id=session_id,
             turn_id=turn_id,
+            user_id=user_id,
+            agent_id=agent_id,
         )
 
         if deleted:

@@ -439,6 +439,17 @@ class ChatStorage:
     ) -> Optional[Dict[str, Any]]:
         """Create a conversation thread in DynamoDB."""
         if not self._dynamo:
+            self.logger.warning(
+                "create_conversation: cold-storage backend not configured "
+                "(session=%s)", session_id,
+            )
+            return None
+        if not getattr(self._dynamo, "is_connected", True):
+            self.logger.warning(
+                "create_conversation: %s not connected — thread %s will "
+                "NOT be persisted.",
+                self._backend_label, session_id,
+            )
             return None
         now = datetime.now(timezone.utc)
         metadata = {
@@ -457,8 +468,9 @@ class ChatStorage:
                 session_id=session_id,
                 metadata=metadata,
             )
-            self.logger.debug(
-                "Conversation %s created in %s", session_id, self._backend_label
+            self.logger.info(
+                "Conversation %s created in %s (user=%s agent=%s)",
+                session_id, self._backend_label, user_id, agent_id,
             )
             return {
                 "session_id": session_id,
@@ -485,7 +497,18 @@ class ChatStorage:
 
         Note: DynamoDB requires user_id and agent_id to build the PK.
         """
-        if not self._dynamo or not user_id or not agent_id:
+        if not self._dynamo:
+            self.logger.warning(
+                "update_conversation_title: backend not configured "
+                "(session=%s)", session_id,
+            )
+            return False
+        if not user_id or not agent_id:
+            self.logger.warning(
+                "update_conversation_title: missing PK fields "
+                "(session=%s, user_id=%r, agent_id=%r)",
+                session_id, user_id, agent_id,
+            )
             return False
         try:
             await self._dynamo.update_thread(
@@ -495,8 +518,9 @@ class ChatStorage:
                 title=title,
                 updated_at=datetime.now(timezone.utc),
             )
-            self.logger.debug(
-                "Conversation %s title updated to '%s'", session_id, title
+            self.logger.info(
+                "Conversation %s title updated to '%s' (user=%s agent=%s)",
+                session_id, title, user_id, agent_id,
             )
             return True
         except Exception as exc:

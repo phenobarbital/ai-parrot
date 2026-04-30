@@ -28,21 +28,22 @@ class MockToolkit(DatabaseToolkit):
 
 class TestDatabaseToolkitBase:
     def test_tool_generation(self):
-        tk = MockToolkit(dsn="postgresql://test", backend="asyncdb")
+        # tool_prefix="db" so all tools are prefixed: db_search_schema etc.
+        tk = MockToolkit(dsn="postgresql://test")
         tool_names = [t.name for t in tk.get_tools()]
-        assert "search_schema" in tool_names
-        assert "execute_query" in tool_names
-        assert "do_something" in tool_names
+        assert any("search_schema" in n for n in tool_names)
+        assert any("execute_query" in n for n in tool_names)
+        assert any("do_something" in n for n in tool_names)
 
     def test_exclude_tools(self):
-        tk = MockToolkit(dsn="postgresql://test", backend="asyncdb")
+        tk = MockToolkit(dsn="postgresql://test")
         tool_names = [t.name for t in tk.get_tools()]
         for name in ("start", "stop", "cleanup", "get_table_metadata", "health_check"):
             assert name not in tool_names
+            assert f"db_{name}" not in tool_names
 
     def test_default_config(self):
         tk = MockToolkit(dsn="postgresql://test")
-        assert tk.backend == "asyncdb"
         assert tk.database_type == "postgresql"
         assert tk.allowed_schemas == ["public"]
         assert tk.primary_schema == "public"
@@ -52,14 +53,42 @@ class TestDatabaseToolkitBase:
         assert MockToolkit(dsn="x", database_type="postgresql")._get_asyncdb_driver() == "pg"
         assert MockToolkit(dsn="x", database_type="bigquery")._get_asyncdb_driver() == "bigquery"
 
-    def test_sqlalchemy_dsn_conversion(self):
-        tk = MockToolkit(dsn="postgresql://user:pass@host/db", backend="sqlalchemy")
-        assert tk._build_sqlalchemy_dsn(tk.dsn) == "postgresql+asyncpg://user:pass@host/db"
+    def test_backend_kwarg_removed(self):
+        """backend= kwarg no longer accepted (hard removed in FEAT-118)."""
+        with pytest.raises(TypeError):
+            MockToolkit(dsn="postgresql://localhost/test", backend="sqlalchemy")
 
     def test_config_model(self):
         config = DatabaseToolkitConfig(dsn="postgresql://test", allowed_schemas=["public", "sales"])
         assert config.dsn == "postgresql://test"
         assert "sales" in config.allowed_schemas
+
+    def test_config_model_no_backend_field(self):
+        """DatabaseToolkitConfig no longer has a backend field."""
+        config = DatabaseToolkitConfig(dsn="postgresql://test")
+        assert not hasattr(config, "backend")
+
+    def test_no_sqlalchemy_imports_at_module_level(self):
+        """sqlalchemy must not be imported at module level in toolkit modules."""
+        import importlib
+        import inspect
+        for mod_name in [
+            "parrot.bots.database.toolkits.base",
+            "parrot.bots.database.toolkits.sql",
+            "parrot.bots.database.toolkits.postgres",
+        ]:
+            mod = sys.modules.get(mod_name)
+            if mod is None:
+                continue
+            source = inspect.getsource(mod)
+            # Only check top-level imports (before any 'def ' or 'class ')
+            top_level = source.split("def ")[0].split("class ")[0]
+            assert "from sqlalchemy" not in top_level, (
+                f"sqlalchemy found at module level in {mod_name}"
+            )
+            assert "import sqlalchemy" not in top_level, (
+                f"sqlalchemy found at module level in {mod_name}"
+            )
 
 
 class TestDatabaseToolkitLifecycle:
