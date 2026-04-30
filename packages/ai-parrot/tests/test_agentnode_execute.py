@@ -10,37 +10,17 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-import sys
-from typing import Any, Dict, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Stub infrastructure — mirrors test_agent_crew_examples.py
-# ---------------------------------------------------------------------------
-
-mock_nav_auth = MagicMock()
-mock_nav_auth.decorators = MagicMock()
-mock_nav_auth.decorators.is_authenticated = (
-    lambda *args, **kwargs: lambda func: func
-)
-mock_nav_auth.decorators.user_session = (
-    lambda *args, **kwargs: lambda func: func
-)
-sys.modules.setdefault("navigator_auth", mock_nav_auth)
-sys.modules.setdefault("navigator_auth.decorators", mock_nav_auth.decorators)
-
-mock_nav_conf = MagicMock()
-mock_nav_conf.AUTH_SESSION_OBJECT = "session"
-sys.modules.setdefault("navigator_auth.conf", mock_nav_conf)
-
-from parrot.bots.flows.core.node import AgentNode  # noqa: E402
-from parrot.bots.orchestration.crew import _CrewAgentNode  # noqa: E402
+from parrot.bots.flows.core.node import AgentNode
+from parrot.bots.orchestration.crew import _CrewAgentNode
 
 
 # ---------------------------------------------------------------------------
-# Mock agent
+# Mock agent (specific to node-level tests — not the same as DummyAgent)
 # ---------------------------------------------------------------------------
 
 
