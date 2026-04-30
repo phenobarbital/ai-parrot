@@ -175,6 +175,72 @@ class AgentNode(Node):
         """Agent identity (delegates to ``agent.name``)."""
         return self.agent.name
 
+    async def execute(
+        self,
+        prompt: str,
+        *,
+        timeout: Optional[float] = None,
+        **ctx: Any,
+    ) -> Dict[str, Any]:
+        """Execute the agent with pre/post hooks, timeout, and time tracking.
+
+        Calls ``run_pre_actions`` before execution, invokes the agent via
+        ``agent.ask()``, then calls ``run_post_actions``.  Optionally wraps
+        the agent call in ``asyncio.wait_for`` when *timeout* is provided.
+
+        On timeout or any other exception, transitions the FSM to ``failed``
+        (if an FSM is attached) before propagating the error.
+
+        Args:
+            prompt: Input prompt for the agent.
+            timeout: Optional timeout in seconds for the agent call.
+            **ctx: Additional context forwarded to hooks and the agent.
+
+        Returns:
+            Dict with keys ``'response'``, ``'output'``,
+            ``'execution_time'``, and ``'prompt'``.
+
+        Raises:
+            TimeoutError: If the agent call exceeds *timeout*.
+        """
+        await self.run_pre_actions(prompt=prompt, **ctx)
+        start_time = asyncio.get_event_loop().time()
+        try:
+            if timeout:
+                response = await asyncio.wait_for(
+                    self.agent.ask(prompt=prompt, **ctx),
+                    timeout=timeout,
+                )
+            else:
+                response = await self.agent.ask(prompt=prompt, **ctx)
+            end_time = asyncio.get_event_loop().time()
+            output = (
+                response.content
+                if hasattr(response, "content")
+                else str(
+                    response.output
+                    if hasattr(response, "output")
+                    else response
+                )
+            )
+            await self.run_post_actions(result=response, **ctx)
+            return {
+                "response": response,
+                "output": output,
+                "execution_time": end_time - start_time,
+                "prompt": prompt,
+            }
+        except asyncio.TimeoutError:
+            if self.fsm:
+                self.fsm.fail()
+            raise TimeoutError(
+                f"Agent {self.name} timed out after {timeout}s"
+            ) from None
+        except Exception:
+            if self.fsm:
+                self.fsm.fail()
+            raise
+
 
 # ---------------------------------------------------------------------------
 # StartNode
