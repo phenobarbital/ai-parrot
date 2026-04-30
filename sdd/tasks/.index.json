@@ -16887,7 +16887,7 @@
       "feature_id": "FEAT-137",
       "feature": "openai-model-deprecation",
       "spec": "sdd/specs/openai-model-deprecation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16898,7 +16898,8 @@
       "assigned_to": null,
       "started_at": "2026-04-29T23:21:08.346201+00:00",
       "created_at": "2026-04-29T23:01:56.266377+00:00",
-      "file": "sdd/tasks/active/TASK-938-openai-client-deprecation-warning-chokepoint.md"
+      "file": "sdd/tasks/completed/TASK-938-openai-client-deprecation-warning-chokepoint.md",
+      "completed_at": "2026-04-30T00:17:10.855623+00:00"
     },
     {
       "id": "TASK-939",
@@ -16907,7 +16908,7 @@
       "feature_id": "FEAT-137",
       "feature": "openai-model-deprecation",
       "spec": "sdd/specs/openai-model-deprecation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16919,7 +16920,8 @@
       "assigned_to": null,
       "started_at": "2026-04-29T23:21:08.346201+00:00",
       "created_at": "2026-04-29T23:01:56.266377+00:00",
-      "file": "sdd/tasks/active/TASK-939-openai-client-defaults-and-model-sets.md"
+      "file": "sdd/tasks/completed/TASK-939-openai-client-defaults-and-model-sets.md",
+      "completed_at": "2026-04-30T00:17:10.855623+00:00"
     },
     {
       "id": "TASK-940",
