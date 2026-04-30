@@ -16986,7 +16986,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -16996,8 +16996,8 @@
       "parallelism_notes": "Final task; removes dead code and runs full regression",
       "assigned_to": null,
       "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-943-cleanup-final-regression.md"
+      "completed_at": "2026-04-30T21:52:39.060364+00:00",
+      "file": "sdd/tasks/completed/TASK-943-cleanup-final-regression.md"
     }
   ]
 }
