@@ -49,6 +49,7 @@ from ...models.crew import (
 from ...models.status import AgentStatus
 from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
 from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
+from ..flows.core.node import AgentNode as _CoreAgentNode
 from ..flow.tools import ResultRetrievalTool
 
 
@@ -127,28 +128,29 @@ class FlowContext:
             }
         }
 
-class _CrewAgentNode:
-    """Represents a node in the workflow graph (an agent with its dependencies).
+@dataclass
+class _CrewAgentNode(_CoreAgentNode):
+    """Crew-specific node wrapping an agent with dependency metadata.
 
-    .. deprecated::
-        The public name ``AgentNode`` in this module is now ambiguous because
-        ``parrot.bots.flows.core`` exports a different (FSM-backed)
-        ``AgentNode``.  Internal crew code uses ``_CrewAgentNode`` to make
-        the distinction explicit; the ``AgentNode`` alias below preserves
-        backward compatibility for external callers.
+    Inherits ``execute()`` (with timeout, time tracking, and pre/post hooks)
+    from the core ``AgentNode``.  Adds ``_format_prompt()`` for crew-specific
+    prompt formatting and ``execute_in_context()`` for context-driven execution.
+
+    The public name ``AgentNode`` at module level is kept as an alias for
+    backward compatibility.
     """
 
-    def __init__(self, agent: Union[BasicAgent, AbstractBot], dependencies: Optional[Set[str]] = None):
-        self.agent = agent
-        self.dependencies = dependencies or set()
-        self.successors: Set[str] = set()
-
     def _format_prompt(self, input_data: Dict[str, Any]) -> str:
-        """
-        Format the input data dictionary into a string prompt.
+        """Format the input data dictionary into a string prompt.
 
-        This method converts the structured input data (task + dependencies)
-        into a natural language prompt that the agent can understand.
+        Converts structured input data (task + dependency results) into a
+        natural language prompt the agent can understand.
+
+        Args:
+            input_data: Dict with ``'task'`` and optionally ``'dependencies'``.
+
+        Returns:
+            Formatted prompt string.
         """
         if not input_data:
             return ""
@@ -169,71 +171,33 @@ class _CrewAgentNode:
 
         return "\n".join(prompt_parts)
 
-    async def execute(self, context: FlowContext, timeout: Optional[float] = None) -> Any:
-        """Execute the agent with context from previous agents."""
+    async def execute_in_context(
+        self, context: FlowContext, timeout: Optional[float] = None
+    ) -> Any:
+        """Execute the agent with context from previous agents.
+
+        Resolves the prompt from the ``FlowContext`` using dependency data,
+        then delegates to the inherited ``execute()`` method.
+
+        Args:
+            context: The current workflow execution context.
+            timeout: Optional timeout in seconds for the agent call.
+
+        Returns:
+            Dict with ``'response'``, ``'output'``, ``'execution_time'``,
+            ``'prompt'``.
+        """
         # Get input data based on dependencies
-        input_data = context.get_input_for_agent(self.agent.name, self.dependencies)
+        input_data = context.get_input_for_agent(
+            self.agent.name, self.dependencies
+        )
 
         # If this is the first agent, use initial task
         if not input_data and not self.dependencies:
             input_data = {"task": context.initial_task}
 
-        # Execute the agent and track time
-        start_time = asyncio.get_event_loop().time()
         prompt = self._format_prompt(input_data)
-        try:
-            # Execute with timeout if provided
-            if timeout:
-                response = await asyncio.wait_for(
-                    self.agent.ask(prompt=prompt),
-                    timeout=timeout
-                )
-            else:
-                response = await self.agent.ask(prompt=prompt)
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            # Extract output text
-            output = response.content if hasattr(response, 'content') else str(response.output if hasattr(response, 'output') else response)
-
-            return {
-                'response': response,
-                'output': output,
-                'execution_time': end_time - start_time,
-                'prompt': prompt
-            }
-
-        except asyncio.TimeoutError:
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            error_msg = f"Agent execution timed out after {timeout} seconds"
-            
-            agent_info = build_agent_metadata(
-                agent_id=self.agent.name,
-                agent=self.agent,
-                response=None,
-                output=None,
-                execution_time=execution_time,
-                status='failed',
-                error=error_msg
-            )
-            # Re-raise to be caught by caller
-            raise TimeoutError(error_msg)
-
-        except Exception as e:
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            # Build agent metadata for failed execution
-            # TODO: Save the error of execution
-            agent_info = build_agent_metadata(
-                agent_id=self.agent.name,
-                agent=self.agent,
-                response=None,
-                output=None,
-                execution_time=execution_time,
-                status='failed',
-                error=str(e)
-            )
-            raise
+        return await self.execute(prompt, timeout=timeout)
 
 
 # Backward-compatibility alias.  New code should use
@@ -367,7 +331,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         if agents:
             for agent in agents:
                 self.add_agent(agent)
-                self.workflow_graph[agent.name] = _CrewAgentNode(agent)
+                self.workflow_graph[agent.name] = _CrewAgentNode(
+                    agent=agent, node_id=agent.name
+                )
 
     @property
     def agent_statuses(self) -> Dict[str, Dict[str, Any]]:
@@ -742,7 +708,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute(context, timeout=self.agent_execution_timeout))
+                tasks.append(node.execute_in_context(context, timeout=self.agent_execution_timeout))
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel
