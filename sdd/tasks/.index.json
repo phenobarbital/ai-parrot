@@ -16926,7 +16926,7 @@
       "feature_id": "FEAT-137",
       "feature": "agentcrew-primitives",
       "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16936,8 +16936,8 @@
       "parallelism_notes": "Modifies crew.py; builds on sequential migration pattern",
       "assigned_to": null,
       "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-940-migrate-run-parallel.md"
+      "completed_at": "2026-04-30T18:22:59.123350+00:00",
+      "file": "sdd/tasks/completed/TASK-940-migrate-run-parallel.md"
     },
     {
       "id": "TASK-941",
