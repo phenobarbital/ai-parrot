@@ -47,8 +47,8 @@ from ...models.crew import (
     determine_run_status
 )
 from ...models.status import AgentStatus
-from ..flow.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
-from ..flow.storage.synthesis import SYNTHESIS_PROMPT
+from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
+from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
 from ..flow.tools import ResultRetrievalTool
 
 

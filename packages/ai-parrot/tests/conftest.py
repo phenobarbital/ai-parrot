@@ -2,11 +2,25 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 import types
 from typing import Any, Dict, List, Optional
+
+import pytest
+
+
+def pytest_collection_modifyitems(config, items):  # noqa: D401
+    """Skip tests marked real_llm unless PARROT_TEST_REAL_LLM=1 is set."""
+    if not os.environ.get("PARROT_TEST_REAL_LLM"):
+        skip_real_llm = pytest.mark.skip(
+            reason="Set PARROT_TEST_REAL_LLM=1 to run real LLM tests"
+        )
+        for item in items:
+            if "real_llm" in item.keywords:
+                item.add_marker(skip_real_llm)
 
 # Ensure the project root is importable as ``parrot`` when running tests without
 # installing the package.  Several tests import modules directly from the
