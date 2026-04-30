@@ -286,6 +286,21 @@ class OdooInterface:
 
         return data.get("result")
 
+    # ── Server Info ───────────────────────────────────────────────────────────
+
+    async def version(self) -> dict[str, Any]:
+        """Return Odoo server version info via the unauthenticated common service.
+
+        Returns:
+            A dict with keys such as ``server_version``, ``server_serie``,
+            ``protocol_version``, ``server_version_info``.
+
+        Raises:
+            OdooRPCError: If Odoo returns a JSON-RPC error.
+            OdooConnectionError: On network failures.
+        """
+        return await self._jsonrpc_call("common", "version", [])
+
     # ── Authentication ────────────────────────────────────────────────────────
 
     async def authenticate(self) -> int:

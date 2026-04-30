@@ -22,6 +22,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bestbuy": "parrot_tools.retail.bby.BestBuyToolkit",
     "massive": "parrot_tools.massive.toolkit.MassiveToolkit",
     "workday": "parrot_tools.workday.tool.WorkdayToolkit",
+    "odoo": "parrot_tools.odoo.OdooToolkit",
 
     # --- Individual Tools (Batch 1 — simple tools) ---
     "ddg_search": "parrot_tools.ddgsearch.DdgSearchTool",
