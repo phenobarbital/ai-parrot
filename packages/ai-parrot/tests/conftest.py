@@ -29,6 +29,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Also add the tests directory so shared helper modules (e.g. _crew_test_helpers)
+# can be imported directly by test files.
+TESTS_DIR = Path(__file__).resolve().parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
+
 
 def _install_navconfig_stub() -> None:
     """Provide a lightweight ``navconfig`` implementation for tests."""

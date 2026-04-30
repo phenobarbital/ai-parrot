@@ -44,8 +44,8 @@ from ...models.crew import (
     AgentResult,
     AgentExecutionInfo,
     build_agent_metadata,
-    determine_run_status
 )
+from ..flows.core.result import determine_run_status
 from ...models.status import AgentStatus
 from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
 from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
@@ -58,6 +58,16 @@ from ..flows.core.types import (
 )
 from ..flows.core.fsm import AgentTaskMachine
 from ..flow.tools import ResultRetrievalTool
+
+__all__ = [
+    "AgentCrew",
+    "AgentNode",
+    # Re-exports from flows.core for backward compatibility
+    "FlowContext",
+    "AgentRef",
+    "DependencyResults",
+    "PromptBuilder",
+]
 
 @dataclass
 class _CrewAgentNode(_CoreAgentNode):
@@ -118,14 +128,12 @@ class _CrewAgentNode(_CoreAgentNode):
             Dict with ``'response'``, ``'output'``, ``'execution_time'``,
             ``'prompt'``.
         """
-        # Get input data based on dependencies
+        # Get input data based on dependencies.
+        # ``get_input_for_agent`` already falls back to ``initial_task``
+        # when the node has no dependencies and no prior results.
         input_data = context.get_input_for_agent(
             self.agent.name, self.dependencies
         )
-
-        # If this is the first agent, use initial task
-        if not input_data and not self.dependencies:
-            input_data = {"task": context.initial_task}
 
         prompt = self._format_prompt(input_data)
         return await self.execute(prompt, timeout=timeout)
@@ -329,13 +337,13 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
-        # DEBUG: Print tools available to the agent
+        # Log tools available to the agent
         try:
             agent_tools = agent.tool_manager.list_tools()
-            self.logger.info(f"DEBUG: Agent '{agent.name}' (ID: {agent_id}) initial tools: {agent_tools}")
+            self.logger.debug("Agent '%s' (ID: %s) initial tools: %s", agent.name, agent_id, agent_tools)
         except Exception as e:
-            self.logger.error(
-                f"DEBUG: Error listing tools for agent '{agent_id}': {e}"
+            self.logger.debug(
+                "Error listing tools for agent '%s': %s", agent_id, e
             )
 
         # Register as tool in LLM orchestrator (if exists)
@@ -608,7 +616,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
     async def _execute_parallel_agents(
         self,
         agent_names: Set[str],
-        context: FlowContext
+        context: FlowContext,
+        on_agent_complete: Optional[Callable] = None,
     ) -> CrewResult:
         """
         Execute multiple agents in parallel and collect their results.
@@ -725,6 +734,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     node.fsm.succeed()
                 context.active_tasks.discard(agent_name)
                 execution_results[agent_name] = output
+
+                # Fire per-agent callback right after FSM succeeds
+                if on_agent_complete:
+                    await on_agent_complete(agent_name, output, context)
                 self.execution_log.append({
                     'agent_id': agent_name,
                     'agent_name': node.agent.name,
@@ -1122,7 +1135,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
 
         self.execution_log = []
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         responses: Dict[str, Any] = {}
         results: List[Any] = []
@@ -1147,7 +1160,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 node.fsm.start()
 
             try:
-                agent_start_time = asyncio.get_event_loop().time()
+                agent_start_time = asyncio.get_running_loop().time()
 
                 # Prepare input based on context passing mode
                 if i == 0:
@@ -1165,14 +1178,22 @@ Current task: {current_input}"""
                     # Pass only the immediately previous result
                     agent_input = current_input
 
+                # Run pre-action hooks if available
+                if node:
+                    await node.run_pre_actions(prompt=agent_input)
+
                 # Execute agent
                 response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
                 )
 
                 result = self._extract_result(response)
-                agent_end_time = asyncio.get_event_loop().time()
+                agent_end_time = asyncio.get_running_loop().time()
                 execution_time = agent_end_time - agent_start_time
+
+                # Run post-action hooks if available
+                if node:
+                    await node.run_post_actions(result=response)
 
                 # Log execution details
                 log_entry = {
@@ -1290,7 +1311,7 @@ Current task: {current_input}"""
 
                 failure_count += 1
 
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
         total_time = end_time - start_time
         status = determine_run_status(success_count, failure_count)
 
@@ -1428,7 +1449,7 @@ Current task: {current_input}"""
         ]
 
         self.execution_log = []
-        overall_start = asyncio.get_event_loop().time()
+        overall_start = asyncio.get_running_loop().time()
 
         shared_state: Dict[str, Any] = {
             'initial_task': initial_task,
@@ -1565,7 +1586,12 @@ Current task: {current_input}"""
                     agent_input = current_input
 
                 try:
-                    agent_start = asyncio.get_event_loop().time()
+                    agent_start = asyncio.get_running_loop().time()
+
+                    # Run pre-action hooks if available
+                    if node:
+                        await node.run_pre_actions(prompt=agent_input)
+
                     response = await self._execute_agent(
                         agent,
                         agent_input,
@@ -1576,8 +1602,12 @@ Current task: {current_input}"""
                     )
 
                     result = self._extract_result(response)
-                    agent_end = asyncio.get_event_loop().time()
+                    agent_end = asyncio.get_running_loop().time()
                     execution_time = agent_end - agent_start
+
+                    # Run post-action hooks if available
+                    if node:
+                        await node.run_post_actions(result=response)
 
                     execution_id = f"{agent_id}#iteration{iterations_run}"
                     log_entry = {
@@ -1728,7 +1758,7 @@ Current task: {current_input}"""
 
             current_input = shared_state['last_output']
 
-        overall_end = asyncio.get_event_loop().time()
+        overall_end = asyncio.get_running_loop().time()
 
         last_output = shared_state['last_output'] if shared_state['iteration_outputs'] else initial_task
         status = determine_run_status(success_count, failure_count)
@@ -1879,17 +1909,28 @@ Current task: {current_input}"""
                 continue
 
             agent = self.agents[agent_id]
+            node = self.workflow_graph.get(agent_id)
             task_metadata.append({
                 'agent_id': agent_id,
                 'agent_name': agent.name,
                 'query': query,
                 'index': i
             })
-            async_tasks.append(
-                self._execute_agent(
-                    agent, query, session_id, user_id, i, crew_context
+
+            async def _run_with_hooks(
+                _agent=agent, _query=query, _idx=i, _node=node,
+            ):
+                """Wrap _execute_agent with pre/post action hooks."""
+                if _node:
+                    await _node.run_pre_actions(prompt=_query)
+                resp = await self._execute_agent(
+                    _agent, _query, session_id, user_id, _idx, crew_context
                 )
-            )
+                if _node:
+                    await _node.run_post_actions(result=resp)
+                return resp
+
+            async_tasks.append(_run_with_hooks())
 
         if not async_tasks:
             return CrewResult(
@@ -1908,9 +1949,9 @@ Current task: {current_input}"""
 
         # Execute all tasks in parallel using asyncio.gather()
         # This is the key to parallel execution - all coroutines run concurrently
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         results = await asyncio.gather(*async_tasks, return_exceptions=True)
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
 
         # Process results from all parallel executions
         parallel_results = {}
@@ -2172,7 +2213,7 @@ Current task: {current_input}"""
         context.session_id = session_id
 
         self.execution_log = []
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         # Validate workflow before starting
         if not self.initial_agent:
@@ -2214,13 +2255,11 @@ Current task: {current_input}"""
                 continue
 
             # Execute all ready agents in parallel
-            # This is where the automatic parallelization happens
-            results = await self._execute_parallel_agents(ready_agents, context)
-
-            # Call callback for each completed agent if provided
-            if on_agent_complete:
-                for agent_name, result in results.items():
-                    await on_agent_complete(agent_name, result, context)
+            # This is where the automatic parallelization happens.
+            # The callback is fired per-agent right after FSM succeeds.
+            results = await self._execute_parallel_agents(
+                ready_agents, context, on_agent_complete=on_agent_complete
+            )
 
             iteration += 1
 
@@ -2231,7 +2270,7 @@ Current task: {current_input}"""
                 f"Expected: {self.final_agents}"
             )
 
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
         error_messages: Dict[str, str] = {
             agent: str(err)
             for agent, err in context.errors.items()
@@ -2961,7 +3000,7 @@ analyze, and present information in the most helpful way for the user.
         self.logger.info(
             f"Processing ask() query: {question[:100]}..."
         )
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         # 2. Búsqueda semántica en FAISS (ExecutionMemory)
         self.logger.debug(
@@ -3028,7 +3067,7 @@ analyze, and present information in the most helpful way for the user.
             )
 
         # 7. Agregar metadata a la respuesta
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
 
         if not hasattr(response, 'metadata'):
             response.metadata = {}

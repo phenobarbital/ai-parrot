@@ -5,102 +5,12 @@ callback, and status calculation after migration to flows.core primitives.
 """
 from __future__ import annotations
 
-import asyncio
-import sys
-from typing import Any, Dict, Optional, Set
-from unittest.mock import MagicMock
+from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Stub infrastructure
-# ---------------------------------------------------------------------------
-
-mock_nav_auth = MagicMock()
-mock_nav_auth.decorators = MagicMock()
-mock_nav_auth.decorators.is_authenticated = (
-    lambda *args, **kwargs: lambda func: func
-)
-mock_nav_auth.decorators.user_session = (
-    lambda *args, **kwargs: lambda func: func
-)
-sys.modules.setdefault("navigator_auth", mock_nav_auth)
-sys.modules.setdefault("navigator_auth.decorators", mock_nav_auth.decorators)
-
-mock_nav_conf = MagicMock()
-mock_nav_conf.AUTH_SESSION_OBJECT = "session"
-sys.modules.setdefault("navigator_auth.conf", mock_nav_conf)
-
-from parrot.bots.orchestration.crew import AgentCrew  # noqa: E402
-
-
-# ---------------------------------------------------------------------------
-# DummyAgent compatible with AgentCrew.add_agent
-# ---------------------------------------------------------------------------
-
-
-class DummyToolManager:
-    """Minimal ToolManager stand-in."""
-
-    def __init__(self) -> None:
-        self._tools: Dict[str, Any] = {}
-
-    def add_tool(self, tool: Any, tool_name: Optional[str] = None) -> None:
-        name = tool_name or getattr(tool, "name", str(tool))
-        self._tools[name] = tool
-
-    def get_tool(self, tool_name: Optional[str]) -> Any:
-        return self._tools.get(tool_name or "")
-
-    def list_tools(self):
-        return list(self._tools.keys())
-
-
-class DummyAgent:
-    """Deterministic agent for testing AgentCrew flow mode."""
-
-    is_configured: bool = True
-    EVENT_STATUS_CHANGED: str = "status_changed"
-    EVENT_TASK_STARTED: str = "task_started"
-    EVENT_TASK_COMPLETED: str = "task_completed"
-    EVENT_TASK_FAILED: str = "task_failed"
-
-    def __init__(
-        self,
-        name: str,
-        response: str = "ok",
-        *,
-        fail: bool = False,
-    ) -> None:
-        self._name = name
-        self._response = response
-        self._fail = fail
-        self.tool_manager = DummyToolManager()
-        self.description = f"Agent {name}"
-        self.prompts_received: list[str] = []
-
-    @property
-    def name(self) -> str:  # noqa: D401
-        return self._name
-
-    async def ask(self, prompt: str = "", *, question: str = "", **kwargs: Any) -> MagicMock:
-        effective_prompt = question or prompt
-        self.prompts_received.append(effective_prompt)
-        if self._fail:
-            raise RuntimeError(f"{self._name} failed")
-        resp = MagicMock()
-        resp.content = f"{self._response}: {effective_prompt[:40]}"
-        return resp
-
-    def add_event_listener(self, event: str, handler: Any) -> None:
-        """No-op for tests."""
-
-    def as_tool(self, **kwargs: Any) -> None:
-        """No-op stub for AgentTool registration."""
-        return None
-
-    async def configure(self) -> None:
-        """No-op configure."""
+from _crew_test_helpers import DummyAgent  # shared test infrastructure
+from parrot.bots.orchestration.crew import AgentCrew
 
 
 # ---------------------------------------------------------------------------

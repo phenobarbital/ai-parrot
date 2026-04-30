@@ -9,29 +9,11 @@ from __future__ import annotations
 import inspect
 import subprocess
 import sys
-from typing import Any, Dict, Optional
-from unittest.mock import MagicMock
+from typing import Any
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Stub infrastructure
-# ---------------------------------------------------------------------------
-
-mock_nav_auth = MagicMock()
-mock_nav_auth.decorators = MagicMock()
-mock_nav_auth.decorators.is_authenticated = (
-    lambda *args, **kwargs: lambda func: func
-)
-mock_nav_auth.decorators.user_session = (
-    lambda *args, **kwargs: lambda func: func
-)
-sys.modules.setdefault("navigator_auth", mock_nav_auth)
-sys.modules.setdefault("navigator_auth.decorators", mock_nav_auth.decorators)
-
-mock_nav_conf = MagicMock()
-mock_nav_conf.AUTH_SESSION_OBJECT = "session"
-sys.modules.setdefault("navigator_auth.conf", mock_nav_conf)
+from _crew_test_helpers import DummyAgent  # shared test infrastructure
 
 
 # ---------------------------------------------------------------------------
@@ -116,59 +98,26 @@ class TestNoCircularImports:
 
 
 # ---------------------------------------------------------------------------
-# CrewResult structure tests
+# __all__ export list
 # ---------------------------------------------------------------------------
 
 
-class DummyToolManager:
-    """Minimal ToolManager stand-in."""
+class TestModuleExports:
+    """Verify crew.py has __all__ listing public re-exports."""
 
-    def __init__(self) -> None:
-        self._tools: Dict[str, Any] = {}
+    def test_crew_has_dunder_all(self) -> None:
+        from parrot.bots.orchestration import crew
+        assert hasattr(crew, "__all__"), "crew.py should define __all__"
 
-    def add_tool(self, tool: Any, tool_name: Optional[str] = None) -> None:
-        name = tool_name or getattr(tool, "name", str(tool))
-        self._tools[name] = tool
-
-    def get_tool(self, tool_name: Optional[str]) -> Any:
-        return self._tools.get(tool_name or "")
-
-    def list_tools(self):
-        return list(self._tools.keys())
+    def test_dunder_all_contains_public_names(self) -> None:
+        from parrot.bots.orchestration import crew
+        expected = {"AgentCrew", "AgentNode", "FlowContext", "AgentRef"}
+        assert expected.issubset(set(crew.__all__))
 
 
-class DummyAgent:
-    """Deterministic agent for testing."""
-
-    is_configured: bool = True
-    EVENT_STATUS_CHANGED: str = "status_changed"
-    EVENT_TASK_STARTED: str = "task_started"
-    EVENT_TASK_COMPLETED: str = "task_completed"
-    EVENT_TASK_FAILED: str = "task_failed"
-
-    def __init__(self, name: str = "test") -> None:
-        self._name = name
-        self.tool_manager = DummyToolManager()
-        self.description = f"Agent {name}"
-
-    @property
-    def name(self) -> str:  # noqa: D401
-        return self._name
-
-    async def ask(self, prompt: str = "", *, question: str = "", **kwargs: Any) -> MagicMock:
-        resp = MagicMock()
-        resp.content = f"ok: {(question or prompt)[:20]}"
-        return resp
-
-    def add_event_listener(self, event: str, handler: Any) -> None:
-        """No-op."""
-
-    def as_tool(self, **kwargs: Any) -> None:
-        """No-op."""
-        return None
-
-    async def configure(self) -> None:
-        """No-op."""
+# ---------------------------------------------------------------------------
+# CrewResult structure tests
+# ---------------------------------------------------------------------------
 
 
 class TestCrewResultStructure:

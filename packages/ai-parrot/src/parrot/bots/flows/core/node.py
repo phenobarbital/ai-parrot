@@ -204,7 +204,7 @@ class AgentNode(Node):
             TimeoutError: If the agent call exceeds *timeout*.
         """
         await self.run_pre_actions(prompt=prompt, **ctx)
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         try:
             if timeout:
                 response = await asyncio.wait_for(
@@ -213,7 +213,7 @@ class AgentNode(Node):
                 )
             else:
                 response = await self.agent.ask(prompt=prompt, **ctx)
-            end_time = asyncio.get_event_loop().time()
+            end_time = asyncio.get_running_loop().time()
             output = (
                 response.content
                 if hasattr(response, "content")
