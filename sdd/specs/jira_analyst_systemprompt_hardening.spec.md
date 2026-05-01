@@ -739,11 +739,13 @@ class JiraToolkit(...):
       twice, debug_jira.py once) and zero tests on read methods —
       blast radius is acceptable. The legacy native shapes are removed;
       Module 5b migrates all three call-sites in the same change-set.
-- [ ] Are the English sentinel phrases (`No results found for <KEY>`,
+- [x] Are the English sentinel phrases (`No results found for <KEY>`,
       `Jira lookup failed: <message>`) the final wording, or should they
-      be tuned for tone/length? — *Owner: Juan Rodríguez*. The grounding
-      layer ships English-only by design; channel-specific localisation
-      is explicitly out of scope.
+      be tuned for tone/length? — *Owner: Juan Rodríguez*: **keep as-is**.
+      Both phrases are the verbatim assertion targets in tests T1 and T3
+      and acceptance criteria AC4 / AC6. The grounding layer ships
+      English-only; channel-specific localisation is explicitly out of
+      scope.
 - [ ] After the migration, should we deprecate `JIRA_SPECIALIST_PROMPT`
       formally (raise on use, removal target version)? — *Owner: Juan
       Rodríguez*.
