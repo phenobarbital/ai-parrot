@@ -2,9 +2,13 @@
 
 All tests mock ``xmlrpc.client.ServerProxy`` — no live Odoo required.
 """
+
 from __future__ import annotations
 
+import asyncio
 import sys
+import threading
+import time
 import types
 import xmlrpc.client
 from unittest.mock import MagicMock, patch
@@ -34,6 +38,7 @@ from parrot.interfaces.odoointerface import (  # noqa: E402
     OdooRPCError,
 )
 from parrot_tools.odoo.transport.xmlrpc import XmlRpcTransport  # noqa: E402
+from parrot_tools.odoo.transport.xmlrpc import _build_proxy  # noqa: E402
 
 
 def _config(**overrides) -> OdooConfig:
@@ -57,9 +62,7 @@ def proxies(monkeypatch):
     def _factory(*args, **kwargs):
         return next(proxies_iter)
 
-    monkeypatch.setattr(
-        "parrot_tools.odoo.transport.xmlrpc._build_proxy", _factory
-    )
+    monkeypatch.setattr("parrot_tools.odoo.transport.xmlrpc._build_proxy", _factory)
     return common, object_
 
 
@@ -119,15 +122,17 @@ async def test_execute_kw_passes_correct_args(proxies):
     object_.execute_kw.return_value = [{"id": 1, "name": "Acme"}]
     transport = XmlRpcTransport(_config())
 
-    rows = await transport.execute_kw(
-        "res.partner", "search_read", [[]], {"fields": ["name"], "limit": 5}
-    )
+    rows = await transport.execute_kw("res.partner", "search_read", [[]], {"fields": ["name"], "limit": 5})
 
     assert rows == [{"id": 1, "name": "Acme"}]
     object_.execute_kw.assert_called_once_with(
-        "testdb", 11, "secret",
-        "res.partner", "search_read",
-        [[]], {"fields": ["name"], "limit": 5},
+        "testdb",
+        11,
+        "secret",
+        "res.partner",
+        "search_read",
+        [[]],
+        {"fields": ["name"], "limit": 5},
     )
 
 
@@ -170,15 +175,61 @@ def test_build_proxy_disables_ssl_when_requested(monkeypatch):
     """Verify _build_proxy passes an unverified context for verify_ssl=False."""
     captured: dict = {}
 
-    def fake_proxy(url, allow_none=True, context=None):
+    def fake_proxy(url, allow_none=True, transport=None):
         captured["url"] = url
-        captured["context"] = context
+        captured["transport"] = transport
         return MagicMock()
 
     monkeypatch.setattr(xmlrpc.client, "ServerProxy", fake_proxy)
-    from parrot_tools.odoo.transport.xmlrpc import _build_proxy
 
-    _build_proxy("https://x.example.com/xmlrpc/2/common", verify_ssl=False)
+    _build_proxy("https://x.example.com/xmlrpc/2/common", verify_ssl=False, timeout=12)
 
     assert captured["url"] == "https://x.example.com/xmlrpc/2/common"
-    assert captured["context"] is not None  # unverified context provided
+    assert captured["transport"].context is not None  # unverified context provided
+    assert captured["transport"]._timeout == 12
+
+
+def test_build_proxy_sets_timeout_for_http(monkeypatch):
+    """Verify HTTP XML-RPC proxies also receive the configured timeout."""
+    captured: dict = {}
+
+    def fake_proxy(url, allow_none=True, transport=None):
+        captured["url"] = url
+        captured["transport"] = transport
+        return MagicMock()
+
+    monkeypatch.setattr(xmlrpc.client, "ServerProxy", fake_proxy)
+
+    _build_proxy("http://x.example.com/xmlrpc/2/common", verify_ssl=True, timeout=7)
+
+    assert captured["url"] == "http://x.example.com/xmlrpc/2/common"
+    assert captured["transport"]._timeout == 7
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_serializes_shared_proxy_access(proxies):
+    """Concurrent async calls should not enter the shared ServerProxy together."""
+    _, object_ = proxies
+    state = {"active": 0, "max_active": 0}
+    lock = threading.Lock()
+
+    def slow_execute(*args):
+        with lock:
+            state["active"] += 1
+            state["max_active"] = max(state["max_active"], state["active"])
+        time.sleep(0.02)
+        with lock:
+            state["active"] -= 1
+        return True
+
+    object_.execute_kw.side_effect = slow_execute
+    transport = XmlRpcTransport(_config())
+    transport.uid = 11
+
+    await asyncio.gather(
+        transport.execute_kw("res.partner", "write", [[1], {"name": "A"}], {}),
+        transport.execute_kw("res.partner", "write", [[2], {"name": "B"}], {}),
+    )
+
+    assert object_.execute_kw.call_count == 2
+    assert state["max_active"] == 1

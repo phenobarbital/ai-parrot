@@ -5,9 +5,11 @@ via ``asyncio.to_thread`` so the event loop stays unblocked. This mirrors the
 classic Odoo XML-RPC pattern used by Flowtask's OdooInjector and odoo-mcp-pro
 for older Odoo releases.
 """
+
 from __future__ import annotations
 
 import asyncio
+import http.client
 import logging
 import socket
 import xmlrpc.client
@@ -25,22 +27,71 @@ from parrot.interfaces.odoointerface import (
 from .base import AbstractOdooTransport
 
 
-def _build_proxy(url: str, verify_ssl: bool) -> xmlrpc.client.ServerProxy:
+class TimeoutTransport(xmlrpc.client.Transport):
+    """HTTP XML-RPC transport with explicit socket timeout."""
+
+    def __init__(self, timeout: int) -> None:
+        super().__init__()
+        self._timeout = timeout
+
+    def make_connection(self, host: str) -> http.client.HTTPConnection:
+        if self._connection and host == self._connection[0]:
+            return self._connection[1]
+        chost, self._extra_headers, _ = self.get_host_info(host)
+        connection = http.client.HTTPConnection(chost, timeout=self._timeout)
+        self._connection = host, connection
+        return connection
+
+
+class TimeoutSafeTransport(xmlrpc.client.SafeTransport):
+    """HTTPS XML-RPC transport with explicit socket timeout."""
+
+    def __init__(self, timeout: int, context: Any | None = None) -> None:
+        super().__init__(context=context)
+        self._timeout = timeout
+
+    def make_connection(self, host: str) -> http.client.HTTPSConnection:
+        if self._connection and host == self._connection[0]:
+            return self._connection[1]
+        chost, self._extra_headers, _ = self.get_host_info(host)
+        connection = http.client.HTTPSConnection(
+            chost,
+            timeout=self._timeout,
+            context=self.context,
+        )
+        self._connection = host, connection
+        return connection
+
+
+def _build_proxy(
+    url: str,
+    verify_ssl: bool,
+    timeout: int,
+) -> xmlrpc.client.ServerProxy:
     """Create a ServerProxy with consistent SSL handling.
 
     Args:
         url: Full XML-RPC endpoint URL.
         verify_ssl: When False, build an unverified SSL context.
+        timeout: Socket timeout in seconds for XML-RPC connections.
 
     Returns:
         A configured ``xmlrpc.client.ServerProxy`` instance.
     """
-    if not verify_ssl and url.lower().startswith("https://"):
+    if url.lower().startswith("https://"):
         import ssl
 
-        ctx = ssl._create_unverified_context()  # noqa: SLF001 - intentional
-        return xmlrpc.client.ServerProxy(url, allow_none=True, context=ctx)
-    return xmlrpc.client.ServerProxy(url, allow_none=True)
+        ctx = None if verify_ssl else ssl._create_unverified_context()  # noqa: SLF001
+        return xmlrpc.client.ServerProxy(
+            url,
+            allow_none=True,
+            transport=TimeoutSafeTransport(timeout=timeout, context=ctx),
+        )
+    return xmlrpc.client.ServerProxy(
+        url,
+        allow_none=True,
+        transport=TimeoutTransport(timeout=timeout),
+    )
 
 
 class XmlRpcTransport(AbstractOdooTransport):
@@ -56,10 +107,19 @@ class XmlRpcTransport(AbstractOdooTransport):
         """
         self.config = config
         self.uid: int | None = None
+        self._rpc_lock = asyncio.Lock()
         self.logger = logging.getLogger("parrot_tools.odoo.XmlRpcTransport")
         base = self.config.url.rstrip("/")
-        self._common = _build_proxy(f"{base}/xmlrpc/2/common", config.verify_ssl)
-        self._object = _build_proxy(f"{base}/xmlrpc/2/object", config.verify_ssl)
+        self._common = _build_proxy(
+            f"{base}/xmlrpc/2/common",
+            config.verify_ssl,
+            config.timeout,
+        )
+        self._object = _build_proxy(
+            f"{base}/xmlrpc/2/object",
+            config.verify_ssl,
+            config.timeout,
+        )
 
     @classmethod
     def from_config(cls, config: OdooConfig) -> "XmlRpcTransport":
@@ -95,7 +155,8 @@ class XmlRpcTransport(AbstractOdooTransport):
             self.config.database,
             self.config.username,
         )
-        uid = await asyncio.to_thread(self._authenticate_sync)
+        async with self._rpc_lock:
+            uid = await asyncio.to_thread(self._authenticate_sync)
         self.uid = uid
         self.logger.info("Authenticated successfully, uid=%d", uid)
         return uid
@@ -147,9 +208,10 @@ class XmlRpcTransport(AbstractOdooTransport):
         if self.uid is None:
             await self.authenticate()
         self.logger.debug("execute_kw model=%r method=%r (xmlrpc)", model, method)
-        return await asyncio.to_thread(
-            self._execute_kw_sync, model, method, args or [], kwargs or {}
-        )
+        async with self._rpc_lock:
+            return await asyncio.to_thread(
+                self._execute_kw_sync, model, method, args or [], kwargs or {}
+            )
 
     # ── Version ─────────────────────────────────────────────────────────────
 
@@ -164,7 +226,8 @@ class XmlRpcTransport(AbstractOdooTransport):
             ) from exc
 
     async def version(self) -> dict[str, Any]:
-        return await asyncio.to_thread(self._version_sync)
+        async with self._rpc_lock:
+            return await asyncio.to_thread(self._version_sync)
 
     async def close(self) -> None:
         # xmlrpc.client.ServerProxy holds no persistent socket; nothing to do.

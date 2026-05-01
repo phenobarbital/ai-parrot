@@ -5,6 +5,7 @@ network-free. Each test asserts both: (a) execute_kw is called with the right
 model/method/args/kwargs, and (b) the returned envelope/entity is the correct
 Pydantic class with the expected fields.
 """
+
 from __future__ import annotations
 
 import sys
@@ -51,7 +52,6 @@ from parrot_tools.odoo.models.envelopes import (  # noqa: E402
 )
 from parrot_tools.odoo.toolkit import OdooToolkit  # noqa: E402
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
 
@@ -70,9 +70,13 @@ def _fake_transport(uid: int = 1) -> MagicMock:
     transport.name = "jsonrpc"
     transport.authenticate = AsyncMock(return_value=uid)
     transport.execute_kw = AsyncMock(return_value=None)
-    transport.version = AsyncMock(return_value={
-        "server_serie": "19.0", "server_version": "19.0+e", "protocol_version": 1,
-    })
+    transport.version = AsyncMock(
+        return_value={
+            "server_serie": "19.0",
+            "server_version": "19.0+e",
+            "protocol_version": 1,
+        }
+    )
     transport.close = AsyncMock(return_value=None)
     return transport
 
@@ -97,21 +101,33 @@ def test_get_tools_exposes_expected_surface():
 
     expected = {
         # discovery
-        "server_info", "list_models", "fields_get",
+        "odoo_server_info",
+        "odoo_list_models",
+        "odoo_fields_get",
         # generic CRUD
-        "search_records", "get_record",
-        "create_record", "create_records",
-        "update_record", "update_records",
-        "delete_record", "delete_records",
-        "import_records",
+        "odoo_search_records",
+        "odoo_get_record",
+        "odoo_create_record",
+        "odoo_create_records",
+        "odoo_update_record",
+        "odoo_update_records",
+        "odoo_delete_record",
+        "odoo_delete_records",
+        "odoo_import_records",
         # partner helpers
-        "find_partner", "create_partner", "update_partner_contact_info",
+        "odoo_find_partner",
+        "odoo_create_partner",
+        "odoo_update_partner_contact_info",
         # sales helpers
-        "create_quotation", "confirm_sale_order",
+        "odoo_create_quotation",
+        "odoo_confirm_sale_order",
         # invoicing helpers
-        "create_invoice", "post_invoice", "register_payment",
+        "odoo_create_invoice",
+        "odoo_post_invoice",
+        "odoo_register_payment",
         # binary helpers
-        "set_binary_field", "attach_document",
+        "odoo_set_binary_field",
+        "odoo_attach_document",
     }
     missing = expected - tool_names
     assert not missing, f"missing tools: {missing}"
@@ -123,6 +139,18 @@ def test_each_tool_has_args_schema():
         # tools without parameters (server_info, list_models) get an
         # empty auto-generated schema, which is still not None.
         assert tool.args_schema is not None, f"{tool.name} missing args_schema"
+
+
+def test_write_tools_have_permissions():
+    toolkit = _make_toolkit()
+    tools = {tool.name: tool for tool in toolkit.get_tools()}
+
+    assert tools["odoo_create_record"]._required_permissions == frozenset({"odoo.write"})
+    assert tools["odoo_update_record"]._required_permissions == frozenset({"odoo.write"})
+    assert tools["odoo_import_records"]._required_permissions == frozenset({"odoo.write"})
+    assert tools["odoo_post_invoice"]._required_permissions == frozenset({"odoo.write"})
+    assert tools["odoo_register_payment"]._required_permissions == frozenset({"odoo.write"})
+    assert tools["odoo_delete_record"]._required_permissions == frozenset({"odoo.delete"})
 
 
 # ── Generic CRUD ────────────────────────────────────────────────────────────
@@ -168,9 +196,10 @@ async def test_get_record_uses_read():
     assert isinstance(result, RecordResult)
     assert result.record == {"id": 7, "name": "Acme"}
     assert result.model == "res.partner"
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "read", [[7]], {}
-    )
+    assert result.metadata is not None
+    assert result.metadata.fields_returned == 2
+    assert result.metadata.field_selection_method == "all"
+    transport.execute_kw.assert_awaited_once_with("res.partner", "read", [[7]], {})
 
 
 @pytest.mark.asyncio
@@ -179,9 +208,7 @@ async def test_create_record_then_reads_back():
     transport.execute_kw.side_effect = [42, [{"id": 42, "name": "New"}]]
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.create_record(
-        model="res.partner", values={"name": "New"}
-    )
+    result = await toolkit.create_record(model="res.partner", values={"name": "New"})
 
     assert isinstance(result, CreateResult)
     assert result.record_id == 42
@@ -214,9 +241,7 @@ async def test_update_record():
     transport.execute_kw.side_effect = [True, [{"id": 5, "name": "X"}]]
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.update_record(
-        model="res.partner", record_id=5, values={"name": "X"}
-    )
+    result = await toolkit.update_record(model="res.partner", record_id=5, values={"name": "X"})
 
     assert isinstance(result, UpdateResult)
     assert result.success is True
@@ -230,15 +255,11 @@ async def test_update_records_bulk():
     transport.execute_kw.return_value = True
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.update_records(
-        model="res.partner", record_ids=[1, 2, 3], values={"active": False}
-    )
+    result = await toolkit.update_records(model="res.partner", record_ids=[1, 2, 3], values={"active": False})
 
     assert isinstance(result, BulkUpdateResult)
     assert result.count == 3
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "write", [[1, 2, 3], {"active": False}], None
-    )
+    transport.execute_kw.assert_awaited_once_with("res.partner", "write", [[1, 2, 3], {"active": False}], None)
 
 
 @pytest.mark.asyncio
@@ -252,9 +273,7 @@ async def test_delete_record():
     assert isinstance(result, DeleteResult)
     assert result.success is True
     assert result.deleted_id == 99
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "unlink", [[99]], None
-    )
+    transport.execute_kw.assert_awaited_once_with("res.partner", "unlink", [[99]], None)
 
 
 @pytest.mark.asyncio
@@ -263,15 +282,11 @@ async def test_delete_records_bulk():
     transport.execute_kw.return_value = True
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.delete_records(
-        model="res.partner", record_ids=[3, 4, 5]
-    )
+    result = await toolkit.delete_records(model="res.partner", record_ids=[3, 4, 5])
 
     assert isinstance(result, BulkDeleteResult)
     assert result.count == 3
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "unlink", [[3, 4, 5]], None
-    )
+    transport.execute_kw.assert_awaited_once_with("res.partner", "unlink", [[3, 4, 5]], None)
 
 
 @pytest.mark.asyncio
@@ -290,7 +305,8 @@ async def test_import_records_returns_envelope():
     assert result.imported == 2
     assert result.errors == []
     transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "load",
+        "res.partner",
+        "load",
         [["id", "name"], [["__ext.acme", "Acme"], ["__ext.beta", "Beta"]]],
         {},
     )
@@ -333,14 +349,10 @@ async def test_fields_get_passes_attributes():
     transport.execute_kw.return_value = {"name": {"type": "char", "string": "Name"}}
     toolkit = _make_toolkit(transport)
 
-    fields = await toolkit.fields_get(
-        model="res.partner", attributes=["string", "type"]
-    )
+    fields = await toolkit.fields_get(model="res.partner", attributes=["string", "type"])
 
     assert "name" in fields
-    transport.execute_kw.assert_awaited_once_with(
-        "res.partner", "fields_get", [], {"attributes": ["string", "type"]}
-    )
+    transport.execute_kw.assert_awaited_once_with("res.partner", "fields_get", [], {"attributes": ["string", "type"]})
 
 
 # ── Partner helpers ─────────────────────────────────────────────────────────
@@ -473,9 +485,7 @@ async def test_register_payment_creates_wizard_then_runs():
     ]
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.register_payment(
-        invoice_id=500, journal_id=2, amount=42.0
-    )
+    result = await toolkit.register_payment(invoice_id=500, journal_id=2, amount=42.0)
 
     assert isinstance(result, dict)
     create_call = transport.execute_kw.call_args_list[0]
@@ -497,12 +507,11 @@ async def test_set_binary_field_writes_base64_payload():
 
     # Pass already-base64'd data so no aiohttp call happens
     import base64
+
     raw = b"hello"
     payload = base64.b64encode(raw).decode("ascii")
 
-    result = await toolkit.set_binary_field(
-        model="res.partner", record_id=1, field_name="image_1920", source=payload
-    )
+    result = await toolkit.set_binary_field(model="res.partner", record_id=1, field_name="image_1920", source=payload)
 
     assert isinstance(result, BinaryFieldResult)
     assert result.size_bytes == len(raw)
@@ -519,6 +528,7 @@ async def test_attach_document_creates_ir_attachment():
     toolkit = _make_toolkit(transport)
 
     import base64
+
     payload = base64.b64encode(b"PDF-bytes").decode("ascii")
 
     result = await toolkit.attach_document(
@@ -551,6 +561,7 @@ async def test_pre_execute_authenticates_only_once():
     async def fake_auth():
         transport.uid = 1
         return 1
+
     transport.authenticate = AsyncMock(side_effect=fake_auth)
     transport.execute_kw.return_value = True
 
