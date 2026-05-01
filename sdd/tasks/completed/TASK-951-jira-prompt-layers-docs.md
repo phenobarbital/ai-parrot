@@ -149,9 +149,12 @@ manual and via the ACs above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-01
+**Notes**: Created `docs/jira-specialist-prompt-layers.md` (174 lines). Covers all 6
+spec-listed sections: rationale, layer stack table, sentinel phrases, subclass extension
+patterns (add/replace/custom builder), anti-patterns, and cross-references. All code
+samples verified against the actual PromptBuilder API (add(), remove(), default()).
+**Deviations from spec**: Imports not verified via a live REPL due to the broken Cython
+chain in the test environment (navigator.utils.file ImportError). Verified instead via
+grep of builder.py method signatures and __init__.py exports.

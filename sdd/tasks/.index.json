@@ -17159,7 +17159,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -17169,7 +17169,8 @@
       "parallelism_notes": "Doc-only; can run in parallel with TASK-948/949/950 once TASK-947 is done.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-951-jira-prompt-layers-docs.md"
+      "completed_at": "2026-05-01T17:45:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-951-jira-prompt-layers-docs.md"
     }
   ]
 }
