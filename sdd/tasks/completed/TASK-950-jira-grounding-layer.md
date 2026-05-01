@@ -232,10 +232,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (Claude Sonnet)
+**Date**: 2026-05-01
+**Notes**: Added `JIRA_GROUNDING_LAYER` as a `PromptLayer` in `domain_layers.py`
+with priority 65 (BEHAVIOR - 5), RenderPhase.CONFIGURE, and no condition.
+The layer template covers: no invented tickets, tool-only data source, empty
+result handling, auth failure handling (authorization_required), connection
+failure handling, no prior-turn data reuse, and uncertainty resolution.
+Registered as `"jira_grounding"` in `_DOMAIN_LAYERS`. 13/13 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

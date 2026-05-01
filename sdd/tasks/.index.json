@@ -17141,7 +17141,7 @@
       "feature_id": "FEAT-139",
       "feature": "jira-analyst-systemprompt-hardening",
       "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -17149,7 +17149,8 @@
       "parallelism_notes": "Modifies domain_layers.py — shared with TASK-951",
       "assigned_to": null,
       "started_at": "2026-05-01T00:20:09.112764+00:00",
-      "file": "sdd/tasks/active/TASK-950-jira-grounding-layer.md"
+      "file": "sdd/tasks/completed/TASK-950-jira-grounding-layer.md",
+      "completed_at": "2026-05-01T00:53:52.132830+00:00"
     },
     {
       "id": "TASK-951",
