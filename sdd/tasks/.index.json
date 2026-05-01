@@ -17023,7 +17023,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -17031,7 +17031,8 @@
       "parallelism_notes": "Foundation layer; only touches domain_layers.py + new test file. No file collision with TASK-945 or TASK-948.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-944-jira-workflow-layer.md"
+      "file": "sdd/tasks/completed/TASK-944-jira-workflow-layer.md",
+      "completed_at": "2026-05-01T16:12:22.011631+00:00"
     },
     {
       "id": "TASK-945",
@@ -17040,7 +17041,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -17048,7 +17049,8 @@
       "parallelism_notes": "Same module file as TASK-944 (domain_layers.py) but new constant; TASK-944 and TASK-945 must merge in either order, then TASK-946 wires them. Run sequentially to avoid trivial merge in domain_layers.py.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-945-jira-grounding-layer.md"
+      "file": "sdd/tasks/completed/TASK-945-jira-grounding-layer.md",
+      "completed_at": "2026-05-01T16:12:22.011631+00:00"
     },
     {
       "id": "TASK-946",
@@ -17057,7 +17059,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -17068,7 +17070,8 @@
       "parallelism_notes": "Must run after both layer constants exist.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-946-register-and-export-jira-layers.md"
+      "file": "sdd/tasks/completed/TASK-946-register-and-export-jira-layers.md",
+      "completed_at": "2026-05-01T16:12:22.011631+00:00"
     },
     {
       "id": "TASK-947",
