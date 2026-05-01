@@ -166,13 +166,11 @@ Agent.ask()
 from typing import Literal, TypedDict, Any, Optional
 
 class JiraToolEnvelope(TypedDict, total=False):
-    """Uniform envelope returned by JiraToolkit lookups when no row is
-    found, the search is empty, or a recoverable error occurred.
-
-    On success, tools may return either:
-      - a JiraToolEnvelope with status="ok" and data populated, OR
-      - their existing native shape (backwards-compatible) when
-        ``envelope=False`` was requested.
+    """Uniform envelope — the single return type for read-only
+    JiraToolkit lookups (`jira_get_issue`, `jira_search_issues`,
+    `jira_search_users`, etc.). The legacy native shapes are removed;
+    callers either read `envelope["data"]` for the success payload or
+    branch on `envelope["status"]`.
     """
     status: Literal["ok", "empty", "not_found", "error"]
     data: Any                 # the original payload (issue dict, list, etc.)
@@ -216,19 +214,25 @@ class JiraSpecialist(Agent):
 
 ```python
 # packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
+# Global flip — no envelope= kwarg. The envelope shape is now the only
+# return type for read-only lookups. Three (3) non-LLM callers are
+# migrated in Module 5b.
 async def jira_get_issue(
     self,
     issue: str,
     ...,
-    envelope: bool = True,    # NEW — default True; legacy callers pass False
-) -> Union[JiraToolEnvelope, Dict[str, Any]]:
+) -> JiraToolEnvelope:
     ...
 async def jira_search_issues(
     self,
     jql: str,
     ...,
-    envelope: bool = True,
-) -> Union[JiraToolEnvelope, Dict[str, Any]]:
+) -> JiraToolEnvelope:
+    ...
+async def jira_search_users(
+    self,
+    ...,
+) -> JiraToolEnvelope:
     ...
 ```
 
@@ -294,27 +298,57 @@ async def jira_search_issues(
     code changes — the prompt builder must be inheritable.
 - **Depends on**: Module 3.
 
-### Module 5: `JiraToolkit` response envelope
+### Module 5: `JiraToolkit` response envelope (global flip)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py`
-- **Responsibility**:
-  - Add `envelope: bool = True` parameter to `jira_get_issue`,
-    `jira_search_issues`, `jira_search_users`, and other lookup tools
-    that today either return an empty list/dict or raise.
-  - When `envelope=True`:
-    - Return `{"status": "ok", "data": <native>, "query": ..., "message": ""}`
-      on success.
-    - Return `{"status": "empty", "data": [], "query": jql, "message": "..."}`
-      when a search returns zero rows.
-    - Catch `JIRAError` (or equivalent) for "issue does not exist" and
-      return `{"status": "not_found", "data": None, "query": issue, "message": ...}`.
-    - Catch other recoverable exceptions and return
-      `{"status": "error", "data": None, "query": ..., "message": str(exc)}`.
-      Do NOT suppress the original log line — keep `self.logger.error(...)`.
+- **Responsibility**: The envelope shape becomes the **single, unconditional
+  return type** for `jira_get_issue`, `jira_search_issues`,
+  `jira_search_users`, and other read-only lookup tools that today either
+  return an empty list/dict or raise. There is **no `envelope=False`
+  fallback** — the shape change is global and atomic.
+  - On success:
+    `{"status": "ok", "data": <native>, "query": ..., "message": ""}`.
+  - On a search returning zero rows:
+    `{"status": "empty", "data": [], "query": jql, "message": "..."}`.
+  - On `JIRAError` "issue does not exist":
+    `{"status": "not_found", "data": None, "query": issue, "message": ...}`.
+  - On other recoverable exceptions:
+    `{"status": "error", "data": None, "query": ..., "message": str(exc)}`.
+    Do NOT suppress the original log line — keep `self.logger.error(...)`.
   - Authentication/permission errors keep raising (so the agent surface
     layer sees them, not the LLM) — they are NOT recoverable for the
     grounding layer.
 - **Depends on**: nothing in this spec; it's a self-contained toolkit
   change. Land first or in parallel with Modules 1-4.
+
+### Module 5b: Migrate non-LLM callers to the envelope shape
+- **Path**:
+  - `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py`
+  - `packages/ai-parrot/tests/debug_jira.py`
+- **Responsibility**: With the global flip there is no opt-out, so the
+  three programmatic call-sites that read the return shape must be
+  migrated in the same change-set:
+  1. `research.py:546` — `await self._jira.jira_get_issue(...)` discards
+     the return; the only behaviour change is that exceptions for
+     unknown keys are now `{"status":"not_found", ...}` instead of a
+     `JIRAError`. Update the surrounding `try/except` to also branch on
+     `result["status"] != "ok"` and treat it as the previous "not found"
+     fallback path.
+  2. `research.py:572-588` — replace the `result.get("issues") or
+     result.get("results") or result.get("data") or []` fallback chain
+     with explicit envelope handling:
+     ```python
+     if result["status"] == "empty":
+         issues = []
+     elif result["status"] == "ok":
+         issues = result["data"]["issues"]
+     else:
+         self.logger.warning("Jira lookup failed: %s", result["message"])
+         return None
+     ```
+  3. `tests/debug_jira.py:42-44` — change to read `issue["data"]["key"]`
+     and `issue["data"]["fields"]["summary"]`, gated on
+     `issue["status"] == "ok"`.
+- **Depends on**: Module 5.
 
 ### Module 6: Regression tests
 - **Path**: `packages/ai-parrot/tests/test_jira_specialist_grounding.py` (new)
@@ -360,10 +394,12 @@ async def jira_search_issues(
 | `test_jiraspecialist_uses_prompt_builder` | 4 | `JiraSpecialist().prompt_builder` is set; `JiraSpecialist().system_prompt_template` is unset or unused after configure(). |
 | `test_jiraspecialist_layers_include_jira_grounding` | 4 | The builder's `layer_names` contains both `jira_workflow` and `jira_grounding`. |
 | `test_jirachi_inherits_layers` | 4 | A bare `class Jirachi(JiraSpecialist): pass` instance has the same layers as the parent. |
-| `test_envelope_get_issue_not_found` | 5 | `jira_get_issue("ZZZ-9999", envelope=True)` against a 404 stub returns `status="not_found"`. |
+| `test_envelope_get_issue_not_found` | 5 | `jira_get_issue("ZZZ-9999")` against a 404 stub returns `status="not_found"`. |
 | `test_envelope_get_issue_ok` | 5 | Successful call returns `status="ok"` with `data` containing the issue dict. |
-| `test_envelope_search_empty` | 5 | `jira_search_issues("project = NOPE", envelope=True)` returns `status="empty"`, `data=[]`. |
-| `test_envelope_legacy_callers` | 5 | `envelope=False` preserves the existing return shape (no behaviour change for current callers). |
+| `test_envelope_search_empty` | 5 | `jira_search_issues("project = NOPE")` returns `status="empty"`, `data=[]`. |
+| `test_envelope_search_ok_shape` | 5 | Successful search returns `status="ok"` with `data` carrying the legacy `{total, issues, pagination, ...}` payload intact. |
+| `test_research_node_envelope_ok` | 5b | `research.py` duplicate lookup returns the issue key when `status="ok"`. |
+| `test_research_node_envelope_empty` | 5b | `research.py` returns `None` when search yields `status="empty"`. |
 
 ### Integration / Behaviour Tests (Module 6)
 
@@ -404,11 +440,18 @@ This feature is complete when ALL are true:
 - [ ] **AC2** — `JIRA_WORKFLOW_LAYER` and `JIRA_GROUNDING_LAYER` are
       exported from `parrot.bots.prompts` and registered in
       `_DOMAIN_LAYERS`.
-- [ ] **AC3** — `JiraToolkit.jira_get_issue` and
-      `JiraToolkit.jira_search_issues` accept `envelope: bool = True` and
-      return the documented `JiraToolEnvelope` shape on
-      `ok`/`empty`/`not_found`/`error`. `envelope=False` preserves the
-      legacy shape byte-for-byte.
+- [ ] **AC3** — `JiraToolkit.jira_get_issue`, `jira_search_issues`, and
+      `jira_search_users` return the `JiraToolEnvelope` shape
+      unconditionally on `ok`/`empty`/`not_found`/`error`. There is no
+      `envelope=False` opt-out; the legacy shapes are removed.
+- [ ] **AC3b** — The three non-LLM callers identified in Module 5b are
+      migrated:
+      - `flows/dev_loop/nodes/research.py:546` (re-checks `status`)
+      - `flows/dev_loop/nodes/research.py:572-588` (explicit envelope branching)
+      - `tests/debug_jira.py:42-44` (reads `issue["data"]`)
+      A repository-wide grep confirms no remaining caller of those three
+      methods reads `result["issues"]`, `result["total"]`, `issue["key"]`,
+      or `issue["fields"]` directly without going through `["data"]`.
 - [ ] **AC4** — When the toolkit returns `status="not_found"` for a
       requested key, the agent's reply contains the verbatim phrase
       `No results found for <KEY>` and contains **no** fabricated
@@ -588,15 +631,20 @@ class JiraToolkit(...):
 | `JIRA_GROUNDING_LAYER` | `_DOMAIN_LAYERS` registry | dict insertion | `domain_layers.py:172` |
 | `JiraSpecialist.__init__` | `AbstractBot._prompt_builder` | kwarg `prompt_builder=` | `abstract.py:176, 843` |
 | `JiraSpecialist.__init__` | `PromptBuilder.default()` + `.add()` | factory + chained add | `builder.py:45, 116` |
-| `JiraToolkit.jira_get_issue` (envelope path) | LLM tool message | structured dict return | `jiratoolkit.py:1159` |
-| `JiraToolkit.jira_search_issues` (envelope path) | LLM tool message | structured dict return | `jiratoolkit.py:2189` |
+| `JiraToolkit.jira_get_issue` (envelope, sole shape) | LLM tool message + Python callers | structured dict return | `jiratoolkit.py:1159` |
+| `JiraToolkit.jira_search_issues` (envelope, sole shape) | LLM tool message + Python callers | structured dict return | `jiratoolkit.py:2189` |
+| `JiraToolkit.jira_search_users` (envelope, sole shape) | LLM tool message + Python callers | structured dict return | `jiratoolkit.py:1971` |
+| Migrated caller `research.py:546,572` | `JiraToolEnvelope` | direct `["status"]` / `["data"]` reads | `flows/dev_loop/nodes/research.py:546,572-588` |
+| Migrated caller `tests/debug_jira.py:42` | `JiraToolEnvelope` | direct `["data"]` reads | `tests/debug_jira.py:42-44` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
 - ~~`PromptBuilder.jira()`~~ — not a factory method; use `PromptBuilder.default()` + `.add(get_domain_layer("jira_grounding"))`.
 - ~~`JIRA_GROUNDING_LAYER` (today)~~ — does not exist yet; this spec adds it.
 - ~~`JIRA_WORKFLOW_LAYER` (today)~~ — does not exist yet; this spec adds it.
-- ~~`JiraToolkit.search_users_envelope`~~ — no separate envelope method; the existing methods gain an `envelope` parameter.
+- ~~`JiraToolkit.search_users_envelope`~~ — no separate envelope method; the existing methods change shape unconditionally.
+- ~~`envelope: bool = True` parameter~~ — does NOT exist. Q1 was resolved as a global flip; there is no opt-out kwarg.
+- ~~`JiraToolkit(default_envelope=True)` constructor flag~~ — does NOT exist; the shape is global, not per-instance.
 - ~~`get_domain_layer("jira")`~~ — registry keys are `"jira_workflow"` and `"jira_grounding"`, not `"jira"`.
 - ~~`PromptLayer.replace()`~~ — replacement is on the `PromptBuilder`, not the layer (`PromptBuilder.replace(name, layer)`, `builder.py:140`).
 - ~~`AbstractBot.set_prompt_builder()`~~ — assignment is via the property setter (`abstract.py:843`) or the `prompt_builder=` kwarg.
@@ -621,10 +669,12 @@ class JiraToolkit(...):
   — pytector (deBERTa, English-trained) flags non-English imperative
   phrasing as injection at p > 0.98 by default; the elevated threshold
   is required and unrelated to this spec's English-only sentinel choice.
-- For envelope changes in `JiraToolkit`, gate them behind
-  `envelope: bool = True` so concrete callers in `agents/`, the
-  callbacks layer (`packages/ai-parrot/src/parrot/integrations/telegram/callbacks.py`)
-  and existing tests are unaffected unless they opt out.
+- The envelope shape change is global and unconditional (Q1 resolved).
+  Module 5b is the migration ledger for the three programmatic
+  read-callers; AC3b's repo-wide grep gate keeps the change atomic.
+  Write-method callers (`jira_add_comment`, `jira_create_issue`,
+  `jira_update_issue`, `jira_transition_issue`) are out of scope and
+  must remain untouched.
 - Logging stays via `self.logger` (project rule, `CLAUDE.md`).
 
 ### Known Risks / Gotchas
@@ -641,16 +691,27 @@ class JiraToolkit(...):
   prompt overall. **Mitigation**: the layer's template echoes the most
   load-bearing rules (no fabrication, on-empty phrase, on-error phrase)
   in the *first* paragraph so they survive truncation.
-- **Risk: Backwards compatibility for callers of `jira_get_issue` /
-  `jira_search_issues`.** Switching the default to `envelope=True`
-  changes the return shape. **Mitigation**: keep `envelope=False` as
-  the default for **non-LLM** callers initially; only the toolkit
-  registration path used by `JiraSpecialist` opts the envelope on.
-  Concretely: `JiraSpecialist.post_configure` instantiates
-  `JiraToolkit(... default_envelope=True)` (a new constructor flag);
-  programmatic callers in callbacks and tests stay on the legacy shape.
-  This needs to be reflected in Module 5's design — defer the global
-  default flip to a follow-up.
+- **Risk: Global return-shape flip for `jira_get_issue` /
+  `jira_search_issues` / `jira_search_users`.** The shape change is
+  unconditional and breaks any caller that reads `result["issues"]`,
+  `result["total"]`, `issue["key"]`, or `issue["fields"]` directly.
+  **Blast-radius audit (verified at spec time):**
+  - 22 write-method callers (`jira_add_comment`, `jira_create_issue`,
+    `jira_update_issue`, `jira_transition_issue`) — out of scope, untouched.
+  - `flows/dev_loop/nodes/research.py:546` — discards the return; only
+    needs the `try/except` updated to also branch on `status != "ok"`.
+  - `flows/dev_loop/nodes/research.py:572-588` — currently relies on a
+    `result.get("issues") or result.get("results") or result.get("data")`
+    fallback chain that *coincidentally* works under the envelope (the
+    third clause hits `data`); the spec still requires explicit
+    rewrite for correctness, not survival.
+  - `tests/debug_jira.py:42-44` — debug script; rewrite to read
+    `issue["data"]`.
+  - LLM-side: every agent that exposes `JiraToolkit` as a tool receives
+    the new shape automatically — that is the goal.
+  **Mitigation**: Module 5b explicitly migrates all three programmatic
+  call-sites in the same change-set as Module 5; AC3b adds a
+  repo-wide grep gate to prevent regressions.
 - **Risk: Subclass override drift.** `Jirachi` (or future subclasses)
   may set `system_prompt_template` of their own. **Mitigation**: leave
   `system_prompt_template` accessible for subclasses but document that
@@ -671,10 +732,13 @@ class JiraToolkit(...):
 
 ## 8. Open Questions
 
-- [ ] Should the envelope default flip to `True` globally for all
+- [x] Should the envelope default flip to `True` globally for all
       `JiraToolkit` callers in this spec, or strictly via a constructor
-      flag the agent passes? — *Owner: Juan Rodríguez* (recommendation:
-      constructor flag this round, global flip in a follow-up FEAT).
+      flag the agent passes? — *Owner: Juan Rodríguez*: **global flip**.
+      Audit confirmed only 3 programmatic read-call sites (research.py
+      twice, debug_jira.py once) and zero tests on read methods —
+      blast radius is acceptable. The legacy native shapes are removed;
+      Module 5b migrates all three call-sites in the same change-set.
 - [ ] Are the English sentinel phrases (`No results found for <KEY>`,
       `Jira lookup failed: <message>`) the final wording, or should they
       be tuned for tone/length? — *Owner: Juan Rodríguez*. The grounding
