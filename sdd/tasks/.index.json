@@ -5234,52 +5234,6 @@
       "file": "sdd/tasks/completed/TASK-312-episodic-tests.md"
     },
     {
-      "id": "TASK-434",
-      "slug": "handoff-tool",
-      "title": "Implement HandoffTool & Exception",
-      "feature": "FEAT-045",
-      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "assigned_to": null,
-      "completed_at": "2026-03-12T00:00:00Z",
-      "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
-    },
-    {
-      "id": "TASK-435",
-      "slug": "orchestrator-pause-resume",
-      "title": "Orchestrator Pause & Resume Support",
-      "feature": "FEAT-045",
-      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-051"
-      ],
-      "assigned_to": null,
-      "completed_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/completed/TASK-052-orchestrator-pause-resume.md"
-    },
-    {
-      "id": "TASK-436",
-      "slug": "chat-integration-state",
-      "title": "Chat Integration State Management",
-      "feature": "FEAT-045",
-      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-052"
-      ],
-      "assigned_to": "antigravity",
-      "completed_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/completed/TASK-053-chat-integration-state.md"
-    },
-    {
       "id": "TASK-324",
       "slug": "chat-integration-state",
       "title": "Chat Integration State Management",
@@ -5845,26 +5799,6 @@
       "started_at": "2026-03-18T01:47:01.341734",
       "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
       "completed_at": "2026-03-18T02:02:44.667925"
-    },
-    {
-      "id": "TASK-437",
-      "slug": "filter-tests",
-      "title": "Unit and Integration Tests for add_dataset Filter",
-      "feature_id": "FEAT-050",
-      "feature": "add-filter-add-dataset",
-      "spec": "sdd/specs/add-filter-add-dataset.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-349"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Depends on TASK-349 implementation to test against",
-      "assigned_to": null,
-      "started_at": "2026-03-18T01:16:15.395665",
-      "file": "sdd/tasks/active/TASK-350-filter-tests.md",
-      "completed_at": "2026-03-18T01:20:44.394946"
     },
     {
       "id": "TASK-352",
@@ -6443,104 +6377,6 @@
       "started_at": "2026-03-20T00:00:00Z",
       "completed_at": "2026-03-20T00:35:00Z",
       "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
-    },
-    {
-      "id": "TASK-438",
-      "slug": "odoo-config-variables",
-      "title": "Odoo Config Variables",
-      "feature_id": "FEAT-054",
-      "feature": "odoo-interface",
-      "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Modifies parrot/conf.py \u2014 must complete before core interface",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-21T00:00:00Z",
-      "completed_at": "2026-03-21T00:05:00Z",
-      "file": "sdd/tasks/completed/TASK-373-odoo-config-variables.md"
-    },
-    {
-      "id": "TASK-439",
-      "slug": "odoo-core-interface",
-      "title": "Odoo Core Interface (Auth + execute_kw + Context Manager)",
-      "feature_id": "FEAT-054",
-      "feature": "odoo-interface",
-      "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-373"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Imports config from TASK-373, creates main module",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-21T00:00:00Z",
-      "completed_at": "2026-03-21T00:10:00Z",
-      "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
-    },
-    {
-      "id": "TASK-440",
-      "slug": "odoo-crud-methods",
-      "title": "Odoo CRUD Convenience Methods",
-      "feature_id": "FEAT-054",
-      "feature": "odoo-interface",
-      "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-374"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Extends OdooInterface class from TASK-374",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-21T00:00:00Z",
-      "completed_at": "2026-03-21T00:15:00Z",
-      "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
-    },
-    {
-      "id": "TASK-441",
-      "slug": "odoo-export-registration",
-      "title": "Odoo Interface Export & Registration",
-      "feature_id": "FEAT-054",
-      "feature": "odoo-interface",
-      "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-375"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Needs completed module from TASK-375",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-21T00:00:00Z",
-      "completed_at": "2026-03-21T00:20:00Z",
-      "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
-    },
-    {
-      "id": "TASK-442",
-      "slug": "odoo-unit-tests",
-      "title": "Odoo Interface Unit Tests",
-      "feature_id": "FEAT-054",
-      "feature": "odoo-interface",
-      "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-376"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Tests require all implementation tasks complete",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-21T00:00:00Z",
-      "completed_at": "2026-03-21T00:25:00Z",
-      "file": "sdd/tasks/completed/TASK-377-odoo-unit-tests.md"
     },
     {
       "id": "TASK-380",
@@ -7239,86 +7075,6 @@
       "completed_at": "2026-03-24T23:20:49.602168+00:00"
     },
     {
-      "id": "TASK-443",
-      "slug": "tablesource-allowed-columns-param",
-      "title": "TableSource \u2014 allowed_columns parameter and schema filtering",
-      "feature_id": "FEAT-061",
-      "feature": "datasetmanager-tablesource-column-list",
-      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Modifies table.py \u2014 must run before TASK-423/424",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-24T17:00:00.000000Z",
-      "completed_at": "2026-03-24T23:20:00.000000Z",
-      "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
-    },
-    {
-      "id": "TASK-444",
-      "slug": "tablesource-sql-column-validation",
-      "title": "TableSource \u2014 SQL column validation in fetch()",
-      "feature_id": "FEAT-061",
-      "feature": "datasetmanager-tablesource-column-list",
-      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-422"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies table.py fetch() \u2014 depends on TASK-422 for allowed_columns attribute",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-24T17:00:00.000000Z",
-      "completed_at": "2026-03-24T23:25:00.000000Z",
-      "file": "sdd/tasks/completed/TASK-423-tablesource-sql-column-validation.md"
-    },
-    {
-      "id": "TASK-445",
-      "slug": "datasetmanager-allowed-columns-passthrough",
-      "title": "DatasetManager \u2014 pass allowed_columns through to TableSource",
-      "feature_id": "FEAT-061",
-      "feature": "datasetmanager-tablesource-column-list",
-      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-422"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies tool.py \u2014 depends on TASK-422 for TableSource param",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-24T17:00:00.000000Z",
-      "completed_at": "2026-03-24T23:30:00.000000Z",
-      "file": "sdd/tasks/completed/TASK-424-datasetmanager-allowed-columns-passthrough.md"
-    },
-    {
-      "id": "TASK-446",
-      "slug": "tablesource-allowed-columns-unit-tests",
-      "title": "Unit tests for TableSource allowed_columns",
-      "feature_id": "FEAT-061",
-      "feature": "datasetmanager-tablesource-column-list",
-      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-422",
-        "TASK-423",
-        "TASK-424"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Tests all implementation tasks \u2014 must run after all code changes",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-03-24T17:00:00.000000Z",
-      "completed_at": "2026-03-25T00:00:00.000000Z",
-      "file": "sdd/tasks/completed/TASK-425-tablesource-allowed-columns-unit-tests.md"
-    },
-    {
       "id": "TASK-426",
       "slug": "tablesource-allowed-columns-integration-tests",
       "title": "Integration tests for allowed_columns (guide + metadata)",
@@ -7482,6 +7238,20 @@
     },
     {
       "id": "TASK-434",
+      "slug": "handoff-tool",
+      "title": "Implement HandoffTool & Exception",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "completed_at": "2026-03-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
+    },
+    {
+      "id": "TASK-434",
       "slug": "dbtoolkit-influx-elastic",
       "title": "InfluxDB & Elasticsearch Sources",
       "feature_id": "FEAT-062",
@@ -7500,6 +7270,22 @@
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-434-dbtoolkit-influx-elastic.md",
       "completed_at": "2026-03-25T13:41:27.318027Z"
+    },
+    {
+      "id": "TASK-435",
+      "slug": "orchestrator-pause-resume",
+      "title": "Orchestrator Pause & Resume Support",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-051"
+      ],
+      "assigned_to": null,
+      "completed_at": "2026-03-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-052-orchestrator-pause-resume.md"
     },
     {
       "id": "TASK-435",
@@ -7527,6 +7313,22 @@
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-435-dbtoolkit-toolkit-tools.md",
       "completed_at": "2026-03-25T13:50:16.120132Z"
+    },
+    {
+      "id": "TASK-436",
+      "slug": "chat-integration-state",
+      "title": "Chat Integration State Management",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "assigned_to": "antigravity",
+      "completed_at": "2026-03-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-053-chat-integration-state.md"
     },
     {
       "id": "TASK-436",
@@ -7558,6 +7360,26 @@
     },
     {
       "id": "TASK-437",
+      "slug": "filter-tests",
+      "title": "Unit and Integration Tests for add_dataset Filter",
+      "feature_id": "FEAT-050",
+      "feature": "add-filter-add-dataset",
+      "spec": "sdd/specs/add-filter-add-dataset.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-349"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-349 implementation to test against",
+      "assigned_to": null,
+      "started_at": "2026-03-18T01:16:15.395665",
+      "file": "sdd/tasks/active/TASK-350-filter-tests.md",
+      "completed_at": "2026-03-18T01:20:44.394946"
+    },
+    {
+      "id": "TASK-437",
       "slug": "credential-data-models",
       "title": "Credential Data Models",
       "feature_id": "FEAT-063",
@@ -7573,6 +7395,24 @@
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-437-credential-data-models.md",
       "completed_at": "2026-03-25T16:39:06.002244+00:00"
+    },
+    {
+      "id": "TASK-438",
+      "slug": "odoo-config-variables",
+      "title": "Odoo Config Variables",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies parrot/conf.py \u2014 must complete before core interface",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-373-odoo-config-variables.md"
     },
     {
       "id": "TASK-438",
@@ -7593,6 +7433,26 @@
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-438-credential-encryption-helpers.md",
       "completed_at": "2026-03-25T16:50:11.308614+00:00"
+    },
+    {
+      "id": "TASK-439",
+      "slug": "odoo-core-interface",
+      "title": "Odoo Core Interface (Auth + execute_kw + Context Manager)",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-373"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports config from TASK-373, creates main module",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
     },
     {
       "id": "TASK-439",
@@ -7617,6 +7477,26 @@
     },
     {
       "id": "TASK-440",
+      "slug": "odoo-crud-methods",
+      "title": "Odoo CRUD Convenience Methods",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-374"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends OdooInterface class from TASK-374",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:15:00Z",
+      "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
+    },
+    {
+      "id": "TASK-440",
       "slug": "credential-routes",
       "title": "Route Registration & Collection Setup",
       "feature_id": "FEAT-063",
@@ -7634,6 +7514,26 @@
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-440-credential-routes.md",
       "completed_at": "2026-03-25T17:04:40.528726+00:00"
+    },
+    {
+      "id": "TASK-441",
+      "slug": "odoo-export-registration",
+      "title": "Odoo Interface Export & Registration",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-375"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs completed module from TASK-375",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
     },
     {
       "id": "TASK-441",
@@ -7657,6 +7557,106 @@
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-441-credential-integration-tests.md",
       "completed_at": "2026-03-25T17:11:01.138153+00:00"
+    },
+    {
+      "id": "TASK-442",
+      "slug": "odoo-unit-tests",
+      "title": "Odoo Interface Unit Tests",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-376"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests require all implementation tasks complete",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-377-odoo-unit-tests.md"
+    },
+    {
+      "id": "TASK-443",
+      "slug": "tablesource-allowed-columns-param",
+      "title": "TableSource \u2014 allowed_columns parameter and schema filtering",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies table.py \u2014 must run before TASK-423/424",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:20:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
+    },
+    {
+      "id": "TASK-444",
+      "slug": "tablesource-sql-column-validation",
+      "title": "TableSource \u2014 SQL column validation in fetch()",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-422"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies table.py fetch() \u2014 depends on TASK-422 for allowed_columns attribute",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:25:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-423-tablesource-sql-column-validation.md"
+    },
+    {
+      "id": "TASK-445",
+      "slug": "datasetmanager-allowed-columns-passthrough",
+      "title": "DatasetManager \u2014 pass allowed_columns through to TableSource",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-422"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies tool.py \u2014 depends on TASK-422 for TableSource param",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:30:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-424-datasetmanager-allowed-columns-passthrough.md"
+    },
+    {
+      "id": "TASK-446",
+      "slug": "tablesource-allowed-columns-unit-tests",
+      "title": "Unit tests for TableSource allowed_columns",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-422",
+        "TASK-423",
+        "TASK-424"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all implementation tasks \u2014 must run after all code changes",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-25T00:00:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-425-tablesource-allowed-columns-unit-tests.md"
     },
     {
       "id": "TASK-447",
@@ -12399,14 +12399,6 @@
       "started_at": null
     },
     {
-      "id": "TASK-748",
-      "slug": "navigator-baseline-regression-tests",
-      "title": "Baseline regression tests for NavigatorToolkit",
-      "priority": "high",
-      "effort": "M",
-      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
-    },
-    {
       "id": "TASK-747",
       "slug": "abstracttoolkit-lifecycle-hooks",
       "title": "AbstractToolkit Lifecycle Hooks (_pre_execute / _post_execute)",
@@ -12423,6 +12415,14 @@
       "started_at": "2026-04-17T12:25:04.763904+00:00",
       "file": "sdd/tasks/completed/TASK-747-abstracttoolkit-lifecycle-hooks.md",
       "completed_at": "2026-04-17T13:07:45.368847+00:00"
+    },
+    {
+      "id": "TASK-748",
+      "slug": "navigator-baseline-regression-tests",
+      "title": "Baseline regression tests for NavigatorToolkit",
+      "priority": "high",
+      "effort": "M",
+      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
     },
     {
       "id": "TASK-748",
@@ -12463,6 +12463,24 @@
       "started_at": null
     },
     {
+      "id": "TASK-749",
+      "slug": "permissioncontext-channel-field",
+      "title": "PermissionContext \u2014 Add channel Field",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only permission.py \u2014 no shared files with TASK-747",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-749-permissioncontext-channel-field.md",
+      "completed_at": "2026-04-17T13:18:13.969048+00:00"
+    },
+    {
       "id": "TASK-750",
       "slug": "migrate-create-module",
       "title": "Migrate create_module to CRUD primitives",
@@ -12480,6 +12498,26 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
+    },
+    {
+      "id": "TASK-750",
+      "slug": "credential-resolver-abstraction",
+      "title": "CredentialResolver Abstraction",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "OAuthCredentialResolver wraps JiraOAuthManager \u2014 must run after TASK-751",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-750-credential-resolver-abstraction.md",
+      "completed_at": "2026-04-17T13:41:33.777034+00:00"
     },
     {
       "id": "TASK-751",
@@ -12501,6 +12539,27 @@
       "started_at": null
     },
     {
+      "id": "TASK-751",
+      "slug": "jira-oauth-manager",
+      "title": "JiraOAuthManager \u2014 OAuth 2.0 (3LO) Lifecycle",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core OAuth engine \u2014 TASK-750, TASK-752, TASK-753 depend on this",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-751-jira-oauth-manager.md",
+      "completed_at": "2026-04-17T13:37:07.981949+00:00"
+    },
+    {
       "id": "TASK-752",
       "slug": "migrate-clone-dashboard",
       "title": "Migrate clone_dashboard to CRUD primitives",
@@ -12518,6 +12577,26 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
+    },
+    {
+      "id": "TASK-752",
+      "slug": "oauth-callback-routes",
+      "title": "OAuth Callback HTTP Routes",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on JiraOAuthManager \u2014 can run in parallel with TASK-750",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-752-oauth-callback-routes.md",
+      "completed_at": "2026-04-17T13:52:07.031121+00:00"
     },
     {
       "id": "TASK-753",
@@ -12539,6 +12618,29 @@
       "started_at": null
     },
     {
+      "id": "TASK-753",
+      "slug": "jiratoolkit-oauth2-3lo-mode",
+      "title": "JiraToolkit \u2014 OAuth2 3LO Mode",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748",
+        "TASK-749",
+        "TASK-750"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration task \u2014 needs hooks, exception, channel field, and credential resolver",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-753-jiratoolkit-oauth2-3lo-mode.md",
+      "completed_at": "2026-04-17T14:14:27.460954+00:00"
+    },
+    {
       "id": "TASK-754",
       "slug": "migrate-assign-module-tools",
       "title": "Migrate assign_module_to_client + assign_module_to_group",
@@ -12556,6 +12658,27 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
+    },
+    {
+      "id": "TASK-754",
+      "slug": "telegram-connect-jira-commands",
+      "title": "Telegram Integration \u2014 /connect_jira Commands",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-753 and TASK-755 \u2014 different codebase areas",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-754-telegram-connect-jira-commands.md",
+      "completed_at": "2026-04-17T14:19:14.755303+00:00"
     },
     {
       "id": "TASK-755",
@@ -12583,6 +12706,28 @@
       "started_at": null
     },
     {
+      "id": "TASK-755",
+      "slug": "agentalk-jira-connect-hotswap",
+      "title": "AgenTalk Integration \u2014 JiraConnectTool + Hot-Swap",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-750",
+        "TASK-751",
+        "TASK-753"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-754 \u2014 different integration (AgenTalk vs Telegram)",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-755-agentalk-jira-connect-hotswap.md",
+      "completed_at": "2026-04-17T14:31:47.815092+00:00"
+    },
+    {
       "id": "TASK-756",
       "slug": "remove-dead-helpers",
       "title": "Remove dead _nav_* helpers",
@@ -12606,6 +12751,25 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
+    },
+    {
+      "id": "TASK-756",
+      "slug": "post-auth-config-model",
+      "title": "PostAuthAction Config Model & YAML Parsing",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all others depend on it. Must run first.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-756-post-auth-config-model.md",
+      "completed_at": "2026-04-19T15:05:47.130674+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-757",
@@ -12635,170 +12799,6 @@
       "assigned_to": null,
       "started_at": null,
       "completed_at": "2026-04-17T13:30:00.341223+00:00"
-    },
-    {
-      "id": "TASK-749",
-      "slug": "permissioncontext-channel-field",
-      "title": "PermissionContext \u2014 Add channel Field",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": true,
-      "parallelism_notes": "Touches only permission.py \u2014 no shared files with TASK-747",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-749-permissioncontext-channel-field.md",
-      "completed_at": "2026-04-17T13:18:13.969048+00:00"
-    },
-    {
-      "id": "TASK-750",
-      "slug": "credential-resolver-abstraction",
-      "title": "CredentialResolver Abstraction",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-751"
-      ],
-      "parallel": false,
-      "parallelism_notes": "OAuthCredentialResolver wraps JiraOAuthManager \u2014 must run after TASK-751",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-750-credential-resolver-abstraction.md",
-      "completed_at": "2026-04-17T13:41:33.777034+00:00"
-    },
-    {
-      "id": "TASK-751",
-      "slug": "jira-oauth-manager",
-      "title": "JiraOAuthManager \u2014 OAuth 2.0 (3LO) Lifecycle",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-747",
-        "TASK-748"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Core OAuth engine \u2014 TASK-750, TASK-752, TASK-753 depend on this",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-751-jira-oauth-manager.md",
-      "completed_at": "2026-04-17T13:37:07.981949+00:00"
-    },
-    {
-      "id": "TASK-752",
-      "slug": "oauth-callback-routes",
-      "title": "OAuth Callback HTTP Routes",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-751"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Only depends on JiraOAuthManager \u2014 can run in parallel with TASK-750",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-752-oauth-callback-routes.md",
-      "completed_at": "2026-04-17T13:52:07.031121+00:00"
-    },
-    {
-      "id": "TASK-753",
-      "slug": "jiratoolkit-oauth2-3lo-mode",
-      "title": "JiraToolkit \u2014 OAuth2 3LO Mode",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-747",
-        "TASK-748",
-        "TASK-749",
-        "TASK-750"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Integration task \u2014 needs hooks, exception, channel field, and credential resolver",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-753-jiratoolkit-oauth2-3lo-mode.md",
-      "completed_at": "2026-04-17T14:14:27.460954+00:00"
-    },
-    {
-      "id": "TASK-754",
-      "slug": "telegram-connect-jira-commands",
-      "title": "Telegram Integration \u2014 /connect_jira Commands",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "M",
-      "depends_on": [
-        "TASK-751",
-        "TASK-752"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Independent of TASK-753 and TASK-755 \u2014 different codebase areas",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-754-telegram-connect-jira-commands.md",
-      "completed_at": "2026-04-17T14:19:14.755303+00:00"
-    },
-    {
-      "id": "TASK-755",
-      "slug": "agentalk-jira-connect-hotswap",
-      "title": "AgenTalk Integration \u2014 JiraConnectTool + Hot-Swap",
-      "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "M",
-      "depends_on": [
-        "TASK-750",
-        "TASK-751",
-        "TASK-753"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Independent of TASK-754 \u2014 different integration (AgenTalk vs Telegram)",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-755-agentalk-jira-connect-hotswap.md",
-      "completed_at": "2026-04-17T14:31:47.815092+00:00"
-    },
-    {
-      "id": "TASK-756",
-      "slug": "post-auth-config-model",
-      "title": "PostAuthAction Config Model & YAML Parsing",
-      "feature_id": "FEAT-108",
-      "feature": "jiratoolkit-auth-telegram",
-      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 all others depend on it. Must run first.",
-      "assigned_to": null,
-      "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/completed/TASK-756-post-auth-config-model.md",
-      "completed_at": "2026-04-19T15:05:47.130674+00:00",
-      "verification": "verified"
     },
     {
       "id": "TASK-757",
@@ -14734,6 +14734,42 @@
       "file": "sdd/tasks/completed/TASK-855-anthropic-sdk-pin-upgrade.md"
     },
     {
+      "id": "TASK-855",
+      "slug": "abstractloader-contract-changes",
+      "title": "AbstractLoader contract changes \u2014 language, title, validate_metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-855-abstractloader-contract-changes.md",
+      "completed_at": "2026-04-27T01:05:45.114449+00:00"
+    },
+    {
+      "id": "TASK-855",
+      "slug": "parent-searcher-abstraction",
+      "title": "ParentSearcher abstraction + InTable default impl",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 1 of FEAT-128. Foundation that TASK-858 consumes; sequential per spec's worktree strategy.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-855-parent-searcher-abstraction.md",
+      "completed_at": "2026-04-27T02:21:27.408060+00:00"
+    },
+    {
       "id": "TASK-856",
       "slug": "anthropic-regression-validation",
       "title": "AnthropicClient regression validation against SDK 0.97.0",
@@ -14752,143 +14788,6 @@
       "started_at": "2026-04-26T23:28:24.491178+00:00",
       "completed_at": "2026-04-26T23:42:00.000000+00:00",
       "file": "sdd/tasks/completed/TASK-856-anthropic-regression-validation.md"
-    },
-    {
-      "id": "TASK-857",
-      "slug": "aimessage-factory-from-claude-agent",
-      "title": "AIMessageFactory.from_claude_agent static method",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": true,
-      "parallelism_notes": "Pure conversion function in models/responses.py \u2014 no shared files with Track A tasks (TASK-855/856) or pyproject restructure (TASK-860). Can run in parallel.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-26T23:55:00.000000+00:00",
-      "file": "sdd/tasks/completed/TASK-857-aimessage-factory-from-claude-agent.md"
-    },
-    {
-      "id": "TASK-858",
-      "slug": "claude-agent-client-core",
-      "title": "ClaudeAgentClient core implementation",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-857"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Depends on TASK-857 (uses AIMessageFactory.from_claude_agent). Sequential after TASK-857.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T02:46:42.437731+00:00",
-      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
-    },
-    {
-      "id": "TASK-859",
-      "slug": "factory-registration-lazy-loader",
-      "title": "Factory registration and lazy loader for ClaudeAgentClient",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-858"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Depends on TASK-858 (imports ClaudeAgentClient). Sequential after TASK-858.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T02:50:33.792488+00:00",
-      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
-    },
-    {
-      "id": "TASK-860",
-      "slug": "pyproject-extras-restructure",
-      "title": "Pyproject extras restructure \u2014 dedicated claude-agent extra",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": true,
-      "parallelism_notes": "Pure pyproject.toml change \u2014 no code files shared. Can run in parallel with TASK-855 and TASK-857.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T02:51:46.284943+00:00",
-      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md"
-    },
-    {
-      "id": "TASK-861",
-      "slug": "claude-agent-client-tests",
-      "title": "Unit tests for ClaudeAgentClient",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-857",
-        "TASK-858",
-        "TASK-859"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Tests all Track B components \u2014 must wait for implementation tasks to complete.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T00:00:00",
-      "file": "sdd/tasks/completed/TASK-861-tests-canonical-metadata.md"
-    },
-    {
-      "id": "TASK-862",
-      "slug": "example-and-docs",
-      "title": "Example and documentation for ClaudeAgentClient",
-      "feature_id": "FEAT-124",
-      "feature": "claude-sdk-migration",
-      "spec": "sdd/specs/claude-sdk-migration.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-858",
-        "TASK-859"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Depends on client and factory being complete. Can run in parallel with TASK-861.",
-      "assigned_to": null,
-      "started_at": "2026-04-26T23:28:24.491178+00:00",
-      "completed_at": "2026-04-27T00:00:00",
-      "file": "sdd/tasks/completed/TASK-862-documentation-canonical-metadata.md"
-    },
-    {
-      "id": "TASK-855",
-      "slug": "abstractloader-contract-changes",
-      "title": "AbstractLoader contract changes \u2014 language, title, validate_metadata",
-      "feature_id": "FEAT-125",
-      "feature": "ai-parrot-loaders-metadata-standarization",
-      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
-      "assigned_to": "sdd-worker-feat-125",
-      "started_at": "2026-04-26T23:46:53.342662+00:00",
-      "file": "sdd/tasks/completed/TASK-855-abstractloader-contract-changes.md",
-      "completed_at": "2026-04-27T01:05:45.114449+00:00"
     },
     {
       "id": "TASK-856",
@@ -14911,6 +14810,42 @@
       "completed_at": "2026-04-27T01:23:13.194357+00:00"
     },
     {
+      "id": "TASK-856",
+      "slug": "store-marker-standardisation",
+      "title": "Marker standardisation in stores (is_chunk filter)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 2 of FEAT-128. Independent at the code level from TASK-855 but spec recommends sequential implementation; touches similarity_search/mmr_search filters and add_documents normalisation.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-856-store-marker-standardisation.md",
+      "completed_at": "2026-04-27T02:21:27.408060+00:00"
+    },
+    {
+      "id": "TASK-857",
+      "slug": "aimessage-factory-from-claude-agent",
+      "title": "AIMessageFactory.from_claude_agent static method",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure conversion function in models/responses.py \u2014 no shared files with Track A tasks (TASK-855/856) or pyproject restructure (TASK-860). Can run in parallel.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-26T23:55:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-857-aimessage-factory-from-claude-agent.md"
+    },
+    {
       "id": "TASK-857",
       "slug": "refactor-file-document-loaders",
       "title": "Refactor file/document loaders to use canonical metadata",
@@ -14929,6 +14864,46 @@
       "started_at": "2026-04-26T23:46:53.342662+00:00",
       "completed_at": "2026-04-27T00:00:00.000000+00:00",
       "file": "sdd/tasks/completed/TASK-857-refactor-file-document-loaders.md"
+    },
+    {
+      "id": "TASK-857",
+      "slug": "three-level-hierarchy",
+      "title": "3-level hierarchy in late chunking (document -> parent_chunk -> child)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 3 of FEAT-128. Depends on TASK-856 because parent_chunk rows must be filtered out of similarity search by default.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-857-three-level-hierarchy.md",
+      "completed_at": "2026-04-27T02:32:28.902557+00:00"
+    },
+    {
+      "id": "TASK-858",
+      "slug": "claude-agent-client-core",
+      "title": "ClaudeAgentClient core implementation",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-857"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-857 (uses AIMessageFactory.from_claude_agent). Sequential after TASK-857.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T02:46:42.437731+00:00",
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
     },
     {
       "id": "TASK-858",
@@ -14952,6 +14927,47 @@
       "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
     },
     {
+      "id": "TASK-858",
+      "slug": "bot-parent-expansion-wiring",
+      "title": "Bot-side wiring (expand_to_parent + parent_searcher)",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 4 of FEAT-128. Core feature wiring; needs the searcher abstraction (TASK-855) and the marker filter (TASK-856).",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md",
+      "completed_at": "2026-04-27T02:46:42.437731+00:00"
+    },
+    {
+      "id": "TASK-859",
+      "slug": "factory-registration-lazy-loader",
+      "title": "Factory registration and lazy loader for ClaudeAgentClient",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-858"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-858 (imports ClaudeAgentClient). Sequential after TASK-858.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T02:50:33.792488+00:00",
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
+    },
+    {
       "id": "TASK-859",
       "slug": "refactor-youtube-vimeo-loaders",
       "title": "Refactor YouTube and Vimeo loaders to use canonical metadata",
@@ -14973,6 +14989,45 @@
       "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
     },
     {
+      "id": "TASK-859",
+      "slug": "pgvector-and-bot-integration-tests",
+      "title": "Integration tests - pgvector end-to-end + bot composition",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-857",
+        "TASK-858"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Module 5 of FEAT-128. Validates the full pipeline; needs both ingestion (TASK-857) and bot wiring (TASK-858).",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md",
+      "completed_at": "2026-04-27T02:50:33.792488+00:00"
+    },
+    {
+      "id": "TASK-860",
+      "slug": "pyproject-extras-restructure",
+      "title": "Pyproject extras restructure \u2014 dedicated claude-agent extra",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure pyproject.toml change \u2014 no code files shared. Can run in parallel with TASK-855 and TASK-857.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T02:51:46.284943+00:00",
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md"
+    },
+    {
       "id": "TASK-860",
       "slug": "refactor-web-loaders",
       "title": "Refactor web and webscraping loaders to use canonical metadata",
@@ -14991,6 +15046,48 @@
       "started_at": "2026-04-26T23:46:53.342662+00:00",
       "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
       "completed_at": "2026-04-27T02:51:46.284943+00:00"
+    },
+    {
+      "id": "TASK-860",
+      "slug": "parent-child-retrieval-docs",
+      "title": "Documentation - docs/parent-child-retrieval.md",
+      "feature_id": "FEAT-128",
+      "feature": "parent-child-retrieval",
+      "spec": "sdd/specs/parent-child-retrieval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-858"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Module 6 of FEAT-128. Docs-only; touches no source files \u2014 can run in parallel with TASK-859.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:53:31.367264+00:00",
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
+      "completed_at": "2026-04-27T02:51:46.284943+00:00"
+    },
+    {
+      "id": "TASK-861",
+      "slug": "claude-agent-client-tests",
+      "title": "Unit tests for ClaudeAgentClient",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-857",
+        "TASK-858",
+        "TASK-859"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all Track B components \u2014 must wait for implementation tasks to complete.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-861-tests-canonical-metadata.md"
     },
     {
       "id": "TASK-861",
@@ -15018,6 +15115,45 @@
       "completed_at": "2026-04-27T00:00:00"
     },
     {
+      "id": "TASK-861",
+      "slug": "contextual-helper-module",
+      "title": "Build `contextual.py` helper module",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational. Every other FEAT-127 task imports build_contextual_text from this module; nothing can run before it.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/completed/TASK-861-contextual-helper-module.md",
+      "completed_at": "2026-04-27T02:29:49.707002+00:00"
+    },
+    {
+      "id": "TASK-862",
+      "slug": "example-and-docs",
+      "title": "Example and documentation for ClaudeAgentClient",
+      "feature_id": "FEAT-124",
+      "feature": "claude-sdk-migration",
+      "spec": "sdd/specs/claude-sdk-migration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-858",
+        "TASK-859"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on client and factory being complete. Can run in parallel with TASK-861.",
+      "assigned_to": null,
+      "started_at": "2026-04-26T23:28:24.491178+00:00",
+      "completed_at": "2026-04-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-862-documentation-canonical-metadata.md"
+    },
+    {
       "id": "TASK-862",
       "slug": "documentation-canonical-metadata",
       "title": "Documentation for canonical metadata shape",
@@ -15043,6 +15179,26 @@
       "completed_at": "2026-04-27T00:00:00"
     },
     {
+      "id": "TASK-862",
+      "slug": "abstractstore-augmentation-hook",
+      "title": "Wire `_apply_contextual_augmentation` into `AbstractStore`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-861"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies the shared base class; all store wirings (TASK-863..866) consume the new method.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/completed/TASK-862-abstractstore-augmentation-hook.md",
+      "completed_at": "2026-04-27T02:33:36.640529+00:00"
+    },
+    {
       "id": "TASK-863",
       "slug": "reranker-models-and-abstract",
       "title": "Reranker Data Models and Abstract Base Class",
@@ -15059,6 +15215,27 @@
       "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/completed/TASK-863-reranker-models-and-abstract.md",
       "completed_at": "2026-04-27T00:34:22.004330+00:00"
+    },
+    {
+      "id": "TASK-863",
+      "slug": "pgvector-wiring",
+      "title": "Wire `PgVectorStore.add_documents` and `from_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Largest store wiring; encodes the metadata-header-wins precedence with LateChunkingProcessor. TASK-867/868/869 all reference its outputs.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/completed/TASK-863-pgvector-wiring.md",
+      "completed_at": "2026-04-27T02:37:01.910260+00:00"
     },
     {
       "id": "TASK-864",
@@ -15081,6 +15258,26 @@
       "completed_at": "2026-04-27T02:46:27.661832+00:00"
     },
     {
+      "id": "TASK-864",
+      "slug": "milvus-wiring",
+      "title": "Wire `MilvusStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only milvus.py; can run concurrently with TASK-863/865/866 in separate worktrees once TASK-862 lands.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-864-milvus-wiring.md"
+    },
+    {
       "id": "TASK-865",
       "slug": "llm-reranker",
       "title": "LLMReranker Debug Implementation",
@@ -15099,6 +15296,26 @@
       "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/completed/TASK-865-llm-reranker.md",
       "completed_at": "2026-04-27T02:46:27.661832+00:00"
+    },
+    {
+      "id": "TASK-865",
+      "slug": "faiss-wiring",
+      "title": "Wire `FaissStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only faiss_store.py; mutually independent of TASK-863/864/866.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-865-faiss-wiring.md"
     },
     {
       "id": "TASK-866",
@@ -15120,6 +15337,26 @@
       "started_at": "2026-04-26T23:35:48.188228+00:00",
       "file": "sdd/tasks/completed/TASK-866-bot-reranker-integration.md",
       "completed_at": "2026-04-27T02:46:27.661832+00:00"
+    },
+    {
+      "id": "TASK-866",
+      "slug": "arango-wiring",
+      "title": "Wire `ArangoStore.add_documents` to the augmentation hook",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-861",
+        "TASK-862"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only arango.py; mutually independent of TASK-863/864/865.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-866-arango-wiring.md"
     },
     {
       "id": "TASK-867",
@@ -15145,6 +15382,25 @@
       "completed_at": "2026-04-27T02:47:26.147745+00:00"
     },
     {
+      "id": "TASK-867",
+      "slug": "searchresult-header-propagation",
+      "title": "Surface `contextual_header` in `SearchResult.metadata`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Audits postgres.py SearchResult constructions and asserts header round-trip; conflicts with TASK-863's edits to the same file.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-867-searchresult-header-propagation.md"
+    },
+    {
       "id": "TASK-868",
       "slug": "benchmark-harness-and-integration-tests",
       "title": "Benchmark Harness, Eval Dataset, and Integration Tests",
@@ -15168,6 +15424,25 @@
       "completed_at": "2026-04-27T02:50:11.014365+00:00"
     },
     {
+      "id": "TASK-868",
+      "slug": "recompute-migration-script",
+      "title": "Migration script `recompute_contextual_embeddings.py`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file under scripts/; can run concurrently with TASK-867/869 once TASK-863 lands.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-868-recompute-migration-script.md"
+    },
+    {
       "id": "TASK-869",
       "slug": "filemanager-toolkit-core",
       "title": "Implement FileManagerToolkit Core Class",
@@ -15184,6 +15459,25 @@
       "started_at": "2026-04-27T01:57:38.220676Z",
       "file": "sdd/tasks/completed/TASK-869-filemanager-toolkit-core.md",
       "completed_at": "2026-04-27T02:51:36.540701+00:00"
+    },
+    {
+      "id": "TASK-869",
+      "slug": "contextual-embedding-docs",
+      "title": "Documentation page `docs/contextual-embedding.md`",
+      "feature_id": "FEAT-127",
+      "feature": "contextual-embedding-headers",
+      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-863"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Docs only; can run concurrently with TASK-867/868 once the API surface is stable (post TASK-863).",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:59:56.384054+00:00",
+      "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
     },
     {
       "id": "TASK-870",
@@ -15266,300 +15560,6 @@
       "started_at": "2026-04-27T01:57:38.220676Z",
       "file": "sdd/tasks/completed/TASK-873-filemanager-toolkit-example.md",
       "completed_at": "2026-04-27T02:34:09.665839+00:00"
-    },
-    {
-      "id": "TASK-855",
-      "slug": "parent-searcher-abstraction",
-      "title": "ParentSearcher abstraction + InTable default impl",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Module 1 of FEAT-128. Foundation that TASK-858 consumes; sequential per spec's worktree strategy.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-855-parent-searcher-abstraction.md",
-      "completed_at": "2026-04-27T02:21:27.408060+00:00"
-    },
-    {
-      "id": "TASK-856",
-      "slug": "store-marker-standardisation",
-      "title": "Marker standardisation in stores (is_chunk filter)",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Module 2 of FEAT-128. Independent at the code level from TASK-855 but spec recommends sequential implementation; touches similarity_search/mmr_search filters and add_documents normalisation.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-856-store-marker-standardisation.md",
-      "completed_at": "2026-04-27T02:21:27.408060+00:00"
-    },
-    {
-      "id": "TASK-857",
-      "slug": "three-level-hierarchy",
-      "title": "3-level hierarchy in late chunking (document -> parent_chunk -> child)",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-856"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 3 of FEAT-128. Depends on TASK-856 because parent_chunk rows must be filtered out of similarity search by default.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-857-three-level-hierarchy.md",
-      "completed_at": "2026-04-27T02:32:28.902557+00:00"
-    },
-    {
-      "id": "TASK-858",
-      "slug": "bot-parent-expansion-wiring",
-      "title": "Bot-side wiring (expand_to_parent + parent_searcher)",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-855",
-        "TASK-856"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 4 of FEAT-128. Core feature wiring; needs the searcher abstraction (TASK-855) and the marker filter (TASK-856).",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md",
-      "completed_at": "2026-04-27T02:46:42.437731+00:00"
-    },
-    {
-      "id": "TASK-859",
-      "slug": "pgvector-and-bot-integration-tests",
-      "title": "Integration tests - pgvector end-to-end + bot composition",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-857",
-        "TASK-858"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 5 of FEAT-128. Validates the full pipeline; needs both ingestion (TASK-857) and bot wiring (TASK-858).",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md",
-      "completed_at": "2026-04-27T02:50:33.792488+00:00"
-    },
-    {
-      "id": "TASK-860",
-      "slug": "parent-child-retrieval-docs",
-      "title": "Documentation - docs/parent-child-retrieval.md",
-      "feature_id": "FEAT-128",
-      "feature": "parent-child-retrieval",
-      "spec": "sdd/specs/parent-child-retrieval.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-858"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Module 6 of FEAT-128. Docs-only; touches no source files \u2014 can run in parallel with TASK-859.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:53:31.367264+00:00",
-      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
-      "completed_at": "2026-04-27T02:51:46.284943+00:00"
-    },
-    {
-      "id": "TASK-861",
-      "slug": "contextual-helper-module",
-      "title": "Build `contextual.py` helper module",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Foundational. Every other FEAT-127 task imports build_contextual_text from this module; nothing can run before it.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/completed/TASK-861-contextual-helper-module.md",
-      "completed_at": "2026-04-27T02:29:49.707002+00:00"
-    },
-    {
-      "id": "TASK-862",
-      "slug": "abstractstore-augmentation-hook",
-      "title": "Wire `_apply_contextual_augmentation` into `AbstractStore`",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-861"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies the shared base class; all store wirings (TASK-863..866) consume the new method.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/completed/TASK-862-abstractstore-augmentation-hook.md",
-      "completed_at": "2026-04-27T02:33:36.640529+00:00"
-    },
-    {
-      "id": "TASK-863",
-      "slug": "pgvector-wiring",
-      "title": "Wire `PgVectorStore.add_documents` and `from_documents` to the augmentation hook",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-861",
-        "TASK-862"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Largest store wiring; encodes the metadata-header-wins precedence with LateChunkingProcessor. TASK-867/868/869 all reference its outputs.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/completed/TASK-863-pgvector-wiring.md",
-      "completed_at": "2026-04-27T02:37:01.910260+00:00"
-    },
-    {
-      "id": "TASK-864",
-      "slug": "milvus-wiring",
-      "title": "Wire `MilvusStore.add_documents` to the augmentation hook",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-861",
-        "TASK-862"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Touches only milvus.py; can run concurrently with TASK-863/865/866 in separate worktrees once TASK-862 lands.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-864-milvus-wiring.md"
-    },
-    {
-      "id": "TASK-865",
-      "slug": "faiss-wiring",
-      "title": "Wire `FaissStore.add_documents` to the augmentation hook",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-861",
-        "TASK-862"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Touches only faiss_store.py; mutually independent of TASK-863/864/866.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-865-faiss-wiring.md"
-    },
-    {
-      "id": "TASK-866",
-      "slug": "arango-wiring",
-      "title": "Wire `ArangoStore.add_documents` to the augmentation hook",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-861",
-        "TASK-862"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Touches only arango.py; mutually independent of TASK-863/864/865.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-866-arango-wiring.md"
-    },
-    {
-      "id": "TASK-867",
-      "slug": "searchresult-header-propagation",
-      "title": "Surface `contextual_header` in `SearchResult.metadata`",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-863"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Audits postgres.py SearchResult constructions and asserts header round-trip; conflicts with TASK-863's edits to the same file.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-867-searchresult-header-propagation.md"
-    },
-    {
-      "id": "TASK-868",
-      "slug": "recompute-migration-script",
-      "title": "Migration script `recompute_contextual_embeddings.py`",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "M",
-      "depends_on": [
-        "TASK-863"
-      ],
-      "parallel": true,
-      "parallelism_notes": "New file under scripts/; can run concurrently with TASK-867/869 once TASK-863 lands.",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-868-recompute-migration-script.md"
-    },
-    {
-      "id": "TASK-869",
-      "slug": "contextual-embedding-docs",
-      "title": "Documentation page `docs/contextual-embedding.md`",
-      "feature_id": "FEAT-127",
-      "feature": "contextual-embedding-headers",
-      "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-863"
-      ],
-      "parallel": true,
-      "parallelism_notes": "Docs only; can run concurrently with TASK-867/868 once the API surface is stable (post TASK-863).",
-      "assigned_to": null,
-      "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
     },
     {
       "id": "TASK-874",
@@ -16989,124 +16989,6 @@
       "created_at": "2026-04-29T23:01:56.266377+00:00",
       "file": "sdd/tasks/completed/TASK-942-deprecation-test-suite.md",
       "completed_at": "2026-05-01T00:54:42.821473+00:00"
-    },
-    {
-      "id": "TASK-937",
-      "slug": "prep-test-audit-infrastructure",
-      "title": "Prep \u2014 Test Audit & Infrastructure",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "in-progress",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Foundation task; all subsequent tasks depend on it",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-937-prep-test-audit-infrastructure.md"
-    },
-    {
-      "id": "TASK-938",
-      "slug": "core-agentnode-execute",
-      "title": "Core AgentNode Enhancement \u2014 Add execute()",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "in-progress",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-937"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies flows/core/node.py and crew.py; foundation for all mode migrations",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-938-core-agentnode-execute.md"
-    },
-    {
-      "id": "TASK-939",
-      "slug": "migrate-run-sequential",
-      "title": "Migrate run_sequential",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-938"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies crew.py; sequential dependency on TASK-938",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": "2026-04-30T16:57:15.069290+00:00",
-      "file": "sdd/tasks/completed/TASK-939-migrate-run-sequential.md"
-    },
-    {
-      "id": "TASK-940",
-      "slug": "migrate-run-parallel",
-      "title": "Migrate run_parallel",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "L",
-      "depends_on": [
-        "TASK-939"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies crew.py; builds on sequential migration pattern",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": "2026-04-30T18:22:59.123350+00:00",
-      "file": "sdd/tasks/completed/TASK-940-migrate-run-parallel.md"
-    },
-    {
-      "id": "TASK-941",
-      "slug": "migrate-run-flow",
-      "title": "Migrate run_flow",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "XL",
-      "depends_on": [
-        "TASK-940"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Most complex mode; modifies crew.py with DAG + callback wiring",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": "2026-04-30T19:20:03.211332+00:00",
-      "file": "sdd/tasks/completed/TASK-941-migrate-run-flow.md"
-    },
-    {
-      "id": "TASK-942",
-      "slug": "migrate-run-loop",
-      "title": "Migrate run_loop",
-      "feature_id": "FEAT-137",
-      "feature": "agentcrew-primitives",
-      "spec": "sdd/specs/agentcrew-primitives.spec.md",
-      "status": "done",
-      "priority": "medium",
-      "effort": "M",
-      "depends_on": [
-        "TASK-941"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Modifies crew.py; depends on flow migration pattern",
-      "assigned_to": null,
-      "started_at": "2026-04-30T00:32:29.243308+00:00",
-      "completed_at": "2026-04-30T21:12:40.395150+00:00",
-      "file": "sdd/tasks/completed/TASK-942-migrate-run-loop.md"
     },
     {
       "id": "TASK-943",
