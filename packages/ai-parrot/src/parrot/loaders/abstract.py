@@ -217,7 +217,7 @@ class AbstractLoader(ABC):
         # Choose primary text splitter based on configuration
         if self._use_huggingface_splitter:
             self.text_splitter = self._create_hf_token_splitter(
-                model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
+                model_name=kwargs.get('model_name', 'gpt-4.1-mini'),
                 chunk_size=self.chunk_size,
                 chunk_overlap=self.chunk_overlap
             )
@@ -239,7 +239,7 @@ class AbstractLoader(ABC):
                 self.text_splitter = TokenTextSplitter(
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
-                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
+                    model_name=kwargs.get('model_name', 'gpt-4.1-mini')
                 )
         else:
             # Default: SemanticTextSplitter (replaces MarkdownTextSplitter)

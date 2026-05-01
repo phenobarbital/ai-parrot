@@ -244,30 +244,44 @@ def _coerce(model: Union[str, OpenAIModel]) -> str:
     return model.value if isinstance(model, OpenAIModel) else model
 
 
+_CURRENT_VALUES: frozenset[str] = frozenset(m.value for m in OpenAIModel)
+
+
 def is_deprecated(model: Union[str, OpenAIModel]) -> bool:
     """Return True if ``model`` is in DEPRECATIONS or matches an alias entry.
+
+    An alias-match only counts as deprecated when the alias itself is NOT a
+    current ``OpenAIModel`` value. This handles the case where a deprecated
+    dated source (e.g. ``gpt-4.1-nano-2025-04-14``) points at an alias
+    (``gpt-4.1-nano``) that is still alive in the upstream catalog.
 
     Examples::
 
         is_deprecated("gpt-4-turbo-2024-04-09")  # True — direct key
-        is_deprecated("gpt-4-turbo")              # True — alias
+        is_deprecated("gpt-4-turbo")              # True — alias of dead family
+        is_deprecated("gpt-4.1-nano")             # False — alias is alive
         is_deprecated("gpt-5-mini")               # False
         is_deprecated(OpenAIModel.GPT5_MINI)      # False
     """
     s = _coerce(model)
     if s in DEPRECATIONS:
         return True
+    if s in _CURRENT_VALUES:
+        return False
     return any(info.alias == s for info in DEPRECATIONS.values())
 
 
 def get_shutoff_date(model: Union[str, OpenAIModel]) -> Optional[date]:
     """Return the API shutoff date for ``model``, or None if not deprecated.
 
-    Resolves both direct keys and alias strings.
+    Resolves direct keys and alias strings, but ignores aliases that are
+    themselves current ``OpenAIModel`` values (still alive in the catalog).
     """
     s = _coerce(model)
     if s in DEPRECATIONS:
         return DEPRECATIONS[s].shutoff
+    if s in _CURRENT_VALUES:
+        return None
     for info in DEPRECATIONS.values():
         if info.alias == s:
             return info.shutoff
