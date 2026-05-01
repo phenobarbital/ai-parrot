@@ -292,9 +292,12 @@ async def test_search_error_returns_none(node_with_mock_jira):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-01
+**Notes**: All 3 spec-listed call sites migrated. 6/6 envelope tests pass.
+Final grep gate run — all non-spec callers confirmed to be internal jiratoolkit.py
+pass-throughs already fixed in TASK-948. examples/tools/jiratool.py still uses
+legacy shape but is an example script outside production code.
+**Deviations from spec**: Method name in test scaffold was _resolve_existing_issue_key
+but actual method is _find_existing_issue — used the correct name. Test file uses
+importlib to load research.py directly due to broken Cython chain in test environment.

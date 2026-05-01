@@ -17118,7 +17118,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -17128,7 +17128,8 @@
       "parallelism_notes": "Reads the new envelope shape; must come after TASK-948.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-949-migrate-non-llm-callers.md"
+      "file": "sdd/tasks/completed/TASK-949-migrate-non-llm-callers.md",
+      "completed_at": "2026-05-01T16:43:26.088982+00:00"
     },
     {
       "id": "TASK-950",
