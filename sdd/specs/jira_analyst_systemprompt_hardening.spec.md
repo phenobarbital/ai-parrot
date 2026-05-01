@@ -4,7 +4,7 @@
 **Date**: 2026-05-01
 **Author**: Juan Rodríguez
 **Status**: draft
-**Target version**: 0.25.0
+**Target version**: next-version (TBD at merge time — not a forced minor bump)
 
 ---
 
@@ -81,6 +81,11 @@ silently.
 - Per-user prompt personalisation.
 - Migrating other agents (`JiraAnalyst` non-existent today; only
   `JiraSpecialist` and its subclasses are in scope).
+- Multi-language reply support. The new layers and sentinel phrases are
+  **English-only**; any non-English text present in the legacy
+  `JIRA_SPECIALIST_PROMPT` (greetings, form questions, cancellation text)
+  is rewritten in English during decomposition. Channel-specific
+  localisation is a future-FEAT concern.
 
 ---
 
@@ -241,6 +246,10 @@ async def jira_search_issues(
   *Mid-day blockers*, *Assignment intake*, *End-of-day wrap*, *Escalation*).
   Phase: `CONFIGURE`. Priority: `LayerPriority.PRE_INSTRUCTIONS + 5` so it
   renders after identity/security but before knowledge.
+  **Language**: the layer template is **English-only**, including all
+  reply templates and form questions. Any non-English phrasing in the
+  legacy `JIRA_SPECIALIST_PROMPT` (greetings, form prompts, cancellation
+  text) must be rewritten in English when copied into the layer.
 - **Depends on**: existing `PromptLayer`, `LayerPriority`, `RenderPhase`
   in `prompts/layers.py`.
 
@@ -251,13 +260,13 @@ async def jira_search_issues(
     labels, components, comments, history) MUST be quoted verbatim from a
     tool call made *in the current turn*.
   - On `status: "not_found"` or `status: "empty"` reply literally
-    `No encontré <KEY|JQL>.` and STOP. Do not retry the same tool with
-    cosmetic variations of the input.
+    `No results found for <KEY|JQL>.` and STOP. Do not retry the same
+    tool with cosmetic variations of the input.
   - Never reuse fields from a prior tool call's result for a different
     issue key. Re-call the tool.
   - Never invent IDs, dates, accountIds, displayNames, project keys.
-  - On a tool error / exception, reply literally `Hubo un error consultando
-    Jira: <message>.` and stop. Do NOT apologise + re-emit a fabricated
+  - On a tool error / exception, reply literally `Jira lookup failed:
+    <message>.` and stop. Do NOT apologise + re-emit a fabricated
     answer.
   - Forbid the "apology-then-fabricate" loop explicitly.
 - **Depends on**: Module 1 (registered alongside it).
@@ -313,13 +322,13 @@ async def jira_search_issues(
   mocked `JiraToolkit`:
   - **T1**: `jira_get_issue("NAV-99999")` returns
     `{"status": "not_found", ...}`. Assert the agent reply contains
-    `No encontré NAV-99999` and does not include any fabricated summary,
-    status, assignee, or date.
+    `No results found for NAV-99999` and does not include any fabricated
+    summary, status, assignee, or date.
   - **T2**: `jira_search_issues("project = NAV AND ...")` returns
     `{"status": "empty", ...}`. Assert the reply does not list any
     ticket key.
   - **T3**: `jira_get_issue` raises an unexpected `RuntimeError`. Assert
-    the reply contains `Hubo un error consultando Jira` and stops.
+    the reply contains `Jira lookup failed` and stops.
   - **T4 — apology-then-fabricate**: simulate a turn where the user
     contradicts the agent. Assert the agent re-calls the tool (visible
     in the mock) instead of producing a second answer with the same
@@ -346,7 +355,7 @@ async def jira_search_issues(
 | Test | Module | Description |
 |---|---|---|
 | `test_jira_workflow_layer_renders` | 1 | Layer renders all CONFIGURE vars; sections (cancellation, fresh-turn, standup) appear in the output. |
-| `test_jira_grounding_layer_renders` | 2 | Layer renders without missing-var errors; key phrases (`No encontré`, `Hubo un error consultando Jira`) appear verbatim. |
+| `test_jira_grounding_layer_renders` | 2 | Layer renders without missing-var errors; key phrases (`No results found for`, `Jira lookup failed`) appear verbatim. |
 | `test_get_domain_layer_jira_grounding` | 3 | `get_domain_layer("jira_grounding")` and `get_domain_layer("jira_workflow")` resolve. |
 | `test_jiraspecialist_uses_prompt_builder` | 4 | `JiraSpecialist().prompt_builder` is set; `JiraSpecialist().system_prompt_template` is unset or unused after configure(). |
 | `test_jiraspecialist_layers_include_jira_grounding` | 4 | The builder's `layer_names` contains both `jira_workflow` and `jira_grounding`. |
@@ -402,19 +411,21 @@ This feature is complete when ALL are true:
       legacy shape byte-for-byte.
 - [ ] **AC4** — When the toolkit returns `status="not_found"` for a
       requested key, the agent's reply contains the verbatim phrase
-      `No encontré <KEY>` and contains **no** fabricated summary,
-      status, assignee, reporter, dates, labels, components, accountId,
-      or comments. Verified by `test_grounding_not_found_no_fabrication`.
+      `No results found for <KEY>` and contains **no** fabricated
+      summary, status, assignee, reporter, dates, labels, components,
+      accountId, or comments. Verified by
+      `test_grounding_not_found_no_fabrication`.
 - [ ] **AC5** — When the toolkit returns `status="empty"` for a JQL
       search, the agent's reply contains no ticket keys. Verified by
       `test_grounding_empty_search_no_fabrication`.
 - [ ] **AC6** — When the toolkit raises an unexpected exception, the
-      agent reply contains `Hubo un error consultando Jira` and the
-      agent issues no further tool calls in that turn. Verified by
+      agent reply contains `Jira lookup failed` and the agent issues
+      no further tool calls in that turn. Verified by
       `test_grounding_toolkit_error_reports_error`.
-- [ ] **AC7** — On user contradiction ("ese ticket no se llama así"),
-      the agent re-calls the toolkit instead of producing a new answer
-      from memory. Verified by `test_grounding_correction_re_calls_tool`.
+- [ ] **AC7** — On user contradiction (e.g. "that ticket is not named
+      that"), the agent re-calls the toolkit instead of producing a new
+      answer from memory. Verified by
+      `test_grounding_correction_re_calls_tool`.
 - [ ] **AC8** — In a sequence of two lookups where the second returns
       `status="not_found"`, no field value from the first issue appears
       anywhere in the agent's reply about the second. Verified by
@@ -607,7 +618,9 @@ class JiraToolkit(...):
 - Inject the builder in `JiraSpecialist.__init__` via a kwarg the parent
   consumes (the `prompt_builder=` path already exists in `AbstractBot`).
 - Keep `injection_probability_threshold = 0.995` (`jira_specialist.py:497`)
-  — Spanish imperative phrasing trips the detector otherwise.
+  — pytector (deBERTa, English-trained) flags non-English imperative
+  phrasing as injection at p > 0.98 by default; the elevated threshold
+  is required and unrelated to this spec's English-only sentinel choice.
 - For envelope changes in `JiraToolkit`, gate them behind
   `envelope: bool = True` so concrete callers in `agents/`, the
   callbacks layer (`packages/ai-parrot/src/parrot/integrations/telegram/callbacks.py`)
@@ -662,14 +675,11 @@ class JiraToolkit(...):
       `JiraToolkit` callers in this spec, or strictly via a constructor
       flag the agent passes? — *Owner: Juan Rodríguez* (recommendation:
       constructor flag this round, global flip in a follow-up FEAT).
-- [ ] Should `JIRA_GROUNDING_LAYER` localise its sentinel phrases
-      (`No encontré`, `Hubo un error consultando Jira`) per channel
-      language, or are we fixed to Spanish for `Jirachi`? — *Owner: Juan
-      Rodríguez* (current default in legacy prompt is Spanish for
-      end-user replies).
-- [ ] Do we need a parallel `JIRA_GROUNDING_LAYER_EN` for English-language
-      deployments, or can a single layer use a `$reply_language` slot? —
-      *Owner: TBD*; can be deferred to implementation.
+- [ ] Are the English sentinel phrases (`No results found for <KEY>`,
+      `Jira lookup failed: <message>`) the final wording, or should they
+      be tuned for tone/length? — *Owner: Juan Rodríguez*. The grounding
+      layer ships English-only by design; channel-specific localisation
+      is explicitly out of scope.
 - [ ] After the migration, should we deprecate `JIRA_SPECIALIST_PROMPT`
       formally (raise on use, removal target version)? — *Owner: Juan
       Rodríguez*.
