@@ -276,10 +276,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (Claude Sonnet)
+**Date**: 2026-05-01
+**Notes**: Added imports for `PromptBuilder`, `JIRA_GROUNDING_LAYER`, and
+`JIRA_OPERATIONS_LAYER` to `jira_specialist.py`. Set `_prompt_builder` as a
+class attribute (built with `PromptBuilder.default().add(...).add(...)`). Added
+instance-level builder assignment in `__init__` to prevent shared-state issues
+between parent and clones via `clone_for_user()`. Kept `JIRA_SPECIALIST_PROMPT`
+with a deprecation comment. 11/11 integration tests pass; 40/40 total FEAT-139
+tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used explicit builder reconstruction in `__init__`
+rather than `.clone()` to ensure truly fresh (unconfigured) builder per
+instance. This is safer and avoids copying stale `_configured=True` state.

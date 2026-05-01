@@ -17179,7 +17179,7 @@
       "feature_id": "FEAT-139",
       "feature": "jira-analyst-systemprompt-hardening",
       "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -17190,7 +17190,8 @@
       "parallelism_notes": "Depends on both layer tasks; touches jira_specialist.py",
       "assigned_to": null,
       "started_at": "2026-05-01T00:20:09.112764+00:00",
-      "file": "sdd/tasks/active/TASK-952-jiraspecialist-promptbuilder-migration.md"
+      "file": "sdd/tasks/completed/TASK-952-jiraspecialist-promptbuilder-migration.md",
+      "completed_at": "2026-05-01T01:03:48.870069+00:00"
     },
     {
       "id": "TASK-953",
