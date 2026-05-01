@@ -17138,7 +17138,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -17149,7 +17149,8 @@
       "parallelism_notes": "End-to-end tests; need both the new agent (TASK-947) and the new envelope (TASK-948 via TASK-949).",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-950-jira-grounding-regression-tests.md"
+      "completed_at": "2026-05-01T17:30:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-950-jira-grounding-regression-tests.md"
     },
     {
       "id": "TASK-951",
