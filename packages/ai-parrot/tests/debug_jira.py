@@ -39,9 +39,13 @@ async def main():
         
         issue_key = "NAV-7010"
         print(f"Getting issue {issue_key} via toolkit...")
-        issue = await toolkit.jira_get_issue(issue_key)
-        print(f"Success! Issue Key: {issue.get('key')}")
-        print(f"Summary: {issue.get('fields', {}).get('summary')}")
+        result = await toolkit.jira_get_issue(issue_key)
+        if result["status"] != "ok":
+            print(f"Lookup failed: {result['status']} — {result['message']}")
+        else:
+            data = result["data"]
+            print(f"Success! Issue Key: {data.get('key')}")
+            print(f"Summary: {data.get('fields', {}).get('summary')}")
         
     except Exception as e:
         print(f"Toolkit Error: {e}")
