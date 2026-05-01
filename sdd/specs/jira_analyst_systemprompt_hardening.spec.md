@@ -290,8 +290,10 @@ async def jira_search_users(
 - **Path**: `packages/ai-parrot/src/parrot/bots/jira_specialist.py`
 - **Responsibility**:
   - Delete the class attribute `system_prompt_template`.
-  - Delete (or move to a private constant) the `JIRA_SPECIALIST_PROMPT`
-    string literal once `JIRA_WORKFLOW_LAYER` is verified equivalent.
+  - **Delete the `JIRA_SPECIALIST_PROMPT` string literal entirely**
+    (lines 152-461) once `JIRA_WORKFLOW_LAYER` is verified equivalent.
+    No `DeprecationWarning` shim, no compatibility re-export — the
+    symbol is removed in the same commit.
   - In `__init__`, install the layered `PromptBuilder` via the
     `prompt_builder` kwarg before `super().__init__()`.
   - Verify `Jirachi` (the public concrete subclass) still works without
@@ -436,7 +438,9 @@ This feature is complete when ALL are true:
 - [ ] **AC1** — `JiraSpecialist` no longer references
       `system_prompt_template`; its prompt is assembled by
       `PromptBuilder` with at least `jira_workflow` and `jira_grounding`
-      layers present in `prompt_builder.layer_names`.
+      layers present in `prompt_builder.layer_names`. The
+      `JIRA_SPECIALIST_PROMPT` symbol is fully removed from
+      `jira_specialist.py` and a repo-wide grep returns zero references.
 - [ ] **AC2** — `JIRA_WORKFLOW_LAYER` and `JIRA_GROUNDING_LAYER` are
       exported from `parrot.bots.prompts` and registered in
       `_DOMAIN_LAYERS`.
@@ -746,9 +750,12 @@ class JiraToolkit(...):
       and acceptance criteria AC4 / AC6. The grounding layer ships
       English-only; channel-specific localisation is explicitly out of
       scope.
-- [ ] After the migration, should we deprecate `JIRA_SPECIALIST_PROMPT`
+- [x] After the migration, should we deprecate `JIRA_SPECIALIST_PROMPT`
       formally (raise on use, removal target version)? — *Owner: Juan
-      Rodríguez*.
+      Rodríguez*: **delete immediately**. Once `JIRA_WORKFLOW_LAYER`
+      carries the verified-equivalent text, the literal is removed in
+      the same change-set as Module 4 — no `DeprecationWarning`, no
+      grace period. Repo-wide grep confirms no external import.
 
 ---
 
