@@ -1,6 +1,6 @@
-# TASK-937: Refresh OpenAIModel enum + add DEPRECATIONS registry and helpers
+# TASK-944: Refresh OpenAIModel enum + add DEPRECATIONS registry and helpers
 
-**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-138 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: high
@@ -12,7 +12,7 @@
 
 ## Context
 
-This is the foundational task for FEAT-137. It rewrites
+This is the foundational task for FEAT-138. It rewrites
 `packages/ai-parrot/src/parrot/models/openai.py` to:
 
 1. Mirror the upstream "current" catalog snapshot fetched on 2026-04-29
@@ -44,10 +44,10 @@ Implements §2 "Architectural Design" and Module 1 of §3.
 - Add `__all__` listing the public exports.
 
 **NOT in scope**:
-- Touching `parrot/clients/gpt.py` (TASK-938 / TASK-939).
+- Touching `parrot/clients/gpt.py` (TASK-945 / TASK-946).
 - Touching `parrot/handlers/{chat,llm}.py` or `parrot/loaders/abstract.py`
-  (TASK-940 / TASK-941).
-- Writing the test file (TASK-942).
+  (TASK-947 / TASK-948).
+- Writing the test file (TASK-949).
 - Removing/renaming any consumers of dropped enum members — those tasks
   rely on this one being merged first.
 
@@ -319,7 +319,7 @@ __all__ = [
 
 - `packages/ai-parrot/src/parrot/models/openai.py` — current 38-line file (will be replaced).
 - `packages/ai-parrot/src/parrot/models/responses.py` — example of Pydantic `BaseModel` usage in this directory.
-- `packages/ai-parrot/src/parrot/clients/gpt.py:38` — current consumer (will be edited in TASK-938/915).
+- `packages/ai-parrot/src/parrot/clients/gpt.py:38` — current consumer (will be edited in TASK-945/915).
 
 ---
 
@@ -343,7 +343,7 @@ __all__ = [
 
 ## Test Specification
 
-Tests are out of scope for this task and will be added by TASK-942.
+Tests are out of scope for this task and will be added by TASK-949.
 However, the implementing agent SHOULD do a quick smoke check via the
 Python REPL to confirm imports + helper return values before marking
 the task done.

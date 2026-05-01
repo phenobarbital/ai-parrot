@@ -1,18 +1,18 @@
-# TASK-938: Add `_normalize_model` chokepoint that emits one-shot DeprecationWarning
+# TASK-945: Add `_normalize_model` chokepoint that emits one-shot DeprecationWarning
 
-**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-138 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-937
+**Depends-on**: TASK-944
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Once TASK-937 lands, `parrot.models.openai` exposes `is_deprecated`,
+Once TASK-944 lands, `parrot.models.openai` exposes `is_deprecated`,
 `get_shutoff_date`, and `resolve_alias`. This task wires them into
 `OpenAIClient` so any caller passing a deprecated model ID receives a
 one-shot Python `DeprecationWarning` (not a logger message — that
@@ -39,16 +39,16 @@ Implements §2 "Architectural Design — Component Diagram" and Module 2 of §3.
   - `ask` (line 598)
   - `responses` (line 1111)
   - the method at line 1410 (legacy `model: str = "gpt-4-turbo"` — replace
-    default in TASK-939, but already wire `_normalize_model` here)
+    default in TASK-946, but already wire `_normalize_model` here)
   - lines 1543, 1594, 1651, 1694, 1741, 1806
 
 **NOT in scope**:
-- Changing the default values of any `model=` parameter (TASK-939).
+- Changing the default values of any `model=` parameter (TASK-946).
 - Refreshing `RESPONSES_ONLY_MODELS` / `STRUCTURED_OUTPUT_COMPATIBLE_MODELS`
-  (TASK-939).
+  (TASK-946).
 - Touching `handlers/`, `loaders/`, or any file other than
-  `parrot/clients/gpt.py` (TASK-940 / TASK-941).
-- Writing tests (TASK-942).
+  `parrot/clients/gpt.py` (TASK-947 / TASK-948).
+- Writing tests (TASK-949).
 
 ---
 
@@ -68,7 +68,7 @@ Implements §2 "Architectural Design — Component Diagram" and Module 2 of §3.
 # already present at packages/ai-parrot/src/parrot/clients/gpt.py:38
 from ..models.openai import OpenAIModel
 
-# UPDATE this import to also bring in the new helpers from TASK-937:
+# UPDATE this import to also bring in the new helpers from TASK-944:
 from ..models.openai import (
     OpenAIModel,
     is_deprecated,
@@ -86,9 +86,9 @@ import warnings
 # packages/ai-parrot/src/parrot/clients/gpt.py
 class OpenAIClient(AbstractClient):
     client_type: str = 'openai'                   # line 93
-    model: str = OpenAIModel.GPT4_TURBO.value     # line 94 — TASK-939 will change
+    model: str = OpenAIModel.GPT4_TURBO.value     # line 94 — TASK-946 will change
     client_name: str = 'openai'                   # line 95
-    _default_model: str = 'gpt-4o-mini'           # line 96 — TASK-939 will change
+    _default_model: str = 'gpt-4o-mini'           # line 96 — TASK-946 will change
     _fallback_model: str = 'gpt-4.1-nano'         # line 97
     _lightweight_model: str = "gpt-4.1"           # line 98
 
@@ -227,7 +227,7 @@ class OpenAIClient(AbstractClient):
 
 ## Test Specification
 
-Tests live in TASK-942, but smoke-check before marking done:
+Tests live in TASK-949, but smoke-check before marking done:
 
 ```bash
 source .venv/bin/activate
@@ -254,7 +254,7 @@ print('OK')
 When you pick up this task:
 
 1. Read the spec at `sdd/specs/openai-model-deprecation.spec.md`.
-2. Verify TASK-937 is in `sdd/tasks/completed/` before starting.
+2. Verify TASK-944 is in `sdd/tasks/completed/` before starting.
 3. Verify the codebase contract by re-running the `grep` command in the
    call-site map; line numbers may have shifted.
 4. Update `sdd/tasks/.index.json` → `"in-progress"`.
