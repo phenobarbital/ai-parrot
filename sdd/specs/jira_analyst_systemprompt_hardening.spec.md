@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-138
 **Date**: 2026-05-01
 **Author**: Juan Rodríguez
-**Status**: draft
+**Status**: approved
 **Target version**: next-version (TBD at merge time — not a forced minor bump)
 
 ---
