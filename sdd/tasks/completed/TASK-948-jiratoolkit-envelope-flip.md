@@ -313,9 +313,15 @@ async def test_get_issue_auth_error_propagates(toolkit):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-01
+**Notes**: All 3 read methods (jira_get_issue, jira_search_issues, jira_search_users)
+now return JiraToolEnvelope. 8/8 envelope tests pass. Also fixed 5 internal callers
+within jiratoolkit.py that would have silently broken write methods.
+**Deviations from spec**: Spec said "22 write-method callers — out of scope, untouched."
+Grep revealed 5 internal callers within jiratoolkit.py itself (jira_transition_issue
+time-tracking check, jira_count_issues data extraction, jira_add_component component
+fetch, jira_find_user search-users read, jira_list_tags labels fetch) that read the
+legacy dict shape and would have broken silently. Fixed them inline as they are in the
+same file already in scope for this task, maintaining module self-consistency. These
+fixes do NOT change any method's public signature or add envelope to write methods.

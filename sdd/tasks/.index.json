@@ -17100,7 +17100,7 @@
       "feature_id": "FEAT-138",
       "feature": "jira_analyst_systemprompt_hardening",
       "spec": "sdd/specs/jira_analyst_systemprompt_hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -17108,7 +17108,8 @@
       "parallelism_notes": "Different package (ai-parrot-tools). Independent of layer stack tasks; can run in parallel with TASK-944/945/946/947.",
       "assigned_to": null,
       "started_at": "2026-05-01T15:57:38.130824+00:00",
-      "file": "sdd/tasks/active/TASK-948-jiratoolkit-envelope-flip.md"
+      "file": "sdd/tasks/completed/TASK-948-jiratoolkit-envelope-flip.md",
+      "completed_at": "2026-05-01T16:35:56.261803+00:00"
     },
     {
       "id": "TASK-949",
