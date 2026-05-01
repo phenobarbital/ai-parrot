@@ -543,13 +543,19 @@ class ResearchNode(Node):
         # 1. Caller override.
         if brief.existing_issue_key:
             try:
-                await self._jira.jira_get_issue(brief.existing_issue_key)
-                return brief.existing_issue_key
+                result = await self._jira.jira_get_issue(brief.existing_issue_key)
             except Exception as exc:  # noqa: BLE001 - degrade to lookup
                 self.logger.warning(
                     "existing_issue_key=%r could not be fetched (%s); "
                     "falling back to summary search",
                     brief.existing_issue_key, exc,
+                )
+            else:
+                if result["status"] == "ok":
+                    return brief.existing_issue_key
+                self.logger.warning(
+                    "existing_issue_key=%r returned %s; falling back",
+                    brief.existing_issue_key, result["status"],
                 )
 
         # 2. Summary search inside the configured project.
@@ -568,24 +574,20 @@ class ResearchNode(Node):
             f"AND statusCategory != Done "
             f"ORDER BY created DESC"
         )
-        try:
-            result = await self._jira.jira_search_issues(
-                jql=jql,
-                max_results=10,
-                fields="key,summary,status",
-            )
-        except Exception as exc:  # noqa: BLE001 - degrade to create-new
+        result = await self._jira.jira_search_issues(
+            jql=jql,
+            max_results=10,
+            fields="key,summary,status",
+        )
+        if result["status"] == "empty":
+            issues = []
+        elif result["status"] == "ok":
+            issues = result["data"]["issues"]
+        else:
             self.logger.warning(
-                "Jira lookup failed (%s); will create a new ticket", exc,
+                "Jira lookup failed: %s", result["message"],
             )
             return None
-
-        issues = (
-            result.get("issues")
-            or result.get("results")
-            or result.get("data")
-            or []
-        )
         # JQL `~` is fuzzy — verify the exact summary post-fetch so we
         # don't mistakenly merge unrelated tickets that share keywords.
         exact_matches = [
