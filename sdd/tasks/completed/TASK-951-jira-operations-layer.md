@@ -240,10 +240,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (Claude Sonnet)
+**Date**: 2026-05-01
+**Notes**: Added `JIRA_OPERATIONS_LAYER` as a `PromptLayer` in `domain_layers.py`
+with `name="jira_operations"`, `priority=LayerPriority.CUSTOM` (80),
+`phase=RenderPhase.CONFIGURE`. The full `JIRA_SPECIALIST_PROMPT` text was
+embedded verbatim in the template wrapped in `<jira_operations>...</jira_operations>`.
+No `$word` template conflicts were found in the prompt text. Registered as
+`"jira_operations"` in `_DOMAIN_LAYERS`. 16/16 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
