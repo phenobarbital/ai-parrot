@@ -17200,7 +17200,7 @@
       "feature_id": "FEAT-139",
       "feature": "jira-analyst-systemprompt-hardening",
       "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -17208,7 +17208,8 @@
       "parallelism_notes": "Independent of prompt layer tasks — touches jiratoolkit.py only (different package)",
       "assigned_to": null,
       "started_at": "2026-05-01T00:20:09.112764+00:00",
-      "file": "sdd/tasks/active/TASK-953-jiratoolkit-error-hardening.md"
+      "completed_at": "2026-05-01T02:15:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-953-jiratoolkit-error-hardening.md"
     }
   ]
 }
