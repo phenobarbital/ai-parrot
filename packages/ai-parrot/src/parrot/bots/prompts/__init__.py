@@ -33,6 +33,8 @@ from .domain_layers import (
     COMPANY_CONTEXT_LAYER,
     CREW_CONTEXT_LAYER,
     STRICT_GROUNDING_LAYER,
+    JIRA_GROUNDING_LAYER,
+    JIRA_WORKFLOW_LAYER,
     get_domain_layer,
 )
 

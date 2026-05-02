@@ -331,9 +331,29 @@ The tests ARE the specification. Run them.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) via /sdd-start
+**Date**: 2026-05-01
+**Notes**: 33 unit tests + 2 integration tests landed and passing
+(`pytest tests/unit/models/ tests/integration/test_openai_deprecation_warning.py` →
+35 passed in 2.34s). Implementation in worktree commit `3f4e15c6` on
+branch `feat-137-openai-model-deprecation`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **Test pattern relaxed.** `test_enum_contains_only_current_models` no
+   longer asserts that current enum values are absent from any
+   `DeprecationInfo.alias` field. Spec §7 explicitly keeps
+   `gpt-4.1-nano` as a current member while the dated source
+   `gpt-4.1-nano-2025-04-14` aliases it — the implementation-note
+   pattern (every-alias check) was overstrict.
+2. **Helper semantics tightened.** `is_deprecated` / `get_shutoff_date`
+   now skip alias-matches when the alias itself is a current
+   `OpenAIModel` value, so `is_deprecated("gpt-4.1-nano")` returns
+   `False` (it remains alive upstream). Direct keys and bare-alias dead
+   families are still flagged. Added explicit
+   `test_is_deprecated_skips_alive_alias` regression test.
+3. **TASK-940 residual cleanup.** Migrated two further
+   `kwargs.get('model_name', 'gpt-3.5-turbo')` fallbacks in
+   `parrot/loaders/abstract.py:220, 242` to `'gpt-4.1-mini'`. Without
+   this, the §4 integration test "no internal call site uses deprecated
+   ID" would fail. Bundled into TASK-942 because it surfaced through
+   the test-suite acceptance gate.
