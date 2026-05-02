@@ -9,6 +9,7 @@ from .bots import (
     PromptCategory,
     create_bot,
 )
+from .users_bots import UserBotModel
 from .understanding import (
     UnderstandingRequest,
     UnderstandingResponse,
@@ -26,6 +27,7 @@ __all__ = [
     "PromptLibrary",
     "PromptCategory",
     "create_bot",
+    "UserBotModel",
     "UnderstandingRequest",
     "UnderstandingResponse",
     "media_type_from_filename",

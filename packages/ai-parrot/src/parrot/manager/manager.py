@@ -45,7 +45,9 @@ from ..handlers.dashboard_handler import (
     DashboardTabHandler,
     _ensure_dashboard_indexes,
 )
-from ..handlers.models import BotModel
+from ..handlers.models import BotModel, UserBotModel
+# Per-user bot HTTP handler (PUT/PATCH/GET/DELETE)
+from ..handlers.agents.users import UserAgentHandler
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
@@ -679,6 +681,107 @@ class BotManager:
         # Clean up expiration tracking if it exists (but keep class definition)
         self._bot_expiration.pop(name, None)
 
+    # ------------------------------------------------------------------
+    # User-defined bots (per-user, session-cached)
+    # ------------------------------------------------------------------
+
+    USER_BOTS_SESSION_KEY = "_user_bots"
+
+    async def _fetch_user_bot_model(
+        self,
+        user_id: int,
+        chatbot_id: str,
+    ) -> Optional[UserBotModel]:
+        """Load a single ``UserBotModel`` row scoped to ``(user_id, chatbot_id)``."""
+        db = self.app["database"]
+        async with await db.acquire() as conn:
+            UserBotModel.Meta.connection = conn
+            try:
+                return await UserBotModel.get(
+                    user_id=user_id, chatbot_id=chatbot_id
+                )
+            except NoDataFound:
+                return None
+
+    async def _build_user_bot_instance(
+        self,
+        bot_model: UserBotModel,
+    ) -> AbstractBot:
+        """Instantiate and ``configure()`` a bot from a ``UserBotModel`` row."""
+        kwargs = bot_model.to_bot_kwargs()
+        # User bots always use BasicBot — they don't carry a bot_class column.
+        bot = BasicBot(**kwargs)
+        bot.model_id = bot_model.chatbot_id
+        # Apply prompt-layer mutations declared in prompt_config (mirrors system bots).
+        prompt_config_dict = bot_model.prompt_config or {}
+        with contextlib.suppress(Exception):
+            self._apply_prompt_config(bot, prompt_config_dict)
+        await bot.configure(self.app)
+        return bot
+
+    async def get_user_bot(
+        self,
+        request: web.Request,
+        chatbot_id: Any,
+    ) -> Optional[AbstractBot]:
+        """Resolve a user-defined bot via session cache → DB load → instantiate.
+
+        Order of resolution:
+          1. Look in ``request.session[USER_BOTS_SESSION_KEY][chatbot_id]``.
+          2. On miss, query ``navigator.users_bots`` constrained by
+             ``(user_id, chatbot_id)`` from the authenticated session.
+          3. Build the bot instance, cache it on the session, return it.
+
+        Returns ``None`` when the user is not authenticated or no row matches.
+        """
+        try:
+            from navigator_session import get_session  # noqa: PLC0415
+        except ImportError:
+            return None
+
+        try:
+            session = request.session or await get_session(request)
+        except AttributeError:
+            session = await get_session(request)
+        if session is None:
+            return None
+        user_id = session.get("user_id")
+        if not user_id:
+            return None
+
+        cache = session.setdefault(self.USER_BOTS_SESSION_KEY, {})
+        cid = str(chatbot_id)
+        cached = cache.get(cid)
+        if cached is not None:
+            return cached
+
+        bot_model = await self._fetch_user_bot_model(user_id, cid)
+        if bot_model is None:
+            return None
+        try:
+            bot = await self._build_user_bot_instance(bot_model)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "Failed to build user bot %s for user %s: %s",
+                cid,
+                user_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+        cache[cid] = bot
+        return bot
+
+    @classmethod
+    def invalidate_user_bot(cls, session: Any, chatbot_id: Any) -> None:
+        """Drop a user-bot from the session cache (used after PATCH/DELETE)."""
+        if session is None:
+            return
+        cache = session.get(cls.USER_BOTS_SESSION_KEY)
+        if not cache:
+            return
+        cache.pop(str(chatbot_id), None)
+
     def get_bots(self) -> Dict[str, AbstractBot]:
         """Get all Bots declared on Manager."""
         return self._bots
@@ -886,6 +989,15 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/chat/{agent_id}/{method_name}',
             AgentTalk
+        )
+        # User-defined bots: PUT/PATCH/GET/DELETE
+        router.add_view(
+            '/api/v1/user_agents',
+            UserAgentHandler
+        )
+        router.add_view(
+            '/api/v1/user_agents/{chatbot_id}',
+            UserAgentHandler
         )
         # Data Analyst creation route:
         router.add_view(
