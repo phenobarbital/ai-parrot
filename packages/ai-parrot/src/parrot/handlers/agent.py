@@ -6,7 +6,7 @@ with support for multiple output modes and MCP server integration.
 """
 from __future__ import annotations
 import contextlib
-from typing import Dict, Any, List, Union, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Tuple, Union, TYPE_CHECKING
 import tempfile
 import os
 import time
@@ -905,38 +905,63 @@ class AgentTalk(BaseView):
     async def _get_agent(self, data: Dict[str, Any]) -> Union[AbstractBot, web.Response]:
         """
         Get the agent instance from BotManager.
+
+        Resolution order:
+          1. Per-user bot — session cache (set by UserAgentHandler) or DB
+             lookup via ``BotManager.get_user_bot``.
+          2. System bot — registry / DB via ``BotManager.get_bot``.
+
+        On success returns the bot instance.  The caller can detect a
+        user-bot result by checking ``agent.chatbot_id`` against the
+        session's ``BotManager.USER_BOTS_SESSION_KEY`` map (see
+        :meth:`_resolve_bot`).
         """
-        # Get BotManager
+        bot, _is_user = await self._resolve_bot(data)
+        if isinstance(bot, web.Response):
+            return bot
+        if bot is None:
+            agent_name = self._get_agent_name(data) or "<unknown>"
+            return self.error(f"Agent '{agent_name}' not found.", status=404)
+        return bot
+
+    async def _resolve_bot(
+        self,
+        data: Dict[str, Any],
+    ) -> Tuple[Optional[AbstractBot], bool]:
+        """Resolve a bot, preferring user-defined bots, falling back to system bots.
+
+        Returns ``(bot, is_user_bot)``.  ``bot`` may also be a ``web.Response``
+        when an early-return error condition is hit (e.g. BotManager missing).
+        """
         manager: BotManager = self.request.app.get('bot_manager')
         if not manager:
             return self.json_response(
-                {"error": "BotManager is not installed."},
-                status=500
-            )
+                {"error": "BotManager is not installed."}, status=500,
+            ), False
 
-        # Extract agent name
         agent_name = self._get_agent_name(data)
         if not agent_name:
-            return self.error(
-                "Missing Agent Name",
-                status=400
-            )
+            return self.error("Missing Agent Name", status=400), False
 
-        # Get the agent
+        # 1. Per-user bot — session cache or DB lookup.
+        try:
+            user_bot = await manager.get_user_bot(self.request, agent_name)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "get_user_bot failed for %s, falling back to system: %s",
+                agent_name, exc,
+            )
+            user_bot = None
+        if user_bot is not None:
+            return user_bot, True
+
+        # 2. System bot.
         try:
             agent: AbstractBot = await manager.get_bot(agent_name)
-            if not agent:
-                return self.error(
-                    f"Agent '{agent_name}' not found.",
-                    status=404
-                )
-            return agent
-        except Exception as e:
-            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
-            return self.error(
-                f"Error retrieving agent: {e}",
-                status=500
-            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(f"Error retrieving agent {agent_name}: {exc}")
+            return self.error(f"Error retrieving agent: {exc}", status=500), False
+        return agent, False
 
     async def _setup_agent_tools(
         self,
@@ -1282,14 +1307,21 @@ class AgentTalk(BaseView):
         method_name = (
             method_name or data.pop('method_name', None) or qs.get('method_name')
         )
-        # Get the agent
-        agent = await self._get_agent(data)
-        if isinstance(agent, web.Response):
-            return agent
+        # Get the agent — user bots win over system bots when both could match.
+        agent_or_response, is_user_bot = await self._resolve_bot(data)
+        if isinstance(agent_or_response, web.Response):
+            return agent_or_response
+        if agent_or_response is None:
+            agent_name = self._get_agent_name(data) or "<unknown>"
+            return self.error(f"Agent '{agent_name}' not found.", status=404)
+        agent: AbstractBot = agent_or_response
 
-        # Load user's tool_manager from session (configured via PATCH)
+        # Load user's tool_manager from session (configured via PATCH).
+        # User-defined bots own their own ToolManager in the session cache
+        # (built when the bot was instantiated from the DB row), so the
+        # per-system-bot ToolManager swap is not applicable to them.
         user_tool_manager = None
-        if request_session:
+        if request_session and not is_user_bot:
             session_key = f"{agent.name}_tool_manager"
             user_tool_manager = request_session.get(session_key)
 
