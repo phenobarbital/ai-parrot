@@ -11200,7 +11200,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11210,7 +11210,7 @@
       "parallelism_notes": "Requires TASK-628; targets plan.py (different file from TASK-629)",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-630-plan-py-illumination-orchestration.md"
+      "file": "sdd/tasks/completed/TASK-630-plan-py-illumination-orchestration.md"
     },
     {
       "id": "TASK-631",
@@ -11240,7 +11240,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11253,7 +11253,7 @@
       "parallelism_notes": "All implementation tasks (including TASK-633 FEAT-090 fixes) must be done before tests",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-632-unit-tests-product-on-shelves-illumination.md"
+      "file": "sdd/tasks/completed/TASK-632-unit-tests-product-on-shelves-illumination.md"
     },
     {
       "id": "TASK-633",
@@ -11538,7 +11538,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11549,7 +11549,7 @@
       "parallelism_notes": "Needs the type and registration complete to test integration.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-658-tests-endcap-backlit.md"
+      "file": "sdd/tasks/completed/TASK-658-tests-endcap-backlit.md"
     },
     {
       "id": "TASK-659",
@@ -11715,7 +11715,8 @@
       "title": "Baseline regression tests for NavigatorToolkit",
       "priority": "high",
       "effort": "M",
-      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
+      "file": "sdd/tasks/completed/TASK-746-feat-106-tests.md",
+      "status": "done"
     },
     {
       "id": "TASK-756",
@@ -12486,7 +12487,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -12494,7 +12495,7 @@
       "parallelism_notes": "Base-class refactor; every other task depends on this. Sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-795-abstract-client-per-loop-cache.md"
+      "file": "sdd/tasks/completed/TASK-795-abstract-client-per-loop-cache.md"
     },
     {
       "id": "TASK-796",
@@ -12503,7 +12504,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12513,7 +12514,7 @@
       "parallelism_notes": "Uses new base API from TASK-795; same worktree, sequential.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-796-google-genai-migrate-to-base-hook.md"
+      "file": "sdd/tasks/completed/TASK-796-google-genai-migrate-to-base-hook.md"
     },
     {
       "id": "TASK-797",
@@ -12522,7 +12523,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12532,7 +12533,7 @@
       "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
+      "file": "sdd/tasks/completed/TASK-797-grok-strip-self-caching.md"
     },
     {
       "id": "TASK-798",
@@ -12541,7 +12542,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -12551,7 +12552,7 @@
       "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
+      "file": "sdd/tasks/completed/TASK-798-subclass-audit-ensure-client.md"
     },
     {
       "id": "TASK-799",
@@ -12560,7 +12561,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -12570,7 +12571,7 @@
       "parallelism_notes": "Docstring-only audit in a single file; sequential.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-799-gemini-live-audit-docstring.md"
+      "file": "sdd/tasks/completed/TASK-799-gemini-live-audit-docstring.md"
     },
     {
       "id": "TASK-800",
@@ -12579,7 +12580,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12591,7 +12592,7 @@
       "parallelism_notes": "Exercises base + subclass behaviour; must run after the three code tasks.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-800-unit-tests-per-loop-cache.md"
+      "file": "sdd/tasks/completed/TASK-800-unit-tests-per-loop-cache.md"
     },
     {
       "id": "TASK-801",
@@ -12600,7 +12601,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12610,7 +12611,7 @@
       "parallelism_notes": "Builds on TASK-800 fixtures; runs last (before docs).",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-801-integration-cross-loop-tests.md"
+      "file": "sdd/tasks/completed/TASK-801-integration-cross-loop-tests.md"
     },
     {
       "id": "TASK-802",
@@ -12619,7 +12620,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12630,7 +12631,7 @@
       "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
+      "file": "sdd/tasks/completed/TASK-802-docs-per-loop-cache.md"
     },
     {
       "id": "TASK-803",
@@ -14266,7 +14267,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14277,7 +14278,7 @@
       "parallelism_notes": "Touches only milvus.py; can run concurrently with TASK-863/865/866 in separate worktrees once TASK-862 lands.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-864-milvus-wiring.md"
+      "file": "sdd/tasks/completed/TASK-864-milvus-wiring.md"
     },
     {
       "id": "TASK-865",
@@ -14286,7 +14287,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14297,7 +14298,7 @@
       "parallelism_notes": "Touches only faiss_store.py; mutually independent of TASK-863/864/866.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-865-faiss-wiring.md"
+      "file": "sdd/tasks/completed/TASK-865-faiss-wiring.md"
     },
     {
       "id": "TASK-866",
@@ -14306,7 +14307,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14317,7 +14318,7 @@
       "parallelism_notes": "Touches only arango.py; mutually independent of TASK-863/864/865.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-866-arango-wiring.md"
+      "file": "sdd/tasks/completed/TASK-866-arango-wiring.md"
     },
     {
       "id": "TASK-867",
@@ -14326,7 +14327,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14336,7 +14337,7 @@
       "parallelism_notes": "Audits postgres.py SearchResult constructions and asserts header round-trip; conflicts with TASK-863's edits to the same file.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-867-searchresult-header-propagation.md"
+      "file": "sdd/tasks/completed/TASK-867-searchresult-header-propagation.md"
     },
     {
       "id": "TASK-868",
@@ -14345,7 +14346,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14355,7 +14356,7 @@
       "parallelism_notes": "New file under scripts/; can run concurrently with TASK-867/869 once TASK-863 lands.",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-868-recompute-migration-script.md"
+      "file": "sdd/tasks/completed/TASK-868-recompute-migration-script.md"
     },
     {
       "id": "TASK-869",
@@ -14364,7 +14365,7 @@
       "feature_id": "FEAT-127",
       "feature": "contextual-embedding-headers",
       "spec": "sdd/specs/contextual-embedding-headers.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14374,7 +14375,7 @@
       "parallelism_notes": "Docs only; can run concurrently with TASK-867/868 once the API surface is stable (post TASK-863).",
       "assigned_to": null,
       "started_at": "2026-04-27T01:59:56.384054+00:00",
-      "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
+      "file": "sdd/tasks/completed/TASK-869-contextual-embedding-docs.md"
     },
     {
       "id": "TASK-904",
