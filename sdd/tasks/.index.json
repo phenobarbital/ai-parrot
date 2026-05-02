@@ -14377,40 +14377,6 @@
       "file": "sdd/tasks/active/TASK-869-contextual-embedding-docs.md"
     },
     {
-      "id": "TASK-894",
-      "slug": "att-concierge-bot-migration-sql",
-      "title": "Write SQL migration to insert att_concierge bot record",
-      "feature_id": "FEAT-131",
-      "feature": "att-concierge-bot-record",
-      "spec": "sdd/specs/att-concierge-bot-record.spec.md",
-      "status": "pending",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-894-att-concierge-bot-migration-sql.md",
-      "created_at": "2026-04-28T17:00:00.000000+00:00"
-    },
-    {
-      "id": "TASK-895",
-      "slug": "att-concierge-bot-migration-verify",
-      "title": "Verify att_concierge bot record migration and document acceptance criteria",
-      "feature_id": "FEAT-131",
-      "feature": "att-concierge-bot-record",
-      "spec": "sdd/specs/att-concierge-bot-record.spec.md",
-      "status": "pending",
-      "priority": "medium",
-      "effort": "S",
-      "depends_on": [
-        "TASK-894"
-      ],
-      "parallel": false,
-      "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-895-att-concierge-bot-migration-verify.md",
-      "created_at": "2026-04-28T17:00:00.000000+00:00"
-    },
-    {
       "id": "TASK-904",
       "slug": "creation-sql-reranker-and-parent-columns",
       "title": "Add reranker_config + parent_searcher_config columns to navigator.ai_bots",
