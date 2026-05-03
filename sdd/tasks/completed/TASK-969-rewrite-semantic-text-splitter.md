@@ -480,9 +480,11 @@ for c in typed:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Rewrote semantic.py as specified. Final file is 99 LOC (target ≤100).
+Key finding confirmed in TASK-967: chunk_indices() in v0.30.1 returns char offsets,
+not byte offsets. The _byte_to_char helper handles this transparently. All smoke
+checks pass including AutoPay regression, non-ASCII round-trip, metadata contract,
+and chunk_id format.
+**Deviations from spec**: none
