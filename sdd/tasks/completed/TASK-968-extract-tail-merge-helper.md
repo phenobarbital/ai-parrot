@@ -352,9 +352,11 @@ class TestEnforceMinChunkSize:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Extracted the tail-merge logic from `create_chunks` into
+`_enforce_min_chunk_size` exactly as specified. Also removed the pre-existing
+unused `import re` from `base.py` to satisfy ruff linting. All 6 tests pass.
+**Deviations from spec**: Minor — also removed unused `import re` (pre-existing
+lint issue in base.py); this is outside strict task scope but necessary for
+the linting acceptance criterion.
