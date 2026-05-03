@@ -2,7 +2,7 @@
 legacy create_chunks path (must remain byte-identical post-refactor)."""
 
 import pytest
-from parrot_loaders.splitters.base import BaseTextSplitter, TextChunk
+from parrot_loaders.splitters.base import BaseTextSplitter
 
 
 class _DummySplitter(BaseTextSplitter):
