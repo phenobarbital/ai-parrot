@@ -181,9 +181,11 @@ print('MarkdownSplitter ok:', len(md_chunks), 'chunks')
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Added `semantic-text-splitter>=0.30,<1.0` to dependencies. Installed
+version 0.30.1. Smoke test confirms `TextSplitter` and `MarkdownSplitter` work.
+Key finding: `chunk_indices()` returns character offsets (not byte offsets) in
+v0.30.1 — the `_byte_to_char` conversion in subsequent tasks should use the
+offset directly as a char position.
+**Deviations from spec**: none
