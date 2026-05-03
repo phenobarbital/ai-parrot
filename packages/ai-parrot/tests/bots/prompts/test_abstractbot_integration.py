@@ -221,7 +221,9 @@ class TestBuildPromptFromLayers:
     async def test_rag_preset_builds_one_grounded_system_prompt(self, mock_dv):
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="rag")
-        bot.backstory = "AT&T support KB for residential fiber plans only."
+        # capabilities now drives scope; backstory stays as persona only.
+        bot.capabilities = "AT&T support KB for residential fiber plans only."
+        bot.backstory = "Friendly customer-service voice for residential users."
         await bot._configure_prompt_builder()
         prompt = bot._build_prompt(
             vector_context="Fiber 300 costs $55/mo.",
@@ -233,8 +235,10 @@ class TestBuildPromptFromLayers:
         assert "<rag_policy>" in prompt
         assert "<tool_policy>" not in prompt
         assert "$extra_rag_rules" not in prompt
+        # New order: <rag_policy> precedes scope and chunks so the model
+        # reads the rules BEFORE forming an opinion from the chunks.
+        assert prompt.index("</rag_policy>") < prompt.index("</knowledge_scope>")
         assert prompt.index("</knowledge_scope>") < prompt.index("</knowledge_context>")
-        assert prompt.index("</knowledge_context>") < prompt.index("</rag_policy>")
 
 
 class TestLegacyPathUnchanged:

@@ -74,7 +74,7 @@ class UnderstandingRequest(BaseModel):
     )
     model: Optional[str] = Field(
         default=None,
-        description="GoogleModel override (e.g. 'gemini-2.0-flash').",
+        description="GoogleModel override (e.g. 'gemini-3.1-flash-lite-preview').",
     )
     detect_objects: bool = Field(
         default=True,

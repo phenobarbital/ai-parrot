@@ -37,6 +37,9 @@ With a ScrapingPlan::
 """
 from __future__ import annotations
 
+import html as _html
+import json
+import re
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -481,6 +484,183 @@ class WebScrapingLoader(AbstractLoader):
             )
             return None, {}
 
+    # ── JSON-LD FAQPage extraction ─────────────────────────────────────
+    #
+    # Many marketing/support sites embed structured FAQ data inside a
+    # ``<script type="application/ld+json">`` block following the
+    # ``schema.org/FAQPage`` schema (Google rich-results requirement).
+    # This is a deterministic, drift-resistant source of question/answer
+    # pairs — far more reliable than trying to recover the pairing from
+    # the rendered accordion DOM, where the question (header) and answer
+    # (panel) live in sibling elements that the line-by-line scrapers
+    # break apart.
+    #
+    # When this loader detects FAQPage data, it emits one Document per
+    # Q&A pair with both pieces preserved together in ``page_content``
+    # (as ``"Q: ...\n\nA: ..."``) and as separate fields in
+    # ``metadata.row_data``. Embedding both sides as a single string
+    # gives a vector that matches user queries (which look like the
+    # question) AND query-reformulations from the LLM (which look like
+    # the answer).
+
+    _FAQPAGE_TYPES = {"FAQPage"}
+    _QUESTION_TYPES = {"Question"}
+
+    @staticmethod
+    def _strip_html(text: Any) -> str:
+        """Render an ``acceptedAnswer.text`` payload as clean plain text.
+
+        ``acceptedAnswer.text`` in real-world JSON-LD is frequently HTML
+        (e.g. ``"<p>Answer with <a href=...>links</a></p>\\n"``). For
+        embedding we want plain text with normalized whitespace and
+        decoded entities (``&amp;`` → ``&``, ``&nbsp;`` → space).
+        """
+        if text is None:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        decoded = _html.unescape(text)
+        # Strip tags via BeautifulSoup so nested anchors/lists collapse
+        # into their visible text.
+        soup = BeautifulSoup(decoded, "html.parser")
+        flat = soup.get_text(separator=" ", strip=False)
+        # Collapse whitespace runs (incl. \xa0 from &nbsp;) to single spaces.
+        return re.sub(r"\s+", " ", flat).strip()
+
+    @classmethod
+    def _iter_faqpage_pairs(cls, data: Any):
+        """Yield ``(question, answer)`` tuples from a parsed JSON-LD object.
+
+        Handles the common shapes:
+
+        * Top-level ``@graph`` list (Google's recommended form).
+        * Top-level array of nodes.
+        * Single object with ``@type="FAQPage"`` and ``mainEntity``.
+        * Single object that is itself a ``Question`` (rare but valid).
+        """
+        if data is None:
+            return
+        # Recurse into @graph or arrays.
+        if isinstance(data, list):
+            for item in data:
+                yield from cls._iter_faqpage_pairs(item)
+            return
+        if not isinstance(data, dict):
+            return
+        if "@graph" in data and isinstance(data["@graph"], list):
+            yield from cls._iter_faqpage_pairs(data["@graph"])
+            return
+
+        node_type = data.get("@type")
+        # @type may be a list per spec (e.g. ["FAQPage", "WebPage"]).
+        type_set = {node_type} if isinstance(node_type, str) else set(
+            node_type or []
+        )
+
+        if cls._FAQPAGE_TYPES & type_set:
+            main = data.get("mainEntity") or []
+            if isinstance(main, dict):
+                main = [main]
+            for q in main:
+                yield from cls._iter_faqpage_pairs(q)
+            return
+
+        if cls._QUESTION_TYPES & type_set:
+            question = (data.get("name") or "").strip()
+            answer_node = data.get("acceptedAnswer") or {}
+            if isinstance(answer_node, list):
+                # Multiple accepted answers: concatenate their texts.
+                answer_raw = "\n\n".join(
+                    str(a.get("text", "")) for a in answer_node
+                    if isinstance(a, dict)
+                )
+            elif isinstance(answer_node, dict):
+                answer_raw = answer_node.get("text", "")
+            else:
+                answer_raw = ""
+            answer = cls._strip_html(answer_raw)
+            question = cls._strip_html(question)
+            if question and answer:
+                yield question, answer
+
+    def _extract_faqpage_jsonld(
+        self,
+        soup: BeautifulSoup,
+    ) -> List[Dict[str, str]]:
+        """Return a list of ``{question, answer}`` pairs found in JSON-LD.
+
+        Iterates every ``<script type="application/ld+json">`` block,
+        parses each one tolerantly (broken JSON is logged and skipped)
+        and walks the resulting structure looking for ``FAQPage`` /
+        ``Question`` nodes. Empty list when nothing is found, which is
+        the signal for the rest of the pipeline to fall through to its
+        normal extractors.
+
+        MUST be invoked BEFORE the loader's ``decompose("script")``
+        call, since that strips JSON-LD blocks along with regular JS.
+        """
+        pairs: List[Dict[str, str]] = []
+        seen: set[str] = set()  # de-dupe by question text
+        scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+        for s in scripts:
+            raw = (s.string or s.text or "").strip()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                self.logger.debug(
+                    "Skipping malformed JSON-LD block: %s", exc
+                )
+                continue
+            for question, answer in self._iter_faqpage_pairs(data):
+                key = question.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                pairs.append({"question": question, "answer": answer})
+        if pairs:
+            self.logger.info(
+                "JSON-LD FAQPage detected: %d Q&A pair(s) extracted",
+                len(pairs),
+            )
+        return pairs
+
+    def _docs_from_faqpage(
+        self,
+        pairs: List[Dict[str, str]],
+        base_metadata: Dict[str, Any],
+    ) -> List[Document]:
+        """Build one Document per Q&A pair from JSON-LD FAQPage data.
+
+        ``page_content`` keeps both sides together as
+        ``"Q: <question>\\n\\nA: <answer>"`` so the embedder produces a
+        single vector that matches both literal user questions and
+        LLM-style reformulations of the answer.
+        """
+        docs: List[Document] = []
+        total = len(pairs)
+        for idx, pair in enumerate(pairs):
+            question = pair["question"]
+            answer = pair["answer"]
+            page_content = f"Q: {question}\n\nA: {answer}"
+            docs.append(Document(
+                page_content=page_content,
+                metadata={
+                    **base_metadata,
+                    "content_kind": "faq",
+                    "selector_name": "faq",
+                    "source_type": "faq-jsonld",
+                    "row_index": idx,
+                    "row_count": total,
+                    "row_data": {
+                        "question": question,
+                        "answer": answer,
+                    },
+                },
+            ))
+        return docs
+
     # ── Selector-result → Documents ───────────────────────────────────
 
     @staticmethod
@@ -514,7 +694,10 @@ class WebScrapingLoader(AbstractLoader):
         cards lead with the plan name, FAQ items with the question),
         with the other fields as labeled paragraphs below. This preserves
         semantic structure for downstream chunkers / vector stores
-        without collapsing everything into a comma-joined blob.
+        without collapsing everything into a comma-joined blob. The
+        promoted field name is kept in metadata (``row_data``) rather
+        than rendered into ``page_content``, so retrieved chunks stay
+        free of stray label lines.
         """
         parts: List[str] = []
         title: Optional[str] = None
@@ -526,16 +709,11 @@ class WebScrapingLoader(AbstractLoader):
                 continue
             if title is None and isinstance(raw, str) and "\n" not in rendered:
                 title = rendered
-                title_key = key
                 continue
             body_fields.append((key, rendered))
 
         header = title or f"{selector_name} #{index + 1}"
         parts.append(f"# {header}")
-        if title is not None:
-            # Keep a machine-readable label line too, so downstream
-            # consumers know which field was promoted to the title.
-            parts.append(f"*{title_key}*")
         for key, rendered in body_fields:
             parts.append(f"\n## {key}\n\n{rendered}")
         return "\n".join(parts).strip()
@@ -661,6 +839,12 @@ class WebScrapingLoader(AbstractLoader):
 
         soup = result.bs_soup
 
+        # Extract JSON-LD FAQPage data BEFORE stripping <script> tags.
+        # The block lives inside ``<script type="application/ld+json">``
+        # and would otherwise be discarded by the noise-removal step
+        # below.
+        faq_pairs = self._extract_faqpage_jsonld(soup)
+
         # Remove noise elements
         for el in soup(["script", "style", "link", "noscript"]):
             el.decompose()
@@ -686,6 +870,12 @@ class WebScrapingLoader(AbstractLoader):
 
         docs: List[Document] = []
 
+        # Emit FAQ docs first so they show up at the head of the chunk
+        # list and stay grouped together independent of the rest of the
+        # extraction pipeline.
+        if faq_pairs:
+            docs.extend(self._docs_from_faqpage(faq_pairs, base_metadata))
+
         # Fast path: caller wants only the named-selector extractions.
         # Skip full-page markdown, trafilatura, fragments, videos, navs,
         # and tables — they are noise when the plan targets specific data.
@@ -696,7 +886,7 @@ class WebScrapingLoader(AbstractLoader):
                         result.extracted_data, base_metadata
                     )
                 )
-            else:
+            elif not faq_pairs:
                 self.logger.warning(
                     "extract_only=True but result.extracted_data is empty for %s",
                     url,

@@ -45,6 +45,23 @@ class BaseBot(AbstractBot):
     as-is for standard bot functionality.
     """
 
+    def _resolve_metric_type(self, metric_type: Optional[str]) -> str:
+        """Resolve which vector-search metric to use.
+
+        Precedence: explicit call argument → vector_store_config.metric_type
+        (from BD via the bot config) → self._metric_type → 'COSINE'.
+
+        Without this, the hardcoded ``metric_type='EUCLIDEAN_DISTANCE'``
+        defaults on ask/conversation/ask_stream would silently override
+        whatever the agent's vector_store_config declared.
+        """
+        if metric_type:
+            return metric_type
+        cfg = getattr(self, '_vector_store', None) or {}
+        if isinstance(cfg, dict) and cfg.get('metric_type'):
+            return cfg['metric_type']
+        return getattr(self, '_metric_type', None) or 'COSINE'
+
     def _debug_prompt_dump(
         self,
         method: str,
@@ -107,7 +124,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -163,6 +180,11 @@ class BaseBot(AbstractBot):
         )
         score_threshold = kwargs.get(
             'score_threshold', self.context_score_threshold
+        )
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] conversation() resolved metric_type=%s, score_threshold=%s",
+            self.name, metric_type, score_threshold,
         )
 
         # ── Intent Router: pop routing kwargs before any downstream processing ──
@@ -638,7 +660,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -735,6 +757,11 @@ class BaseBot(AbstractBot):
             )
             limit = 10  # enforce a minimum limit to ensure some context is retrieved
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
+            self.name, metric_type, score_threshold, limit,
+        )
 
         try:
             # Get conversation history
@@ -1061,7 +1088,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -1111,6 +1138,11 @@ class BaseBot(AbstractBot):
         max_tokens = kwargs.get('max_tokens', default_max_tokens)
         limit = kwargs.get('limit', self.context_search_limit)
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] ask_stream() resolved metric_type=%s, score_threshold=%s",
+            self.name, metric_type, score_threshold,
+        )
 
         search_kwargs = search_kwargs or {}
 

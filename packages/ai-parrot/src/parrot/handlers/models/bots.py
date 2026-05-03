@@ -57,7 +57,7 @@ class BotModel(Model):
 
         -- LLM configuration
         llm VARCHAR DEFAULT 'google',
-        model_name VARCHAR DEFAULT 'gemini-2.0-flash-001',
+        model_name VARCHAR DEFAULT 'gemini-3.1-flash-lite-preview',
         temperature FLOAT DEFAULT 0.1,
         max_tokens INTEGER DEFAULT 1024,
         top_k INTEGER DEFAULT 41,

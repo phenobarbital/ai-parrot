@@ -58,6 +58,18 @@ class EmbeddingModelEntry(BaseModel):
         hnsw_compatible: Whether pgvector HNSW indexing is supported
             (dimension <= 2000).
         license: SPDX license identifier or ``"proprietary"``.
+        recommended_score_threshold: Minimum similarity score below which
+            retrieved chunks should be discarded by RAG consumers. Units
+            match ``metric_recommended`` — for cosine/L2-normalised models
+            the value sits in ``[0.0, 1.0]``; for raw dot product on
+            non-normalised models (e.g. ``multi-qa-mpnet-base-dot-v1``)
+            it can exceed 1.0. The global default of 0.7 is too aggressive
+            for several models — for example ``multi-qa-mpnet-base-cos-v1``
+            naturally produces scores in the 0.30-0.55 range.
+        recommended_search_limit: Default top-k for vector retrieval that
+            consumers should use when the operator has not configured one.
+            Heavyweight instruct/long-context models warrant a smaller
+            pool than fast lightweight encoders.
         matryoshka_dimensions: Optional list of supported Matryoshka dims.
     """
 
@@ -78,6 +90,8 @@ class EmbeddingModelEntry(BaseModel):
     max_seq_length: int = Field(gt=0)
     hnsw_compatible: bool
     license: str
+    recommended_score_threshold: float = Field(ge=0.0, le=100.0)
+    recommended_search_limit: int = Field(ge=1, le=100)
     # Existing optional field
     matryoshka_dimensions: Optional[list[int]] = None
 
@@ -106,6 +120,30 @@ class EmbeddingModelEntry(BaseModel):
                 raise ValueError(
                     f"{self.model}: requires_prefix=False but a prefix is set"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _recommended_threshold_metric_consistency(self) -> "EmbeddingModelEntry":
+        """Bound ``recommended_score_threshold`` to the metric's natural range.
+
+        Cosine and L2 distances on L2-normalised outputs always fall within
+        ``[0.0, 1.0]``; only raw dot product on non-normalised vectors can
+        legitimately exceed ``1.0``. Catching out-of-range values here
+        prevents typos like ``70`` (intended as ``0.7``) sneaking into the
+        catalog and silently disabling retrieval for cosine models.
+
+        Returns:
+            Self, after validation.
+
+        Raises:
+            ValueError: When threshold > 1.0 on a cosine/L2 entry.
+        """
+        if self.metric_recommended in ("cosine", "l2") and self.recommended_score_threshold > 1.0:
+            raise ValueError(
+                f"{self.model}: recommended_score_threshold="
+                f"{self.recommended_score_threshold} > 1.0 is not valid for "
+                f"metric_recommended={self.metric_recommended!r}"
+            )
         return self
 
     @model_validator(mode="after")
@@ -154,6 +192,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/all-MiniLM-L12-v2",
@@ -175,6 +215,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.45,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/all-MiniLM-L6-v2",
@@ -196,6 +238,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 256,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.40,
+        "recommended_search_limit": 10,
     },
 
     # -- Information Retrieval -------------------------------------------
@@ -219,6 +263,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
     },
     {
         "model": "thenlper/gte-base",
@@ -240,6 +286,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "thenlper/gte-large",
@@ -261,6 +309,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/msmarco-MiniLM-L12-v3",
@@ -282,6 +332,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/multi-qa-mpnet-base-dot-v1",
@@ -303,6 +355,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 30.0,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/multi-qa-mpnet-base-cos-v1",
@@ -325,6 +379,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.30,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/msmarco-distilbert-base-v4",
@@ -346,6 +402,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/gtr-t5-large",
@@ -367,6 +425,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- E5 family -------------------------------------------------------
@@ -390,6 +450,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.75,
+        "recommended_search_limit": 10,
     },
     {
         "model": "intfloat/e5-large-v2",
@@ -411,6 +473,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.75,
+        "recommended_search_limit": 10,
     },
     {
         "model": "intfloat/multilingual-e5-base",
@@ -432,6 +496,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.75,
+        "recommended_search_limit": 10,
     },
     {
         "model": "intfloat/multilingual-e5-large",
@@ -453,6 +519,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.75,
+        "recommended_search_limit": 10,
     },
 
     # -- BGE family (BAAI) -----------------------------------------------
@@ -476,6 +544,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.65,
+        "recommended_search_limit": 10,
     },
     {
         "model": "BAAI/bge-base-en-v1.5",
@@ -497,6 +567,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.65,
+        "recommended_search_limit": 10,
     },
     {
         "model": "BAAI/bge-large-en-v1.5",
@@ -518,6 +590,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.65,
+        "recommended_search_limit": 10,
     },
     {
         "model": "BAAI/bge-m3",
@@ -539,6 +613,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "mit",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- Multilingual ----------------------------------------------------
@@ -562,6 +638,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
@@ -583,6 +661,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 128,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.40,
+        "recommended_search_limit": 10,
     },
     {
         "model": "sentence-transformers/paraphrase-multilingual-mpnet-base-v2",
@@ -604,6 +684,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 128,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.45,
+        "recommended_search_limit": 10,
     },
 
     # -- Code / Technical ------------------------------------------------
@@ -628,6 +710,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "jinaai/jina-embeddings-v2-base-en",
@@ -650,6 +734,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- Jina v3 (prefix-requiring) --------------------------------------
@@ -674,6 +760,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "cc-by-nc-4.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- Matryoshka / Flexible Dimensions --------------------------------
@@ -699,6 +787,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8192,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "mixedbread-ai/mxbai-embed-large-v1",
@@ -722,6 +812,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- Gemma Embeddings ------------------------------------------------
@@ -748,6 +840,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "gemma",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
 
     # -- Snowflake Arctic ------------------------------------------------
@@ -771,6 +865,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "Snowflake/snowflake-arctic-embed-m-v1.5",
@@ -794,6 +890,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "Snowflake/snowflake-arctic-embed-l",
@@ -815,6 +913,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 512,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.60,
+        "recommended_search_limit": 10,
     },
 
     # -- Instruct-Tuned --------------------------------------------------
@@ -842,6 +942,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 32768,
         "hnsw_compatible": True,
         "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 5,
     },
     {
         "model": "intfloat/e5-mistral-7b-instruct",
@@ -867,6 +969,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 4096,
         "hnsw_compatible": False,
         "license": "mit",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 5,
     },
 
     # -- High-Dimension / Specialized ------------------------------------
@@ -895,6 +999,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 32768,
         "hnsw_compatible": False,
         "license": "cc-by-nc-4.0",
+        "recommended_score_threshold": 0.60,
+        "recommended_search_limit": 5,
     },
 
     # ── OpenAI ───────────────────────────────────────────────────────────
@@ -918,6 +1024,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8191,
         "hnsw_compatible": False,
         "license": "proprietary",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
     },
     {
         "model": "text-embedding-3-small",
@@ -939,6 +1047,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 8191,
         "hnsw_compatible": True,
         "license": "proprietary",
+        "recommended_score_threshold": 0.50,
+        "recommended_search_limit": 10,
     },
 
     # ── Google ───────────────────────────────────────────────────────────
@@ -962,6 +1072,8 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "max_seq_length": 2048,
         "hnsw_compatible": False,
         "license": "proprietary",
+        "recommended_score_threshold": 0.60,
+        "recommended_search_limit": 10,
     },
 ]
 

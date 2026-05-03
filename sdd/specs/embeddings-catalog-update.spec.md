@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-140
 **Date**: 2026-05-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -555,11 +555,10 @@ No new third-party dependencies.
       task template to the user? — *Owner: Jesus*. **Default if undecided
       at implementation time:** no — leave for a follow-up spec; for now the
       `prefix_query` field carries the template and consumers display it.
-- [ ] Do we want to mark `text-embedding-ada-002` as soft-deprecated in its
+- [x] Do we want to mark `text-embedding-ada-002` as soft-deprecated in its
       `description` (already noted "consider 3-small as a newer alternative"
-      but no machine-readable flag)? — *Owner: Jesus*. **Default:** leave as-is;
-      out of scope for this spec.
-- [ ] Should the consumer API endpoint expose the new fields as a separate
+      but no machine-readable flag)? — *Owner: Jesus*: remove from the list (we are not currently used in any chatbot).
+- [x] Should the consumer API endpoint expose the new fields as a separate
       "metadata" sub-object (cleaner JSON) or keep them flat in the entry?
       — *Owner: API consumer team*. **Resolution:** flat for now; the
       consumer API is out of scope of this spec, but the dict shape it

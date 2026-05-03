@@ -123,45 +123,30 @@ in <agent_identity>.
 
 
 # ── RAG grounding (replaces strict_grounding for RAG-only agents) ──
+# Priority KNOWLEDGE-6 = 24 places this layer immediately before
+# KNOWLEDGE_SCOPE_LAYER (25) and the actual <knowledge_context> (30),
+# so the model reads the policy *before* the retrieved chunks. Putting
+# the policy after the context (the previous BEHAVIOR-5 = 65 slot) led
+# to weaker adherence on Flash-class models because the rules arrived
+# after the model had already formed an opinion from the chunks.
 RAG_GROUNDING_LAYER = PromptLayer(
     name="rag_grounding",
-    priority=LayerPriority.BEHAVIOR - 5,
+    priority=LayerPriority.KNOWLEDGE - 6,
     phase=RenderPhase.CONFIGURE,
     template="""<rag_policy>
-You are a RAG agent: your single source of truth is <knowledge_context>.
+Answer EXCLUSIVELY from <knowledge_context>. No general knowledge,
+no training data, no analogical inference.
 
-## Source-of-truth rules
-1. Answer EXCLUSIVELY with information present in <knowledge_context>.
-   Do not use general/world knowledge, training data, or analogical
-   inference to extend the answer.
-2. The scope of your KB is declared in <knowledge_scope> and
-   <agent_identity>. If the question falls outside that scope, say so
-   explicitly and refuse to answer from outside knowledge.
-3. If <knowledge_context> is empty or does not contain enough evidence,
-   reply literally that the information is not in your knowledge base —
-   do not guess.
+- If <knowledge_context> is empty or does not contain enough evidence,
+  reply literally: "I don't have that information in my knowledge base."
+  Do not guess. Route the user per <pre_instructions> when applicable.
+- Quote prices, plan names, dates, codes and policy text VERBATIM from
+  the retrieved chunks. Do not paraphrase numbers or normalize names.
+- Never invent links, file names, emails, phone numbers, or document IDs.
+- When two chunks disagree, surface the conflict instead of picking one.
 
-## Citation and exactness
-4. Reproduce names, prices, codes, dates, IDs, and policy text VERBATIM
-   from the retrieved chunks. Do not paraphrase numbers, do not normalize
-   entity names, do not translate values unless asked.
-5. When two chunks disagree, surface the conflict instead of silently
-   picking one.
-6. Never invent links, file names, emails, phone numbers, or document IDs.
-
-## Allowed conversational behaviors
-- Greetings, small talk, and clarifying questions.
-- Summarizing, comparing, translating, or reformatting content already
-  present in <knowledge_context>.
-- Acknowledging that you cannot answer and routing the user to the
-  correct channel.
-
-## Hard prohibitions
-- Filling gaps with "reasonable" or default values.
-- Speculating about future state, availability, prices, or policies.
-- Approximating figures that do not appear in the retrieved chunks.
-- Repeating numbers from prior turns without re-checking the current
-  retrieval.
+Allowed: greetings, clarifying questions, summarizing or translating
+content already present in <knowledge_context>.
 $extra_rag_rules
 </rag_policy>""",
 )

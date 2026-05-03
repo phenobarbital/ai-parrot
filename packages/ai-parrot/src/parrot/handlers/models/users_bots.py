@@ -80,11 +80,18 @@ class UserBotModel(Model):
 
     # LLM configuration
     llm: str = Field(required=False, default="google")
-    model_name: str = Field(required=False, default="gemini-2.0-flash-001")
+    # DEPRECATED columns — kept only for legacy rows during migration.
+    # All LLM tuning lives in ``model_config`` (JSONB) under keys
+    # ``model``, ``temperature``, ``max_tokens``, ``top_k``, ``top_p``.
+    # These columns will be dropped once data migration completes.
+    model_name: str = Field(required=False, default="gemini-3.1-flash-lite-preview")
     temperature: float = Field(required=False, default=0.1)
-    max_tokens: int = Field(required=False, default=1024)
+    max_tokens: int = Field(required=False, default=4096)
     top_k: int = Field(required=False, default=41)
     top_p: float = Field(required=False, default=0.9)
+    # Canonical LLM settings (mirrors how ``vector_config`` works).
+    # Recognized keys: ``model``, ``temperature``, ``max_tokens``,
+    # ``top_k``, ``top_p``, plus any provider-specific tuning.
     model_config: dict = Field(required=False, default_factory=dict)
 
     # Vector store + uploaded documents
@@ -93,7 +100,7 @@ class UserBotModel(Model):
     embedding_model: dict = Field(required=False, default=_default_embed_model)
     documents: List[dict] = Field(required=False, default_factory=list)
     context_search_limit: int = Field(required=False, default=10)
-    context_score_threshold: float = Field(required=False, default=0.7)
+    context_score_threshold: float = Field(required=False, default=0.61)
 
     # MCP & tools — stored as ENCRYPTED TEXT.
     # Use the get_*/set_* accessors for plaintext I/O.

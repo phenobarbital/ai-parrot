@@ -129,7 +129,7 @@ from parrot.bots.agent import BasicAgent
 from parrot.tools.messaging.whatsapp import WhatsAppTool
 from parrot.tools.manager import ToolManager
 
-agent = BasicAgent(name="Assistant", llm="google:gemini-2.0-flash-exp")
+agent = BasicAgent(name="Assistant", llm="google:gemini-3.1-flash-lite-preview")
 
 # Add WhatsApp tool
 tool_manager = ToolManager()
@@ -150,7 +150,7 @@ response = await agent.ask(
 from parrot.bots.agent import BasicAgent
 from parrot.hooks.whatsapp import WhatsAppHook
 
-agent = BasicAgent(name="Assistant", llm="google:gemini-2.0-flash-exp")
+agent = BasicAgent(name="Assistant", llm="google:gemini-3.1-flash-lite-preview")
 await agent.configure()
 
 # Setup WhatsApp hook
