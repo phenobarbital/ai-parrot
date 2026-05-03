@@ -5,9 +5,14 @@
 -- using the navigator-session vault keys (same scheme as user_credentials).
 
 CREATE TABLE IF NOT EXISTS navigator.users_bots (
-    -- Composite identity
+    -- Composite identity. user_id references the navigator-auth users
+    -- table (auth.users.user_id) so deleting an account also reaps every
+    -- private bot it owns (and the encrypted credential blobs on those
+    -- rows). The DELETE CASCADE is REQUIRED for credential hygiene — a
+    -- deleted user must not leave readable encrypted secrets behind.
     chatbot_id     UUID NOT NULL DEFAULT uuid_generate_v4(),
-    user_id        INTEGER NOT NULL,
+    user_id        INTEGER NOT NULL
+                   REFERENCES auth.users(user_id) ON DELETE CASCADE,
 
     -- Basic bot information
     name           VARCHAR NOT NULL,

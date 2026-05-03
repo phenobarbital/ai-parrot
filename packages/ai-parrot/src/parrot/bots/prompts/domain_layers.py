@@ -103,22 +103,22 @@ If information is missing, state "Data not available" rather than estimating.
 
 
 # ── Knowledge scope (RAG-only agents) ──────────────────────────
-# Reuses $backstory as the canonical declaration of WHAT the KB covers,
-# so RAG agents do not need an extra DB column. The backstory text is
-# projected verbatim into <knowledge_scope> as the authoritative scope.
+# Uses $capabilities as the authoritative declaration of WHAT the KB
+# covers (and what is out of scope). $backstory is reserved for the
+# agent's persona/identity and is rendered by IDENTITY_LAYER.
 KNOWLEDGE_SCOPE_LAYER = PromptLayer(
     name="knowledge_scope",
     priority=LayerPriority.KNOWLEDGE - 5,
     phase=RenderPhase.CONFIGURE,
     template="""<knowledge_scope>
 Your knowledge base covers EXCLUSIVELY the topics described below:
-$backstory
+$capabilities
 
 Anything outside this scope is OUT OF SCOPE: state so explicitly and
 route the user according to <pre_instructions> or the channel referenced
 in <agent_identity>.
 </knowledge_scope>""",
-    condition=lambda ctx: bool(ctx.get("backstory", "").strip()),
+    condition=lambda ctx: bool(ctx.get("capabilities", "").strip()),
 )
 
 

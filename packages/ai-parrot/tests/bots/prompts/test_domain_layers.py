@@ -117,19 +117,26 @@ class TestStrictGroundingLayer:
 
 class TestKnowledgeScopeLayer:
 
-    def test_renders_when_backstory_present(self):
+    def test_renders_when_capabilities_present(self):
         result = KNOWLEDGE_SCOPE_LAYER.render(
-            {"backstory": "Knows AT&T fiber and wireless plans."}
+            {"capabilities": "Knows AT&T fiber and wireless plans."}
         )
         assert "<knowledge_scope>" in result
         assert "AT&T fiber and wireless plans" in result
         assert "EXCLUSIVELY" in result
 
     def test_skipped_when_empty(self):
-        assert KNOWLEDGE_SCOPE_LAYER.render({"backstory": ""}) is None
+        assert KNOWLEDGE_SCOPE_LAYER.render({"capabilities": ""}) is None
 
     def test_skipped_when_missing(self):
         assert KNOWLEDGE_SCOPE_LAYER.render({}) is None
+
+    def test_backstory_alone_does_not_trigger_layer(self):
+        # backstory belongs to identity/persona, not to knowledge scope.
+        # Only $capabilities should drive what the KB covers.
+        assert KNOWLEDGE_SCOPE_LAYER.render(
+            {"backstory": "I am AT&T Concierge.", "capabilities": ""}
+        ) is None
 
     def test_priority_before_knowledge(self):
         assert KNOWLEDGE_SCOPE_LAYER.priority < LayerPriority.KNOWLEDGE

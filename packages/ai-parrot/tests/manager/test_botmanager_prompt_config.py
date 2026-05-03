@@ -135,12 +135,23 @@ class TestBotManagerApplyPromptConfig:
         BotManager._apply_prompt_config(bot, {})
         assert list(bot._prompt_builder.layer_names) == before
 
-    def test_noop_when_builder_missing(self):
+    def test_creates_default_builder_when_mutations_present_and_builder_missing(self):
         from parrot.manager.manager import BotManager
         from unittest.mock import MagicMock
         bot = MagicMock()
         bot._prompt_builder = None
         BotManager._apply_prompt_config(bot, {"remove": ["tools"]})
+        assert bot._prompt_builder is not None
+        assert bot._prompt_builder.get("identity") is not None
+        assert bot._prompt_builder.get("tools") is None
+
+    def test_noop_when_builder_missing_and_config_has_no_mutations(self):
+        from parrot.manager.manager import BotManager
+        from unittest.mock import MagicMock
+        bot = MagicMock()
+        bot._prompt_builder = None
+        BotManager._apply_prompt_config(bot, {"preset": "rag"})
+        assert bot._prompt_builder is None
 
     def test_remove_layers(self):
         from parrot.manager.manager import BotManager

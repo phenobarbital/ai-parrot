@@ -1,21 +1,40 @@
 from typing import Dict, Any, Optional, Union
 from enum import Enum
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class SearchResult(BaseModel):
-    """
-    Data model for a single document returned from a vector search.
+    """Data model for a single document returned from a vector search.
+
+    ``score`` carries the raw value produced by the configured vector-store
+    metric (e.g. L2 / cosine distance / negative inner product). For
+    distance-based metrics (the common case) **lower means closer**. The
+    same value is also serialised as ``distance`` via a computed alias so
+    API consumers can use the unambiguous name without any input changes
+    on the producer side.
     """
     id: str
     content: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    score: float
+    score: float = Field(
+        ...,
+        description=(
+            "Raw value from the configured metric. For L2 / cosine / "
+            "negative-inner-product, lower = closer. Also exposed as "
+            "``distance`` in serialised output."
+        ),
+    )
     ensemble_score: float = None
     search_source: str = None
     similarity_rank: Optional[int] = None
     mmr_rank: Optional[int] = None
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def distance(self) -> float:
+        """Alias for :attr:`score` — same value, unambiguous name."""
+        return self.score
 
 
 class Document(BaseModel):

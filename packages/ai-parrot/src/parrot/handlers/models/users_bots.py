@@ -132,21 +132,41 @@ class UserBotModel(Model):
 
     def get_mcp_config(self) -> List[dict]:
         """Return plaintext MCP server configurations."""
-        value = unseal(self.mcp_config)
+        value = unseal(
+            self.mcp_config,
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="mcp_config",
+        )
         return value if isinstance(value, list) else []
 
     def set_mcp_config(self, value: Any) -> None:
         """Encrypt and store MCP server configurations."""
-        self.mcp_config = seal(value or [])
+        self.mcp_config = seal(
+            value or [],
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="mcp_config",
+        )
 
     def get_tools_config(self) -> List[dict]:
         """Return plaintext tool configurations."""
-        value = unseal(self.tools_config)
+        value = unseal(
+            self.tools_config,
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="tools_config",
+        )
         return value if isinstance(value, list) else []
 
     def set_tools_config(self, value: Any) -> None:
         """Encrypt and store tool configurations."""
-        self.tools_config = seal(value or [])
+        self.tools_config = seal(
+            value or [],
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="tools_config",
+        )
 
     # ------------------------------------------------------------------
     # Helpers

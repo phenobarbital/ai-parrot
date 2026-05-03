@@ -152,7 +152,7 @@ class SentenceTransformerModel(EmbeddingModel):
         the centroid and ranking becomes essentially random.
         """
         prefixed = self._apply_passage_prefix(texts)
-        result = await self.encode(prefixed)
+        result = await self.encode(prefixed, normalize_embeddings=True)
         if hasattr(result, "tolist"):
             return result.tolist()
         return result

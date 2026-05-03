@@ -248,6 +248,17 @@ class TestApplyPromptConfigOnBot:
         assert bot._prompt_builder.get("strict_grounding") is not None
         assert bot._prompt_builder.get("dataframe_context") is not None
 
+    def test_apply_creates_default_builder_when_mutations_present(self):
+        from unittest.mock import MagicMock
+
+        bot = MagicMock()
+        bot._prompt_builder = None
+        config = PromptConfig(add=["rag_grounding"])
+        AgentRegistry._apply_prompt_config(bot, config)
+        assert bot._prompt_builder is not None
+        assert bot._prompt_builder.get("identity") is not None
+        assert bot._prompt_builder.get("rag_grounding") is not None
+
     def test_apply_customizes_template(self):
         bot = self._make_bot()
         config = PromptConfig(customize={

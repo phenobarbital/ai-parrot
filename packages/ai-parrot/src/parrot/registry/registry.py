@@ -656,6 +656,17 @@ class AgentRegistry:
         from ..bots.prompts.domain_layers import get_domain_layer
 
         builder = bot._prompt_builder
+        has_prompt_mutations = bool(
+            prompt_config.remove
+            or prompt_config.add
+            or prompt_config.customize
+        )
+        if builder is None and has_prompt_mutations:
+            from ..bots.prompts.presets import get_preset
+            builder = get_preset(prompt_config.preset or "default")
+            bot._prompt_builder = builder
+        if builder is None:
+            return
 
         # Remove layers
         for layer_name in prompt_config.remove:
@@ -767,7 +778,15 @@ class AgentRegistry:
 
             # 5. Handle Prompt Config — pass preset through init
             if config.prompt:
-                merged_args['prompt_preset'] = config.prompt.preset
+                has_prompt_mutations = bool(
+                    config.prompt.remove
+                    or config.prompt.add
+                    or config.prompt.customize
+                )
+                merged_args['prompt_preset'] = (
+                    config.prompt.preset
+                    or ("default" if has_prompt_mutations else None)
+                )
 
             # Instantiate
             bot = agent_class(**merged_args)

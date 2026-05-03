@@ -20,7 +20,7 @@ def _make_handler(cache=None, job_manager=None, temp_file_manager=None):
     }
     request = MagicMock()
     request.app = app
-    handler.request = request
+    handler._request = request
     handler.logger = MagicMock()
     return handler
 
@@ -45,6 +45,18 @@ _DEFAULT_EMBED_TOKEN = (
     ("model", "thenlper/gte-base"),
     ("model_type", "huggingface"),
 )
+_DEFAULT_METRIC_TOKEN = "COSINE"
+_DEFAULT_DISTANCE_TOKEN = "COSINE"
+
+
+def _cache_key(store_type="postgres", dsn="postgresql+asyncpg://test/testdb"):
+    return (
+        store_type,
+        dsn,
+        _DEFAULT_EMBED_TOKEN,
+        _DEFAULT_METRIC_TOKEN,
+        _DEFAULT_DISTANCE_TOKEN,
+    )
 
 
 class TestStoreConnectionCache:
@@ -76,11 +88,7 @@ class TestStoreConnectionCache:
         mock_store.connection = AsyncMock()
 
         cache = OrderedDict()
-        cache[(
-            "postgres",
-            "postgresql+asyncpg://test/testdb",
-            _DEFAULT_EMBED_TOKEN,
-        )] = mock_store
+        cache[_cache_key()] = mock_store
 
         handler = _make_handler(cache=cache)
         config = _make_store_config()
@@ -104,11 +112,7 @@ class TestStoreConnectionCache:
         cached_store.connection = AsyncMock()
 
         cache = OrderedDict()
-        cache[(
-            "postgres",
-            "postgresql+asyncpg://test/testdb",
-            _DEFAULT_EMBED_TOKEN,
-        )] = cached_store
+        cache[_cache_key()] = cached_store
 
         # New store returned when we switch to e5-large
         new_store = MagicMock()
@@ -140,6 +144,38 @@ class TestStoreConnectionCache:
         assert len(cache) == 2
 
     @pytest.mark.asyncio
+    async def test_cache_miss_on_metric_change(self):
+        """Switching metric/distance strategy must miss the cache."""
+        cached_store = MagicMock()
+        cached_store._connected = True
+        cached_store.connection = AsyncMock()
+
+        cache = OrderedDict()
+        cache[_cache_key()] = cached_store
+
+        new_store = MagicMock()
+        new_store._connected = True
+        new_store.connection = AsyncMock()
+
+        mock_cls = MagicMock(return_value=new_store)
+        mock_module = MagicMock()
+        mock_module.PgVectorStore = mock_cls
+
+        handler = _make_handler(cache=cache)
+        config = _make_store_config(metric_type="L2", distance_strategy="L2")
+
+        with patch("importlib.import_module", return_value=mock_module):
+            store = await handler._get_store(config)
+
+        assert store is new_store
+        cached_store.connection.assert_not_called()
+        new_store.connection.assert_called_once()
+        assert len(cache) == 2
+        call_kwargs = mock_cls.call_args[1]
+        assert call_kwargs["metric_type"] == "L2"
+        assert call_kwargs["distance_strategy"] == "L2"
+
+    @pytest.mark.asyncio
     async def test_cache_eviction_disconnects_oldest(self):
         """When cache is full, oldest entry is evicted and disconnected."""
         from parrot.handlers.stores.handler import _STORE_CACHE_MAX
@@ -152,13 +188,13 @@ class TestStoreConnectionCache:
         new_store._connected = True
         new_store.connection = AsyncMock()
 
-        # Fill cache to max — each entry uses the new 3-tuple key shape
+        # Fill cache to max — each entry uses the full metric-aware key shape
         cache = OrderedDict()
-        cache[("postgres", "evicted", _DEFAULT_EMBED_TOKEN)] = evicted_store
+        cache[_cache_key(dsn="evicted")] = evicted_store
         for i in range(1, _STORE_CACHE_MAX):
             m = MagicMock()
             m._connected = True
-            cache[("postgres", f"dsn_{i}", _DEFAULT_EMBED_TOKEN)] = m
+            cache[_cache_key(dsn=f"dsn_{i}")] = m
 
         assert len(cache) == _STORE_CACHE_MAX
 
@@ -173,7 +209,7 @@ class TestStoreConnectionCache:
             await handler._get_store(config)
 
         evicted_store.disconnect.assert_called_once()
-        assert ("postgres", "evicted", _DEFAULT_EMBED_TOKEN) not in cache
+        assert _cache_key(dsn="evicted") not in cache
 
     @pytest.mark.asyncio
     async def test_cache_reconnects_stale_store(self):
@@ -183,11 +219,7 @@ class TestStoreConnectionCache:
         stale_store.connection = AsyncMock()
 
         cache = OrderedDict()
-        cache[(
-            "postgres",
-            "postgresql+asyncpg://test/testdb",
-            _DEFAULT_EMBED_TOKEN,
-        )] = stale_store
+        cache[_cache_key()] = stale_store
 
         handler = _make_handler(cache=cache)
         config = _make_store_config()
@@ -260,8 +292,8 @@ class TestLifecycle:
         store2.disconnect = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "dsn1", _DEFAULT_EMBED_TOKEN)] = store1
-        cache[("postgres", "dsn2", _DEFAULT_EMBED_TOKEN)] = store2
+        cache[_cache_key(dsn="dsn1")] = store1
+        cache[_cache_key(dsn="dsn2")] = store2
 
         mock_jm = MagicMock()
         mock_jm.stop = AsyncMock()
@@ -296,8 +328,8 @@ class TestLifecycle:
         store2.disconnect = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "dsn1", _DEFAULT_EMBED_TOKEN)] = store1
-        cache[("postgres", "dsn2", _DEFAULT_EMBED_TOKEN)] = store2
+        cache[_cache_key(dsn="dsn1")] = store1
+        cache[_cache_key(dsn="dsn2")] = store2
 
         mock_jm = MagicMock()
         mock_jm.stop = AsyncMock()

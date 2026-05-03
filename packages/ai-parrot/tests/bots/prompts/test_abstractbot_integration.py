@@ -216,6 +216,26 @@ class TestBuildPromptFromLayers:
         prompt = bot._build_prompt()
         assert "<security_policy>" in prompt
 
+    @pytest.mark.asyncio
+    @patch('parrot.bots.abstract.dynamic_values')
+    async def test_rag_preset_builds_one_grounded_system_prompt(self, mock_dv):
+        mock_dv.get_all_names.return_value = []
+        bot = MockBot(prompt_preset="rag")
+        bot.backstory = "AT&T support KB for residential fiber plans only."
+        await bot._configure_prompt_builder()
+        prompt = bot._build_prompt(
+            vector_context="Fiber 300 costs $55/mo.",
+            conversation_context="Human: what does Fiber 300 cost?",
+        )
+        assert isinstance(prompt, str)
+        assert "<knowledge_scope>" in prompt
+        assert "<knowledge_context>" in prompt
+        assert "<rag_policy>" in prompt
+        assert "<tool_policy>" not in prompt
+        assert "$extra_rag_rules" not in prompt
+        assert prompt.index("</knowledge_scope>") < prompt.index("</knowledge_context>")
+        assert prompt.index("</knowledge_context>") < prompt.index("</rag_policy>")
+
 
 class TestLegacyPathUnchanged:
 

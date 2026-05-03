@@ -340,6 +340,7 @@ class MultiStoreSearchTool(AbstractTool):
                 'content': r.content,
                 'metadata': r.metadata,
                 'score': r.score,
+                'distance': r.distance,
                 'source': getattr(r, 'search_source', 'unknown'),
                 'id': getattr(r, 'id', None),
                 'rank': idx + 1
