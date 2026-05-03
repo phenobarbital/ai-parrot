@@ -15743,7 +15743,7 @@
       "feature_id": "FEAT-141",
       "feature": "rust-semantic-text-splitter",
       "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15754,7 +15754,8 @@
       "parallelism_notes": "All FEAT-141 tasks share the splitters subpackage and run sequentially per spec \u00a7Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-05-03T23:41:50.319643+00:00",
-      "file": "sdd/tasks/active/TASK-970-rewrite-markdown-text-splitter.md"
+      "file": "sdd/tasks/completed/TASK-970-rewrite-markdown-text-splitter.md",
+      "completed_at": "2026-05-03T23:52:04.219239+00:00"
     },
     {
       "id": "TASK-971",

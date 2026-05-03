@@ -418,9 +418,10 @@ for c in typed:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Rewrote md.py as specified. Final file is 87 LOC (target ≤100). 
+Reuses _byte_to_char from .semantic as specified. min_chunk_size defaults to 0
+(matching legacy behaviour). All smoke checks pass including fence preservation,
+offset round-trip, and consumer API compatibility.
+**Deviations from spec**: none
