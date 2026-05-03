@@ -8,7 +8,7 @@ from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
 
-def _resolve_prefixes(model_name: str) -> Tuple[Optional[str], Optional[str]]:
+def _resolve_prefixes(model_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """Return the (query_prefix, passage_prefix) pair for a model, or (None, None).
 
     A number of modern sentence-encoder families were trained with
@@ -175,7 +175,7 @@ class SentenceTransformerModel(EmbeddingModel):
                 self.model_name, self._query_prefix, self._passage_prefix,
             )
         self.logger.info(
-            f"Initialized SentenceTransformerModel with model: {self.model_name}"
+            "Initialized SentenceTransformerModel with model: %s", self.model_name
         )
 
     def _apply_query_prefix(self, text: str) -> str:

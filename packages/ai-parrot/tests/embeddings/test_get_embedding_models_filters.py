@@ -170,3 +170,43 @@ class TestExistingFiltersUnchanged:
         result = get_embedding_models(use_case="clustering")
         assert len(result) > 0
         assert all("clustering" in m["use_case"] for m in result)
+
+
+class TestEdgeCaseFilters:
+    """Edge-case and boundary behaviour for filter arguments."""
+
+    def test_empty_string_provider_returns_empty_not_full_catalog(self):
+        """provider='' filters for models whose provider field equals '', returning [].
+
+        Historically this was a silent bypass (truthy check). After the fix
+        to ``is not None``, an empty string is treated as a legitimate filter
+        value — no provider is named '', so the result is empty rather than
+        the full catalog. This documents the corrected contract.
+        """
+        result = get_embedding_models(provider="")
+        assert result == [], (
+            "provider='' should return [] (no match), not the full catalog"
+        )
+
+    def test_empty_string_use_case_returns_empty(self):
+        """use_case='' filters for entries whose use_case list contains '', returning []."""
+        result = get_embedding_models(use_case="")
+        assert result == []
+
+    def test_empty_string_metric_returns_empty(self):
+        """metric='' filters for entries whose metric_recommended equals '', returning []."""
+        result = get_embedding_models(metric="")
+        assert result == []
+
+    def test_none_filters_are_equivalent_to_no_args(self):
+        """Passing all filters as None is identical to calling with no args."""
+        result_none = get_embedding_models(
+            provider=None,
+            use_case=None,
+            metric=None,
+            max_dims=None,
+            hnsw_compatible=None,
+            requires_prefix=None,
+        )
+        result_default = get_embedding_models()
+        assert result_none == result_default

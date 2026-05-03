@@ -19,6 +19,18 @@ from pydantic import BaseModel, Field, model_validator
 
 Metric = Literal["cosine", "dot", "l2"]
 Provider = Literal["huggingface", "openai", "google"]
+UseCaseTag = Literal[
+    "similarity",
+    "retrieval",
+    "clustering",
+    "multilingual",
+    "code",
+    "qa",
+    "long-context",
+    "instruct",
+    "asymmetric",
+    "symmetric",
+]
 
 
 class EmbeddingModelEntry(BaseModel):
@@ -55,7 +67,7 @@ class EmbeddingModelEntry(BaseModel):
     dimension: int = Field(gt=0)
     multilingual: bool
     language: str
-    use_case: list[str]
+    use_case: list[UseCaseTag]
     description: str
     # New required fields
     metric_recommended: Metric
@@ -1036,11 +1048,11 @@ def get_embedding_models(
         List of embedding model descriptor dicts satisfying all active filters.
     """
     models: List[Dict[str, Any]] = EMBEDDING_MODELS
-    if provider:
+    if provider is not None:
         models = [m for m in models if m["provider"] == provider]
-    if use_case:
+    if use_case is not None:
         models = [m for m in models if use_case in m.get("use_case", [])]
-    if metric:
+    if metric is not None:
         models = [m for m in models if m["metric_recommended"] == metric]
     if max_dims is not None:
         models = [m for m in models if m["dimension"] <= max_dims]
@@ -1063,4 +1075,9 @@ def get_use_cases() -> Dict[str, str]:
 # immediately after validation; the runtime list stays plain dicts.
 for _entry in EMBEDDING_MODELS:
     EmbeddingModelEntry.model_validate(_entry)
-del _entry
+# Clean up the loop variable from the module namespace.
+# Guard against an empty EMBEDDING_MODELS list (e.g. in stripped test fixtures).
+try:
+    del _entry
+except NameError:
+    pass
