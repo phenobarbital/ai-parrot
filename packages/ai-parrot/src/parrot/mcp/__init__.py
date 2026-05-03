@@ -7,12 +7,14 @@ from .integration import (
     create_local_mcp_server,
     create_http_mcp_server,
     create_api_key_mcp_server,
+    create_netsuite_m2m_mcp_server,
 )
 from .config import AuthMethod
 from .oauth import (
     APIKeyStore,
     ExternalOAuthValidator,
     APIKeyRecord,
+    NetSuiteM2MAuth,
     TokenStore,
     InMemoryTokenStore,
     RedisTokenStore,
@@ -42,6 +44,8 @@ __all__ = [
     "create_local_mcp_server",
     "create_http_mcp_server",
     "create_api_key_mcp_server",
+    "create_netsuite_m2m_mcp_server",
+    "NetSuiteM2MAuth",
     "AuthMethod",
     "APIKeyStore",
     "ExternalOAuthValidator",

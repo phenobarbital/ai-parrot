@@ -846,6 +846,77 @@ def create_netsuite_mcp_server(
     return cfg
 
 
+def create_netsuite_m2m_mcp_server(
+    *,
+    account_id: str,
+    client_id: str,
+    certificate_id: str,
+    private_key_path: str,
+    name: str = "netsuite",
+    token_store: Optional[TokenStore] = None,
+    headers: Optional[Dict[str, Any]] = None,
+) -> MCPServerConfig:
+    """Create a NetSuite MCP server using OAuth2 Client Credentials (M2M) with certificate.
+
+    This is the machine-to-machine variant — no browser login required.
+    Authentication uses a JWT ``client_assertion`` signed with the private key
+    whose matching X.509 certificate was uploaded to the NetSuite Integration Record.
+
+    Args:
+        account_id: NetSuite account ID (e.g. ``"4984231"``).
+        client_id: OAuth2 client ID from the NetSuite integration record.
+        certificate_id: Certificate ID shown in NetSuite after uploading the
+            public certificate (Mapping Key field).
+        private_key_path: Path to a PEM-encoded RSA private key file.
+        name: Server name (default ``"netsuite"``).
+        token_store: Optional :class:`~parrot.mcp.oauth.TokenStore`.
+        headers: Extra HTTP headers.
+
+    Returns:
+        :class:`MCPServerConfig` configured for NetSuite M2M.
+
+    Example:
+        >>> cfg = create_netsuite_m2m_mcp_server(
+        ...     account_id="4984231",
+        ...     client_id="abc...",
+        ...     certificate_id="XYZ123",
+        ...     private_key_path="/path/to/private.pem",
+        ... )
+    """
+    from .oauth import NetSuiteM2MAuth
+
+    url = NETSUITE_MCP_URL.format(account_id=account_id)
+    token_url = NETSUITE_TOKEN_URL.format(account_id=account_id)
+
+    m2m = NetSuiteM2MAuth(
+        client_id=client_id,
+        certificate_id=certificate_id,
+        private_key_path=private_key_path,
+        account_id=account_id,
+        token_url=token_url,
+        scopes=NETSUITE_SCOPES,
+        token_store=token_store,
+    )
+
+    cfg = MCPServerConfig(
+        name=name,
+        transport="http",
+        url=url,
+        headers=headers or {"Content-Type": "application/json"},
+        auth_type="oauth",
+        auth_config={
+            "grant_type": "client_credentials",
+            "token_url": token_url,
+            "scopes": NETSUITE_SCOPES,
+            "client_id": client_id,
+            "certificate_id": certificate_id,
+        },
+        token_supplier=m2m.token_supplier,
+    )
+    cfg._ensure_oauth_token = m2m.ensure_token
+    return cfg
+
+
 def create_unix_mcp_server(
     name: str,
     socket_path: str,
@@ -1509,6 +1580,48 @@ class MCPEnabledMixin:
             **kwargs,
         )
         return await self.add_mcp_server(config)
+
+    async def add_netsuite_m2m_mcp_server(
+        self,
+        account_id: str,
+        client_id: str,
+        certificate_id: str,
+        private_key_path: str,
+        **kwargs,
+    ) -> List[str]:
+        """Add NetSuite MCP server via OAuth2 Client Credentials (M2M) with certificate.
+
+        No browser login is needed — the agent authenticates using a JWT
+        signed with the provided private key.
+
+        Args:
+            account_id: NetSuite account ID (e.g. ``"4984231"``).
+            client_id: OAuth2 client ID from the NetSuite integration record.
+            certificate_id: Mapping Key from the uploaded certificate in NetSuite.
+            private_key_path: Path to a PEM-encoded RSA private key file.
+            **kwargs: Forwarded to :func:`create_netsuite_m2m_mcp_server`.
+
+        Returns:
+            List of registered tool names.
+
+        Example:
+            >>> tools = await agent.add_netsuite_m2m_mcp_server(
+            ...     account_id="4984231",
+            ...     client_id="abc...",
+            ...     certificate_id="XYZ123",
+            ...     private_key_path="/path/to/private.pem",
+            ... )
+        """
+        cfg = create_netsuite_m2m_mcp_server(
+            account_id=account_id,
+            client_id=client_id,
+            certificate_id=certificate_id,
+            private_key_path=private_key_path,
+            **kwargs,
+        )
+        if hasattr(cfg, "_ensure_oauth_token"):
+            await cfg._ensure_oauth_token()
+        return await self.add_mcp_server(cfg)
 
     async def add_genmedia_mcp_servers(
         self,
