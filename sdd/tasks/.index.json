@@ -15578,14 +15578,14 @@
       "feature_id": "FEAT-140",
       "feature": "embeddings-catalog-update",
       "spec": "sdd/specs/embeddings-catalog-update.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "All 5 tasks in FEAT-140 touch catalog.py and run sequentially per spec \u00a7Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
       "file": "sdd/tasks/active/TASK-962-catalog-schema-extension.md"
     },
     {
@@ -15595,7 +15595,7 @@
       "feature_id": "FEAT-140",
       "feature": "embeddings-catalog-update",
       "spec": "sdd/specs/embeddings-catalog-update.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -15604,7 +15604,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies catalog.py and huggingface.py \u2014 sequential after schema lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
       "file": "sdd/tasks/active/TASK-963-new-models-and-resolver-wiring.md"
     },
     {
@@ -15614,7 +15614,7 @@
       "feature_id": "FEAT-140",
       "feature": "embeddings-catalog-update",
       "spec": "sdd/specs/embeddings-catalog-update.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15624,7 +15624,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies same catalog.py entries that TASK-962/963 just landed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
       "file": "sdd/tasks/active/TASK-964-use-case-taxonomy-extension.md"
     },
     {
@@ -15634,7 +15634,7 @@
       "feature_id": "FEAT-140",
       "feature": "embeddings-catalog-update",
       "spec": "sdd/specs/embeddings-catalog-update.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15643,7 +15643,7 @@
       "parallel": false,
       "parallelism_notes": "Touches catalog.py \u2014 sequential to avoid merge conflicts with sibling tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
       "file": "sdd/tasks/active/TASK-965-helper-api-extension.md"
     },
     {
@@ -15653,7 +15653,7 @@
       "feature_id": "FEAT-140",
       "feature": "embeddings-catalog-update",
       "spec": "sdd/specs/embeddings-catalog-update.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15665,7 +15665,7 @@
       "parallel": false,
       "parallelism_notes": "Validation gate \u2014 must run after every implementation task lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
       "file": "sdd/tasks/active/TASK-966-catalog-resolver-consistency-pytest.md"
     }
   ]
