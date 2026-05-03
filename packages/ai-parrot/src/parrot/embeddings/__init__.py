@@ -5,6 +5,9 @@ from .catalog import (  # noqa: E402
     get_embedding_models,
     get_use_cases,
 )
+# EmbeddingModelEntry is intentionally NOT exported — it is a validation-only
+# schema used at catalog import time. Consumers should use EMBEDDING_MODELS
+# (plain dicts) for JSON-serialization compatibility with the consumer API.
 
 supported_embeddings = {
     'huggingface': 'SentenceTransformerModel',
