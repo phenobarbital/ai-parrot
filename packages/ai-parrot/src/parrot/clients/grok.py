@@ -1,4 +1,5 @@
-from typing import List, Dict, Any, Optional, Union, AsyncIterator
+from __future__ import annotations
+from typing import List, Dict, Any, Optional, Union, AsyncIterator, TYPE_CHECKING
 import os
 import asyncio
 import logging
@@ -9,10 +10,27 @@ from pathlib import Path
 from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 
-from xai_sdk import AsyncClient
-from xai_sdk.chat import user, system, assistant
-
 from .base import AbstractClient
+
+if TYPE_CHECKING:
+    from xai_sdk import AsyncClient
+
+
+def _xai_chat_helpers():
+    """Lazy-import the xai_sdk.chat role builders.
+
+    Centralised so each ``ask``/``ask_stream``/``resume`` method can pull
+    ``user``, ``system``, ``assistant`` without forcing ``xai_sdk`` to be
+    installed at module import time.
+    """
+    try:
+        from xai_sdk.chat import user, system, assistant
+    except ImportError as exc:
+        raise ImportError(
+            "GrokClient requires the 'xai-sdk' package. "
+            "Install with: pip install ai-parrot[grok]"
+        ) from exc
+    return user, system, assistant
 from ..models import (
     MessageResponse,
     CompletionUsage,
@@ -77,7 +95,7 @@ class GrokClient(AbstractClient):
         self.timeout = timeout
         # NOTE: no self.client = None — base class owns the per-loop cache as a property.
 
-    async def get_client(self) -> AsyncClient:
+    async def get_client(self) -> "AsyncClient":
         """Construct and return a fresh xAI AsyncClient for the current loop.
 
         The per-loop cache in AbstractClient calls this on a cache miss.
@@ -86,6 +104,13 @@ class GrokClient(AbstractClient):
         Returns:
             A freshly constructed ``AsyncClient`` instance.
         """
+        try:
+            from xai_sdk import AsyncClient
+        except ImportError as exc:
+            raise ImportError(
+                "GrokClient requires the 'xai-sdk' package. "
+                "Install with: pip install ai-parrot[grok]"
+            ) from exc
         return AsyncClient(api_key=self.api_key, timeout=self.timeout)
 
     async def close(self) -> None:
@@ -220,10 +245,12 @@ class GrokClient(AbstractClient):
         # Using chat.create() creates a new conversation container.
         chat = client.chat.create(**chat_kwargs)
 
+        user, system, assistant = _xai_chat_helpers()
+
         # 4. Add Context (System, History, User)
         if system_prompt:
             chat.append(system(system_prompt))
-            
+
         if self.conversation_memory and user_id and session_id:
             history = await self.get_conversation(user_id, session_id)
             if history:
@@ -419,6 +446,8 @@ class GrokClient(AbstractClient):
 
         chat = client.chat.create(**chat_kwargs)
 
+        user, system, assistant = _xai_chat_helpers()
+
         if system_prompt:
             chat.append(system(system_prompt))
 
@@ -431,7 +460,7 @@ class GrokClient(AbstractClient):
                         chat.append(assistant(turn.output))
 
         chat.append(user(prompt))
-        
+
         full_response = []
         
         async for token in chat.stream():
@@ -509,6 +538,8 @@ class GrokClient(AbstractClient):
             chat_kwargs["tool_choice"] = "auto"
 
         chat = client.chat.create(**chat_kwargs)
+
+        user, system, assistant = _xai_chat_helpers()
 
         # Replay history into the new chat object.
         for msg in messages:

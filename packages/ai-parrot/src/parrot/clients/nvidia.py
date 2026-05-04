@@ -13,7 +13,6 @@ import contextvars
 from typing import Any, AsyncIterator, Dict, Optional
 
 from navconfig import config
-from openai import APIConnectionError, APIError, RateLimitError
 from tenacity import (
     AsyncRetrying,
     retry_if_exception_type,
@@ -149,6 +148,7 @@ class NvidiaClient(OpenAIClient):
         Returns:
             Raw OpenAI ``ChatCompletion`` response.
         """
+        from openai import APIConnectionError, APIError, RateLimitError
         thinking = _thinking_ctx.get()
         if thinking.get("enable_thinking"):
             kwargs["extra_body"] = self._merge_thinking_extra_body(

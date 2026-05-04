@@ -1,5 +1,6 @@
+from __future__ import annotations
 import asyncio
-from typing import AsyncIterator, Dict, List, Optional, Union, Any
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, TYPE_CHECKING
 from typing import List as TypingList
 import base64
 import io
@@ -9,14 +10,17 @@ import uuid
 import logging
 from pathlib import Path
 import mimetypes
-from PIL import Image
 from pydantic import BaseModel, Field
 from navconfig import config
 # from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
-from anthropic import AsyncAnthropic
-from anthropic.types import Message, MessageStreamEvent
 from .base import AbstractClient, BatchRequest, StreamingRetryConfig
+
+if TYPE_CHECKING:
+    # Type-check-only imports — keep IDE/mypy support without forcing the
+    # SDKs to be installed at runtime when this client is unused.
+    from anthropic import AsyncAnthropic
+    from PIL import Image
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -63,8 +67,15 @@ class AnthropicClient(AbstractClient):
         }
         super().__init__(**kwargs)
 
-    async def get_client(self) -> AsyncAnthropic:
+    async def get_client(self) -> "AsyncAnthropic":
         """Initialize the Anthropic client."""
+        try:
+            from anthropic import AsyncAnthropic
+        except ImportError as exc:
+            raise ImportError(
+                "AnthropicClient requires the 'anthropic' SDK. "
+                "Install with: pip install ai-parrot[anthropic]"
+            ) from exc
         return AsyncAnthropic(
             api_key=self.api_key,
             max_retries=2
@@ -699,9 +710,16 @@ class AnthropicClient(AbstractClient):
 
     def _encode_image_for_claude(
         self,
-        image: Union[Path, bytes, Image.Image]
+        image: Union[Path, bytes, "Image.Image"]
     ) -> Dict[str, Any]:
         """Encode image for Claude's vision API."""
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError(
+                "Image methods on AnthropicClient require Pillow. "
+                "Install with: pip install Pillow"
+            ) from exc
 
         if isinstance(image, Path):
             if not image.exists():

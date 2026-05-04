@@ -3,14 +3,17 @@
 Extends OpenAIClient to route requests through OpenRouter's multi-model
 API gateway, providing access to 200+ LLM models via a single endpoint.
 """
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from logging import getLogger
 
 import aiohttp
-from openai import AsyncOpenAI
 from navconfig import config
 
 from .gpt import OpenAIClient
+
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
 from ..models.openrouter import (
     OpenRouterModel,
     ProviderPreferences,
@@ -74,12 +77,19 @@ class OpenRouterClient(OpenAIClient):
         # Re-set after super().__init__ because AbstractClient may overwrite
         self.api_key = resolved_key
 
-    async def get_client(self) -> AsyncOpenAI:
+    async def get_client(self) -> "AsyncOpenAI":
         """Initialize AsyncOpenAI with OpenRouter base_url and custom headers.
 
         Returns:
             AsyncOpenAI client configured for OpenRouter.
         """
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "OpenRouterClient requires the 'openai' SDK. "
+                "Install with: pip install ai-parrot[openai]"
+            ) from exc
         headers = {
             "HTTP-Referer": self.site_url,
             "X-Title": self.app_name,

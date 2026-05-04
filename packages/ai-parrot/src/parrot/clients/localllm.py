@@ -3,14 +3,17 @@
 Extends OpenAIClient to support local/self-hosted OpenAI-compatible LLM
 servers such as Ollama, vLLM, llama.cpp, and LM Studio.
 """
-from typing import Any, Dict, List, Optional, Union
+from __future__ import annotations
+from typing import Any, Dict, List, Optional, Union, TYPE_CHECKING
 from enum import Enum
 from logging import getLogger
 
-from openai import AsyncOpenAI
 from navconfig import config
 
 from .gpt import OpenAIClient, STRUCTURED_OUTPUT_COMPATIBLE_MODELS
+
+if TYPE_CHECKING:
+    from openai import AsyncOpenAI
 from ..models.localllm import LocalLLMModel
 from ..models import CompletionUsage, StructuredOutputConfig
 from ..models.responses import InvokeResult
@@ -90,7 +93,7 @@ class LocalLLMClient(OpenAIClient):
         self.api_key = resolved_key
         self.base_url = resolved_url
 
-    async def get_client(self) -> AsyncOpenAI:
+    async def get_client(self) -> "AsyncOpenAI":
         """Initialize AsyncOpenAI with local server URL.
 
         Uses ``"no-key"`` as a placeholder when no API key is provided,
@@ -99,6 +102,13 @@ class LocalLLMClient(OpenAIClient):
         Returns:
             AsyncOpenAI client configured for the local server.
         """
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "LocalLLMClient requires the 'openai' SDK. "
+                "Install with: pip install ai-parrot[openai]"
+            ) from exc
         return AsyncOpenAI(
             api_key=self.api_key or "no-key",
             base_url=self.base_url,
