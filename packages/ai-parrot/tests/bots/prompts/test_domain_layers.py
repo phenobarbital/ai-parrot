@@ -151,14 +151,15 @@ class TestRagGroundingLayer:
     def test_renders_always(self):
         result = RAG_GROUNDING_LAYER.render({"extra_rag_rules": ""})
         assert "<rag_policy>" in result
-        assert "single source of truth" in result
+        assert "EXCLUSIVELY" in result
         assert "<knowledge_context>" in result
 
     def test_no_condition(self):
         assert RAG_GROUNDING_LAYER.condition is None
 
-    def test_priority_before_behavior(self):
-        assert RAG_GROUNDING_LAYER.priority < LayerPriority.BEHAVIOR
+    def test_priority_precedes_knowledge(self):
+        # Policy must arrive BEFORE the chunks to predispose the model.
+        assert RAG_GROUNDING_LAYER.priority < LayerPriority.KNOWLEDGE
 
     def test_phase_is_configure(self):
         assert RAG_GROUNDING_LAYER.phase == RenderPhase.CONFIGURE

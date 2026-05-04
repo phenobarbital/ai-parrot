@@ -1314,6 +1314,8 @@ Your job is to produce a final summary from the following text and identify the 
             'video_link',
             'navigation',
             'selector',
+            'faq',
+            'table',
         })
 
         for doc in documents:

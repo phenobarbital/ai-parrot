@@ -212,7 +212,7 @@ async def main():
     # 1. Create and register agent
     agent = BasicAgent(
         name="CustomerService",
-        llm="google:gemini-2.0-flash-exp",
+        llm="google:gemini-3.1-flash-lite-preview",
         system_instructions="You are a helpful customer service agent. Be concise.",
     )
     await agent.configure()
@@ -271,7 +271,7 @@ async def main():
     ]:
         agent = BasicAgent(
             name=name,
-            llm="google:gemini-2.0-flash-exp",
+            llm="google:gemini-3.1-flash-lite-preview",
             system_instructions=instructions,
         )
         await agent.configure()

@@ -121,7 +121,7 @@ class TestUnderstandingRequest:
             prompt="What objects are visible?",
             media_url="https://example.com/image.png",
             media_type="image",
-            model="gemini-2.0-flash",
+            model="gemini-3.1-flash-lite-preview",
             detect_objects=False,
             as_image=False,
             temperature=0.5,
@@ -130,7 +130,7 @@ class TestUnderstandingRequest:
         assert req.prompt == "What objects are visible?"
         assert req.media_url == "https://example.com/image.png"
         assert req.media_type == "image"
-        assert req.model == "gemini-2.0-flash"
+        assert req.model == "gemini-3.1-flash-lite-preview"
         assert req.detect_objects is False
         assert req.as_image is False
         assert req.temperature == 0.5
@@ -150,13 +150,13 @@ class TestUnderstandingResponse:
         resp = UnderstandingResponse(
             content="A red square on white background",
             structured_output={"detections": []},
-            model="gemini-2.0-flash",
+            model="gemini-3.1-flash-lite-preview",
             provider="google_genai",
             usage={"prompt_tokens": 10, "completion_tokens": 50},
         )
         assert resp.content == "A red square on white background"
         assert resp.structured_output == {"detections": []}
-        assert resp.model == "gemini-2.0-flash"
+        assert resp.model == "gemini-3.1-flash-lite-preview"
         assert resp.provider == "google_genai"
         assert resp.usage is not None
 
@@ -170,14 +170,14 @@ class TestUnderstandingResponse:
         msg = MagicMock()
         msg.content = "An image of a cat"
         msg.structured_output = None
-        msg.model = "gemini-2.0-flash"
+        msg.model = "gemini-3.1-flash-lite-preview"
         msg.provider = "google_genai"
         msg.usage = None
 
         resp = UnderstandingResponse.from_ai_message(msg)
         assert resp.content == "An image of a cat"
         assert resp.structured_output is None
-        assert resp.model == "gemini-2.0-flash"
+        assert resp.model == "gemini-3.1-flash-lite-preview"
         assert resp.provider == "google_genai"
         assert resp.usage is None
 
@@ -189,7 +189,7 @@ class TestUnderstandingResponse:
         msg = MagicMock()
         msg.content = "Image with a cat"
         msg.structured_output = structured
-        msg.model = "gemini-2.0-flash"
+        msg.model = "gemini-3.1-flash-lite-preview"
         msg.provider = "google_genai"
         msg.usage = None
 
@@ -203,7 +203,7 @@ class TestUnderstandingResponse:
         msg = MagicMock()
         msg.content = "Video summary"
         msg.structured_output = None
-        msg.model = "gemini-2.0-flash"
+        msg.model = "gemini-3.1-flash-lite-preview"
         msg.provider = "google_genai"
         msg.usage = usage
 
@@ -215,7 +215,7 @@ class TestUnderstandingResponse:
         msg = MagicMock()
         msg.content = 42
         msg.structured_output = None
-        msg.model = "gemini-2.0-flash"
+        msg.model = "gemini-3.1-flash-lite-preview"
         msg.provider = "google_genai"
         msg.usage = None
 

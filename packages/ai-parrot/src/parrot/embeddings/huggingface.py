@@ -8,7 +8,7 @@ from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
 
-def _resolve_prefixes(model_name: str) -> Tuple[Optional[str], Optional[str]]:
+def _resolve_prefixes(model_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     """Return the (query_prefix, passage_prefix) pair for a model, or (None, None).
 
     A number of modern sentence-encoder families were trained with
@@ -19,10 +19,20 @@ def _resolve_prefixes(model_name: str) -> Tuple[Optional[str], Optional[str]]:
 
     Covered families:
 
+    * **e5-mistral-7b-instruct** (``intfloat/e5-mistral-7b-instruct``):
+      instruction-tuned variant that uses a long task-instruction prefix,
+      NOT the generic E5 ``"query: "`` prefix. Checked before the generic
+      E5 branch to prevent misclassification.
+    * **gte-Qwen2-instruct** (``Alibaba-NLP/gte-Qwen2-*-instruct``):
+      instruction-tuned GTE model; same instruct-template as e5-mistral.
+    * **NV-Embed-v2** (``nvidia/NV-Embed-v2``): NVIDIA task-instruction
+      prefix; passages go in raw.
+    * **Jina v3** (``jinaai/jina-embeddings-v3``): task-specific query
+      prefix for retrieval; passages go in raw.
     * **E5** (``intfloat/e5-*``, ``intfloat/multilingual-e5-*``): uses
       the canonical ``"query: "`` / ``"passage: "`` pair for every
-      variant. Required — omitting these drops retrieval quality to
-      near baseline.
+      non-instruct variant. Required — omitting these drops retrieval
+      quality to near baseline.
     * **BGE English v1.5** (``BAAI/bge-*-en-v1.5``): queries are
       prefixed with the long retrieval instruction, passages go in raw.
       Multilingual BGE (``bge-m3``) does **not** use a prefix.
@@ -42,7 +52,41 @@ def _resolve_prefixes(model_name: str) -> Tuple[Optional[str], Optional[str]]:
 
     lower = model_name.lower()
 
-    # E5 family — every checkpoint uses the same contract.
+    # --- Instruct variants MUST come before generic E5 branch ----------
+    # e5-mistral-7b-instruct uses the instruct template, NOT "query: ".
+    # Without this guard the generic "/e5-" branch below would match it
+    # and return the wrong prefix pair.
+    if "e5-mistral-7b-instruct" in lower:
+        return (
+            "Instruct: Given a web search query, retrieve relevant passages "
+            "that answer the query\nQuery: ",
+            None,
+        )
+
+    # gte-Qwen2 instruct variants — same template as e5-mistral.
+    if "gte-qwen2" in lower and "instruct" in lower:
+        return (
+            "Instruct: Given a web search query, retrieve relevant passages "
+            "that answer the query\nQuery: ",
+            None,
+        )
+
+    # NV-Embed-v2 — NVIDIA task-instruction prefix, passages raw.
+    if "nv-embed-v2" in lower:
+        return (
+            "Instruct: Given a question, retrieve passages that answer the "
+            "question\nQuery: ",
+            None,
+        )
+
+    # Jina v3 — retrieval-specific query prefix, passages raw.
+    if "jina-embeddings-v3" in lower:
+        return (
+            "Represent the query for retrieving evidence documents: ",
+            None,
+        )
+
+    # E5 family — every non-instruct checkpoint uses the same contract.
     if "/e5-" in lower or "intfloat/e5" in lower or "multilingual-e5" in lower:
         return ("query: ", "passage: ")
 
@@ -69,6 +113,7 @@ class ModelType(Enum):
     GTE_LARGE = "thenlper/gte-large"
     MSMARCO = "sentence-transformers/msmarco-MiniLM-L12-v3"
     MULTI_QA = "sentence-transformers/multi-qa-mpnet-base-dot-v1"
+    MULTI_QA_COS = "sentence-transformers/multi-qa-mpnet-base-cos-v1"
     GTR_T5 = "sentence-transformers/gtr-t5-large"
     E5_BASE = "intfloat/e5-base-v2"
     E5_LARGE = "intfloat/e5-large-v2"
@@ -86,6 +131,7 @@ class ModelType(Enum):
     # Code / Technical
     JINA_CODE = "jinaai/jina-embeddings-v2-base-code"
     JINA_EN = "jinaai/jina-embeddings-v2-base-en"
+    JINA_V3 = "jinaai/jina-embeddings-v3"
     # Matryoshka / Flexible Dimensions
     NOMIC = "nomic-ai/nomic-embed-text-v1.5"
     MXBAI_LARGE = "mixedbread-ai/mxbai-embed-large-v1"
@@ -95,6 +141,11 @@ class ModelType(Enum):
     ARCTIC_S = "Snowflake/snowflake-arctic-embed-s"
     ARCTIC_M = "Snowflake/snowflake-arctic-embed-m-v1.5"
     ARCTIC_L = "Snowflake/snowflake-arctic-embed-l"
+    # Instruct-Tuned
+    GTE_QWEN2_INSTRUCT = "Alibaba-NLP/gte-Qwen2-1.5B-instruct"
+    E5_MISTRAL_INSTRUCT = "intfloat/e5-mistral-7b-instruct"
+    # High-Dimension / Specialized
+    NV_EMBED_V2 = "nvidia/NV-Embed-v2"
 
 
 class SentenceTransformerModel(EmbeddingModel):
@@ -124,7 +175,7 @@ class SentenceTransformerModel(EmbeddingModel):
                 self.model_name, self._query_prefix, self._passage_prefix,
             )
         self.logger.info(
-            f"Initialized SentenceTransformerModel with model: {self.model_name}"
+            "Initialized SentenceTransformerModel with model: %s", self.model_name
         )
 
     def _apply_query_prefix(self, text: str) -> str:

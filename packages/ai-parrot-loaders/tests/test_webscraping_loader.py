@@ -464,3 +464,211 @@ def test_registry_entry():
     from parrot_loaders import LOADER_REGISTRY
     assert "WebScrapingLoader" in LOADER_REGISTRY
     assert LOADER_REGISTRY["WebScrapingLoader"] == "parrot_loaders.webscraping.WebScrapingLoader"
+
+
+# ── Tests: JSON-LD FAQPage extraction ───────────────────────────────
+#
+# Real-world motivating case: schema.org/FAQPage embedded in
+# <script type="application/ld+json"> on att.com/prepaid/. The loader
+# must extract Q&A pairs deterministically and emit one Document per
+# pair so the embedder receives (question + answer) as a single semantic
+# unit. Without this, scrapers separate the question (in <h*>) from the
+# answer (in a sibling panel) and the vector store ends up with
+# answer-only chunks that never match user queries phrased as questions.
+
+ATT_FAQ_FIXTURE_HTML = '''
+<html><head><title>AT&T Prepaid Plans</title></head><body>
+<div data-comp="accordion-duc">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is AT&T Level Up?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "AT&amp;T Level Up is a feature that lets you use your payment history to &quot;level up&quot; to a new phone."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I access my AT&T Prepaid account?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "<p>You can access and manage your AT&amp;T Prepaid account by logging into <a href=\\"https://example.com\\">your account</a>.</p>\\nYour AT&amp;T Prepaid account allows you to see your data usage, change your plan, check your balance, enroll &amp; set up AutoPay."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I lease-to-own a phone with Progressive Leasing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "<p>Choose the phone you want. During checkout,&nbsp;you&rsquo;ll&nbsp;have the opportunity to select the Progressive lease-to-own payment&nbsp;option.</p>"
+      }
+    }
+  ]
+}
+</script>
+</div></body></html>
+'''
+
+
+@pytest.fixture
+def stub_loader():
+    """Bypass __init__ — these tests target pure helper methods."""
+    import logging
+    loader = WebScrapingLoader.__new__(WebScrapingLoader)
+    loader.logger = logging.getLogger("test_faqpage")
+    return loader
+
+
+class TestFAQPageJSONLD:
+    """JSON-LD FAQPage extraction → Q&A pair list."""
+
+    def test_extracts_three_pairs_from_att_fixture(self, stub_loader):
+        soup = BeautifulSoup(ATT_FAQ_FIXTURE_HTML, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        assert len(pairs) == 3
+        questions = [p["question"] for p in pairs]
+        assert "How do I access my AT&T Prepaid account?" in questions
+        assert "How do I lease-to-own a phone with Progressive Leasing?" in questions
+
+    def test_decodes_html_entities(self, stub_loader):
+        soup = BeautifulSoup(ATT_FAQ_FIXTURE_HTML, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        autopay = next(
+            p for p in pairs if "access my AT&T" in p["question"]
+        )
+        assert "AT&T Prepaid" in autopay["answer"]
+        assert "&amp;" not in autopay["answer"]
+
+    def test_strips_html_tags_from_answer(self, stub_loader):
+        soup = BeautifulSoup(ATT_FAQ_FIXTURE_HTML, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        for p in pairs:
+            assert "<p>" not in p["answer"]
+            assert "<a " not in p["answer"]
+
+    def test_collapses_whitespace_runs(self, stub_loader):
+        soup = BeautifulSoup(ATT_FAQ_FIXTURE_HTML, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        for p in pairs:
+            assert "  " not in p["answer"]
+            assert p["answer"] == p["answer"].strip()
+
+    def test_preserves_autopay_keyword(self, stub_loader):
+        # The motivating regression: AutoPay must survive the answer
+        # cleanup so the embedder gets the keyword users query against.
+        soup = BeautifulSoup(ATT_FAQ_FIXTURE_HTML, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        autopay = next(
+            p for p in pairs if "access my AT&T" in p["question"]
+        )
+        assert "AutoPay" in autopay["answer"]
+
+    def test_returns_empty_list_when_no_jsonld(self, stub_loader):
+        soup = BeautifulSoup(
+            "<html><body><p>No FAQ here.</p></body></html>",
+            "html.parser",
+        )
+        assert stub_loader._extract_faqpage_jsonld(soup) == []
+
+    def test_tolerates_malformed_jsonld(self, stub_loader):
+        bad_html = (
+            '<script type="application/ld+json">{ broken json </script>'
+            '<script type="application/ld+json">'
+            '{"@context":"https://schema.org","@type":"FAQPage","mainEntity":'
+            '[{"@type":"Question","name":"Q1?","acceptedAnswer":{"@type":"Answer","text":"A1"}}]}'
+            "</script>"
+        )
+        soup = BeautifulSoup(bad_html, "html.parser")
+        assert stub_loader._extract_faqpage_jsonld(soup) == [
+            {"question": "Q1?", "answer": "A1"}
+        ]
+
+    def test_handles_at_graph_wrapper(self, stub_loader):
+        graph_html = (
+            '<script type="application/ld+json">'
+            '{"@context":"https://schema.org","@graph":['
+            '{"@type":"WebPage","name":"page"},'
+            '{"@type":"FAQPage","mainEntity":[{"@type":"Question",'
+            '"name":"Wrapped?","acceptedAnswer":{"@type":"Answer","text":"Yes"}}]}]}'
+            "</script>"
+        )
+        soup = BeautifulSoup(graph_html, "html.parser")
+        assert stub_loader._extract_faqpage_jsonld(soup) == [
+            {"question": "Wrapped?", "answer": "Yes"}
+        ]
+
+    def test_dedupes_questions_across_blocks(self, stub_loader):
+        # Same Q in two blocks → first wins.
+        dup_html = (
+            '<script type="application/ld+json">'
+            '{"@type":"FAQPage","mainEntity":[{"@type":"Question",'
+            '"name":"Same?","acceptedAnswer":{"@type":"Answer","text":"first"}}]}'
+            "</script>"
+            '<script type="application/ld+json">'
+            '{"@type":"FAQPage","mainEntity":[{"@type":"Question",'
+            '"name":"Same?","acceptedAnswer":{"@type":"Answer","text":"second"}}]}'
+            "</script>"
+        )
+        soup = BeautifulSoup(dup_html, "html.parser")
+        pairs = stub_loader._extract_faqpage_jsonld(soup)
+        assert len(pairs) == 1
+        assert pairs[0]["answer"] == "first"
+
+    def test_skips_question_with_empty_answer(self, stub_loader):
+        empty_ans_html = (
+            '<script type="application/ld+json">'
+            '{"@type":"FAQPage","mainEntity":[{"@type":"Question",'
+            '"name":"Empty?","acceptedAnswer":{"@type":"Answer","text":""}}]}'
+            "</script>"
+        )
+        soup = BeautifulSoup(empty_ans_html, "html.parser")
+        assert stub_loader._extract_faqpage_jsonld(soup) == []
+
+
+class TestFAQPageDocumentEmission:
+    """Document shape for FAQ pairs — page_content format and metadata."""
+
+    def test_page_content_uses_q_and_a_prefixes(self, stub_loader):
+        pairs = [{"question": "Can I do X?", "answer": "Yes."}]
+        docs = stub_loader._docs_from_faqpage(pairs, {"source": "u"})
+        assert docs[0].page_content == "Q: Can I do X?\n\nA: Yes."
+
+    def test_metadata_has_qa_in_row_data(self, stub_loader):
+        pairs = [{"question": "Q?", "answer": "A!"}]
+        docs = stub_loader._docs_from_faqpage(pairs, {"source": "u"})
+        meta = docs[0].metadata
+        assert meta["content_kind"] == "faq"
+        assert meta["selector_name"] == "faq"
+        assert meta["source_type"] == "faq-jsonld"
+        assert meta["row_data"] == {"question": "Q?", "answer": "A!"}
+        assert meta["row_index"] == 0
+        assert meta["row_count"] == 1
+
+    def test_metadata_inherits_base_fields(self, stub_loader):
+        pairs = [{"question": "Q?", "answer": "A!"}]
+        docs = stub_loader._docs_from_faqpage(pairs, {
+            "source": "https://www.att.com/prepaid/",
+            "category": "prepaid-faq",
+            "title": "AT&T Prepaid Plans",
+        })
+        meta = docs[0].metadata
+        assert meta["source"] == "https://www.att.com/prepaid/"
+        assert meta["category"] == "prepaid-faq"
+        assert meta["title"] == "AT&T Prepaid Plans"
+
+    def test_one_document_per_pair(self, stub_loader):
+        pairs = [
+            {"question": "Q1?", "answer": "A1"},
+            {"question": "Q2?", "answer": "A2"},
+            {"question": "Q3?", "answer": "A3"},
+        ]
+        docs = stub_loader._docs_from_faqpage(pairs, {"source": "u"})
+        assert len(docs) == 3
+        for i, d in enumerate(docs):
+            assert d.metadata["row_index"] == i
+            assert d.metadata["row_count"] == 3

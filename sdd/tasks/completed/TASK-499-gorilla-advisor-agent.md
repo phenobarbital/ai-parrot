@@ -139,7 +139,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     # 3. Create bot
     bot = GorillaAdvisorBot(
         name="Gorilla Sheds Advisor",
-        llm="google:gemini-2.0-flash",
+        llm="google:gemini-3.1-flash-lite-preview",
         system_prompt=SYSTEM_PROMPT,
         catalog=catalog,
         auto_register_tools=True,

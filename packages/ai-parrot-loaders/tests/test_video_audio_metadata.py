@@ -136,7 +136,7 @@ class TestVideoUnderstandingMetadata:
             Path("/tmp/video.mp4"),
             doctype="video_understanding",
             source_type="video_understanding",
-            model_used="gemini-2.0-pro",
+            model_used="gemini-3.1-flash-lite-preview",
             analysis_type="video_understanding",
             video_title="video",
         )
@@ -149,7 +149,7 @@ class TestVideoUnderstandingMetadata:
             Path("/tmp/video.mp4"),
             doctype="video_understanding",
             source_type="video_understanding",
-            model_used="gemini-2.0-pro",
+            model_used="gemini-3.1-flash-lite-preview",
             scene_index=3,
         )
         assert "model_used" in meta

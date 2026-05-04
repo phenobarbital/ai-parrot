@@ -270,7 +270,7 @@ async def test_agent_real_integration():
     agent = BasicAgent(
         name="RealTestAgent", 
         use_llm="google", 
-        model="gemini-2.0-flash-exp"
+        model="gemini-3.1-flash-lite-preview"
     )
     
     response = await agent.conversation("Hello, who are you?")

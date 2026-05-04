@@ -1,4 +1,3 @@
-import re
 import uuid
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
@@ -80,30 +79,50 @@ class BaseTextSplitter(ABC):
             chunks.append(chunk)
             current_position = start_pos + len(chunk_text) - self.chunk_overlap
 
-        # Enforce min_chunk_size: merge undersized final chunk with previous
-        if self.min_chunk_size > 0 and len(chunks) >= 2:
-            if chunks[-1].token_count < self.min_chunk_size:
-                prev = chunks[-2]
-                last = chunks[-1]
-                merged_text = prev.text + "\n\n" + last.text
-                merged_token_count = self._count_tokens(merged_text)
-                # Update previous chunk with merged content
-                chunks[-2] = TextChunk(
-                    text=merged_text,
-                    start_position=prev.start_position,
-                    end_position=last.end_position,
-                    token_count=merged_token_count,
-                    metadata={
-                        **prev.metadata,
-                        'total_chunks': prev.metadata.get('total_chunks', 1) - 1,
-                    },
-                    chunk_id=prev.chunk_id,
-                )
-                # Remove last chunk
-                chunks.pop()
-                # Update total_chunks in all remaining chunks
-                for c in chunks:
-                    c.metadata['total_chunks'] = len(chunks)
+        return self._enforce_min_chunk_size(chunks)
+
+    def _enforce_min_chunk_size(
+        self, chunks: List[TextChunk]
+    ) -> List[TextChunk]:
+        """Merge an undersized trailing chunk with its predecessor.
+
+        No-op when min_chunk_size <= 0, when there are fewer than 2 chunks,
+        or when the trailing chunk already meets the minimum.
+
+        Idempotent: applying the helper twice yields the same list.
+
+        Args:
+            chunks: List of TextChunk objects to process.
+
+        Returns:
+            The (possibly modified) list with the tail-merge applied.
+        """
+        if self.min_chunk_size <= 0 or len(chunks) < 2:
+            return chunks
+        if chunks[-1].token_count >= self.min_chunk_size:
+            return chunks
+
+        prev = chunks[-2]
+        last = chunks[-1]
+        merged_text = prev.text + "\n\n" + last.text
+        merged_token_count = self._count_tokens(merged_text)
+        # Update previous chunk with merged content
+        chunks[-2] = TextChunk(
+            text=merged_text,
+            start_position=prev.start_position,
+            end_position=last.end_position,
+            token_count=merged_token_count,
+            metadata={
+                **prev.metadata,
+                'total_chunks': prev.metadata.get('total_chunks', 1) - 1,
+            },
+            chunk_id=prev.chunk_id,
+        )
+        # Remove last chunk
+        chunks.pop()
+        # Update total_chunks in all remaining chunks
+        for c in chunks:
+            c.metadata['total_chunks'] = len(chunks)
 
         return chunks
 
