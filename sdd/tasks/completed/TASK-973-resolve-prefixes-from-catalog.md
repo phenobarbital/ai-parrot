@@ -321,10 +321,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Added `_PREFIX_LOOKUP` dict built at import time from `EMBEDDING_MODELS`,
+module-level `logger`, and rewrote `_resolve_prefixes` body as a catalog-driven O(1)
+lookup. All 40 existing tests pass with zero regressions. The pre-existing
+`TYPE_CHECKING` unused-import lint warning was present before this change and is
+not a regression introduced by this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
