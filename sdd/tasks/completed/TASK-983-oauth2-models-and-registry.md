@@ -296,8 +296,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Implemented parrot/integrations/oauth2/__init__.py (with _WEB_CHANNEL constant and re-exports), models.py (8 Pydantic v2 models), and registry.py (OAuth2Provider ABC + OAuth2ProviderRegistry singleton with _reset() for tests). All 26 unit tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
