@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-144 — Cross-Repository JiraToolkit OAuth2 3LO (Web AgentChat)
 **Spec**: `sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-985
@@ -246,10 +246,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-05-05
+**Notes**: Implemented exactly as specified. WEB_OAUTH_ALLOWED_ORIGINS added to
+conf.py as comma-separated env var parsed to list. IntegrationsHandler created
+as BaseView with @is_authenticated/@user_session decorators, dispatching
+GET/POST/DELETE to service layer. Four routes registered in manager.py plus
+_register_oauth2_providers on_startup callback. Unit tests bypass auth decorators
+via `request["authenticated"] = True` and patching `navigator_auth.decorators.get_session`.
+All 4 handler tests and 63 oauth2 unit tests pass. Lint clean on modified files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

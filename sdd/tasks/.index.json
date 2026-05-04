@@ -16085,7 +16085,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -16095,7 +16095,8 @@
       "parallelism_notes": "After TASK-985, modifies conf.py + new integrations.py + manager.py routes. Shares no files with TASK-987.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-986-handler-routes-config.md"
+      "file": "sdd/tasks/completed/TASK-986-handler-routes-config.md",
+      "completed_at": "2026-05-05T00:00:00Z"
     },
     {
       "id": "TASK-987",
