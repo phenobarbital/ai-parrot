@@ -61,6 +61,9 @@ class FlowContext:
     completed_tasks: Set[str] = field(default_factory=set)
     """Set of node_ids that have successfully completed."""
 
+    shared_data: Dict[str, Any] = field(default_factory=dict)
+    """Arbitrary key-value data shared across all nodes (replaces AgentContext.shared_data)."""
+
     # ── Dependency checking ───────────────────────────────────────────────
 
     def can_execute(self, _node_id: str, dependencies: Set[str]) -> bool:
