@@ -47,8 +47,17 @@ even though it is the primary consumer of the flow primitives defined in
   to use `FlowContext` instead of `AgentContext`.
 - **Extract `CrewAgentNode`**: Move `_CrewAgentNode` from `crew.py` to its own
   `flows/crew/nodes.py` module, rename to `CrewAgentNode`.
-- **Delete `orchestration/`**: The old package is removed entirely — no
-  backward-compat re-exports.
+- **Leave `orchestration/` in place for review**: The moved files are
+  superseded by their new locations in `flows/`, but `orchestration/` is
+  NOT deleted — remaining code needs review before removal.
+- **Introduce `NodeResult` in `flows.core`**: Move `AgentResult` from
+  `parrot.models.crew` to `flows.core.result` as `NodeResult` with
+  node-centric naming (`node_id`/`node_name` instead of
+  `agent_id`/`agent_name`) and backward-compat property aliases. This
+  unifies the storage model across AgentCrew and future AgentsFlow.
+- **Add `shared_data` to `FlowContext`**: Drop `AgentContext` entirely from
+  AgentCrew by adding a `shared_data: Dict[str, Any]` field to
+  `FlowContext`.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -62,6 +71,13 @@ even though it is the primary consumer of the flow primitives defined in
 - Migrating `AgentContext` out of `parrot.tools.agent` — it stays; we just
   stop using it inside `AgentCrew`.
 - Performance optimizations or new test infrastructure.
+- Cleaning up `bots/flow/` (singular) — that module is for the AgentsFlow
+  refactor (Spec 3) and is left untouched.
+- Cleaning up `bots/orchestration/` beyond deletion — remaining code that
+  other packages depend on stays until consumers are migrated in a separate
+  pass. **Update**: orchestration/ is NOT deleted in this spec; it is left
+  in place for review of remaining code. Only the files that move to
+  `flows/` stop being maintained in `orchestration/`.
 
 ---
 
@@ -96,7 +112,8 @@ parrot/bots/flows/
 └── tools.py                 (NEW — ResultRetrievalTool, moved from bots/flow/tools.py)
 ```
 
-After the move, `parrot/bots/orchestration/` is **deleted entirely**.
+After the move, `parrot/bots/orchestration/` is **left in place** for review
+of remaining code — it is NOT deleted in this spec.
 
 ### Component Diagram
 
@@ -119,7 +136,7 @@ parrot.bots.flows.core (FEAT-134 — untouched)
     └──→ parrot.bots.flows.tools (NEW)
            └── ResultRetrievalTool(AbstractTool)
 
-parrot.bots.orchestration/ → DELETED
+parrot.bots.orchestration/ → LEFT IN PLACE (review remaining code separately)
 ```
 
 ### Integration Points
@@ -135,22 +152,71 @@ parrot.bots.orchestration/ → DELETED
 | `flows.core.fsm.AgentTaskMachine` | composed by | Each `CrewAgentNode` contains one |
 | `parrot.tools.agent.AgentTool` | used by | AgentCrew wraps agents as tools |
 | `parrot.tools.agent.AgentContext` | **no longer used** | Replaced by `FlowContext` |
-| `parrot.models.crew.AgentResult` | still used | For `ExecutionMemory.add_result()` — NOT changed |
+| `parrot.models.crew.AgentResult` | **replaced by** | `NodeResult` in `flows.core.result` — unified storage model |
 | `parrot.models.crew.CrewResult` | **no longer used** | Replaced by `FlowResult` |
 
 ### Data Models
 
-No new data models. The migration switches from old models to existing
-`flows.core.result` models:
+The migration switches from old models to `flows.core.result` models and
+introduces one new model (`NodeResult`):
 
-| Old (removed from AgentCrew) | New (already exists in flows.core) |
+| Old (removed from AgentCrew) | New (in flows.core) |
 |---|---|
-| `CrewResult` | `FlowResult` |
-| `AgentExecutionInfo` | `NodeExecutionInfo` |
-| `build_agent_metadata()` | `build_node_metadata()` |
+| `CrewResult` | `FlowResult` (already exists) |
+| `AgentExecutionInfo` | `NodeExecutionInfo` (already exists) |
+| `build_agent_metadata()` | `build_node_metadata()` (already exists) |
+| `AgentResult` | `NodeResult` (**new** — created in this spec) |
 
-`AgentResult` (used for `ExecutionMemory`) is **not changed** — it stays in
-`parrot.models.crew` and is still used inside `AgentCrew` for memory storage.
+#### `NodeResult` (new — replaces `AgentResult`)
+
+`NodeResult` is the unified per-node execution record used by
+`ExecutionMemory` for storage and FAISS vectorization. It replaces
+`AgentResult` with node-centric naming while preserving all fields and
+the `to_text()` vectorization method.
+
+```python
+# parrot/bots/flows/core/result.py (new class)
+@dataclass
+class NodeResult:
+    """Per-node execution record for storage and vectorization."""
+    node_id: str
+    node_name: str
+    task: str
+    result: Any
+    ai_message: Optional[AIMessage] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    parent_execution_id: Optional[str] = None
+    execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # Backward-compat aliases
+    @property
+    def agent_id(self) -> str: return self.node_id
+    @property
+    def agent_name(self) -> str: return self.node_name
+
+    def to_text(self) -> str:
+        """Rich text for FAISS vectorization (handles DataFrame, dict, list)."""
+        ...
+```
+
+`ExecutionMemory`, `VectorStoreMixin`, and all crew code switch from
+`AgentResult` to `NodeResult`. `AgentResult` stays in `parrot.models.crew`
+for any remaining consumers.
+
+#### `FlowContext` — new `shared_data` field
+
+```python
+# parrot/bots/flows/core/context.py (add field)
+@dataclass
+class FlowContext:
+    ...
+    shared_data: Dict[str, Any] = field(default_factory=dict)
+    """Arbitrary key-value data shared across all nodes (replaces AgentContext.shared_data)."""
+```
+
+This eliminates the need for `AgentContext` in all AgentCrew execution modes.
 
 ### New Public Interfaces
 
@@ -191,21 +257,37 @@ structurally compatible (all `CrewResult` properties exist as aliases on
   6. Update relative imports to new location (`..core.`, `...agent`, etc.)
 - **Depends on**: Module 1, Module 2
 
-### Module 4: Refactor sequential/loop modes to use `FlowContext`
+### Module 4: Add `shared_data` to `FlowContext` + introduce `NodeResult`
+
+- **Path**: `parrot/bots/flows/core/context.py`, `parrot/bots/flows/core/result.py`,
+  `parrot/bots/flows/core/storage/memory.py`, `parrot/bots/flows/core/storage/mixin.py`
+- **Responsibility**:
+  1. Add `shared_data: Dict[str, Any]` field to `FlowContext`
+  2. Create `NodeResult` dataclass in `flows/core/result.py` (replacing
+     `AgentResult` for all flow-internal usage)
+  3. Update `ExecutionMemory` to use `NodeResult` instead of `AgentResult`
+  4. Update `VectorStoreMixin` to use `NodeResult` instead of `AgentResult`
+  5. Export `NodeResult` from `flows/core/__init__.py` and `flows/__init__.py`
+- **Depends on**: None (modifies core primitives)
+
+### Module 5: Refactor sequential/loop/parallel modes to use `FlowContext`
 
 - **Path**: `parrot/bots/flows/crew/crew.py` (same file as Module 3)
-- **Responsibility**: Replace `AgentContext` usage in `run_sequential()` and
-  `run_loop()` with `FlowContext`. This means:
-  1. Replace `AgentContext(...)` construction with `FlowContext(initial_task=...)`
+- **Responsibility**: Replace `AgentContext` usage in `run_sequential()`,
+  `run_loop()`, and `run_parallel()` with `FlowContext`. This means:
+  1. Replace `AgentContext(...)` construction with
+     `FlowContext(initial_task=..., shared_data={...})`
   2. Use `context.mark_completed()` / `context.mark_failed()` for tracking
   3. Use `context.get_input_for_node()` for prompt assembly
   4. Adapt `_build_context_summary()` to read from `FlowContext.results`
      instead of `AgentContext.agent_results`
-  5. Remove `AgentContext` import (only used by `_execute_agent()` — see
-     Module 5 for that method's refactoring)
-- **Depends on**: Module 3
+  5. Refactor `_execute_agent()` to accept `**kwargs` directly instead of
+     `AgentContext` — pass `context.shared_data` as kwargs
+  6. Remove `AgentContext` import entirely from `flows/crew/crew.py`
+  7. Replace all `AgentResult(...)` constructions with `NodeResult(...)`
+- **Depends on**: Module 3, Module 4
 
-### Module 5: Create `flows/crew/__init__.py` and `flows/agents/` package
+### Module 6: Create `flows/crew/__init__.py` and `flows/agents/` package
 
 - **Path**: `parrot/bots/flows/crew/__init__.py`,
   `parrot/bots/flows/agents/__init__.py`,
@@ -223,14 +305,16 @@ structurally compatible (all `CrewResult` properties exist as aliases on
   5. Create `agents/__init__.py` exporting public classes
 - **Depends on**: Module 3
 
-### Module 6: Delete `orchestration/` and update `flows/__init__.py`
+### Module 7: Update `flows/__init__.py` exports
 
-- **Path**: `parrot/bots/orchestration/` (DELETE), `parrot/bots/flows/__init__.py`
+- **Path**: `parrot/bots/flows/__init__.py`
 - **Responsibility**:
-  1. Delete `parrot/bots/orchestration/` entirely (all files including `__init__.py`, `verify.py`)
-  2. Update `parrot/bots/flows/__init__.py` to also export `AgentCrew`,
-     `CrewAgentNode`, and the agent classes from the new sub-packages
-- **Depends on**: Module 5
+  1. Update `parrot/bots/flows/__init__.py` to also export `AgentCrew`,
+     `CrewAgentNode`, `NodeResult`, and the agent classes from the new
+     sub-packages
+  2. `parrot/bots/orchestration/` is **NOT deleted** — it remains for
+     review of remaining code and consumer migration in a separate pass
+- **Depends on**: Module 6
 
 ---
 
@@ -249,11 +333,15 @@ importable and structurally correct.
 | `test_result_retrieval_tool_import` | Module 2 | `from parrot.bots.flows.tools import ResultRetrievalTool` works |
 | `test_agent_crew_import` | Module 3 | `from parrot.bots.flows.crew import AgentCrew` works |
 | `test_agent_crew_returns_flow_result` | Module 3 | `AgentCrew.run_sequential()` returns `FlowResult` (mock agents) |
-| `test_flow_context_in_sequential` | Module 4 | `run_sequential` creates and populates `FlowContext` |
-| `test_flow_context_in_loop` | Module 4 | `run_loop` creates and populates `FlowContext` |
-| `test_orchestrator_agent_import` | Module 5 | `from parrot.bots.flows.agents import OrchestratorAgent` works |
-| `test_a2a_orchestrator_import` | Module 5 | `from parrot.bots.flows.agents import A2AOrchestratorAgent` works |
-| `test_orchestration_deleted` | Module 6 | `import parrot.bots.orchestration` raises `ImportError` |
+| `test_node_result_import` | Module 4 | `from parrot.bots.flows.core.result import NodeResult` works |
+| `test_node_result_compat_aliases` | Module 4 | `NodeResult.agent_id` / `NodeResult.agent_name` return node_id/node_name |
+| `test_flow_context_shared_data` | Module 4 | `FlowContext(initial_task="x", shared_data={"k": "v"})` works |
+| `test_execution_memory_uses_node_result` | Module 4 | `ExecutionMemory.add_result()` accepts `NodeResult` |
+| `test_flow_context_in_sequential` | Module 5 | `run_sequential` creates and populates `FlowContext` |
+| `test_flow_context_in_loop` | Module 5 | `run_loop` creates and populates `FlowContext` |
+| `test_no_agent_context_import` | Module 5 | `AgentContext` not imported in `flows/crew/crew.py` |
+| `test_orchestrator_agent_import` | Module 6 | `from parrot.bots.flows.agents import OrchestratorAgent` works |
+| `test_a2a_orchestrator_import` | Module 6 | `from parrot.bots.flows.agents import A2AOrchestratorAgent` works |
 
 ### Test Data / Fixtures
 
@@ -287,17 +375,29 @@ def mock_agent():
   modes: `run_sequential`, `run_parallel`, `run_flow`, `run_loop`
 - [ ] `AgentCrew` uses `build_node_metadata()` (not `build_agent_metadata()`)
   for all execution metadata construction
-- [ ] `run_sequential()` and `run_loop()` use `FlowContext` (not
-  `AgentContext`) for execution state tracking
-- [ ] `run_sequential()` and `run_loop()` call `context.mark_completed()` /
-  `context.mark_failed()` for each agent execution
+- [ ] `run_sequential()`, `run_loop()`, and `run_parallel()` use
+  `FlowContext` (not `AgentContext`) for execution state tracking
+- [ ] `run_sequential()`, `run_loop()`, and `run_parallel()` call
+  `context.mark_completed()` / `context.mark_failed()` for each agent
+  execution
 - [ ] No import of `AgentContext` exists in `flows/crew/crew.py`
-- [ ] `parrot/bots/orchestration/` directory does not exist
+- [ ] `FlowContext` has a `shared_data: Dict[str, Any]` field
+- [ ] `NodeResult` exists in `flows.core.result` with `node_id`,
+  `node_name`, `task`, `result`, `to_text()`, and backward-compat
+  `agent_id`/`agent_name` property aliases
+- [ ] `ExecutionMemory` and `VectorStoreMixin` use `NodeResult` instead
+  of `AgentResult`
+- [ ] All `AgentResult(...)` constructions in `AgentCrew` are replaced
+  with `NodeResult(...)`
 - [ ] `from parrot.bots.flows.crew import AgentCrew` resolves successfully
 - [ ] `from parrot.bots.flows.agents import OrchestratorAgent` resolves
   successfully
+- [ ] `from parrot.bots.flows.core.result import NodeResult` resolves
+  successfully
 - [ ] All existing properties and methods of `AgentCrew` are preserved
   (same public API surface)
+- [ ] `parrot/bots/orchestration/` is left in place (NOT deleted) for
+  review of remaining code
 
 ---
 
@@ -517,26 +617,47 @@ is the return type (`AgentExecutionInfo` vs `NodeExecutionInfo`).
   Option (b) is cleaner. `_execute_agent()` should be refactored to accept kwargs
   directly instead of an `AgentContext`.
 
-### Migration Strategy for `run_sequential()` / `run_loop()`
+### Migration Strategy for `run_sequential()` / `run_loop()` / `run_parallel()`
 
 Currently these modes use `AgentContext` for:
 1. `crew_context.agent_results[agent_id] = result` → becomes `context.mark_completed(agent_id, result, response, metadata)`
-2. `crew_context.shared_data` → attach to FlowContext instance or pass via kwargs
+2. `crew_context.shared_data` → becomes `FlowContext(shared_data={...})`
 3. `self._build_context_summary(crew_context)` reads `crew_context.agent_results` → refactor to read `context.results`
 
-The `run_parallel()` mode also uses `AgentContext` in the same pattern and should
-be migrated identically.
+All three modes are migrated identically.
 
-### Handling `_execute_agent()` Without `AgentContext`
+### Dropping `AgentContext` — `_execute_agent()` refactoring
+
+**Decision: Drop `AgentContext` entirely from AgentCrew.**
 
 `_execute_agent()` (line 855) currently takes an `AgentContext` and unpacks
-`context.shared_data` into the agent call. After migration, either:
-- Change its signature to accept `**kwargs` directly, or
-- Accept a `FlowContext` and read from it.
+`context.shared_data` into the agent call. The new approach:
 
-The simplest approach: change signature to `_execute_agent(self, agent, query,
-session_id, user_id, index, **kwargs)` and pass kwargs through. The `AgentContext`
-wrapping was only used for `shared_data` passthrough.
+1. Change `_execute_agent()` signature to accept `**kwargs` directly:
+   `_execute_agent(self, agent, query, session_id, user_id, index, **kwargs)`
+2. Callers pass `**context.shared_data` instead of an `AgentContext` wrapper
+3. Remove the `AgentContext` import from `flows/crew/crew.py`
+
+`AgentContext` stays in `parrot.tools.agent` for other consumers; it is
+simply no longer used by AgentCrew.
+
+### `NodeResult` replaces `AgentResult` in all flow code
+
+**Decision: Unify with `NodeResult` in `flows.core.result`.**
+
+`AgentResult` and `NodeExecutionInfo` serve different purposes and cannot be
+merged — `AgentResult` carries the actual result payload (DataFrame, dict, etc.)
+plus vectorization support (`to_text()`), while `NodeExecutionInfo` carries
+LLM metadata (provider, model, usage). Both are needed.
+
+However, `AgentResult` is renamed to `NodeResult` with node-centric naming to
+be consistent with the `NodeExecutionInfo` pattern. The `to_text()` method and
+all storage-specific fields (`parent_execution_id`, `execution_id`, `timestamp`)
+are preserved exactly.
+
+All `ExecutionMemory` and `VectorStoreMixin` type annotations switch from
+`AgentResult` to `NodeResult`. The old `AgentResult` class stays in
+`parrot.models.crew` for any remaining external consumers.
 
 ### Known Risks / Gotchas
 
@@ -552,8 +673,9 @@ wrapping was only used for `shared_data` passthrough.
   and Python allows setting arbitrary attributes. The same pattern should be
   used for sequential/loop/parallel modes.
 - **`AgentResult` stays in `parrot.models.crew`**: This is intentional.
-  `AgentResult` is used by `ExecutionMemory.add_result()` and changing it is
-  out of scope.
+  `NodeResult` in `flows.core.result` replaces it for all flow-internal usage,
+  but `AgentResult` is not deleted from `parrot.models.crew` in case external
+  consumers still reference it.
 - **Consumers will break**: Handlers, manager, examples, and tests that import
   from `parrot.bots.orchestration` will fail. This is by design — a subsequent
   pass will fix all consumers.
@@ -568,12 +690,19 @@ No new external dependencies.
 
 ## 8. Open Questions
 
-- [ ] Should `_execute_agent()` be refactored to drop `AgentContext` entirely, or
-  should we add `shared_data` as a field on `FlowContext`? — *Owner: Jesus*
-- [ ] Should `AgentResult` (used for ExecutionMemory) eventually move to
-  `flows.core` or stay in `models.crew`? — *Owner: Jesus* (deferred to future spec)
-- [ ] Should the old `bots/flow/` package (singular) also be cleaned up in this
-  spec, or kept for the AgentsFlow refactor (Spec 3)? — *Owner: Jesus*
+- [x] Should `_execute_agent()` be refactored to drop `AgentContext` entirely, or
+  should we add `shared_data` as a field on `FlowContext`? — *Resolved*: Both.
+  Drop `AgentContext` entirely from AgentCrew, add `shared_data: Dict[str, Any]`
+  to `FlowContext`, and refactor `_execute_agent()` to accept `**kwargs` directly.
+- [x] Should `AgentResult` (used for ExecutionMemory) eventually move to
+  `flows.core` or stay in `models.crew`? — *Resolved*: Create `NodeResult` in
+  `flows.core.result` as the unified storage model (replaces `AgentResult` in all
+  flow code). `AgentResult` stays in `parrot.models.crew` for external consumers.
+- [x] Should the old `bots/flow/` package (singular) also be cleaned up in this
+  spec, or kept for the AgentsFlow refactor (Spec 3)? — *Resolved*: Leave
+  `bots/flow/` untouched — it belongs to the AgentsFlow refactor (Spec 3).
+  Also leave `bots/orchestration/` NOT deleted — remaining code needs review
+  before removal in a separate pass.
 
 ---
 
