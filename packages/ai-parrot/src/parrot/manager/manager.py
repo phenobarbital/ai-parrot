@@ -368,14 +368,11 @@ class BotManager:
                         name=bot_model.name,
                         description=bot_model.description,
                         prompt_preset=prompt_preset_name,
-                        # LLM configuration
+                        # LLM configuration: ``model_config`` (JSONB) is the
+                        # canonical source for model/temperature/max_tokens/
+                        # top_k/top_p. AbstractBot resolves them from there.
                         use_llm=bot_model.llm,
-                        model_name=bot_model.model_name,
                         model_config=bot_model.model_config,
-                        temperature=bot_model.temperature,
-                        max_tokens=bot_model.max_tokens,
-                        top_k=bot_model.top_k,
-                        top_p=bot_model.top_p,
                         # Bot personality
                         role=bot_model.role,
                         goal=bot_model.goal,
