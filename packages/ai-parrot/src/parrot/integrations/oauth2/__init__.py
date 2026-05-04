@@ -33,6 +33,7 @@ from .registry import (  # noqa: E402
 )
 
 from .jira_provider import JiraOAuth2Provider  # noqa: E402
+from .service import IntegrationsService  # noqa: E402
 
 __all__ = [
     "_WEB_CHANNEL",
@@ -51,4 +52,6 @@ __all__ = [
     "register_oauth2_provider",
     # providers
     "JiraOAuth2Provider",
+    # service
+    "IntegrationsService",
 ]
