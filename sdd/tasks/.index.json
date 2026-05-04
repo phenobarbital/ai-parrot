@@ -16125,7 +16125,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -16135,7 +16135,8 @@
       "parallelism_notes": "Only imports AuthRequiredEnvelope from TASK-983 and modifies agent.py. No shared files with TASK-984 through TASK-987.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-988-agenttalk-auth-required-envelope.md"
+      "file": "sdd/tasks/completed/TASK-988-agenttalk-auth-required-envelope.md",
+      "completed_at": "2026-05-05T00:00:00Z"
     },
     {
       "id": "TASK-989",
