@@ -15866,14 +15866,14 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies core primitives that all subsequent tasks depend on",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-976-add-shared-data-and-noderesult.md"
     },
     {
@@ -15883,7 +15883,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15892,7 +15892,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-978 \u2014 different files, no overlap",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-977-extract-crewagentnode.md"
     },
     {
@@ -15902,7 +15902,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15911,7 +15911,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-977 \u2014 different files, no overlap",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-978-move-resultretrievaltool.md"
     },
     {
@@ -15921,7 +15921,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -15932,7 +15932,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on all prior tasks \u2014 touches the same crew.py file as TASK-977",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-979-move-agentcrew-and-result-migration.md"
     },
     {
@@ -15942,7 +15942,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -15951,7 +15951,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies the same crew.py as TASK-979 \u2014 must run after it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-980-refactor-modes-to-flowcontext.md"
     },
     {
@@ -15961,7 +15961,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -15970,7 +15970,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-980 \u2014 different files (agents/ vs crew.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-981-move-orchestrator-agents.md"
     },
     {
@@ -15980,7 +15980,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -15991,7 +15991,7 @@
       "parallel": false,
       "parallelism_notes": "Final integration \u2014 depends on all prior move tasks being complete",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-982-update-flows-init-exports.md"
     }
   ]
