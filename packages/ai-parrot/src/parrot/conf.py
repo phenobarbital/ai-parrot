@@ -629,6 +629,14 @@ JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
 JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
+# OAuth2 web-channel origin allowlist — comma-separated string or list.
+# Used by IntegrationsHandler and jira_oauth_callback to validate that the
+# popup's window.opener.postMessage target origin is trusted.
+WEB_OAUTH_ALLOWED_ORIGINS = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])
+if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str):
+    WEB_OAUTH_ALLOWED_ORIGINS = [
+        o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()
+    ]
 JIRA_ALLOWED_REPORTERS: list[str] = config.getlist(
     "JIRA_ALLOWED_REPORTERS",
     fallback=[],

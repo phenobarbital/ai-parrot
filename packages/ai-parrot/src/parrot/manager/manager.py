@@ -24,6 +24,7 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
 from ..handlers.print_pdf import PrintPDFHandler
@@ -980,6 +981,9 @@ class BotManager:
         self._register_shared_redis()
         # Add Manager to main Application:
         self.app['bot_manager'] = self
+        # Register OAuth2 providers after startup (FEAT-144)
+        # Uses a deferred callback so app["jira_oauth_manager"] is available.
+        self.app.on_startup.append(self._register_oauth2_providers)
         ## Configure Routes
         router = self.app.router
         # Chat Information Router
@@ -1016,6 +1020,23 @@ class BotManager:
             setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
+        # OAuth2 Integrations routes (FEAT-144)
+        router.add_view(
+            '/api/v1/agents/integrations/{agent_id}',
+            IntegrationsHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/integrations/{agent_id}/{provider}/connect',
+            IntegrationsHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/integrations/{agent_id}/{provider}/enable',
+            IntegrationsHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/integrations/{agent_id}/{provider}',
+            IntegrationsHandler,
+        )
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view(
             '/api/v1/user_agents',
@@ -1215,6 +1236,34 @@ Available documentation UIs:
                     exc_info=True
                 )
                 # Continue running even if there's an error
+
+    async def _register_oauth2_providers(self, app: web.Application) -> None:
+        """Register OAuth2 providers with the global registry (FEAT-144).
+
+        Called as an ``on_startup`` callback so that ``app["jira_oauth_manager"]``
+        is guaranteed to be available before registration.
+        """
+        try:
+            from parrot.integrations.oauth2.jira_provider import JiraOAuth2Provider
+            from parrot.integrations.oauth2.registry import register_oauth2_provider
+
+            jira_manager = app.get("jira_oauth_manager")
+            if jira_manager is not None:
+                register_oauth2_provider(JiraOAuth2Provider(manager=jira_manager))
+                self.logger.info(
+                    "Registered JiraOAuth2Provider with the global OAuth2ProviderRegistry"
+                )
+            else:
+                self.logger.warning(
+                    "app['jira_oauth_manager'] is not set — "
+                    "JiraOAuth2Provider not registered.  "
+                    "Ensure JiraOAuthManager.setup(app) is called before startup."
+                )
+        except Exception:  # noqa: BLE001
+            self.logger.exception(
+                "Failed to register OAuth2 providers — integrations endpoints "
+                "will return empty provider lists."
+            )
 
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""
