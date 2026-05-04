@@ -1376,8 +1376,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         handling special cases like thought_signature parts from reasoning models.
         """
 
-        # Pre-check for function calls to avoid library warnings when accessing .text
+        # Pre-check for function calls and thoughts to avoid library warnings when accessing .text
+        # and to prevent reasoning parts from leaking into the final output.
         has_function_call = False
+        has_thought = False
         try:
             if (hasattr(response, 'candidates') and response.candidates and
                 len(response.candidates) > 0 and hasattr(response.candidates[0], 'content') and
@@ -1386,13 +1388,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, 'function_call') and part.function_call:
                         has_function_call = True
-                        break
+                    if (hasattr(part, 'thought') and part.thought) or \
+                       (hasattr(part, 'thought_signature') and part.thought_signature):
+                        has_thought = True
         except Exception:
             pass
 
         # Method 1: Try response.text first (fastest path)
-        # Skip if we found a function call, as accessing .text triggers a warning in the library
-        if not has_function_call:
+        # Skip if we found a function call or a thought
+        if not has_function_call and not has_thought:
             try:
                 if hasattr(response, 'text') and response.text:
                     if (text := response.text.strip()):
