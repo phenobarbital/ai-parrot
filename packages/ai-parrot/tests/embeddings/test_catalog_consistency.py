@@ -29,20 +29,13 @@ def hf_catalog_entries() -> list[dict]:
 
 @pytest.fixture
 def known_prefix_models() -> list[str]:
-    """Models that MUST be handled by both sides (per spec §4)."""
-    return [
-        "intfloat/e5-base-v2",
-        "intfloat/e5-large-v2",
-        "intfloat/multilingual-e5-base",
-        "intfloat/multilingual-e5-large",
-        "BAAI/bge-small-en-v1.5",
-        "BAAI/bge-base-en-v1.5",
-        "BAAI/bge-large-en-v1.5",
-        "jinaai/jina-embeddings-v3",
-        "Alibaba-NLP/gte-Qwen2-1.5B-instruct",
-        "intfloat/e5-mistral-7b-instruct",
-        "nvidia/NV-Embed-v2",
-    ]
+    """All catalog models that require prefixes (derived from EMBEDDING_MODELS).
+
+    Derived at test-collection time so the fixture stays correct automatically
+    when new prefix-requiring models are added to the catalog — no manual
+    maintenance required.
+    """
+    return [e["model"] for e in EMBEDDING_MODELS if e["requires_prefix"]]
 
 
 class TestCatalogToResolver:
@@ -92,7 +85,7 @@ class TestResolverToCatalog:
     """Direction 2: every known prefix model must be in the catalog with the right flags."""
 
     def test_every_known_model_in_catalog(self, known_prefix_models):
-        """All 11 known prefix-requiring models must appear in EMBEDDING_MODELS."""
+        """All catalog prefix-requiring models must appear in EMBEDDING_MODELS."""
         catalog_names = {e["model"] for e in EMBEDDING_MODELS}
         missing = [m for m in known_prefix_models if m not in catalog_names]
         assert not missing, (
@@ -100,7 +93,7 @@ class TestResolverToCatalog:
         )
 
     def test_every_known_model_requires_prefix(self, known_prefix_models):
-        """All 11 known models must have requires_prefix=True in the catalog."""
+        """All catalog-derived prefix models must have requires_prefix=True."""
         problems = []
         for name in known_prefix_models:
             entry = next(

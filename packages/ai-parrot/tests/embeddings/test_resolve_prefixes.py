@@ -1,12 +1,13 @@
-"""Tests for _resolve_prefixes new branches and regression checks.
+"""Tests for _resolve_prefixes: correctness, catalog-driven lookup, and edge cases.
 
-Covers TASK-963: new resolver branches for Jina v3, gte-Qwen2-instruct,
-e5-mistral-7b-instruct, and NV-Embed-v2, plus regression tests for
-existing E5 and BGE-EN-v1.5 branches.
+Covers all prefix-requiring model families (Jina v3, gte-Qwen2-instruct,
+e5-mistral-7b-instruct, NV-Embed-v2, E5, BGE-EN-v1.5) plus regression
+tests for no-prefix models.
 
-Covers TASK-974: catalog-driven and unknown-model tests verifying the
-TASK-973 refactor: all EMBEDDING_MODELS entries resolve correctly, and
-out-of-catalog models return (None, None) with one INFO log.
+The resolver is catalog-driven: EMBEDDING_MODELS is the single source of
+truth for query/passage prefixes. TestResolverIsCatalogDriven validates
+every catalog entry; TestResolverUnknownModel validates out-of-catalog
+passthrough with INFO logging.
 """
 import logging
 import pytest
@@ -234,11 +235,13 @@ class TestResolverIsCatalogDriven:
         """Regression anchor: harrier-oss was added to the catalog WITHOUT touching
         _resolve_prefixes. This test proves the catalog-driven path works for
         models added after the original FEAT-140 family branches."""
-        q, p = _resolve_prefixes("microsoft/harrier-oss-v1-0.6b")
-        assert q is not None
-        assert q.startswith("Instruct:")
-        assert "Query:" in q
-        assert p is None
+        harrier = next(
+            e for e in EMBEDDING_MODELS if e["model"] == "microsoft/harrier-oss-v1-0.6b"
+        )
+        assert _resolve_prefixes("microsoft/harrier-oss-v1-0.6b") == (
+            harrier["prefix_query"],
+            harrier["prefix_passage"],
+        )
 
 
 class TestResolverUnknownModel:

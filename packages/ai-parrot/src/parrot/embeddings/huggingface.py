@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Any, Optional, Tuple, TYPE_CHECKING
+from typing import List, Any, Optional, Tuple
 from enum import Enum
 import logging
 import numpy as np
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Keys are lowercased model identifiers; values are (prefix_query, prefix_passage).
 # The catalog's Pydantic validator guarantees the pair is consistent with
 # requires_prefix, so the result here is correct by construction.
-_PREFIX_LOOKUP: dict[str, Tuple[Optional[str], Optional[str]]] = {
+_PREFIX_LOOKUP: dict[str, tuple[str | None, str | None]] = {
     entry["model"].lower(): (entry["prefix_query"], entry["prefix_passage"])
     for entry in EMBEDDING_MODELS
 }
@@ -34,7 +34,7 @@ def _resolve_prefixes(model_name: Optional[str]) -> Tuple[Optional[str], Optiona
     compatibility with operators using third-party models.
 
     Args:
-        model_name: HuggingFace model identifier.
+        model_name: Model identifier (HuggingFace, OpenAI, or Google).
 
     Returns:
         Tuple ``(query_prefix, passage_prefix)``. Either entry may be
@@ -204,7 +204,7 @@ class SentenceTransformerModel(EmbeddingModel):
         model_name = model_name or self.model_name
         
         self.logger.info(
-            f"Loading embedding model '{model_name}' on device '{device}'"
+            "Loading embedding model '%s' on device '%s'", model_name, device
         )
         
         # Suppress noisy DEBUG output from HTTP transport used by
@@ -244,7 +244,7 @@ class SentenceTransformerModel(EmbeddingModel):
         # Resolve model on the main thread (triggers lazy load if needed)
         # so the executor thread never calls _create_embedding.
         raw_model = self.model
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             self.executor,
             lambda: raw_model.encode(texts, **kwargs)
