@@ -16105,7 +16105,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16115,7 +16115,8 @@
       "parallelism_notes": "After TASK-985, modifies only auth/routes.py + new templates. Shares no files with TASK-986.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-987-oauth-callback-web-branch.md"
+      "file": "sdd/tasks/completed/TASK-987-oauth-callback-web-branch.md",
+      "completed_at": "2026-05-05T00:00:00Z"
     },
     {
       "id": "TASK-988",
