@@ -177,3 +177,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note (filled)
+
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Created `parrot/bots/flows/tools.py` with `ResultRetrievalTool` copied from `bots/flow/tools.py`. Updated import of `ExecutionMemory` from `.core.storage.memory` (relative path within `flows/`). Updated `res.agent_name` reference to `res.node_name` (works via backward-compat alias too, but node_name is canonical). The old `bots/flow/tools.py` was NOT modified. `ResultRetrievalTool` is a proper subclass of `AbstractTool` from `parrot.tools.abstract`.
+
+**Deviations from spec**: none
