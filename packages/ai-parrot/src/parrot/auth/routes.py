@@ -14,19 +14,36 @@ Optionally, a :class:`TelegramOAuthNotifier` stored on
 ``app['jira_oauth_notifier']`` receives a fire-and-forget notification
 after successful callbacks that originated from Telegram (i.e. the
 authorization URL included ``extra_state={"chat_id": ...}``).
+
+For web-channel OAuth2 3LO flows the callback instead persists the
+credential via :class:`~parrot.integrations.oauth2.service.IntegrationsService`
+and renders a ``postMessage`` HTML page that signals the opener popup.
 """
 from __future__ import annotations
 
 import asyncio
 import html
 import logging
-from typing import TYPE_CHECKING
+import string
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict
 
 from aiohttp import web
 
+from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
+from parrot.integrations.oauth2.service import IntegrationsService
+
 if TYPE_CHECKING:  # pragma: no cover - type-checking only
-    from .jira_oauth import JiraOAuthManager
+    from .jira_oauth import JiraOAuthManager, JiraTokenSet
     from parrot.integrations.telegram.jira_commands import TelegramOAuthNotifier
+
+_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_WEB_SUCCESS_TMPL = string.Template(
+    (_TEMPLATES_DIR / "web_oauth_success.html").read_text()
+)
+_WEB_ERROR_TMPL = string.Template(
+    (_TEMPLATES_DIR / "web_oauth_error.html").read_text()
+)
 
 
 logger = logging.getLogger(__name__)
@@ -60,6 +77,90 @@ def _error_response(message: str, status: int = 400) -> web.Response:
         text=_ERROR_HTML.format(error=html.escape(message)),
         content_type="text/html",
         status=status,
+    )
+
+
+async def _handle_web_callback(
+    request: web.Request,
+    token_set: "JiraTokenSet",
+    state_payload: Dict[str, Any],
+) -> web.Response:
+    """Process an OAuth callback that originated from the web popup flow.
+
+    Validates the ``return_origin``, persists the credential, and renders
+    the ``web_oauth_success.html`` postMessage page.  On failure, renders
+    ``web_oauth_error.html``.
+
+    Args:
+        request: The incoming aiohttp request (unused beyond signature).
+        token_set: Token and identity data returned by :meth:`JiraOAuthManager.handle_callback`.
+        state_payload: Full state payload (channel, user_id, extra) from the manager.
+
+    Returns:
+        HTML response suitable for the popup window.
+    """
+    extra: Dict[str, Any] = state_payload.get("extra") or {}
+    return_origin: str | None = extra.get("return_origin")
+    user_id: str | None = state_payload.get("user_id")
+    provider = "jira"
+
+    # Validate return_origin against the server-side allowlist.
+    if not return_origin or return_origin not in WEB_OAUTH_ALLOWED_ORIGINS:
+        logger.warning(
+            "Web OAuth callback rejected: return_origin=%r not in allowlist",
+            return_origin,
+        )
+        safe_origin = html.escape(return_origin or "*")
+        return web.Response(
+            text=_WEB_ERROR_TMPL.safe_substitute(
+                provider=provider,
+                error="invalid_origin",
+                target_origin=safe_origin,
+            ),
+            content_type="text/html",
+            status=400,
+        )
+
+    if not user_id:
+        logger.warning("Web OAuth callback: state_payload missing user_id")
+        return web.Response(
+            text=_WEB_ERROR_TMPL.safe_substitute(
+                provider=provider,
+                error="missing_user",
+                target_origin=html.escape(return_origin),
+            ),
+            content_type="text/html",
+            status=400,
+        )
+
+    # Persist the credential to DocumentDB.
+    try:
+        svc = IntegrationsService()
+        await svc.persist_credential(user_id, provider, token_set)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "Failed to persist web OAuth credential for user_id=%s provider=%s",
+            user_id,
+            provider,
+        )
+        return web.Response(
+            text=_WEB_ERROR_TMPL.safe_substitute(
+                provider=provider,
+                error="internal_error",
+                target_origin=html.escape(return_origin),
+            ),
+            content_type="text/html",
+            status=500,
+        )
+
+    return web.Response(
+        text=_WEB_SUCCESS_TMPL.safe_substitute(
+            provider=provider,
+            account_id=html.escape(token_set.account_id or ""),
+            display_name=html.escape(token_set.display_name or ""),
+            target_origin=html.escape(return_origin),
+        ),
+        content_type="text/html",
     )
 
 
@@ -111,6 +212,12 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
             "An unexpected error occurred while exchanging the authorization code.",
             status=500,
         )
+
+    # Web-channel branch: render postMessage page and persist credential.
+    # When channel is absent, default to "telegram" for backward compatibility.
+    channel = state_payload.get("channel", "telegram")
+    if channel == "web":
+        return await _handle_web_callback(request, token_set, state_payload)
 
     # Stamp the Telegram user session with the Jira identity so prompt
     # enrichment and tool context use the connected Jira account instead
