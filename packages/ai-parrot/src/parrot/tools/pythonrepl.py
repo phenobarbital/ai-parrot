@@ -28,6 +28,7 @@ from matplotlib import _pylab_helpers
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from navconfig import BASE_DIR
+from parrot._imports import lazy_import
 from .abstract import AbstractTool
 
 
@@ -248,26 +249,58 @@ class PythonREPLTool(AbstractTool):
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Lazy load heavy dependencies
+        # Core libs (numexpr, seaborn) live in [project.dependencies], so a
+        # plain import is fine — failure here means the install is broken.
+        import numexpr as ne
+        import seaborn as sns
+
+        # Optional plotting libs are only registered in self.locals when
+        # importable. User code that imports a missing lib still gets a
+        # normal ImportError; user code referencing the convenience name
+        # (e.g. `hv`) gets a clear NameError.
+        optional_libs: Dict[str, Any] = {}
+
         try:
-            import altair
-            import plotly.express as px
-            import plotly.graph_objects as go
-            import plotly.io as pio
-            import numexpr as ne
-            import seaborn as sns
-            import bokeh
-            import holoviews as hv
-            import folium
-            from holoviews import opts
-            
-            # Configure holoviews
-            hv.extension('bokeh')
-        except ImportError as e:
-            self.logger.warning(f"Could not import some data science libraries: {e}")
-            # Define dummies or handle gracefully if desired
-            # For now, we'll just let them be missing from locals if import failed
-            pass
+            optional_libs['altair'] = lazy_import("altair", extra="images")
+        except ImportError as exc:
+            self.logger.debug(str(exc))
+
+        try:
+            optional_libs['px'] = lazy_import(
+                "plotly.express", package_name="plotly", extra="images"
+            )
+            optional_libs['go'] = lazy_import(
+                "plotly.graph_objects", package_name="plotly", extra="images"
+            )
+            optional_libs['pio'] = lazy_import(
+                "plotly.io", package_name="plotly", extra="images"
+            )
+        except ImportError as exc:
+            self.logger.debug(str(exc))
+
+        try:
+            optional_libs['bokeh'] = lazy_import("bokeh", extra="images")
+        except ImportError as exc:
+            self.logger.debug(str(exc))
+
+        # holoviews + bokeh extension. Only configure the bokeh backend when
+        # bokeh is also present, otherwise hv.extension('bokeh') raises.
+        if 'bokeh' in optional_libs:
+            try:
+                hv = lazy_import("holoviews", extra="images")
+                from holoviews import opts as hv_opts
+                hv.extension('bokeh')
+                optional_libs['hv'] = hv
+                optional_libs['opts'] = hv_opts
+            except ImportError as exc:
+                self.logger.debug(str(exc))
+            except Exception as exc:
+                self.logger.debug("holoviews extension init failed: %s", exc)
+
+        try:
+            optional_libs['folium'] = lazy_import("folium", extra="agents")
+        except ImportError as exc:
+            self.logger.debug(str(exc))
 
 
         # Helper functions for plot handling
@@ -331,21 +364,13 @@ class PythonREPLTool(AbstractTool):
 
         # Update locals with essential libraries and tools
         self.locals.update({
-            # Core data science libraries
+            # Core data science libraries (always available — in [project.dependencies])
             'pd': pd,
             'np': np,
             'plt': plt,
             'matplotlib': matplotlib,
-            'altair': altair,
-            'px': px,
-            'go': go,
-            'pio': pio,
             'numexpr': ne,
             'sns': sns,
-            'bokeh': bokeh,
-            'hv': hv,
-            'opts': opts,
-            'folium': folium,
 
             # JSON utilities
             'json_encoder': json_encoder,
@@ -366,6 +391,9 @@ class PythonREPLTool(AbstractTool):
             'execute_safely': lambda code: self.execute_code_safely(code),
 
         })
+
+        # Merge in any optional plotting libs that imported successfully.
+        self.locals.update(optional_libs)
 
         # Mirror locals into globals so user code can see everything
         self.globals.update(self.locals)
@@ -717,13 +745,12 @@ print("Use 'execution_results' dict to store intermediate results.")
 
     def get_environment_info(self) -> Dict[str, Any]:
         """Get information about the current REPL environment."""
-        return {
+        info = {
             "python_version": sys.version,
             "pandas_version": pd.__version__,
             "numpy_version": np.__version__,
             "matplotlib_version": matplotlib.__version__,
             "matplotlib_backend": matplotlib.get_backend(),
-            "seaborn_version": sns.__version__,
             "output_directory": str(self.output_dir),
             "locals_count": len(self.locals),
             "globals_count": len(self.globals),
@@ -733,8 +760,11 @@ print("Use 'execution_results' dict to store intermediate results.")
             "plot_style": self.plt_style,
             "color_palette": self.palette,
             "auto_save_plots": self.auto_save_plots,
-            "return_plot_as_base64": self.return_plot_as_base64
+            "return_plot_as_base64": self.return_plot_as_base64,
         }
+        if (sns := self.locals.get('sns')) is not None:
+            info["seaborn_version"] = sns.__version__
+        return info
 
     def reset_environment(self) -> None:
         """Reset the REPL environment to its initial state."""

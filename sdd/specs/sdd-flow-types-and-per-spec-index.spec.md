@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-145
 **Date**: 2026-05-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: tooling-only (no library version bump)
 
 ---
