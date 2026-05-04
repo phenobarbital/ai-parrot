@@ -245,6 +245,8 @@ train/
 templates/
 !packages/parrot-formdesigner/src/parrot/formdesigner/renderers/templates/
 !packages/parrot-formdesigner/src/parrot/formdesigner/renderers/templates/**
+!packages/ai-parrot/src/parrot/auth/templates/
+!packages/ai-parrot/src/parrot/auth/templates/**
 resources/
 logs/
 etc/
