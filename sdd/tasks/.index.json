@@ -15966,7 +15966,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -15976,7 +15976,8 @@
       "parallelism_notes": "Can run in parallel with TASK-980 \u2014 different files (agents/ vs crew.py)",
       "assigned_to": null,
       "started_at": "2026-05-04T13:13:30.336584+00:00",
-      "file": "sdd/tasks/active/TASK-981-move-orchestrator-agents.md"
+      "file": "sdd/tasks/completed/TASK-981-move-orchestrator-agents.md",
+      "completed_at": "2026-05-04T00:00:00Z"
     },
     {
       "id": "TASK-982",

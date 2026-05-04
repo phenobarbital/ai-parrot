@@ -220,10 +220,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (FEAT-143 session)
+**Date**: 2026-05-04
+**Notes**: Created `flows/agents/` package with four files:
+`__init__.py` (exports all public classes), `orchestrator.py` (`OrchestratorAgent`
+moved from `orchestration/agent.py` with import paths updated for 2-level depth;
+`_init_execution_memory` updated to canonical `..core.storage.memory`),
+`a2a_orchestrator.py` (`A2AOrchestratorAgent` + `ListAvailableA2AAgentsTool`;
+`.agent.OrchestratorAgent` → `.orchestrator.OrchestratorAgent`),
+`hr.py` (`HRAgentFactory`, `RAGHRAgent`, `EmployeeDataAgent`; `AgentCrew`
+imported from `..crew` flows package). Files in `orchestration/` untouched.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
