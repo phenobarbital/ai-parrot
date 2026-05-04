@@ -321,28 +321,33 @@ The integration tests above ARE the test specification.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Integration tests pass. The worktree's abstract.py was missing `faq`
+and `table` in `_ATOMIC_CONTENT_KINDS` (those were added on dev as part of FEAT-140
+after the worktree was branched). Restored abstract.py from dev to include the
+complete set. Also included test_chunk_documents_atomic.py from dev since it is
+listed in TASK-972 scope as a required-passing test.
+**Deviations from spec**: abstract.py was brought up to date with dev (not a
+FEAT-141 change — it was a missing merge). No FEAT-141 source files were modified.
 **Pytest summary**:
 ```
-# paste the final pytest summary line for both suites
+packages/ai-parrot-loaders/tests/splitters/: 21 passed in 0.12s
+packages/ai-parrot/tests/loaders/:           17 passed in 2.73s
 ```
 **FEAT-141 acceptance checklist**:
-- [ ] dep present and resolves
-- [ ] imports unchanged
-- [ ] AutoPay regression test passes
-- [ ] no mid-word cuts (corpus)
-- [ ] overlap honored ≥ 60%
-- [ ] min_chunk_size tail-merge works
-- [ ] tokenizer= switches capacity
-- [ ] markdown preserves fences/headers
-- [ ] offset round-trip
-- [ ] chunk_id / metadata byte-identical
-- [ ] all existing loader tests pass
-- [ ] semantic.py ≤ 100 LOC
-- [ ] md.py ≤ 100 LOC
+- [x] dep present and resolves (semantic-text-splitter>=0.30,<1.0 in pyproject.toml)
+- [x] imports unchanged (abstract.py still imports SemanticTextSplitter, MarkdownTextSplitter from parrot_loaders.splitters)
+- [x] AutoPay regression test passes (test_autopay_regression, test_no_mid_word_cuts_for_long_non_atomic_doc)
+- [x] no mid-word cuts (corpus) (test_split_text_no_mid_word_cuts, test_no_mid_word_cuts_for_long_non_atomic_doc)
+- [x] overlap honored >= 60% (test_overlap_honored)
+- [x] min_chunk_size tail-merge works (test_min_chunk_size_tail_merge, TestEnforceMinChunkSize)
+- [x] tokenizer= switches capacity (test_tokenizer_changes_capacity)
+- [x] markdown preserves fences/headers (test_preserves_code_fences, test_preserves_headers)
+- [x] offset round-trip (test_create_chunks_offsets_slice_back, test_non_ascii_offset_round_trip)
+- [x] chunk_id / metadata byte-identical (test_chunk_id_format, test_metadata_contract)
+- [x] all existing loader tests pass (17/17 green)
+- [x] semantic.py <= 100 LOC (99 LOC)
+- [x] md.py <= 100 LOC (87 LOC)
+- [x] non-atomic 5000-char doc respects word boundaries (test_no_mid_word_cuts_for_long_non_atomic_doc)
 - [ ] non-atomic 5000-char doc respects word boundaries
