@@ -15834,7 +15834,7 @@
       "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
       "assigned_to": null,
       "started_at": "2026-05-04T10:00:00.000000+00:00",
-      "completed_at": "2026-05-04T10:15:00.000000+00:00",
+      "completed_at": "2026-05-04T20:22:36.221856",
       "effort": "M",
       "depends_on": [],
       "file": "sdd/tasks/completed/TASK-973-resolve-prefixes-from-catalog.md"
@@ -15852,7 +15852,7 @@
       "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
       "assigned_to": null,
       "started_at": "2026-05-04T10:00:00.000000+00:00",
-      "completed_at": "2026-05-04T13:07:34.872226+00:00",
+      "completed_at": "2026-05-04T20:22:36.221871",
       "effort": "S",
       "depends_on": [
         "TASK-973"
@@ -16017,7 +16017,7 @@
       "parallelism_notes": "Tests the integrated pipeline \u2014 requires both TASK-973 and TASK-974 complete",
       "assigned_to": null,
       "started_at": "2026-05-04T16:29:52.259293+00:00",
-      "completed_at": "2026-05-04T16:29:52.259293+00:00",
+      "completed_at": "2026-05-04T20:22:36.221874",
       "file": "sdd/tasks/completed/TASK-975-jsonld-integration-tests.md"
     },
     {

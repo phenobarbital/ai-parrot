@@ -260,8 +260,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Implemented jira_provider.py (JiraOAuth2Provider wrapping JiraOAuthManager, toolkit_factory returning JiraToolkit with auth_type=oauth2_3lo) and persistence.py (6 async repository functions for users_integrations and user_agent_toolkits collections using DocumentDb context manager pattern). All 18 unit tests pass. JiraOAuth2Provider takes manager as constructor arg for testability.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: JiraOAuth2Provider takes manager as __init__ arg instead of singleton resolution, for better testability.
