@@ -156,7 +156,7 @@ class Chatbot(BaseBot):
                 # Bot exists on Database, Configure from the Database
                 await self.from_database(bot)
             else:
-                self.logger.warning(
+                self.logger.info(
                     f"Bot {self.name} not found or database unavailable, falling back to manual configuration"
                 )
                 self._from_database = False
@@ -297,9 +297,13 @@ class Chatbot(BaseBot):
                             f"Error retrieving bot from database: {exc}",
                             exc_info=True,
                         )
+        except ConfigError as exc:
+            self.logger.info(
+                f"Skipping database check (no DB configured): {exc}"
+            )
         except UninitializedError as exc:
-            self.logger.warning(
-                f"Database uninitialized or unavailable for bot checking: {exc}. "
+            self.logger.info(
+                f"Database uninitialized for bot checking: {exc}. "
                 "Operating without database configuration."
             )
         except Exception as exc:  # pragma: no cover - database unavailable

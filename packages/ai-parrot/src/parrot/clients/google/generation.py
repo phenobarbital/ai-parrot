@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any, AsyncIterator, List, Optional, Union
 import sys
 import logging
@@ -16,13 +17,23 @@ import uuid
 import aiohttp
 import aiofiles
 from PIL import Image
-from google.genai import types
-from google.genai.types import (
-    Part,
-    ModelContent,
-    UserContent
-)
 from navconfig import BASE_DIR
+
+# Lazy SDK guard: see ``client.py`` for the rationale. The mixin must import
+# even when google-genai is not installed; instantiating
+# ``GoogleGenAIClient`` is what raises the actionable ImportError.
+try:
+    from google.genai import types
+    from google.genai.types import (
+        Part,
+        ModelContent,
+        UserContent,
+    )
+except ImportError:  # pragma: no cover - exercised when extra is missing
+    types = None  # type: ignore[assignment]
+    Part = None  # type: ignore[assignment]
+    ModelContent = None  # type: ignore[assignment]
+    UserContent = None  # type: ignore[assignment]
 from ...models import (
     AIMessage,
     AIMessageFactory,

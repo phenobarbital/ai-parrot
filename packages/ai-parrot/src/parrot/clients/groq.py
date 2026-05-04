@@ -1,5 +1,6 @@
+from __future__ import annotations
 import traceback
-from typing import AsyncIterator, List, Optional, Union, Any
+from typing import AsyncIterator, List, Optional, Union, Any, TYPE_CHECKING
 from pathlib import Path
 from logging import getLogger
 import uuid
@@ -9,8 +10,10 @@ from dataclasses import is_dataclass
 from pydantic import BaseModel, TypeAdapter
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
-from groq import AsyncGroq
 from .base import AbstractClient
+
+if TYPE_CHECKING:
+    from groq import AsyncGroq
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -73,8 +76,15 @@ class GroqClient(AbstractClient):
         }
         super().__init__(**kwargs)
 
-    async def get_client(self) -> AsyncGroq:
+    async def get_client(self) -> "AsyncGroq":
         """Initialize the Groq client."""
+        try:
+            from groq import AsyncGroq
+        except ImportError as exc:
+            raise ImportError(
+                "GroqClient requires the 'groq' SDK. "
+                "Install with: pip install ai-parrot[groq]"
+            ) from exc
         return AsyncGroq(api_key=self.api_key)
 
     def _fix_schema_for_groq(self, schema: dict) -> dict:

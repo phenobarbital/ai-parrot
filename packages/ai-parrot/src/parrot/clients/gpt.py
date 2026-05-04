@@ -11,7 +11,6 @@ import time
 import asyncio
 from logging import getLogger
 from enum import Enum
-from PIL import Image
 from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
@@ -22,9 +21,13 @@ from tenacity import (
     wait_exponential,
     retry_if_exception_type
 )
-from openai import AsyncOpenAI
-from openai import APIConnectionError, RateLimitError, APIError, BadRequestError
 from .base import AbstractClient
+
+if TYPE_CHECKING:
+    # Type-check-only imports — keep IDE/mypy support without forcing the
+    # SDKs to be installed at runtime when this client is unused.
+    from openai import AsyncOpenAI
+    from PIL import Image
 from ..models import (
     AIMessage,
     AIMessageFactory,
@@ -142,6 +145,7 @@ class OpenAIClient(AbstractClient):
 
         Overrides base class with OpenAI-specific exception types.
         """
+        from openai import RateLimitError, APIError
         if isinstance(error, RateLimitError):
             return True
         if isinstance(error, APIError) and hasattr(error, 'status_code'):
@@ -149,8 +153,15 @@ class OpenAIClient(AbstractClient):
                 return True
         return super()._is_capacity_error(error)
 
-    async def get_client(self) -> AsyncOpenAI:
+    async def get_client(self) -> "AsyncOpenAI":
         """Initialize the OpenAI client."""
+        try:
+            from openai import AsyncOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "OpenAIClient requires the 'openai' SDK. "
+                "Install with: pip install ai-parrot[openai]"
+            ) from exc
         return AsyncOpenAI(
             api_key=self.api_key,
             base_url=self.base_url,
@@ -254,6 +265,7 @@ class OpenAIClient(AbstractClient):
         use_tools: bool = False,
         **kwargs
     ):
+        from openai import APIConnectionError, RateLimitError, APIError
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -462,6 +474,7 @@ class OpenAIClient(AbstractClient):
         but also on BadRequestError when the server reports unknown params,
         so we can fall back to older-SDK-compatible shapes.
         """
+        from openai import BadRequestError
         last_exc = None
         for payload in payloads:
             try:
@@ -489,6 +502,7 @@ class OpenAIClient(AbstractClient):
         Try several payload shapes against responses.stream(), mirroring
         the compatibility shims we use for responses.create().
         """
+        from openai import BadRequestError
         last_exc = None
         for payload in payloads:
             try:
@@ -1406,10 +1420,17 @@ class OpenAIClient(AbstractClient):
 
     def _encode_image_for_openai(
         self,
-        image: Union[Path, bytes, Image.Image],
+        image: Union[Path, bytes, "Image.Image"],
         low_quality: bool = False
     ) -> Dict[str, Any]:
         """Encode image for OpenAI's vision API."""
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError(
+                "Image methods on OpenAIClient require Pillow. "
+                "Install with: pip install Pillow"
+            ) from exc
         if isinstance(image, Path):
             if not image.exists():
                 raise FileNotFoundError(f"Image file not found: {image}")
@@ -1844,10 +1865,10 @@ class OpenAIClient(AbstractClient):
     async def image_identification(
         self,
         *,
-        image: Union[Path, bytes, Image.Image],
+        image: Union[Path, bytes, "Image.Image"],
         detections: List[DetectionBox],          # from parrot.models.detections
         shelf_regions: List[ShelfRegion],        # "
-        reference_images: Optional[List[Union[Path, bytes, Image.Image]]] = None,
+        reference_images: Optional[List[Union[Path, bytes, "Image.Image"]]] = None,
         model: Union[OpenAIModel, str] = OpenAIModel.GPT4_1_MINI,
         prompt: Optional[str] = None,
         temperature: float = 0.0,
@@ -1862,6 +1883,13 @@ class OpenAIClient(AbstractClient):
         Returns a list[IdentifiedProduct] with bbox, type, model, confidence, features,
         reference_match, shelf_location, and position_on_shelf.
         """
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise ImportError(
+                "image_identification() requires Pillow. "
+                "Install with: pip install Pillow"
+            ) from exc
         model = self._normalize_model(model)
         try:
             _pytesseract = lazy_import("pytesseract", extra="ocr")
@@ -1870,7 +1898,7 @@ class OpenAIClient(AbstractClient):
             _pytesseract = None
             _has_tesseract = False
 
-        def _crop_box(pil_img: Image.Image, box) -> Image.Image:
+        def _crop_box(pil_img: "Image.Image", box) -> "Image.Image":
             # small padding to include context
             pad = 6
             x1 = max(0, box.x1 - pad)
