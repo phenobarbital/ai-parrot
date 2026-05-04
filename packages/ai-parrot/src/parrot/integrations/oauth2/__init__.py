@@ -32,6 +32,8 @@ from .registry import (  # noqa: E402
     register_oauth2_provider,
 )
 
+from .jira_provider import JiraOAuth2Provider  # noqa: E402
+
 __all__ = [
     "_WEB_CHANNEL",
     # models
@@ -47,4 +49,6 @@ __all__ = [
     "OAuth2Provider",
     "OAuth2ProviderRegistry",
     "register_oauth2_provider",
+    # providers
+    "JiraOAuth2Provider",
 ]
