@@ -1,8 +1,8 @@
 {
-  "feature": "rust-semantic-text-splitter",
-  "feature_id": "FEAT-141",
-  "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
-  "created_at": "2026-05-03T23:30:32.058860+00:00",
+  "feature": "embedding-catalog-as-prefix-source-of-truth",
+  "feature_id": "FEAT-142",
+  "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
+  "created_at": "2026-05-04T11:08:52.756182+00:00",
   "previous_features": [
     {
       "feature": "embeddings-catalog-update",
@@ -218,6 +218,12 @@
       "feature_id": "FEAT-135",
       "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
       "created_at": "2026-04-29T10:32:39.763139+00:00"
+    },
+    {
+      "feature": "rust-semantic-text-splitter",
+      "feature_id": "FEAT-141",
+      "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
+      "created_at": "2026-05-03T23:30:32.058860+00:00"
     }
   ],
   "tasks": [
@@ -15801,6 +15807,42 @@
       "started_at": "2026-05-03T23:41:50.319643+00:00",
       "completed_at": "2026-05-04T02:10:00.000000+00:00",
       "file": "sdd/tasks/completed/TASK-972-verify-no-consumer-regression.md"
+    },
+    {
+      "id": "TASK-973",
+      "slug": "resolve-prefixes-from-catalog",
+      "title": "Refactor _resolve_prefixes to read prefixes from EMBEDDING_MODELS",
+      "feature_id": "FEAT-142",
+      "feature": "embedding-catalog-as-prefix-source-of-truth",
+      "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": false,
+      "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "effort": "M",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-973-resolve-prefixes-from-catalog.md"
+    },
+    {
+      "id": "TASK-974",
+      "slug": "tests-catalog-driven-and-unknown-model",
+      "title": "Add catalog-driven and unknown-model tests for _resolve_prefixes",
+      "feature_id": "FEAT-142",
+      "feature": "embedding-catalog-as-prefix-source-of-truth",
+      "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": false,
+      "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
+      "assigned_to": null,
+      "started_at": null,
+      "effort": "S",
+      "depends_on": [
+        "TASK-973"
+      ],
+      "file": "sdd/tasks/active/TASK-974-tests-catalog-driven-and-unknown-model.md"
     }
   ]
 }
