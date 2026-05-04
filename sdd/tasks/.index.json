@@ -16020,3 +16020,228 @@
     }
   ]
 }
+
+{
+  "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+  "feature_id": "FEAT-144",
+  "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+  "created_at": "2026-05-04T22:00:00+00:00",
+  "tasks": [
+    {
+      "id": "TASK-983",
+      "slug": "oauth2-models-and-registry",
+      "title": "OAuth2 Integration Models and Provider Registry",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks import from modules created here. Must complete first.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-983-oauth2-models-and-registry.md"
+    },
+    {
+      "id": "TASK-984",
+      "slug": "jira-provider-and-persistence",
+      "title": "Jira OAuth2 Provider and DocumentDB Persistence",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-983"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends TASK-983 models and registry. Shares parrot/integrations/oauth2/ package.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-984-jira-provider-and-persistence.md"
+    },
+    {
+      "id": "TASK-985",
+      "slug": "integrations-service",
+      "title": "IntegrationsService",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Orchestrates registry + persistence from TASK-983 and TASK-984.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-985-integrations-service.md"
+    },
+    {
+      "id": "TASK-986",
+      "slug": "handler-routes-config",
+      "title": "IntegrationsHandler, Route Registration, and Config",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-985, modifies conf.py + new integrations.py + manager.py routes. Shares no files with TASK-987.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-986-handler-routes-config.md"
+    },
+    {
+      "id": "TASK-987",
+      "slug": "oauth-callback-web-branch",
+      "title": "OAuth Callback Web-Channel Branch and Templates",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-985, modifies only auth/routes.py + new templates. Shares no files with TASK-986.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-987-oauth-callback-web-branch.md"
+    },
+    {
+      "id": "TASK-988",
+      "slug": "agenttalk-auth-required-envelope",
+      "title": "AgentTalk AuthorizationRequired Envelope Translator",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-983"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only imports AuthRequiredEnvelope from TASK-983 and modifies agent.py. No shared files with TASK-984 through TASK-987.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-988-agenttalk-auth-required-envelope.md"
+    },
+    {
+      "id": "TASK-989",
+      "slug": "cold-session-hydration",
+      "title": "UserObjectsHandler Cold-Session Hydration",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only modifies user_objects.py. After TASK-983+984, shares no files with TASK-985 through TASK-988.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-989-cold-session-hydration.md"
+    },
+    {
+      "id": "TASK-990",
+      "slug": "frontend-api-client-and-popup",
+      "title": "Frontend API Client and OAuth Popup Helper",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-986"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Cross-repo (navigator-frontend-next). No shared files with any ai-parrot task.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-990-frontend-api-client-and-popup.md"
+    },
+    {
+      "id": "TASK-991",
+      "slug": "integrations-menu",
+      "title": "IntegrationsMenu Svelte Component",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-990"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-990 API client. Modifies AgentChat.svelte which TASK-992 also modifies.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-991-integrations-menu.md"
+    },
+    {
+      "id": "TASK-992",
+      "slug": "connect-integration-pill",
+      "title": "ConnectIntegrationPill and AgentChat Message Wiring",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-990",
+        "TASK-988"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares AgentChat.svelte modification with TASK-991. Must run after TASK-991 to avoid merge conflicts.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-992-connect-integration-pill.md"
+    },
+    {
+      "id": "TASK-993",
+      "slug": "e2e-integration-tests",
+      "title": "End-to-End Integration Tests",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984",
+        "TASK-985",
+        "TASK-986",
+        "TASK-987",
+        "TASK-988",
+        "TASK-989"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration tests that exercise the full backend stack. Depends on all backend tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-993-e2e-integration-tests.md"
+    }
+  ]
+}

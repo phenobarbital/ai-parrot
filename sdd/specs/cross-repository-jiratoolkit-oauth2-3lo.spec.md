@@ -1,9 +1,9 @@
 # Feature Specification: Cross-Repository JiraToolkit OAuth2 3LO (Web AgentChat)
 
-**Feature ID**: FEAT-143
+**Feature ID**: FEAT-144
 **Date**: 2026-05-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Source brainstorm**: `sdd/proposals/cross-repository-jiratoolkit-oauth2-3lo.brainstorm.md` (Recommended Option B)
 
@@ -1006,11 +1006,11 @@ existing `JiraOAuthManager` — unchanged.
 
 > Genuinely open — must be resolved before or during implementation:
 
-- [ ] **Q-A** PBAC action namespace. Proposed: `integration:list`, `integration:connect`, `integration:disconnect` (provider supplied as EvalContext attribute, not baked into action). Alternative: per-provider variants like `integration:connect:jira`. Decide before writing the policy fixtures. — *Owner: Jesus*
-- [ ] **Q-B** Default PBAC policy for `integration:*` when no PDP is configured. Current AgentTalk convention is fail-open; should integrations follow suit, or fail-closed (more conservative for credential surfaces)? — *Owner: Jesus + Security*
-- [ ] **Q-C** UX of empty menu. If PBAC filters out everything, should the `+ Integrations` toolbar button hide entirely, or always render with an "No integrations available" empty state? — *Owner: Jesus*
-- [ ] **Q-D** Auto-retry the user's last prompt after a successful connect, or require an explicit user retry? Spec defaults to **explicit retry** (deterministic; no surprise tool calls). — *Owner: Jesus*
-- [ ] **Q-E** DocumentDB migration story for the two new collections. Spec assumes lazy collection creation on first write (mirrors `MCPPersistenceService` behaviour). Confirm during implementation. — *Owner: Jesus*
+- [x] **Q-A** PBAC action namespace. Proposed: `integration:list`, `integration:connect`, `integration:disconnect` (provider supplied as EvalContext attribute, not baked into action). Alternative: per-provider variants like `integration:connect:jira`. Decide before writing the policy fixtures. — *Owner: Jesus*: proposed.
+- [ ] **Q-B** Default PBAC policy for `integration:*` when no PDP is configured. Current AgentTalk convention is fail-open; should integrations follow suit, or fail-closed (more conservative for credential surfaces)? — *Owner: Jesus + Security*: fail-closed
+- [ ] **Q-C** UX of empty menu. If PBAC filters out everything, should the `+ Integrations` toolbar button hide entirely, or always render with an "No integrations available" empty state? — *Owner: Jesus*: always render
+- [ ] **Q-D** Auto-retry the user's last prompt after a successful connect, or require an explicit user retry? Spec defaults to **explicit retry** (deterministic; no surprise tool calls). — *Owner: Jesus*: no auto-retry, explicit retry
+- [ ] **Q-E** DocumentDB migration story for the two new collections. Spec assumes lazy collection creation on first write (mirrors `MCPPersistenceService` behaviour). Confirm during implementation. — *Owner: Jesus*: confirm during implementation
 
 ---
 
