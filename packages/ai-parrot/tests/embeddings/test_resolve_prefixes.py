@@ -3,8 +3,14 @@
 Covers TASK-963: new resolver branches for Jina v3, gte-Qwen2-instruct,
 e5-mistral-7b-instruct, and NV-Embed-v2, plus regression tests for
 existing E5 and BGE-EN-v1.5 branches.
+
+Covers TASK-974: catalog-driven and unknown-model tests verifying the
+TASK-973 refactor: all EMBEDDING_MODELS entries resolve correctly, and
+out-of-catalog models return (None, None) with one INFO log.
 """
+import logging
 import pytest
+from parrot.embeddings.catalog import EMBEDDING_MODELS
 from parrot.embeddings.huggingface import _resolve_prefixes
 
 
@@ -193,3 +199,78 @@ class TestNewModelsInCatalog:
         actual_values = {m.value for m in ModelType}
         missing = expected_values - actual_values
         assert not missing, f"ModelType enum missing entries: {missing}"
+
+
+class TestResolverIsCatalogDriven:
+    """Verify _resolve_prefixes is driven by EMBEDDING_MODELS for all entries."""
+
+    @pytest.mark.parametrize(
+        "entry",
+        [e for e in EMBEDDING_MODELS if e["requires_prefix"]],
+        ids=lambda e: e["model"],
+    )
+    def test_prefix_requiring_entry_resolves_via_catalog(self, entry):
+        """Every catalog entry with requires_prefix=True resolves to its catalog pair."""
+        expected = (entry["prefix_query"], entry["prefix_passage"])
+        actual = _resolve_prefixes(entry["model"])
+        assert actual == expected, (
+            f"{entry['model']}: catalog={expected!r} vs resolver={actual!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "entry",
+        [e for e in EMBEDDING_MODELS if not e["requires_prefix"]],
+        ids=lambda e: e["model"],
+    )
+    def test_non_prefix_entry_returns_none_pair(self, entry):
+        """Every catalog entry with requires_prefix=False resolves to (None, None)."""
+        assert _resolve_prefixes(entry["model"]) == (None, None)
+
+    def test_resolver_is_case_insensitive(self):
+        """Lookup must be case-insensitive — uppercase identifier still resolves."""
+        assert _resolve_prefixes("INTFLOAT/E5-BASE-V2") == ("query: ", "passage: ")
+
+    def test_harrier_oss_resolves_via_catalog(self):
+        """Regression anchor: harrier-oss was added to the catalog WITHOUT touching
+        _resolve_prefixes. This test proves the catalog-driven path works for
+        models added after the original FEAT-140 family branches."""
+        q, p = _resolve_prefixes("microsoft/harrier-oss-v1-0.6b")
+        assert q is not None
+        assert q.startswith("Instruct:")
+        assert "Query:" in q
+        assert p is None
+
+
+class TestResolverUnknownModel:
+    """Verify out-of-catalog models return (None, None) with one INFO log."""
+
+    def test_unknown_model_returns_none_pair(self):
+        """An unknown model identifier returns (None, None)."""
+        assert _resolve_prefixes("acme/unknown-model") == (None, None)
+
+    def test_unknown_model_logs_info(self, caplog):
+        """One INFO log record is emitted for an unknown model."""
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="parrot.embeddings.huggingface"):
+            _resolve_prefixes("acme/unknown-model-xyz")
+        info_records = [
+            r for r in caplog.records
+            if r.levelno == logging.INFO and "acme/unknown-model-xyz" in r.getMessage()
+        ]
+        assert len(info_records) == 1, (
+            f"Expected 1 INFO record mentioning the unknown model, got {len(info_records)}"
+        )
+
+    def test_empty_string_silent(self, caplog):
+        """Falsy input returns (None, None) without emitting any log."""
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="parrot.embeddings.huggingface"):
+            assert _resolve_prefixes("") == (None, None)
+        assert not caplog.records, "Empty string should not trigger any log line"
+
+    def test_none_silent(self, caplog):
+        """None input returns (None, None) without emitting any log."""
+        caplog.clear()
+        with caplog.at_level(logging.INFO, logger="parrot.embeddings.huggingface"):
+            assert _resolve_prefixes(None) == (None, None)
+        assert not caplog.records, "None should not trigger any log line"
