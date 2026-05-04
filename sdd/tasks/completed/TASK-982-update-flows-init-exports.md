@@ -200,10 +200,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (FEAT-143 session)
+**Date**: 2026-05-04
+**Notes**: Updated `flows/__init__.py` to add imports from `.crew` (AgentCrew,
+CrewAgentNode), `.agents` (OrchestratorAgent, A2AOrchestratorAgent,
+ListAvailableA2AAgentsTool, HRAgentFactory), and `.tools` (ResultRetrievalTool).
+All previously-exported symbols unchanged. `orchestration/` directory untouched.
+Module docstring updated to document the new exports. Total `__all__` size: 30 symbols.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
