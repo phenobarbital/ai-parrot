@@ -318,10 +318,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Implemented _extract_jsonld, _walk_jsonld_node, _docs_from_jsonld_items.
+Added jsonld_types parameter (None=all, []=disabled, list=filtered).
+_result_to_documents now uses the new generic pipeline.
+_ATOMIC_CONTENT_KINDS extended with 9 new jsonld-* kinds in abstract.py.
+Legacy _extract_faqpage_jsonld and _docs_from_faqpage kept as deprecated private methods.
+92 tests pass (2 pre-existing failures unchanged).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
