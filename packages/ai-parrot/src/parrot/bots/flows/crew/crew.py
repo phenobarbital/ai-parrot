@@ -11,16 +11,18 @@ The original ``orchestration/crew.py`` is left in place for review.
 
 TASK-980: ``AgentContext`` removed; sequential/loop/parallel modes now use
 ``FlowContext`` for execution state tracking.
+
+Module-level constant ``_INTERNAL_SHARED_KEYS`` lists keys that are placed
+in ``FlowContext.shared_data`` for framework bookkeeping and must NOT be
+forwarded as kwargs to agent calls.
 """
 from __future__ import annotations
 from typing import (
-    List, Dict, Any, Union, Optional, Literal, Set, Callable, Awaitable, Tuple
+    List, Dict, Any, Union, Optional, Literal, Set, Callable, Tuple
 )
-from dataclasses import dataclass, field
 from datetime import datetime
 import contextlib
 import asyncio
-import time
 import uuid
 from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
@@ -48,7 +50,6 @@ from ..core.result import (
     build_node_metadata,
     determine_run_status,
 )
-from ..core.types import FlowStatus
 from ..core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
 from ..core.storage.synthesis import SYNTHESIS_PROMPT
 from ..core.context import FlowContext  # noqa: F401 — re-export for backward compat
@@ -75,6 +76,11 @@ __all__ = [
 # CrewAgentNode is imported from .nodes (extracted in TASK-977)
 # Backward-compatibility alias: AgentNode = CrewAgentNode
 AgentNode = CrewAgentNode
+
+# Keys placed in FlowContext.shared_data for framework bookkeeping.
+# These must NOT be forwarded to agent calls (agent.ask / .conversation / .invoke)
+# because they contain non-serialisable internal objects (ExecutionMemory, dicts, …).
+_INTERNAL_SHARED_KEYS: frozenset = frozenset({'execution_memory', 'shared_state'})
 
 
 class AgentCrew(PersistenceMixin, SynthesisMixin):
@@ -398,73 +404,39 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             })
         return statuses
 
-    # def get_agent_result(self, agent_id: str) -> dict:
-    #     """Get the result of a specific agent."""
-    #     if agent_id in self._agent_statuses:
-    #         info = self._agent_statuses[agent_id]
-    #         return {
-    #             "agent_id": agent_id,
-    #             "status": info["status"],
-    #             "result": info["result"],
-    #             "error": info["error"]
-    #         }
-    #     return None
-
-    #     if event_name == "status_changed":
-    #         new_status = kwargs.get("new_status")
-    #         if isinstance(new_status, AgentStatus):
-    #             status_info["status"] = new_status.value
-    #         else:
-    #             status_info["status"] = str(new_status)
-                
-    #     elif event_name == "task_started":
-    #         status_info["status"] = AgentStatus.WORKING.value
-    #         status_info["task"] = kwargs.get("task")
-    #         status_info["error"] = None
-    #         status_info["started_at"] = datetime.now()
-            
-    #     elif event_name == "task_completed":
-    #         status_info["status"] = AgentStatus.COMPLETED.value
-    #         # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
-    #         status_info["completed_at"] = datetime.now()
-            
-    #     elif event_name == "task_failed":
-    #         status_info["status"] = AgentStatus.FAILED.value
-    #         status_info["error"] = kwargs.get("error")
-    #         status_info["completed_at"] = datetime.now()
-
-    def get_agents_status(self) -> List[Dict[str, Any]]:
-        """Get the current status of all agents."""
-        return [
-            {
-                "agent_id": agent_id,
-                "agent_name": self.agents[agent_id].name,
-                **status
-            }
-            for agent_id, status in self._agent_statuses.items()
-        ]
-
     def get_agent_result(self, agent_id: str) -> Optional[NodeResult]:
-        """Get the result of the last execution for a specific agent."""
-        # This relies on ExecutionMemory or FlowContext results
-        # If execution_memory is active, try fetching from there
+        """Return the most recent ``NodeResult`` for *agent_id*, or ``None``.
+
+        Queries ``ExecutionMemory`` first (covers all execution modes that
+        store results there).  Falls back to scanning ``last_crew_result``
+        for the agent's ``NodeExecutionInfo`` when memory is not available.
+
+        Args:
+            agent_id: The agent's registered identifier.
+
+        Returns:
+            A ``NodeResult`` if the agent ran in the last execution, or
+            ``None`` if no result is found.
+        """
         if self.execution_memory:
-            # This is a bit complex as ExecutionMemory stores by vector info
-            # Simplified retrieval might be needed or relying on FlowContext results
-            # stored in self.last_crew_result if available
-            pass
-        
-        # Fallback to last_crew_result
+            node_result = self.execution_memory.get_results_by_agent(agent_id)
+            if node_result is not None:
+                return node_result
+
+        # Fallback: reconstruct a minimal NodeResult from NodeExecutionInfo
         if self.last_crew_result:
-            for agent_res in self.last_crew_result.agents:
-                if agent_res.agent_id == agent_id:
+            for agent_info in self.last_crew_result.agents:
+                if agent_info.agent_id == agent_id:
                     return NodeResult(
                         node_id=agent_id,
-                        node_name=agent_res.agent_name,
-                        task="", # Context lost
-                        result=None, # results not directly in AgentExecutionInfo 
-                        metadata={},
-                        execution_time=agent_res.execution_time
+                        node_name=agent_info.agent_name,
+                        task="",
+                        result=agent_info.result,
+                        metadata={
+                            'status': agent_info.status,
+                            'source': 'last_crew_result',
+                        },
+                        execution_time=agent_info.execution_time,
                     )
         return None
 
@@ -624,8 +596,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     'error': str(result)
                 })
 
-                # Save failed execution to memory if context has execution_memory
-                if hasattr(context, 'execution_memory') and context.execution_memory:
+                # Save failed execution to memory (via shared_data)
+                _exec_mem = context.shared_data.get('execution_memory')
+                if _exec_mem:
+                    _uid = context.shared_data.get('user_id', 'crew_user')
+                    _sid = context.shared_data.get('session_id', 'unknown')
                     agent_result = NodeResult(
                         node_id=agent_name,
                         node_name=node.agent.name,
@@ -635,15 +610,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                             'success': False,
                             'error': str(result),
                             'mode': 'flow',
-                            'user_id': getattr(context, 'user_id', 'crew_user'),
-                            'session_id': getattr(context, 'session_id', 'unknown')
+                            'user_id': _uid,
+                            'session_id': _sid,
                         },
                         execution_time=0.0
                     )
-                    context.execution_memory.add_result(
-                        agent_result,
-                        vectorize=False
-                    )
+                    _exec_mem.add_result(agent_result, vectorize=False)
             else:
                 output = result.get('output') if isinstance(result, dict) else result
                 raw_response = result.get('response') if isinstance(result, dict) else result
@@ -680,8 +652,11 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     'success': True
                 })
 
-                # Save successful execution to memory if context has execution_memory
-                if hasattr(context, 'execution_memory') and context.execution_memory:
+                # Save successful execution to memory (via shared_data)
+                _exec_mem = context.shared_data.get('execution_memory')
+                if _exec_mem:
+                    _uid = context.shared_data.get('user_id', 'crew_user')
+                    _sid = context.shared_data.get('session_id', 'unknown')
                     agent_input = result.get('prompt', '') if isinstance(result, dict) else context.initial_task
                     agent_result = NodeResult(
                         node_id=agent_name,
@@ -691,20 +666,20 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                         metadata={
                             'success': True,
                             'mode': 'flow',
-                            'user_id': getattr(context, 'user_id', 'crew_user'),
-                            'session_id': getattr(context, 'session_id', 'unknown'),
+                            'user_id': _uid,
+                            'session_id': _sid,
                             'result_type': type(output).__name__
                         },
                         execution_time=execution_time
                     )
                     # Vectorize only if analysis enabled
-                    context.execution_memory.add_result(
+                    _exec_mem.add_result(
                         agent_result,
                         vectorize=True
                     )
                     # Update execution order
-                    if agent_name not in context.execution_memory.execution_order:
-                        context.execution_memory.execution_order.append(agent_name)
+                    if agent_name not in _exec_mem.execution_order:
+                        _exec_mem.execution_order.append(agent_name)
 
         return execution_results
 
@@ -1140,11 +1115,16 @@ Current task: {current_input}"""
                 if node:
                     await node.run_pre_actions(prompt=agent_input)
 
-                # Execute agent
+                # Execute agent — strip framework-internal keys from shared_data
+                # (e.g. 'execution_memory') so they never leak into agent calls.
+                _agent_kwargs = {
+                    k: v for k, v in context.shared_data.items()
+                    if k not in _INTERNAL_SHARED_KEYS
+                }
                 response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i,
                     model=model, max_tokens=max_tokens,
-                    **context.shared_data
+                    **_agent_kwargs
                 )
 
                 result = self._extract_result(response)
@@ -1332,6 +1312,7 @@ Current task: {current_input}"""
         pass_full_context: bool = True,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
+        model: Optional[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
@@ -1355,6 +1336,7 @@ Current task: {current_input}"""
             generate_summary: If True, downstream agents receive summaries of
                 previous outputs from the current iteration.
             synthesis_prompt: Optional prompt to synthesize final results.
+            model: Optional model override forwarded to each agent call.
             max_tokens: Token limit when synthesizing or evaluating condition.
             temperature: Temperature used for synthesis or condition evaluation.
             **kwargs: Additional parameters forwarded to agent executions.
@@ -1549,13 +1531,20 @@ Current task: {current_input}"""
                     if node:
                         await node.run_pre_actions(prompt=agent_input)
 
+                    # Strip framework-internal keys from shared_data
+                    _agent_kwargs = {
+                        k: v for k, v in context.shared_data.items()
+                        if k not in _INTERNAL_SHARED_KEYS
+                    }
                     response = await self._execute_agent(
                         agent,
                         agent_input,
                         session_id,
                         user_id,
                         agent_position,
-                        **context.shared_data
+                        model=model,
+                        max_tokens=max_tokens,
+                        **_agent_kwargs
                     )
 
                     result = self._extract_result(response)
@@ -1871,15 +1860,24 @@ Current task: {current_input}"""
                 'index': i
             })
 
+            # Build per-task agent kwargs: strip internal bookkeeping keys so
+            # ExecutionMemory / shared_state never reach agent.ask(**kwargs).
+            _agent_kwargs = {
+                k: v for k, v in context.shared_data.items()
+                if k not in _INTERNAL_SHARED_KEYS
+            }
+
             async def _run_with_hooks(
                 _agent=agent, _query=query, _idx=i, _node=node,
-                _shared=dict(context.shared_data),
+                _kwargs=_agent_kwargs,
             ):
                 """Wrap _execute_agent with pre/post action hooks."""
                 if _node:
                     await _node.run_pre_actions(prompt=_query)
                 resp = await self._execute_agent(
-                    _agent, _query, session_id, user_id, _idx, **_shared
+                    _agent, _query, session_id, user_id, _idx,
+                    max_tokens=max_tokens,
+                    **_kwargs
                 )
                 if _node:
                     await _node.run_post_actions(result=resp)
@@ -2160,12 +2158,17 @@ Current task: {current_input}"""
         # Set execution order for flow mode (will be updated as agents complete)
         self.execution_memory.execution_order = []
 
-        # Initialize execution context to track the workflow state
-        context = FlowContext(initial_task=initial_task)
-        # Store execution metadata in context for use in _execute_parallel_agents
-        context.execution_memory = self.execution_memory
-        context.user_id = user_id
-        context.session_id = session_id
+        # Initialize execution context to track the workflow state.
+        # Framework metadata (execution_memory, user_id, session_id) lives in
+        # shared_data — consistent with run_sequential / run_loop / run_parallel.
+        context = FlowContext(
+            initial_task=initial_task,
+            shared_data={
+                'execution_memory': self.execution_memory,
+                'user_id': user_id,
+                'session_id': session_id,
+            },
+        )
 
         self.execution_log = []
         start_time = asyncio.get_running_loop().time()
@@ -2209,10 +2212,9 @@ Current task: {current_input}"""
                 await asyncio.sleep(0.1)
                 continue
 
-            # Execute all ready agents in parallel
-            # This is where the automatic parallelization happens.
-            # The callback is fired per-agent right after FSM succeeds.
-            results = await self._execute_parallel_agents(
+            # Execute all ready agents in parallel.
+            # Results are tracked in context; the return dict is not needed.
+            await self._execute_parallel_agents(
                 ready_agents, context, on_agent_complete=on_agent_complete
             )
 
@@ -2231,11 +2233,6 @@ Current task: {current_input}"""
             for agent, err in context.errors.items()
         }
         completion_order = context.completion_order or list(context.completed_tasks)
-
-        results_payload = [
-            context.results.get(agent_name)
-            for agent_name in completion_order
-        ]
 
         agents_info: List[NodeExecutionInfo] = []
         for agent_name in completion_order:
@@ -2752,7 +2749,7 @@ analyze, and present information in the most helpful way for the user.
                     f"**Execution Time**: {match['execution_time']:.2f}s",
                     "",
                     "**Relevant Content**:",
-                    f"```",
+                    "```",
                     match['relevant_content'],
                     "```",
                     ""

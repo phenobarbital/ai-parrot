@@ -58,7 +58,10 @@ from .agents import (
     OrchestratorAgent,
     A2AOrchestratorAgent,
     ListAvailableA2AAgentsTool,
+    DiscoverA2AAgentsInput,
     HRAgentFactory,
+    RAGHRAgent,
+    EmployeeDataAgent,
 )
 
 # Flow tools
@@ -102,7 +105,10 @@ __all__ = [
     "OrchestratorAgent",
     "A2AOrchestratorAgent",
     "ListAvailableA2AAgentsTool",
+    "DiscoverA2AAgentsInput",
     "HRAgentFactory",
+    "RAGHRAgent",
+    "EmployeeDataAgent",
     # Tools
     "ResultRetrievalTool",
 ]

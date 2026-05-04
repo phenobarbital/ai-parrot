@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from .types import FlowStatus
@@ -67,7 +67,7 @@ class NodeResult:
     ai_message: Optional[Any] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     execution_time: float = 0.0
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
     parent_execution_id: Optional[str] = None
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
 

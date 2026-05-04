@@ -14,7 +14,7 @@ from ...abstract import AbstractBot
 from ....tools.agent import AgentContext, AgentTool
 from ....registry import agent_registry
 from ....models.responses import AIMessage
-from ....models.crew import AgentResult
+from ..core.result import NodeResult
 
 
 class OrchestratorAgent(BasicAgent):
@@ -203,14 +203,14 @@ After gathering responses from one or more agents:
         for agent_tool in self.agent_tools.values():
             agent_tool.execution_memory = self._execution_memory
 
-    def _collect_agent_results(self) -> Dict[str, AgentResult]:
+    def _collect_agent_results(self) -> Dict[str, NodeResult]:
         """Get all agent results from the current execution."""
         memory = getattr(self, '_execution_memory', None)
         if memory is None:
             return {}
         return dict(memory.results)
 
-    def _is_passthrough_eligible(self, agent_results: Dict[str, AgentResult]) -> bool:
+    def _is_passthrough_eligible(self, agent_results: Dict[str, NodeResult]) -> bool:
         """Check if response should pass through the specialist's AIMessage directly."""
         if not agent_results:
             return False
@@ -228,7 +228,7 @@ After gathering responses from one or more agents:
     def _build_passthrough_response(
         self,
         orchestrator_response: AIMessage,
-        agent_results: Dict[str, AgentResult]
+        agent_results: Dict[str, NodeResult]
     ) -> AIMessage:
         """Return the specialist's AIMessage with orchestrator session metadata."""
         agent_result = next(iter(agent_results.values()))
@@ -247,7 +247,7 @@ After gathering responses from one or more agents:
     def _build_synthesis_response(
         self,
         orchestrator_response: AIMessage,
-        agent_results: Dict[str, AgentResult]
+        agent_results: Dict[str, NodeResult]
     ) -> AIMessage:
         """Merge data from multiple agents into the orchestrator's response."""
         merged_data = {}
