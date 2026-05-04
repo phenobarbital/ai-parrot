@@ -512,7 +512,7 @@ Expose your bots natively to chat platforms:
 |----------|-------|------------|---------|
 | OpenAI | `openai` | `openai` | `openai:gpt-4o` |
 | Anthropic | `anthropic` | `anthropic`, `claude` | `anthropic:claude-sonnet-4-20250514` |
-| Google Gemini | `google` | `google` | `google:gemini-2.0-flash` |
+| Google Gemini | `google` | `google` | `google:gemini-3.1-flash-lite-preview` |
 | Groq | `groq` | `groq` | `groq:llama-3.3-70b-versatile` |
 | X.AI / Grok | `xai` | `grok` | `grok:grok-3` |
 | HuggingFace | *(included)* | `hf` | `hf:meta-llama/Llama-3-8B` |

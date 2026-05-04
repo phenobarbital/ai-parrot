@@ -1,7 +1,7 @@
 """OdooToolkit — exposes Odoo ERP operations as agent tools.
 
 Composes an :class:`~parrot_tools.odoo.transport.AbstractOdooTransport`
-(JSON-RPC 2.0 for Odoo 19+, XML-RPC for 14-18, or auto-detected) and turns
+(JSON-2 for Odoo 19+, XML-RPC for 14-18, or auto-detected) and turns
 each public async method into a tool via :class:`AbstractToolkit`.
 
 Inspired by:
@@ -40,6 +40,7 @@ from parrot.interfaces.odoointerface import (
     OdooRPCError,
 )
 from parrot.tools.decorators import tool_schema
+from parrot.tools.decorators import requires_permission
 from parrot.tools.toolkit import AbstractToolkit
 
 from .models.entities import (
@@ -58,6 +59,7 @@ from .models.envelopes import (
     BulkUpdateResult,
     CreateResult,
     DeleteResult,
+    FieldSelectionMetadata,
     ImportResult,
     ModelInfo,
     ModelOperations,
@@ -122,11 +124,6 @@ def _model_to_dict(model: BaseModel | dict[str, Any] | None) -> dict[str, Any]:
     return dict(model)
 
 
-def _wrap_unexpected(exc: Exception, where: str) -> OdooRPCError:
-    """Wrap unexpected exceptions in OdooRPCError so tools always raise OdooError."""
-    return OdooRPCError(f"Unexpected error in {where}: {exc!r}")
-
-
 class OdooToolkit(AbstractToolkit):
     """Toolkit exposing Odoo ERP CRUD + business helpers as agent tools.
 
@@ -145,6 +142,8 @@ class OdooToolkit(AbstractToolkit):
         tools = toolkit.get_tools()
         result = await toolkit.search_records(model="res.partner", limit=5)
     """
+
+    tool_prefix = "odoo"
 
     def __init__(
         self,
@@ -167,7 +166,7 @@ class OdooToolkit(AbstractToolkit):
             password: Odoo password / API key. Falls back to ``ODOO_PASSWORD``.
             timeout: Request timeout (seconds). Falls back to ``ODOO_TIMEOUT``.
             verify_ssl: Whether to verify SSL certificates.
-            protocol: 'auto' (default), 'jsonrpc', or 'xmlrpc'.
+            protocol: 'auto' (default), 'json2', 'jsonrpc', or 'xmlrpc'.
             transport: Pre-built transport (mainly for tests). When provided,
                 ``protocol`` is ignored.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
@@ -241,19 +240,6 @@ class OdooToolkit(AbstractToolkit):
     def _record_url(base_url: str, model: str, record_id: int) -> str:
         """Build an Odoo web URL pointing at a given record."""
         return f"{base_url.rstrip('/')}/web#id={record_id}&model={model}&view_type=form"
-
-    @staticmethod
-    def _coerce_to_entity(
-        record: dict[str, Any] | None,
-        cls: type[BaseModel],
-    ) -> BaseModel | None:
-        """Build a typed entity from a record dict, tolerating partial payloads."""
-        if not record:
-            return None
-        try:
-            return cls.model_validate(record)
-        except Exception:  # pragma: no cover - defensive: never lose a record
-            return None
 
     async def _read_one(
         self,
@@ -387,8 +373,14 @@ class OdooToolkit(AbstractToolkit):
     ) -> RecordResult:
         """Read a single record by id."""
         record = await self._read_one(model, record_id, fields)
-        return RecordResult(record=record, model=model)
+        metadata = FieldSelectionMetadata(
+            fields_returned=len(record),
+            field_selection_method="requested" if fields else "all",
+            note="Requested fields were used." if fields else "No explicit fields requested.",
+        )
+        return RecordResult(record=record, model=model, metadata=metadata)
 
+    @requires_permission("odoo.write")
     @tool_schema(CreateRecordInput)
     async def create_record(
         self,
@@ -405,6 +397,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Created {model} #{new_id}",
         )
 
+    @requires_permission("odoo.write")
     @tool_schema(CreateRecordsInput)
     async def create_records(
         self,
@@ -421,6 +414,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Created {len(ids)} {model} record(s)",
         )
 
+    @requires_permission("odoo.write")
     @tool_schema(UpdateRecordInput)
     async def update_record(
         self,
@@ -439,6 +433,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Updated {model} #{record_id}",
         )
 
+    @requires_permission("odoo.write")
     @tool_schema(UpdateRecordsInput)
     async def update_records(
         self,
@@ -456,6 +451,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Updated {len(record_ids)} {model} record(s)",
         )
 
+    @requires_permission("odoo.delete")
     @tool_schema(DeleteRecordInput)
     async def delete_record(
         self,
@@ -471,6 +467,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Deleted {model} #{record_id}",
         )
 
+    @requires_permission("odoo.delete")
     @tool_schema(DeleteRecordsInput)
     async def delete_records(
         self,
@@ -487,6 +484,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Deleted {len(record_ids)} {model} record(s)",
         )
 
+    @requires_permission("odoo.write")
     @tool_schema(ImportRecordsInput)
     async def import_records(
         self,
@@ -559,6 +557,7 @@ class OdooToolkit(AbstractToolkit):
         )
         return [ResPartner.model_validate(r) for r in records or []]
 
+    @requires_permission("odoo.write")
     @tool_schema(CreatePartnerInput)
     async def create_partner(
         self,
@@ -601,6 +600,7 @@ class OdooToolkit(AbstractToolkit):
         )
         return ResPartner.model_validate(record)
 
+    @requires_permission("odoo.write")
     @tool_schema(UpdatePartnerContactInfoInput)
     async def update_partner_contact_info(
         self,
@@ -643,6 +643,7 @@ class OdooToolkit(AbstractToolkit):
         "order_line", "invoice_status", "client_order_ref",
     ]
 
+    @requires_permission("odoo.write")
     @tool_schema(CreateQuotationInput)
     async def create_quotation(
         self,
@@ -680,6 +681,7 @@ class OdooToolkit(AbstractToolkit):
         )
         return SaleOrder.model_validate(record)
 
+    @requires_permission("odoo.write")
     @tool_schema(ConfirmSaleOrderInput)
     async def confirm_sale_order(self, sale_order_id: int) -> SaleOrder:
         """Confirm a draft quotation, transitioning it to the 'sale' state."""
@@ -699,6 +701,7 @@ class OdooToolkit(AbstractToolkit):
         "invoice_line_ids",
     ]
 
+    @requires_permission("odoo.write")
     @tool_schema(CreateInvoiceInput)
     async def create_invoice(
         self,
@@ -740,6 +743,7 @@ class OdooToolkit(AbstractToolkit):
         )
         return AccountMove.model_validate(record)
 
+    @requires_permission("odoo.write")
     @tool_schema(PostInvoiceInput)
     async def post_invoice(self, invoice_id: int) -> AccountMove:
         """Post a draft invoice (Odoo 13+: ``action_post``)."""
@@ -749,6 +753,7 @@ class OdooToolkit(AbstractToolkit):
         )
         return AccountMove.model_validate(record)
 
+    @requires_permission("odoo.write")
     @tool_schema(RegisterPaymentInput)
     async def register_payment(
         self,
@@ -789,6 +794,7 @@ class OdooToolkit(AbstractToolkit):
 
     # ── Binary helpers ──────────────────────────────────────────────────────
 
+    @requires_permission("odoo.write")
     @tool_schema(SetBinaryFieldInput)
     async def set_binary_field(
         self,
@@ -809,6 +815,7 @@ class OdooToolkit(AbstractToolkit):
             message=f"Uploaded {len(data)} bytes to {model}.{field_name} on #{record_id}",
         )
 
+    @requires_permission("odoo.write")
     @tool_schema(AttachDocumentInput)
     async def attach_document(
         self,

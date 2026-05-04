@@ -32,32 +32,62 @@ from navigator_auth.decorators import is_authenticated, user_session
 from ..models import UserBotModel
 
 
-# Keys whose values must never be echoed back in GET responses (case-insensitive).
+# Keys whose values must never be echoed back in GET responses
+# (case-insensitive; "-" is normalised to "_" before matching).
 _REDACT_KEYS = {
-    "api_key",
-    "apikey",
-    "api-key",
-    "client_secret",
-    "oauth2_client_secret",
-    "password",
-    "token",
-    "secret",
-    "access_token",
-    "refresh_token",
-    "private_key",
-    "bearer",
+    # API keys
+    "api_key", "apikey", "x_api_key",
+    # OAuth / clients
+    "client_secret", "oauth2_client_secret",
+    # Passwords
+    "password", "passwd",
+    # Tokens
+    "token", "auth_token", "access_token", "refresh_token", "id_token",
+    # Generic secrets
+    "secret", "webhook_secret", "signing_secret",
+    # Private keys
+    "private_key", "private_key_id",
+    # HTTP auth
+    "bearer", "authorization",
+    # Cloud / GCP
+    "credentials", "session_token",
 }
 
 _REDACT_PLACEHOLDER = "***"
 
+# Per-file upload size cap (env-overridable). 50 MB default — large enough
+# for typical PDF/markdown ingestion, small enough that an attacker cannot
+# fill the temp partition with a single multipart request.
+_DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def _is_credential_key(key: Any) -> bool:
+    """Return True for keys whose value should be redacted on responses."""
+    if not isinstance(key, str):
+        return False
+    return key.lower().replace("-", "_") in _REDACT_KEYS
+
 
 def _redact(value: Any) -> Any:
-    """Recursively redact credential-shaped keys in dicts/lists."""
+    """Recursively redact credential-shaped keys in dicts/lists.
+
+    Special case: when a dict key is exactly ``env`` and its value is a
+    dict, every value inside is redacted unconditionally. MCP server
+    configurations standardise on ``"env": {"FOO_API_KEY": "..."}``
+    blocks where keys are upper-case environment variable names that do
+    not match the explicit key list above; redacting the whole block is
+    the only way to stay safe without an enumerable allowlist.
+    """
     if isinstance(value, dict):
-        return {
-            k: (_REDACT_PLACEHOLDER if k.lower() in _REDACT_KEYS else _redact(v))
-            for k, v in value.items()
-        }
+        out: Dict[str, Any] = {}
+        for k, v in value.items():
+            if isinstance(k, str) and k.lower() == "env" and isinstance(v, dict):
+                out[k] = {ek: _REDACT_PLACEHOLDER for ek in v}
+            elif _is_credential_key(k):
+                out[k] = _REDACT_PLACEHOLDER
+            else:
+                out[k] = _redact(v)
+        return out
     if isinstance(value, list):
         return [_redact(item) for item in value]
     return value
@@ -68,7 +98,12 @@ def _deep_merge(base: Any, patch: Any) -> Any:
 
     For lists of objects-with-name, items in ``patch`` replace items in
     ``base`` matched by the ``name`` key; otherwise the list is overwritten.
-    Explicit ``None`` in a dict value deletes the key.
+
+    Deletion sentinels:
+        - In a dict: an explicit ``None`` value deletes the key.
+        - In a named-list item: an explicit ``"_delete": true`` field
+          removes the matching entry by name. The previous substring check
+          on the ``name`` field was a no-op and has been replaced.
     """
     if isinstance(base, dict) and isinstance(patch, dict):
         out = dict(base)
@@ -85,13 +120,40 @@ def _deep_merge(base: Any, patch: Any) -> Any:
             by_name = {it["name"]: copy.deepcopy(it) for it in base}
             for it in patch:
                 name = it["name"]
-                if it.keys() == {"name"} and "_delete" in it.get("name", ""):
+                if it.get("_delete") is True:
                     by_name.pop(name, None)
                 else:
                     by_name[name] = _deep_merge(by_name.get(name, {}), it)
             return list(by_name.values())
         return patch
     return patch
+
+
+def _max_upload_bytes() -> int:
+    """Read the per-file upload size cap from env, falling back to default."""
+    raw = os.environ.get("USER_BOT_MAX_UPLOAD_BYTES")
+    if raw is None:
+        return _DEFAULT_MAX_UPLOAD_BYTES
+    try:
+        value = int(raw)
+        return value if value > 0 else _DEFAULT_MAX_UPLOAD_BYTES
+    except (TypeError, ValueError):
+        return _DEFAULT_MAX_UPLOAD_BYTES
+
+
+def _coerce_chatbot_id(raw: Any) -> Optional[str]:
+    """Validate ``raw`` as a UUID and return the canonical str form.
+
+    Returns ``None`` when ``raw`` is missing or malformed; callers translate
+    that into a 400 response so a malformed path segment never reaches the
+    ORM layer.
+    """
+    if not raw:
+        return None
+    try:
+        return str(uuid.UUID(str(raw)))
+    except (ValueError, AttributeError):
+        return None
 
 
 @is_authenticated()
@@ -144,38 +206,61 @@ class UserAgentHandler(BaseView):
         import json as _json
         config: Dict[str, Any] = {}
         uploads: List[Tuple[str, str, str]] = []
-        reader = await self.request.multipart()
-        async for part in reader:
-            if part is None:
-                break
-            field_name = part.name
-            filename = part.filename
-            if filename:
-                # Stream to a temp file so it can be uploaded to S3 afterwards.
-                suffix = os.path.splitext(filename)[1]
-                fd, tmp_path = tempfile.mkstemp(suffix=suffix)
-                try:
-                    with os.fdopen(fd, "wb") as out:
-                        while True:
-                            chunk = await part.read_chunk()
-                            if not chunk:
-                                break
-                            out.write(chunk)
-                except Exception:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
-                    raise
-                uploads.append((field_name or "files", filename, tmp_path))
-            else:
-                value = await part.text()
-                if field_name == "config":
+        max_bytes = _max_upload_bytes()
+
+        def _cleanup() -> None:
+            for _, _, tp in uploads:
+                with contextlib.suppress(OSError):
+                    if os.path.exists(tp):
+                        os.unlink(tp)
+
+        try:
+            reader = await self.request.multipart()
+            async for part in reader:
+                if part is None:
+                    break
+                field_name = part.name
+                filename = part.filename
+                if filename:
+                    # Stream to a temp file so it can be uploaded to S3
+                    # afterwards. Enforce a per-file size cap so a single
+                    # multipart request cannot exhaust the temp partition.
+                    suffix = os.path.splitext(filename)[1]
+                    fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+                    written = 0
                     try:
-                        config = _json.loads(value)
-                    except Exception:
-                        return {}, uploads
+                        with os.fdopen(fd, "wb") as out:
+                            while True:
+                                chunk = await part.read_chunk()
+                                if not chunk:
+                                    break
+                                written += len(chunk)
+                                if written > max_bytes:
+                                    raise web.HTTPRequestEntityTooLarge(
+                                        max_size=max_bytes,
+                                        actual_size=written,
+                                    )
+                                out.write(chunk)
+                    except BaseException:
+                        with contextlib.suppress(OSError):
+                            if os.path.exists(tmp_path):
+                                os.unlink(tmp_path)
+                        raise
+                    uploads.append((field_name or "files", filename, tmp_path))
                 else:
-                    # Allow arbitrary scalar fields to live alongside config JSON.
-                    config[field_name] = value
+                    value = await part.text()
+                    if field_name == "config":
+                        try:
+                            config = _json.loads(value)
+                        except Exception:
+                            _cleanup()
+                            return {}, []
+                    else:
+                        # Allow arbitrary scalar fields alongside config JSON.
+                        config[field_name] = value
+        except BaseException:
+            _cleanup()
+            raise
         return config, uploads
 
     # ------------------------------------------------------------------
@@ -351,6 +436,22 @@ class UserAgentHandler(BaseView):
         return out
 
     # ------------------------------------------------------------------
+    # Internal cleanup helper (uploads list -> unlinked tmp files)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _purge_uploads(uploads: List[Tuple[str, str, str]]) -> None:
+        """Best-effort unlink of every tmp file in ``uploads``.
+
+        Safe to call after :meth:`_ingest_uploads` has already removed the
+        successfully uploaded files — :class:`OSError` is suppressed.
+        """
+        for _, _, tmp_path in uploads:
+            with contextlib.suppress(OSError):
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+
+    # ------------------------------------------------------------------
     # PUT — create
     # ------------------------------------------------------------------
 
@@ -361,6 +462,17 @@ class UserAgentHandler(BaseView):
             return self.error("Authentication required.", status=401)
 
         data, uploads = await self._parse_request()
+        try:
+            return await self._put_inner(user_id, data, uploads)
+        finally:
+            self._purge_uploads(uploads)
+
+    async def _put_inner(
+        self,
+        user_id: int,
+        data: Dict[str, Any],
+        uploads: List[Tuple[str, str, str]],
+    ) -> web.Response:
         if not data.get("name"):
             return self.error("Field 'name' is required.", status=400)
 
@@ -374,7 +486,11 @@ class UserAgentHandler(BaseView):
                 **plain,
             )
         except Exception as exc:  # noqa: BLE001
-            return self.error(f"Invalid configuration: {exc}", status=422)
+            self.logger.warning(
+                "Invalid user_bot configuration for user %s: %s",
+                user_id, exc,
+            )
+            return self.error("Invalid configuration.", status=422)
 
         # Encrypt credential blobs (RuntimeError -> 503 if vault not configured)
         try:
@@ -383,7 +499,8 @@ class UserAgentHandler(BaseView):
             if tools_cfg is not None:
                 model.set_tools_config(tools_cfg)
         except RuntimeError as exc:
-            return self.error(f"Vault not configured: {exc}", status=503)
+            self.logger.error("Vault unavailable on PUT user_bot: %s", exc)
+            return self.error("Vault not configured.", status=503)
 
         # Ingest uploaded files (best-effort) and append to documents.
         ingested = await self._ingest_uploads(user_id, str(chatbot_id), uploads)
@@ -394,8 +511,11 @@ class UserAgentHandler(BaseView):
         try:
             await self._insert(model)
         except Exception as exc:  # noqa: BLE001
-            self.logger.error("Insert user_bot failed: %s", exc, exc_info=True)
-            return self.error(f"Could not create bot: {exc}", status=400)
+            self.logger.error(
+                "Insert user_bot failed for user %s: %s",
+                user_id, exc, exc_info=True,
+            )
+            return self.error(self._classify_db_error(exc, "create"), status=400)
 
         return web.json_response(
             self._serialize(model),
@@ -412,15 +532,27 @@ class UserAgentHandler(BaseView):
         if not user_id:
             return self.error("Authentication required.", status=401)
 
-        chatbot_id = self.request.match_info.get("chatbot_id")
-        if not chatbot_id:
-            return self.error("Missing chatbot_id in URL.", status=400)
+        chatbot_id = _coerce_chatbot_id(self.request.match_info.get("chatbot_id"))
+        if chatbot_id is None:
+            return self.error("Missing or invalid chatbot_id in URL.", status=400)
 
+        data, uploads = await self._parse_request()
+        try:
+            return await self._patch_inner(user_id, chatbot_id, data, uploads)
+        finally:
+            self._purge_uploads(uploads)
+
+    async def _patch_inner(
+        self,
+        user_id: int,
+        chatbot_id: str,
+        data: Dict[str, Any],
+        uploads: List[Tuple[str, str, str]],
+    ) -> web.Response:
         existing = await self._get_one(user_id, chatbot_id)
         if existing is None:
             return self.error("Bot not found.", status=404)
 
-        data, uploads = await self._parse_request()
         plain, mcp_cfg, tools_cfg = self._split_payload(data)
 
         # Apply plain-column patches.
@@ -428,7 +560,11 @@ class UserAgentHandler(BaseView):
             try:
                 setattr(existing, key, value)
             except Exception as exc:  # noqa: BLE001
-                return self.error(f"Invalid value for {key}: {exc}", status=422)
+                self.logger.warning(
+                    "Invalid value for %s on user_bot %s: %s",
+                    key, chatbot_id, exc,
+                )
+                return self.error(f"Invalid value for {key}.", status=422)
 
         # Merge encrypted blobs to preserve untouched credentials.
         try:
@@ -439,7 +575,8 @@ class UserAgentHandler(BaseView):
                 merged = _deep_merge(existing.get_tools_config(), tools_cfg)
                 existing.set_tools_config(merged)
         except RuntimeError as exc:
-            return self.error(f"Vault not configured: {exc}", status=503)
+            self.logger.error("Vault unavailable on PATCH user_bot: %s", exc)
+            return self.error("Vault not configured.", status=503)
 
         # Append any newly uploaded documents.
         ingested = await self._ingest_uploads(user_id, chatbot_id, uploads)
@@ -447,19 +584,34 @@ class UserAgentHandler(BaseView):
             existing.documents = list(existing.documents or []) + ingested
 
         # Optional explicit document removal: payload may include
-        # "documents_remove": [<path>, ...]
+        # "documents_remove": [<path>, ...]. Apply to the in-memory list
+        # *before* persisting; only delete from S3 once the DB write
+        # succeeds, otherwise a DB failure leaves dangling references.
         remove_paths = data.get("documents_remove")
+        removed: List[dict] = []
         if isinstance(remove_paths, list) and remove_paths:
-            keep = [d for d in (existing.documents or []) if d.get("path") not in remove_paths]
-            removed = [d for d in (existing.documents or []) if d.get("path") in remove_paths]
-            await self._delete_documents(removed)
+            keep = [
+                d for d in (existing.documents or [])
+                if d.get("path") not in remove_paths
+            ]
+            removed = [
+                d for d in (existing.documents or [])
+                if d.get("path") in remove_paths
+            ]
             existing.documents = keep
 
         try:
             await self._update(existing)
         except Exception as exc:  # noqa: BLE001
-            self.logger.error("Update user_bot failed: %s", exc, exc_info=True)
-            return self.error(f"Could not update bot: {exc}", status=400)
+            self.logger.error(
+                "Update user_bot %s failed for user %s: %s",
+                chatbot_id, user_id, exc, exc_info=True,
+            )
+            return self.error(self._classify_db_error(exc, "update"), status=400)
+
+        # DB write committed — best-effort cleanup of removed documents.
+        if removed:
+            await self._delete_documents(removed)
 
         # Invalidate session cache so next chat rebuilds.
         from ...manager.manager import BotManager  # noqa: PLC0415
@@ -481,8 +633,11 @@ class UserAgentHandler(BaseView):
         if not user_id:
             return self.error("Authentication required.", status=401)
 
-        chatbot_id = self.request.match_info.get("chatbot_id")
-        if chatbot_id:
+        raw_chatbot_id = self.request.match_info.get("chatbot_id")
+        if raw_chatbot_id:
+            chatbot_id = _coerce_chatbot_id(raw_chatbot_id)
+            if chatbot_id is None:
+                return self.error("Invalid chatbot_id format.", status=400)
             row = await self._get_one(user_id, chatbot_id)
             if row is None:
                 return self.error("Bot not found.", status=404)
@@ -503,9 +658,9 @@ class UserAgentHandler(BaseView):
         if not user_id:
             return self.error("Authentication required.", status=401)
 
-        chatbot_id = self.request.match_info.get("chatbot_id")
-        if not chatbot_id:
-            return self.error("Missing chatbot_id in URL.", status=400)
+        chatbot_id = _coerce_chatbot_id(self.request.match_info.get("chatbot_id"))
+        if chatbot_id is None:
+            return self.error("Missing or invalid chatbot_id in URL.", status=400)
 
         row = await self._get_one(user_id, chatbot_id)
         if row is None:
@@ -516,10 +671,13 @@ class UserAgentHandler(BaseView):
         try:
             await self._delete(row)
         except Exception as exc:  # noqa: BLE001
-            self.logger.error("Delete user_bot failed: %s", exc, exc_info=True)
-            return self.error(f"Could not delete bot: {exc}", status=400)
+            self.logger.error(
+                "Delete user_bot %s failed for user %s: %s",
+                chatbot_id, user_id, exc, exc_info=True,
+            )
+            return self.error(self._classify_db_error(exc, "delete"), status=400)
 
-        # Best-effort S3 cleanup
+        # Best-effort S3 cleanup (DB row already gone).
         await self._delete_documents(documents)
 
         from ...manager.manager import BotManager  # noqa: PLC0415
@@ -527,3 +685,30 @@ class UserAgentHandler(BaseView):
         BotManager.invalidate_user_bot(session, chatbot_id)
 
         return web.json_response({"deleted": True, "chatbot_id": chatbot_id})
+
+    # ------------------------------------------------------------------
+    # Error message classification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_db_error(exc: BaseException, operation: str) -> str:
+        """Map a DB-layer exception to a user-safe message.
+
+        Never echoes the raw exception string to clients (asyncpg
+        exception messages contain table, column, and constraint names
+        that leak schema details). The full traceback is still logged
+        via ``self.logger.error(..., exc_info=True)`` at the call site.
+        """
+        try:
+            from asyncpg.exceptions import (  # noqa: PLC0415
+                ForeignKeyViolationError,
+                UniqueViolationError,
+            )
+        except ImportError:  # pragma: no cover — asyncpg always present in prod
+            UniqueViolationError = ForeignKeyViolationError = ()  # type: ignore[assignment]
+
+        if isinstance(exc, UniqueViolationError):
+            return "A bot with this name already exists."
+        if isinstance(exc, ForeignKeyViolationError):
+            return "Referenced resource not found."
+        return f"Could not {operation} bot."

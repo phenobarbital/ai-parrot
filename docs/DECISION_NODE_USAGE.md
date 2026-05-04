@@ -165,9 +165,9 @@ from parrot.bots.orchestration.decision_node import (
 )
 
 # Create agents
-generator = BasicAgent(name="Generator", llm="google_genai:gemini-2.0-flash-exp", ...)
-checker = BasicAgent(name="Checker", llm="google_genai:gemini-2.0-flash-exp", ...)
-processor = BasicAgent(name="Processor", llm="google_genai:gemini-2.0-flash-exp", ...)
+generator = BasicAgent(name="Generator", llm="google_genai:gemini-3.1-flash-lite-preview", ...)
+checker = BasicAgent(name="Checker", llm="google_genai:gemini-3.1-flash-lite-preview", ...)
+processor = BasicAgent(name="Processor", llm="google_genai:gemini-3.1-flash-lite-preview", ...)
 
 # Create decision node
 decision = DecisionFlowNode(

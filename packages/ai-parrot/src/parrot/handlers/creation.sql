@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
 
     -- LLM configuration
     llm VARCHAR DEFAULT 'google',
-    model_name VARCHAR DEFAULT 'gemini-2.0-flash-001',
+    model_name VARCHAR DEFAULT 'gemini-3.1-flash-lite-preview',
     temperature FLOAT DEFAULT 0.1 CHECK (temperature >= 0 AND temperature <= 2),
     max_tokens INTEGER DEFAULT 1024 CHECK (max_tokens > 0),
     top_k INTEGER DEFAULT 41 CHECK (top_k > 0),

@@ -354,7 +354,14 @@ class BotManager:
                     # Mutations (remove/add/customize) are applied post-init,
                     # before configure(), to mirror the YAML registry flow.
                     prompt_config_dict = bot_model.prompt_config or {}
-                    prompt_preset_name = prompt_config_dict.get("preset") or None
+                    has_prompt_mutations = any(
+                        prompt_config_dict.get(key)
+                        for key in ("remove", "add", "customize")
+                    )
+                    prompt_preset_name = (
+                        prompt_config_dict.get("preset")
+                        or ("default" if has_prompt_mutations else None)
+                    )
 
                     bot_instance = class_name(
                         chatbot_id=bot_model.chatbot_id,
@@ -499,6 +506,14 @@ class BotManager:
         if not prompt_config:
             return
         builder = getattr(bot, "_prompt_builder", None)
+        has_prompt_mutations = any(
+            prompt_config.get(key)
+            for key in ("remove", "add", "customize")
+        )
+        if builder is None and has_prompt_mutations:
+            from ..bots.prompts.presets import get_preset
+            builder = get_preset(prompt_config.get("preset") or "default")
+            bot._prompt_builder = builder
         if builder is None:
             return
 

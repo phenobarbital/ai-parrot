@@ -1,4 +1,5 @@
-"""Abstract transport for Odoo RPC dialects."""
+"""Abstract transport for Odoo external API dialects."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -8,11 +9,11 @@ from parrot.interfaces.odoointerface import OdooConfig
 
 
 class AbstractOdooTransport(ABC):
-    """Common surface for JSON-RPC and XML-RPC Odoo backends.
+    """Common surface for JSON-2, legacy JSON-RPC, and XML-RPC backends.
 
     Concrete transports are responsible for authentication, dispatching
-    ``execute_kw`` calls, and reporting server version. The toolkit composes
-    one of these — it never constructs an Odoo client directly.
+    toolkit calls, and reporting server version. The toolkit composes one of
+    these — it never constructs an Odoo client directly.
     """
 
     config: OdooConfig
@@ -39,7 +40,7 @@ class AbstractOdooTransport(ABC):
         args: list[Any] | None = None,
         kwargs: dict[str, Any] | None = None,
     ) -> Any:
-        """Dispatch a model method via the underlying RPC channel."""
+        """Dispatch a model method via the underlying Odoo external API."""
 
     @abstractmethod
     async def version(self) -> dict[str, Any]:
@@ -52,4 +53,4 @@ class AbstractOdooTransport(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Human-readable transport identifier ('jsonrpc' | 'xmlrpc')."""
+        """Human-readable transport identifier ('json2' | 'jsonrpc' | 'xmlrpc')."""

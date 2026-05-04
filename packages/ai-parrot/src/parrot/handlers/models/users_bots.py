@@ -80,11 +80,18 @@ class UserBotModel(Model):
 
     # LLM configuration
     llm: str = Field(required=False, default="google")
-    model_name: str = Field(required=False, default="gemini-2.0-flash-001")
+    # DEPRECATED columns — kept only for legacy rows during migration.
+    # All LLM tuning lives in ``model_config`` (JSONB) under keys
+    # ``model``, ``temperature``, ``max_tokens``, ``top_k``, ``top_p``.
+    # These columns will be dropped once data migration completes.
+    model_name: str = Field(required=False, default="gemini-3.1-flash-lite-preview")
     temperature: float = Field(required=False, default=0.1)
-    max_tokens: int = Field(required=False, default=1024)
+    max_tokens: int = Field(required=False, default=4096)
     top_k: int = Field(required=False, default=41)
     top_p: float = Field(required=False, default=0.9)
+    # Canonical LLM settings (mirrors how ``vector_config`` works).
+    # Recognized keys: ``model``, ``temperature``, ``max_tokens``,
+    # ``top_k``, ``top_p``, plus any provider-specific tuning.
     model_config: dict = Field(required=False, default_factory=dict)
 
     # Vector store + uploaded documents
@@ -93,7 +100,7 @@ class UserBotModel(Model):
     embedding_model: dict = Field(required=False, default=_default_embed_model)
     documents: List[dict] = Field(required=False, default_factory=list)
     context_search_limit: int = Field(required=False, default=10)
-    context_score_threshold: float = Field(required=False, default=0.7)
+    context_score_threshold: float = Field(required=False, default=0.61)
 
     # MCP & tools — stored as ENCRYPTED TEXT.
     # Use the get_*/set_* accessors for plaintext I/O.
@@ -132,21 +139,41 @@ class UserBotModel(Model):
 
     def get_mcp_config(self) -> List[dict]:
         """Return plaintext MCP server configurations."""
-        value = unseal(self.mcp_config)
+        value = unseal(
+            self.mcp_config,
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="mcp_config",
+        )
         return value if isinstance(value, list) else []
 
     def set_mcp_config(self, value: Any) -> None:
         """Encrypt and store MCP server configurations."""
-        self.mcp_config = seal(value or [])
+        self.mcp_config = seal(
+            value or [],
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="mcp_config",
+        )
 
     def get_tools_config(self) -> List[dict]:
         """Return plaintext tool configurations."""
-        value = unseal(self.tools_config)
+        value = unseal(
+            self.tools_config,
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="tools_config",
+        )
         return value if isinstance(value, list) else []
 
     def set_tools_config(self, value: Any) -> None:
         """Encrypt and store tool configurations."""
-        self.tools_config = seal(value or [])
+        self.tools_config = seal(
+            value or [],
+            user_id=self.user_id,
+            chatbot_id=self.chatbot_id,
+            field="tools_config",
+        )
 
     # ------------------------------------------------------------------
     # Helpers

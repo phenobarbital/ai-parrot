@@ -37,7 +37,7 @@ class ProductAdvisorMixin:
 
         bot = MyProductBot(
             name="Product Advisor",
-            llm="google:gemini-2.0-flash",
+            llm="google:gemini-3.1-flash-lite-preview",
             catalog=my_catalog,  # ProductCatalog instance
         )
         await bot.configure()

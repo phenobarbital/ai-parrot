@@ -141,15 +141,28 @@ class VectorStoreHandler(BaseView):
         # Fallback: rely on repr for anything exotic.
         return repr(embedding_model)
 
+    @staticmethod
+    def _metric_cache_token(value: Any, default: str = "COSINE") -> str:
+        """Normalize metric-like values for store cache keys."""
+        if value is None:
+            return default
+        if hasattr(value, "value"):
+            value = value.value
+        token = str(value).upper()
+        aliases = {
+            "EUCLIDEAN": "L2",
+            "EUCLIDEAN_DISTANCE": "L2",
+            "MAX_INNER_PRODUCT": "IP",
+            "DOT_PRODUCT": "DOT",
+        }
+        return aliases.get(token, token)
+
     async def _get_store(self, config: StoreConfig) -> AbstractStore:
         """Return a connected store, using the handler-level connection cache.
 
-        Cache key is ``(vector_store, dsn or "default", embedding_token)`` —
-        the embedding token is derived from ``config.embedding_model`` so
-        switching models at runtime (e.g. gte-base → e5-large) always
-        instantiates a fresh store with a matching embedder. On a cache
-        miss the store is instantiated and connected. When the cache is
-        full, the oldest entry is evicted and disconnected.
+        Cache key includes store type, DSN, embedding model, metric type, and
+        distance strategy. Different embedding models, vector dimensions, or
+        distance operators must not share a cached store instance.
 
         Args:
             config: StoreConfig describing the desired store.
@@ -170,7 +183,15 @@ class VectorStoreHandler(BaseView):
             dsn = async_default_dsn
 
         embed_token = self._embedding_cache_token(config.embedding_model)
-        cache_key = (store_type, dsn or "default", embed_token)
+        metric_token = self._metric_cache_token(config.metric_type)
+        distance_token = self._metric_cache_token(config.distance_strategy)
+        cache_key = (
+            store_type,
+            dsn or "default",
+            embed_token,
+            metric_token,
+            distance_token,
+        )
         cache: OrderedDict = self.request.app.get(_STORE_CACHE_KEY, OrderedDict())
 
         if cache_key in cache:
@@ -436,6 +457,12 @@ class VectorStoreHandler(BaseView):
             method = body.get("method", "similarity")
             k = body.get("k", 5)
             store_type = body.get("vector_store", "postgres")
+            search_metric = (
+                body.get("metric")
+                or body.get("metric_type")
+                or body.get("distance_strategy")
+                or "COSINE"
+            )
 
             if method not in ("similarity", "mmr", "both"):
                 return web.Response(
@@ -451,6 +478,8 @@ class VectorStoreHandler(BaseView):
                 embedding_model=body.get("embedding_model", {"model": "thenlper/gte-base", "model_type": "huggingface"}),
                 dimension=body.get("dimension", 768),
                 dsn=body.get("dsn"),
+                distance_strategy=body.get("distance_strategy", search_metric),
+                metric_type=body.get("metric_type", search_metric),
             )
 
             store = await self._get_store(config)
@@ -465,12 +494,12 @@ class VectorStoreHandler(BaseView):
             results: list[SearchResult] = []
             if method in ("similarity", "both"):
                 sim_results = await store.similarity_search(
-                    query=query, table=table, schema=schema, k=k
+                    query=query, table=table, schema=schema, k=k, metric=search_metric
                 )
                 results.extend(sim_results)
             if method in ("mmr", "both"):
                 mmr_results = await store.mmr_search(
-                    query=query, table=table, schema=schema, k=k
+                    query=query, table=table, schema=schema, k=k, metric=search_metric
                 )
                 if method == "mmr":
                     results = mmr_results

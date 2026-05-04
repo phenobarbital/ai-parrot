@@ -26,7 +26,7 @@ Notes:
 - Each method returns JSON-serializable dicts/lists (using Issue.raw where possible).
 """
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union, Literal
+from typing import Any, Dict, List, Optional, Union, Literal, TypedDict
 import os
 import re
 import logging
@@ -44,10 +44,31 @@ except Exception:  # pragma: no cover - optional
 
 try:
     from jira import JIRA
+    from jira.exceptions import JIRAError
 except ImportError as e:  # pragma: no cover - optional
     raise ImportError(
         "Please install the 'jira' package: pip install jira"
     ) from e
+
+
+# ---------------------------------------------------------------------------
+# Envelope type for read-method returns (FEAT-138, Module 5)
+# ---------------------------------------------------------------------------
+
+class JiraToolEnvelope(TypedDict, total=False):
+    """Uniform return shape for all JiraToolkit read methods.
+
+    Attributes:
+        status: One of ``"ok"``, ``"empty"``, ``"not_found"``, or ``"error"``.
+        data: The native success payload (issue dict, issues list wrapper, user
+            list, etc.) on ``"ok"``/``"empty"``; ``None`` on ``"not_found"``/``"error"``.
+        message: Human-readable detail; empty string on success.
+        query: The key, JQL, or search string used in the call.
+    """
+    status: Literal["ok", "empty", "not_found", "error"]
+    data: Any
+    message: str
+    query: Optional[str]
 from parrot.tools.manager import ToolManager
 from parrot.auth.exceptions import AuthorizationRequired
 from .toolkit import AbstractToolkit
@@ -1164,8 +1185,13 @@ class JiraToolkit(AbstractToolkit):
         structured: Optional[StructuredOutputOptions] = None,
         include_history: bool = False,
         history_page_size: int = 100,
-    ) -> Union[Dict[str, Any], Any]:
+    ) -> JiraToolEnvelope:
         """Get a Jira issue by key or id.
+
+        Returns a :class:`JiraToolEnvelope` with ``status="ok"`` on success,
+        ``status="not_found"`` when the issue key does not exist (HTTP 404),
+        or ``status="error"`` for other recoverable failures.  Authentication
+        and permission errors are re-raised rather than wrapped.
 
         Example: issue = jira.issue('JRA-1330')
 
@@ -1174,7 +1200,29 @@ class JiraToolkit(AbstractToolkit):
         def _run():
             return self.jira.issue(issue, fields=fields, expand=expand)
 
-        obj = await asyncio.to_thread(_run)
+        try:
+            obj = await asyncio.to_thread(_run)
+        except JIRAError as exc:
+            if getattr(exc, "status_code", None) == 404:
+                return {
+                    "status": "not_found",
+                    "data": None,
+                    "query": issue,
+                    "message": f"Issue {issue} not found.",
+                }
+            # Auth/permission errors (403, 401, etc.) propagate to the caller.
+            raise
+        except AuthorizationRequired:
+            raise
+        except Exception as exc:
+            self.logger.error("jira_get_issue failed: %s", exc, exc_info=True)
+            return {
+                "status": "error",
+                "data": None,
+                "query": issue,
+                "message": str(exc),
+            }
+
         raw = self._issue_to_dict(obj)
         structured = self._ensure_structured(structured)
 
@@ -1202,7 +1250,13 @@ class JiraToolkit(AbstractToolkit):
             raw["history"] = history_events
             raw["_changelog_count"] = len(changelog_entries)
 
-        return self._apply_structured_output(raw, structured) if structured else raw
+        payload = self._apply_structured_output(raw, structured) if structured else raw
+        return {
+            "status": "ok",
+            "data": payload,
+            "query": issue,
+            "message": "",
+        }
 
     @requires_permission('jira.write')
     @tool_schema(TransitionIssueInput)
@@ -1247,9 +1301,12 @@ class JiraToolkit(AbstractToolkit):
 
         # If transitioning to TODO/In Progress, check if issue has original estimate
         if needs_estimate_check:
-            current_issue = await self.jira_get_issue(issue)
-            raw = current_issue.get("raw", current_issue)
-            timetracking = raw.get("fields", {}).get("timetracking", {}) if isinstance(raw, dict) else {}
+            _env = await self.jira_get_issue(issue)
+            if _env.get("status") == "ok":
+                _fields_data = (_env.get("data") or {}).get("fields", {})
+            else:
+                _fields_data = {}
+            timetracking = _fields_data.get("timetracking", {})
             original_estimate = timetracking.get("originalEstimate") if timetracking else None
 
             if not original_estimate:
@@ -1976,8 +2033,13 @@ class JiraToolkit(AbstractToolkit):
         include_active: bool = True,
         include_inactive: bool = False,
         query: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> JiraToolEnvelope:
         """Search for users matching the specified search string.
+
+        Returns a :class:`JiraToolEnvelope` with ``status="ok"`` when users
+        are found, ``status="empty"`` when the search returns no results, or
+        ``status="error"`` for recoverable failures.  Authentication errors
+        are re-raised.
 
         "username" query parameter is deprecated in Jira Cloud; the expected parameter now is "query".
         But the "user" parameter is kept for backwards compatibility.
@@ -1985,6 +2047,8 @@ class JiraToolkit(AbstractToolkit):
         Example:
             jira.search_users(query='john.doe@example.com')
         """
+        _query_str = query or user or ""
+
         def _run():
             return self.jira.search_users(
                 user=user,
@@ -1995,9 +2059,34 @@ class JiraToolkit(AbstractToolkit):
                 query=query
             )
 
-        users = await asyncio.to_thread(_run)
+        try:
+            users = await asyncio.to_thread(_run)
+        except AuthorizationRequired:
+            raise
+        except Exception as exc:
+            self.logger.error("jira_search_users failed: %s", exc, exc_info=True)
+            return {
+                "status": "error",
+                "data": None,
+                "query": _query_str,
+                "message": str(exc),
+            }
+
         # Convert resources to dicts
-        return [self._issue_to_dict(u) for u in users]
+        user_list = [self._issue_to_dict(u) for u in users]
+        if not user_list:
+            return {
+                "status": "empty",
+                "data": [],
+                "query": _query_str,
+                "message": "",
+            }
+        return {
+            "status": "ok",
+            "data": user_list,
+            "query": _query_str,
+            "message": "",
+        }
 
     def _store_dataframe(
         self,
@@ -2198,9 +2287,14 @@ class JiraToolkit(AbstractToolkit):
         dataframe_name: Optional[str] = None,
         summary_only: bool = False,
         structured: Optional[StructuredOutputOptions] = None,
-    ) -> Dict[str, Any]:
+    ) -> JiraToolEnvelope:
         """
         Search issues with JQL.
+
+        Returns a :class:`JiraToolEnvelope`.  ``status="ok"`` carries the
+        legacy success payload inside ``data``; ``status="empty"`` means zero
+        results; ``status="error"`` wraps a recoverable failure.
+        Authentication errors are re-raised.
 
         For efficiency:
         - Use `fields` to request only needed data (e.g., 'key,assignee,status')
@@ -2255,45 +2349,83 @@ class JiraToolkit(AbstractToolkit):
 
         # Pagination loop using nextPageToken
         # If max_results is None, fetch all (loop until isLast=True)
-        while not is_last:
-            # Calculate how many we still need
-            # Use 100 per page if fetching all, otherwise remaining
-            if max_results is None:
-                page_size = 100  # Reasonable page size for full fetch
-            else:
-                remaining = max_results - fetched
-                if remaining <= 0:
+        try:
+            while not is_last:
+                # Calculate how many we still need
+                # Use 100 per page if fetching all, otherwise remaining
+                if max_results is None:
+                    page_size = 100  # Reasonable page size for full fetch
+                else:
+                    remaining = max_results - fetched
+                    if remaining <= 0:
+                        break
+                    page_size = min(remaining, 100)
+
+                # Using asyncio.to_thread for the blocking call
+                result_list = await asyncio.to_thread(_run_enhanced_search, next_page_token, page_size)
+
+                # enhanced_search_issues returns a ResultList object
+                batch_issues = [self._issue_to_dict(i) for i in result_list]
+
+                # Get pagination info from ResultList
+                next_page_token = getattr(result_list, 'nextPageToken', None)
+                is_last = getattr(result_list, 'isLast', True)  # Default to True if missing
+
+                if not batch_issues:
                     break
-                page_size = min(remaining, 100)
 
-            # Using asyncio.to_thread for the blocking call
-            result_list = await asyncio.to_thread(_run_enhanced_search, next_page_token, page_size)
+                all_issues.extend(batch_issues)
+                fetched += len(batch_issues)
 
-            # enhanced_search_issues returns a ResultList object
-            batch_issues = [self._issue_to_dict(i) for i in result_list]
+                # If max_results is set and we've reached it, stop
+                if max_results is not None and fetched >= max_results:
+                    break
 
-            # Get pagination info from ResultList
-            next_page_token = getattr(result_list, 'nextPageToken', None)
-            is_last = getattr(result_list, 'isLast', True)  # Default to True if missing
+                # If no more pages, stop
+                if is_last or next_page_token is None:
+                    break
 
-            if not batch_issues:
-                break
-
-            all_issues.extend(batch_issues)
-            fetched += len(batch_issues)
-
-            # If max_results is set and we've reached it, stop
-            if max_results is not None and fetched >= max_results:
-                break
-
-            # If no more pages, stop
-            if is_last or next_page_token is None:
-                break
+        except AuthorizationRequired:
+            raise
+        except Exception as exc:
+            self.logger.error("jira_search_issues failed: %s", exc, exc_info=True)
+            return {
+                "status": "error",
+                "data": None,
+                "query": jql,
+                "message": str(exc),
+            }
 
         issues = all_issues
 
         # Total is not returned by enhanced_search_issues, use fetched count
         total = len(issues)
+
+        # ----------------------------------------------------------------
+        # Empty result: return status="empty" carrying the zero-row shape
+        # ----------------------------------------------------------------
+        if total == 0:
+            empty_data: Dict[str, Any] = {
+                "total": 0,
+                "issues": [],
+                "pagination": {
+                    "start_at": start_at,
+                    "max_results": max_results,
+                    "returned": 0,
+                    "total": 0,
+                    "has_more": False,
+                },
+            }
+            return {
+                "status": "empty",
+                "data": empty_data,
+                "query": jql,
+                "message": "",
+            }
+
+        # ----------------------------------------------------------------
+        # Non-empty: build the legacy success payload, then wrap in envelope
+        # ----------------------------------------------------------------
 
         # Convert to DataFrame
         df = self._json_issues_to_dataframe(issues)
@@ -2303,7 +2435,12 @@ class JiraToolkit(AbstractToolkit):
         if structured:
             _sopts = self._ensure_structured(structured)
             items = [self._apply_structured_output(it, _sopts) for it in issues]
-            return {"total": total, "issues": items}
+            return {
+                "status": "ok",
+                "data": {"total": total, "issues": items},
+                "query": jql,
+                "message": "",
+            }
 
         if store_as_dataframe and not df.empty:
             self._store_dataframe(
@@ -2316,7 +2453,7 @@ class JiraToolkit(AbstractToolkit):
                     "fields_requested": fields,
                 }
             )
-            return {
+            payload_df: Dict[str, Any] = {
                 "total": total,
                 "dataframe_name": df_name,
                 "dataframe_info": (
@@ -2330,7 +2467,13 @@ class JiraToolkit(AbstractToolkit):
                     "total": total,
                     "has_more": (start_at + len(issues)) < total,
                 },
-                "jql": jql
+                "jql": jql,
+            }
+            return {
+                "status": "ok",
+                "data": payload_df,
+                "query": jql,
+                "message": "",
             }
 
         # Build response
@@ -2350,35 +2493,44 @@ class JiraToolkit(AbstractToolkit):
                     f"Full data stored in DataFrame '{df_name}' with {len(df)} rows. "
                     f"Use PythonPandasTool for custom aggregations."
                 )
-            return result
-
-        else:
-            # Return issues with metadata
-            result = {
-                "total": total,
-                "issues": issues,
-                "pagination": {
-                    "start_at": start_at,
-                    "max_results": max_results,
-                    "returned": len(issues),
-                    "total": total,
-                    "has_more": (start_at + len(issues)) < total,
-                },
+            return {
+                "status": "ok",
+                "data": result,
+                "query": jql,
+                "message": "",
             }
 
-            if store_as_dataframe:
-                result["dataframe_name"] = df_name
-                result["dataframe_info"] = f"Data also stored in DataFrame '{df_name}'"
+        # Default: full issues list
+        result = {
+            "total": total,
+            "issues": issues,
+            "pagination": {
+                "start_at": start_at,
+                "max_results": max_results,
+                "returned": len(issues),
+                "total": total,
+                "has_more": (start_at + len(issues)) < total,
+            },
+        }
 
-            # Add notice if not all results returned
-            if len(issues) < total:
-                result["notice"] = (
-                    f"Showing {len(issues)} of {total} total issues. "
-                    f"Increase max_results (up to 1000) to get more, or "
-                    f"use summary_only=True for counts."
-                )
+        if store_as_dataframe:
+            result["dataframe_name"] = df_name
+            result["dataframe_info"] = f"Data also stored in DataFrame '{df_name}'"
 
-            return result
+        # Add notice if not all results returned
+        if len(issues) < total:
+            result["notice"] = (
+                f"Showing {len(issues)} of {total} total issues. "
+                f"Increase max_results (up to 1000) to get more, or "
+                f"use summary_only=True for counts."
+            )
+
+        return {
+            "status": "ok",
+            "data": result,
+            "query": jql,
+            "message": "",
+        }
 
     @tool_schema(CountIssuesInput)
     async def jira_count_issues(
@@ -2447,9 +2599,10 @@ class JiraToolkit(AbstractToolkit):
             store_as_dataframe=False
         )
 
-        # search_result is a dict: {'total': int, 'issues': list, ...}
-        total = search_result.get('total', 0)
-        issues = search_result.get('issues', [])
+        # search_result is an envelope: {'status': ..., 'data': {'total': int, 'issues': [...]}, ...}
+        _data = (search_result.get("data") or {})
+        total = _data.get('total', 0)
+        issues = _data.get('issues', [])
 
         result = {
             "total_count": total,
@@ -2736,7 +2889,10 @@ class JiraToolkit(AbstractToolkit):
 
         # Get current components so we append, not replace
         current = await self.jira_get_issue(issue, fields="components")
-        existing = current.get("fields", {}).get("components", [])
+        if current.get("status") == "ok":
+            existing = (current.get("data") or {}).get("fields", {}).get("components", [])
+        else:
+            existing = []
         existing_ids = {str(c.get("id")) for c in existing}
 
         if str(comp_id) in existing_ids:
@@ -2918,7 +3074,10 @@ class JiraToolkit(AbstractToolkit):
     async def jira_find_user(self, email: str) -> Dict[str, Any]:
         """Find a user by email."""
         # 'query' is the standard param for email search in new/cloud Jira
-        results = await self.jira_search_users(query=email)
+        envelope = await self.jira_search_users(query=email)
+        if envelope.get("status") not in ("ok",):
+            return {"found": False, "email": email}
+        results = envelope.get("data") or []
         if not results:
             return {"found": False, "email": email}
         # Return exact match or best guess
@@ -2928,9 +3087,9 @@ class JiraToolkit(AbstractToolkit):
     async def jira_list_tags(self, issue: str) -> List[str]:
         """List all tags (labels) added to a ticket."""
         obj = await self.jira_get_issue(issue, fields="labels")
-        # Structure varies, but usually it's in fields['labels']
-        if isinstance(obj, dict):
-            return obj.get("fields", {}).get("labels", [])
+        # obj is now a JiraToolEnvelope; extract fields from data on success
+        if isinstance(obj, dict) and obj.get("status") == "ok":
+            return (obj.get("data") or {}).get("fields", {}).get("labels", [])
         return []
 
     @requires_permission('jira.write')

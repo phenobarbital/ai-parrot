@@ -111,7 +111,12 @@ class PromptLayer:
 
 
 # ── IDENTITY LAYER ──────────────────────────────────────────────
-# Phase: CONFIGURE — name, role, goal, backstory don't change per request
+# Phase: CONFIGURE — name, role, goal, backstory don't change per request.
+# Note: $capabilities is intentionally NOT here — it describes the *scope*
+# of what the agent knows, which is the responsibility of
+# KNOWLEDGE_SCOPE_LAYER (RAG agents) or absent for non-RAG agents.
+# Keeping capabilities out of identity prevents the same list being
+# projected into the prompt twice.
 IDENTITY_LAYER = PromptLayer(
     name="identity",
     priority=LayerPriority.IDENTITY,
@@ -119,7 +124,6 @@ IDENTITY_LAYER = PromptLayer(
     template="""<agent_identity>
 Your name is $name. You are $role.
 $goal
-$capabilities
 $backstory
 </agent_identity>""",
     required_vars=frozenset({"name", "role"}),

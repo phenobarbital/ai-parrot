@@ -1,4 +1,5 @@
-"""JSON-RPC 2.0 transport — adapts the existing async OdooInterface."""
+"""Legacy JSON-RPC 2.0 transport — adapts the existing async OdooInterface."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,9 +12,9 @@ from .base import AbstractOdooTransport
 class JsonRpcTransport(AbstractOdooTransport):
     """Wrap :class:`parrot.interfaces.OdooInterface` as a transport.
 
-    Delegates all calls to the underlying interface — the only state held here
-    is the wrapped interface itself. This keeps a single source of truth for
-    JSON-RPC 2.0 semantics in the parrot codebase.
+    Delegates all calls to the underlying interface. This remains available for
+    compatibility with deployments that still require Odoo's legacy ``/jsonrpc``
+    endpoint; auto-detection prefers JSON-2 for Odoo 19+.
     """
 
     name: str = "jsonrpc"

@@ -180,7 +180,7 @@ class EmbeddingModel(ABC):
         Returns:
             A list of embedding vectors.
         """
-        result = await self.encode(texts)
+        result = await self.encode(texts, normalize_embeddings=True)
         if hasattr(result, "tolist"):
             return result.tolist()
         return result

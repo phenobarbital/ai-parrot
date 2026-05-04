@@ -49,18 +49,42 @@ class VectorStoreHelper(BaseHandler):
     def supported_embedding_models(
         provider: str = None,
         use_case: str = None,
+        metric: str = None,
+        max_dims: int = None,
+        hnsw_compatible: bool = None,
+        requires_prefix: bool = None,
     ) -> List[Dict[str, Any]]:
-        """Return the curated catalog of embedding models.
+        """Return the curated catalog of embedding models, optionally filtered.
+
+        All active filters compose with AND semantics.
 
         Args:
-            provider: Filter by provider (huggingface, openai, google).
-            use_case: Filter by use case (similarity, retrieval, clustering,
-                      multilingual, code).
+            provider: Filter by provider (``"huggingface"``, ``"openai"``,
+                ``"google"``). ``None`` disables this filter.
+            use_case: Filter by use-case tag (``"similarity"``, ``"retrieval"``,
+                ``"clustering"``, ``"multilingual"``, ``"code"``, ``"qa"``,
+                ``"long-context"``, ``"instruct"``, ``"asymmetric"``,
+                ``"symmetric"``). ``None`` disables this filter.
+            metric: Filter by recommended similarity metric (``"cosine"``,
+                ``"dot"``, ``"l2"``). ``None`` disables this filter.
+            max_dims: Keep only models whose ``dimension <= max_dims``.
+                ``None`` disables this filter.
+            hnsw_compatible: If ``True``/``False``, filter by pgvector HNSW
+                compatibility (dimension <= 2000). ``None`` disables this filter.
+            requires_prefix: If ``True``/``False``, filter by whether the model
+                requires query/passage prefixes. ``None`` disables this filter.
 
         Returns:
-            list: Embedding model descriptors with metadata.
+            list: Embedding model descriptors satisfying all active filters.
         """
-        return get_embedding_models(provider=provider, use_case=use_case)
+        return get_embedding_models(
+            provider=provider,
+            use_case=use_case,
+            metric=metric,
+            max_dims=max_dims,
+            hnsw_compatible=hnsw_compatible,
+            requires_prefix=requires_prefix,
+        )
 
     @staticmethod
     def supported_use_cases() -> Dict[str, str]:

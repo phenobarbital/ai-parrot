@@ -1,6 +1,6 @@
 # Feature Specification: OpenAI Model Deprecation Refresh
 
-**Feature ID**: FEAT-137
+**Feature ID**: FEAT-138
 **Date**: 2026-04-29
 **Author**: Jesus Lara
 **Status**: approved

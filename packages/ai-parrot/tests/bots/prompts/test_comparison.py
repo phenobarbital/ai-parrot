@@ -108,7 +108,14 @@ class TestLegacyVsLayerIdentity:
 
     @pytest.mark.asyncio
     @patch('parrot.bots.abstract.dynamic_values')
-    async def test_both_include_capabilities(self, mock_dv):
+    async def test_capabilities_diverge_by_design(self, mock_dv):
+        # Intentional divergence:
+        # - Legacy path (BASIC_SYSTEM_PROMPT) projects $capabilities into the
+        #   identity block.
+        # - Layered path (default preset) keeps capabilities OUT of identity;
+        #   capabilities only surfaces in <knowledge_scope> when the agent is
+        #   configured as RAG via PromptBuilder.rag(). This avoids the
+        #   double-projection bug previously seen in att_concierge.
         mock_dv.get_all_names.return_value = []
         legacy_bot = MockBot(use_layers=False)
         layer_bot = MockBot(use_layers=True)
@@ -117,8 +124,10 @@ class TestLegacyVsLayerIdentity:
         await layer_bot._configure_prompt_builder()
         layer_prompt = layer_bot._build_prompt()
 
+        # Legacy keeps capabilities in identity (back-compat).
         assert "Answer questions" in legacy_prompt
-        assert "Answer questions" in layer_prompt
+        # Layered default preset does NOT inject capabilities into identity.
+        assert "Answer questions" not in layer_prompt
 
 
 class TestLegacyVsLayerSecurity:

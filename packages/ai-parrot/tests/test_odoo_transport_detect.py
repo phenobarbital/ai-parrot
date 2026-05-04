@@ -1,4 +1,5 @@
 """Unit tests for the Odoo transport auto-detector."""
+
 from __future__ import annotations
 
 import sys
@@ -26,12 +27,13 @@ if "parrot.utils" not in sys.modules:
 
 from parrot.interfaces.odoointerface import OdooConfig  # noqa: E402
 from parrot_tools.odoo.transport import (  # noqa: E402
+    Json2Transport,
     JsonRpcTransport,
     XmlRpcTransport,
     auto_detect_transport,
     build_transport,
 )
-from parrot_tools.odoo.transport.detect import _serie_is_jsonrpc  # noqa: E402
+from parrot_tools.odoo.transport.detect import _serie_is_json2  # noqa: E402
 
 
 def _config(**overrides) -> OdooConfig:
@@ -46,7 +48,7 @@ def _config(**overrides) -> OdooConfig:
 
 
 def _mock_aiohttp_with_payload(body: dict, status: int = 200):
-    """Patch aiohttp.ClientSession to return a mock POST response."""
+    """Patch aiohttp.ClientSession to return a mock GET/POST response."""
     response = AsyncMock()
     response.status = status
     response.json = AsyncMock(return_value=body)
@@ -54,6 +56,7 @@ def _mock_aiohttp_with_payload(body: dict, status: int = 200):
     response.__aexit__ = AsyncMock(return_value=None)
 
     session = MagicMock()
+    session.get = MagicMock(return_value=response)
     session.post = MagicMock(return_value=response)
     session.__aenter__ = AsyncMock(return_value=session)
     session.__aexit__ = AsyncMock(return_value=None)
@@ -77,31 +80,29 @@ def _mock_aiohttp_with_payload(body: dict, status: int = 200):
         ("garbage", False),
     ],
 )
-def test_serie_is_jsonrpc(serie, expected):
-    assert _serie_is_jsonrpc(serie) is expected
+def test_serie_is_json2(serie, expected):
+    assert _serie_is_json2(serie) is expected
 
 
 # ── Auto-detect ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_auto_detect_picks_jsonrpc_for_v19():
+async def test_auto_detect_picks_json2_for_v19():
     body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {"server_serie": "19.0", "server_version": "19.0+e"},
+        "version": "19.0",
+        "version_info": [19, 0, 0, "final", 0, ""],
     }
     with _mock_aiohttp_with_payload(body):
         transport = await auto_detect_transport(_config())
-    assert isinstance(transport, JsonRpcTransport)
+    assert isinstance(transport, Json2Transport)
 
 
 @pytest.mark.asyncio
 async def test_auto_detect_picks_xmlrpc_for_v17():
     body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {"server_serie": "17.0", "server_version": "17.0+e"},
+        "version": "17.0",
+        "version_info": [17, 0, 0, "final", 0, ""],
     }
     with _mock_aiohttp_with_payload(body):
         transport = await auto_detect_transport(_config())
@@ -110,8 +111,9 @@ async def test_auto_detect_picks_xmlrpc_for_v17():
 
 @pytest.mark.asyncio
 async def test_auto_detect_falls_back_to_xmlrpc_on_probe_failure():
-    """Network failure during probe → XML-RPC fallback."""
+    """Network failure during both probes → XML-RPC fallback."""
     bad_session = MagicMock()
+    bad_session.get = MagicMock(side_effect=aiohttp.ClientError("boom"))
     bad_session.post = MagicMock(side_effect=aiohttp.ClientError("boom"))
     bad_session.__aenter__ = AsyncMock(return_value=bad_session)
     bad_session.__aexit__ = AsyncMock(return_value=None)
@@ -122,8 +124,33 @@ async def test_auto_detect_falls_back_to_xmlrpc_on_probe_failure():
 
 
 @pytest.mark.asyncio
+async def test_auto_detect_uses_legacy_probe_when_web_version_unavailable():
+    legacy_response = AsyncMock()
+    legacy_response.status = 200
+    legacy_response.json = AsyncMock(
+        return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"server_serie": "19.0", "server_version": "19.0+e"},
+        }
+    )
+    legacy_response.__aenter__ = AsyncMock(return_value=legacy_response)
+    legacy_response.__aexit__ = AsyncMock(return_value=None)
+
+    session = MagicMock()
+    session.get = MagicMock(side_effect=aiohttp.ClientError("missing"))
+    session.post = MagicMock(return_value=legacy_response)
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        transport = await auto_detect_transport(_config())
+    assert isinstance(transport, Json2Transport)
+
+
+@pytest.mark.asyncio
 async def test_auto_detect_falls_back_on_jsonrpc_error_payload():
-    body = {"jsonrpc": "2.0", "id": 1, "error": {"code": 500, "message": "x"}}
+    body = {"error": {"code": 500, "message": "x"}}
     with _mock_aiohttp_with_payload(body):
         transport = await auto_detect_transport(_config())
     assert isinstance(transport, XmlRpcTransport)
@@ -132,7 +159,12 @@ async def test_auto_detect_falls_back_on_jsonrpc_error_payload():
 # ── build_transport ─────────────────────────────────────────────────────────
 
 
-def test_build_transport_explicit_jsonrpc():
+def test_build_transport_explicit_json2():
+    t = build_transport("json2", _config())
+    assert isinstance(t, Json2Transport)
+
+
+def test_build_transport_explicit_jsonrpc_legacy():
     t = build_transport("jsonrpc", _config())
     assert isinstance(t, JsonRpcTransport)
 

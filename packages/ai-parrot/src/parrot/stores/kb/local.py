@@ -453,6 +453,7 @@ class LocalKB(AbstractKnowledgeBase):
                     'content': result.content,
                     'metadata': result.metadata,
                     'score': result.score,
+                    'distance': result.distance,
                     'source': result.metadata.get('source', 'unknown')
                 } for result in results
             )

@@ -290,6 +290,7 @@ class VectorStoreSearchTool(AbstractTool):
                 "id": result.id,
                 "content": result.content,
                 "score": result.score,
+                "distance": result.distance,
                 "metadata": result.metadata,
             }
 

@@ -160,7 +160,7 @@ class AgentCard(BaseModel):
     telegram_user_id: int                # ID numérico del bot en Telegram
 
     # Capacidades
-    model: str                           # "google:gemini-2.0-flash"
+    model: str                           # "google:gemini-3.1-flash-lite-preview"
     skills: List[AgentSkill] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     accepts_files: List[str] = Field(   # Tipos de archivo que acepta

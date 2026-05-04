@@ -20,7 +20,7 @@ Usage with BaseBot:
 
     bot = ProductBot(
         name="Product Advisor",
-        llm="google:gemini-2.0-flash",
+        llm="google:gemini-3.1-flash-lite-preview",
         catalog=catalog,
     )
     await bot.configure()

@@ -559,6 +559,12 @@ WORKDAY_WSDL_PATHS = {
     "payroll": WORKDAY_WSDL_PAYROLL
 }
 
+# NetSuite MCP settings (OAuth2 Client Credentials M2M + certificate)
+NETSUITE_ACCOUNT_ID = config.get("NETSUITE_ACCOUNT_ID")
+NETSUITE_CLIENT_ID = config.get("NETSUITE_CLIENT_ID")
+NETSUITE_CERTIFICATE_ID = config.get("NETSUITE_CERTIFICATE_ID")
+NETSUITE_PRIVATE_KEY_PATH = config.get("NETSUITE_PRIVATE_KEY_PATH")
+
 # Final sys.path adjustment: Ensure AGENTS_DIR takes precedence over PLUGINS_DIR
 # This is necessary because parrot.plugins.__init__.py may have inserted PLUGINS_DIR
 # at position 0 during module loading (after our initial AGENTS_DIR insertion above)

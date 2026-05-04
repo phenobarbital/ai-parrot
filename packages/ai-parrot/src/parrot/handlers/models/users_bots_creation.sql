@@ -5,9 +5,14 @@
 -- using the navigator-session vault keys (same scheme as user_credentials).
 
 CREATE TABLE IF NOT EXISTS navigator.users_bots (
-    -- Composite identity
+    -- Composite identity. user_id references the navigator-auth users
+    -- table (auth.users.user_id) so deleting an account also reaps every
+    -- private bot it owns (and the encrypted credential blobs on those
+    -- rows). The DELETE CASCADE is REQUIRED for credential hygiene — a
+    -- deleted user must not leave readable encrypted secrets behind.
     chatbot_id     UUID NOT NULL DEFAULT uuid_generate_v4(),
-    user_id        INTEGER NOT NULL,
+    user_id        INTEGER NOT NULL
+                   REFERENCES auth.users(user_id) ON DELETE CASCADE,
 
     -- Basic bot information
     name           VARCHAR NOT NULL,
@@ -31,9 +36,9 @@ CREATE TABLE IF NOT EXISTS navigator.users_bots (
 
     -- LLM configuration
     llm            VARCHAR NOT NULL DEFAULT 'google',
-    model_name     VARCHAR NOT NULL DEFAULT 'gemini-2.0-flash-001',
+    model_name     VARCHAR NOT NULL DEFAULT 'gemini-3.1-flash-lite-preview',
     temperature    FLOAT DEFAULT 0.1 CHECK (temperature >= 0 AND temperature <= 2),
-    max_tokens     INTEGER DEFAULT 1024 CHECK (max_tokens > 0),
+    max_tokens     INTEGER DEFAULT 4096 CHECK (max_tokens > 0),
     top_k          INTEGER DEFAULT 41 CHECK (top_k > 0),
     top_p          FLOAT DEFAULT 0.9 CHECK (top_p >= 0 AND top_p <= 1),
     model_config   JSONB DEFAULT '{}'::JSONB,
@@ -44,7 +49,7 @@ CREATE TABLE IF NOT EXISTS navigator.users_bots (
     embedding_model         JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}'::JSONB,
     documents               JSONB DEFAULT '[]'::JSONB,
     context_search_limit    INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
-    context_score_threshold FLOAT DEFAULT 0.7 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
+    context_score_threshold FLOAT DEFAULT 0.61 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
 
     -- MCP & tools — ENCRYPTED at rest (AES-GCM, base64 ciphertext)
     mcp_config     TEXT,

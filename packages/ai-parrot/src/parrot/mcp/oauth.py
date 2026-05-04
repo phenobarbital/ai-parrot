@@ -709,6 +709,112 @@ class VaultTokenStore(TokenStore):
 # ---- Simple Dynamic Client Registration ----
 
 
+class NetSuiteM2MAuth:
+    """OAuth2 Client Credentials (M2M) for NetSuite using certificate-based JWT assertion.
+
+    NetSuite M2M requires a signed JWT as the ``client_assertion`` when
+    requesting an access token. The JWT is signed with the private key whose
+    matching X.509 certificate was uploaded to the NetSuite Integration Record.
+
+    Args:
+        client_id: OAuth2 client ID from the NetSuite integration record.
+        certificate_id: Certificate ID shown in NetSuite after uploading the
+            public certificate.
+        private_key_path: Path to the PEM-encoded RSA private key file.
+        account_id: NetSuite account ID (e.g. ``"4984231"``).
+        token_url: NetSuite token endpoint. Built automatically when ``None``.
+        scopes: OAuth2 scopes (default ``["mcp"]``).
+        token_store: Optional :class:`TokenStore` for persisting tokens.
+    """
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        certificate_id: str,
+        private_key_path: str,
+        account_id: str,
+        token_url: str | None = None,
+        scopes: list[str] | None = None,
+        token_store: TokenStore | None = None,
+    ):
+        self.client_id = client_id
+        self.certificate_id = certificate_id
+        self.account_id = account_id
+        self.scopes = scopes or ["mcp"]
+        self.token_store = token_store or InMemoryTokenStore()
+        self._logger = logging.getLogger("NetSuiteM2MAuth")
+
+        self.token_url = token_url or (
+            f"https://{account_id}.suitetalk.api.netsuite.com"
+            "/services/rest/auth/oauth2/v1/token"
+        )
+
+        from cryptography.hazmat.primitives import serialization
+        with open(private_key_path, "rb") as f:
+            self._private_key = serialization.load_pem_private_key(f.read(), password=None)
+
+        self._token: dict | None = None
+        self._server_name = "netsuite"
+
+    def _build_assertion(self) -> str:
+        """Build a signed JWT client assertion for the token request."""
+        import jwt as pyjwt
+
+        now = _now()
+        payload = {
+            "iss": self.client_id,
+            "sub": self.client_id,
+            "aud": self.token_url,
+            "iat": now,
+            "exp": now + 300,
+            "scope": " ".join(self.scopes),
+        }
+        headers = {"kid": self.certificate_id}
+        return pyjwt.encode(payload, self._private_key, algorithm="RS256", headers=headers)
+
+    async def ensure_token(self, user_id: str = "m2m") -> str:
+        """Obtain or refresh an access token via Client Credentials grant."""
+        stored = await self.token_store.get(user_id, self._server_name)
+        if stored and stored.get("expires_at", 0) - _now() > 60:
+            self._token = stored
+            return stored["access_token"]
+
+        assertion = self._build_assertion()
+        async with ClientSession() as sess:
+            data = {
+                "grant_type": "client_credentials",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                "client_assertion": assertion,
+            }
+            async with sess.post(self.token_url, data=data, timeout=30) as resp:
+                tok = await resp.json()
+                if resp.status != 200 or "access_token" not in tok:
+                    raise RuntimeError(
+                        f"NetSuite M2M token exchange failed ({resp.status}): {tok}"
+                    )
+
+        expires_in = int(tok.get("expires_in", 3600))
+        self._token = {
+            "access_token": tok["access_token"],
+            "token_type": tok.get("token_type", "Bearer"),
+            "expires_in": expires_in,
+            "expires_at": _now() + expires_in,
+            "scope": tok.get("scope"),
+            "raw": tok,
+        }
+        await self.token_store.set(user_id, self._server_name, self._token)
+        self._logger.info("NetSuite M2M token acquired (expires in %ds)", expires_in)
+        return self._token["access_token"]
+
+    def token_supplier(self) -> str | None:
+        """Synchronous hook called by the HTTP transport before each request."""
+        if not self._token:
+            return None
+        if self._token.get("expires_at", 0) - _now() < 60:
+            return None
+        return self._token.get("access_token")
+
 
 class OAuthManager:
     """

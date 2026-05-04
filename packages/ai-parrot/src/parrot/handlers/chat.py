@@ -242,7 +242,7 @@ class ChatHandler(BaseView):
         {
             "query": "Explica el concepto de RAG",
             "llm": "openai",
-            "model": "gpt-4-turbo",
+            "model": "gpt-5-mini",
             "temperature": 0.3,
             "search_type": "mmr",
             "return_sources": true
@@ -291,7 +291,7 @@ class ChatHandler(BaseView):
                     return_sources: true
                     return_context: false
                     llm: "openai"
-                    model: "gpt-4-turbo"
+                    model: "gpt-5-mini"
                     temperature: 0.5
                     max_tokens: 1000
                     session_id: "session_abc123"
@@ -354,7 +354,7 @@ class ChatHandler(BaseView):
                         score: 0.87
                     session_id: "session_abc123"
                     metadata:
-                        model: "gpt-4-turbo"
+                        model: "gpt-5-mini"
                         temperature: 0.7
                         tokens_used: 245
                         response_time: 1.23

@@ -33,6 +33,10 @@ from .domain_layers import (
     COMPANY_CONTEXT_LAYER,
     CREW_CONTEXT_LAYER,
     STRICT_GROUNDING_LAYER,
+    KNOWLEDGE_SCOPE_LAYER,
+    RAG_GROUNDING_LAYER,
+    JIRA_GROUNDING_LAYER,
+    JIRA_WORKFLOW_LAYER,
     get_domain_layer,
 )
 
@@ -97,13 +101,16 @@ DEFAULT_GOAL = "to assist users by providing accurate and helpful information ba
 DEFAULT_ROLE = "helpful and informative AI assistant"
 DEFAULT_BACKHISTORY = """
 Focus on answering the question directly but in detail.
-If the context is empty or irrelevant, please answer using your own training data.
 """
 
+# Conversational style only — formality, length, register.
+# Grounding/knowledge-scope policy belongs in domain layers
+# (e.g. RAG_GROUNDING_LAYER, STRICT_GROUNDING_LAYER), not here.
 DEFAULT_RATIONALE = """
 ** Your Style: **
-- Answer based on the provided context if available.
-- If the answer is not in the context, use your general knowledge to answer helpfuly.
+- Be clear, concise, and conversational.
+- Match the level of formality and detail to the user's question.
+- Avoid filler; prefer direct, well-structured answers.
 """
 
 # Deprecated: use PromptBuilder with COMPANY_CONTEXT_LAYER instead

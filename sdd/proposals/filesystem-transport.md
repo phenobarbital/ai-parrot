@@ -124,7 +124,7 @@ Todo el estado vive bajo `root_dir` (default: `.parrot/` en el cwd del proceso).
   "hostname": "dev-machine.local",
   "cwd": "/home/user/myproject",
   "target_type": "agent",
-  "model": "google:gemini-2.0-flash",
+  "model": "google:gemini-3.1-flash-lite-preview",
   "status": "active",
   "status_message": "Processing Q2 report...",
   "joined_at": "2026-02-22T10:00:00Z",
@@ -1312,7 +1312,7 @@ from parrot.transport.filesystem import FilesystemTransport, FilesystemTransport
 async def run_agent(name: str, system_prompt: str):
     agent = BasicAgent(
         name=name,
-        llm="google:gemini-2.0-flash",
+        llm="google:gemini-3.1-flash-lite-preview",
         system_prompt=system_prompt,
     )
     await agent.configure()
@@ -1348,7 +1348,7 @@ CFG = FilesystemTransportConfig(root_dir=".parrot", use_inotify=True)
 
 async def specialist(name: str, prompt: str):
     """Agente especialista: escucha tareas, responde con resultados."""
-    agent = BasicAgent(name=name, llm="google:gemini-2.0-flash", system_prompt=prompt)
+    agent = BasicAgent(name=name, llm="google:gemini-3.1-flash-lite-preview", system_prompt=prompt)
     await agent.configure()
 
     async with FilesystemTransport(agent_name=name, config=CFG) as t:
@@ -1462,8 +1462,8 @@ python -m parrot.transport.filesystem.cli --root .parrot --feed 20
 ```
 ╭─ AI-Parrot FilesystemTransport ── 3 agentes ──────────────────────╮
 │                                                                    │
-│  🟢 Orchestrator    [gemini-2.0-flash]   active   1m ago          │
-│  🟢 DataAgent       [gemini-2.0-flash]   busy     10s ago         │
+│  🟢 Orchestrator    [gemini-3.1-flash-lite-preview]   active   1m ago          │
+│  🟢 DataAgent       [gemini-3.1-flash-lite-preview]   busy     10s ago         │
 │     📁 data/q2.csv (reserved)                                      │
 │  🟡 ReportAgent     [claude-sonnet-4-6]  idle     5m ago          │
 │                                                                    │

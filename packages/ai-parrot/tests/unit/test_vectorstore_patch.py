@@ -2,7 +2,7 @@
 import json
 import pytest
 from collections import OrderedDict
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def _make_handler_with_request(body: dict):
@@ -22,7 +22,7 @@ def _make_handler_with_request(body: dict):
     request = MagicMock()
     request.app = app
     request.json = AsyncMock(return_value=body)
-    handler.request = request
+    handler._request = request
     handler.logger = MagicMock()
     return handler
 
@@ -73,6 +73,43 @@ class TestPatchSearchTest:
         store.mmr_search.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_similarity_search_passes_metric_config(self):
+        """PATCH metric configuration reaches StoreConfig and search call."""
+        store = _mock_store()
+        get_store = AsyncMock(return_value=store)
+
+        handler = _make_handler_with_request({
+            "query": "Autopay",
+            "table": "concierge",
+            "schema": "att",
+            "method": "similarity",
+            "vector_store": "postgres",
+            "embedding_model": {
+                "model": "sentence-transformers/all-mpnet-base-v2",
+                "model_type": "huggingface",
+            },
+            "dimension": 768,
+            "metric_type": "L2",
+            "distance_strategy": "L2",
+            "dsn": "postgresql+asyncpg://test/db",
+        })
+
+        with patch.object(handler, "_get_store", get_store):
+            response = await handler.patch()
+
+        assert response.status == 200
+        config = get_store.call_args.args[0]
+        assert config.metric_type == "L2"
+        assert config.distance_strategy == "L2"
+        store.similarity_search.assert_called_once_with(
+            query="Autopay",
+            table="concierge",
+            schema="att",
+            k=5,
+            metric="L2",
+        )
+
+    @pytest.mark.asyncio
     async def test_mmr_search(self):
         """Returns MMR search results."""
         result = _make_search_result(content="mmr", score=0.8)
@@ -95,7 +132,13 @@ class TestPatchSearchTest:
         data = json.loads(response.text)
         assert data["method"] == "mmr"
         assert data["count"] == 1
-        store.mmr_search.assert_called_once()
+        store.mmr_search.assert_called_once_with(
+            query="test query",
+            table="t",
+            schema="public",
+            k=5,
+            metric="COSINE",
+        )
         store.similarity_search.assert_not_called()
 
     @pytest.mark.asyncio

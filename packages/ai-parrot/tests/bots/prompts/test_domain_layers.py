@@ -117,19 +117,26 @@ class TestStrictGroundingLayer:
 
 class TestKnowledgeScopeLayer:
 
-    def test_renders_when_backstory_present(self):
+    def test_renders_when_capabilities_present(self):
         result = KNOWLEDGE_SCOPE_LAYER.render(
-            {"backstory": "Knows AT&T fiber and wireless plans."}
+            {"capabilities": "Knows AT&T fiber and wireless plans."}
         )
         assert "<knowledge_scope>" in result
         assert "AT&T fiber and wireless plans" in result
         assert "EXCLUSIVELY" in result
 
     def test_skipped_when_empty(self):
-        assert KNOWLEDGE_SCOPE_LAYER.render({"backstory": ""}) is None
+        assert KNOWLEDGE_SCOPE_LAYER.render({"capabilities": ""}) is None
 
     def test_skipped_when_missing(self):
         assert KNOWLEDGE_SCOPE_LAYER.render({}) is None
+
+    def test_backstory_alone_does_not_trigger_layer(self):
+        # backstory belongs to identity/persona, not to knowledge scope.
+        # Only $capabilities should drive what the KB covers.
+        assert KNOWLEDGE_SCOPE_LAYER.render(
+            {"backstory": "I am AT&T Concierge.", "capabilities": ""}
+        ) is None
 
     def test_priority_before_knowledge(self):
         assert KNOWLEDGE_SCOPE_LAYER.priority < LayerPriority.KNOWLEDGE
@@ -144,14 +151,15 @@ class TestRagGroundingLayer:
     def test_renders_always(self):
         result = RAG_GROUNDING_LAYER.render({"extra_rag_rules": ""})
         assert "<rag_policy>" in result
-        assert "single source of truth" in result
+        assert "EXCLUSIVELY" in result
         assert "<knowledge_context>" in result
 
     def test_no_condition(self):
         assert RAG_GROUNDING_LAYER.condition is None
 
-    def test_priority_before_behavior(self):
-        assert RAG_GROUNDING_LAYER.priority < LayerPriority.BEHAVIOR
+    def test_priority_precedes_knowledge(self):
+        # Policy must arrive BEFORE the chunks to predispose the model.
+        assert RAG_GROUNDING_LAYER.priority < LayerPriority.KNOWLEDGE
 
     def test_phase_is_configure(self):
         assert RAG_GROUNDING_LAYER.phase == RenderPhase.CONFIGURE

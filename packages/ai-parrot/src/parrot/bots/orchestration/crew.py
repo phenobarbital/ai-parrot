@@ -44,111 +44,54 @@ from ...models.crew import (
     AgentResult,
     AgentExecutionInfo,
     build_agent_metadata,
-    determine_run_status
 )
+from ..flows.core.result import determine_run_status
 from ...models.status import AgentStatus
-from ..flow.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
-from ..flow.storage.synthesis import SYNTHESIS_PROMPT
+from ..flows.core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
+from ..flows.core.storage.synthesis import SYNTHESIS_PROMPT
+from ..flows.core.node import AgentNode as _CoreAgentNode
+from ..flows.core.context import FlowContext  # noqa: F401 — re-export for backward compat
+from ..flows.core.types import (
+    AgentRef,  # noqa: F401 — re-export for backward compat
+    DependencyResults,  # noqa: F401 — re-export for backward compat
+    PromptBuilder,  # noqa: F401 — re-export for backward compat
+)
+from ..flows.core.fsm import AgentTaskMachine
 from ..flow.tools import ResultRetrievalTool
 
-
-AgentRef = Union[str, BasicAgent, AbstractBot]
-DependencyResults = Dict[str, str]
-PromptBuilder = Callable[[AgentContext, DependencyResults], Union[str, Awaitable[str]]]
-
+__all__ = [
+    "AgentCrew",
+    "AgentNode",
+    # Re-exports from flows.core for backward compatibility
+    "FlowContext",
+    "AgentRef",
+    "DependencyResults",
+    "PromptBuilder",
+]
 
 @dataclass
-class FlowContext:
+class _CrewAgentNode(_CoreAgentNode):
+    """Crew-specific node wrapping an agent with dependency metadata.
+
+    Inherits ``execute()`` (with timeout, time tracking, and pre/post hooks)
+    from the core ``AgentNode``.  Adds ``_format_prompt()`` for crew-specific
+    prompt formatting and ``execute_in_context()`` for context-driven execution.
+
+    The public name ``AgentNode`` at module level is kept as an alias for
+    backward compatibility.
     """
-    Maintains the execution context across the workflow.
-
-    This context object tracks the state of the entire workflow execution,
-    including which agents have completed, their results, and any errors.
-    It serves as the "memory" of the workflow as it progresses.
-    """
-    initial_task: str
-    results: Dict[str, Any] = field(default_factory=dict)
-    responses: Dict[str, Any] = field(default_factory=dict)
-    agent_metadata: Dict[str, AgentExecutionInfo] = field(default_factory=dict)
-    completion_order: List[str] = field(default_factory=list)
-    errors: Dict[str, Exception] = field(default_factory=dict)
-    active_tasks: Set[str] = field(default_factory=set)
-    completed_tasks: Set[str] = field(default_factory=set)
-
-    def can_execute(self, agent_name: str, dependencies: Set[str]) -> bool:
-        """
-        Check if all dependencies are satisfied for an agent to execute.
-
-        An agent can only execute when all the agents it depends on have
-        successfully completed their execution.
-        """
-        return dependencies.issubset(self.completed_tasks)
-
-    def mark_completed(
-        self,
-        agent_name: str,
-        result: Any = None,
-        response: Any = None,
-        metadata: Optional[AgentExecutionInfo] = None
-    ):
-        """
-        Mark an agent as completed and store its result.
-
-        This updates the workflow state to reflect that an agent has finished,
-        making it possible for dependent agents to begin execution.
-        """
-        self.completed_tasks.add(agent_name)
-        self.completion_order.append(agent_name)
-        self.active_tasks.discard(agent_name)
-        if result is not None:
-            self.results[agent_name] = result
-        if response is not None:
-            self.responses[agent_name] = response
-        if metadata is not None:
-            self.agent_metadata[agent_name] = metadata
-
-    def get_input_for_agent(self, agent_name: str, dependencies: Set[str]) -> Dict[str, Any]:
-        """
-        Prepare input data for an agent based on its dependencies.
-
-        This method aggregates the results from all dependency agents and
-        packages them in a way that the target agent can use. If the agent
-        has no dependencies, it receives the initial task.
-        """
-        if not dependencies:
-            return {"task": self.initial_task}
-
-        return {
-            "task": self.initial_task,
-            "dependencies": {
-                dep: self.results.get(dep)
-                for dep in dependencies
-                if dep in self.results
-            }
-        }
-
-class _CrewAgentNode:
-    """Represents a node in the workflow graph (an agent with its dependencies).
-
-    .. deprecated::
-        The public name ``AgentNode`` in this module is now ambiguous because
-        ``parrot.bots.flows.core`` exports a different (FSM-backed)
-        ``AgentNode``.  Internal crew code uses ``_CrewAgentNode`` to make
-        the distinction explicit; the ``AgentNode`` alias below preserves
-        backward compatibility for external callers.
-    """
-
-    def __init__(self, agent: Union[BasicAgent, AbstractBot], dependencies: Optional[Set[str]] = None):
-        self.agent = agent
-        self.dependencies = dependencies or set()
-        self.successors: Set[str] = set()
 
     def _format_prompt(self, input_data: Dict[str, Any]) -> str:
-        """
-        Format the input data dictionary into a string prompt.
+        """Format the input data dictionary into a string prompt.
 
-        This method converts the structured input data (task + dependencies)
-        into a natural language prompt that the agent can understand.
+        Converts structured input data (task + dependency results) into a
+        natural language prompt the agent can understand.
+
+        Args:
+            input_data: Dict with ``'task'`` and optionally ``'dependencies'``.
+
+        Returns:
+            Formatted prompt string.
         """
         if not input_data:
             return ""
@@ -169,71 +112,31 @@ class _CrewAgentNode:
 
         return "\n".join(prompt_parts)
 
-    async def execute(self, context: FlowContext, timeout: Optional[float] = None) -> Any:
-        """Execute the agent with context from previous agents."""
-        # Get input data based on dependencies
-        input_data = context.get_input_for_agent(self.agent.name, self.dependencies)
+    async def execute_in_context(
+        self, context: FlowContext, timeout: Optional[float] = None
+    ) -> Any:
+        """Execute the agent with context from previous agents.
 
-        # If this is the first agent, use initial task
-        if not input_data and not self.dependencies:
-            input_data = {"task": context.initial_task}
+        Resolves the prompt from the ``FlowContext`` using dependency data,
+        then delegates to the inherited ``execute()`` method.
 
-        # Execute the agent and track time
-        start_time = asyncio.get_event_loop().time()
+        Args:
+            context: The current workflow execution context.
+            timeout: Optional timeout in seconds for the agent call.
+
+        Returns:
+            Dict with ``'response'``, ``'output'``, ``'execution_time'``,
+            ``'prompt'``.
+        """
+        # Get input data based on dependencies.
+        # ``get_input_for_agent`` already falls back to ``initial_task``
+        # when the node has no dependencies and no prior results.
+        input_data = context.get_input_for_agent(
+            self.agent.name, self.dependencies
+        )
+
         prompt = self._format_prompt(input_data)
-        try:
-            # Execute with timeout if provided
-            if timeout:
-                response = await asyncio.wait_for(
-                    self.agent.ask(prompt=prompt),
-                    timeout=timeout
-                )
-            else:
-                response = await self.agent.ask(prompt=prompt)
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            # Extract output text
-            output = response.content if hasattr(response, 'content') else str(response.output if hasattr(response, 'output') else response)
-
-            return {
-                'response': response,
-                'output': output,
-                'execution_time': end_time - start_time,
-                'prompt': prompt
-            }
-
-        except asyncio.TimeoutError:
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            error_msg = f"Agent execution timed out after {timeout} seconds"
-            
-            agent_info = build_agent_metadata(
-                agent_id=self.agent.name,
-                agent=self.agent,
-                response=None,
-                output=None,
-                execution_time=execution_time,
-                status='failed',
-                error=error_msg
-            )
-            # Re-raise to be caught by caller
-            raise TimeoutError(error_msg)
-
-        except Exception as e:
-            end_time = asyncio.get_event_loop().time()
-            execution_time = end_time - start_time
-            # Build agent metadata for failed execution
-            # TODO: Save the error of execution
-            agent_info = build_agent_metadata(
-                agent_id=self.agent.name,
-                agent=self.agent,
-                response=None,
-                output=None,
-                execution_time=execution_time,
-                status='failed',
-                error=str(e)
-            )
-            raise
+        return await self.execute(prompt, timeout=timeout)
 
 
 # Backward-compatibility alias.  New code should use
@@ -367,7 +270,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         if agents:
             for agent in agents:
                 self.add_agent(agent)
-                self.workflow_graph[agent.name] = _CrewAgentNode(agent)
+                self.workflow_graph[agent.name] = _CrewAgentNode(
+                    agent=agent, node_id=agent.name
+                )
 
     @property
     def agent_statuses(self) -> Dict[str, Dict[str, Any]]:
@@ -432,13 +337,13 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
-        # DEBUG: Print tools available to the agent
+        # Log tools available to the agent
         try:
             agent_tools = agent.tool_manager.list_tools()
-            self.logger.info(f"DEBUG: Agent '{agent.name}' (ID: {agent_id}) initial tools: {agent_tools}")
+            self.logger.debug("Agent '%s' (ID: %s) initial tools: %s", agent.name, agent_id, agent_tools)
         except Exception as e:
-            self.logger.error(
-                f"DEBUG: Error listing tools for agent '{agent_id}': {e}"
+            self.logger.debug(
+                "Error listing tools for agent '%s': %s", agent_id, e
             )
 
         # Register as tool in LLM orchestrator (if exists)
@@ -711,7 +616,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
     async def _execute_parallel_agents(
         self,
         agent_names: Set[str],
-        context: FlowContext
+        context: FlowContext,
+        on_agent_complete: Optional[Callable] = None,
     ) -> CrewResult:
         """
         Execute multiple agents in parallel and collect their results.
@@ -741,8 +647,13 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             await self._ensure_agent_ready(agent)
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
+                # Wire FSM: schedule + start before execution
+                if node.fsm and str(node.fsm.current_state.id) == "idle":
+                    node.fsm.schedule()
+                if node.fsm and str(node.fsm.current_state.id) == "ready":
+                    node.fsm.start()
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute(context, timeout=self.agent_execution_timeout))
+                tasks.append(node.execute_in_context(context, timeout=self.agent_execution_timeout))
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel
@@ -755,6 +666,9 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             if isinstance(result, Exception):
                 context.errors[agent_name] = result
                 context.active_tasks.discard(agent_name)
+                # Transition FSM to failed (guard against double-transition)
+                if node.fsm and str(node.fsm.current_state.id) != "failed":
+                    node.fsm.fail()
                 self.logger.error(
                     f"Error executing {agent_name}: {result}"
                 )
@@ -815,8 +729,15 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     raw_response,
                     metadata
                 )
+                # Transition FSM to completed
+                if node.fsm and str(node.fsm.current_state.id) == "running":
+                    node.fsm.succeed()
                 context.active_tasks.discard(agent_name)
                 execution_results[agent_name] = output
+
+                # Fire per-agent callback right after FSM succeeds
+                if on_agent_complete:
+                    await on_agent_complete(agent_name, output, context)
                 self.execution_log.append({
                     'agent_id': agent_name,
                     'agent_name': node.agent.name,
@@ -872,6 +793,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
             if (
                 agent_name not in context.completed_tasks
                 and agent_name not in context.active_tasks
+                and agent_name not in context.errors
                 and context.can_execute(agent_name, node.dependencies)
             )
         }
@@ -1213,7 +1135,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
 
         self.execution_log = []
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         responses: Dict[str, Any] = {}
         results: List[Any] = []
@@ -1231,8 +1153,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
             agent = self.agents[agent_id]
 
+            # Wire FSM transitions for this node
+            node = self.workflow_graph.get(agent_id)
+            if node and node.fsm:
+                node.fsm.schedule()
+                node.fsm.start()
+
             try:
-                agent_start_time = asyncio.get_event_loop().time()
+                agent_start_time = asyncio.get_running_loop().time()
 
                 # Prepare input based on context passing mode
                 if i == 0:
@@ -1250,14 +1178,22 @@ Current task: {current_input}"""
                     # Pass only the immediately previous result
                     agent_input = current_input
 
+                # Run pre-action hooks if available
+                if node:
+                    await node.run_pre_actions(prompt=agent_input)
+
                 # Execute agent
                 response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
                 )
 
                 result = self._extract_result(response)
-                agent_end_time = asyncio.get_event_loop().time()
+                agent_end_time = asyncio.get_running_loop().time()
                 execution_time = agent_end_time - agent_start_time
+
+                # Run post-action hooks if available
+                if node:
+                    await node.run_post_actions(result=response)
 
                 # Log execution details
                 log_entry = {
@@ -1311,11 +1247,19 @@ Current task: {current_input}"""
                     vectorize=True
                 )
 
+                # FSM: mark node as completed
+                if node and node.fsm:
+                    node.fsm.succeed()
+
                 success_count += 1
 
             except Exception as e:
                 error_msg = f"Error executing agent {agent_id}: {str(e)}"
                 self.logger.error(error_msg, exc_info=True)
+
+                # FSM: mark node as failed
+                if node and node.fsm:
+                    node.fsm.fail()
 
                 log_entry = {
                     'agent_id': agent_id,
@@ -1367,7 +1311,7 @@ Current task: {current_input}"""
 
                 failure_count += 1
 
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
         total_time = end_time - start_time
         status = determine_run_status(success_count, failure_count)
 
@@ -1505,7 +1449,7 @@ Current task: {current_input}"""
         ]
 
         self.execution_log = []
-        overall_start = asyncio.get_event_loop().time()
+        overall_start = asyncio.get_running_loop().time()
 
         shared_state: Dict[str, Any] = {
             'initial_task': initial_task,
@@ -1532,6 +1476,14 @@ Current task: {current_input}"""
                 f'Starting iteration {iteration_index + 1}/{max_iterations}'
             )
             iterations_run = iteration_index + 1
+
+            # Fresh FSM per iteration (completed is a final state, so
+            # we cannot reuse the same FSM across iterations)
+            for agent_id in agent_sequence:
+                node = self.workflow_graph.get(agent_id)
+                if node:
+                    node.fsm = AgentTaskMachine(agent_name=node.agent.name)
+
             crew_context = AgentContext(
                 user_id=user_id,
                 session_id=session_id,
@@ -1608,6 +1560,12 @@ Current task: {current_input}"""
                 agent = self.agents[agent_id]
                 await self._ensure_agent_ready(agent)
 
+                # Wire FSM: schedule + start before execution
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm:
+                    node.fsm.schedule()
+                    node.fsm.start()
+
                 if agent_position == 0:
                     agent_input = self._build_loop_first_agent_prompt(
                         initial_task=initial_task,
@@ -1628,7 +1586,12 @@ Current task: {current_input}"""
                     agent_input = current_input
 
                 try:
-                    agent_start = asyncio.get_event_loop().time()
+                    agent_start = asyncio.get_running_loop().time()
+
+                    # Run pre-action hooks if available
+                    if node:
+                        await node.run_pre_actions(prompt=agent_input)
+
                     response = await self._execute_agent(
                         agent,
                         agent_input,
@@ -1639,8 +1602,12 @@ Current task: {current_input}"""
                     )
 
                     result = self._extract_result(response)
-                    agent_end = asyncio.get_event_loop().time()
+                    agent_end = asyncio.get_running_loop().time()
                     execution_time = agent_end - agent_start
+
+                    # Run post-action hooks if available
+                    if node:
+                        await node.run_post_actions(result=response)
 
                     execution_id = f"{agent_id}#iteration{iterations_run}"
                     log_entry = {
@@ -1702,8 +1669,14 @@ Current task: {current_input}"""
                     )
 
                     success_count += 1
+                    # Transition FSM to completed
+                    if node and node.fsm and str(node.fsm.current_state.id) == "running":
+                        node.fsm.succeed()
                 except Exception as exc:
                     execution_id = f"{agent_id}#iteration{iterations_run}"
+                    # Transition FSM to failed
+                    if node and node.fsm and str(node.fsm.current_state.id) != "failed":
+                        node.fsm.fail()
                     error_msg = f"Error executing agent {agent_id}: {exc}"
                     self.logger.error(error_msg, exc_info=True)
                     self.execution_log.append({
@@ -1785,7 +1758,7 @@ Current task: {current_input}"""
 
             current_input = shared_state['last_output']
 
-        overall_end = asyncio.get_event_loop().time()
+        overall_end = asyncio.get_running_loop().time()
 
         last_output = shared_state['last_output'] if shared_state['iteration_outputs'] else initial_task
         status = determine_run_status(success_count, failure_count)
@@ -1936,17 +1909,28 @@ Current task: {current_input}"""
                 continue
 
             agent = self.agents[agent_id]
+            node = self.workflow_graph.get(agent_id)
             task_metadata.append({
                 'agent_id': agent_id,
                 'agent_name': agent.name,
                 'query': query,
                 'index': i
             })
-            async_tasks.append(
-                self._execute_agent(
-                    agent, query, session_id, user_id, i, crew_context
+
+            async def _run_with_hooks(
+                _agent=agent, _query=query, _idx=i, _node=node,
+            ):
+                """Wrap _execute_agent with pre/post action hooks."""
+                if _node:
+                    await _node.run_pre_actions(prompt=_query)
+                resp = await self._execute_agent(
+                    _agent, _query, session_id, user_id, _idx, crew_context
                 )
-            )
+                if _node:
+                    await _node.run_post_actions(result=resp)
+                return resp
+
+            async_tasks.append(_run_with_hooks())
 
         if not async_tasks:
             return CrewResult(
@@ -1956,11 +1940,18 @@ Current task: {current_input}"""
                 metadata={'mode': 'parallel'}
             )
 
+        # Wire FSM transitions: schedule + start all nodes before gather
+        for meta in task_metadata:
+            node = self.workflow_graph.get(meta['agent_id'])
+            if node and node.fsm:
+                node.fsm.schedule()
+                node.fsm.start()
+
         # Execute all tasks in parallel using asyncio.gather()
         # This is the key to parallel execution - all coroutines run concurrently
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         results = await asyncio.gather(*async_tasks, return_exceptions=True)
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
 
         # Process results from all parallel executions
         parallel_results = {}
@@ -1977,6 +1968,10 @@ Current task: {current_input}"""
                 error_msg = f"Error: {str(result)}"
                 parallel_results[agent_id] = error_msg
                 errors[agent_id] = str(result)
+                # Transition FSM to failed (guard against double-transition)
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm and str(node.fsm.current_state.id) != "failed":
+                    node.fsm.fail()
                 # Save failed execution to memory
                 agent_result = AgentResult(
                     agent_id=agent_id,
@@ -2074,6 +2069,10 @@ Current task: {current_input}"""
                 responses[agent_id] = result
                 last_output = extracted_result
                 success_count += 1
+                # Transition FSM to completed
+                node = self.workflow_graph.get(agent_id)
+                if node and node.fsm:
+                    node.fsm.succeed()
 
             self.execution_log.append(log_entry)
         status = determine_run_status(success_count, failure_count)
@@ -2214,7 +2213,7 @@ Current task: {current_input}"""
         context.session_id = session_id
 
         self.execution_log = []
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         # Validate workflow before starting
         if not self.initial_agent:
@@ -2234,6 +2233,17 @@ Current task: {current_input}"""
 
                 # Check if we're stuck - no ready agents but also no active agents
                 if not context.active_tasks:
+                    # If there are errors, the workflow is partial/failed —
+                    # downstream agents are blocked by failed dependencies.
+                    if context.errors:
+                        self.logger.warning(
+                            "Workflow stopped: failed agents %s block downstream. "
+                            "Completed: %s, Expected final: %s",
+                            set(context.errors.keys()),
+                            context.completed_tasks,
+                            self.final_agents,
+                        )
+                        break
                     raise RuntimeError(
                         f"Workflow is stuck. Completed: {context.completed_tasks}, "
                         f"Expected final: {self.final_agents}. "
@@ -2245,13 +2255,11 @@ Current task: {current_input}"""
                 continue
 
             # Execute all ready agents in parallel
-            # This is where the automatic parallelization happens
-            results = await self._execute_parallel_agents(ready_agents, context)
-
-            # Call callback for each completed agent if provided
-            if on_agent_complete:
-                for agent_name, result in results.items():
-                    await on_agent_complete(agent_name, result, context)
+            # This is where the automatic parallelization happens.
+            # The callback is fired per-agent right after FSM succeeds.
+            results = await self._execute_parallel_agents(
+                ready_agents, context, on_agent_complete=on_agent_complete
+            )
 
             iteration += 1
 
@@ -2262,7 +2270,7 @@ Current task: {current_input}"""
                 f"Expected: {self.final_agents}"
             )
 
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
         error_messages: Dict[str, str] = {
             agent: str(err)
             for agent, err in context.errors.items()
@@ -2992,7 +3000,7 @@ analyze, and present information in the most helpful way for the user.
         self.logger.info(
             f"Processing ask() query: {question[:100]}..."
         )
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         # 2. Búsqueda semántica en FAISS (ExecutionMemory)
         self.logger.debug(
@@ -3059,7 +3067,7 @@ analyze, and present information in the most helpful way for the user.
             )
 
         # 7. Agregar metadata a la respuesta
-        end_time = asyncio.get_event_loop().time()
+        end_time = asyncio.get_running_loop().time()
 
         if not hasattr(response, 'metadata'):
             response.metadata = {}

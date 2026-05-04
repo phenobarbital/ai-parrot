@@ -1,11 +1,11 @@
-# TASK-942: Test suite for OpenAIModel catalog refresh + deprecation registry
+# TASK-949: Test suite for OpenAIModel catalog refresh + deprecation registry
 
-**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-138 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-937, TASK-938, TASK-939, TASK-940, TASK-941
+**Depends-on**: TASK-944, TASK-945, TASK-946, TASK-947, TASK-948
 **Assigned-to**: unassigned
 
 ---
@@ -61,7 +61,7 @@ Implements §3 Module 7.
 ### Verified Imports
 
 ```python
-# After TASK-937 these all exist:
+# After TASK-944 these all exist:
 from parrot.models.openai import (
     OpenAIModel,
     DeprecationInfo,
@@ -71,7 +71,7 @@ from parrot.models.openai import (
     resolve_alias,
 )
 
-# After TASK-938 / TASK-939:
+# After TASK-945 / TASK-946:
 from parrot.clients.gpt import (
     OpenAIClient,
     RESPONSES_ONLY_MODELS,
@@ -79,7 +79,7 @@ from parrot.clients.gpt import (
     DEFAULT_STRUCTURED_OUTPUT_MODEL,
 )
 
-# After TASK-941:
+# After TASK-948:
 from parrot.handlers.llm import LLMClient
 ```
 
@@ -321,7 +321,7 @@ The tests ARE the specification. Run them.
 
 ## Agent Instructions
 
-1. Verify TASK-937 through TASK-941 are all in `sdd/tasks/completed/`.
+1. Verify TASK-944 through TASK-948 are all in `sdd/tasks/completed/`.
 2. Read each completion note for any deviations that affect tests.
 3. Update `.index.json` → `"in-progress"`.
 4. Implement; run all tests.
@@ -331,9 +331,29 @@ The tests ARE the specification. Run them.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) via /sdd-start
+**Date**: 2026-05-01
+**Notes**: 33 unit tests + 2 integration tests landed and passing
+(`pytest tests/unit/models/ tests/integration/test_openai_deprecation_warning.py` →
+35 passed in 2.34s). Implementation in worktree commit `3f4e15c6` on
+branch `feat-137-openai-model-deprecation`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **Test pattern relaxed.** `test_enum_contains_only_current_models` no
+   longer asserts that current enum values are absent from any
+   `DeprecationInfo.alias` field. Spec §7 explicitly keeps
+   `gpt-4.1-nano` as a current member while the dated source
+   `gpt-4.1-nano-2025-04-14` aliases it — the implementation-note
+   pattern (every-alias check) was overstrict.
+2. **Helper semantics tightened.** `is_deprecated` / `get_shutoff_date`
+   now skip alias-matches when the alias itself is a current
+   `OpenAIModel` value, so `is_deprecated("gpt-4.1-nano")` returns
+   `False` (it remains alive upstream). Direct keys and bare-alias dead
+   families are still flagged. Added explicit
+   `test_is_deprecated_skips_alive_alias` regression test.
+3. **TASK-940 residual cleanup.** Migrated two further
+   `kwargs.get('model_name', 'gpt-3.5-turbo')` fallbacks in
+   `parrot/loaders/abstract.py:220, 242` to `'gpt-4.1-mini'`. Without
+   this, the §4 integration test "no internal call site uses deprecated
+   ID" would fail. Bundled into TASK-942 because it surfaced through
+   the test-suite acceptance gate.

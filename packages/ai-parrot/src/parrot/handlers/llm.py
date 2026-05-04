@@ -18,9 +18,10 @@ from parrot.outputs import OutputMode
 
 # Try to import Model Enums for listing supported models
 try:
-    from parrot.models.openai import OpenAIModel
+    from parrot.models.openai import OpenAIModel, DEPRECATIONS
 except ImportError:
     OpenAIModel = None
+    DEPRECATIONS = None
 
 try:
     from parrot.models.groq import GroqModel
@@ -55,20 +56,30 @@ class LLMClient(BaseView):
     def post_init(self, *args, **kwargs):
         self.logger = logging.getLogger(self._logger_name)
 
-    def _get_supported_models(self, provider: str) -> List[str]:
-        """Get list of supported models for a given provider."""
+    def _get_supported_models(
+        self, provider: str,
+    ) -> Union[List[str], Dict[str, List[str]]]:
+        """Return supported model IDs for a given provider.
+
+        For ``openai`` / ``azure``: returns a dict
+        ``{"active": [...], "deprecated": [...]}`` so the public endpoint
+        can surface deprecated IDs separately.
+
+        For all other providers: returns a flat ``List[str]`` (unchanged).
+        """
         provider = provider.lower()
-        
+
         if provider in ['openai', 'azure'] and OpenAIModel:
-            return [m.value for m in OpenAIModel]
+            active = [m.value for m in OpenAIModel]
+            deprecated = list(DEPRECATIONS.keys()) if DEPRECATIONS else []
+            return {"active": active, "deprecated": deprecated}
         elif provider == 'groq' and GroqModel:
             return [m.value for m in GroqModel]
         elif provider in ['anthropic', 'claude'] and ClaudeModel:
             return [m.value for m in ClaudeModel]
         elif provider == 'google' and GoogleModel:
             return [m.value for m in GoogleModel]
-        
-        # Fallback or Todo: inspect the client class if possible, or return empty
+
         return []
 
     async def get(self):

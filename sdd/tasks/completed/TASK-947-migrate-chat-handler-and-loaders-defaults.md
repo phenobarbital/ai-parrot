@@ -1,11 +1,11 @@
-# TASK-940: Migrate hard-coded model strings in handlers/chat.py and loaders/abstract.py
+# TASK-947: Migrate hard-coded model strings in handlers/chat.py and loaders/abstract.py
 
-**Feature**: FEAT-137 — OpenAI Model Deprecation Refresh
+**Feature**: FEAT-138 — OpenAI Model Deprecation Refresh
 **Spec**: `sdd/specs/openai-model-deprecation.spec.md`
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-937
+**Depends-on**: TASK-944
 **Assigned-to**: unassigned
 
 ---
@@ -19,7 +19,7 @@ Two consumers in the codebase still hard-code soon-to-shutoff model IDs:
 - `parrot/loaders/abstract.py:156` — `model_name: str = "gpt-3.5-turbo"`
   (shutoff 2026-10-23).
 
-Spec §3 Module 5 mandates migrating both as part of FEAT-137. The user
+Spec §3 Module 5 mandates migrating both as part of FEAT-138. The user
 explicitly confirmed this in the /sdd-spec interview (item 3: "yes,
 migrated").
 
@@ -44,9 +44,9 @@ Implements Module 5 of §3.
   `"gpt-4o"` which is NOT on the deprecation table (spec §2 Integration
   Points marks them "review only").
 - Editing `setup/providers/openai.py` — also "review only".
-- Touching `parrot/clients/gpt.py` (TASK-938 / TASK-939).
-- Touching `parrot/handlers/llm.py` (TASK-941).
-- Writing tests (TASK-942).
+- Touching `parrot/clients/gpt.py` (TASK-945 / TASK-946).
+- Touching `parrot/handlers/llm.py` (TASK-948).
+- Writing tests (TASK-949).
 
 ---
 
@@ -64,7 +64,7 @@ Implements Module 5 of §3.
 ### Verified Imports
 
 ```python
-# Available after TASK-937:
+# Available after TASK-944:
 from parrot.models.openai import OpenAIModel
 
 # Verify whether handlers/chat.py already imports OpenAIModel:
@@ -164,7 +164,7 @@ payload = {
 
 ## Test Specification
 
-Tests live in TASK-942. Smoke check:
+Tests live in TASK-949. Smoke check:
 
 ```bash
 source .venv/bin/activate
@@ -183,7 +183,7 @@ grep -c '"gpt-4-turbo"\|"gpt-3.5-turbo"' \
 
 ## Agent Instructions
 
-1. Verify TASK-937 in `sdd/tasks/completed/`.
+1. Verify TASK-944 in `sdd/tasks/completed/`.
 2. Run the pre-edit verification command; confirm 4 hits.
 3. Update `.index.json` → `"in-progress"`.
 4. Apply the replacement table.

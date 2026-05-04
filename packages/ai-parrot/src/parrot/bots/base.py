@@ -6,6 +6,7 @@ abstract base class. It implements all required abstract methods.
 """
 from typing import Optional, Union, Type, AsyncIterator, Any
 from collections.abc import Callable
+import logging
 import uuid
 import asyncio
 import warnings
@@ -43,6 +44,79 @@ class BaseBot(AbstractBot):
     Subclasses can override these methods to customize behavior or use them
     as-is for standard bot functionality.
     """
+
+    def _resolve_metric_type(self, metric_type: Optional[str]) -> str:
+        """Resolve which vector-search metric to use.
+
+        Precedence: explicit call argument → vector_store_config.metric_type
+        (from BD via the bot config) → self._metric_type → 'COSINE'.
+
+        Without this, the hardcoded ``metric_type='EUCLIDEAN_DISTANCE'``
+        defaults on ask/conversation/ask_stream would silently override
+        whatever the agent's vector_store_config declared.
+        """
+        if metric_type:
+            return metric_type
+        cfg = getattr(self, '_vector_store', None) or {}
+        if isinstance(cfg, dict) and cfg.get('metric_type'):
+            return cfg['metric_type']
+        return getattr(self, '_metric_type', None) or 'COSINE'
+
+    def _debug_prompt_dump(
+        self,
+        method: str,
+        system_prompt: str,
+        prompt_for_llm: str,
+        vector_context: str = "",
+        kb_context: str = "",
+        user_context: str = "",
+        conversation_context: str = "",
+        memory_context: str = "",
+        vector_metadata: Optional[dict] = None,
+    ) -> None:
+        """Dump the assembled system prompt and context sizes when DEBUG is on.
+
+        Zero-cost when the bot's logger is not at DEBUG level. Intended for
+        diagnosing RAG/grounding issues — e.g. confirming that
+        `rag_grounding`/`knowledge_scope` layers are present and that
+        `vector_context` actually carries retrieved chunks before the call
+        to ``client.ask(...)``.
+        """
+        if not self.logger.isEnabledFor(logging.DEBUG):
+            return
+
+        layer_names: list[str] = []
+        if self._prompt_builder is not None:
+            layer_names = self._prompt_builder.layer_names
+
+        vec_meta = (vector_metadata or {}).get('vector', {}) or {}
+        search_results = vec_meta.get('search_results_count', 0)
+        sources = vec_meta.get('sources', [])
+
+        self.logger.debug(
+            "[%s] %s() prompt builder layers: %s",
+            self.name, method, layer_names,
+        )
+        self.logger.debug(
+            "[%s] %s() context sizes: system_prompt=%d, prompt=%d, "
+            "vector=%d (chunks=%d, sources=%d), kb=%d, user=%d, "
+            "history=%d, memory=%d",
+            self.name, method,
+            len(system_prompt or ""),
+            len(prompt_for_llm or ""),
+            len(vector_context or ""), search_results, len(sources),
+            len(kb_context or ""),
+            len(user_context or ""),
+            len(conversation_context or ""),
+            len(memory_context or ""),
+        )
+        self.logger.debug(
+            "[%s] %s() FINAL system_prompt sent to LLM ↓↓↓\n%s\n"
+            "[%s] %s() === END system_prompt ===",
+            self.name, method, system_prompt,
+            self.name, method,
+        )
+
     async def conversation(
         self,
         question: str,
@@ -50,7 +124,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -106,6 +180,11 @@ class BaseBot(AbstractBot):
         )
         score_threshold = kwargs.get(
             'score_threshold', self.context_score_threshold
+        )
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] conversation() resolved metric_type=%s, score_threshold=%s",
+            self.name, metric_type, score_threshold,
         )
 
         # ── Intent Router: pop routing kwargs before any downstream processing ──
@@ -211,6 +290,18 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 **kwargs
             ) + (system_prompt_addition or '')
+
+            self._debug_prompt_dump(
+                method="conversation",
+                system_prompt=system_prompt,
+                prompt_for_llm=question,
+                vector_context=vector_context,
+                kb_context=kb_context,
+                user_context=user_context,
+                conversation_context=conversation_context,
+                vector_metadata=vector_metadata,
+            )
+
             # Configure LLM if needed
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):
@@ -569,7 +660,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -666,6 +757,11 @@ class BaseBot(AbstractBot):
             )
             limit = 10  # enforce a minimum limit to ensure some context is retrieved
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
+            self.name, metric_type, score_threshold, limit,
+        )
 
         try:
             # Get conversation history
@@ -781,8 +877,17 @@ class BaseBot(AbstractBot):
                 **kwargs
             ) + (system_prompt_addition or '')
 
-            # DEBUG: Validate functionality
-            # print(f"DEBUG: System Prompt: {system_prompt}")
+            self._debug_prompt_dump(
+                method="ask",
+                system_prompt=system_prompt,
+                prompt_for_llm=prompt_for_llm,
+                vector_context=vector_context,
+                kb_context=kb_context,
+                user_context=user_context,
+                conversation_context=conversation_context,
+                memory_context=memory_context,
+                vector_metadata=vector_metadata,
+            )
 
             # Configure LLM if needed
             llm = self._llm
@@ -983,7 +1088,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'EUCLIDEAN_DISTANCE',
+        metric_type: Optional[str] = None,
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -1033,6 +1138,11 @@ class BaseBot(AbstractBot):
         max_tokens = kwargs.get('max_tokens', default_max_tokens)
         limit = kwargs.get('limit', self.context_search_limit)
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
+        metric_type = self._resolve_metric_type(metric_type)
+        self.logger.debug(
+            "[%s] ask_stream() resolved metric_type=%s, score_threshold=%s",
+            self.name, metric_type, score_threshold,
+        )
 
         search_kwargs = search_kwargs or {}
 
@@ -1099,6 +1209,17 @@ class BaseBot(AbstractBot):
                 user_context=user_context,
                 **kwargs
             ) + (system_prompt_addition or '')
+
+            self._debug_prompt_dump(
+                method="ask_stream",
+                system_prompt=system_prompt,
+                prompt_for_llm=prompt_for_llm,
+                vector_context=vector_context,
+                kb_context=kb_context,
+                user_context=user_context,
+                conversation_context=conversation_context,
+                vector_metadata=vector_metadata,
+            )
 
             llm = self._llm
             if (new_llm := kwargs.pop('llm', None)):

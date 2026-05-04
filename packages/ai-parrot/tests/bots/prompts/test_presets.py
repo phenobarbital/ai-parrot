@@ -38,15 +38,15 @@ class TestGetPreset:
         builder = get_preset("rag")
         assert builder.get("tools") is None
 
-    def test_rag_preset_projects_backstory_into_scope(self):
+    def test_rag_preset_projects_capabilities_into_scope(self):
         builder = get_preset("rag")
         builder.configure({
             "name": "att_concierge",
             "role": "AT&T support concierge",
             "goal": "Answer customer questions from the support KB.",
-            "backstory": "Knows AT&T fiber and wireless plans for US residential customers.",
+            "backstory": "Friendly residential customer-service persona.",
             "rationale": "",
-            "capabilities": "",
+            "capabilities": "Knows AT&T fiber and wireless plans for US residential customers.",
             "pre_instructions_content": "",
             "extra_security_rules": "",
             "extra_rag_rules": "",
@@ -58,8 +58,11 @@ class TestGetPreset:
             "chat_history": "",
             "output_instructions": "",
         })
+        # capabilities is the scope source of truth, projected into <knowledge_scope>
         assert "<knowledge_scope>" in prompt
         assert "AT&T fiber and wireless plans" in prompt
+        # backstory stays in identity (persona), not in scope
+        assert "Friendly residential" in prompt
         assert "<rag_policy>" in prompt
         assert "<tool_policy>" not in prompt
 
