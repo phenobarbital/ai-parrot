@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-143
 **Date**: 2026-05-04
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Depends on**: FEAT-134 (flow-primitives, merged to dev)
 
