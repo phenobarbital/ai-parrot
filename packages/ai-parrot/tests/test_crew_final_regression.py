@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import inspect
 import subprocess
-import sys
-from typing import Any
 
-import pytest
 
 from _crew_test_helpers import DummyAgent  # shared test infrastructure
 
@@ -53,6 +50,46 @@ class TestBackwardCompatImports:
     def test_import_agentcrew(self) -> None:
         from parrot.bots.orchestration.crew import AgentCrew
         assert AgentCrew is not None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-143: flows.crew canonical path
+# ---------------------------------------------------------------------------
+
+
+class TestFlowsCrewImports:
+    """Verify AgentCrew is importable from the new parrot.bots.flows path.
+
+    FEAT-143 moves the canonical location of AgentCrew to
+    ``parrot.bots.flows.crew``.  The old ``orchestration.crew`` path stays
+    intact as a re-export so existing callers are not broken.
+    """
+
+    def test_agentcrew_importable_from_flows_crew(self) -> None:
+        from parrot.bots.flows.crew import AgentCrew
+        assert AgentCrew is not None
+
+    def test_agentcrew_importable_from_flows_top(self) -> None:
+        from parrot.bots.flows import AgentCrew
+        assert AgentCrew is not None
+
+    def test_crewagentnode_importable_from_flows(self) -> None:
+        from parrot.bots.flows import CrewAgentNode
+        assert CrewAgentNode is not None
+
+    def test_flows_agentcrew_is_same_class_as_orchestration(self) -> None:
+        """Both import paths must resolve to the same class object."""
+        from parrot.bots.flows.crew import AgentCrew as FlowsAgentCrew
+        from parrot.bots.orchestration.crew import AgentCrew as OrchAgentCrew
+        assert FlowsAgentCrew is OrchAgentCrew
+
+    def test_orchestrator_agent_importable_from_flows(self) -> None:
+        from parrot.bots.flows import OrchestratorAgent
+        assert OrchestratorAgent is not None
+
+    def test_result_retrieval_tool_importable_from_flows(self) -> None:
+        from parrot.bots.flows import ResultRetrievalTool
+        assert ResultRetrievalTool is not None
 
 
 # ---------------------------------------------------------------------------
