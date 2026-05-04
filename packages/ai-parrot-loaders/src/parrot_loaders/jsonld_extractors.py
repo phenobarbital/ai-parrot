@@ -10,7 +10,8 @@ Extractor functions are pure data transformations: they receive a parsed
 JSON-LD node (a ``dict``) and return ``List[JsonLdItem]``.  They have no
 dependency on WebScrapingLoader or BeautifulSoup beyond tag-stripping.
 
-Dispatch into the loader's pipeline happens in ``webscraping.py`` (TASK-974).
+Dispatch into the loader's pipeline happens in ``webscraping.py`` via
+``_extract_jsonld`` and ``_walk_jsonld_node``.
 """
 
 from __future__ import annotations
@@ -358,14 +359,19 @@ def place_extractor(node: Dict[str, Any]) -> List[JsonLdItem]:
     else:
         address = strip_html_text(address_node)
 
-    # Geo
+    # Geo — coerce to str so dicts like {"@value": "37.77"} are handled safely;
+    # use str(...) before strip_html_text to avoid falsy zero-coordinate values
+    # (latitude=0 or longitude=0 are valid equator/prime-meridian coordinates).
     geo_node = node.get("geo") or {}
     geo = ""
     if isinstance(geo_node, dict):
-        lat = geo_node.get("latitude", "")
-        lng = geo_node.get("longitude", "")
-        if lat and lng:
-            geo = f"{lat},{lng}"
+        lat_raw = geo_node.get("latitude")
+        lng_raw = geo_node.get("longitude")
+        if lat_raw is not None and lng_raw is not None:
+            lat = strip_html_text(str(lat_raw))
+            lng = strip_html_text(str(lng_raw))
+            if lat and lng:
+                geo = f"{lat},{lng}"
 
     row_data: Dict[str, Any] = {
         "name": name,
@@ -524,6 +530,7 @@ def article_extractor(node: Dict[str, Any]) -> List[JsonLdItem]:
         "publisher": publisher,
         "date_published": date_published,
         "date_modified": date_modified,
+        "body": body,
     }
 
     parts = [f"# {headline}"]
@@ -684,7 +691,13 @@ def breadcrumb_extractor(node: Dict[str, Any]) -> List[JsonLdItem]:
             continue
         crumb_name = strip_html_text(item.get("name", "") or item.get("item", {}).get("name", ""))
         if crumb_name:
-            position = item.get("position", len(crumbs) + 1)
+            # Coerce position to int to guarantee numeric sort (real-world JSON-LD
+            # sometimes encodes position as a string, e.g. "3" instead of 3,
+            # which would cause lexicographic ordering for 10+ item lists).
+            try:
+                position = int(item.get("position", len(crumbs) + 1))
+            except (TypeError, ValueError):
+                position = len(crumbs) + 1
             crumbs.append((position, crumb_name))
 
     if not crumbs:
@@ -707,18 +720,69 @@ def breadcrumb_extractor(node: Dict[str, Any]) -> List[JsonLdItem]:
     )]
 
 
+def question_extractor(node: Dict[str, Any]) -> List[JsonLdItem]:
+    """Extract a bare top-level ``Question`` node.
+
+    The JSON-LD spec permits a ``@type="Question"`` node to appear at the
+    top level of a block (i.e. not nested inside a ``FAQPage.mainEntity``).
+    This extractor preserves backward compatibility with the legacy
+    ``_iter_faqpage_pairs`` behaviour that handled this case explicitly.
+
+    Produces one ``JsonLdItem`` with the same ``content_kind="faq"`` and
+    ``source_type="faq-jsonld"`` as :func:`faq_extractor` so downstream
+    consumers see a uniform FAQ item regardless of nesting shape.
+
+    Args:
+        node: Parsed JSON-LD dict with ``@type="Question"``.
+
+    Returns:
+        List with one ``JsonLdItem`` (empty list if question or answer is
+        absent or blank).
+    """
+    question = strip_html_text(node.get("name", "")).strip()
+    answer_node = node.get("acceptedAnswer") or {}
+    if isinstance(answer_node, list):
+        answer_raw = "\n\n".join(
+            str(a.get("text", "")) for a in answer_node
+            if isinstance(a, dict)
+        )
+    elif isinstance(answer_node, dict):
+        answer_raw = answer_node.get("text", "")
+    else:
+        answer_raw = ""
+    answer = strip_html_text(answer_raw)
+    if not question or not answer:
+        return []
+    return [JsonLdItem(
+        content_kind="faq",
+        source_type="faq-jsonld",
+        page_content=f"Q: {question}\n\nA: {answer}",
+        row_data={"question": question, "answer": answer},
+        selector_name="faq",
+    )]
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
 #: Maps JSON-LD ``@type`` strings (including aliases) to extractor callables.
 #:
+#: **Declaration order matters**: when a node carries multiple ``@type`` values
+#: (a valid JSON-LD construct), the first matching key in this dict wins.
 #: Aliases map to the same function as their canonical type:
+#:
+#: - ``"IndividualProduct"`` → :func:`product_extractor`
 #: - ``"LocalBusiness"`` / ``"Restaurant"`` → :func:`place_extractor`
 #: - ``"NewsArticle"`` / ``"BlogPosting"`` → :func:`article_extractor`
-#: - ``"IndividualProduct"`` → :func:`product_extractor`
+#: - ``"Question"`` → :func:`question_extractor` (bare top-level Question node)
+#:
+#: Note: ``jsonld_types`` filtering in ``WebScrapingLoader`` matches against
+#: these exact key strings.  Alias types must be listed explicitly when
+#: filtering — e.g. ``jsonld_types=["Product", "IndividualProduct"]``.
 EXTRACTOR_REGISTRY: Dict[str, Callable[[Dict[str, Any]], List[JsonLdItem]]] = {
     "FAQPage": faq_extractor,
+    "Question": question_extractor,
     "Product": product_extractor,
     "IndividualProduct": product_extractor,
     "Event": event_extractor,

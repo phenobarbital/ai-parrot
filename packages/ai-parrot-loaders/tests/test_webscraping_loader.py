@@ -1168,3 +1168,75 @@ class TestFAQPageBackwardCompat:
             assert len(lines) == 2
             assert lines[0].startswith("Q: ")
             assert lines[1].startswith("A: ")
+
+    @pytest.mark.asyncio
+    async def test_dedup_exact_duplicates_collapsed(self) -> None:
+        """Exact-duplicate FAQ blocks across two <script> tags yield one doc.
+
+        Both the old pipeline (dedup by ``question.lower()``) and the new
+        pipeline (dedup by ``(content_kind, page_content)``) collapse
+        identical pairs.  This test documents the shared behaviour.
+        """
+        html = """<html><head><title>FAQ</title></head><body>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        </body></html>"""
+        result = _make_result(html=html)
+        loader = WebScrapingLoader(source="https://example.com/faq")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/faq")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        # Exact duplicate must be collapsed to a single document
+        assert len(faq_docs) == 1
+        assert faq_docs[0].page_content == "Q: What is prepaid?\n\nA: Prepaid means pay in advance."
+
+    @pytest.mark.asyncio
+    async def test_dedup_case_variant_not_collapsed(self) -> None:
+        """Case-variant FAQ pairs in two blocks yield two docs in the new pipeline.
+
+        KNOWN SEMANTIC CHANGE from the old pipeline:
+        - Old ``_extract_faqpage_jsonld`` deduplicates by ``question.lower()``
+          → case variants ("What is prepaid?" vs "WHAT IS PREPAID?") collapsed to 1.
+        - New ``_extract_jsonld`` deduplicates by ``(content_kind, page_content)``
+          (case-sensitive) → case variants produce 2 documents.
+
+        This test documents and pins the new behaviour so any future regression
+        is immediately visible.
+        """
+        html = """<html><head><title>FAQ</title></head><body>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"WHAT IS PREPAID?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        </body></html>"""
+        result = _make_result(html=html)
+        loader = WebScrapingLoader(source="https://example.com/faq")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/faq")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        # New pipeline: case-sensitive dedup → two distinct page_content strings
+        # Old pipeline would have collapsed these to 1 (question.lower() match)
+        assert len(faq_docs) == 2
+        page_contents = {d.page_content for d in faq_docs}
+        assert "Q: What is prepaid?\n\nA: Prepaid means pay in advance." in page_contents
+        assert "Q: WHAT IS PREPAID?\n\nA: Prepaid means pay in advance." in page_contents

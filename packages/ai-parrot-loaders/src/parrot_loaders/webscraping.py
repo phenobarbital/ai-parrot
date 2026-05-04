@@ -40,6 +40,7 @@ from __future__ import annotations
 import html as _html
 import json
 import re
+from collections import Counter
 from pathlib import PurePath
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -133,7 +134,10 @@ class WebScrapingLoader(AbstractLoader):
             - ``None`` (default): extract all supported types via
               ``EXTRACTOR_REGISTRY``.
             - Non-empty list (e.g. ``["Product", "Event"]``): extract only
-              the listed types.
+              the listed types.  Note that alias types are separate registry
+              keys and must be listed explicitly — e.g. to capture both
+              ``Product`` and ``IndividualProduct`` nodes, pass
+              ``["Product", "IndividualProduct"]``.
             - Empty list ``[]``: disable all JSON-LD extraction.
         **kwargs: Passed through to ``AbstractLoader``.
     """
@@ -628,12 +632,16 @@ class WebScrapingLoader(AbstractLoader):
             {node_type} if isinstance(node_type, str) else set(node_type or [])
         )
         allowed = self._jsonld_types  # None = all, [] = disabled
-        for t in type_set:
-            if t in EXTRACTOR_REGISTRY:
-                if allowed is not None and t not in allowed:
-                    continue
-                items.extend(EXTRACTOR_REGISTRY[t](data))
-                break  # one match per node
+        # Iterate the registry in declaration order (Python 3.7+ dicts preserve
+        # insertion order) so that when a node carries multiple @type values,
+        # the highest-priority extractor wins deterministically.
+        for t in EXTRACTOR_REGISTRY:
+            if t not in type_set:
+                continue
+            if allowed is not None and t not in allowed:
+                continue
+            items.extend(EXTRACTOR_REGISTRY[t](data))
+            break  # one match per node
 
     def _extract_jsonld(self, soup: BeautifulSoup) -> List[JsonLdItem]:
         """Extract structured data from all JSON-LD blocks on the page.
@@ -680,7 +688,6 @@ class WebScrapingLoader(AbstractLoader):
                 unique_items.append(item)
 
         if unique_items:
-            from collections import Counter
             kind_counts = Counter(i.content_kind for i in unique_items)
             self.logger.info(
                 "JSON-LD extraction: %d item(s) — %s",
@@ -707,8 +714,6 @@ class WebScrapingLoader(AbstractLoader):
         Returns:
             List of ``Document`` objects with rich metadata.
         """
-        from collections import Counter
-
         kind_counts: Counter[str] = Counter(item.content_kind for item in items)
         kind_indices: Dict[str, int] = {}
         docs: List[Document] = []
