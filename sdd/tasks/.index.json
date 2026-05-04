@@ -15924,7 +15924,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -15936,7 +15936,8 @@
       "parallelism_notes": "Depends on all prior tasks \u2014 touches the same crew.py file as TASK-977",
       "assigned_to": null,
       "started_at": "2026-05-04T13:13:30.336584+00:00",
-      "file": "sdd/tasks/active/TASK-979-move-agentcrew-and-result-migration.md"
+      "file": "sdd/tasks/completed/TASK-979-move-agentcrew-and-result-migration.md",
+      "completed_at": "2026-05-04T18:14:53.398611+00:00"
     },
     {
       "id": "TASK-980",
@@ -16017,15 +16018,7 @@
       "started_at": "2026-05-04T16:29:52.259293+00:00",
       "completed_at": "2026-05-04T16:29:52.259293+00:00",
       "file": "sdd/tasks/completed/TASK-975-jsonld-integration-tests.md"
-    }
-  ]
-}
-{
-  "feature": "cross-repository-jiratoolkit-oauth2-3lo",
-  "feature_id": "FEAT-144",
-  "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-  "created_at": "2026-05-04T22:00:00+00:00",
-  "tasks": [
+    },
     {
       "id": "TASK-983",
       "slug": "oauth2-models-and-registry",
