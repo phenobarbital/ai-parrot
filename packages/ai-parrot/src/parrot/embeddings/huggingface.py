@@ -6,39 +6,32 @@ import numpy as np
 from parrot._imports import lazy_import
 from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
+from .catalog import EMBEDDING_MODELS
+
+logger = logging.getLogger(__name__)
+
+# Built once at import time from the catalog — O(1) lookup at runtime.
+# Keys are lowercased model identifiers; values are (prefix_query, prefix_passage).
+# The catalog's Pydantic validator guarantees the pair is consistent with
+# requires_prefix, so the result here is correct by construction.
+_PREFIX_LOOKUP: dict[str, Tuple[Optional[str], Optional[str]]] = {
+    entry["model"].lower(): (entry["prefix_query"], entry["prefix_passage"])
+    for entry in EMBEDDING_MODELS
+}
 
 
 def _resolve_prefixes(model_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
-    """Return the (query_prefix, passage_prefix) pair for a model, or (None, None).
+    """Return the (query_prefix, passage_prefix) pair for a model.
 
-    A number of modern sentence-encoder families were trained with
-    asymmetric instruction prefixes and produce near-random embeddings
-    when the prefix is omitted. This helper centralises the mapping so
-    ``embed_documents`` / ``embed_query`` can apply the right text
-    contract automatically.
+    Catalog-driven: looks up ``model_name`` (case-insensitive) in
+    ``EMBEDDING_MODELS`` and returns the per-model prefix pair declared
+    there. The catalog's Pydantic validator guarantees the pair is
+    consistent with ``requires_prefix``, so the result here is correct
+    by construction.
 
-    Covered families:
-
-    * **e5-mistral-7b-instruct** (``intfloat/e5-mistral-7b-instruct``):
-      instruction-tuned variant that uses a long task-instruction prefix,
-      NOT the generic E5 ``"query: "`` prefix. Checked before the generic
-      E5 branch to prevent misclassification.
-    * **gte-Qwen2-instruct** (``Alibaba-NLP/gte-Qwen2-*-instruct``):
-      instruction-tuned GTE model; same instruct-template as e5-mistral.
-    * **NV-Embed-v2** (``nvidia/NV-Embed-v2``): NVIDIA task-instruction
-      prefix; passages go in raw.
-    * **Jina v3** (``jinaai/jina-embeddings-v3``): task-specific query
-      prefix for retrieval; passages go in raw.
-    * **E5** (``intfloat/e5-*``, ``intfloat/multilingual-e5-*``): uses
-      the canonical ``"query: "`` / ``"passage: "`` pair for every
-      non-instruct variant. Required — omitting these drops retrieval
-      quality to near baseline.
-    * **BGE English v1.5** (``BAAI/bge-*-en-v1.5``): queries are
-      prefixed with the long retrieval instruction, passages go in raw.
-      Multilingual BGE (``bge-m3``) does **not** use a prefix.
-
-    GTE, MPNet, MiniLM, Gemma and Arctic families do not use prefixes
-    and return ``(None, None)``.
+    Out-of-catalog models return ``(None, None)`` and emit one INFO log,
+    preserving the silent-passthrough behaviour required for backward
+    compatibility with operators using third-party models.
 
     Args:
         model_name: HuggingFace model identifier.
@@ -49,56 +42,14 @@ def _resolve_prefixes(model_name: Optional[str]) -> Tuple[Optional[str], Optiona
     """
     if not model_name:
         return (None, None)
-
-    lower = model_name.lower()
-
-    # --- Instruct variants MUST come before generic E5 branch ----------
-    # e5-mistral-7b-instruct uses the instruct template, NOT "query: ".
-    # Without this guard the generic "/e5-" branch below would match it
-    # and return the wrong prefix pair.
-    if "e5-mistral-7b-instruct" in lower:
-        return (
-            "Instruct: Given a web search query, retrieve relevant passages "
-            "that answer the query\nQuery: ",
-            None,
+    pair = _PREFIX_LOOKUP.get(model_name.lower())
+    if pair is None:
+        logger.info(
+            "Model %s not in embedding catalog; encoding without prefix",
+            model_name,
         )
-
-    # gte-Qwen2 instruct variants — same template as e5-mistral.
-    if "gte-qwen2" in lower and "instruct" in lower:
-        return (
-            "Instruct: Given a web search query, retrieve relevant passages "
-            "that answer the query\nQuery: ",
-            None,
-        )
-
-    # NV-Embed-v2 — NVIDIA task-instruction prefix, passages raw.
-    if "nv-embed-v2" in lower:
-        return (
-            "Instruct: Given a question, retrieve passages that answer the "
-            "question\nQuery: ",
-            None,
-        )
-
-    # Jina v3 — retrieval-specific query prefix, passages raw.
-    if "jina-embeddings-v3" in lower:
-        return (
-            "Represent the query for retrieving evidence documents: ",
-            None,
-        )
-
-    # E5 family — every non-instruct checkpoint uses the same contract.
-    if "/e5-" in lower or "intfloat/e5" in lower or "multilingual-e5" in lower:
-        return ("query: ", "passage: ")
-
-    # BGE English v1.5 — asymmetric: long instruction on queries only.
-    if "baai/bge-" in lower and "en-v1.5" in lower:
-        return (
-            "Represent this sentence for searching relevant passages: ",
-            None,
-        )
-
-    # Everything else: no prefix.
-    return (None, None)
+        return (None, None)
+    return pair
 
 
 class ModelType(Enum):
