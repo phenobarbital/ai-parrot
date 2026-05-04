@@ -1316,6 +1316,8 @@ Your job is to produce a final summary from the following text and identify the 
             'selector',
             'faq',
             'table',
+            'video_dialog',
+            'video_transcript',
         })
 
         for doc in documents:

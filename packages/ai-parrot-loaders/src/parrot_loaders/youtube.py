@@ -279,14 +279,26 @@ class YoutubeLoader(VideoLoader):
     ) -> List[Document]:
         """
         Async method to load video and create documents.
+
+        Emits a parent/child Document set:
+        * one parent ``content_kind='video_transcript'`` carrying the full
+          transcript and the WEBVTT string in ``metadata['vtt']``
+        * N children ``content_kind='video_dialog'``, one per Whisper turn,
+          each linked to the parent via ``parent_document_id``
+
+        Both kinds are atomic for the splitter (see
+        ``_ATOMIC_CONTENT_KINDS`` in ``parrot.loaders.abstract``), so
+        Whisper-aligned segments are never re-split.
         """
         # Get video metadata
         video_info = self.get_video_info(url)
+        parent_id = f"yt:{video_info.get('video_id') or extract_video_id(url) or 'unknown'}"
+        watch_url = video_info.get("watch_url") or url
 
         if transcript is None:
             try:
-                documents = []
-                docs = []
+                documents: List[Document] = []
+                docs: List[Document] = []
 
                 # Download video
                 if self._download_video:
@@ -321,7 +333,13 @@ class YoutubeLoader(VideoLoader):
                 except Exception:
                     summary = ''
 
-                # Metadata
+                # Build VTT once — saved to disk by the helper, kept in-memory
+                # as a sidecar string on the parent document's metadata.
+                vtt_content = self.transcript_to_vtt(transcript_whisper, transcript_path)
+
+                # Parent: full transcript. Atomic for the splitter and
+                # carries the VTT string as a sidecar field instead of
+                # being emitted as a separate Document.
                 base_metadata = self.create_metadata(
                     url,
                     doctype='video_transcript',
@@ -332,34 +350,23 @@ class YoutubeLoader(VideoLoader):
                     summary=f"{summary!s}",
                     docinfo=video_info,
                     topic_tags=self.topics or [],
+                    content_kind='video_transcript',
+                    document_id=parent_id,
+                    is_parent=True,
+                    vtt=vtt_content or '',
+                    vtt_path=str(transcript_path),
+                )
+                documents.append(
+                    Document(page_content=transcript_text, metadata=base_metadata)
                 )
 
-                # Create main transcript document
-                doc = Document(
-                    page_content=transcript_text,
-                    metadata=base_metadata,
-                )
-                documents.append(doc)
-
-                # Create VTT document
-                vtt_content = self.transcript_to_vtt(transcript_whisper, transcript_path)
-                if vtt_content:
-                    vtt_doc = Document(
-                        page_content=vtt_content,
-                        metadata=self.create_metadata(
-                            url,
-                            doctype='video_vtt',
-                            source_type=self._source_type,
-                            title=video_title or video_info.get("title") or url,
-                            summary=f"{summary!s}",
-                            topic_tags=self.topics or [],
-                        ),
-                    )
-                    documents.append(vtt_doc)
-
-                # Create individual dialog chunk documents
+                # Children: one Document per Whisper turn, linked to parent.
                 dialogs = self.transcript_to_blocks(transcript_whisper)
-                for chunk in dialogs:
+                total = len(dialogs)
+                for idx, chunk in enumerate(dialogs):
+                    start_s = float(chunk.get('start_seconds') or 0.0)
+                    end_s = float(chunk.get('end_seconds') or 0.0)
+                    deeplink = f"{watch_url}{'&' if '?' in watch_url else '?'}t={int(start_s)}s"
                     _chunk_meta = self.create_metadata(
                         url,
                         doctype='video_dialog',
@@ -369,15 +376,22 @@ class YoutubeLoader(VideoLoader):
                         answer='',
                         summary=f"{summary!s}",
                         topic_tags=self.topics or [],
+                        content_kind='video_dialog',
+                        parent_document_id=parent_id,
+                        is_chunk=True,
+                        chunk_type='parent_child',
+                        chunk_index=idx,
+                        total_chunks=total,
                         start=str(chunk['start_time']),
                         end=str(chunk['end_time']),
+                        start_seconds=start_s,
+                        end_seconds=end_s,
+                        deeplink=deeplink,
                         chunk_id=str(chunk['id']),
                     )
-                    doc = Document(
-                        page_content=chunk['text'],
-                        metadata=_chunk_meta,
+                    docs.append(
+                        Document(page_content=chunk['text'], metadata=_chunk_meta)
                     )
-                    docs.append(doc)
 
                 documents.extend(docs)
                 return documents
@@ -410,6 +424,9 @@ class YoutubeLoader(VideoLoader):
                     answer='',
                     summary=f"{summary!s}",
                     topic_tags=self.topics or [],
+                    content_kind='video_transcript',
+                    document_id=parent_id,
+                    is_parent=True,
                 )
                 doc = Document(
                     page_content=transcript_content,
@@ -436,6 +453,7 @@ class YoutubeLoader(VideoLoader):
                 summary = await self.summary_from_text(transcript_text)
             except Exception:
                 summary = ''
+            parent_id = f"yt:{video_info.get('video_id') or extract_video_id(url) or 'unknown'}"
             metadata = self.create_metadata(
                 url,
                 doctype='video_transcript',
@@ -446,6 +464,9 @@ class YoutubeLoader(VideoLoader):
                 summary=f"{summary!s}",
                 docinfo=video_info,
                 topic_tags=self.topics or [],
+                content_kind='video_transcript',
+                document_id=parent_id,
+                is_parent=True,
             )
             return [Document(page_content=transcript_text, metadata=metadata)]
         except Exception as e:

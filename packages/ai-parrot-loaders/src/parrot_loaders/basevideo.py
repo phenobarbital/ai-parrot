@@ -830,6 +830,11 @@ class BaseVideoLoader(AbstractLoader):
     def transcript_to_blocks(self, transcript: str) -> list:
         """
         Convert a transcript to blocks.
+
+        Each block carries both the human-readable SRT timestamps
+        (``start_time``/``end_time``) and the raw float seconds
+        (``start_seconds``/``end_seconds``) so downstream loaders can
+        build deeplinks and apply numeric range filters in vector stores.
         """
         blocks = []
         for i, chunk in enumerate(transcript['chunks'], start=1):
@@ -845,6 +850,8 @@ class BaseVideoLoader(AbstractLoader):
             current_window['id'] = i
             current_window['start_time'] = start_srt
             current_window['end_time'] = end_srt
+            current_window['start_seconds'] = float(start)
+            current_window['end_seconds'] = float(end)
             current_window['text'] = text
             blocks.append(current_window)
         return blocks
