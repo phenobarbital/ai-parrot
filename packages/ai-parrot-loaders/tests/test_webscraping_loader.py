@@ -672,3 +672,571 @@ class TestFAQPageDocumentEmission:
         for i, d in enumerate(docs):
             assert d.metadata["row_index"] == i
             assert d.metadata["row_count"] == 3
+
+
+# ── Tests: JSON-LD multi-type integration (TASK-975) ─────────────────────────
+
+# HTML fixture templates for each JSON-LD type
+PRODUCT_JSONLD_HTML = '''<html><head><title>Widget Shop</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Widget Pro",
+ "description":"A great widget.","offers":{"@type":"Offer","price":"29.99","priceCurrency":"USD"}}
+</script>
+<p>Product page content here.</p>
+</body></html>'''
+
+EVENT_JSONLD_HTML = '''<html><head><title>Tech Conference</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Event","name":"Tech Conf 2026",
+ "startDate":"2026-09-15","location":{"@type":"Place","name":"Convention Center"}}
+</script>
+<p>Event details.</p>
+</body></html>'''
+
+PERSON_JSONLD_HTML = '''<html><head><title>Jane Doe</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Person","name":"Jane Doe","jobTitle":"Senior Engineer"}
+</script>
+<p>Bio page.</p>
+</body></html>'''
+
+PLACE_JSONLD_HTML = '''<html><head><title>Joe's Pizza</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"LocalBusiness","name":"Joe's Pizza",
+ "address":{"@type":"PostalAddress","streetAddress":"123 Main St","addressLocality":"Springfield"}}
+</script>
+<p>Restaurant info.</p>
+</body></html>'''
+
+RECIPE_JSONLD_HTML = '''<html><head><title>Chocolate Cake</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Recipe","name":"Chocolate Cake",
+ "recipeIngredient":["flour","sugar","cocoa"],
+ "recipeInstructions":[{"@type":"HowToStep","text":"Mix dry ingredients."}]}
+</script>
+<p>Delicious recipe.</p>
+</body></html>'''
+
+ARTICLE_JSONLD_HTML = '''<html><head><title>Breaking News</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Article","headline":"Breaking News",
+ "author":{"@type":"Person","name":"Reporter"},"datePublished":"2026-01-15"}
+</script>
+<p>Article body text.</p>
+</body></html>'''
+
+ORGANIZATION_JSONLD_HTML = '''<html><head><title>Acme Corp</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Organization","name":"Acme Corp",
+ "url":"https://acme.com","telephone":"+1-800-555-0100"}
+</script>
+<p>Company information.</p>
+</body></html>'''
+
+HOWTO_JSONLD_HTML = '''<html><head><title>Change a Tire</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"HowTo","name":"Change a Tire",
+ "step":[{"@type":"HowToStep","text":"Loosen the nuts."},
+         {"@type":"HowToStep","text":"Jack up the car."}]}
+</script>
+<p>Step by step guide.</p>
+</body></html>'''
+
+BREADCRUMB_JSONLD_HTML = '''<html><head><title>Products > Widget</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"BreadcrumbList",
+ "itemListElement":[
+   {"@type":"ListItem","position":1,"name":"Home"},
+   {"@type":"ListItem","position":2,"name":"Products"},
+   {"@type":"ListItem","position":3,"name":"Widget Pro"}
+ ]}
+</script>
+<p>Widget product page.</p>
+</body></html>'''
+
+MIXED_GRAPH_HTML = '''<html><head><title>Mixed Page</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+  {"@type":"FAQPage","mainEntity":[
+    {"@type":"Question","name":"What is this?","acceptedAnswer":{"@type":"Answer","text":"A mixed page."}}
+  ]},
+  {"@type":"Product","name":"Mixed Widget","description":"A widget on a mixed page."}
+]}
+</script>
+<p>Page with both FAQ and Product JSON-LD.</p>
+</body></html>'''
+
+MIXED_CONTENT_HTML = '''<html><head><title>Full Page with JSON-LD</title></head><body>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Full Page Widget",
+ "offers":{"@type":"Offer","price":"49.99","priceCurrency":"USD"}}
+</script>
+<article>
+<h1>Full Page Title</h1>
+<p>This page has regular content alongside JSON-LD structured data.</p>
+<p>The loader should emit both types of documents.</p>
+<table>
+  <thead><tr><th>Feature</th><th>Value</th></tr></thead>
+  <tbody><tr><td>Color</td><td>Blue</td></tr></tbody>
+</table>
+</article>
+</body></html>'''
+
+
+@pytest.fixture
+def stub_loader_jsonld():
+    """Stub loader for testing new JSON-LD pipeline methods directly."""
+    import logging
+    loader = WebScrapingLoader.__new__(WebScrapingLoader)
+    loader.logger = logging.getLogger("test_jsonld")
+    loader._jsonld_types = None  # None = all types
+    return loader
+
+
+class TestJsonLdMultiTypeIntegration:
+    """Full pipeline tests for each JSON-LD type via _extract_jsonld."""
+
+    def test_product_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Product JSON-LD node is dispatched to product_extractor."""
+        soup = BeautifulSoup(PRODUCT_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        product_items = [i for i in items if i.content_kind == "jsonld-product"]
+        assert len(product_items) == 1
+        assert "Widget Pro" in product_items[0].page_content
+        assert product_items[0].source_type == "product-jsonld"
+
+    def test_event_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Event JSON-LD node is dispatched to event_extractor."""
+        soup = BeautifulSoup(EVENT_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        event_items = [i for i in items if i.content_kind == "jsonld-event"]
+        assert len(event_items) == 1
+        assert "Tech Conf 2026" in event_items[0].page_content
+
+    def test_person_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Person JSON-LD node is dispatched to person_extractor."""
+        soup = BeautifulSoup(PERSON_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        person_items = [i for i in items if i.content_kind == "jsonld-person"]
+        assert len(person_items) == 1
+        assert "Jane Doe" in person_items[0].page_content
+
+    def test_place_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """LocalBusiness JSON-LD node is dispatched to place_extractor."""
+        soup = BeautifulSoup(PLACE_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        place_items = [i for i in items if i.content_kind == "jsonld-place"]
+        assert len(place_items) == 1
+        assert "Joe's Pizza" in place_items[0].page_content
+
+    def test_recipe_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Recipe JSON-LD node is dispatched to recipe_extractor."""
+        soup = BeautifulSoup(RECIPE_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        recipe_items = [i for i in items if i.content_kind == "jsonld-recipe"]
+        assert len(recipe_items) == 1
+        assert "Chocolate Cake" in recipe_items[0].page_content
+
+    def test_article_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Article JSON-LD node is dispatched to article_extractor."""
+        soup = BeautifulSoup(ARTICLE_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        article_items = [i for i in items if i.content_kind == "jsonld-article"]
+        assert len(article_items) == 1
+        assert "Breaking News" in article_items[0].page_content
+
+    def test_organization_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """Organization JSON-LD node is dispatched to organization_extractor."""
+        soup = BeautifulSoup(ORGANIZATION_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        org_items = [i for i in items if i.content_kind == "jsonld-organization"]
+        assert len(org_items) == 1
+        assert "Acme Corp" in org_items[0].page_content
+
+    def test_howto_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """HowTo JSON-LD node is dispatched to howto_extractor."""
+        soup = BeautifulSoup(HOWTO_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        howto_items = [i for i in items if i.content_kind == "jsonld-howto"]
+        assert len(howto_items) == 1
+        assert "Change a Tire" in howto_items[0].page_content
+
+    def test_breadcrumb_jsonld_extract(self, stub_loader_jsonld) -> None:
+        """BreadcrumbList JSON-LD node is dispatched to breadcrumb_extractor."""
+        soup = BeautifulSoup(BREADCRUMB_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        bc_items = [i for i in items if i.content_kind == "jsonld-breadcrumb"]
+        assert len(bc_items) == 1
+        assert "Home" in bc_items[0].page_content
+        assert "Widget Pro" in bc_items[0].page_content
+
+    def test_malformed_jsonld_skipped(self, stub_loader_jsonld) -> None:
+        """Malformed JSON-LD blocks are logged and skipped gracefully."""
+        html = (
+            '<script type="application/ld+json">{ invalid json </script>'
+            '<script type="application/ld+json">'
+            '{"@type":"Product","name":"Valid Widget"}'
+            "</script>"
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        # The malformed block is skipped; the valid Product block is extracted
+        assert any(i.content_kind == "jsonld-product" for i in items)
+
+    def test_empty_page_no_jsonld(self, stub_loader_jsonld) -> None:
+        """Page with no JSON-LD returns empty list."""
+        soup = BeautifulSoup("<html><body><p>No structured data.</p></body></html>", "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        assert items == []
+
+    def test_deduplication(self, stub_loader_jsonld) -> None:
+        """Duplicate JSON-LD blocks produce only one item."""
+        html = (
+            '<script type="application/ld+json">'
+            '{"@type":"Product","name":"Widget"}'
+            "</script>"
+            '<script type="application/ld+json">'
+            '{"@type":"Product","name":"Widget"}'
+            "</script>"
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        product_items = [i for i in items if i.content_kind == "jsonld-product"]
+        assert len(product_items) == 1
+
+
+class TestJsonLdDocsFromItems:
+    """Tests for _docs_from_jsonld_items."""
+
+    def test_converts_single_item(self, stub_loader_jsonld) -> None:
+        """Single JsonLdItem converts to one Document with correct metadata."""
+        from parrot_loaders.jsonld_extractors import JsonLdItem
+
+        item = JsonLdItem(
+            content_kind="jsonld-product",
+            source_type="product-jsonld",
+            page_content="# Widget\nA great widget.",
+            row_data={"name": "Widget"},
+            selector_name="product",
+        )
+        docs = stub_loader_jsonld._docs_from_jsonld_items([item], {"url": "https://example.com"})
+        assert len(docs) == 1
+        assert docs[0].page_content == "# Widget\nA great widget."
+        assert docs[0].metadata["content_kind"] == "jsonld-product"
+        assert docs[0].metadata["source_type"] == "product-jsonld"
+        assert docs[0].metadata["selector_name"] == "product"
+        assert docs[0].metadata["row_index"] == 0
+        assert docs[0].metadata["row_count"] == 1
+        assert docs[0].metadata["row_data"] == {"name": "Widget"}
+        assert docs[0].metadata["url"] == "https://example.com"
+
+    def test_row_index_and_count_per_kind(self, stub_loader_jsonld) -> None:
+        """row_index and row_count are computed per content_kind group."""
+        from parrot_loaders.jsonld_extractors import JsonLdItem
+
+        items = [
+            JsonLdItem("faq", "faq-jsonld", "Q: A\n\nA: B", {"question": "A", "answer": "B"}, "faq"),
+            JsonLdItem("faq", "faq-jsonld", "Q: C\n\nA: D", {"question": "C", "answer": "D"}, "faq"),
+            JsonLdItem("jsonld-product", "product-jsonld", "# Widget", {"name": "Widget"}, "product"),
+        ]
+        docs = stub_loader_jsonld._docs_from_jsonld_items(items, {})
+        faq_docs = [d for d in docs if d.metadata["content_kind"] == "faq"]
+        product_docs = [d for d in docs if d.metadata["content_kind"] == "jsonld-product"]
+        assert len(faq_docs) == 2
+        assert faq_docs[0].metadata["row_index"] == 0
+        assert faq_docs[0].metadata["row_count"] == 2
+        assert faq_docs[1].metadata["row_index"] == 1
+        assert faq_docs[1].metadata["row_count"] == 2
+        assert product_docs[0].metadata["row_index"] == 0
+        assert product_docs[0].metadata["row_count"] == 1
+
+    def test_empty_items_returns_empty(self, stub_loader_jsonld) -> None:
+        """Empty item list returns empty document list."""
+        docs = stub_loader_jsonld._docs_from_jsonld_items([], {})
+        assert docs == []
+
+
+class TestJsonLdMixedContent:
+    """Test JSON-LD extraction alongside other content types."""
+
+    def test_mixed_graph_multiple_types(self, stub_loader_jsonld) -> None:
+        """Page with @graph containing FAQ + Product yields both item types."""
+        soup = BeautifulSoup(MIXED_GRAPH_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        kinds = {i.content_kind for i in items}
+        assert "faq" in kinds
+        assert "jsonld-product" in kinds
+
+    def test_at_graph_walked_recursively(self, stub_loader_jsonld) -> None:
+        """Nested @graph structures are fully walked."""
+        html = '''<script type="application/ld+json">
+        {"@context":"https://schema.org","@graph":[
+          {"@type":"WebSite","name":"Example"},
+          {"@type":"Product","name":"Graph Widget"},
+          {"@type":"BreadcrumbList","itemListElement":[
+            {"@type":"ListItem","position":1,"name":"Home"}
+          ]}
+        ]}
+        </script>'''
+        soup = BeautifulSoup(html, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        kinds = {i.content_kind for i in items}
+        assert "jsonld-product" in kinds
+        assert "jsonld-breadcrumb" in kinds
+
+    @pytest.mark.asyncio
+    async def test_jsonld_with_regular_content(self) -> None:
+        """JSON-LD docs coexist with regular page content docs."""
+        result = _make_result(html=MIXED_CONTENT_HTML)
+        loader = WebScrapingLoader(source="https://example.com/product", parse_tables=False)
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/product")
+
+        kinds = {d.metadata.get("content_kind") for d in docs}
+        # JSON-LD product document should always be present
+        assert "jsonld-product" in kinds
+        # At least one full-page or trafilatura content doc should also be present
+        # (content_kind may be: markdown_full, trafilatura_main, or text_full
+        # depending on the content extraction strategy)
+        full_page_kinds = {"markdown_full", "trafilatura_main", "trafilatura_full", "text_full"}
+        assert kinds & full_page_kinds, (
+            f"Expected at least one full-page doc kind in {kinds}. "
+            f"JSON-LD product was extracted but no page-level doc was emitted."
+        )
+
+    @pytest.mark.asyncio
+    async def test_extract_only_includes_jsonld(self) -> None:
+        """extract_only=True still emits JSON-LD documents."""
+        result = _make_result(html=PRODUCT_JSONLD_HTML)
+        loader = WebScrapingLoader(
+            source="https://example.com/product",
+            extract_only=True,
+        )
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/product")
+
+        kinds = {d.metadata.get("content_kind") for d in docs}
+        assert "jsonld-product" in kinds
+        # Should NOT emit full-page markdown in extract_only mode
+        assert "markdown_full" not in kinds
+
+
+class TestJsonLdTypesFilter:
+    """Test the jsonld_types constructor parameter filtering."""
+
+    def test_filter_to_product_only(self, stub_loader_jsonld) -> None:
+        """jsonld_types=['Product'] extracts only Product from mixed graph."""
+        stub_loader_jsonld._jsonld_types = ["Product"]
+        soup = BeautifulSoup(MIXED_GRAPH_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        kinds = {i.content_kind for i in items}
+        assert "jsonld-product" in kinds
+        assert "faq" not in kinds
+
+    def test_filter_empty_disables_all(self, stub_loader_jsonld) -> None:
+        """jsonld_types=[] disables all JSON-LD extraction."""
+        stub_loader_jsonld._jsonld_types = []
+        soup = BeautifulSoup(PRODUCT_JSONLD_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        assert items == []
+
+    def test_filter_none_extracts_all(self, stub_loader_jsonld) -> None:
+        """jsonld_types=None (default) extracts all supported types."""
+        stub_loader_jsonld._jsonld_types = None
+        soup = BeautifulSoup(MIXED_GRAPH_HTML, "html.parser")
+        items = stub_loader_jsonld._extract_jsonld(soup)
+        kinds = {i.content_kind for i in items}
+        assert len(kinds) > 1  # Both FAQ and Product extracted
+
+    @pytest.mark.asyncio
+    async def test_constructor_jsonld_types_product_only(self) -> None:
+        """WebScrapingLoader(jsonld_types=['Product']) filters to Product."""
+        html = MIXED_GRAPH_HTML  # Contains FAQ + Product
+        result = _make_result(html=html)
+        loader = WebScrapingLoader(
+            source="https://example.com",
+            jsonld_types=["Product"],
+        )
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com")
+
+        kinds = {d.metadata.get("content_kind") for d in docs}
+        assert "jsonld-product" in kinds
+        assert "faq" not in kinds
+
+    @pytest.mark.asyncio
+    async def test_constructor_jsonld_types_empty_disables(self) -> None:
+        """WebScrapingLoader(jsonld_types=[]) disables all JSON-LD extraction."""
+        result = _make_result(html=PRODUCT_JSONLD_HTML)
+        loader = WebScrapingLoader(
+            source="https://example.com",
+            jsonld_types=[],
+        )
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com")
+
+        kinds = {d.metadata.get("content_kind") for d in docs}
+        assert "jsonld-product" not in kinds
+
+
+class TestFAQPageBackwardCompat:
+    """Regression: FAQPage via new pipeline must produce identical output."""
+
+    @pytest.mark.asyncio
+    async def test_att_fixture_produces_faq_docs(self) -> None:
+        """ATT_FAQ_FIXTURE_HTML through new pipeline yields 3 FAQ docs."""
+        result = _make_result(
+            url="https://www.att.com/prepaid/",
+            html=ATT_FAQ_FIXTURE_HTML,
+        )
+        loader = WebScrapingLoader(source="https://www.att.com/prepaid/")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://www.att.com/prepaid/")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        assert len(faq_docs) == 3
+
+    @pytest.mark.asyncio
+    async def test_att_fixture_metadata_schema(self) -> None:
+        """Every FAQ doc has the exact metadata fields required."""
+        result = _make_result(
+            url="https://www.att.com/prepaid/",
+            html=ATT_FAQ_FIXTURE_HTML,
+        )
+        loader = WebScrapingLoader(source="https://www.att.com/prepaid/")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://www.att.com/prepaid/")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        for doc in faq_docs:
+            assert doc.metadata["content_kind"] == "faq"
+            assert doc.metadata["source_type"] == "faq-jsonld"
+            assert doc.metadata["selector_name"] == "faq"
+            assert "question" in doc.metadata["row_data"]
+            assert "answer" in doc.metadata["row_data"]
+            assert doc.page_content.startswith("Q: ")
+            assert "\n\nA: " in doc.page_content
+
+    @pytest.mark.asyncio
+    async def test_no_jsonld_faq_content_kind(self) -> None:
+        """FAQPage must use content_kind='faq', never 'jsonld-faq'."""
+        result = _make_result(html=ATT_FAQ_FIXTURE_HTML)
+        loader = WebScrapingLoader(source="https://example.com")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com")
+        kinds = {d.metadata.get("content_kind") for d in docs}
+        assert "jsonld-faq" not in kinds
+        assert "faq" in kinds
+
+    @pytest.mark.asyncio
+    async def test_att_fixture_row_count_and_index(self) -> None:
+        """FAQ docs have consecutive row_index and correct row_count."""
+        result = _make_result(
+            url="https://www.att.com/prepaid/",
+            html=ATT_FAQ_FIXTURE_HTML,
+        )
+        loader = WebScrapingLoader(source="https://www.att.com/prepaid/")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://www.att.com/prepaid/")
+        faq_docs = sorted(
+            [d for d in docs if d.metadata.get("content_kind") == "faq"],
+            key=lambda d: d.metadata["row_index"],
+        )
+        assert len(faq_docs) == 3
+        for i, doc in enumerate(faq_docs):
+            assert doc.metadata["row_index"] == i
+            assert doc.metadata["row_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_faq_page_content_format(self) -> None:
+        """FAQ page_content is exactly 'Q: <q>\\n\\nA: <a>' format."""
+        result = _make_result(html=ATT_FAQ_FIXTURE_HTML)
+        loader = WebScrapingLoader(source="https://example.com")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        for doc in faq_docs:
+            # Must start with "Q: " and contain "\n\nA: "
+            lines = doc.page_content.split("\n\n")
+            assert len(lines) == 2
+            assert lines[0].startswith("Q: ")
+            assert lines[1].startswith("A: ")
+
+    @pytest.mark.asyncio
+    async def test_dedup_exact_duplicates_collapsed(self) -> None:
+        """Exact-duplicate FAQ blocks across two <script> tags yield one doc.
+
+        Both the old pipeline (dedup by ``question.lower()``) and the new
+        pipeline (dedup by ``(content_kind, page_content)``) collapse
+        identical pairs.  This test documents the shared behaviour.
+        """
+        html = """<html><head><title>FAQ</title></head><body>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        </body></html>"""
+        result = _make_result(html=html)
+        loader = WebScrapingLoader(source="https://example.com/faq")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/faq")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        # Exact duplicate must be collapsed to a single document
+        assert len(faq_docs) == 1
+        assert faq_docs[0].page_content == "Q: What is prepaid?\n\nA: Prepaid means pay in advance."
+
+    @pytest.mark.asyncio
+    async def test_dedup_case_variant_not_collapsed(self) -> None:
+        """Case-variant FAQ pairs in two blocks yield two docs in the new pipeline.
+
+        KNOWN SEMANTIC CHANGE from the old pipeline:
+        - Old ``_extract_faqpage_jsonld`` deduplicates by ``question.lower()``
+          → case variants ("What is prepaid?" vs "WHAT IS PREPAID?") collapsed to 1.
+        - New ``_extract_jsonld`` deduplicates by ``(content_kind, page_content)``
+          (case-sensitive) → case variants produce 2 documents.
+
+        This test documents and pins the new behaviour so any future regression
+        is immediately visible.
+        """
+        html = """<html><head><title>FAQ</title></head><body>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"What is prepaid?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        <script type="application/ld+json">
+        {"@type":"FAQPage","mainEntity":[
+          {"@type":"Question","name":"WHAT IS PREPAID?",
+           "acceptedAnswer":{"@type":"Answer","text":"Prepaid means pay in advance."}}
+        ]}
+        </script>
+        </body></html>"""
+        result = _make_result(html=html)
+        loader = WebScrapingLoader(source="https://example.com/faq")
+        loader._toolkit = _mock_toolkit(scrape_result=result)
+
+        docs = await loader._load("https://example.com/faq")
+        faq_docs = [d for d in docs if d.metadata.get("content_kind") == "faq"]
+        # New pipeline: case-sensitive dedup → two distinct page_content strings
+        # Old pipeline would have collapsed these to 1 (question.lower() match)
+        assert len(faq_docs) == 2
+        page_contents = {d.page_content for d in faq_docs}
+        assert "Q: What is prepaid?\n\nA: Prepaid means pay in advance." in page_contents
+        assert "Q: WHAT IS PREPAID?\n\nA: Prepaid means pay in advance." in page_contents
