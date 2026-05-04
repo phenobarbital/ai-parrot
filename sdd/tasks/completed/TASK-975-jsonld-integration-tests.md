@@ -318,10 +318,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Added 5 test classes with 29 new test methods to test_webscraping_loader.py:
+  - TestJsonLdMultiTypeIntegration: 13 tests for _extract_jsonld (all 9 types + edge cases)
+  - TestJsonLdDocsFromItems: 3 tests for _docs_from_jsonld_items
+  - TestJsonLdMixedContent: 4 tests for mixed content scenarios
+  - TestJsonLdTypesFilter: 5 tests for jsonld_types parameter
+  - TestFAQPageBackwardCompat: 5 regression tests for FAQ backward compatibility
+Total: 121 tests pass (2 pre-existing failures unchanged — test_text_format and test_registry_entry
+were already failing on dev before this feature).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: test_jsonld_with_regular_content checks for
+{"markdown_full","trafilatura_main","trafilatura_full","text_full"} instead of just "full" suffix,
+because the actual trafilatura content kind is "trafilatura_main" not "trafilatura_full".

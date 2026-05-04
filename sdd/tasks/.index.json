@@ -15866,7 +15866,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -15874,7 +15874,8 @@
       "parallelism_notes": "Modifies core primitives that all subsequent tasks depend on",
       "assigned_to": null,
       "started_at": "2026-05-04T13:13:30.336584+00:00",
-      "file": "sdd/tasks/active/TASK-976-add-shared-data-and-noderesult.md"
+      "file": "sdd/tasks/completed/TASK-976-add-shared-data-and-noderesult.md",
+      "completed_at": "2026-05-04T16:50:53.363116+00:00"
     },
     {
       "id": "TASK-977",
@@ -15993,6 +15994,27 @@
       "assigned_to": null,
       "started_at": "2026-05-04T13:13:30.336584+00:00",
       "file": "sdd/tasks/active/TASK-982-update-flows-init-exports.md"
+    },
+    {
+      "id": "TASK-975",
+      "slug": "jsonld-integration-tests",
+      "title": "Integration tests and backward compatibility regression suite",
+      "feature_id": "FEAT-142",
+      "feature": "webscrapingloader-jsonld-support",
+      "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-973",
+        "TASK-974"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests the integrated pipeline \u2014 requires both TASK-973 and TASK-974 complete",
+      "assigned_to": null,
+      "started_at": "2026-05-04T16:29:52.259293+00:00",
+      "completed_at": "2026-05-04T16:29:52.259293+00:00",
+      "file": "sdd/tasks/completed/TASK-975-jsonld-integration-tests.md"
     }
   ]
 }

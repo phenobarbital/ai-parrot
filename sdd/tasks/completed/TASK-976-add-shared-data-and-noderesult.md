@@ -272,3 +272,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note (filled)
+
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Added `shared_data: Dict[str, Any] = field(default_factory=dict)` to FlowContext. Created `NodeResult` dataclass in `flows/core/result.py` with node-centric naming (`node_id`/`node_name`), backward-compat `agent_id`/`agent_name` property aliases, and `to_text()` for FAISS vectorization. Updated `ExecutionMemory` and `VectorStoreMixin` to use `NodeResult` instead of `AgentResult`. Exported `NodeResult` from both `flows/core/__init__.py` and `flows/__init__.py`. All 6 files modified as specified.
+
+**Deviations from spec**: none
