@@ -1180,6 +1180,36 @@ def get_use_cases() -> Dict[str, str]:
     return dict(USE_CASE_DESCRIPTIONS)
 
 
+def get_model_recommendations(model_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return per-model retrieval recommendations from the catalog.
+
+    Provides default ``score_threshold`` and ``search_limit`` values that
+    consumers (chatbots, RAG pipelines, vector-store handlers) should use
+    when the operator has not configured them explicitly. The global
+    fallback of ``0.7`` is too aggressive for several models — e.g.
+    ``multi-qa-mpnet-base-cos-v1`` produces scores in the 0.30-0.55 range
+    and would silently return empty result sets.
+
+    Args:
+        model_name: HuggingFace model identifier or provider model ID.
+            ``None`` or unknown names return ``None``.
+
+    Returns:
+        A dict with keys ``recommended_score_threshold`` (float) and
+        ``recommended_search_limit`` (int) when ``model_name`` matches a
+        catalog entry; ``None`` otherwise.
+    """
+    if not model_name:
+        return None
+    for entry in EMBEDDING_MODELS:
+        if entry["model"] == model_name:
+            return {
+                "recommended_score_threshold": entry["recommended_score_threshold"],
+                "recommended_search_limit": entry["recommended_search_limit"],
+            }
+    return None
+
+
 # ── Import-time validation ────────────────────────────────────────────
 # Validate every entry against the Pydantic schema. If any entry is
 # malformed, the module fails to import — catching catalog regressions

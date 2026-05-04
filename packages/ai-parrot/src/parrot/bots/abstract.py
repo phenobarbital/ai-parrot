@@ -22,6 +22,7 @@ from ..conf import (
     EMBEDDING_DEFAULT_MODEL,
     KB_DEFAULT_MODEL
 )
+from ..embeddings import get_model_recommendations
 from .prompts import (
     BASIC_SYSTEM_PROMPT,
     DEFAULT_GOAL,
@@ -440,9 +441,26 @@ class AbstractBot(
 
         # Conversation settings
         self.max_context_turns: int = kwargs.get('max_context_turns', 50)
-        self.context_search_limit: int = kwargs.get('context_search_limit', 10)
-        self.context_score_threshold: float = kwargs.get(
-            'context_score_threshold', 0.61
+        # FEAT-140 follow-up: when the operator does NOT pass an explicit
+        # context_search_limit / context_score_threshold, fall back to the
+        # per-model recommendation in the embeddings catalog before the
+        # legacy hardcoded defaults. The global 0.61/0.7 threshold is too
+        # aggressive for models such as multi-qa-mpnet-base-cos-v1, whose
+        # natural score range sits at 0.30-0.55.
+        _emb_model_cfg = kwargs.get('embedding_model') or {}
+        _emb_model_name = (
+            _emb_model_cfg.get('model_name') if isinstance(_emb_model_cfg, dict) else None
+        ) or EMBEDDING_DEFAULT_MODEL
+        _recs = get_model_recommendations(_emb_model_name) or {}
+        self.context_search_limit: int = int(
+            kwargs['context_search_limit']
+            if 'context_search_limit' in kwargs
+            else _recs.get('recommended_search_limit', 10)
+        )
+        self.context_score_threshold: float = float(
+            kwargs['context_score_threshold']
+            if 'context_score_threshold' in kwargs
+            else _recs.get('recommended_score_threshold', 0.61)
         )
         # NOTE: context_score_threshold is applied PRE-RERANK (in cosine space,
         # returned by the vector store) and is NOT comparable to cross-encoder
