@@ -98,6 +98,8 @@ class TestEmbeddingModelEntryValidators:
             max_seq_length=512,
             hnsw_compatible=True,
             license="apache-2.0",
+            recommended_score_threshold=0.5,
+            recommended_search_limit=10,
         )
         base.update(overrides)
         return base

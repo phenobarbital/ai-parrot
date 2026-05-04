@@ -3,6 +3,7 @@ from .catalog import (  # noqa: E402
     EMBEDDING_MODELS,
     USE_CASE_DESCRIPTIONS,
     get_embedding_models,
+    get_model_recommendations,
     get_use_cases,
 )
 # EmbeddingModelEntry is intentionally NOT exported — it is a validation-only
@@ -22,5 +23,6 @@ __all__ = [
     "EMBEDDING_MODELS",
     "USE_CASE_DESCRIPTIONS",
     "get_embedding_models",
+    "get_model_recommendations",
     "get_use_cases",
 ]

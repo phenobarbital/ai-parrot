@@ -275,8 +275,9 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "language": "en",
         "use_case": ["retrieval", "similarity"],
         "description": (
-            "768-dim general-purpose model, great for information retrieval "
-            "and text re-ranking."
+            "768-dim general-purpose English model, great for information "
+            "retrieval and text re-ranking. Hard truncation at 512 tokens — "
+            "long documents (PDFs, articles) require upstream chunking."
         ),
         "metric_recommended": "cosine",
         "requires_prefix": False,
@@ -299,7 +300,9 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "use_case": ["retrieval", "similarity"],
         "description": (
             "1024-dim large GTE model. Highest quality in the GTE family; "
-            "strong for information retrieval, re-ranking, and semantic search."
+            "strong for information retrieval, re-ranking, and semantic search. "
+            "Hard truncation at 512 tokens — long documents (PDFs, articles) "
+            "require upstream chunking."
         ),
         "metric_recommended": "cosine",
         "requires_prefix": False,
@@ -1003,6 +1006,68 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "recommended_search_limit": 5,
     },
 
+    # -- Microsoft Harrier (Instruct, multilingual) ----------------------
+    {
+        "model": "microsoft/harrier-oss-v1-0.6b",
+        "provider": "huggingface",
+        "name": "Harrier-OSS v1 0.6B",
+        "dimension": 1024,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "instruct", "asymmetric", "multilingual", "long-context"],
+        "description": (
+            "1024-dim 0.6B-parameter multilingual retrieval model from "
+            "Microsoft (94 languages). Decoder-only with last-token pooling "
+            "and 32K-token context. Instruction-tuned: queries require an "
+            "'Instruct: ...\\nQuery: ' template; documents are encoded "
+            "without prefix. MTEB v2 score 69.0. HNSW-compatible in "
+            "pgvector; MIT license."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": True,
+        "prefix_query": (
+            "Instruct: Given a web search query, retrieve relevant passages "
+            "that answer the query\nQuery: "
+        ),
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 32768,
+        "hnsw_compatible": True,
+        "license": "mit",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
+    },
+
+    # -- Domain-Specialized (Vertical) -----------------------------------
+    {
+        "model": "Octen/Octen-Embedding-0.6B",
+        "provider": "huggingface",
+        "name": "Octen Embedding 0.6B",
+        "dimension": 1024,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "long-context", "multilingual"],
+        "description": (
+            "1024-dim 0.6B-parameter retrieval model fine-tuned (LoRA) on top "
+            "of Qwen3-Embedding-0.6B for vertical domains: legal, finance, "
+            "healthcare, and code. 32K-token context — strong for long "
+            "policies, contracts, and regulatory docs. RTEB public score "
+            "0.7241. HNSW-compatible in pgvector and lightweight enough for "
+            "CPU or modest GPU deployment; good default when domain expertise "
+            "on legal/fiscal corpora matters."
+        ),
+        "metric_recommended": "cosine",
+        "requires_prefix": False,
+        "prefix_query": None,
+        "prefix_passage": None,
+        "normalized_output": True,
+        "max_seq_length": 32768,
+        "hnsw_compatible": True,
+        "license": "apache-2.0",
+        "recommended_score_threshold": 0.55,
+        "recommended_search_limit": 10,
+    },
+
     # ── OpenAI ───────────────────────────────────────────────────────────
     {
         "model": "text-embedding-3-large",
@@ -1178,6 +1243,36 @@ def get_embedding_models(
 def get_use_cases() -> Dict[str, str]:
     """Return available use-case categories and their descriptions."""
     return dict(USE_CASE_DESCRIPTIONS)
+
+
+def get_model_recommendations(model_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Return per-model retrieval recommendations from the catalog.
+
+    Provides default ``score_threshold`` and ``search_limit`` values that
+    consumers (chatbots, RAG pipelines, vector-store handlers) should use
+    when the operator has not configured them explicitly. The global
+    fallback of ``0.7`` is too aggressive for several models — e.g.
+    ``multi-qa-mpnet-base-cos-v1`` produces scores in the 0.30-0.55 range
+    and would silently return empty result sets.
+
+    Args:
+        model_name: HuggingFace model identifier or provider model ID.
+            ``None`` or unknown names return ``None``.
+
+    Returns:
+        A dict with keys ``recommended_score_threshold`` (float) and
+        ``recommended_search_limit`` (int) when ``model_name`` matches a
+        catalog entry; ``None`` otherwise.
+    """
+    if not model_name:
+        return None
+    for entry in EMBEDDING_MODELS:
+        if entry["model"] == model_name:
+            return {
+                "recommended_score_threshold": entry["recommended_score_threshold"],
+                "recommended_search_limit": entry["recommended_search_limit"],
+            }
+    return None
 
 
 # ── Import-time validation ────────────────────────────────────────────

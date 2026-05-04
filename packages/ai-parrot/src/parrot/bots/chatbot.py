@@ -19,6 +19,7 @@ from ..conf import (
     EMBEDDING_DEFAULT_MODEL,
     KB_DEFAULT_MODEL
 )
+from ..embeddings import get_model_recommendations
 from ..handlers.models import BotModel
 from .base import BaseBot
 from ..tools import (
@@ -232,9 +233,25 @@ class Chatbot(BaseBot):
         self.max_context_turns = getattr(self, 'max_context_turns', 5)
         self.use_conversation_history = getattr(self, 'use_conversation_history', True)
 
-        # Context and retrieval settings
-        self.context_search_limit = getattr(self, 'context_search_limit', 10)
-        self.context_score_threshold = getattr(self, 'context_score_threshold', 0.7)
+        # Context and retrieval settings — fall back to per-model catalog
+        # recommendations (FEAT-140 follow-up) when neither the subclass nor
+        # the operator set them. The legacy 0.7 threshold filters out valid
+        # matches for models like multi-qa-mpnet-base-cos-v1 (typical
+        # scores 0.30-0.55).
+        _manual_emb_name = (
+            self.embedding_model.get('model_name')
+            if isinstance(self.embedding_model, dict)
+            else None
+        )
+        _manual_recs = get_model_recommendations(_manual_emb_name) or {}
+        self.context_search_limit = getattr(
+            self, 'context_search_limit',
+            _manual_recs.get('recommended_search_limit', 10)
+        )
+        self.context_score_threshold = getattr(
+            self, 'context_score_threshold',
+            _manual_recs.get('recommended_score_threshold', 0.7)
+        )
         # FEAT-128: parent-child retrieval flag (constructor injection only for parent_searcher)
         self.expand_to_parent = getattr(self, 'expand_to_parent', False)
 
@@ -385,9 +402,22 @@ class Chatbot(BaseBot):
         self.max_context_turns = self._from_db(bot, 'max_context_turns', default=5)
         self.use_conversation_history = self._from_db(bot, 'use_conversation_history', default=True)
 
-        # Context and retrieval settings
-        self.context_search_limit = self._from_db(bot, 'context_search_limit', default=10)
-        self.context_score_threshold = self._from_db(bot, 'context_score_threshold', default=0.7)
+        # Context and retrieval settings — fall back to per-model catalog
+        # recommendations (FEAT-140 follow-up) when the DB column is unset.
+        _db_emb_name = (
+            self.embedding_model.get('model_name')
+            if isinstance(self.embedding_model, dict)
+            else None
+        )
+        _db_recs = get_model_recommendations(_db_emb_name) or {}
+        self.context_search_limit = self._from_db(
+            bot, 'context_search_limit',
+            default=_db_recs.get('recommended_search_limit', 10)
+        )
+        self.context_score_threshold = self._from_db(
+            bot, 'context_score_threshold',
+            default=_db_recs.get('recommended_score_threshold', 0.7)
+        )
         # FEAT-128: parent-child retrieval — read expand_to_parent from DB config.
         # parent_searcher is NOT DB-driven in v1 (constructor injection only).
         self.expand_to_parent = self._from_db(
