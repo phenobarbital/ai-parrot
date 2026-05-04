@@ -33,6 +33,7 @@ from .node import Node, AgentNode, StartNode, EndNode
 from .result import (
     FlowResult,
     NodeExecutionInfo,
+    NodeResult,
     build_node_metadata,
     determine_run_status,
 )
@@ -65,6 +66,7 @@ __all__ = [
     # Result models
     "FlowResult",
     "NodeExecutionInfo",
+    "NodeResult",
     "build_node_metadata",
     "determine_run_status",
     # Context

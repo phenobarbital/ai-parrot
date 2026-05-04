@@ -4,15 +4,20 @@ Provides ``FlowResult`` (replacing ``CrewResult``) and ``NodeExecutionInfo``
 (replacing ``AgentExecutionInfo``) as the canonical result models for both
 orchestration engines.
 
+Also provides ``NodeResult`` (replacing ``AgentResult``) as the unified
+per-node execution record for ``ExecutionMemory`` and FAISS vectorization.
+
 All backward-compatible aliases are preserved so existing code importing
 ``CrewResult`` / ``AgentExecutionInfo`` continues to work via re-exports
 in ``parrot.models.crew`` (wired up in TASK-920).
 
-``AgentResult`` stays in ``parrot.models.crew`` per brainstorm D11.
+``AgentResult`` stays in ``parrot.models.crew`` for any remaining consumers.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from .types import FlowStatus
@@ -23,6 +28,131 @@ try:
     ResponseType = Any  # Union[AIMessage, AgentResponse, Any] but avoids heavy import
 except ImportError:
     ResponseType = Any
+
+
+# ---------------------------------------------------------------------------
+# NodeResult (replaces AgentResult for all flow-internal usage)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NodeResult:
+    """Per-node execution record for storage and vectorization.
+
+    Replaces ``AgentResult`` (``parrot.models.crew``) for all flow-internal
+    usage. Uses node-centric naming (``node_id``/``node_name``) while
+    providing backward-compat ``agent_id``/``agent_name`` property aliases.
+
+    The ``to_text()`` method produces rich text suitable for FAISS
+    vectorization, handling ``DataFrame``, ``dict``, ``list``, and plain
+    string results.
+
+    Args:
+        node_id: Unique identifier for this node's execution.
+        node_name: Human-readable name of the node/agent.
+        task: The task/prompt string given to the node.
+        result: The result value produced by the node.
+        ai_message: Optional raw AI message from the LLM.
+        metadata: Arbitrary additional metadata dict.
+        execution_time: Wall-clock time for this execution (seconds).
+        timestamp: UTC timestamp of this execution record.
+        parent_execution_id: If this is a re-execution, the parent's ID.
+        execution_id: Unique ID for this execution record (auto-generated).
+    """
+
+    node_id: str
+    node_name: str
+    task: str
+    result: Any
+    ai_message: Optional[Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    parent_execution_id: Optional[str] = None
+    execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    # ── Backward-compat aliases ──────────────────────────────────────────
+
+    @property
+    def agent_id(self) -> str:
+        """Alias for ``node_id`` (backward compat with ``AgentResult.agent_id``)."""
+        return self.node_id
+
+    @property
+    def agent_name(self) -> str:
+        """Alias for ``node_name`` (backward compat with ``AgentResult.agent_name``)."""
+        return self.node_name
+
+    # ── Vectorization support ────────────────────────────────────────────
+
+    def to_text(self) -> str:
+        """Convert execution result to rich text for FAISS vectorization.
+
+        Handles ``pandas.DataFrame``, ``dict``, ``list``, and plain string
+        results.  ``DataFrame`` is imported lazily to avoid a hard dependency.
+
+        Returns:
+            Formatted string describing the node's execution.
+        """
+        result_type = type(self.result).__name__
+
+        base_info = (
+            f"Agent: {self.node_name}\n"
+            f"Task: {self.task}\n"
+            f"Result Type: {result_type}\n"
+            f"Execution Time: {self.execution_time}s\n"
+            f"Timestamp: {self.timestamp.isoformat()}\n        "
+        )
+
+        try:
+            from pandas import DataFrame  # noqa: F401  (lazy import)
+
+            if isinstance(self.result, DataFrame):
+                df = self.result
+                content = (
+                    f"\nShape: {df.shape[0]} rows × {df.shape[1]} columns\n"
+                    f"Columns: {', '.join(df.columns)}\n\n"
+                    f"Data Types:\n{df.dtypes.to_string()}\n\n"
+                    f"Statistics:\n"
+                    f"{df.describe().to_string() if len(df) > 0 else 'No numerical data'}\n\n"
+                    f"Sample Data (first 10 rows):\n{df.head(10).to_string()}\n            "
+                )
+                return base_info + content
+        except ImportError:
+            pass
+
+        if isinstance(self.result, dict):
+            try:
+                from datamodel.parsers.json import json_encoder  # type: ignore[import]
+                content = (
+                    f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
+                    f"Content:\n{json_encoder(self.result)}\n            "
+                )
+            except ImportError:
+                import json
+                content = (
+                    f"\nKeys: {', '.join(str(k) for k in self.result.keys())}\n"
+                    f"Content:\n{json.dumps(self.result, default=str)}\n            "
+                )
+            return base_info + content
+
+        if isinstance(self.result, list):
+            try:
+                from datamodel.parsers.json import json_encoder  # type: ignore[import]
+                sample = json_encoder(self.result[:10]) if self.result else "[]"
+            except ImportError:
+                import json
+                sample = json.dumps(self.result[:10], default=str) if self.result else "[]"
+            item_types = set(type(item).__name__ for item in self.result[:100])
+            content = (
+                f"\nLength: {len(self.result)} items\n"
+                f"Item Types: {', '.join(item_types)}\n"
+                f"Sample Items:\n{sample}\n            "
+            )
+            return base_info + content
+
+        content = f"\nContent:\n{str(self.result)}\n            "
+        return base_info + content
 
 
 # ---------------------------------------------------------------------------

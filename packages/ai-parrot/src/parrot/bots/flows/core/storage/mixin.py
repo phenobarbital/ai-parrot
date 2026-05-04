@@ -2,6 +2,8 @@
 
 Copied from ``parrot.bots.flow.storage.mixin`` into the shared core
 storage location.  Relative imports updated for the new package depth.
+
+Updated (TASK-976): ``AgentResult`` → ``NodeResult`` from ``flows.core.result``.
 """
 from __future__ import annotations
 
@@ -9,7 +11,8 @@ import asyncio
 from typing import Any, List, Optional, Tuple
 
 from parrot._imports import lazy_import
-from .....models.crew import AgentResult, VectorStoreProtocol
+from .....models.crew import VectorStoreProtocol
+from ..result import NodeResult
 
 
 class VectorStoreMixin:
@@ -27,7 +30,7 @@ class VectorStoreMixin:
         self._raw_embedding_model = embedding_model
         self.dimension = dimension
         self._faiss_index: Optional[Any] = None
-        self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, agent_id)
+        self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, node_id)
         self._faiss_available = False
 
         if embedding_model:
@@ -72,7 +75,7 @@ class VectorStoreMixin:
     def embedding_model(self, value):
         self._raw_embedding_model = value
 
-    def _chunk_result(self, result: AgentResult) -> List[str]:
+    def _chunk_result(self, result: NodeResult) -> List[str]:
         """Break result into semantically meaningful chunks."""
         text = result.to_text()
 
@@ -98,7 +101,7 @@ class VectorStoreMixin:
 
         return chunks
 
-    async def _vectorize_result_async(self, result: AgentResult):
+    async def _vectorize_result_async(self, result: NodeResult):
         """Async task to vectorize and index a result.
 
         Uses ``asyncio.to_thread`` to offload the CPU-bound
@@ -110,7 +113,7 @@ class VectorStoreMixin:
         chunks = self._chunk_result(result)
 
         for chunk in chunks:
-            self._vector_chunks.append((chunk, result.agent_id))
+            self._vector_chunks.append((chunk, result.node_id))
 
         all_texts = [chunk for chunk, _ in self._vector_chunks]
         # Offload blocking CPU-bound encode to a thread pool to avoid blocking
@@ -125,7 +128,7 @@ class VectorStoreMixin:
 
     def search_similar(
         self, query: str, top_k: int = 5
-    ) -> List[Tuple[str, AgentResult, float]]:
+    ) -> List[Tuple[str, NodeResult, float]]:
         """Search for semantically similar result chunks.
 
         Note: This is a synchronous method — the underlying ``encode`` call is
@@ -149,12 +152,12 @@ class VectorStoreMixin:
         k = min(top_k, self._faiss_index.ntotal)
         D, I = self._faiss_index.search(query_embedding, k)
 
-        results: List[Tuple[str, AgentResult, float]] = []
+        results: List[Tuple[str, NodeResult, float]] = []
         for idx, distance in zip(I[0], D[0]):
             if 0 <= idx < len(self._vector_chunks):
-                chunk_text, agent_id = self._vector_chunks[idx]
-                if agent_result := self.results.get(agent_id):  # type: ignore[attr-defined]
-                    results.append((chunk_text, agent_result, float(distance)))
+                chunk_text, node_id = self._vector_chunks[idx]
+                if node_result := self.results.get(node_id):  # type: ignore[attr-defined]
+                    results.append((chunk_text, node_result, float(distance)))
 
         return results
 

@@ -28,6 +28,7 @@ from .core import (
     # Result models
     FlowResult,
     NodeExecutionInfo,
+    NodeResult,
     build_node_metadata,
     determine_run_status,
     # Context
@@ -60,6 +61,7 @@ __all__ = [
     # Result models
     "FlowResult",
     "NodeExecutionInfo",
+    "NodeResult",
     "build_node_metadata",
     "determine_run_status",
     # Context
