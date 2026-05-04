@@ -37,7 +37,6 @@ class OdooAgent(Agent):
 
     agent_id: str = "odoo_agent"
     model: str = "gemini-2.5-pro"
-    max_tokens: int = 16000
 
     def __init__(self, *args, **kwargs):
         super().__init__(

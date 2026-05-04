@@ -1,9 +1,15 @@
 {
-  "feature": "rust-semantic-text-splitter",
-  "feature_id": "FEAT-141",
-  "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
-  "created_at": "2026-05-03T23:30:32.058860+00:00",
+  "feature": "flows-consolidation",
+  "feature_id": "FEAT-143",
+  "spec": "sdd/specs/flows-consolidation.spec.md",
+  "created_at": "2026-05-04T19:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "webscrapingloader-jsonld-support",
+      "feature_id": "FEAT-142",
+      "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
+      "created_at": "2026-05-04T11:22:42.330048+00:00"
+    },
     {
       "feature": "embeddings-catalog-update",
       "feature_id": "FEAT-140",
@@ -218,6 +224,19 @@
       "feature_id": "FEAT-135",
       "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
       "created_at": "2026-04-29T10:32:39.763139+00:00"
+    },
+    {
+      "feature_id": "FEAT-141",
+      "feature": "rust-semantic-text-splitter",
+      "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
+      "created_at": "2026-05-03T23:30:32.058860+00:00",
+      "task_count": 841
+    },
+    {
+      "feature": "rust-semantic-text-splitter",
+      "feature_id": "FEAT-141",
+      "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
+      "created_at": "2026-05-03T23:30:32.058860+00:00"
     }
   ],
   "tasks": [
@@ -15801,6 +15820,423 @@
       "started_at": "2026-05-03T23:41:50.319643+00:00",
       "completed_at": "2026-05-04T02:10:00.000000+00:00",
       "file": "sdd/tasks/completed/TASK-972-verify-no-consumer-regression.md"
+    },
+    {
+      "id": "TASK-973",
+      "slug": "resolve-prefixes-from-catalog",
+      "title": "Refactor _resolve_prefixes to read prefixes from EMBEDDING_MODELS",
+      "feature_id": "FEAT-142",
+      "feature": "embedding-catalog-as-prefix-source-of-truth",
+      "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "parallel": false,
+      "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T10:00:00.000000+00:00",
+      "completed_at": "2026-05-04T20:22:36.221856",
+      "effort": "M",
+      "depends_on": [],
+      "file": "sdd/tasks/completed/TASK-973-resolve-prefixes-from-catalog.md"
+    },
+    {
+      "id": "TASK-974",
+      "slug": "tests-catalog-driven-and-unknown-model",
+      "title": "Add catalog-driven and unknown-model tests for _resolve_prefixes",
+      "feature_id": "FEAT-142",
+      "feature": "embedding-catalog-as-prefix-source-of-truth",
+      "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "parallel": false,
+      "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T10:00:00.000000+00:00",
+      "completed_at": "2026-05-04T20:22:36.221871",
+      "effort": "S",
+      "depends_on": [
+        "TASK-973"
+      ],
+      "file": "sdd/tasks/completed/TASK-974-webscraping-jsonld-registry.md"
+    },
+    {
+      "id": "TASK-976",
+      "slug": "add-shared-data-and-noderesult",
+      "title": "Add shared_data to FlowContext + introduce NodeResult",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies core primitives that all subsequent tasks depend on",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-976-add-shared-data-and-noderesult.md",
+      "completed_at": "2026-05-04T16:50:53.363116+00:00"
+    },
+    {
+      "id": "TASK-977",
+      "slug": "extract-crewagentnode",
+      "title": "Extract CrewAgentNode to flows/crew/nodes.py",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-976"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-978 \u2014 different files, no overlap",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-977-extract-crewagentnode.md",
+      "completed_at": "2026-05-04T16:53:37.607224+00:00"
+    },
+    {
+      "id": "TASK-978",
+      "slug": "move-resultretrievaltool",
+      "title": "Move ResultRetrievalTool to flows/tools.py",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-976"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-977 \u2014 different files, no overlap",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-978-move-resultretrievaltool.md",
+      "completed_at": "2026-05-04T17:54:42.977873+00:00"
+    },
+    {
+      "id": "TASK-979",
+      "slug": "move-agentcrew-and-result-migration",
+      "title": "Move AgentCrew to flows/crew/crew.py + result model migration",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-976",
+        "TASK-977",
+        "TASK-978"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all prior tasks \u2014 touches the same crew.py file as TASK-977",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-979-move-agentcrew-and-result-migration.md",
+      "completed_at": "2026-05-04T18:14:53.398611+00:00"
+    },
+    {
+      "id": "TASK-980",
+      "slug": "refactor-modes-to-flowcontext",
+      "title": "Refactor sequential/loop/parallel modes to use FlowContext",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-979"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies the same crew.py as TASK-979 \u2014 must run after it",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-980-refactor-modes-to-flowcontext.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    },
+    {
+      "id": "TASK-981",
+      "slug": "move-orchestrator-agents",
+      "title": "Create flows/agents/ package and move orchestrator agents",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-979"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-980 \u2014 different files (agents/ vs crew.py)",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-981-move-orchestrator-agents.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    },
+    {
+      "id": "TASK-982",
+      "slug": "update-flows-init-exports",
+      "title": "Update flows/__init__.py exports",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-979",
+        "TASK-980",
+        "TASK-981"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration \u2014 depends on all prior move tasks being complete",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-982-update-flows-init-exports.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    },
+    {
+      "id": "TASK-975",
+      "slug": "jsonld-integration-tests",
+      "title": "Integration tests and backward compatibility regression suite",
+      "feature_id": "FEAT-142",
+      "feature": "webscrapingloader-jsonld-support",
+      "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-973",
+        "TASK-974"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests the integrated pipeline \u2014 requires both TASK-973 and TASK-974 complete",
+      "assigned_to": null,
+      "started_at": "2026-05-04T16:29:52.259293+00:00",
+      "completed_at": "2026-05-04T20:22:36.221874",
+      "file": "sdd/tasks/completed/TASK-975-jsonld-integration-tests.md"
+    },
+    {
+      "id": "TASK-983",
+      "slug": "oauth2-models-and-registry",
+      "title": "OAuth2 Integration Models and Provider Registry",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks import from modules created here. Must complete first.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-983-oauth2-models-and-registry.md"
+    },
+    {
+      "id": "TASK-984",
+      "slug": "jira-provider-and-persistence",
+      "title": "Jira OAuth2 Provider and DocumentDB Persistence",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-983"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends TASK-983 models and registry. Shares parrot/integrations/oauth2/ package.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-984-jira-provider-and-persistence.md"
+    },
+    {
+      "id": "TASK-985",
+      "slug": "integrations-service",
+      "title": "IntegrationsService",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Orchestrates registry + persistence from TASK-983 and TASK-984.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-985-integrations-service.md"
+    },
+    {
+      "id": "TASK-986",
+      "slug": "handler-routes-config",
+      "title": "IntegrationsHandler, Route Registration, and Config",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-985, modifies conf.py + new integrations.py + manager.py routes. Shares no files with TASK-987.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-986-handler-routes-config.md"
+    },
+    {
+      "id": "TASK-987",
+      "slug": "oauth-callback-web-branch",
+      "title": "OAuth Callback Web-Channel Branch and Templates",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-985"
+      ],
+      "parallel": true,
+      "parallelism_notes": "After TASK-985, modifies only auth/routes.py + new templates. Shares no files with TASK-986.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-987-oauth-callback-web-branch.md"
+    },
+    {
+      "id": "TASK-988",
+      "slug": "agenttalk-auth-required-envelope",
+      "title": "AgentTalk AuthorizationRequired Envelope Translator",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-983"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only imports AuthRequiredEnvelope from TASK-983 and modifies agent.py. No shared files with TASK-984 through TASK-987.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-988-agenttalk-auth-required-envelope.md"
+    },
+    {
+      "id": "TASK-989",
+      "slug": "cold-session-hydration",
+      "title": "UserObjectsHandler Cold-Session Hydration",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only modifies user_objects.py. After TASK-983+984, shares no files with TASK-985 through TASK-988.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-989-cold-session-hydration.md"
+    },
+    {
+      "id": "TASK-990",
+      "slug": "frontend-api-client-and-popup",
+      "title": "Frontend API Client and OAuth Popup Helper",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-986"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Cross-repo (navigator-frontend-next). No shared files with any ai-parrot task.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-990-frontend-api-client-and-popup.md"
+    },
+    {
+      "id": "TASK-991",
+      "slug": "integrations-menu",
+      "title": "IntegrationsMenu Svelte Component",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-990"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-990 API client. Modifies AgentChat.svelte which TASK-992 also modifies.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-991-integrations-menu.md"
+    },
+    {
+      "id": "TASK-992",
+      "slug": "connect-integration-pill",
+      "title": "ConnectIntegrationPill and AgentChat Message Wiring",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-990",
+        "TASK-988"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares AgentChat.svelte modification with TASK-991. Must run after TASK-991 to avoid merge conflicts.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-992-connect-integration-pill.md"
+    },
+    {
+      "id": "TASK-993",
+      "slug": "e2e-integration-tests",
+      "title": "End-to-End Integration Tests",
+      "feature_id": "FEAT-144",
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-983",
+        "TASK-984",
+        "TASK-985",
+        "TASK-986",
+        "TASK-987",
+        "TASK-988",
+        "TASK-989"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration tests that exercise the full backend stack. Depends on all backend tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-04T22:30:00+00:00",
+      "file": "sdd/tasks/active/TASK-993-e2e-integration-tests.md"
     }
   ]
 }
