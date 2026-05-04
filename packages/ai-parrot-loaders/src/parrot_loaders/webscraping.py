@@ -40,7 +40,6 @@ from __future__ import annotations
 import html as _html
 import json
 import re
-from datetime import datetime
 from pathlib import PurePath
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -49,6 +48,10 @@ from markdownify import MarkdownConverter
 
 from parrot.loaders.abstract import AbstractLoader
 from parrot.stores.models import Document
+from parrot_loaders.jsonld_extractors import (
+    EXTRACTOR_REGISTRY,
+    JsonLdItem,
+)
 
 try:
     import trafilatura
@@ -126,6 +129,12 @@ class WebScrapingLoader(AbstractLoader):
             Default 1 — so at most 2 LLM calls total per URL. Only
             applies when the plan is LLM-generated; explicit/cached
             plans are never refined.
+        jsonld_types: Control which JSON-LD ``@type`` values are extracted.
+            - ``None`` (default): extract all supported types via
+              ``EXTRACTOR_REGISTRY``.
+            - Non-empty list (e.g. ``["Product", "Event"]``): extract only
+              the listed types.
+            - Empty list ``[]``: disable all JSON-LD extraction.
         **kwargs: Passed through to ``AbstractLoader``.
     """
 
@@ -166,6 +175,7 @@ class WebScrapingLoader(AbstractLoader):
         plans_dir: Optional[str] = None,
         save_plan: bool = False,
         max_refinement_attempts: int = 1,
+        jsonld_types: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -213,6 +223,9 @@ class WebScrapingLoader(AbstractLoader):
         self._plans_dir = plans_dir
         self._save_plan = save_plan
         self._max_refinement_attempts = max_refinement_attempts
+
+        # JSON-LD extraction filter (None = all types, [] = disabled)
+        self._jsonld_types: Optional[List[str]] = jsonld_types
 
         # Lazy-initialized toolkit instance
         self._toolkit: Optional[Any] = None
@@ -583,6 +596,141 @@ class WebScrapingLoader(AbstractLoader):
             if question and answer:
                 yield question, answer
 
+    # ── Generic JSON-LD extraction (replaces FAQ-only pipeline) ──────────
+
+    def _walk_jsonld_node(
+        self,
+        data: Any,
+        items: List[JsonLdItem],
+    ) -> None:
+        """Recursively walk a JSON-LD structure dispatching nodes to extractors.
+
+        Handles:
+        - Top-level arrays of nodes
+        - ``@graph`` containers
+        - Single typed objects dispatched via ``EXTRACTOR_REGISTRY``
+
+        Args:
+            data: Parsed JSON-LD value (dict, list, or scalar).
+            items: Accumulator list to append ``JsonLdItem`` instances to.
+        """
+        if isinstance(data, list):
+            for item in data:
+                self._walk_jsonld_node(item, items)
+            return
+        if not isinstance(data, dict):
+            return
+        if "@graph" in data:
+            self._walk_jsonld_node(data["@graph"], items)
+            return
+        node_type = data.get("@type")
+        type_set: set[str] = (
+            {node_type} if isinstance(node_type, str) else set(node_type or [])
+        )
+        allowed = self._jsonld_types  # None = all, [] = disabled
+        for t in type_set:
+            if t in EXTRACTOR_REGISTRY:
+                if allowed is not None and t not in allowed:
+                    continue
+                items.extend(EXTRACTOR_REGISTRY[t](data))
+                break  # one match per node
+
+    def _extract_jsonld(self, soup: BeautifulSoup) -> List[JsonLdItem]:
+        """Extract structured data from all JSON-LD blocks on the page.
+
+        Iterates every ``<script type="application/ld+json">`` block, parses
+        each one tolerantly (broken JSON is logged and skipped), then walks
+        the resulting structure dispatching nodes to ``EXTRACTOR_REGISTRY``.
+
+        De-duplicates items by ``(content_kind, page_content)`` hash.
+
+        Must be called BEFORE the loader's ``decompose("script")`` call since
+        that strips JSON-LD blocks along with regular JS.
+
+        Args:
+            soup: BeautifulSoup tree of the page.
+
+        Returns:
+            List of ``JsonLdItem`` instances.
+        """
+        # Short-circuit: caller has disabled JSON-LD extraction entirely
+        if self._jsonld_types is not None and len(self._jsonld_types) == 0:
+            return []
+
+        items: List[JsonLdItem] = []
+        seen: set[tuple[str, str]] = set()  # de-dupe by (content_kind, page_content)
+        scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+        for s in scripts:
+            raw = (s.string or s.text or "").strip()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                self.logger.debug("Skipping malformed JSON-LD block: %s", exc)
+                continue
+            self._walk_jsonld_node(data, items)
+
+        # De-duplicate
+        unique_items: List[JsonLdItem] = []
+        for item in items:
+            key = (item.content_kind, item.page_content)
+            if key not in seen:
+                seen.add(key)
+                unique_items.append(item)
+
+        if unique_items:
+            from collections import Counter
+            kind_counts = Counter(i.content_kind for i in unique_items)
+            self.logger.info(
+                "JSON-LD extraction: %d item(s) — %s",
+                len(unique_items),
+                dict(kind_counts),
+            )
+        return unique_items
+
+    def _docs_from_jsonld_items(
+        self,
+        items: List[JsonLdItem],
+        base_metadata: Dict[str, Any],
+    ) -> List[Document]:
+        """Convert ``JsonLdItem`` instances to ``Document`` objects.
+
+        Groups items by ``content_kind`` to compute ``row_index`` /
+        ``row_count`` per type, mirroring the existing ``_docs_from_faqpage``
+        metadata schema.
+
+        Args:
+            items: List of ``JsonLdItem`` instances to convert.
+            base_metadata: Page-level metadata dict to merge into each doc.
+
+        Returns:
+            List of ``Document`` objects with rich metadata.
+        """
+        from collections import Counter
+
+        kind_counts: Counter[str] = Counter(item.content_kind for item in items)
+        kind_indices: Dict[str, int] = {}
+        docs: List[Document] = []
+        for item in items:
+            idx = kind_indices.get(item.content_kind, 0)
+            kind_indices[item.content_kind] = idx + 1
+            docs.append(Document(
+                page_content=item.page_content,
+                metadata={
+                    **base_metadata,
+                    "content_kind": item.content_kind,
+                    "selector_name": item.selector_name or item.content_kind,
+                    "source_type": item.source_type,
+                    "row_index": idx,
+                    "row_count": kind_counts[item.content_kind],
+                    "row_data": item.row_data,
+                },
+            ))
+        return docs
+
+    # ── Legacy FAQ-only extraction (kept for reference; replaced by above) ─
+
     def _extract_faqpage_jsonld(
         self,
         soup: BeautifulSoup,
@@ -839,11 +987,10 @@ class WebScrapingLoader(AbstractLoader):
 
         soup = result.bs_soup
 
-        # Extract JSON-LD FAQPage data BEFORE stripping <script> tags.
-        # The block lives inside ``<script type="application/ld+json">``
-        # and would otherwise be discarded by the noise-removal step
-        # below.
-        faq_pairs = self._extract_faqpage_jsonld(soup)
+        # Extract ALL JSON-LD structured data BEFORE stripping <script> tags.
+        # ``_extract_jsonld`` dispatches to EXTRACTOR_REGISTRY by @type,
+        # replacing the old FAQ-only ``_extract_faqpage_jsonld`` pipeline.
+        jsonld_items = self._extract_jsonld(soup)
 
         # Remove noise elements
         for el in soup(["script", "style", "link", "noscript"]):
@@ -870,11 +1017,11 @@ class WebScrapingLoader(AbstractLoader):
 
         docs: List[Document] = []
 
-        # Emit FAQ docs first so they show up at the head of the chunk
+        # Emit JSON-LD docs first so they appear at the head of the chunk
         # list and stay grouped together independent of the rest of the
         # extraction pipeline.
-        if faq_pairs:
-            docs.extend(self._docs_from_faqpage(faq_pairs, base_metadata))
+        if jsonld_items:
+            docs.extend(self._docs_from_jsonld_items(jsonld_items, base_metadata))
 
         # Fast path: caller wants only the named-selector extractions.
         # Skip full-page markdown, trafilatura, fragments, videos, navs,
@@ -886,7 +1033,7 @@ class WebScrapingLoader(AbstractLoader):
                         result.extracted_data, base_metadata
                     )
                 )
-            elif not faq_pairs:
+            elif not jsonld_items:
                 self.logger.warning(
                     "extract_only=True but result.extracted_data is empty for %s",
                     url,

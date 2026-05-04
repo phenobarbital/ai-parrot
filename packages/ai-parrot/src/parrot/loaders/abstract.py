@@ -1316,6 +1316,15 @@ Your job is to produce a final summary from the following text and identify the 
             'selector',
             'faq',
             'table',
+            'jsonld-product',
+            'jsonld-event',
+            'jsonld-person',
+            'jsonld-place',
+            'jsonld-recipe',
+            'jsonld-article',
+            'jsonld-organization',
+            'jsonld-howto',
+            'jsonld-breadcrumb',
         })
 
         for doc in documents:
