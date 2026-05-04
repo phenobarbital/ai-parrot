@@ -2,6 +2,8 @@
 
 Copied from ``parrot.bots.flow.storage.memory`` into the shared core
 storage location.  Relative imports updated for the new package depth.
+
+Updated (TASK-976): ``AgentResult`` → ``NodeResult`` from ``flows.core.result``.
 """
 from __future__ import annotations
 
@@ -9,7 +11,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .....models.crew import AgentResult
+from ..result import NodeResult
 from .mixin import VectorStoreMixin
 
 
@@ -28,7 +30,7 @@ class ExecutionMemory(VectorStoreMixin):
     """
 
     original_query: Optional[str] = None
-    results: Dict[str, AgentResult] = field(default_factory=dict)
+    results: Dict[str, NodeResult] = field(default_factory=dict)
     execution_graph: Dict[str, List[str]] = field(default_factory=dict)
     execution_order: List[str] = field(default_factory=list)
 
@@ -50,15 +52,15 @@ class ExecutionMemory(VectorStoreMixin):
             index_type=index_type,
         )
 
-    def add_result(self, result: AgentResult, vectorize: bool = True) -> None:
+    def add_result(self, result: NodeResult, vectorize: bool = True) -> None:
         """Add a result and update execution graph.
 
         Args:
-            result: The ``AgentResult`` to store.
+            result: The ``NodeResult`` to store.
             vectorize: If ``True`` and an embedding model is configured,
                 schedule async FAISS indexing.
         """
-        self.results[result.agent_id] = result
+        self.results[result.node_id] = result
         if result.parent_execution_id:
             if result.parent_execution_id not in self.execution_graph:
                 self.execution_graph[result.parent_execution_id] = []
@@ -73,22 +75,22 @@ class ExecutionMemory(VectorStoreMixin):
             except RuntimeError:
                 pass  # No running loop; vectorization skipped in sync context
 
-    def get_results_by_agent(self, agent_id: str) -> Optional[AgentResult]:
-        """Retrieve result from a specific agent.
+    def get_results_by_agent(self, agent_id: str) -> Optional[NodeResult]:
+        """Retrieve result from a specific agent/node.
 
         Args:
-            agent_id: Agent identifier.
+            agent_id: Agent/node identifier.
 
         Returns:
-            ``AgentResult`` or ``None`` if not found.
+            ``NodeResult`` or ``None`` if not found.
         """
         return self.results.get(agent_id)
 
-    def get_reexecuted_results(self) -> List[AgentResult]:
+    def get_reexecuted_results(self) -> List[NodeResult]:
         """Return only results from re-executions triggered by ``ask()``.
 
         Returns:
-            List of ``AgentResult`` instances with a non-None
+            List of ``NodeResult`` instances with a non-None
             ``parent_execution_id``.
         """
         return [r for r in self.results.values() if r.parent_execution_id is not None]
@@ -137,7 +139,7 @@ class ExecutionMemory(VectorStoreMixin):
         return {
             "original_query": self.original_query,
             "results": {
-                agent_id: {
+                node_id: {
                     "result": str(result.result),
                     "task": result.task,
                     "metadata": result.metadata,
@@ -145,7 +147,7 @@ class ExecutionMemory(VectorStoreMixin):
                     "parent_execution_id": result.parent_execution_id,
                     "execution_time": result.execution_time,
                 }
-                for agent_id, result in self.results.items()
+                for node_id, result in self.results.items()
             },
             "execution_order": self.execution_order.copy(),
             "execution_graph": {k: v.copy() for k, v in self.execution_graph.items()},
