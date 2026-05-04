@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-142
 **Date**: 2026-05-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -471,15 +471,15 @@ No new external dependencies required.
 
 ## 8. Open Questions
 
-- [ ] Should JSON-LD items from types like Product/Event be treated as atomic
+- [x] Should JSON-LD items from types like Product/Event be treated as atomic
   (no splitting), or should long `description` / `articleBody` fields be
   chunked? Current design treats them as atomic (in `_ATOMIC_CONTENT_KINDS`).
-  — *Owner: Jesus*
-- [ ] Should `BreadcrumbList` produce one Document per breadcrumb item or one
-  Document for the entire path? — *Owner: Jesus*
-- [ ] Should the `page_content` format for each type be configurable (e.g.
+  — *Owner: Jesus*: Yes, all items be treated as atomic (no splitting).
+- [x] Should `BreadcrumbList` produce one Document per breadcrumb item or one
+  Document for the entire path? — *Owner: Jesus*: one document for the entire path, atomic.
+- [x] Should the `page_content` format for each type be configurable (e.g.
   markdown vs. key-value), or is a single opinionated format per type
-  sufficient? — *Owner: Jesus*
+  sufficient? — *Owner: Jesus*: be configurable
 
 ---
 
