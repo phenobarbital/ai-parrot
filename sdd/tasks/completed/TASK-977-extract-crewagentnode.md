@@ -219,3 +219,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note (filled)
+
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Created `flows/crew/` package with `nodes.py` containing `CrewAgentNode` (renamed from `_CrewAgentNode`). Copied `_format_prompt()` and `execute_in_context()` methods verbatim from `orchestration/crew.py:84-139`. Updated imports to use relative paths within the new location (`from ..core.node import AgentNode as _CoreAgentNode`, `from ..core.context import FlowContext`). `crew/__init__.py` exports only `CrewAgentNode` — `AgentCrew` will be added in TASK-979. `orchestration/crew.py` was not modified.
+
+**Deviations from spec**: none

@@ -15884,7 +15884,7 @@
       "feature_id": "FEAT-143",
       "feature": "flows-consolidation",
       "spec": "sdd/specs/flows-consolidation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -15894,7 +15894,8 @@
       "parallelism_notes": "Can run in parallel with TASK-978 \u2014 different files, no overlap",
       "assigned_to": null,
       "started_at": "2026-05-04T13:13:30.336584+00:00",
-      "file": "sdd/tasks/active/TASK-977-extract-crewagentnode.md"
+      "file": "sdd/tasks/completed/TASK-977-extract-crewagentnode.md",
+      "completed_at": "2026-05-04T16:53:37.607224+00:00"
     },
     {
       "id": "TASK-978",
