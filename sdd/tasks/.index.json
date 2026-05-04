@@ -1,8 +1,8 @@
 {
-  "feature": "flows-consolidation",
-  "feature_id": "FEAT-143",
-  "spec": "sdd/specs/flows-consolidation.spec.md",
-  "created_at": "2026-05-04T19:00:00+00:00",
+  "feature": "sdd-flow-types-and-per-spec-index",
+  "feature_id": "FEAT-145",
+  "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+  "created_at": "2026-05-04T23:09:06+00:00",
   "previous_features": [
     {
       "feature": "webscrapingloader-jsonld-support",
@@ -237,6 +237,18 @@
       "feature_id": "FEAT-141",
       "spec": "sdd/specs/rust-semantic-text-splitter.spec.md",
       "created_at": "2026-05-03T23:30:32.058860+00:00"
+    },
+    {
+      "feature": "flows-consolidation",
+      "feature_id": "FEAT-143",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "created_at": "2026-05-04T19:00:00+00:00"
+    },
+    {
+      "feature": "cross-repository-jiratoolkit-oauth2-3lo",
+      "feature_id": "FEAT-144",
+      "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
+      "created_at": "2026-05-04T18:00:00+00:00"
     }
   ],
   "tasks": [
@@ -16241,6 +16253,185 @@
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
       "file": "sdd/tasks/active/TASK-993-e2e-integration-tests.md"
+    },
+    {
+      "id": "TASK-994",
+      "slug": "sdd-meta-frontmatter-parser",
+      "title": "SDD frontmatter parser (sdd_meta)",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallelism_notes": "Foundation module. All other tasks depend on this.",
+      "file": "sdd/tasks/active/TASK-994-sdd-meta-frontmatter-parser.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "in-progress",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": "2026-05-04T23:15:44+00:00"
+    },
+    {
+      "id": "TASK-995",
+      "slug": "migrate-monolith-to-per-spec-index",
+      "title": "One-shot migration: monolith \u2192 per-spec index",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-994"
+      ],
+      "parallelism_notes": "Sequential: needs sdd_meta from TASK-994. Must be run on the live monolith after implementation.",
+      "file": "sdd/tasks/active/TASK-995-migrate-monolith-to-per-spec-index.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-996",
+      "slug": "sdd-templates-frontmatter",
+      "title": "Add YAML frontmatter to SDD templates",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallelism_notes": "Independent of TASK-994/995 but logically grouped with the refactor; sequential to keep the worktree single.",
+      "file": "sdd/tasks/active/TASK-996-sdd-templates-frontmatter.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-997",
+      "slug": "frontmatter-in-generation-commands",
+      "title": "Wire frontmatter into generation commands",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-994",
+        "TASK-996"
+      ],
+      "parallelism_notes": "Sequential \u2014 touches multiple shared command files.",
+      "file": "sdd/tasks/active/TASK-997-frontmatter-in-generation-commands.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-998",
+      "slug": "sdd-task-and-start-per-spec-index",
+      "title": "Rewrite /sdd-task and /sdd-start for per-spec index + base_branch",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-994",
+        "TASK-995",
+        "TASK-996"
+      ],
+      "parallelism_notes": "Sequential \u2014 substantive rewrite of the daily-loop commands.",
+      "file": "sdd/tasks/active/TASK-998-sdd-task-and-start-per-spec-index.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-999",
+      "slug": "sdd-done-flow-aware",
+      "title": "Rewrite /sdd-done for flow-type awareness + main-PR enforcement",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-994"
+      ],
+      "parallelism_notes": "Sequential \u2014 single complex command file rewrite.",
+      "file": "sdd/tasks/active/TASK-999-sdd-done-flow-aware.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-1000",
+      "slug": "sdd-next-and-status-glob-indexes",
+      "title": "Update /sdd-next and /sdd-status to scan per-spec indexes",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-995"
+      ],
+      "parallelism_notes": "Sequential \u2014 same worktree as the rest of FEAT-145.",
+      "file": "sdd/tasks/active/TASK-1000-sdd-next-and-status-glob-indexes.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-1001",
+      "slug": "sdd-worker-flow-aware",
+      "title": "Update sdd-worker agent for per-spec index + base_branch",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-994",
+        "TASK-995",
+        "TASK-998"
+      ],
+      "parallelism_notes": "Sequential \u2014 agent must mirror /sdd-start logic from TASK-998.",
+      "file": "sdd/tasks/active/TASK-1001-sdd-worker-flow-aware.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-1002",
+      "slug": "update-sdd-docs",
+      "title": "Update sdd/WORKFLOW.md and CLAUDE.md for the new flow model",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-994",
+        "TASK-995",
+        "TASK-996",
+        "TASK-997",
+        "TASK-998",
+        "TASK-999",
+        "TASK-1000",
+        "TASK-1001"
+      ],
+      "parallelism_notes": "Last task \u2014 documents the actual implemented behaviour.",
+      "file": "sdd/tasks/active/TASK-1002-update-sdd-docs.md",
+      "feature_id": "FEAT-145",
+      "feature": "sdd-flow-types-and-per-spec-index",
+      "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
+      "status": "pending",
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null
     }
   ]
 }

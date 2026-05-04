@@ -56,12 +56,11 @@ class BotModel(Model):
         prompt_config JSONB NOT NULL DEFAULT '{}'::JSONB,
 
         -- LLM configuration
+        --   ``model_config`` (JSONB) is the canonical home for all LLM
+        --   tuning. Recognized keys: ``model`` / ``model_name``,
+        --   ``temperature``, ``max_tokens``, ``top_k``, ``top_p``, plus
+        --   any provider-specific keys.
         llm VARCHAR DEFAULT 'google',
-        model_name VARCHAR DEFAULT 'gemini-3.1-flash-lite-preview',
-        temperature FLOAT DEFAULT 0.1,
-        max_tokens INTEGER DEFAULT 1024,
-        top_k INTEGER DEFAULT 41,
-        top_p FLOAT DEFAULT 0.9,
         model_config JSONB DEFAULT '{}'::JSONB,
 
         -- Tool and agent configuration
@@ -183,12 +182,15 @@ class BotModel(Model):
 
     # LLM configuration
     llm: str = Field(default='google', required=False, ui_help="Large Language Model powering the bot. ")
-    model_name: str = Field(default='gemini-2.5-flash', required=False, ui_help="Exact version or identifier of the model being used.")
-    temperature: float = Field(default=0.1, required=False, ui_help="Controls how creative or constrained the bot’s responses are. Lower values (e.g., 0.1) keep answers close to the context. Higher values increase variation and creativity.")
-    max_tokens: int = Field(default=1024, required=False, ui_help="The bot’s maximum number of tokens.")
-    top_k: int = Field(default=41, required=False, ui_help="The bot’s top-k parameter.")
-    top_p: float = Field(default=0.9, required=False, ui_help="The bot’s top-p parameter.")
-    model_config: dict = Field(default_factory=dict, required=False, ui_help="The bot’s model configuration.")
+    model_config: dict = Field(
+        default_factory=dict,
+        required=False,
+        ui_help=(
+            "Canonical LLM configuration (JSONB). Recognized keys: "
+            "'model' / 'model_name', 'temperature', 'max_tokens', "
+            "'top_k', 'top_p', plus any provider-specific tuning."
+        ),
+    )
 
     # Tool and agent configuration
     tools_enabled: bool = Field(default=True, required=False, ui_help="Whether the bot’s tools are enabled or not.")
@@ -340,11 +342,6 @@ class BotModel(Model):
             'pre_instructions': self.pre_instructions,
             'prompt_config': self.prompt_config,
             'llm': self.llm,
-            'model': self.model_name,
-            'temperature': self.temperature,
-            'max_tokens': self.max_tokens,
-            'top_k': self.top_k,
-            'top_p': self.top_p,
             'model_config': self.model_config,
             'tools_enabled': self.tools_enabled,
             'auto_tool_detection': self.auto_tool_detection,
