@@ -9,7 +9,8 @@ Moved from ``parrot.bots.orchestration.crew`` to ``parrot.bots.flows.crew``
 
 The original ``orchestration/crew.py`` is left in place for review.
 
-Note: ``AgentContext`` is still imported here; it is removed in TASK-980.
+TASK-980: ``AgentContext`` removed; sequential/loop/parallel modes now use
+``FlowContext`` for execution state tracking.
 """
 from __future__ import annotations
 from typing import (
@@ -33,7 +34,6 @@ from ....clients.google import GoogleGenAIClient
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool
-from ....tools.agent import AgentContext  # removed in TASK-980
 from ....models.responses import (
     AIMessage,
     AgentResponse
@@ -792,16 +792,32 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         session_id: str,
         user_id: str,
         index: int,
-        context: AgentContext,
         model: Optional[str] = None,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        **kwargs,
     ) -> Any:
-        """
-        Execute a single agent with proper rate limiting and error handling.
+        """Execute a single agent with proper rate limiting and error handling.
 
         This internal method wraps the agent execution with a semaphore for
         rate limiting and handles the different execution methods that agents
         might implement.
+
+        Args:
+            agent: The agent to execute.
+            query: The prompt/question to send to the agent.
+            session_id: Session identifier propagated to the agent.
+            user_id: User identifier propagated to the agent.
+            index: Positional index of the agent in the sequence (used to
+                build a unique sub-session ID).
+            model: Optional model override forwarded to the agent.
+            max_tokens: Optional token limit forwarded to the agent.
+            **kwargs: Arbitrary additional keyword arguments forwarded to the
+                agent call (replaces the former ``AgentContext.shared_data``
+                spread).
+
+        Returns:
+            The raw response from the agent (``AIMessage``, ``AgentResponse``,
+            or other type depending on the agent implementation).
         """
         await self._ensure_agent_ready(agent)
         async with self.semaphore:
@@ -813,7 +829,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
-                    **context.shared_data
+                    **kwargs
                 )
             if hasattr(agent, 'conversation'):
                 return await agent.conversation(
@@ -823,7 +839,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
-                    **context.shared_data
+                    **kwargs
                 )
             if hasattr(agent, 'invoke'):
                 return await agent.invoke(
@@ -831,7 +847,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     session_id=f"{session_id}_agent_{index}",
                     user_id=user_id,
                     use_conversation_history=False,
-                    **context.shared_data
+                    **kwargs
                 )
             else:
                 raise ValueError(
@@ -847,10 +863,22 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         else:
             return str(response)
 
-    def _build_context_summary(self, context: AgentContext) -> str:
-        """Build summary of previous results."""
+    def _build_context_summary(self, context: FlowContext) -> str:
+        """Build a human-readable summary of results accumulated so far.
+
+        Reads from ``FlowContext.results`` (keyed by node_id → result string).
+        Used by sequential and loop modes when ``pass_full_context=True`` to
+        give downstream agents visibility into what prior agents produced.
+
+        Args:
+            context: The current execution context for this run/iteration.
+
+        Returns:
+            Multi-line string with one ``- <node_id>: <truncated_result>``
+            entry per completed node, or an empty string if no results yet.
+        """
         summaries = []
-        for agent_name, result in context.agent_results.items():
+        for agent_name, result in context.results.items():
             truncated = self._truncate_text(
                 result,
                 enabled=self.truncate_context_summary
@@ -1056,15 +1084,12 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
 
         # Initialize context to track execution across agents
         current_input = query
-        crew_context = AgentContext(
-            user_id=user_id,
-            session_id=session_id,
-            original_query=query,
+        context = FlowContext(
+            initial_task=query,
             shared_data={
                 **kwargs,
                 'execution_memory': self.execution_memory,
             },
-            agent_results={}
         )
 
         self.execution_log = []
@@ -1101,7 +1126,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     agent_input = query
                 elif pass_full_context:
                     # Pass full context of all previous agents' work
-                    context_summary = self._build_context_summary(crew_context)
+                    context_summary = self._build_context_summary(context)
                     agent_input = f"""Original query: {query}
 Previous processing:
 {context_summary}
@@ -1117,7 +1142,9 @@ Current task: {current_input}"""
 
                 # Execute agent
                 response: AIMessage = await self._execute_agent(
-                    agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
+                    agent, agent_input, session_id, user_id, i,
+                    model=model, max_tokens=max_tokens,
+                    **context.shared_data
                 )
 
                 result = self._extract_result(response)
@@ -1142,7 +1169,7 @@ Current task: {current_input}"""
                 self.execution_log.append(log_entry)
 
                 # Store result and prepare for next agent
-                crew_context.agent_results[agent_id] = result
+                context.mark_completed(agent_id, result=result, response=response)
                 current_input = result
                 responses[agent_id] = response
                 agents_info.append(
@@ -1417,16 +1444,13 @@ Current task: {current_input}"""
                 if node:
                     node.fsm = AgentTaskMachine(agent_name=node.agent.name)
 
-            crew_context = AgentContext(
-                user_id=user_id,
-                session_id=session_id,
-                original_query=initial_task,
+            context = FlowContext(
+                initial_task=initial_task,
                 shared_data={
                     **kwargs,
                     'shared_state': shared_state,
                     'execution_memory': self.execution_memory,
                 },
-                agent_results={}
             )
 
             iteration_success = True
@@ -1506,7 +1530,7 @@ Current task: {current_input}"""
                         iteration_number=iterations_run,
                     )
                 elif pass_full_context:
-                    context_summary = self._build_context_summary(crew_context)
+                    context_summary = self._build_context_summary(context)
                     shared_summary = self._build_shared_state_summary(shared_state)
                     agent_input = (
                         f"Original task: {initial_task}\n"
@@ -1531,7 +1555,7 @@ Current task: {current_input}"""
                         session_id,
                         user_id,
                         agent_position,
-                        crew_context
+                        **context.shared_data
                     )
 
                     result = self._extract_result(response)
@@ -1557,7 +1581,7 @@ Current task: {current_input}"""
                     }
                     self.execution_log.append(log_entry)
 
-                    crew_context.agent_results[agent_id] = result
+                    context.mark_completed(agent_id, result=result, response=response)
                     current_input = result
                     responses[execution_id] = response
                     agents_info.append(
@@ -1808,15 +1832,12 @@ Current task: {current_input}"""
             if task.get('agent_id') in self.agents
         ]
 
-        crew_context = AgentContext(
-            user_id=user_id,
-            session_id=session_id,
-            original_query=original_query,
+        context = FlowContext(
+            initial_task=original_query,
             shared_data={
                 **kwargs,
                 'execution_memory': self.execution_memory,
             },
-            agent_results={}
         )
 
         self.execution_log = []
@@ -1852,12 +1873,13 @@ Current task: {current_input}"""
 
             async def _run_with_hooks(
                 _agent=agent, _query=query, _idx=i, _node=node,
+                _shared=dict(context.shared_data),
             ):
                 """Wrap _execute_agent with pre/post action hooks."""
                 if _node:
                     await _node.run_pre_actions(prompt=_query)
                 resp = await self._execute_agent(
-                    _agent, _query, session_id, user_id, _idx, crew_context
+                    _agent, _query, session_id, user_id, _idx, **_shared
                 )
                 if _node:
                     await _node.run_post_actions(result=resp)
@@ -1953,7 +1975,7 @@ Current task: {current_input}"""
                 # Handle successful agent execution
                 extracted_result = self._extract_result(result)
                 parallel_results[agent_id] = extracted_result
-                crew_context.agent_results[agent_id] = extracted_result
+                context.mark_completed(agent_id, result=extracted_result, response=result)
                 _query = metadata['query']
 
                 # Save successful execution to memory
