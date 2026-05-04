@@ -207,7 +207,6 @@ class XmlRpcTransport(AbstractOdooTransport):
         _validate_model_name(model)
         if self.uid is None:
             await self.authenticate()
-        self.logger.debug("execute_kw model=%r method=%r (xmlrpc)", model, method)
         async with self._rpc_lock:
             return await asyncio.to_thread(
                 self._execute_kw_sync, model, method, args or [], kwargs or {}

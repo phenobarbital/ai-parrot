@@ -35,7 +35,6 @@ from ..clients.base import (
     LLM_PRESETS,
     AbstractClient
 )
-from ..clients.factory import SUPPORTED_CLIENTS
 from ..clients.models import LLMConfig
 from ..models import (
     AIMessage,
@@ -592,6 +591,9 @@ class AbstractBot(
 
         # 4/5. String format
         elif isinstance(llm, str):
+            # Lazy import: avoid loading every LLM SDK just to import AbstractBot.
+            from ..clients.factory import SUPPORTED_CLIENTS
+
             provider, parsed_model = self._parse_llm_string(llm)
             config.provider = provider.lower()
             config.model = parsed_model
@@ -609,6 +611,8 @@ class AbstractBot(
 
         # 7. None → defaults
         elif llm is None and not model_config:
+            from ..clients.factory import SUPPORTED_CLIENTS
+
             config.provider = getattr(self, '_default_llm', 'google')
             config.client_class = SUPPORTED_CLIENTS.get(config.provider)
 
@@ -646,6 +650,9 @@ class AbstractBot(
             cfg.setdefault('model', parsed_model)
 
         provider = provider.lower()
+
+        # Lazy import: avoid loading every LLM SDK just to import AbstractBot.
+        from ..clients.factory import SUPPORTED_CLIENTS
 
         if provider not in SUPPORTED_CLIENTS:
             raise ValueError(

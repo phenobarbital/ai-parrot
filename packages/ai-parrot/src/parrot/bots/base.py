@@ -110,12 +110,12 @@ class BaseBot(AbstractBot):
             len(conversation_context or ""),
             len(memory_context or ""),
         )
-        self.logger.debug(
-            "[%s] %s() FINAL system_prompt sent to LLM ↓↓↓\n%s\n"
-            "[%s] %s() === END system_prompt ===",
-            self.name, method, system_prompt,
-            self.name, method,
-        )
+        # self.logger.debug(
+        #     "[%s] %s() FINAL system_prompt sent to LLM ↓↓↓\n%s\n"
+        #     "[%s] %s() === END system_prompt ===",
+        #     self.name, method, system_prompt,
+        #     self.name, method,
+        # )
 
     async def conversation(
         self,
