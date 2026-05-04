@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-142
 **Date**: 2026-05-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -397,11 +397,11 @@ packages/ai-parrot/tests/embeddings/test_catalog_consistency.py
       *Resolved by spec author*: keep the function. Preserving the public
       symbol means existing tests, imports, and the `SentenceTransformerModel`
       `__init__` line stay untouched.
-- [ ] Should the existing `test_catalog_consistency.py::known_prefix_models`
+- [x] Should the existing `test_catalog_consistency.py::known_prefix_models`
       fixture be replaced by a derived list (`[m["model"] for m in
       EMBEDDING_MODELS if m["requires_prefix"]]`) to remove the hand-
       maintenance burden? — *Owner: implementer*. Reasonable yes, but the
-      explicit list also acts as documentation. Decide during implementation.
+      explicit list also acts as documentation. Decide during implementation: Yes, replace it
 
 ---
 
