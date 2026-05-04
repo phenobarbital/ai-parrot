@@ -15833,17 +15833,18 @@
       "feature_id": "FEAT-142",
       "feature": "embedding-catalog-as-prefix-source-of-truth",
       "spec": "sdd/specs/embedding-catalog-as-prefix-source-of-truth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "parallel": false,
       "parallelism_notes": "Both tasks edit files in parrot/embeddings/ and tests/embeddings/ with TASK-974 depending on the runtime introduced by TASK-973; sequential execution in a single worktree.",
       "assigned_to": null,
       "started_at": "2026-05-04T10:00:00.000000+00:00",
+      "completed_at": "2026-05-04T10:30:00.000000+00:00",
       "effort": "S",
       "depends_on": [
         "TASK-973"
       ],
-      "file": "sdd/tasks/active/TASK-974-tests-catalog-driven-and-unknown-model.md"
+      "file": "sdd/tasks/completed/TASK-974-tests-catalog-driven-and-unknown-model.md"
     }
   ]
 }

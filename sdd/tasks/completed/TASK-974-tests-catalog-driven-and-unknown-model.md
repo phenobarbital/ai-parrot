@@ -329,10 +329,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-04
+**Notes**: Appended `TestResolverIsCatalogDriven` and `TestResolverUnknownModel`
+to `test_resolve_prefixes.py`. The parametric tests auto-cover all 39 catalog entries
+(11 prefix-requiring, 28 non-prefix). `test_harrier_oss_resolves_via_catalog` confirms
+the motivating case (model added without touching the resolver). All 85 tests pass.
+No modifications to existing test classes. No changes outside the single test file.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
