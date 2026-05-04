@@ -41,6 +41,8 @@ from .user_objects import UserObjectsHandler
 from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
+from ..auth.exceptions import AuthorizationRequired
+from ..integrations.oauth2.models import AuthRequiredEnvelope
 if TYPE_CHECKING:
     from ..manager import BotManager
 
@@ -1523,6 +1525,18 @@ class AgentTalk(BaseView):
                         llm=llm,
                         **data,
                     )
+        except AuthorizationRequired as exc:
+            # Translate the exception into a structured envelope so the web
+            # frontend can render a "Connect" pill.  HTTP 200 — the chat call
+            # succeeded; the envelope IS the agent's reply.
+            envelope = AuthRequiredEnvelope(
+                provider=exc.provider,
+                tool_name=exc.tool_name,
+                auth_url=exc.auth_url,
+                scopes=exc.scopes or [],
+                message=str(exc),
+            )
+            return web.json_response(envelope.model_dump(), status=200)
         finally:
             # Restore session-isolated PythonPandasTool
             if original_pandas_tool and session_pandas_tool:
