@@ -268,3 +268,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note (filled)
+
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: Created `flows/crew/crew.py` by transforming `orchestration/crew.py`. All result model migrations completed: `CrewResult` → `FlowResult`, `AgentExecutionInfo` → `NodeExecutionInfo`, `build_agent_metadata` → `build_node_metadata`, `AgentResult` → `NodeResult`. All `NodeResult()` calls updated to use `node_id=`/`node_name=` instead of `agent_id=`/`agent_name=`. All `FlowResult()` calls updated to use `nodes=` instead of `agents=`. `CrewAgentNode` imported from `.nodes`. `AgentNode = CrewAgentNode` alias preserved. `AgentContext` import kept for TASK-980. `orchestration/crew.py` not modified. `crew/__init__.py` updated to export both `AgentCrew` and `CrewAgentNode`.
+
+**Deviations from spec**: none
