@@ -255,10 +255,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent (FEAT-143 session)
+**Date**: 2026-05-04
+**Notes**: Removed `AgentContext` import from `flows/crew/crew.py`. Refactored
+`_execute_agent()` to drop `context: AgentContext` parameter and accept `**kwargs`
+instead — all three callers now spread `context.shared_data`. Refactored
+`run_sequential()`, `run_loop()`, and `run_parallel()` to create `FlowContext`
+(instead of `AgentContext`) and call `context.mark_completed()` for each successful
+agent execution. Updated `_build_context_summary()` to read from `FlowContext.results`
+instead of `AgentContext.agent_results`. In `run_parallel()`, `_run_with_hooks`
+captures `context.shared_data` as a default arg snapshot (`_shared=dict(...)`) to
+ensure closure safety across concurrent tasks. `run_flow()` unchanged — it already
+uses `FlowContext` via `_execute_parallel_agents`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
