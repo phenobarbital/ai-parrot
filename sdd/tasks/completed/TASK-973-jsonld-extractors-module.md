@@ -427,10 +427,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-04
+**Notes**: All 10 extractor functions implemented. 62 unit tests pass. Lint clean.
+strip_html_text replicates WebScrapingLoader._strip_html exactly.
+EXTRACTOR_REGISTRY includes all 15 type strings (canonical + aliases).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

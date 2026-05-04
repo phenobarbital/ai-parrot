@@ -15816,7 +15816,7 @@
       "feature_id": "FEAT-142",
       "feature": "webscrapingloader-jsonld-support",
       "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -15824,7 +15824,8 @@
       "parallelism_notes": "Foundation module — TASK-974 and TASK-975 depend on it",
       "assigned_to": null,
       "started_at": "2026-05-04T11:30:51.457522+00:00",
-      "file": "sdd/tasks/active/TASK-973-jsonld-extractors-module.md"
+      "file": "sdd/tasks/completed/TASK-973-jsonld-extractors-module.md",
+      "completed_at": "2026-05-04T11:38:21.412465+00:00"
     },
     {
       "id": "TASK-974",
