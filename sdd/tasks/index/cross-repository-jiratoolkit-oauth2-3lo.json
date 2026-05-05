@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-04T18:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-05-05T07:00:00Z",
   "tasks": [
     {
       "id": "TASK-983",
@@ -215,7 +215,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -231,7 +231,8 @@
       "parallelism_notes": "Integration tests that exercise the full backend stack. Depends on all backend tasks.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-993-e2e-integration-tests.md"
+      "completed_at": "2026-05-05T07:00:00Z",
+      "file": "sdd/tasks/completed/TASK-993-e2e-integration-tests.md"
     }
   ]
 }
