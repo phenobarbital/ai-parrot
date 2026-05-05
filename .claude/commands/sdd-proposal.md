@@ -24,12 +24,23 @@ Extract from the user's invocation:
 - **free-form notes**: anything the user provides as initial context.
 
 ### 2. Scaffold the Proposal
-1. Read the template at `sdd/templates/proposal.md`.
+1. Read the template at `sdd/templates/proposal.md`. The template already
+   contains a YAML frontmatter block at the top (FEAT-145).
 2. Create `sdd/proposals/<feature-title>.proposal.md` with today's date.
+   Preserve the frontmatter; defaults are `type: feature, base_branch: dev`.
+   The §3 discussion may overwrite these values based on the user's answers.
 3. Pre-fill any sections using the user's free-form notes.
 
 ### 3. Discuss and Clarify
 Walk through each section of the proposal with the user, asking:
+
+**Flow type (always ask first; FEAT-145)**:
+- Is this a regular **feature** (lands on `dev`) or a **hotfix** (lands on `main`)?
+- For `feature`, which base branch? (default: `dev`; for sub-features pick the parent feature branch.)
+- For `hotfix`, base is fixed to `main` — no choice.
+
+Update the proposal's YAML frontmatter (`type`, `base_branch`) with the answer.
+Validation rule: `type: hotfix` REQUIRES `base_branch: main`.
 
 **Motivation (Why)**:
 - What problem does this solve?

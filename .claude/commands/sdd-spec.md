@@ -119,6 +119,43 @@ Loaded brainstorm: sdd/proposals/<feature-name>.brainstorm.md
 
 If K is zero, proceed directly to §4 without asking anything.
 
+#### 2d. Sync the Base Branch (FEAT-145)
+
+Read the brainstorm/proposal frontmatter (or default to `feature`/`dev` when
+no exploration doc exists) via `scripts.sdd.sdd_meta`:
+
+```bash
+META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<brainstorm-or-proposal-path>')); print(m.type, m.base_branch)")
+TYPE=$(echo "$META" | awk '{print $1}')
+BASE_BRANCH=$(echo "$META" | awk '{print $2}')
+```
+
+**Validation:** if `TYPE == "hotfix"` and `BASE_BRANCH != "main"`, abort:
+```
+⚠️  type='hotfix' requires base_branch='main' (got base_branch='<value>').
+   Fix the brainstorm/proposal frontmatter and re-run /sdd-spec.
+```
+
+**Sync:** before scaffolding, switch to the base branch and pull:
+```bash
+git checkout "$BASE_BRANCH"
+git pull --ff-only origin "$BASE_BRANCH"
+```
+
+If the working tree is dirty, abort with:
+```
+⚠️  Cannot sync <BASE_BRANCH>: working tree has uncommitted changes.
+   Stash or commit first, then re-run /sdd-spec.
+```
+
+If `--ff-only` fails, abort with:
+```
+⚠️  Cannot fast-forward <BASE_BRANCH>. Reconcile manually
+   (git pull --rebase or merge), then re-run /sdd-spec.
+```
+
+Carry `TYPE` and `BASE_BRANCH` forward into the spec's frontmatter at §5.
+
 ### 3. Ask Clarifying Questions (only what is genuinely missing)
 
 After §2c, you may ask the user **only** for gaps the brainstorm/proposal did
@@ -167,8 +204,18 @@ This step prevents AI hallucinations during implementation. You MUST:
    preserve them as verified references in the contract.
 
 ### 5. Scaffold the Spec
-1. Read the template at `sdd/templates/spec.md`.
+1. Read the template at `sdd/templates/spec.md`. The template already contains
+   a YAML frontmatter block at the top (FEAT-145).
 2. Create `sdd/specs/<feature-name>.spec.md` filled in with:
+   - **Frontmatter** at the very top: set `type` and `base_branch` to the
+     values resolved in §2d. Do NOT strip the frontmatter. The block must
+     match this shape exactly:
+     ```yaml
+     ---
+     type: feature        # or: hotfix
+     base_branch: dev     # or: main (mandatory for hotfix)
+     ---
+     ```
    - Feature ID (check existing; increment last; start at FEAT-001 if none).
    - Today's date.
    - Answers from user (or prior exploration documents).
