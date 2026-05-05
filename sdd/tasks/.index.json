@@ -16385,14 +16385,15 @@
         "TASK-995"
       ],
       "parallelism_notes": "Sequential \u2014 same worktree as the rest of FEAT-145.",
-      "file": "sdd/tasks/active/TASK-1000-sdd-next-and-status-glob-indexes.md",
+      "file": "sdd/tasks/completed/TASK-1000-sdd-next-and-status-glob-indexes.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:26:15+00:00"
+      "started_at": "2026-05-05T01:26:15+00:00",
+      "completed_at": "2026-05-05T01:27:26+00:00"
     },
     {
       "id": "TASK-1001",

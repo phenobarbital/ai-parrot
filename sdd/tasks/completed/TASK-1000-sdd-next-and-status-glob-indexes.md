@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-995
@@ -174,4 +174,19 @@ All counts must match.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-1000`
+**Date**: 2026-05-05
+**Notes**: Both read-only commands now glob `sdd/tasks/index/*.json` instead of reading the monolith. Output format preserved. All 6 acceptance grep checks pass.
+
+**Changes per file:**
+- **`sdd-next.md`**: §1 replaced with a `jq -s` aggregation pattern that excludes `_orphans.json`. Guardrail added: orphans are never suggested. Reference section updated.
+- **`sdd-status.md`**: §1 rewritten to load each per-spec index header (feature/feature_id/type/base_branch/completed_at) and the tasks array. Filter logic now matches against the index header. New §4 "Show Orphan Tasks" appends the Unowned-tasks panel when `_orphans.json` has any entries. Reference section updated.
+
+**Acceptance grep results:**
+| Check                           | sdd-next.md | sdd-status.md |
+|---------------------------------|-------------|---------------|
+| `sdd/tasks/index/` refs (≥ 1)   | 6 ✅        | 7 ✅          |
+| `sdd/tasks/.index.json` (= 0)   | 0 ✅        | 0 ✅          |
+| `_orphans` / `Unowned` (≥ 1)    | 4 ✅        | 4 ✅          |
+
+**Deviations from contract**: none.
