@@ -16,7 +16,6 @@ from asyncdb.exceptions import NoDataFound, UninitializedError
 from asyncdb import AsyncPool
 from ..conf import (
     default_dsn,
-    EMBEDDING_DEFAULT_MODEL,
     KB_DEFAULT_MODEL
 )
 from ..embeddings import get_model_recommendations
@@ -216,16 +215,12 @@ class Chatbot(BaseBot):
         self.auto_tool_detection = getattr(self, 'auto_tool_detection', True)
         self.tool_threshold = getattr(self, 'tool_threshold', 0.7)
         self.operation_mode = getattr(self, 'operation_mode', 'adaptive')
-        # Embedding Model Configuration
-        self.embedding_model: dict = getattr(self, 'embedding_model', {
-            'model_name': EMBEDDING_DEFAULT_MODEL,
-            'model_type': 'huggingface'
-        })
-
-        # Vector store configuration
+        # Vector store configuration — source of truth for the embedding
+        # model is ``vector_store_config['embedding_model']``.
         self._use_vector = getattr(self, '_use_vector', False)
         self._vector_store = getattr(self, '_vector_store', {})
         self._metric_type = getattr(self, '_metric_type', 'COSINE')
+        self.embedding_model = self._initial_embedding_model(self._vector_store)
 
         # Memory and conversation configuration
         self.memory_type = getattr(self, 'memory_type', 'memory')
@@ -387,18 +382,12 @@ class Chatbot(BaseBot):
         if tool_names and self.enable_tools:
             self.tool_manager.register_tools(tool_names)
 
-        # Embedding Model Configuration
-        self.embedding_model: dict = self._from_db(
-            bot, 'embedding_model', default={
-                'model_name': EMBEDDING_DEFAULT_MODEL,
-                'model_type': 'huggingface'
-            }
-        )
-
-        # Vector store configuration
+        # Vector store configuration — embedding model lives at
+        # ``vector_store_config['embedding_model']`` (single source of truth).
         self._use_vector = self._from_db(bot, 'use_vector', default=False)
         self._vector_store = self._from_db(bot, 'vector_store_config', default={})
         self._metric_type = self._vector_store.get('metric_type', self._metric_type)
+        self.embedding_model = self._initial_embedding_model(self._vector_store)
 
         # Memory and conversation configuration
         self.memory_type = self._from_db(bot, 'memory_type', default='memory')

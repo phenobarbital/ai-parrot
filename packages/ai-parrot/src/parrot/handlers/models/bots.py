@@ -13,13 +13,6 @@ from parrot.conf import PARROT_BOTS_TABLE, PARROT_SCHEMA
 # from ..bots.basic import BasicBot
 
 
-def default_embed_model():
-    return {
-        "model_name": "sentence-transformers/all-mpnet-base-v2",
-        "model_type": "huggingface"
-    }
-
-
 def created_at(*args, **kwargs) -> int:
     return int(time.time()) * 1000
 
@@ -71,11 +64,13 @@ class BotModel(Model):
         operation_mode VARCHAR DEFAULT 'adaptive' CHECK (operation_mode IN ('conversational', 'agentic', 'adaptive')),
 
         -- Vector store and retrieval configuration
+        --   The embedding model lives at vector_store_config['embedding_model']
+        --   (single source of truth — see migration
+        --   FEAT-fold-embedding-model-into-vector-store-config.sql).
         use_vector_context BOOLEAN DEFAULT FALSE,
         vector_store_config JSONB DEFAULT '{}'::JSONB,
         reranker_config        JSONB DEFAULT '{}'::JSONB,
         parent_searcher_config JSONB DEFAULT '{}'::JSONB,
-        embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}',
         context_search_limit INTEGER DEFAULT 10,
         context_score_threshold FLOAT DEFAULT 0.7,
 
@@ -236,11 +231,6 @@ class BotModel(Model):
         required=False,
         ui_help="The bot’s parent-searcher config (FEAT-128).",
     )
-    embedding_model: dict = Field(
-        default=default_embed_model,
-        required=False,
-        ui_help="The bot’s embedding model."
-    )
     context_search_limit: int = Field(
         default=10,
         required=False,
@@ -352,7 +342,6 @@ class BotModel(Model):
             'vector_store_config': self.vector_store_config,
             'reranker_config': self.reranker_config,
             'parent_searcher_config': self.parent_searcher_config,
-            'embedding_model': self.embedding_model,
             'context_search_limit': self.context_search_limit,
             'context_score_threshold': self.context_score_threshold,
             'memory_type': self.memory_type,

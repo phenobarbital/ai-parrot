@@ -187,6 +187,28 @@ class AbstractBot(
     EVENT_TASK_COMPLETED = "task_completed"
     EVENT_TASK_FAILED = "task_failed"
 
+    @staticmethod
+    def _initial_embedding_model(
+        vector_store_config: Any,
+        legacy_kwarg: Any = None,
+    ) -> dict:
+        """Resolve the bot's embedding model dict from vector_store_config.
+
+        ``vector_store_config['embedding_model']`` is the single source of
+        truth. Falls back to a legacy standalone kwarg, then to the
+        framework default.
+        """
+        if isinstance(vector_store_config, dict):
+            emb = vector_store_config.get('embedding_model')
+            if isinstance(emb, dict) and emb:
+                return emb
+        if isinstance(legacy_kwarg, dict) and legacy_kwarg:
+            return legacy_kwarg
+        return {
+            'model_name': EMBEDDING_DEFAULT_MODEL,
+            'model_type': 'huggingface',
+        }
+
     def __init__(
         self,
         name: str = 'Nav',
@@ -489,13 +511,17 @@ class AbstractBot(
 
         # Memory settings
         self.memory: Callable = None
-        # Embedding Model Name
-        self.embedding_model = kwargs.get(
-            'embedding_model',
-            {
-                'model_name': EMBEDDING_DEFAULT_MODEL,
-                'model_type': 'huggingface'
-            }
+        # Embedding model — sourced from ``vector_store_config['embedding_model']``
+        # which is the single source of truth (FEAT migration:
+        # fold-embedding-model-into-vector-store-config). A legacy
+        # standalone ``embedding_model`` kwarg is folded into
+        # ``vector_store_config`` for backward compatibility with
+        # constructor-style instantiation.
+        _legacy_emb_kwarg = kwargs.get('embedding_model')
+        if _legacy_emb_kwarg and isinstance(self._vector_store, dict):
+            self._vector_store.setdefault('embedding_model', _legacy_emb_kwarg)
+        self.embedding_model = self._initial_embedding_model(
+            self._vector_store, _legacy_emb_kwarg
         )
         # embedding object:
         self.embeddings = kwargs.get('embeddings', None)

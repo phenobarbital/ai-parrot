@@ -401,10 +401,10 @@ class HITLResponseHandler(BaseView):
 # ---------------------------------------------------------------------------
 
 
-def setup_web_hitl(app: web.Application) -> None:
+async def setup_web_hitl(app: web.Application) -> None:
     """Bootstrap a process-wide HumanInteractionManager with a WebHumanChannel.
 
-    This function is idempotent — it is safe to call multiple times. On each
+    This coroutine is idempotent — it is safe to call multiple times. On each
     call it:
 
     1. Checks whether a manager already exists via
@@ -415,10 +415,14 @@ def setup_web_hitl(app: web.Application) -> None:
        (``parrot.conf.REDIS_URL``), registers a
        :class:`~parrot.human.channels.web.WebHumanChannel` under the name
        ``"web"``, calls :func:`~parrot.human.set_default_human_manager`, and
-       appends ``manager.startup()`` to ``app.on_startup``.
+       awaits ``manager.startup()`` directly.
     3. If ``app['user_socket_manager']`` is absent, logs a WARNING but does
        not raise — the bootstrap completes with a degraded state where the
        web channel cannot deliver messages.
+
+    This function awaits ``manager.startup()`` itself rather than appending a
+    new ``on_startup`` hook, so it is safe to call from within an existing
+    ``on_startup`` callback (where ``app.on_startup`` is frozen).
 
     Args:
         app: The :class:`aiohttp.web.Application` instance.
@@ -458,11 +462,7 @@ def setup_web_hitl(app: web.Application) -> None:
         new_manager.register_channel("web", channel)
 
     set_default_human_manager(new_manager)
-
-    async def _startup(app: web.Application) -> None:  # noqa: ARG001
-        await new_manager.startup()
-
-    app.on_startup.append(_startup)
+    await new_manager.startup()
     logger.info(
-        "setup_web_hitl: HumanInteractionManager created and startup hook registered."
+        "setup_web_hitl: HumanInteractionManager created and started."
     )

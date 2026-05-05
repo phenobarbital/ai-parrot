@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.43",
+    "ai-parrot>=0.24.44",
     "opencv-python-headless>=4.8",
     "pytesseract>=0.3.13",
 ]

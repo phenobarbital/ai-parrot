@@ -36,17 +36,11 @@ CREATE TABLE IF NOT EXISTS navigator.users_bots (
 
     -- LLM configuration
     llm            VARCHAR NOT NULL DEFAULT 'google',
-    model_name     VARCHAR NOT NULL DEFAULT 'gemini-3.1-flash-lite-preview',
-    temperature    FLOAT DEFAULT 0.1 CHECK (temperature >= 0 AND temperature <= 2),
-    max_tokens     INTEGER DEFAULT 4096 CHECK (max_tokens > 0),
-    top_k          INTEGER DEFAULT 41 CHECK (top_k > 0),
-    top_p          FLOAT DEFAULT 0.9 CHECK (top_p >= 0 AND top_p <= 1),
     model_config   JSONB DEFAULT '{}'::JSONB,
 
     -- Vector store + uploaded documents (S3 paths)
     use_vector              BOOLEAN DEFAULT FALSE,
     vector_config           JSONB DEFAULT '{}'::JSONB,
-    embedding_model         JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}'::JSONB,
     documents               JSONB DEFAULT '[]'::JSONB,
     context_search_limit    INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
     context_score_threshold FLOAT DEFAULT 0.61 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
