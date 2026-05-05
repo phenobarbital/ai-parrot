@@ -39,6 +39,7 @@ from ...models.crew import (
 )
 from ...clients import AbstractClient
 from ..flows.core.storage import PersistenceMixin, SynthesisMixin
+from ..flows.core.storage.backends import ResultStorage
 from .storage.synthesis import SYNTHESIS_PROMPT
 
 
@@ -327,6 +328,8 @@ class AgentsFlow(PersistenceMixin, SynthesisMixin):
         vector_dimension: int = 384,
         vector_index_type: str = "Flat",
         llm: Optional[Union[str, AbstractClient]] = None,
+        persist_results: bool = True,
+        result_storage: Union[str, "ResultStorage", None] = None,
         **kwargs,
     ):
         """
@@ -388,6 +391,14 @@ class AgentsFlow(PersistenceMixin, SynthesisMixin):
         else:
             self.execution_memory = None
             self.retrieval_tool = None
+
+        # Result persistence (FEAT-147)
+        self._persist_results: bool = persist_results
+        self._result_storage_arg: Union[str, "ResultStorage", None] = result_storage
+        self._result_storage: Optional["ResultStorage"] = (
+            result_storage if isinstance(result_storage, ResultStorage) else None
+        )
+        self._persist_tasks: set = set()
 
         # Add initial agents
         if agents:
@@ -938,9 +949,8 @@ class AgentsFlow(PersistenceMixin, SynthesisMixin):
                     'synthesis_prompt': synthesis_prompt,
                 })
 
-        # Persist to DocumentDB
-        import asyncio as _aio
-        _aio.get_running_loop().create_task(
+        # Persist result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 result,
                 'run_flow',
@@ -949,6 +959,8 @@ class AgentsFlow(PersistenceMixin, SynthesisMixin):
                 session_id=session_id,
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return result
 
