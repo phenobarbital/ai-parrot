@@ -387,10 +387,11 @@ async def test_async_context_manager_calls_aclose():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-05
+**Notes**: 9 tests pass. Canonical persistence.py rewritten to delegate to
+ResultStorage backends. Legacy flow/storage/persistence.py deleted.
+fsm.py import updated to canonical location. Legacy __init__.py drops
+PersistenceMixin re-export with an explanatory comment.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
