@@ -73,6 +73,8 @@ class ProductReport(BasicAgent):
             tools=tools,
             **kwargs
         )
+        # ProductReport uses its own legacy system_prompt_template
+        self._prompt_builder = None
         self.system_prompt_template = prompt_template or PRODUCT_PROMPT
         self._system_prompt_base = system_prompt or ''
 

@@ -77,11 +77,11 @@ class TestPromptBuilderFactories:
         assert builder.get("user_session") is not None
         assert builder.get("tools") is not None
 
-    def test_agent_has_strict_grounding(self):
+    def test_agent_has_agent_behavior(self):
         builder = PromptBuilder.agent()
-        grounding = builder.get("strict_grounding")
-        assert grounding is not None
-        assert "<grounding_policy>" in grounding.template
+        behavior = builder.get("agent_behavior")
+        assert behavior is not None
+        assert "<agent_behavior>" in behavior.template
 
     def test_agent_extends_default(self):
         builder = PromptBuilder.agent()

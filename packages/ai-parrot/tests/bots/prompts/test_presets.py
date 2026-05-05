@@ -26,7 +26,7 @@ class TestGetPreset:
 
     def test_get_agent_preset(self):
         builder = get_preset("agent")
-        assert builder.get("strict_grounding") is not None
+        assert builder.get("agent_behavior") is not None
 
     def test_get_rag_preset_has_grounding_and_scope(self):
         builder = get_preset("rag")

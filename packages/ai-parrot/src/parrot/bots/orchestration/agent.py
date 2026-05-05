@@ -28,7 +28,8 @@ class OrchestratorAgent(BasicAgent):
         self.specialist_agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
         # Store pending agent names for deferred registry resolution
         self._pending_agent_names: List[str] = agent_names or []
-        # Set orchestration-specific system prompt
+        # OrchestratorAgent uses its own legacy system_prompt_template
+        self._prompt_builder = None
         if orchestration_prompt:
             self.system_prompt_template = orchestration_prompt
         else:

@@ -89,10 +89,10 @@ $rationale
 
     @classmethod
     def agent(cls) -> PromptBuilder:
-        """Agent stack with strict grounding behavior."""
-        from .domain_layers import STRICT_GROUNDING_LAYER
+        """Agent stack with general-purpose grounding behavior."""
+        from .domain_layers import AGENT_BEHAVIOR_LAYER
         builder = cls.default()
-        builder.add(STRICT_GROUNDING_LAYER)
+        builder.add(AGENT_BEHAVIOR_LAYER)
         return builder
 
     @classmethod

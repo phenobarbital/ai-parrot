@@ -11,6 +11,7 @@ from ..models.responses import AIMessage, AgentResponse
 from ..clients.google import GoogleGenAIClient
 from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
+from .prompts.builder import PromptBuilder
 from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
 from ..tools.json_tool import ToJsonTool
@@ -106,6 +107,14 @@ class BasicAgent(Chatbot, NotificationMixin):
             use_tools=use_tools,
             **kwargs
         )
+        # Default to composable PromptBuilder for agents unless:
+        # 1. A custom system_prompt was given (legacy caller expects legacy behavior)
+        # 2. An explicit prompt_builder or prompt_preset was already set by super()
+        if (
+            system_prompt is None
+            and getattr(self, '_prompt_builder', None) is None
+        ):
+            self._prompt_builder = PromptBuilder.agent()
         if instructions:
             self.goal = instructions
         self.enable_tools = True  # Enable tools by default
@@ -1138,25 +1147,40 @@ class BasicAgent(Chatbot, NotificationMixin):
         return self._dataframe_info_cache
 
     def _update_system_prompt_with_dataframes(self):
-        """Inject dataframe information into system prompt."""
+        """Inject dataframe information into system prompt.
+
+        When PromptBuilder is active, adds a DATAFRAME_CONTEXT_LAYER so the
+        information flows through the composable layer system. Falls back to
+        legacy template manipulation otherwise.
+        """
         df_info = self._generate_dataframe_info()
 
         if not df_info:
             return
 
-        # Find the position to inject (before $pre_context or $context)
+        if self._prompt_builder is not None:
+            from .prompts.domain_layers import DATAFRAME_CONTEXT_LAYER
+            self._prompt_builder.add(DATAFRAME_CONTEXT_LAYER)
+            self._dataframe_schemas = df_info
+            return
+
+        # Legacy path: inject into system_prompt_template
         if "$pre_context" in self.system_prompt_template:
             marker = "$pre_context"
         elif "$context" in self.system_prompt_template:
             marker = "$context"
         else:
-            # Append at the end if no markers found
             self.system_prompt_template += f"\n\n{df_info}"
             return
 
-        # Inject before the marker
         parts = self.system_prompt_template.split(marker, 1)
         self.system_prompt_template = f"{parts[0]}{df_info}\n\n{marker}{parts[1]}"
+
+    async def create_system_prompt(self, **kwargs):
+        if self._prompt_builder and hasattr(self, '_dataframe_schemas'):
+            if "dataframe_schemas" not in kwargs and self._dataframe_schemas:
+                kwargs["dataframe_schemas"] = self._dataframe_schemas
+        return await super().create_system_prompt(**kwargs)
 
     def remove_dataframe(self, name: str):
         """Remove a dataframe by name."""
