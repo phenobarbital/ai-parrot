@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import logging
 from contextvars import ContextVar, Token
-from typing import Any, List, Optional, Type
+from typing import Any, List, Optional
 
 from aiohttp import web
 from pydantic import BaseModel, Field
@@ -145,6 +145,12 @@ class WebHumanTool(HumanTool):
         Raises:
             ValueError: When neither the ContextVar nor ``default_targets``
                 provides a target and none was supplied in ``kwargs``.
+
+        Note:
+            This tool blocks the HTTP response for up to ``timeout`` seconds
+            (default 7200s / 2h) while awaiting human input. For production
+            use, this agent should be invoked via streaming or with a much
+            shorter timeout. See docs/web-hitl-frontend-brainstorm.md.
         """
         # Lazy-resolve the manager
         if self.manager is None:
@@ -234,6 +240,11 @@ except ImportError:
             return func
         return decorator
 
+    logger.warning(
+        "navigator_auth not installed: HITLResponseHandler is unauthenticated. "
+        "This is only safe in test/dev environments."
+    )
+
 
 class HITLResponseHandler(BaseView):
     """HTTP handler for ``POST /api/v1/agents/hitl/respond``.
@@ -295,6 +306,25 @@ class HITLResponseHandler(BaseView):
 
         interaction_id: str = body.interaction_id
 
+        # Respondent identity from authenticated session, never from body
+        respondent: str = "unknown"
+        try:
+            respondent = self.request.session.get("user_id", "unknown")
+        except AttributeError:
+            pass
+
+        # Guard: reject unauthenticated callers before any further processing
+        if respondent == "unknown":
+            logger.warning(
+                "HITLResponseHandler: unauthenticated request for interaction %s",
+                interaction_id,
+            )
+            return web.Response(
+                status=403,
+                content_type="application/json",
+                body=json.dumps({"error": "unauthenticated"}),
+            )
+
         # Verify the interaction exists — if the manager has a pending future
         # for this ID the response is valid; if not, return 404.
         if (
@@ -310,12 +340,19 @@ class HITLResponseHandler(BaseView):
                 body=json.dumps({"error": "interaction not found"}),
             )
 
-        # Respondent identity from authenticated session, never from body
-        respondent: str = "unknown"
-        try:
-            respondent = self.request.session.get("user_id", "unknown")
-        except AttributeError:
-            pass
+        # Ownership check: only the intended respondent can submit a reply
+        if not await manager.is_valid_respondent(interaction_id, respondent):
+            logger.warning(
+                "HITLResponseHandler: respondent '%s' is not authorised for "
+                "interaction %s",
+                respondent,
+                interaction_id,
+            )
+            return web.Response(
+                status=403,
+                content_type="application/json",
+                body=json.dumps({"error": "forbidden: not the intended respondent"}),
+            )
 
         # Determine response type
         response_type_str: str = (

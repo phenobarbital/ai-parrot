@@ -13,7 +13,7 @@ contract) but does not invoke it itself.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
 from .base import HumanChannel
@@ -164,7 +164,6 @@ class WebHumanChannel(HumanChannel):
         """
         # Compute ISO-8601 deadline from the interaction timeout
         now = datetime.now(tz=timezone.utc)
-        from datetime import timedelta
         deadline = (
             now + timedelta(seconds=interaction.timeout)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")

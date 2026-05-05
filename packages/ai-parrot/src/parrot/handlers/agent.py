@@ -1387,6 +1387,7 @@ class AgentTalk(BaseView):
         # resolve the active WebSocket channel without being passed it explicitly.
         # Reset in the finally block below to ensure clean teardown.
         _hitl_token = set_current_web_session(ws_channel_id or session_id)
+        start_time = time.perf_counter()  # safe default; overwritten inside try
 
         # --- WebSearchAgent-specific flags ---
         _ws_originals = {}  # saved originals for restore

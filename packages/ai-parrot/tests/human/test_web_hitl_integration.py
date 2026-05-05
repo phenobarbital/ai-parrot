@@ -87,6 +87,10 @@ class _FakeRedis:
         for key in keys:
             self._store.pop(key, None)
 
+    async def publish(self, channel: str, message: str) -> int:
+        """No-op pub/sub for testing."""
+        return 0
+
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

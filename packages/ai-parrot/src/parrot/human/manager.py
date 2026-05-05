@@ -138,6 +138,37 @@ class HumanInteractionManager:
         await redis.setex(key, 86400, result.model_dump_json())
 
     # ------------------------------------------------------------------
+    # Ownership validation
+    # ------------------------------------------------------------------
+
+    async def is_valid_respondent(
+        self, interaction_id: str, respondent: str
+    ) -> bool:
+        """Check whether *respondent* is an intended recipient of the interaction.
+
+        Loads the interaction from Redis and checks whether *respondent* appears
+        in ``interaction.target_humans``. Returns ``True`` when the interaction
+        is not found (to prevent leaking information about unknown IDs, which
+        are already rejected as 404 before this method is called) or when
+        ``target_humans`` is empty (open broadcast).
+
+        Args:
+            interaction_id: UUID of the pending interaction.
+            respondent: User identifier extracted from the authenticated session.
+
+        Returns:
+            ``True`` if the respondent is authorised, ``False`` otherwise.
+        """
+        interaction = await self._load_interaction(interaction_id)
+        if interaction is None:
+            # Interaction not found — allow through; 404 is handled by the caller.
+            return True
+        if not interaction.target_humans:
+            # No specific targets: open to any authenticated user.
+            return True
+        return respondent in interaction.target_humans
+
+    # ------------------------------------------------------------------
     # Channel registration
     # ------------------------------------------------------------------
 

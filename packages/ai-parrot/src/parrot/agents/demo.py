@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, List, Optional, Type
+from typing import Any, List, Type
 
+from navconfig import config
 from pydantic import BaseModel, Field
 
 from parrot.bots.agent import BasicAgent
@@ -144,7 +145,7 @@ Important guidelines:
 """
 
 
-@register_agent(name="hitl_demo", at_startup=True)
+@register_agent(name="hitl_demo", at_startup=False)
 class HITLDemoAgent(BasicAgent):
     """Travel Concierge — demonstrates the web HITL (Human-in-the-Loop) flow.
 
@@ -166,11 +167,15 @@ class HITLDemoAgent(BasicAgent):
             *args: Forwarded to :class:`~parrot.bots.agent.BasicAgent`.
             **kwargs: Forwarded to :class:`~parrot.bots.agent.BasicAgent`.
         """
+        use_llm = config.get(
+            "HITL_DEMO_LLM",
+            fallback=config.get("DEFAULT_LLM", fallback="google"),
+        )
         super().__init__(
             *args,
             name="Travel Concierge",
             agent_id="hitl_demo",
-            use_llm="google",
+            use_llm=use_llm,
             system_prompt=_SYSTEM_PROMPT,
             use_tools=True,
             **kwargs,

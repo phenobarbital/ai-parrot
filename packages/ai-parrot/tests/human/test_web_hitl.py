@@ -54,6 +54,7 @@ def mock_manager():
     ))
     manager.receive_response = AsyncMock()
     manager.get_result = AsyncMock(return_value={"value": "response_value"})
+    manager.is_valid_respondent = AsyncMock(return_value=True)
     manager.channels = {}
     manager._pending_futures = {}
     return manager
@@ -264,10 +265,14 @@ class TestHITLResponseHandler:
         response = await handler.post()
         assert response.status == 200
         assert mock_manager.receive_response.called
-        # Parse response body — handle both bytes and StringPayload
+        # Parse response body — decode bytes or StringPayload safely
         raw_body = response.body
-        if hasattr(raw_body, '_value'):
-            raw_body = raw_body._value
+        if isinstance(raw_body, bytes):
+            raw_body = raw_body.decode()
+        elif hasattr(raw_body, 'decode'):
+            raw_body = raw_body.decode()
+        else:
+            raw_body = str(raw_body)
         body = json.loads(raw_body)
         assert body["ok"] is True
         assert body["interaction_id"] == interaction_id

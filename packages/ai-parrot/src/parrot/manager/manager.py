@@ -1009,8 +1009,13 @@ class BotManager:
             '/api/v1/agents/hitl/respond',
             HITLResponseHandler
         )
-        # FEAT-146: Bootstrap web HITL stack (idempotent)
-        setup_web_hitl(self.app)
+        # FEAT-146: Bootstrap web HITL stack (idempotent).
+        # Deferred to on_startup so that app['user_socket_manager'] is
+        # guaranteed to be populated before setup_web_hitl runs.
+        async def _hitl_deferred_startup(app: web.Application) -> None:
+            setup_web_hitl(app)
+
+        self.app.on_startup.append(_hitl_deferred_startup)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view(
             '/api/v1/user_agents',
