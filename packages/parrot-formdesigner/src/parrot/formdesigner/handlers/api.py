@@ -71,7 +71,8 @@ def _loc_to_str(value: object) -> str | None:
 
     Returns:
         Plain string if a non-empty value was provided; ``None`` if the
-        input is ``None`` or an empty string/dict.
+        input is ``None``, an empty string/dict, or any falsy scalar
+        value (e.g., ``0``, ``False``).
     """
     if value is None:
         return None
