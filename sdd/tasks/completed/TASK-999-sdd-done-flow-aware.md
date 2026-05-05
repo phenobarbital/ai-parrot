@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-994
@@ -212,4 +212,33 @@ All counts must match.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-999`
+**Date**: 2026-05-05
+**Notes**: `/sdd-done` is now flow-aware end-to-end. The hard refusal of pushing to or PR'ing against `main` is the load-bearing rule — implemented as both a documented cardinal block at the top of Steps and an explicit `if [[ "$BASE_BRANCH" == "main" ]]; then ... exit 0` in §9.
+
+**What landed:**
+- **Header doc**: "runs on dev" → "runs on the spec's `base_branch`".
+- **Usage**: documented new `--sync-dev` flag for hotfixes.
+- **Guardrails**: replaced "Must run on dev" with "Must run on the spec's base_branch", and added the cardinal `> CRITICAL` block forbidding any push or PR to `main`.
+- **§1**: rewritten as "Verify We're on the Base Branch" — reads frontmatter via `scripts.sdd.sdd_meta`, checks `CURRENT_BRANCH == BASE_BRANCH`, refuses inside-worktree.
+- **§2**: replaced monolithic-index lookup with per-spec-index glob.
+- **§7**: replaced index update with `jq` in-place mutation of `sdd/tasks/index/<feature>.json` (status/completed_at/verification/file fields). Stamps the index header's `completed_at` when every task is done.
+- **§9**: now flow-aware. For `BASE_BRANCH == "main"` (hotfix), HARD REFUSE to merge — emit the manual `gh pr create --base main` snippet and exit cleanly (exit 0, NOT an error — the hotfix workflow continues outside the command). For `BASE_BRANCH != "main"` (feature), perform the merge as before, parameterised on `$BASE_BRANCH`.
+- **NEW §9.5 "Hotfix → Dev Sync"**: gated by `--sync-dev` AND `TYPE == "hotfix"`. Pre-flight check via `git merge-base --is-ancestor feat-… origin/main` (refuses if PR not yet merged). Then optimistic auto-merge into dev with safe `git merge --abort` on conflict (decision 4c).
+- **Reference**: updated to point at per-spec index files and the FEAT-145 frontmatter parser.
+
+**Acceptance grep results:**
+- Cardinal block "NEVER pushes to main / NEVER opens PR against main": 1 (≥ 1 required)
+- `BASE_BRANCH` references: 19 (≥ 1 required)
+- per-spec index references: 3 (≥ 1 required, plus reference section)
+- `git checkout dev` outside §9.5: 0 (= 0 required)
+- `merge --abort`: 2 (≥ 1 required, in §9.5)
+- `merge-base --is-ancestor`: 1 (≥ 1 required)
+- monolith references: 0 (caught one residual in §Reference and fixed)
+- `gh pr create --base main` shown only as user-instruction snippet: ✅ (never inside an executable code block that runs)
+
+**Deviations from contract**: none.
+
+**Heads-up for downstream tasks**:
+- Existing in-flight features (with no spec frontmatter) keep working: `parse()` returns the `feature/dev` defaults, so `/sdd-done` behaves identically to the old version for them.
+- The hotfix flow's `exit 0` in §9 is intentional — a hotfix is NOT a failure of `/sdd-done`; it's a different valid path. The user runs the manual PR, then `--sync-dev`.

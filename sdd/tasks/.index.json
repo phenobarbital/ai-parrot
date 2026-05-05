@@ -16361,14 +16361,15 @@
         "TASK-994"
       ],
       "parallelism_notes": "Sequential \u2014 single complex command file rewrite.",
-      "file": "sdd/tasks/active/TASK-999-sdd-done-flow-aware.md",
+      "file": "sdd/tasks/completed/TASK-999-sdd-done-flow-aware.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:22:24+00:00"
+      "started_at": "2026-05-05T01:22:24+00:00",
+      "completed_at": "2026-05-05T01:24:49+00:00"
     },
     {
       "id": "TASK-1000",
