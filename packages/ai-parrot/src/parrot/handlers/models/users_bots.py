@@ -23,13 +23,6 @@ from parrot.conf import PARROT_SCHEMA
 from ._encrypted_field import seal, unseal
 
 
-def _default_embed_model() -> dict:
-    return {
-        "model_name": "sentence-transformers/all-mpnet-base-v2",
-        "model_type": "huggingface",
-    }
-
-
 class UserBotModel(Model):
     """Per-user bot definition.
 
@@ -80,24 +73,14 @@ class UserBotModel(Model):
 
     # LLM configuration
     llm: str = Field(required=False, default="google")
-    # DEPRECATED columns — kept only for legacy rows during migration.
-    # All LLM tuning lives in ``model_config`` (JSONB) under keys
-    # ``model``, ``temperature``, ``max_tokens``, ``top_k``, ``top_p``.
-    # These columns will be dropped once data migration completes.
-    model_name: str = Field(required=False, default="gemini-3.1-flash-lite-preview")
-    temperature: float = Field(required=False, default=0.1)
-    max_tokens: int = Field(required=False, default=4096)
-    top_k: int = Field(required=False, default=41)
-    top_p: float = Field(required=False, default=0.9)
-    # Canonical LLM settings (mirrors how ``vector_config`` works).
-    # Recognized keys: ``model``, ``temperature``, ``max_tokens``,
-    # ``top_k``, ``top_p``, plus any provider-specific tuning.
     model_config: dict = Field(required=False, default_factory=dict)
 
-    # Vector store + uploaded documents
+    # Vector store + uploaded documents.
+    # The embedding model lives at vector_config['embedding_model']
+    # (single source of truth — see migration
+    # FEAT-fold-embedding-model-into-vector-store-config.sql).
     use_vector: bool = Field(required=False, default=False)
     vector_config: dict = Field(required=False, default_factory=dict)
-    embedding_model: dict = Field(required=False, default=_default_embed_model)
     documents: List[dict] = Field(required=False, default_factory=list)
     context_search_limit: int = Field(required=False, default=10)
     context_score_threshold: float = Field(required=False, default=0.61)
@@ -200,13 +183,7 @@ class UserBotModel(Model):
             "pre_instructions": self.pre_instructions or [],
             "prompt_preset": (self.prompt_config or {}).get("preset"),
             "use_llm": self.llm,
-            "model_name": self.model_name,
             "model_config": self.model_config or {},
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "top_k": self.top_k,
-            "top_p": self.top_p,
-            "embedding_model": self.embedding_model,
             "use_vectorstore": self.use_vector,
             "vector_store_config": self.vector_config or {},
             "context_search_limit": self.context_search_limit,

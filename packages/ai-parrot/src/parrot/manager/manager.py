@@ -386,8 +386,8 @@ class BotManager:
                         system_prompt=bot_model.system_prompt_template,
                         human_prompt=bot_model.human_prompt_template,
                         pre_instructions=bot_model.pre_instructions,
-                        # Vector store configuration
-                        embedding_model=bot_model.embedding_model,
+                        # Vector store configuration — embedding model is
+                        # carried inside ``vector_store_config['embedding_model']``.
                         use_vectorstore=bot_model.use_vector,
                         vector_store_config=bot_model.vector_store_config,
                         context_search_limit=bot_model.context_search_limit,

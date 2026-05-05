@@ -65,7 +65,7 @@ class StoreConfig:
     schema: str = 'public'
     embedding_model: Union[str, dict] = field(
         default_factory=lambda: {
-            "model": "sentence-transformers/all-mpnet-base-v2",
+            "model_name": "sentence-transformers/all-mpnet-base-v2",
             "model_type": "huggingface"
         }
     )
