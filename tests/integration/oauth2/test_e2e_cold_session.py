@@ -21,13 +21,7 @@ import pytest
 from parrot.integrations.oauth2.models import UserAgentToolkitRow
 
 
-def _make_mock_db() -> tuple[MagicMock, AsyncMock]:
-    """Return (mock_db_cls, mock_db_instance) for patching DocumentDb."""
-    mock_db_instance = AsyncMock()
-    mock_db_cls = MagicMock()
-    mock_db_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db_instance)
-    mock_db_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-    return mock_db_cls, mock_db_instance
+from .helpers import make_mock_db as _make_mock_db
 
 
 class TestE2EColdSessionRehydration:
@@ -52,6 +46,16 @@ class TestE2EColdSessionRehydration:
         # Mock credential resolver so toolkit_factory doesn't need real Jira credentials
         mock_resolver = MagicMock()
 
+        # Build a minimal AbstractToolkit-spec mock so register_toolkit()'s
+        # isinstance check passes, but no real Jira connection is needed.
+        from parrot.tools.toolkit import AbstractToolkit
+        from parrot.tools.abstract import AbstractTool
+
+        fake_tool = MagicMock(spec=AbstractTool)
+        fake_tool.name = "jira_search_issues"
+        mock_toolkit = MagicMock(spec=AbstractToolkit)
+        mock_toolkit.get_tools_sync.return_value = [fake_tool]
+
         with patch(
             "parrot.integrations.oauth2.persistence.DocumentDb",
             mock_db_cls,
@@ -60,9 +64,10 @@ class TestE2EColdSessionRehydration:
                 "parrot.handlers.user_objects.OAuthCredentialResolver",
                 return_value=mock_resolver,
             ):
-                with patch(
-                    "parrot_tools.jiratoolkit.JiraToolkit.__init__",
-                    return_value=None,
+                with patch.object(
+                    registered_jira_provider,
+                    "toolkit_factory",
+                    return_value=mock_toolkit,
                 ):
                     handler = UserObjectsHandler()
                     result_tm = await handler._hydrate_oauth_toolkits(
@@ -72,10 +77,14 @@ class TestE2EColdSessionRehydration:
                         request_session={},
                     )
 
-        # toolkit_factory should have been invoked by the provider
-        # The ToolManager should have received a new tool via add_tool or similar
-        # (implementation detail: registry.get("jira").toolkit_factory called)
-        assert result_tm is not None  # hydration returned a ToolManager
+        # toolkit_factory should have been invoked by the provider.
+        # The ToolManager must be non-None AND contain at least one registered tool
+        # (guards against the silent add_tool/register_toolkit regression).
+        assert result_tm is not None
+        assert result_tm.tool_count() > 0, (
+            "Cold-session hydration returned a ToolManager but registered zero tools. "
+            "Ensure _hydrate_oauth_toolkits calls register_toolkit(), not add_tool()."
+        )
 
     @pytest.mark.asyncio
     async def test_hydration_skips_when_no_toolkit_rows(
@@ -137,6 +146,7 @@ class TestE2EColdSessionRehydration:
 
         # An empty ToolManager is returned — provider was skipped, no tools added
         assert result_tm is not None
+        assert result_tm.tool_count() == 0
 
     @pytest.mark.asyncio
     async def test_hydration_skips_user_id_absent(self) -> None:

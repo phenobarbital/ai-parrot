@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from navconfig.logging import logging  # noqa: F811
 
 from parrot.integrations.oauth2 import _WEB_CHANNEL
+
+if TYPE_CHECKING:  # pragma: no cover
+    from parrot.auth.jira_oauth import JiraTokenSet
 from parrot.integrations.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
@@ -46,34 +49,18 @@ logger = logging.getLogger(__name__)
 def _get_allowed_origins() -> List[str]:
     """Return the configured list of allowed OAuth2 return origins.
 
-    Reads from :mod:`parrot.conf` if available (added by TASK-986), falls back
-    to reading ``WEB_OAUTH_ALLOWED_ORIGINS`` directly from navconfig.
+    Reads ``WEB_OAUTH_ALLOWED_ORIGINS`` from :mod:`parrot.conf`, which
+    normalises the raw env-var into a ``list[str]`` at import time.
 
     Returns:
         List of origin strings, e.g. ``["https://app.example.com"]``.
     """
-    try:
-        from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS  # type: ignore[attr-defined]
+    from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS  # type: ignore[attr-defined]
 
-        if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, list):
-            return WEB_OAUTH_ALLOWED_ORIGINS
-        if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str) and WEB_OAUTH_ALLOWED_ORIGINS:
-            return [o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()]
-        return []
-    except (ImportError, AttributeError):
-        pass
-
-    # Fallback: read directly from navconfig
-    try:
-        from navconfig import config  # type: ignore[import]
-
-        raw = config.get("WEB_OAUTH_ALLOWED_ORIGINS", fallback=[])
-        if isinstance(raw, list):
-            return raw
-        if isinstance(raw, str) and raw:
-            return [o.strip() for o in raw.split(",") if o.strip()]
-    except Exception:  # noqa: BLE001
-        pass
+    if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, list):
+        return list(WEB_OAUTH_ALLOWED_ORIGINS)
+    if isinstance(WEB_OAUTH_ALLOWED_ORIGINS, str) and WEB_OAUTH_ALLOWED_ORIGINS:
+        return [o.strip() for o in WEB_OAUTH_ALLOWED_ORIGINS.split(",") if o.strip()]
     return []
 
 
@@ -189,6 +176,7 @@ class IntegrationsService:
 
         extra_state: Dict[str, Any] = {
             "channel": _WEB_CHANNEL,
+            "provider_id": provider_id,
             "agent_id": agent_id,
             "return_origin": return_origin,
         }
@@ -302,7 +290,7 @@ class IntegrationsService:
         self,
         user_id: str,
         provider_id: str,
-        token_set: Any,
+        token_set: "JiraTokenSet",
     ) -> UsersIntegrationRow:
         """Upsert a ``users_integrations`` row from a provider token set.
 
@@ -313,8 +301,8 @@ class IntegrationsService:
         Args:
             user_id: Navigator user identifier.
             provider_id: Provider identifier, e.g. ``"jira"``.
-            token_set: The ``JiraTokenSet`` (or compatible mapping) returned
-                by ``JiraOAuthManager.handle_callback()``.  Must expose
+            token_set: The :class:`~parrot.auth.jira_oauth.JiraTokenSet`
+                returned by ``JiraOAuthManager.handle_callback()``.  Exposes
                 ``account_id``, ``display_name``, ``email``, ``scopes``,
                 ``cloud_id``, and ``site_url``.
 
@@ -327,12 +315,12 @@ class IntegrationsService:
             provider=provider_id,
             channel=_WEB_CHANNEL,
             status="active",
-            account_id=getattr(token_set, "account_id", ""),
-            display_name=getattr(token_set, "display_name", "") or "",
-            email=getattr(token_set, "email", None),
-            scopes=list(getattr(token_set, "scopes", [])),
-            cloud_id=getattr(token_set, "cloud_id", None),
-            site_url=getattr(token_set, "site_url", None),
+            account_id=token_set.account_id or "",
+            display_name=token_set.display_name or "",
+            email=token_set.email,
+            scopes=list(token_set.scopes or []),
+            cloud_id=token_set.cloud_id,
+            site_url=token_set.site_url,
             connected_at=datetime.now(tz=timezone.utc),
         )
         await upsert_users_integration(row)

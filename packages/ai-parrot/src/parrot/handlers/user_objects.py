@@ -235,7 +235,7 @@ class UserObjectsHandler:
                     continue
                 resolver = OAuthCredentialResolver(provider.manager)
                 toolkit = provider.toolkit_factory(resolver)
-                tool_manager.add_tool(toolkit)
+                tool_manager.register_toolkit(toolkit)
                 self.logger.debug(
                     "Hydrated toolkit %r for user=%s agent=%s",
                     row.toolkit_id, user_id, agent_id,
