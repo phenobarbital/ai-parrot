@@ -50,7 +50,7 @@
       "feature_id": "FEAT-148",
       "feature": "formbuilder-list-created-forms",
       "spec": "sdd/specs/formbuilder-list-created-forms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Touches only services/storage.py; file-disjoint from TASK-1028, TASK-1029.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1030-postgres-list-forms-enriched.md"
+      "completed_at": "2026-05-05T15:14:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1030-postgres-list-forms-enriched.md"
     },
     {
       "id": "TASK-1031",
