@@ -134,10 +134,11 @@ def sample_addon_dir():
 # ── diagnose_odoo_call ────────────────────────────────────────────────────────
 
 
-def test_diagnose_call_read_only_method():
+@pytest.mark.asyncio
+async def test_diagnose_call_read_only_method():
     """search_read is classified as read_only."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(model="res.partner", method="search_read")
+    result = await tk.diagnose_odoo_call(model="res.partner", method="search_read")
 
     assert isinstance(result, OdooCallDiagnosisResult)
     assert result.method_safety == "read_only"
@@ -145,44 +146,49 @@ def test_diagnose_call_read_only_method():
     assert result.method == "search_read"
 
 
-def test_diagnose_call_destructive_method():
+@pytest.mark.asyncio
+async def test_diagnose_call_destructive_method():
     """unlink is classified as destructive with a warning."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(model="res.partner", method="unlink")
+    result = await tk.diagnose_odoo_call(model="res.partner", method="unlink")
 
     assert result.method_safety == "destructive"
     assert any("mutates" in w.lower() or "destructive" in w.lower() or "write" in w.lower()
                for w in result.warnings)
 
 
-def test_diagnose_call_side_effect_method():
+@pytest.mark.asyncio
+async def test_diagnose_call_side_effect_method():
     """action_confirm is classified as side_effect."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(model="sale.order", method="action_confirm")
+    result = await tk.diagnose_odoo_call(model="sale.order", method="action_confirm")
 
     assert result.method_safety == "side_effect"
 
 
-def test_diagnose_call_unknown_method():
+@pytest.mark.asyncio
+async def test_diagnose_call_unknown_method():
     """Custom methods are classified as unknown."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(model="sale.order", method="my_custom_method")
+    result = await tk.diagnose_odoo_call(model="sale.order", method="my_custom_method")
 
     assert result.method_safety == "unknown"
 
 
-def test_diagnose_call_invalid_model_name():
+@pytest.mark.asyncio
+async def test_diagnose_call_invalid_model_name():
     """Model names with invalid characters produce a warning."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(model="SELECT * FROM users", method="read")
+    result = await tk.diagnose_odoo_call(model="SELECT * FROM users", method="read")
 
     assert any("invalid" in w.lower() or "characters" in w.lower() for w in result.warnings)
 
 
-def test_diagnose_call_odoo20_deprecation_warning():
+@pytest.mark.asyncio
+async def test_diagnose_call_odoo20_deprecation_warning():
     """target_version='20.0' triggers XML-RPC deprecation warning."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(
+    result = await tk.diagnose_odoo_call(
         model="res.partner", method="search_read", target_version="20.0"
     )
 
@@ -191,10 +197,11 @@ def test_diagnose_call_odoo20_deprecation_warning():
     assert len(result.next_actions) > 0
 
 
-def test_diagnose_call_observed_error_hints():
+@pytest.mark.asyncio
+async def test_diagnose_call_observed_error_hints():
     """When observed_error contains 'access', next_actions suggests diagnose_access."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(
+    result = await tk.diagnose_odoo_call(
         model="res.partner", method="write",
         observed_error="Access Error: insufficient rights",
     )
@@ -202,10 +209,11 @@ def test_diagnose_call_observed_error_hints():
     assert any("diagnose_access" in action for action in result.next_actions)
 
 
-def test_diagnose_call_with_args_builds_corrected_payload():
+@pytest.mark.asyncio
+async def test_diagnose_call_with_args_builds_corrected_payload():
     """When args/kwargs are provided, a corrected_payload is included."""
     tk = _make_toolkit()
-    result = tk.diagnose_odoo_call(
+    result = await tk.diagnose_odoo_call(
         model="res.partner",
         method="search_read",
         args=[[("is_company", "=", True)]],
@@ -219,20 +227,22 @@ def test_diagnose_call_with_args_builds_corrected_payload():
 # ── generate_json2_payload ────────────────────────────────────────────────────
 
 
-def test_generate_json2_search_read_endpoint():
+@pytest.mark.asyncio
+async def test_generate_json2_search_read_endpoint():
     """search_read produces the correct /json/2/ endpoint."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(model="res.partner", method="search_read")
+    result = await tk.generate_json2_payload(model="res.partner", method="search_read")
 
     assert isinstance(result, Json2PayloadResult)
     assert result.endpoint == "/json/2/res.partner/search_read"
     assert "Content-Type" in result.headers
 
 
-def test_generate_json2_search_read_maps_positional_args():
+@pytest.mark.asyncio
+async def test_generate_json2_search_read_maps_positional_args():
     """Positional args for search_read are mapped to named params."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(
+    result = await tk.generate_json2_payload(
         model="res.partner",
         method="search_read",
         args=[[("is_company", "=", True)], ["name", "email"]],
@@ -243,10 +253,11 @@ def test_generate_json2_search_read_maps_positional_args():
     assert params["fields"] == ["name", "email"]
 
 
-def test_generate_json2_create_mapping():
+@pytest.mark.asyncio
+async def test_generate_json2_create_mapping():
     """create maps first arg to vals_list."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(
+    result = await tk.generate_json2_payload(
         model="res.partner",
         method="create",
         args=[{"name": "Alice"}],
@@ -256,10 +267,11 @@ def test_generate_json2_create_mapping():
     assert params["vals_list"] == {"name": "Alice"}
 
 
-def test_generate_json2_write_mapping():
+@pytest.mark.asyncio
+async def test_generate_json2_write_mapping():
     """write maps first arg to ids, second to vals."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(
+    result = await tk.generate_json2_payload(
         model="res.partner",
         method="write",
         args=[[1, 2, 3], {"name": "Updated"}],
@@ -270,19 +282,21 @@ def test_generate_json2_write_mapping():
     assert params["vals"] == {"name": "Updated"}
 
 
-def test_generate_json2_unknown_method_generic_body():
+@pytest.mark.asyncio
+async def test_generate_json2_unknown_method_generic_body():
     """Unknown methods fall back to a generic body structure."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(model="res.partner", method="my_custom_action")
+    result = await tk.generate_json2_payload(model="res.partner", method="my_custom_action")
 
     assert result.endpoint == "/json/2/res.partner/my_custom_action"
     assert len(result.notes) > 0
 
 
-def test_generate_json2_notes_contain_full_url():
+@pytest.mark.asyncio
+async def test_generate_json2_notes_contain_full_url():
     """Notes include the full URL hint."""
     tk = _make_toolkit()
-    result = tk.generate_json2_payload(model="res.partner", method="search_read")
+    result = await tk.generate_json2_payload(model="res.partner", method="search_read")
 
     assert any("http" in note for note in result.notes)
 
@@ -290,10 +304,11 @@ def test_generate_json2_notes_contain_full_url():
 # ── scan_addons_source ────────────────────────────────────────────────────────
 
 
-def test_scan_addons_finds_manifest(sample_addon_dir):
+@pytest.mark.asyncio
+async def test_scan_addons_finds_manifest(sample_addon_dir):
     """Discovers __manifest__.py in a valid addon directory."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=[sample_addon_dir])
+    result = await tk.scan_addons_source(addons_paths=[sample_addon_dir])
 
     assert isinstance(result, AddonScanResult)
     assert result.addons_found >= 1
@@ -302,36 +317,40 @@ def test_scan_addons_finds_manifest(sample_addon_dir):
     assert addon["manifest_file"] == "__manifest__.py"
 
 
-def test_scan_addons_detects_model_class(sample_addon_dir):
+@pytest.mark.asyncio
+async def test_scan_addons_detects_model_class(sample_addon_dir):
     """Discovers _name = 'test.model' inside the model Python file."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=[sample_addon_dir])
+    result = await tk.scan_addons_source(addons_paths=[sample_addon_dir])
 
     addon = result.addons[0]
     assert "test.model" in addon["models"]
 
 
-def test_scan_addons_detects_risky_methods(sample_addon_dir):
+@pytest.mark.asyncio
+async def test_scan_addons_detects_risky_methods(sample_addon_dir):
     """Flags 'unlink' and 'sudo' as risky method overrides."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=[sample_addon_dir])
+    result = await tk.scan_addons_source(addons_paths=[sample_addon_dir])
 
     addon = result.addons[0]
     risky_names = {r["method"] for r in addon["risky_methods"]}
     assert "unlink" in risky_names or "sudo" in risky_names
 
 
-def test_scan_addons_detects_security_files(sample_addon_dir):
+@pytest.mark.asyncio
+async def test_scan_addons_detects_security_files(sample_addon_dir):
     """ir.model.access.csv is included in security_files."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=[sample_addon_dir])
+    result = await tk.scan_addons_source(addons_paths=[sample_addon_dir])
 
     addon = result.addons[0]
     assert any("ir.model.access.csv" in f for f in addon["security_files"])
 
 
-def test_scan_addons_respects_max_files():
-    """max_files=1 stops scanning after the cap is reached."""
+@pytest.mark.asyncio
+async def test_scan_addons_respects_max_files():
+    """max_files=2 stops scanning after the cap is reached."""
     tk = _make_toolkit()
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create an addon with many Python files
@@ -343,13 +362,14 @@ def test_scan_addons_respects_max_files():
             with open(os.path.join(addon_path, f"model_{i}.py"), "w") as f:
                 f.write(f"# file {i}\nclass M{i}:\n    _name = 'model.{i}'\n")
 
-        result = tk.scan_addons_source(addons_paths=[tmpdir], max_files=2)
-        # Some files were parsed but the cap was hit
-        # The important thing is it completed without error
+        result = await tk.scan_addons_source(addons_paths=[tmpdir], max_files=2)
+        # Some files were parsed but the cap was hit — warning should be present
         assert isinstance(result, AddonScanResult)
+        assert any("max_files" in w or "limit" in w for w in result.warnings)
 
 
-def test_scan_addons_handles_syntax_error():
+@pytest.mark.asyncio
+async def test_scan_addons_handles_syntax_error():
     """Files with syntax errors are reported as parse_warnings, not crashes."""
     tk = _make_toolkit()
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -360,7 +380,7 @@ def test_scan_addons_handles_syntax_error():
         with open(os.path.join(addon_path, "bad_file.py"), "w") as f:
             f.write("this is NOT valid python !!!\n def broken(:\n")
 
-        result = tk.scan_addons_source(addons_paths=[tmpdir])
+        result = await tk.scan_addons_source(addons_paths=[tmpdir])
         # Should not raise — syntax errors go into parse_warnings
         assert isinstance(result, AddonScanResult)
         if result.addons:
@@ -369,19 +389,21 @@ def test_scan_addons_handles_syntax_error():
             assert isinstance(addon.get("parse_warnings", []), list)
 
 
-def test_scan_addons_no_paths_returns_warning():
+@pytest.mark.asyncio
+async def test_scan_addons_no_paths_returns_warning():
     """Calling with no paths returns a warning, not an error."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=None)
+    result = await tk.scan_addons_source(addons_paths=None)
 
     assert result.addons_found == 0
     assert len(result.warnings) > 0
 
 
-def test_scan_addons_nonexistent_path():
+@pytest.mark.asyncio
+async def test_scan_addons_nonexistent_path():
     """A non-existent path generates a warning, not a crash."""
     tk = _make_toolkit()
-    result = tk.scan_addons_source(addons_paths=["/this/path/does/not/exist/ever"])
+    result = await tk.scan_addons_source(addons_paths=["/this/path/does/not/exist/ever"])
 
     assert isinstance(result, AddonScanResult)
     assert len(result.warnings) > 0
@@ -405,8 +427,9 @@ async def test_fit_gap_standard_requirement():
     assert isinstance(result, FitGapResult)
     assert len(result.requirements) == 1
     classified = result.requirements[0]
-    assert classified["classification"] in ("standard", "custom_module", "unknown")
-    assert "standard" in result.summary or "custom_module" in result.summary
+    # "track sales orders" directly matches STANDARD_KEYWORDS — must classify as standard
+    assert classified["classification"] == "standard"
+    assert result.summary.get("standard", 0) == 1
 
 
 @pytest.mark.asyncio

@@ -737,10 +737,11 @@ async def test_aggregate_records_rejects_invalid_aggregator():
 # ── Phase 1: Domain Builder ───────────────────────────────────────────────────
 
 
-def test_build_domain_and_operator():
+@pytest.mark.asyncio
+async def test_build_domain_and_operator():
     """AND conditions produce correct & prefix."""
     toolkit = _make_toolkit()
-    result = toolkit.build_domain(
+    result = await toolkit.build_domain(
         conditions=[
             {"field": "name", "operator": "ilike", "value": "test"},
             {"field": "active", "operator": "=", "value": True},
@@ -754,10 +755,11 @@ def test_build_domain_and_operator():
     assert ("name", "ilike", "test") in result.domain
 
 
-def test_build_domain_or_operator():
+@pytest.mark.asyncio
+async def test_build_domain_or_operator():
     """OR conditions produce correct | prefix."""
     toolkit = _make_toolkit()
-    result = toolkit.build_domain(
+    result = await toolkit.build_domain(
         conditions=[
             {"field": "email", "operator": "ilike", "value": "@acme"},
             {"field": "phone", "operator": "!=", "value": False},
@@ -768,28 +770,31 @@ def test_build_domain_or_operator():
     assert "|" in result.domain
 
 
-def test_build_domain_invalid_operator():
+@pytest.mark.asyncio
+async def test_build_domain_invalid_operator():
     """Unsafe operators produce valid=False with a warning."""
     toolkit = _make_toolkit()
-    result = toolkit.build_domain(
+    result = await toolkit.build_domain(
         conditions=[{"field": "name", "operator": "EVIL; DROP TABLE", "value": "x"}]
     )
     assert result.valid is False
     assert len(result.warnings) > 0
 
 
-def test_build_domain_empty_conditions():
+@pytest.mark.asyncio
+async def test_build_domain_empty_conditions():
     """Empty conditions list returns empty domain."""
     toolkit = _make_toolkit()
-    result = toolkit.build_domain(conditions=[])
+    result = await toolkit.build_domain(conditions=[])
     assert result.domain == []
     assert result.valid is True
 
 
-def test_build_domain_single_condition_no_prefix():
+@pytest.mark.asyncio
+async def test_build_domain_single_condition_no_prefix():
     """Single condition needs no prefix operator."""
     toolkit = _make_toolkit()
-    result = toolkit.build_domain(
+    result = await toolkit.build_domain(
         conditions=[{"field": "name", "operator": "=", "value": "Alice"}]
     )
     assert result.valid is True

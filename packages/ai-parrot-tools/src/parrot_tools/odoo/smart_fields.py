@@ -166,8 +166,8 @@ def select_smart_fields(
 
     top_fields = [fname for _, fname in scored[:max_fields]]
 
-    # Build result: pinned fields that actually exist in metadata come first
-    result_pinned = [f for f in _ALWAYS_INCLUDE if f in fields_metadata or f == "id" or f == "display_name"]
+    # Build result: pinned fields always come first (id, display_name are unconditional)
+    result_pinned = list(_ALWAYS_INCLUDE)
     # Add extra always_include fields (preserving order, deduplicating)
     if always_include:
         for f in always_include:
@@ -179,7 +179,6 @@ def select_smart_fields(
 
 __all__ = [
     "select_smart_fields",
-    "_smart_field_score",
     "SKIP_FIELD_TYPES",
     "TECHNICAL_FIELD_NAMES",
     "HIGH_VALUE_PATTERNS",

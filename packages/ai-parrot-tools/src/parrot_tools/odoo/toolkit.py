@@ -15,10 +15,14 @@ constructor arguments are omitted.
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import base64
 import binascii
 import logging
+import os
+import re
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 import aiohttp
@@ -212,7 +216,7 @@ class OdooToolkit(AbstractToolkit):
         self._transport: AbstractOdooTransport | None = transport
         self._auth_lock = asyncio.Lock()
         self._fields_cache: dict[str, dict[str, Any]] = {}
-        self.logger = logging.getLogger("OdooToolkit")
+        self.logger = logging.getLogger(__name__)
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -450,7 +454,7 @@ class OdooToolkit(AbstractToolkit):
 
         record = await self._read_one(model, record_id, fields)
         metadata = FieldSelectionMetadata(
-            fields_returned=len(record),
+            fields_returned=len(fields) if fields else len(record),
             field_selection_method="auto" if auto_selected else "requested",
             total_fields_available=len(fields_meta) if fields_meta else None,
             note=(
@@ -1029,11 +1033,11 @@ class OdooToolkit(AbstractToolkit):
                 kwargs["order"] = order
             groups = await self._execute(model, "formatted_read_group", [domain], kwargs)
         else:
-            # Odoo 16-18 read_group
+            # Odoo 16-18 read_group — fields must include group_by columns AND measure specs
             measure_fields = [f"{f}:{a}" for f, a in parsed_measures] if parsed_measures else []
             kwargs = {
                 "groupby": group_by,
-                "fields": measure_fields,
+                "fields": list(group_by) + measure_fields,
                 "lazy": lazy,
             }
             if limit is not None:
@@ -1065,7 +1069,7 @@ class OdooToolkit(AbstractToolkit):
     })
 
     @tool_schema(BuildDomainInput)
-    def build_domain(
+    async def build_domain(
         self,
         conditions: list[dict[str, Any]],
         logical_operator: str = "and",
@@ -1074,7 +1078,8 @@ class OdooToolkit(AbstractToolkit):
 
         Args:
             conditions: List of condition dicts, each with keys ``field``,
-                ``operator``, and ``value``.
+                ``operator``, and ``value``.  An empty list returns an empty
+                (match-all) domain.
             logical_operator: ``"and"`` (default, uses ``&`` prefix) or
                 ``"or"`` (uses ``|`` prefix).
 
@@ -1082,7 +1087,7 @@ class OdooToolkit(AbstractToolkit):
             DomainBuildResult with the domain array, warnings, and validity flag.
 
         Note:
-            This is a **pure synchronous function** — no Odoo network call is made.
+            Pure function — no Odoo network call is made.
         """
         if not conditions:
             return DomainBuildResult(domain=[], warnings=[], valid=True)
@@ -1188,6 +1193,9 @@ class OdooToolkit(AbstractToolkit):
             query: Substring to filter model names or display names.
             models: Explicit list of model technical names to include.
             include_fields: When True, include ``fields_get`` metadata per model.
+                **Warning:** each model's field metadata can be 50-200 KB; keep
+                ``limit`` small (≤ 10) when using this option to avoid flooding
+                the LLM context.
             limit: Maximum models to return (capped at 500).
 
         Returns:
@@ -1407,13 +1415,8 @@ class OdooToolkit(AbstractToolkit):
         transport_name = (
             self._transport.name if self._transport is not None else self.protocol
         )
-        # Count public tool methods (tools registered by AbstractToolkit)
-        tool_count = len([
-            name for name in dir(self.__class__)
-            if not name.startswith("_")
-            and callable(getattr(self.__class__, name))
-            and name not in {"get_tools", "tool_prefix", "cleanup", "stop"}
-        ])
+        # Use get_tools() for an accurate count of registered async tools
+        tool_count = len(self.get_tools())
         return HealthCheckResult(
             toolkit_version="1.0.0",
             transport=str(transport_name),
@@ -1556,7 +1559,7 @@ class OdooToolkit(AbstractToolkit):
     }
 
     @tool_schema(DiagnoseOdooCallInput)
-    def diagnose_odoo_call(
+    async def diagnose_odoo_call(
         self,
         model: str,
         method: str,
@@ -1584,10 +1587,8 @@ class OdooToolkit(AbstractToolkit):
             OdooCallDiagnosisResult with method safety, warnings, and next actions.
 
         Note:
-            This is a **pure synchronous function** — no Odoo network call is made.
+            Pure function — no Odoo network call is made.
         """
-        import re
-
         warnings: list[str] = []
         next_actions: list[str] = []
         corrected_payload: Optional[dict[str, Any]] = None
@@ -1597,6 +1598,13 @@ class OdooToolkit(AbstractToolkit):
             warnings.append(
                 f"Model name {model!r} contains invalid characters. "
                 "Odoo model names are lowercase with dots (e.g. 'res.partner')."
+            )
+
+        # Validate method name format
+        if not re.match(r"^[a-z_][a-z0-9_]*$", method):
+            warnings.append(
+                f"Method name {method!r} contains invalid characters. "
+                "ORM method names are lowercase with underscores (e.g. 'search_read')."
             )
 
         # Classify method safety
@@ -1675,7 +1683,7 @@ class OdooToolkit(AbstractToolkit):
         )
 
     @tool_schema(GenerateJson2PayloadInput)
-    def generate_json2_payload(
+    async def generate_json2_payload(
         self,
         model: str,
         method: str,
@@ -1698,7 +1706,7 @@ class OdooToolkit(AbstractToolkit):
             Json2PayloadResult with endpoint, headers, body, and notes.
 
         Note:
-            This is a **pure synchronous function** — no Odoo network call is made.
+            Pure function — no Odoo network call is made.
         """
         resolved_url = (base_url or self.config.url or "https://your-odoo.example.com").rstrip("/")
         resolved_db = database or self.config.database or "odoo"
@@ -1761,7 +1769,7 @@ class OdooToolkit(AbstractToolkit):
         )
 
     @tool_schema(ScanAddonsSourceInput)
-    def scan_addons_source(
+    async def scan_addons_source(
         self,
         addons_paths: Optional[list[str]] = None,
         max_files: int = 200,
@@ -1769,7 +1777,9 @@ class OdooToolkit(AbstractToolkit):
     ) -> AddonScanResult:
         """Scan local Odoo addon directories for manifests and risky patterns.
 
-        Uses AST parsing — no addon code is imported or executed.
+        Uses AST parsing — no addon code is imported or executed.  The
+        filesystem walk and AST parsing run in a thread pool to avoid blocking
+        the event loop.
 
         Args:
             addons_paths: Directories to scan. Must be under the server's
@@ -1781,10 +1791,17 @@ class OdooToolkit(AbstractToolkit):
             AddonScanResult with discovered addons, model classes, risky methods,
             and any scan warnings.
         """
-        import ast
-        import os
-        from pathlib import Path
+        return await asyncio.to_thread(
+            self._scan_addons_source_sync, addons_paths, max_files, max_file_bytes
+        )
 
+    def _scan_addons_source_sync(
+        self,
+        addons_paths: Optional[list[str]],
+        max_files: int,
+        max_file_bytes: int,
+    ) -> AddonScanResult:
+        """Synchronous implementation of scan_addons_source (runs in thread pool)."""
         if not addons_paths:
             return AddonScanResult(
                 addons_found=0,
@@ -1795,6 +1812,7 @@ class OdooToolkit(AbstractToolkit):
         all_warnings: list[str] = []
         addons: list[dict[str, Any]] = []
         files_parsed = 0
+        scan_truncated = False
         risky_method_names = frozenset({"create", "write", "unlink", "sudo"})
 
         for raw_path in addons_paths:
@@ -1810,6 +1828,14 @@ class OdooToolkit(AbstractToolkit):
 
             # Walk looking for addon manifests
             for entry in root.iterdir():
+                # Guard at outer loop so we stop between addons too
+                if files_parsed >= max_files:
+                    if not scan_truncated:
+                        all_warnings.append(
+                            f"Reached max_files={max_files} limit. Scan truncated."
+                        )
+                        scan_truncated = True
+                    break
                 if not entry.is_dir():
                     continue
                 manifest_path = entry / "__manifest__.py"
@@ -1854,9 +1880,11 @@ class OdooToolkit(AbstractToolkit):
                 # Scan Python files for model classes and risky methods
                 for py_file in entry.rglob("*.py"):
                     if files_parsed >= max_files:
-                        all_warnings.append(
-                            f"Reached max_files={max_files} limit. Scan truncated."
-                        )
+                        if not scan_truncated:
+                            all_warnings.append(
+                                f"Reached max_files={max_files} limit. Scan truncated."
+                            )
+                            scan_truncated = True
                         break
                     try:
                         file_size = py_file.stat().st_size
@@ -1936,6 +1964,15 @@ class OdooToolkit(AbstractToolkit):
         Returns:
             FitGapResult with classified requirements, bucket summary, and
             recommended follow-up Odoo calls.
+
+            Classification buckets:
+
+            - ``"standard"`` — covered by a built-in Odoo module
+            - ``"configuration"`` — achievable via settings/workflow changes
+            - ``"studio"`` — no-code customization (Odoo Studio)
+            - ``"custom_module"`` — requires a bespoke addon
+            - ``"avoid"`` — anti-pattern (raw SQL, ORM bypass, etc.)
+            - ``"unknown"`` — cannot be classified with available context
         """
         # Heuristic keyword classifier
         STANDARD_KEYWORDS = frozenset({

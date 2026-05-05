@@ -283,8 +283,8 @@ class BuildDomainInput(_OdooBaseInput):
 
     conditions: list[dict[str, Any]] = Field(
         ...,
-        min_length=1,
-        description="List of condition dicts with keys: field, operator, value",
+        description="List of condition dicts with keys: field, operator, value. "
+        "An empty list returns an empty (match-all) domain.",
     )
     logical_operator: str = Field(
         default="and",
@@ -340,9 +340,9 @@ class DiagnoseAccessInput(_OdooBaseInput):
     """Input schema for ``diagnose_access`` — ACL and record-rule diagnosis."""
 
     model: str = Field(..., description="Odoo model technical name to diagnose")
-    operation: str = Field(
+    operation: Literal["read", "write", "create", "unlink"] = Field(
         default="read",
-        description="Operation to check: 'read' | 'write' | 'create' | 'unlink'",
+        description="Operation to check",
     )
     domain: Optional[OdooDomain] = Field(
         default=None,
@@ -364,8 +364,16 @@ class SearchEmployeeInput(_OdooBaseInput):
 class SearchHolidaysInput(_OdooBaseInput):
     """Input schema for ``search_holidays`` — leave/holiday queries."""
 
-    start_date: str = Field(..., description="Start of date range (YYYY-MM-DD)")
-    end_date: str = Field(..., description="End of date range (YYYY-MM-DD)")
+    start_date: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Start of date range (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="End of date range (YYYY-MM-DD)",
+    )
     employee_id: Optional[int] = Field(
         default=None,
         description="Filter to a specific employee by ID",
@@ -388,9 +396,9 @@ class DiagnoseOdooCallInput(_OdooBaseInput):
         default=None,
         description="Keyword arguments for the call",
     )
-    transport: str = Field(
+    transport: Literal["auto", "json2", "xmlrpc", "jsonrpc"] = Field(
         default="auto",
-        description="Transport type: 'auto' | 'json2' | 'xmlrpc' | 'jsonrpc'",
+        description="Transport type to assume for compatibility checks",
     )
     target_version: Optional[str] = Field(
         default=None,
@@ -462,7 +470,7 @@ class FitGapReportInput(_OdooBaseInput):
 class BusinessPackReportInput(_OdooBaseInput):
     """Input schema for ``business_pack_report``."""
 
-    pack: str = Field(
+    pack: Literal["sales", "crm", "inventory", "accounting", "hr"] = Field(
         ...,
-        description="Business pack name: 'sales' | 'crm' | 'inventory' | 'accounting' | 'hr'",
+        description="Business pack to evaluate",
     )
