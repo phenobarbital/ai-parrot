@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-147
 **Date**: 2026-05-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -1000,14 +1000,14 @@ and Pydantic (already present).
 
 ## 8. Open Questions
 
-- [ ] Should `schema_catalog` cache its results within the toolkit instance (like
-      the mcp-odoo project does), or should each call be fresh? — *Owner: Jesus*
-- [ ] For `search_holidays`, should we query `hr.leave` directly or use the
+- [x] Should `schema_catalog` cache its results within the toolkit instance (like
+      the mcp-odoo project does), or should each call be fresh? — *Owner: Jesus*: each call be fresh.
+- [x] For `search_holidays`, should we query `hr.leave` directly or use the
       `hr.leave.report.calendar` reporting model? The latter provides a flattened
-      view but may not exist in all Odoo versions. — *Owner: Jesus*
-- [ ] Should `health_check` be a synchronous method (no `async`) since it makes no
+      view but may not exist in all Odoo versions. — *Owner: Jesus*: is not always available on all odoo versions, use directly if exists.
+- [x] Should `health_check` be a synchronous method (no `async`) since it makes no
       network calls, or should it remain `async` for interface consistency with other
-      toolkit methods? — *Owner: implementer*
+      toolkit methods? — *Owner: implementer*: remain async-
 
 ---
 
