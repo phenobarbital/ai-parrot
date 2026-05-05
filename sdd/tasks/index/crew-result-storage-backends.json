@@ -115,7 +115,7 @@
       "feature_id": "FEAT-147",
       "feature": "crew-result-storage-backends",
       "spec": "sdd/specs/crew-result-storage-backends.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Touches three host classes (two AgentCrew duplicates + AgentsFlow); must keep the duplicates in lockstep.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1018-crew-flow-constructor-wiring-and-lifecycle.md"
+      "completed_at": "2026-05-05T11:52:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1018-crew-flow-constructor-wiring-and-lifecycle.md"
     },
     {
       "id": "TASK-1019",
