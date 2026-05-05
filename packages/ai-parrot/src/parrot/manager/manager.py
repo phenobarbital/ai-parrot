@@ -70,6 +70,8 @@ from ..conf import (
 from ..handlers.credentials import setup_credentials_routes
 # MCP helper handler (discovery, activation, management)
 from ..handlers.mcp_helper import setup_mcp_helper_routes
+# FEAT-146: Web HITL response endpoint + bootstrap
+from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
@@ -1002,6 +1004,18 @@ class BotManager:
             '/api/v1/agents/chat/{agent_id}/{method_name}',
             AgentTalk
         )
+        # FEAT-146: HITL response endpoint (agent-driven human-in-the-loop)
+        router.add_view(
+            '/api/v1/agents/hitl/respond',
+            HITLResponseHandler
+        )
+        # FEAT-146: Bootstrap web HITL stack (idempotent).
+        # Deferred to on_startup so that app['user_socket_manager'] is
+        # guaranteed to be populated before setup_web_hitl runs.
+        async def _hitl_deferred_startup(app: web.Application) -> None:
+            setup_web_hitl(app)
+
+        self.app.on_startup.append(_hitl_deferred_startup)
         # User-defined bots: PUT/PATCH/GET/DELETE
         router.add_view(
             '/api/v1/user_agents',
