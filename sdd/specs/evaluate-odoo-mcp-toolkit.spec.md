@@ -3,7 +3,7 @@ type: feature
 base_branch: dev
 ---
 
-# Feature Specification: Evaluate Odoo MCP Toolkit — Phase 1
+# Feature Specification: Evaluate Odoo MCP Toolkit
 
 **Feature ID**: FEAT-147
 **Date**: 2026-05-05
@@ -36,8 +36,20 @@ interaction:
   relationships, or report runtime health.
 - **No HR convenience methods**: Employee search and leave/holiday queries require
   the agent to know internal model names and field layouts.
+- **No call diagnostics**: Agents cannot preview/debug a failing `execute_kw` call
+  or understand why a method returns an unexpected result without trial-and-error.
+- **No JSON-2 payload preview**: When migrating from XML-RPC to Odoo 19+ JSON-2,
+  there is no way to preview the translated request without executing it.
+- **No addon source scanning**: Agents cannot inspect local custom addon code
+  (manifests, model overrides, risky method patterns) without importing it.
+- **No fit/gap analysis**: Agents cannot classify business requirements against
+  installed Odoo modules to determine standard vs. customisation needs.
+- **No business-pack discovery**: No quick way to check which modules, models, and
+  capabilities are available for a given business domain (sales, CRM, HR, etc.).
 
 ### Goals
+
+#### Phase 1 — Core Introspection & Smart Tools
 
 - Adopt a **smart field selection** heuristic so `search_records` and `get_record`
   return an LLM-friendly field subset when the caller omits `fields`.
@@ -50,13 +62,24 @@ interaction:
 - Add **`health_check`** for a non-secret runtime posture report.
 - Add **`search_employee`** and **`search_holidays`** as typed HR convenience methods.
 
+#### Phase 2 — Diagnostics, Audit & Planning
+
+- Add **`diagnose_odoo_call`** to preview/debug an `execute_kw` call without
+  executing it (model validation, transport compatibility, version warnings).
+- Add **`generate_json2_payload`** to convert XML-RPC-shaped input into JSON-2
+  endpoint, headers, and named body — pure preview, no network call.
+- Add **`scan_addons_source`** to scan local addon directories for manifests,
+  custom models, risky method overrides, and security files without importing code.
+- Add **`fit_gap_report`** to classify business requirements into standard,
+  configuration, Studio, custom module, avoid, or unknown buckets.
+- Add **`business_pack_report`** to report expected modules, models, and discovery
+  calls for standard business domains (sales, CRM, inventory, accounting, HR).
+
 ### Non-Goals (explicitly out of scope)
 
 - Write-safety approval-token flow (existing `@requires_permission` is sufficient).
-- `scan_addons_source`, `fit_gap_report`, `business_pack_report` — Phase 2.
-- `diagnose_odoo_call`, `generate_json2_payload` — Phase 2.
-- `upgrade_risk_report` — Phase 2.
-- Chatter/messaging tools — Phase 2 or separate feature.
+- `upgrade_risk_report` — too version-specific; better maintained externally.
+- Chatter/messaging tools — separate feature.
 - MCP server exposure — OdooToolkit is an agent toolkit, not an MCP server.
 
 ---
@@ -66,15 +89,24 @@ interaction:
 ### Overview
 
 All new capabilities are added as public async methods on the existing
-`OdooToolkit` class. The smart-field selection logic lives in a new private
-module `parrot_tools/odoo/smart_fields.py` so it can be unit-tested in
-isolation. New Pydantic input/envelope models are added to the existing
-`models/inputs.py` and `models/envelopes.py` files.
+`OdooToolkit` class. The implementation is split into two phases:
 
-The diagnostic and introspection tools (`diagnose_access`,
-`inspect_model_relationships`, `health_check`) are **read-only** — they never
-mutate Odoo data. They use the existing `_execute` helper which delegates to
-the transport layer.
+**Phase 1** adds core introspection and smart tools: smart-field selection
+(in a new `smart_fields.py` module), aggregation, domain building, profile/
+schema catalog, model relationship inspection, access diagnostics, health
+check, and HR convenience methods.
+
+**Phase 2** adds diagnostic, audit, and planning tools: call diagnostics,
+JSON-2 payload preview, addon source scanning, fit/gap analysis, and
+business-pack reporting. The audit tools (`scan_addons_source`) operate on
+the local filesystem; the planning tools (`fit_gap_report`,
+`business_pack_report`) are heuristic classifiers that optionally query
+live Odoo metadata.
+
+All tools across both phases are **read-only** — they never mutate Odoo data.
+They use the existing `_execute` helper which delegates to the transport layer.
+New Pydantic input/envelope models are added to the existing `models/inputs.py`
+and `models/envelopes.py` files.
 
 HR convenience methods follow the same pattern as `find_partner`: typed
 entity models, default field lists, and Pydantic return types.
@@ -102,14 +134,21 @@ OdooToolkit (toolkit.py)
   ├── diagnose_access()        ← NEW
   ├── health_check()           ← NEW (pure, no Odoo call needed)
   ├── search_employee()        ← NEW
-  └── search_holidays()        ← NEW
+  ├── search_holidays()        ← NEW
+  │
+  │   ── Phase 2 ──────────────────────────────────────────────
+  ├── diagnose_odoo_call()     ← NEW (pure, no Odoo call)
+  ├── generate_json2_payload() ← NEW (pure, no Odoo call)
+  ├── scan_addons_source()     ← NEW (filesystem only, no Odoo call)
+  ├── fit_gap_report()         ← NEW (heuristic + optional live metadata)
+  └── business_pack_report()   ← NEW (pack definitions + optional live check)
 ```
 
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `OdooToolkit` (`toolkit.py`) | Modified | Add 10 new public methods + smart-field fallback in `search_records`/`get_record` |
+| `OdooToolkit` (`toolkit.py`) | Modified | Add 15 new public methods (10 Phase 1 + 5 Phase 2) + smart-field fallback |
 | `models/inputs.py` | Modified | Add input schemas for new tools |
 | `models/envelopes.py` | Modified | Add result envelopes for new tools |
 | `models/entities.py` | Modified | Add `HrEmployee`, `HrLeave` entity models |
@@ -163,6 +202,37 @@ class SearchHolidaysInput(_OdooBaseInput):
     start_date: str   # YYYY-MM-DD
     end_date: str     # YYYY-MM-DD
     employee_id: Optional[int] = None
+
+# ── Phase 2 Input Schemas ──────────────────────────────────
+
+class DiagnoseOdooCallInput(_OdooBaseInput):
+    model: str
+    method: str
+    args: Optional[list[Any]] = None
+    kwargs: Optional[dict[str, Any]] = None
+    transport: str = "auto"
+    target_version: Optional[str] = None
+    observed_error: Optional[str] = None
+
+class GenerateJson2PayloadInput(_OdooBaseInput):
+    model: str
+    method: str
+    args: Optional[list[Any]] = None
+    kwargs: Optional[dict[str, Any]] = None
+    base_url: Optional[str] = None
+    database: Optional[str] = None
+
+class ScanAddonsSourceInput(_OdooBaseInput):
+    addons_paths: Optional[list[str]] = None
+    max_files: int = 200
+    max_file_bytes: int = 300_000
+
+class FitGapReportInput(_OdooBaseInput):
+    requirements: list[dict[str, Any]]
+    business_context: Optional[dict[str, Any]] = None
+
+class BusinessPackReportInput(_OdooBaseInput):
+    pack: str  # "sales" | "crm" | "inventory" | "accounting" | "hr"
 ```
 
 #### New Result Envelopes
@@ -217,6 +287,40 @@ class HealthCheckResult(BaseModel):
     connected: bool
     write_permissions: list[str]
     tool_count: int
+
+# ── Phase 2 Result Envelopes ──────────────────────────────
+
+class OdooCallDiagnosisResult(BaseModel):
+    model: str
+    method: str
+    method_safety: str           # "read_only" | "destructive" | "side_effect" | "unknown"
+    transport_compatibility: str # "ok" | "warning" | "error"
+    warnings: list[str]
+    corrected_payload: Optional[dict[str, Any]] = None
+    next_actions: list[str]
+
+class Json2PayloadResult(BaseModel):
+    endpoint: str               # e.g. "/json/2/res.partner/search_read"
+    headers: dict[str, str]
+    body: dict[str, Any]
+    notes: list[str]
+
+class AddonScanResult(BaseModel):
+    addons_found: int
+    addons: list[dict[str, Any]]  # manifest info, models, risky methods, views
+    warnings: list[str]
+
+class FitGapResult(BaseModel):
+    requirements: list[dict[str, Any]]  # each with classification bucket
+    summary: dict[str, int]             # count per bucket
+    recommended_calls: list[str]        # suggested follow-up Odoo calls
+
+class BusinessPackResult(BaseModel):
+    pack: str
+    expected_modules: list[dict[str, Any]]
+    expected_models: list[str]
+    installed: list[str]                # populated when live check is used
+    missing: list[str]                  # populated when live check is used
 ```
 
 #### New Entity Models
@@ -293,6 +397,40 @@ async def search_holidays(
     self, start_date: str, end_date: str,
     employee_id: int | None = None,
 ) -> list[HrLeave]: ...
+
+# ── Phase 2 methods ────────────────────────────────────────
+
+def diagnose_odoo_call(
+    self, model: str, method: str,
+    args: list[Any] | None = None,
+    kwargs: dict[str, Any] | None = None,
+    transport: str = "auto",
+    target_version: str | None = None,
+    observed_error: str | None = None,
+) -> OdooCallDiagnosisResult: ...
+
+def generate_json2_payload(
+    self, model: str, method: str,
+    args: list[Any] | None = None,
+    kwargs: dict[str, Any] | None = None,
+    base_url: str | None = None,
+    database: str | None = None,
+) -> Json2PayloadResult: ...
+
+def scan_addons_source(
+    self, addons_paths: list[str] | None = None,
+    max_files: int = 200,
+    max_file_bytes: int = 300_000,
+) -> AddonScanResult: ...
+
+async def fit_gap_report(
+    self, requirements: list[dict[str, Any]],
+    business_context: dict[str, Any] | None = None,
+) -> FitGapResult: ...
+
+async def business_pack_report(
+    self, pack: str,
+) -> BusinessPackResult: ...
 ```
 
 ---
@@ -360,23 +498,85 @@ async def search_holidays(
   entities.
 - **Depends on**: Module 2 (needs transport)
 
-### Module 8: Input Schemas & Envelopes
+### Module 8: Input Schemas & Envelopes (Phase 1 + Phase 2)
 
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py` (modified)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/models/envelopes.py` (modified)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/models/entities.py` (modified)
 - **Responsibility**: Add all new Pydantic models (input schemas, result envelopes,
-  entity classes) described in §2 Data Models. Must be committed before other modules
-  can import them.
+  entity classes) described in §2 Data Models for both phases. Must be committed
+  before other modules can import them.
 - **Depends on**: None
 
-### Module 9: Tests
+### Module 9: Phase 1 Tests
 
 - **Path**: `packages/ai-parrot/tests/test_odoo_toolkit.py` (modified)
 - **Path**: `packages/ai-parrot/tests/test_odoo_smart_fields.py` (new)
-- **Responsibility**: Unit tests for all new methods. Mock the transport layer
+- **Responsibility**: Unit tests for all Phase 1 methods. Mock the transport layer
   (`_execute`). Test smart-field scoring in isolation.
-- **Depends on**: All other modules
+- **Depends on**: Modules 1-7
+
+---
+
+### Module 10: Call Diagnostics (Phase 2)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` (modified)
+- **Responsibility**: Add `diagnose_odoo_call` method. Validates model name format,
+  classifies method safety (read_only/destructive/side_effect/unknown), checks
+  transport compatibility (JSON-2 vs XML-RPC), flags Odoo 20 deprecation warnings,
+  and suggests corrected payload shape. **Pure function** — no Odoo network call.
+- **Depends on**: Module 2 (needs toolkit instance for config context)
+
+### Module 11: JSON-2 Payload Generator (Phase 2)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` (modified)
+- **Responsibility**: Add `generate_json2_payload` method. Translates XML-RPC-style
+  positional args into the JSON-2 named-argument endpoint, headers, and body using a
+  mapping table for common ORM methods (`search_read`, `create`, `write`, `unlink`,
+  `read`, `search`, `search_count`, `fields_get`, `name_search`, etc.).
+  **Pure function** — no network call.
+- **Depends on**: None
+
+### Module 12: Addon Source Scanner (Phase 2)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` (modified)
+- **Responsibility**: Add `scan_addons_source` method. Scans local addon directories
+  (restricted to configured paths) for `__manifest__.py` files, custom model class
+  definitions, risky method overrides (`create`/`write`/`unlink`/`sudo`), automated
+  actions, view XML files, and `ir.model.access.csv` security files. Uses AST parsing
+  — **no addon code is imported or executed**. Filesystem only, no Odoo call.
+- **Depends on**: None
+
+### Module 13: Fit/Gap Report (Phase 2)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` (modified)
+- **Responsibility**: Add `fit_gap_report` method. Classifies a list of business
+  requirements into buckets: `standard` (covered by base Odoo), `configuration`
+  (achievable via settings/views), `studio` (Odoo Studio customisation), `custom_module`
+  (requires development), `avoid` (anti-pattern), or `unknown`. Uses a heuristic
+  keyword matcher and optionally queries live Odoo for installed modules and available
+  models/fields to improve classification.
+- **Depends on**: Module 5 (can reuse `schema_catalog` for model evidence)
+
+### Module 14: Business Pack Report (Phase 2)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py` (modified)
+- **Responsibility**: Add `business_pack_report` method. Defines expected modules,
+  models, and discovery calls for five standard business domains: `sales`, `crm`,
+  `inventory`, `accounting`, `hr`. Optionally queries live Odoo to check which
+  expected modules are installed and which models are available. Reports
+  installed/missing split.
+- **Depends on**: Module 5 (can reuse `get_odoo_profile` for installed module list)
+
+### Module 15: Phase 2 Tests
+
+- **Path**: `packages/ai-parrot/tests/test_odoo_toolkit.py` (modified)
+- **Path**: `packages/ai-parrot/tests/test_odoo_diagnostics.py` (new)
+- **Responsibility**: Unit tests for all Phase 2 methods. `diagnose_odoo_call` and
+  `generate_json2_payload` are pure functions (no mocks needed). `scan_addons_source`
+  tests use a temporary directory with sample addon files. `fit_gap_report` and
+  `business_pack_report` test both offline (no live Odoo) and mocked-live modes.
+- **Depends on**: Modules 10-14
 
 ---
 
@@ -408,6 +608,26 @@ async def search_holidays(
 | `test_search_employee` | 7 | Returns typed HrEmployee list |
 | `test_search_holidays_date_range` | 7 | Filters by date range |
 | `test_search_holidays_by_employee` | 7 | Adds employee_id to domain |
+| `test_diagnose_call_valid_read` | 10 | Classifies `search_read` as read_only |
+| `test_diagnose_call_destructive_method` | 10 | Warns on `unlink` as destructive |
+| `test_diagnose_call_bad_model_name` | 10 | Rejects model name with invalid chars |
+| `test_diagnose_call_json2_incompatibility` | 10 | Flags methods not available in JSON-2 |
+| `test_diagnose_call_odoo20_deprecation` | 10 | Warns about XML-RPC removal in Odoo 20 |
+| `test_generate_json2_search_read` | 11 | Correct endpoint + named body for `search_read` |
+| `test_generate_json2_create` | 11 | Correct mapping for `create` |
+| `test_generate_json2_write` | 11 | Correct mapping for `write` with record ids |
+| `test_generate_json2_unknown_method` | 11 | Falls back to generic body for custom methods |
+| `test_scan_addons_finds_manifests` | 12 | Discovers `__manifest__.py` in temp dir |
+| `test_scan_addons_detects_risky_methods` | 12 | Flags `sudo()` and `unlink` overrides |
+| `test_scan_addons_respects_max_files` | 12 | Stops after `max_files` cap |
+| `test_scan_addons_path_traversal_blocked` | 12 | Rejects paths outside allowed roots |
+| `test_fit_gap_standard_requirement` | 13 | Classifies "track sales orders" as `standard` |
+| `test_fit_gap_custom_module` | 13 | Classifies novel integration as `custom_module` |
+| `test_fit_gap_with_live_models` | 13 | Improves classification when model evidence available |
+| `test_business_pack_sales` | 14 | Returns expected modules for `sales` pack |
+| `test_business_pack_hr` | 14 | Returns expected modules for `hr` pack |
+| `test_business_pack_live_check` | 14 | Reports installed/missing with mocked module list |
+| `test_business_pack_invalid_pack` | 14 | Rejects unknown pack name |
 
 ### Test Data / Fixtures
 
@@ -462,9 +682,21 @@ def mock_transport(mocker):
 - [ ] `health_check` returns runtime posture without making any Odoo network call
 - [ ] `search_employee` returns typed `HrEmployee` list
 - [ ] `search_holidays` filters by date range and optionally by employee_id
+- [ ] **Phase 2**: `diagnose_odoo_call` classifies method safety and flags transport issues
+- [ ] **Phase 2**: `diagnose_odoo_call` warns about Odoo 20 XML-RPC deprecation
+- [ ] **Phase 2**: `generate_json2_payload` produces correct endpoint + named body for
+      common ORM methods (`search_read`, `create`, `write`, `unlink`, `read`)
+- [ ] **Phase 2**: `scan_addons_source` discovers manifests and model classes in temp dir
+- [ ] **Phase 2**: `scan_addons_source` flags risky method overrides (sudo, unlink override)
+- [ ] **Phase 2**: `scan_addons_source` rejects paths outside configured addon roots
+- [ ] **Phase 2**: `fit_gap_report` classifies requirements into standard/config/studio/
+      custom_module/avoid/unknown buckets
+- [ ] **Phase 2**: `fit_gap_report` optionally improves classification with live model evidence
+- [ ] **Phase 2**: `business_pack_report` returns expected modules/models for each pack
+- [ ] **Phase 2**: `business_pack_report` reports installed/missing when live Odoo available
 - [ ] All new methods have `@tool_schema` input schemas
 - [ ] All new result types are Pydantic `BaseModel` subclasses
-- [ ] All unit tests pass: `pytest packages/ai-parrot/tests/test_odoo_toolkit.py packages/ai-parrot/tests/test_odoo_smart_fields.py -v`
+- [ ] All unit tests pass: `pytest packages/ai-parrot/tests/test_odoo_toolkit.py packages/ai-parrot/tests/test_odoo_smart_fields.py packages/ai-parrot/tests/test_odoo_diagnostics.py -v`
 - [ ] No breaking changes to existing OdooToolkit public API
 - [ ] No new external dependencies required
 
@@ -602,6 +834,11 @@ class ServerInfoResult(BaseModel):                         # line 154
 | `diagnose_access()` | `OdooToolkit._execute` | queries `ir.model.access` and `ir.rule` | `toolkit.py:228` |
 | `search_employee()` | `OdooToolkit._execute` | `self._execute("hr.employee", ...)` | `toolkit.py:228` |
 | `search_holidays()` | `OdooToolkit._execute` | `self._execute("hr.leave", ...)` | `toolkit.py:228` |
+| `diagnose_odoo_call()` | `OdooToolkit.config` | reads config for transport context | `toolkit.py:175` |
+| `generate_json2_payload()` | `OdooToolkit.config` | reads config for base_url/database defaults | `toolkit.py:175` |
+| `scan_addons_source()` | filesystem | AST parsing of `__manifest__.py` and `.py` files | N/A |
+| `fit_gap_report()` | `OdooToolkit.schema_catalog` | optional live model evidence | new (Phase 1) |
+| `business_pack_report()` | `OdooToolkit.get_odoo_profile` | optional installed module list | new (Phase 1) |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -621,6 +858,13 @@ class ServerInfoResult(BaseModel):                         # line 154
 - ~~`HrLeave` entity~~ — does not exist in `models/entities.py`; must be created
 - ~~`parrot.interfaces.odoointerface.formatted_read_group`~~ — no such wrapper; use `_execute` directly
 - ~~`OdooToolkit._odoo_version`~~ — does not exist; version detection must use `server_info()` or transport
+- ~~`OdooToolkit.diagnose_odoo_call()`~~ — does not exist yet (Phase 2)
+- ~~`OdooToolkit.generate_json2_payload()`~~ — does not exist yet (Phase 2)
+- ~~`OdooToolkit.scan_addons_source()`~~ — does not exist yet (Phase 2)
+- ~~`OdooToolkit.fit_gap_report()`~~ — does not exist yet (Phase 2)
+- ~~`OdooToolkit.business_pack_report()`~~ — does not exist yet (Phase 2)
+- ~~`parrot_tools.odoo.agent_tools`~~ — does not exist; mcp-odoo's helper module name, not ours
+- ~~`parrot_tools.odoo.diagnostics`~~ — does not exist; Phase 2 diagnostics go in toolkit.py
 
 ---
 
@@ -668,6 +912,59 @@ SAFE_DOMAIN_OPERATORS = frozenset({
 })
 ```
 
+### Phase 2 — Method Safety Classification
+
+`diagnose_odoo_call` classifies methods using constant sets:
+
+```python
+READ_ONLY_METHODS = frozenset({
+    "search", "search_count", "search_read", "read",
+    "fields_get", "name_get", "name_search", "context_get",
+})
+DESTRUCTIVE_METHODS = frozenset({"create", "write", "unlink"})
+```
+
+Methods not in either set are classified as `"side_effect"` (e.g.
+`action_confirm`, `action_post`) or `"unknown"`.
+
+### Phase 2 — JSON-2 Positional-to-Named Arg Mapping
+
+`generate_json2_payload` uses a mapping table to convert positional args:
+
+```python
+JSON2_ARG_MAP = {
+    "search_read": ["domain", "fields", "offset", "limit", "order"],
+    "search":      ["domain", "offset", "limit", "order"],
+    "search_count":["domain"],
+    "read":        ["ids", "fields"],
+    "create":      ["vals_list"],
+    "write":       ["ids", "vals"],
+    "unlink":      ["ids"],
+    "fields_get":  ["allfields", "attributes"],
+    "name_search": ["name", "args", "operator", "limit"],
+}
+```
+
+### Phase 2 — Addon Scanner Safety
+
+`scan_addons_source` must:
+1. Restrict scanned paths to a configured allowlist (prevent path traversal).
+2. Use `ast.parse` — never `import` or `exec` addon code.
+3. Cap at `max_files` and `max_file_bytes` to prevent resource exhaustion.
+4. Recognise `__manifest__.py` (Odoo 10+) and `__openerp__.py` (legacy).
+
+### Phase 2 — Business Pack Definitions
+
+```python
+BUSINESS_PACKS = {
+    "sales":      {"modules": ["sale", "sale_management"], "models": ["sale.order", "sale.order.line"]},
+    "crm":        {"modules": ["crm"], "models": ["crm.lead", "crm.team"]},
+    "inventory":  {"modules": ["stock", "stock_account"], "models": ["stock.picking", "stock.move"]},
+    "accounting": {"modules": ["account", "account_payment"], "models": ["account.move", "account.payment"]},
+    "hr":         {"modules": ["hr", "hr_holidays"], "models": ["hr.employee", "hr.leave"]},
+}
+```
+
 ### Known Risks / Gotchas
 
 - **`hr.employee` may not be installed**: If the HR module is not installed on the
@@ -684,6 +981,15 @@ SAFE_DOMAIN_OPERATORS = frozenset({
 - **`hr.leave` vs `hr.leave.report.calendar`**: The mcp-odoo project uses
   `hr.leave.report.calendar` (a reporting view). We should prefer `hr.leave` for
   direct queries but fall back gracefully.
+- **Addon path traversal (Phase 2)**: `scan_addons_source` must validate that
+  provided paths are under the configured addon roots. A malicious path like
+  `../../etc` must be rejected.
+- **AST parsing robustness (Phase 2)**: Some addon `.py` files may have syntax
+  errors or Python 2 constructs. `scan_addons_source` should catch `SyntaxError`
+  per file and report it as a warning, not abort the entire scan.
+- **Fit/gap heuristic accuracy (Phase 2)**: The keyword-based classifier in
+  `fit_gap_report` is inherently approximate. The tool should clearly label
+  `"unknown"` when confidence is low rather than guessing wrong.
 
 ### External Dependencies
 
@@ -708,12 +1014,12 @@ and Pydantic (already present).
 ## Worktree Strategy
 
 - **Isolation unit**: `per-spec` (sequential tasks in one worktree).
-- All modules modify the same files (`toolkit.py`, `models/*.py`), so parallel
-  execution within this feature would create merge conflicts.
+- All modules across both phases modify the same files (`toolkit.py`, `models/*.py`),
+  so parallel execution within this feature would create merge conflicts.
+- Phase 2 modules depend on Phase 1 being complete (they import Phase 1 envelopes
+  and reuse `schema_catalog`/`get_odoo_profile` for live evidence).
 - **Cross-feature dependencies**: None. This feature extends OdooToolkit without
   requiring changes from other in-flight features.
-- **Phase 2 note**: The follow-up spec (audit/planning tools) will also modify
-  `toolkit.py` but should be sequenced after this feature merges to `dev`.
 
 ---
 
@@ -722,3 +1028,4 @@ and Pydantic (already present).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-05 | Jesus Lara | Initial draft — Phase 1 scope |
+| 0.2 | 2026-05-05 | Jesus Lara | Added Phase 2 — diagnostics, audit & planning tools |
