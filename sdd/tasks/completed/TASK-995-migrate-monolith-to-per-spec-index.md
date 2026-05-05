@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-994
@@ -325,4 +325,23 @@ def test_completed_at_set_when_all_done(monolith: Path, tmp_path: Path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-995`
+**Date**: 2026-05-05
+**Notes**: Implemented `scripts/sdd/migrate_index.py` and ran the live migration. Source monolith preserved; 127 per-spec index files written under `sdd/tasks/index/`. All 7 unit tests pass.
+
+**Migration outcome on the live monolith** (commit `0f434117`):
+- 126 per-spec index files (one per unique `feature` slug across the current top-level + `previous_features` registry).
+- 1 orphan in `_orphans.json`: legacy entry `TASK-748` (recorded as `TASK-TASK-748` in the monolith — malformed `id`, no `feature`). Routed cleanly with the documented stderr warning.
+- FEAT-145's per-spec index (`sdd-flow-types-and-per-spec-index.json`) generated correctly with all 9 tasks and the current `done`/`in-progress`/`pending` mix.
+- Idempotency verified by sha256 — re-running the migration on the live monolith produces byte-identical output.
+
+**Tests added**: 7 (one beyond the contract's 5: `test_dry_run_writes_nothing` and `test_feat142_collision_split_by_slug`, the latter explicitly exercising the FEAT-142 collision risk called out in §7 of the spec).
+
+**Deviations from contract**:
+1. **Test directory**: created in `tests/sdd_scripts/` instead of `tests/scripts/` to remain consistent with the rename done by TASK-994 (the original name shadows the worktree's real `scripts/` package under pytest).
+2. **Lint step skipped**: ruff/pyflakes still unavailable in `.venv`; `python -m py_compile` passes.
+
+**Follow-ups for downstream tasks**:
+- TASK-998 (`/sdd-start` rewrite) can now safely read from per-spec indexes — the FEAT-145 per-spec index is in place.
+- TASK-1000 (`/sdd-status`, `/sdd-next`) should surface `_orphans.json` per the spec §3 / Module 7.
+- The legacy monolith `sdd/tasks/.index.json` is untouched and should remain so until the team has verified the migration end-to-end. Removal is a separate, explicit step.
