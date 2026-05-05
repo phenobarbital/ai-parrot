@@ -16434,14 +16434,15 @@
         "TASK-1001"
       ],
       "parallelism_notes": "Last task \u2014 documents the actual implemented behaviour.",
-      "file": "sdd/tasks/active/TASK-1002-update-sdd-docs.md",
+      "file": "sdd/tasks/completed/TASK-1002-update-sdd-docs.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:30:35+00:00"
+      "started_at": "2026-05-05T01:30:35+00:00",
+      "completed_at": "2026-05-05T01:32:38+00:00"
     },
     {
       "id": "TASK-1003",

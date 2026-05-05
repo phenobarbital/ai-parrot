@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-994, TASK-995, TASK-996, TASK-997, TASK-998, TASK-999, TASK-1000, TASK-1001
@@ -180,4 +180,30 @@ All counts must match.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-1002`
+**Date**: 2026-05-05
+**Notes**: Final task of FEAT-145. Both docs now describe the new model end-to-end. Future contributors and Claude sessions reading these files will see the per-spec model as the source of truth, with the monolith called out as a historical artifact.
+
+**`sdd/WORKFLOW.md`:**
+- §"Phase 2 — Task Generation": rewrote the index reference from `tasks/.index.json` to `sdd/tasks/index/<feature-slug>.json` with FEAT-145 attribution.
+- New §"Flow Types (FEAT-145)" section: documents `type: feature | hotfix` + `base_branch` frontmatter, table of when to use each, and the `--sync-dev` flow for hotfixes.
+- §"Task Index Schema" replaced with the per-spec schema (header + tasks array, type/base_branch/completed_at fields). Includes the migration history note and pointer to `_orphans.json`.
+
+**`CLAUDE.md`:**
+- §"Git Configuration": added flow-types declaration (frontmatter), worktree branch source explanation per flow type, and the explicit `/sdd-done NEVER pushes to main` rule with the `--sync-dev` mention.
+- §"SDD Auto-Commit Rule" table: added Where (FEAT-145) column, updated all paths to per-spec; added a note about `/sdd-start` no longer needing the cd dance.
+- §"Task Index Schema": replaced with the per-spec schema (header + tasks). Added migration history paragraph and the `.gitignore templates/` heads-up I flagged in TASK-996.
+
+**Acceptance grep results:**
+| Check                                  | Value | Required |
+|----------------------------------------|-------|----------|
+| WORKFLOW.md `sdd/tasks/index/` refs    | 3     | ≥ 2 ✅   |
+| WORKFLOW.md `FEAT-145` refs            | 4     | ≥ 1 ✅   |
+| WORKFLOW.md Flow Types section         | 2     | ≥ 1 ✅   |
+| CLAUDE.md `sdd/tasks/index/` refs      | 3     | ≥ 2 ✅   |
+| CLAUDE.md `FEAT-145` refs              | 6     | ≥ 1 ✅   |
+| CLAUDE.md NEVER push/PR to main        | 1     | ≥ 1 ✅   |
+
+**Deviations from contract**: none.
+
+**Reconciliation note for the team**: this commit closes FEAT-145 in the worktree. After `/sdd-done FEAT-145` is run on `dev`, the live monolithic `sdd/tasks/.index.json` will still contain the (now stale) duplicate of FEAT-145's tasks. A clean way to reconcile is to re-run `python -m scripts.sdd.migrate_index` from `dev` after the merge — it will overwrite the per-spec index for FEAT-145 with the latest monolith snapshot. From there onwards, any new feature is born in the per-spec model and never touches the monolith.
