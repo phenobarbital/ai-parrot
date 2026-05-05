@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-994, TASK-995, TASK-996
@@ -231,4 +231,36 @@ All counts must match.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-998`
+**Date**: 2026-05-05
+**Notes**: Both commands rewritten end-to-end. The "code in worktree, state on dev" pattern is gone — per-spec indexes mean state IS the worktree's; the merge in `/sdd-done` brings everything to base_branch atomically.
+
+**`sdd-task.md` changes:**
+- Guardrails: now require `base_branch` (read from spec frontmatter), not hardcoded `dev`.
+- §1 "Verify Branch" → "Sync the Base Branch": reads frontmatter via `python -c "from scripts.sdd.sdd_meta import parse; ..."`, runs `git checkout $BASE && git pull --ff-only`, refuses if dirty or non-FF, refuses if invoked from inside a worktree.
+- §4 step 4: replaced the monolithic-index schema block with the per-spec schema (header + tasks). Documents `mkdir -p` for the index directory and append-vs-create behaviour for existing indexes (e.g. when the migration script already laid one down for an old spec).
+- §5 commit: stages `sdd/tasks/index/<feature>.json` instead of `sdd/tasks/.index.json`.
+
+**`sdd-start.md` changes:**
+- Guardrails: replaced the "code in worktree, state on dev" rule with the FEAT-145 model (code + per-spec index live together; merge brings them across).
+- §1 Resolve Task: globs `sdd/tasks/index/*.json` (excluding `_orphans.json`) and finds the per-spec index containing the requested ID/slug. Includes a working `jq -e` snippet.
+- §3 Detect Context: dropped the "you should be in a worktree" warning; both worktree and main repo are safe targets now.
+- §4 Mark In-Progress: rewritten as in-place `jq` update + commit on the current branch. The whole `cd $REPO_ROOT && git checkout dev && ... && cd $WORKTREE_DIR` dance is gone.
+- §8 Mark Done: same pattern — in-place `jq` update + `mv` + commit. Also updates `.tasks[…].file` to point at `sdd/tasks/completed/`.
+- §9 Post-Completion Hint: simplified ("committed on branch: <current branch>" instead of "Index updated on dev").
+- Reference: now lists per-spec index path + the new `scripts/sdd/sdd_meta.py` parser.
+
+**Acceptance grep results:**
+| Check                                  | sdd-task.md | sdd-start.md |
+|----------------------------------------|-------------|--------------|
+| `sdd/tasks/index/` refs (≥ 1)          | 6 ✅        | 6 ✅         |
+| `sdd/tasks/.index.json` refs (= 0)     | 0 ✅        | 0 ✅         |
+| `git checkout dev` (= 0)               | 0 ✅        | 0 ✅         |
+| `cd …REPO_ROOT` blocks in sdd-start (= 0) | —        | 0 ✅         |
+| `parse(Path` / `sdd_meta` in sdd-task (≥ 1) | 1 ✅   | —            |
+
+**Deviations from contract**: none.
+
+**Heads-up for downstream tasks**:
+- TASK-1001 (`sdd-worker` agent rewrite) must mirror these same patterns — the agent duplicates `/sdd-start`'s logic inline.
+- The new `/sdd-task` flow assumes `scripts.sdd.sdd_meta` is importable (delivered by TASK-994) and that `sdd/tasks/index/` exists (delivered by TASK-995's migration). Both prerequisites are satisfied.

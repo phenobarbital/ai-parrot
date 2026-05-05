@@ -16341,14 +16341,15 @@
         "TASK-996"
       ],
       "parallelism_notes": "Sequential \u2014 substantive rewrite of the daily-loop commands.",
-      "file": "sdd/tasks/active/TASK-998-sdd-task-and-start-per-spec-index.md",
+      "file": "sdd/tasks/completed/TASK-998-sdd-task-and-start-per-spec-index.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:18:30+00:00"
+      "started_at": "2026-05-05T01:18:30+00:00",
+      "completed_at": "2026-05-05T01:21:08+00:00"
     },
     {
       "id": "TASK-999",
