@@ -1,0 +1,104 @@
+{
+  "feature": "FEAT-025",
+  "feature_id": null,
+  "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-171",
+      "slug": "cio-memory-dataclasses",
+      "title": "CIOMemoryContext & TrackRecordEntry Dataclasses",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-171-cio-memory-dataclasses.md"
+    },
+    {
+      "id": "TASK-172",
+      "slug": "build-cio-context",
+      "title": "_build_cio_context Function",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-171"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-172-build-cio-context.md"
+    },
+    {
+      "id": "TASK-173",
+      "slug": "sentiment-reversal-detection",
+      "title": "Sentiment Reversal Detection",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-171"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-173-sentiment-reversal-detection.md"
+    },
+    {
+      "id": "TASK-174",
+      "slug": "cio-deliberation-integration",
+      "title": "CommitteeDeliberation CIO Context Integration",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-172",
+        "TASK-173",
+        "TASK-167"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-174-cio-deliberation-integration.md"
+    },
+    {
+      "id": "TASK-175",
+      "slug": "cio-memory-unit-tests",
+      "title": "CIO Memory Context Unit Tests",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-171",
+        "TASK-172",
+        "TASK-173"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-175-cio-memory-unit-tests.md"
+    },
+    {
+      "id": "TASK-176",
+      "slug": "cio-memory-integration-tests",
+      "title": "CIO Memory Context Integration Tests",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-174",
+        "TASK-175"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-176-cio-memory-integration-tests.md"
+    }
+  ]
+}

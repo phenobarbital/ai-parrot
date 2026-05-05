@@ -1,0 +1,113 @@
+{
+  "feature": "embeddings-catalog-update",
+  "feature_id": "FEAT-140",
+  "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-04T12:00:00+00:00",
+  "completed_at": "2026-05-03T22:39:12.700693Z",
+  "tasks": [
+    {
+      "id": "TASK-962",
+      "slug": "catalog-schema-extension",
+      "title": "Add Pydantic validation schema and backfill 8 metadata fields on existing catalog entries",
+      "feature_id": "FEAT-140",
+      "feature": "embeddings-catalog-update",
+      "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "All 5 tasks in FEAT-140 touch catalog.py and run sequentially per spec \u00a7Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
+      "file": "sdd/tasks/completed/TASK-962-catalog-schema-extension.md",
+      "completed_at": "2026-05-03T22:39:12.700693Z"
+    },
+    {
+      "id": "TASK-963",
+      "slug": "new-models-and-resolver-wiring",
+      "title": "Add 5 new model entries and wire prefix resolver branches",
+      "feature_id": "FEAT-140",
+      "feature": "embeddings-catalog-update",
+      "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-962"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies catalog.py and huggingface.py \u2014 sequential after schema lands.",
+      "assigned_to": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
+      "file": "sdd/tasks/completed/TASK-963-new-models-and-resolver-wiring.md",
+      "completed_at": "2026-05-03T22:39:12.700693Z"
+    },
+    {
+      "id": "TASK-964",
+      "slug": "use-case-taxonomy-extension",
+      "title": "Extend USE_CASE_DESCRIPTIONS taxonomy and reassign tags on existing entries",
+      "feature_id": "FEAT-140",
+      "feature": "embeddings-catalog-update",
+      "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-962",
+        "TASK-963"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same catalog.py entries that TASK-962/963 just landed.",
+      "assigned_to": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
+      "file": "sdd/tasks/completed/TASK-964-use-case-taxonomy-extension.md",
+      "completed_at": "2026-05-03T22:39:12.700693Z"
+    },
+    {
+      "id": "TASK-965",
+      "slug": "helper-api-extension",
+      "title": "Extend get_embedding_models() with 4 new filter kwargs",
+      "feature_id": "FEAT-140",
+      "feature": "embeddings-catalog-update",
+      "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-962"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches catalog.py \u2014 sequential to avoid merge conflicts with sibling tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
+      "file": "sdd/tasks/completed/TASK-965-helper-api-extension.md",
+      "completed_at": "2026-05-03T22:39:12.700693Z"
+    },
+    {
+      "id": "TASK-966",
+      "slug": "catalog-resolver-consistency-pytest",
+      "title": "Cross-consistency pytest between catalog and _resolve_prefixes",
+      "feature_id": "FEAT-140",
+      "feature": "embeddings-catalog-update",
+      "spec": "sdd/specs/embeddings-catalog-update.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-962",
+        "TASK-963",
+        "TASK-964",
+        "TASK-965"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Validation gate \u2014 must run after every implementation task lands.",
+      "assigned_to": null,
+      "started_at": "2026-05-03T22:30:02.646199Z",
+      "file": "sdd/tasks/completed/TASK-966-catalog-resolver-consistency-pytest.md",
+      "completed_at": "2026-05-03T22:39:12.700693Z"
+    }
+  ]
+}

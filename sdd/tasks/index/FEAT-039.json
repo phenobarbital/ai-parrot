@@ -1,0 +1,102 @@
+{
+  "feature": "FEAT-039",
+  "feature_id": null,
+  "spec": "sdd/specs/telegram-voice-notes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-262",
+      "slug": "shared-voice-transcriber",
+      "title": "Shared Voice Transcription Module",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-262-shared-voice-transcriber.md"
+    },
+    {
+      "id": "TASK-263",
+      "slug": "msteams-voice-backward-compat",
+      "title": "MS Teams Voice Backward Compatibility",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-262"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-263-msteams-voice-backward-compat.md"
+    },
+    {
+      "id": "TASK-264",
+      "slug": "telegram-voice-config",
+      "title": "Telegram Voice Config",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-262"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-264-telegram-voice-config.md"
+    },
+    {
+      "id": "TASK-265",
+      "slug": "telegram-voice-handler",
+      "title": "Telegram Voice Handler",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-262",
+        "TASK-264"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-265-telegram-voice-handler.md"
+    },
+    {
+      "id": "TASK-266",
+      "slug": "voice-transcriber-unit-tests",
+      "title": "Voice Transcriber Unit Tests",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-262",
+        "TASK-263"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-266-voice-transcriber-unit-tests.md"
+    },
+    {
+      "id": "TASK-267",
+      "slug": "telegram-voice-tests",
+      "title": "Telegram Voice Handler Tests",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-264",
+        "TASK-265"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-267-telegram-voice-tests.md"
+    }
+  ]
+}

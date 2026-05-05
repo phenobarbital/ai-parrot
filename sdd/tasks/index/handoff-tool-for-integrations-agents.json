@@ -1,0 +1,30 @@
+{
+  "feature": "handoff-tool-for-integrations-agents",
+  "feature_id": "FEAT-012",
+  "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-324",
+      "slug": "chat-integration-state",
+      "title": "Chat Integration State Management",
+      "feature_id": "FEAT-012",
+      "feature": "handoff-tool-for-integrations-agents",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "parallel": false,
+      "parallelism_notes": "",
+      "assigned_to": "claude-session",
+      "started_at": "2026-03-13T00:00:00",
+      "file": "sdd/tasks/completed/TASK-324-chat-integration-state.md"
+    }
+  ]
+}

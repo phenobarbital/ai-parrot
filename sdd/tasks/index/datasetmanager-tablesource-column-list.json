@@ -1,0 +1,114 @@
+{
+  "feature": "datasetmanager-tablesource-column-list",
+  "feature_id": "FEAT-061",
+  "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-25T00:15:00.000000Z",
+  "tasks": [
+    {
+      "id": "TASK-443",
+      "slug": "tablesource-allowed-columns-param",
+      "title": "TableSource \u2014 allowed_columns parameter and schema filtering",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies table.py \u2014 must run before TASK-423/424",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:20:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
+    },
+    {
+      "id": "TASK-444",
+      "slug": "tablesource-sql-column-validation",
+      "title": "TableSource \u2014 SQL column validation in fetch()",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-422"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies table.py fetch() \u2014 depends on TASK-422 for allowed_columns attribute",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:25:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-423-tablesource-sql-column-validation.md"
+    },
+    {
+      "id": "TASK-445",
+      "slug": "datasetmanager-allowed-columns-passthrough",
+      "title": "DatasetManager \u2014 pass allowed_columns through to TableSource",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-422"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies tool.py \u2014 depends on TASK-422 for TableSource param",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:30:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-424-datasetmanager-allowed-columns-passthrough.md"
+    },
+    {
+      "id": "TASK-446",
+      "slug": "tablesource-allowed-columns-unit-tests",
+      "title": "Unit tests for TableSource allowed_columns",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-422",
+        "TASK-423",
+        "TASK-424"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all implementation tasks \u2014 must run after all code changes",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-25T00:00:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-425-tablesource-allowed-columns-unit-tests.md"
+    },
+    {
+      "id": "TASK-426",
+      "slug": "tablesource-allowed-columns-integration-tests",
+      "title": "Integration tests for allowed_columns (guide + metadata)",
+      "feature_id": "FEAT-061",
+      "feature": "datasetmanager-tablesource-column-list",
+      "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-422",
+        "TASK-423",
+        "TASK-424",
+        "TASK-425"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration tests \u2014 must run after all implementation and unit tests",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-25T00:15:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-426-tablesource-allowed-columns-integration-tests.md"
+    }
+  ]
+}

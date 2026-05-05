@@ -1,0 +1,128 @@
+{
+  "feature": "bot-cleanup-lifecycle",
+  "feature_id": "FEAT-114",
+  "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-21T23:34:39.668365+00:00",
+  "tasks": [
+    {
+      "id": "TASK-812",
+      "slug": "bot-cleanup-timeout-conf",
+      "title": "Add BOT_CLEANUP_TIMEOUT configuration constant",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Spec \u00a79 picks per-spec isolation (one worktree, sequential). Tiny conf edit; TASK-814 imports this constant so it must land first.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T19:28:06.752594+00:00",
+      "file": "sdd/tasks/completed/TASK-812-bot-cleanup-timeout-conf.md"
+    },
+    {
+      "id": "TASK-813",
+      "slug": "hookable-agent-cleanup",
+      "title": "Add cooperative HookableAgent.cleanup() with MRO chaining",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Independent file from TASK-812/814 but kept sequential per spec \u00a79 (per-spec isolation). Could theoretically run in parallel with TASK-812.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T19:28:06.752594+00:00",
+      "file": "sdd/tasks/completed/TASK-813-hookable-agent-cleanup.md"
+    },
+    {
+      "id": "TASK-814",
+      "slug": "botmanager-on-cleanup",
+      "title": "Wire BotManager on_cleanup with _cleanup_all_bots + _safe_cleanup",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-812"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports BOT_CLEANUP_TIMEOUT added by TASK-812; must run after it.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T21:12:20.099360+00:00",
+      "file": "sdd/tasks/completed/TASK-814-botmanager-on-cleanup.md"
+    },
+    {
+      "id": "TASK-815",
+      "slug": "hookable-cleanup-tests",
+      "title": "Unit tests for HookableAgent.cleanup()",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-813"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises the cleanup method added in TASK-813; must run after it.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T23:34:39.668365+00:00",
+      "file": "sdd/tasks/active/TASK-815-hookable-cleanup-tests.md"
+    },
+    {
+      "id": "TASK-816",
+      "slug": "botmanager-cleanup-tests",
+      "title": "Unit + integration tests for BotManager cleanup lifecycle",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-814"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises _cleanup_all_bots/_safe_cleanup added in TASK-814 and the conf constant from TASK-812.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T23:26:29.133311+00:00",
+      "file": "sdd/tasks/completed/TASK-816-botmanager-cleanup-tests.md"
+    },
+    {
+      "id": "TASK-817",
+      "slug": "cleanup-lifecycle-docs",
+      "title": "Document the bot cleanup lifecycle (MRO contract + BOT_CLEANUP_TIMEOUT)",
+      "feature_id": "FEAT-114",
+      "feature": "bot-cleanup-lifecycle",
+      "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-813",
+        "TASK-814"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Documents both the mixin cleanup and the BotManager iteration; runs after both are implemented.",
+      "assigned_to": null,
+      "started_at": "2026-04-21T18:42:31.833788+00:00",
+      "completed_at": "2026-04-21T23:29:47.814033+00:00",
+      "file": "sdd/tasks/completed/TASK-817-cleanup-lifecycle-docs.md"
+    }
+  ]
+}

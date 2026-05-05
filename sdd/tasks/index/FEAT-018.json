@@ -1,0 +1,100 @@
+{
+  "feature": "FEAT-018",
+  "feature_id": null,
+  "spec": "sdd/specs/massive-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-092",
+      "slug": "massive-models",
+      "title": "MassiveToolkit Input Models",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-092-massive-models.md"
+    },
+    {
+      "id": "TASK-093",
+      "slug": "massive-client",
+      "title": "MassiveToolkit Client Wrapper",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-092"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-093-massive-client.md"
+    },
+    {
+      "id": "TASK-094",
+      "slug": "massive-cache",
+      "title": "MassiveToolkit Cache Layer",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-094-massive-cache.md"
+    },
+    {
+      "id": "TASK-095",
+      "slug": "massive-toolkit",
+      "title": "MassiveToolkit Main Implementation",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-092",
+        "TASK-093",
+        "TASK-094"
+      ],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-095-massive-toolkit.md"
+    },
+    {
+      "id": "TASK-096",
+      "slug": "massive-unit-tests",
+      "title": "MassiveToolkit Unit Tests",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-095"
+      ],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-096-massive-unit-tests.md"
+    },
+    {
+      "id": "TASK-097",
+      "slug": "massive-integration-tests",
+      "title": "MassiveToolkit Integration Tests",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-095",
+        "TASK-096"
+      ],
+      "assigned_to": "be4f3fec-c0dc-470d-b790-020b79803a50",
+      "file": "sdd/tasks/completed/TASK-097-massive-integration-tests.md"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "feature": "agentcrew-primitives",
+  "feature_id": "FEAT-137",
+  "spec": "sdd/specs/agentcrew-primitives.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-30T21:52:39.060364+00:00",
+  "tasks": [
+    {
+      "id": "TASK-937",
+      "slug": "prep-test-audit-infrastructure",
+      "title": "Prep \u2014 Test Audit & Infrastructure",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; all subsequent tasks depend on it",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T00:45:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-937-prep-test-audit-infrastructure.md"
+    },
+    {
+      "id": "TASK-938",
+      "slug": "core-agentnode-execute",
+      "title": "Core AgentNode Enhancement \u2014 Add execute()",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-937"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies flows/core/node.py and crew.py; foundation for all mode migrations",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T01:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-938-core-agentnode-execute.md"
+    },
+    {
+      "id": "TASK-939",
+      "slug": "migrate-run-sequential",
+      "title": "Migrate run_sequential",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-938"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies crew.py; sequential dependency on TASK-938",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T16:57:15.069290+00:00",
+      "file": "sdd/tasks/completed/TASK-939-migrate-run-sequential.md"
+    },
+    {
+      "id": "TASK-940",
+      "slug": "migrate-run-parallel",
+      "title": "Migrate run_parallel",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-939"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies crew.py; builds on sequential migration pattern",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T18:22:59.123350+00:00",
+      "file": "sdd/tasks/completed/TASK-940-migrate-run-parallel.md"
+    },
+    {
+      "id": "TASK-941",
+      "slug": "migrate-run-flow",
+      "title": "Migrate run_flow",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-940"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Most complex mode; modifies crew.py with DAG + callback wiring",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T19:20:03.211332+00:00",
+      "file": "sdd/tasks/completed/TASK-941-migrate-run-flow.md"
+    },
+    {
+      "id": "TASK-942",
+      "slug": "migrate-run-loop",
+      "title": "Migrate run_loop",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-941"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies crew.py; depends on flow migration pattern",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T21:12:40.395150+00:00",
+      "file": "sdd/tasks/completed/TASK-942-migrate-run-loop.md"
+    },
+    {
+      "id": "TASK-943",
+      "slug": "cleanup-final-regression",
+      "title": "Cleanup & Final Regression",
+      "feature_id": "FEAT-137",
+      "feature": "agentcrew-primitives",
+      "spec": "sdd/specs/agentcrew-primitives.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-942"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final task; removes dead code and runs full regression",
+      "assigned_to": null,
+      "started_at": "2026-04-30T00:32:29.243308+00:00",
+      "completed_at": "2026-04-30T21:52:39.060364+00:00",
+      "file": "sdd/tasks/completed/TASK-943-cleanup-final-regression.md"
+    }
+  ]
+}

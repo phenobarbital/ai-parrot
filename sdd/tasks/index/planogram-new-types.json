@@ -1,0 +1,106 @@
+{
+  "feature": "planogram-new-types",
+  "feature_id": "FEAT-085",
+  "spec": "sdd/specs/planogram-new-types.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-04-06T12:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-592",
+      "slug": "product-counter-type",
+      "title": "Implement ProductCounter Planogram Type",
+      "feature_id": "FEAT-085",
+      "feature": "planogram-new-types",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-593 \u2014 no shared files or imports between the two type classes",
+      "assigned_to": null,
+      "started_at": "2026-04-06T14:06:36+00:00",
+      "file": "sdd/tasks/active/TASK-592-product-counter-type.md"
+    },
+    {
+      "id": "TASK-593",
+      "slug": "endcap-no-shelves-type",
+      "title": "Implement EndcapNoShelvesPromotional Planogram Type",
+      "feature_id": "FEAT-085",
+      "feature": "planogram-new-types",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-592 \u2014 no shared files or imports between the two type classes",
+      "assigned_to": null,
+      "started_at": "2026-04-06T14:06:36+00:00",
+      "file": "sdd/tasks/active/TASK-593-endcap-no-shelves-type.md"
+    },
+    {
+      "id": "TASK-594",
+      "slug": "registration-exports",
+      "title": "Register New Planogram Types and Update Exports",
+      "feature_id": "FEAT-085",
+      "feature": "planogram-new-types",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-592",
+        "TASK-593"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after both type classes exist \u2014 modifies shared files __init__.py and plan.py",
+      "assigned_to": null,
+      "started_at": "2026-04-06T14:06:36+00:00",
+      "file": "sdd/tasks/active/TASK-594-registration-exports.md"
+    },
+    {
+      "id": "TASK-595",
+      "slug": "example-config-scripts",
+      "title": "Create Example Planogram Configuration Scripts",
+      "feature_id": "FEAT-085",
+      "feature": "planogram-new-types",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-592",
+        "TASK-593"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only needs to know the config schema \u2014 can run in parallel with TASK-594",
+      "assigned_to": null,
+      "started_at": "2026-04-06T14:06:36+00:00",
+      "file": "sdd/tasks/active/TASK-595-example-config-scripts.md"
+    },
+    {
+      "id": "TASK-596",
+      "slug": "unit-integration-tests",
+      "title": "Unit and Integration Tests for New Planogram Types",
+      "feature_id": "FEAT-085",
+      "feature": "planogram-new-types",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-592",
+        "TASK-593",
+        "TASK-594"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation \u2014 must run after all types are implemented and registered",
+      "assigned_to": null,
+      "started_at": "2026-04-06T14:06:36+00:00",
+      "file": "sdd/tasks/active/TASK-596-unit-integration-tests.md"
+    }
+  ]
+}

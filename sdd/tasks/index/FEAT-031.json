@@ -1,0 +1,103 @@
+{
+  "feature": "FEAT-031",
+  "feature_id": null,
+  "spec": "sdd/specs/exception-migration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-222",
+      "slug": "pure-python-exceptions",
+      "title": "Pure Python Exception Implementation",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-222-pure-python-exceptions.md"
+    },
+    {
+      "id": "TASK-223",
+      "slug": "rename-pyi-stub",
+      "title": "Rename exceptions.pxi \u2192 exceptions.pyi (PEP 561 Stub)",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-223-rename-pyi-stub.md"
+    },
+    {
+      "id": "TASK-224",
+      "slug": "remove-cython-extension-setup",
+      "title": "Remove parrot.exceptions Extension from setup.py",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-224-remove-cython-extension-setup.md"
+    },
+    {
+      "id": "TASK-225",
+      "slug": "remove-pylint-suppressions",
+      "title": "Remove # pylint: disable=E0611 from Dependent Files",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-225-remove-pylint-suppressions.md"
+    },
+    {
+      "id": "TASK-226",
+      "slug": "delete-cython-artifacts",
+      "title": "Delete Stale Cython Artifacts",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222",
+        "TASK-223",
+        "TASK-224",
+        "TASK-225",
+        "TASK-227"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-226-delete-cython-artifacts.md"
+    },
+    {
+      "id": "TASK-227",
+      "slug": "unit-tests-exceptions",
+      "title": "Unit Tests for parrot/exceptions.py",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-227-unit-tests-exceptions.md"
+    }
+  ]
+}

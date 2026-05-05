@@ -1,0 +1,120 @@
+{
+  "feature": "FEAT-008",
+  "feature_id": null,
+  "spec": "sdd/specs/msteams-voice-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-016",
+      "slug": "voice-transcription-models",
+      "title": "Voice Transcription Data Models",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-016-voice-transcription-models.md"
+    },
+    {
+      "id": "TASK-017",
+      "slug": "abstract-transcriber-backend",
+      "title": "Abstract Transcriber Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-016"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-017-abstract-transcriber-backend.md"
+    },
+    {
+      "id": "TASK-018",
+      "slug": "faster-whisper-backend",
+      "title": "Faster Whisper Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-018-faster-whisper-backend.md"
+    },
+    {
+      "id": "TASK-019",
+      "slug": "openai-whisper-backend",
+      "title": "OpenAI Whisper Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-019-openai-whisper-backend.md"
+    },
+    {
+      "id": "TASK-020",
+      "slug": "voice-transcriber-service",
+      "title": "Voice Transcriber Service",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017",
+        "TASK-018",
+        "TASK-019"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-020-voice-transcriber-service.md"
+    },
+    {
+      "id": "TASK-021",
+      "slug": "msteams-wrapper-integration",
+      "title": "MSTeamsAgentWrapper Voice Integration",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-020",
+        "TASK-022"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-021-msteams-wrapper-integration.md"
+    },
+    {
+      "id": "TASK-022",
+      "slug": "msteams-config-extension",
+      "title": "MSTeamsAgentConfig Voice Extension",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-016"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-022-msteams-config-extension.md"
+    }
+  ]
+}

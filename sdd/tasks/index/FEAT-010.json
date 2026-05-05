@@ -1,0 +1,307 @@
+{
+  "feature": "FEAT-010",
+  "feature_id": null,
+  "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-023",
+      "slug": "slack-config-model",
+      "title": "Extend SlackAgentConfig Model",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-023-slack-config-model.md"
+    },
+    {
+      "id": "TASK-024",
+      "slug": "slack-signature-verification",
+      "title": "Slack Signature Verification Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-024-slack-signature-verification.md"
+    },
+    {
+      "id": "TASK-025",
+      "slug": "slack-event-deduplication",
+      "title": "Slack Event Deduplication Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-025-slack-event-deduplication.md"
+    },
+    {
+      "id": "TASK-026",
+      "slug": "slack-async-processing",
+      "title": "Slack Async Background Processing",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-023",
+        "TASK-024",
+        "TASK-025"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-026-slack-async-processing.md"
+    },
+    {
+      "id": "TASK-027",
+      "slug": "slack-typing-indicator",
+      "title": "Slack Typing Indicator",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-027-slack-typing-indicator.md"
+    },
+    {
+      "id": "TASK-028",
+      "slug": "slack-file-handling",
+      "title": "Slack File Handling Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-028-slack-file-handling.md"
+    },
+    {
+      "id": "TASK-029",
+      "slug": "slack-socket-mode",
+      "title": "Slack Socket Mode Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-023",
+        "TASK-024",
+        "TASK-025",
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-029-slack-socket-mode.md"
+    },
+    {
+      "id": "TASK-030",
+      "slug": "slack-interactive-handler",
+      "title": "Slack Block Kit Interactive Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-030-slack-interactive-handler.md"
+    },
+    {
+      "id": "TASK-031",
+      "slug": "slack-assistant-handler",
+      "title": "Slack Agents & AI Apps Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-026",
+        "TASK-027",
+        "TASK-030"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-031-slack-assistant-handler.md"
+    },
+    {
+      "id": "TASK-109",
+      "slug": "research-memory-schemas",
+      "title": "Research Memory Data Models",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-109-research-memory-schemas.md"
+    },
+    {
+      "id": "TASK-110",
+      "slug": "research-memory-abstract",
+      "title": "Abstract Research Memory Interface",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-109"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-110-research-memory-abstract.md"
+    },
+    {
+      "id": "TASK-111",
+      "slug": "file-research-memory",
+      "title": "File Research Memory Implementation",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-109",
+        "TASK-110"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-111-file-research-memory.md"
+    },
+    {
+      "id": "TASK-112",
+      "slug": "audit-trail-cleanup",
+      "title": "Audit Trail & Cleanup Implementation",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-112-audit-trail-cleanup.md"
+    },
+    {
+      "id": "TASK-113",
+      "slug": "research-memory-tools",
+      "title": "Research Memory Tools",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-113-research-memory-tools.md"
+    },
+    {
+      "id": "TASK-114",
+      "slug": "service-integration",
+      "title": "Service Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111",
+        "TASK-112",
+        "TASK-113"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-114-service-integration.md"
+    },
+    {
+      "id": "TASK-115",
+      "slug": "crew-integration",
+      "title": "Research Crew Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-113",
+        "TASK-114"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-115-crew-integration.md"
+    },
+    {
+      "id": "TASK-116",
+      "slug": "analyst-integration",
+      "title": "Analyst Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-113",
+        "TASK-114"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-116-analyst-integration.md"
+    },
+    {
+      "id": "TASK-117",
+      "slug": "unit-tests",
+      "title": "Research Memory Unit Tests",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-109",
+        "TASK-110",
+        "TASK-111",
+        "TASK-112",
+        "TASK-113"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-117-unit-tests.md"
+    },
+    {
+      "id": "TASK-118",
+      "slug": "integration-tests",
+      "title": "Research Memory Integration Tests",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-114",
+        "TASK-115",
+        "TASK-116",
+        "TASK-117"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-118-integration-tests.md"
+    }
+  ]
+}

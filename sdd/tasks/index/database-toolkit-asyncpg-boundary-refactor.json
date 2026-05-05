@@ -1,0 +1,113 @@
+{
+  "feature": "database-toolkit-asyncpg-boundary-refactor",
+  "feature_id": "FEAT-118",
+  "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-29T12:30:00.000000+00:00",
+  "tasks": [
+    {
+      "id": "TASK-926",
+      "slug": "asyncpg-boundary-unwrap",
+      "title": "Connection Boundary Unwrap \u2014 yield raw asyncpg.Connection",
+      "feature_id": "FEAT-118",
+      "feature": "database-toolkit-asyncpg-boundary-refactor",
+      "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational change \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
+      "file": "sdd/tasks/completed/TASK-926-asyncpg-boundary-unwrap.md",
+      "completed_at": "2026-04-29T11:22:23.096216+00:00"
+    },
+    {
+      "id": "TASK-927",
+      "slug": "delete-sqlalchemy-backend",
+      "title": "Delete SQLAlchemy Backend Path",
+      "feature_id": "FEAT-118",
+      "feature": "database-toolkit-asyncpg-boundary-refactor",
+      "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-926"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-926 (boundary unwrap must land first)",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
+      "file": "sdd/tasks/completed/TASK-927-delete-sqlalchemy-backend.md",
+      "completed_at": "2026-04-29T12:10:00.000000+00:00"
+    },
+    {
+      "id": "TASK-928",
+      "slug": "query-builder-param-normalisation",
+      "title": "Query-Builder Parameter Normalisation \u2014 :name to $N",
+      "feature_id": "FEAT-118",
+      "feature": "database-toolkit-asyncpg-boundary-refactor",
+      "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-926",
+        "TASK-927"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs boundary unwrap + SQLAlchemy removal before changing param style",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
+      "file": "sdd/tasks/completed/TASK-928-query-builder-param-normalisation.md",
+      "completed_at": "2026-04-29T12:10:00.000000+00:00"
+    },
+    {
+      "id": "TASK-929",
+      "slug": "transaction-asyncpg-native",
+      "title": "Transaction on asyncpg Native with Savepoint Support",
+      "feature_id": "FEAT-118",
+      "feature": "database-toolkit-asyncpg-boundary-refactor",
+      "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-926"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on TASK-926; can run in parallel with TASK-927",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
+      "file": "sdd/tasks/completed/TASK-929-transaction-asyncpg-native.md",
+      "completed_at": "2026-04-29T11:47:55.241940+00:00"
+    },
+    {
+      "id": "TASK-930",
+      "slug": "cleanup-feat117-override-tests-deps",
+      "title": "Remove FEAT-117 Override + Final Tests + Dep Audit",
+      "feature_id": "FEAT-118",
+      "feature": "database-toolkit-asyncpg-boundary-refactor",
+      "spec": "sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-926",
+        "TASK-927",
+        "TASK-928",
+        "TASK-929"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final cleanup \u2014 depends on ALL prior tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:50.343171+00:00",
+      "file": "sdd/tasks/completed/TASK-930-cleanup-feat117-override-tests-deps.md",
+      "completed_at": "2026-04-29T12:30:00.000000+00:00"
+    }
+  ]
+}
