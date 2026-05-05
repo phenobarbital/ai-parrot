@@ -41,7 +41,8 @@ Start here when you already know what you want to build. Use `/sdd-spec` to scaf
 Run `/sdd-task <spec-file>` to decompose the spec into Task Artifacts.
 
 Each task is written to `tasks/active/TASK-<id>-<slug>.md`.
-The index `tasks/.index.json` is updated with task metadata.
+The **per-spec index** at `sdd/tasks/index/<feature-slug>.json` is created
+or updated with task metadata (FEAT-145).
 
 Tasks are designed to be:
 - **Atomic** — completable independently
@@ -124,37 +125,75 @@ When complete, the agent must:
 
 ---
 
-## Task Index Schema (`tasks/.index.json`)
+## Flow Types (FEAT-145)
+
+Every brainstorm/proposal/spec declares its flow type via YAML frontmatter
+at the top of the document:
+
+```yaml
+---
+type: feature        # one of: feature | hotfix
+base_branch: dev     # for feature: any branch; for hotfix: must be "main"
+---
+```
+
+| Type      | base_branch       | When to use                                        |
+|-----------|-------------------|----------------------------------------------------|
+| `feature` | `dev` (default)   | Most work. Lands on `dev` via `/sdd-done`.         |
+| `feature` | `<other-branch>`  | Sub-features extending another feature branch.     |
+| `hotfix`  | `main` (required) | Production hotfixes. Land on `main` via manual PR. |
+
+`/sdd-done` enforces: hotfixes are NEVER auto-pushed or auto-PR'd to `main`.
+The user opens the PR manually; afterwards, `/sdd-done --sync-dev` propagates
+the change back to `dev`.
+
+---
+
+## Per-Spec Index Schema (`sdd/tasks/index/<feature-slug>.json`, FEAT-145)
+
+> **Migration history**: the legacy monolithic `sdd/tasks/.index.json` was
+> split into per-spec files by `scripts/sdd/migrate_index.py`. The original
+> monolith is preserved as a historical artifact. New tooling reads only
+> per-spec indexes.
+
+Each per-spec index file contains a header describing the feature plus
+the `tasks[]` array for that feature only. Two parallel features touch
+disjoint files and never collide on merge.
 
 ```json
 {
-  "feature": "feature-name",
-  "spec": "docs/sdd/specs/feature-name.spec.md",
+  "feature": "feature-slug",
+  "feature_id": "FEAT-NNN",
+  "spec": "sdd/specs/feature-slug.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
   "created_at": "ISO-8601",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-001",
       "slug": "base-loader-interface",
       "title": "Define BaseLoader abstract interface",
+      "feature_id": "FEAT-NNN",
+      "feature": "feature-slug",
       "status": "done",
       "priority": "high",
       "depends_on": [],
       "assigned_to": null,
-      "file": "tasks/completed/TASK-001-base-loader-interface.md"
-    },
-    {
-      "id": "TASK-002",
-      "slug": "pgvector-store",
-      "title": "Implement PgVector store integration",
-      "status": "in-progress",
-      "priority": "high",
-      "depends_on": ["TASK-001"],
-      "assigned_to": "session-abc123",
-      "file": "tasks/active/TASK-002-pgvector-store.md"
+      "started_at": null,
+      "completed_at": "ISO-8601",
+      "file": "sdd/tasks/completed/TASK-001-base-loader-interface.md"
     }
   ]
 }
 ```
+
+Tasks orphaned by the migration (no resolvable `feature`) live in
+`sdd/tasks/index/_orphans.json` with the same schema and `feature: "_orphans"`.
+`/sdd-status` surfaces them in a dedicated panel; `/sdd-next` skips them.
+
+See `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md` (FEAT-145) for
+the authoritative design rationale.
 
 ---
 
