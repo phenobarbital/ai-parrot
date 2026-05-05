@@ -342,10 +342,10 @@ async def test_postgres_close_idempotent(mock_asyncdb):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-05
+**Notes**: 7 tests pass. Idempotent DDL with table regex validation,
+bare-string result wrapping, jsonb payload, lazy connection,
+idempotent close.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

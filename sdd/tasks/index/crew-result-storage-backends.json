@@ -72,7 +72,7 @@
       "feature_id": "FEAT-147",
       "feature": "crew-result-storage-backends",
       "spec": "sdd/specs/crew-result-storage-backends.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Conceptually parallel with TASK-1014 and TASK-1015 — share no source files.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1016-postgres-result-storage-backend.md"
+      "completed_at": "2026-05-05T11:42:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1016-postgres-result-storage-backend.md"
     },
     {
       "id": "TASK-1017",
