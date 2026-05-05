@@ -1017,7 +1017,7 @@ class BotManager:
         # Deferred to on_startup so that app['user_socket_manager'] is
         # guaranteed to be populated before setup_web_hitl runs.
         async def _hitl_deferred_startup(app: web.Application) -> None:
-            setup_web_hitl(app)
+            await setup_web_hitl(app)
 
         self.app.on_startup.append(_hitl_deferred_startup)
         # OAuth2 Integrations routes (FEAT-144)
