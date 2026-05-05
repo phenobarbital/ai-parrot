@@ -1952,18 +1952,17 @@ class AbstractBot(
                 search_results, origin=search_type, question=question
             )
 
-            # Format the context from search results using Template to avoid JSON conflicts
+            # Format the context from search results.
+            # Chunks are concatenated with a blank-line separator and no
+            # per-chunk label: source attribution travels via the separate
+            # `source_documents` / citations channel, so adding bracketed
+            # markers like "[Context N]:" only invites the model to echo
+            # them back as inline citations in the final answer.
             context_parts = []
             sources = []
-            context_template = Template("[Context $index]: $content")
 
             for i, result in enumerate(search_results):
-                # Use Template to safely format context with potentially JSON-containing content
-                formatted_context = context_template.safe_substitute(
-                    index=i + 1,
-                    content=result.content
-                )
-                context_parts.append(formatted_context)
+                context_parts.append(result.content)
 
                 # Extract source information
                 if hasattr(result, 'metadata') and result.metadata:
