@@ -16603,14 +16603,15 @@
         "TASK-1010"
       ],
       "parallelism_notes": "Per-spec sequential per spec \u00a7Worktree Strategy \u2014 multiple tasks share `parrot/handlers/web_hitl.py`.",
-      "file": "sdd/tasks/active/TASK-1011-hitl-e2e-tests.md",
+      "file": "sdd/tasks/completed/TASK-1011-hitl-e2e-tests.md",
       "feature_id": "FEAT-146",
       "feature": "web-hitl-and-demo-agent",
       "spec": "sdd/specs/web-hitl-and-demo-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T00:31:38.474896+00:00"
+      "started_at": "2026-05-05T00:31:38.474896+00:00",
+      "completed_at": "2026-05-05T00:53:02.725745Z"
     },
     {
       "id": "TASK-1012",
