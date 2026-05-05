@@ -56,11 +56,12 @@ class ExecutionMemory(VectorStoreMixin):
         """Add a result and update execution graph.
 
         Args:
-            result: The ``NodeResult`` to store.
+            result: The ``NodeResult`` (or legacy ``AgentResult``) to store.
             vectorize: If ``True`` and an embedding model is configured,
                 schedule async FAISS indexing.
         """
-        self.results[result.node_id] = result
+        key = getattr(result, "node_id", None) or result.agent_id
+        self.results[key] = result
         if result.parent_execution_id:
             if result.parent_execution_id not in self.execution_graph:
                 self.execution_graph[result.parent_execution_id] = []

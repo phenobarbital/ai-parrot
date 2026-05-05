@@ -454,6 +454,7 @@ class BaseBot(AbstractBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
+        _trusted_source = kwargs.pop("_trusted_source", False)
 
         # SECURITY: Sanitize question. The wrap is for the LLM call ONLY —
         # do NOT rebind ``question`` here, otherwise the security wrapper
@@ -463,7 +464,8 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                context={'method': 'invoke'}
+                context={'method': 'invoke'},
+                _trusted_source=_trusted_source,
             )
         except PromptInjectionException as e:
             return AIMessage(
@@ -698,6 +700,7 @@ class BaseBot(AbstractBot):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
+        _trusted_source = kwargs.pop("_trusted_source", False)
 
         # Security: sanitize the user's question. The wrap is for the LLM
         # call ONLY — keep ``question`` clean so events, conversation memory,
@@ -707,7 +710,8 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                context={'method': 'ask'}
+                context={'method': 'ask'},
+                _trusted_source=_trusted_source,
             )
         except PromptInjectionException as e:
             # Return error response instead of crashing
@@ -1100,6 +1104,7 @@ class BaseBot(AbstractBot):
         user_id = user_id or "anonymous"
         # Maintain turn identifier generation for parity with ask()
         _turn_id = str(uuid.uuid4())
+        _trusted_source = kwargs.pop("_trusted_source", False)
 
         try:
             # The wrap is for the LLM call ONLY; keep ``question`` clean.
@@ -1107,7 +1112,8 @@ class BaseBot(AbstractBot):
                 question=question,
                 user_id=user_id,
                 session_id=session_id,
-                context={'method': 'ask_stream'}
+                context={'method': 'ask_stream'},
+                _trusted_source=_trusted_source,
             )
         except PromptInjectionException:
             yield (

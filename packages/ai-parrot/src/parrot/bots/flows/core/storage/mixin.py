@@ -113,7 +113,8 @@ class VectorStoreMixin:
         chunks = self._chunk_result(result)
 
         for chunk in chunks:
-            self._vector_chunks.append((chunk, result.node_id))
+            _rid = getattr(result, "node_id", None) or result.agent_id
+            self._vector_chunks.append((chunk, _rid))
 
         all_texts = [chunk for chunk, _ in self._vector_chunks]
         # Offload blocking CPU-bound encode to a thread pool to avoid blocking

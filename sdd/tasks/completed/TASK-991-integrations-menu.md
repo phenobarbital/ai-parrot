@@ -169,10 +169,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-05
+**Notes**: Implemented as specified.
+- `IntegrationItem.svelte`: renders icon (falls back to mdi:puzzle-outline),
+  display_name, status badge (Connected/Not connected badge), Connect/Disconnect
+  button with loading disabled state.
+- `IntegrationsMenu.svelte`: DaisyUI dropdown, button trigger with mdi:puzzle-plus-outline
+  icon matching existing toolbar style, loads integrations on open, handles connect flow
+  (startIntegrationConnect → awaitOAuthCallback → confirmIntegrationEnable), handles
+  disconnect, all outcomes produce appropriate toasts (blocked, timeout, error), cancelled
+  is silent, empty state shows "No integrations available".
+- `AgentChat.svelte`: imported IntegrationsMenu, injected `<IntegrationsMenu {agentId} />`
+  between Refresh button and Canvas-toggle block.
+- svelte-check: 0 errors. TypeScript compiles cleanly.
+- Committed in navigator-frontend-next on dev (commit ee3712b).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

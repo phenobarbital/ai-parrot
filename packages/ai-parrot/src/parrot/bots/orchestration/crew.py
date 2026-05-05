@@ -880,6 +880,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
+                    _trusted_source=True,
                     **context.shared_data
                 )
             if hasattr(agent, 'conversation'):
@@ -890,6 +891,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     use_conversation_history=True,
                     model=model,
                     max_tokens=max_tokens,
+                    _trusted_source=True,
                     **context.shared_data
                 )
             if hasattr(agent, 'invoke'):
@@ -898,6 +900,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                     session_id=f"{session_id}_agent_{index}",
                     user_id=user_id,
                     use_conversation_history=False,
+                    _trusted_source=True,
                     **context.shared_data
                 )
             else:
