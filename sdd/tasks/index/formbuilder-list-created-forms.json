@@ -88,7 +88,7 @@
       "feature_id": "FEAT-148",
       "feature": "formbuilder-list-created-forms",
       "spec": "sdd/specs/formbuilder-list-created-forms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Reads FormSchema.created_at (TASK-1028) and PostgresFormStorage.list_forms() new shape (TASK-1030). Must run after both.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1032-handler-list-forms-merge.md"
+      "completed_at": "2026-05-05T15:17:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1032-handler-list-forms-merge.md"
     },
     {
       "id": "TASK-1033",
