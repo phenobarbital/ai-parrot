@@ -43,34 +43,51 @@ from parrot.tools.decorators import tool_schema
 from parrot.tools.decorators import requires_permission
 from parrot.tools.toolkit import AbstractToolkit
 
+from .models.envelopes import (
+    AccessDiagnosisResult,
+    AddonScanResult,
+    AggregateResult,
+    BinaryFieldResult,
+    BulkCreateResult,
+    BulkDeleteResult,
+    BulkUpdateResult,
+    BusinessPackResult,
+    CreateResult,
+    DeleteResult,
+    DomainBuildResult,
+    FieldSelectionMetadata,
+    FitGapResult,
+    HealthCheckResult,
+    ImportResult,
+    Json2PayloadResult,
+    ModelInfo,
+    ModelOperations,
+    ModelRelationshipsResult,
+    ModelsResult,
+    OdooCallDiagnosisResult,
+    OdooProfileResult,
+    RecordResult,
+    SchemaCatalogResult,
+    SearchResult,
+    ServerInfoResult,
+    UpdateResult,
+)
 from .models.entities import (
     AccountMove,
     CrmLead,
+    HrEmployee,
+    HrLeave,
     ProductProduct,
     ProductTemplate,
     ResPartner,
     SaleOrder,
     StockPicking,
 )
-from .models.envelopes import (
-    BinaryFieldResult,
-    BulkCreateResult,
-    BulkDeleteResult,
-    BulkUpdateResult,
-    CreateResult,
-    DeleteResult,
-    FieldSelectionMetadata,
-    ImportResult,
-    ModelInfo,
-    ModelOperations,
-    ModelsResult,
-    RecordResult,
-    SearchResult,
-    ServerInfoResult,
-    UpdateResult,
-)
 from .models.inputs import (
+    AggregateRecordsInput,
     AttachDocumentInput,
+    BuildDomainInput,
+    BusinessPackReportInput,
     ConfirmSaleOrderInput,
     CreateInvoiceInput,
     CreatePartnerInput,
@@ -79,12 +96,22 @@ from .models.inputs import (
     CreateRecordsInput,
     DeleteRecordInput,
     DeleteRecordsInput,
+    DiagnoseAccessInput,
+    DiagnoseOdooCallInput,
     FieldsGetInput,
     FindPartnerInput,
+    FitGapReportInput,
+    GenerateJson2PayloadInput,
+    GetOdooProfileInput,
     GetRecordInput,
     ImportRecordsInput,
+    InspectModelRelationshipsInput,
     PostInvoiceInput,
     RegisterPaymentInput,
+    ScanAddonsSourceInput,
+    SchemaCatalogInput,
+    SearchEmployeeInput,
+    SearchHolidaysInput,
     SearchRecordsInput,
     SetBinaryFieldInput,
     UpdatePartnerContactInfoInput,
@@ -905,6 +932,1132 @@ class OdooToolkit(AbstractToolkit):
                 f"Attached {name!r} ({len(data)} bytes) to {res_model} #{res_id} "
                 f"as ir.attachment #{attachment_id}"
             ),
+        )
+
+    # ── Aggregation ─────────────────────────────────────────────────────────
+
+    #: Recognised aggregation functions for ``aggregate_records`` measures.
+    ALLOWED_AGGREGATORS: frozenset[str] = frozenset({
+        "sum", "avg", "min", "max", "count", "count_distinct",
+        "array_agg", "bool_and", "bool_or",
+    })
+
+    @staticmethod
+    def _parse_measure_spec(spec: str) -> tuple[str, str]:
+        """Split ``'field:agg'`` into ``(field, aggregator)``.
+
+        Defaults to ``"sum"`` when no colon is present.
+        """
+        if ":" in spec:
+            field, agg = spec.rsplit(":", 1)
+            return field.strip(), agg.strip()
+        return spec.strip(), "sum"
+
+    async def _get_odoo_major_version(self) -> int | None:
+        """Return the Odoo major version integer (e.g. 17, 19) or ``None``."""
+        try:
+            info = await self.server_info()
+            serie = info.server_serie  # e.g. "17.0"
+            if serie:
+                return int(serie.split(".")[0])
+        except (OdooError, ValueError, AttributeError):
+            pass
+        return None
+
+    @tool_schema(AggregateRecordsInput)
+    async def aggregate_records(
+        self,
+        model: str,
+        group_by: list[str],
+        measures: Optional[list[str]] = None,
+        domain: Optional[list[Any]] = None,
+        lazy: bool = False,
+        limit: Optional[int] = None,
+        offset: int = 0,
+        order: Optional[str] = None,
+    ) -> AggregateResult:
+        """Group and aggregate records server-side using read_group (Odoo 16-18)
+        or formatted_read_group (Odoo 19+).
+
+        Args:
+            model: Odoo model technical name (e.g. ``"sale.order"``).
+            group_by: Fields to group by (e.g. ``["state", "partner_id"]``).
+            measures: Aggregation specs as ``"field:agg"`` strings
+                (e.g. ``["amount_total:sum", "id:count"]``). Supported
+                aggregators: sum, avg, min, max, count, count_distinct.
+            domain: Optional domain filter.
+            lazy: When True, only the first group_by level is resolved.
+            limit: Max number of groups to return.
+            offset: Groups to skip.
+            order: Sort order string.
+
+        Returns:
+            AggregateResult with groups list and metadata.
+
+        Raises:
+            ValueError: When an unsupported aggregator name is used.
+        """
+        # Validate and parse measure specs
+        parsed_measures: list[tuple[str, str]] = []
+        if measures:
+            for spec in measures:
+                field, agg = self._parse_measure_spec(spec)
+                if agg not in self.ALLOWED_AGGREGATORS:
+                    raise ValueError(
+                        f"Unknown aggregator {agg!r} in measure {spec!r}. "
+                        f"Allowed: {sorted(self.ALLOWED_AGGREGATORS)}"
+                    )
+                parsed_measures.append((field, agg))
+
+        domain = domain or []
+        odoo_version = await self._get_odoo_major_version()
+        use_formatted = odoo_version is not None and odoo_version >= 19
+
+        if use_formatted:
+            # Odoo 19+ formatted_read_group
+            kwargs: dict[str, Any] = {
+                "groupby": group_by,
+                "lazy": lazy,
+            }
+            if parsed_measures:
+                kwargs["aggregates"] = [f"{f}:{a}" for f, a in parsed_measures]
+            if limit is not None:
+                kwargs["limit"] = limit
+            if offset:
+                kwargs["offset"] = offset
+            if order:
+                kwargs["order"] = order
+            groups = await self._execute(model, "formatted_read_group", [domain], kwargs)
+        else:
+            # Odoo 16-18 read_group
+            measure_fields = [f"{f}:{a}" for f, a in parsed_measures] if parsed_measures else []
+            kwargs = {
+                "groupby": group_by,
+                "fields": measure_fields,
+                "lazy": lazy,
+            }
+            if limit is not None:
+                kwargs["limit"] = limit
+            if offset:
+                kwargs["offset"] = offset
+            if order:
+                kwargs["orderby"] = order
+            groups = await self._execute(model, "read_group", [domain], kwargs)
+
+        groups = groups or []
+        return AggregateResult(
+            groups=list(groups),
+            model=model,
+            group_by=group_by,
+            measures=[f"{f}:{a}" for f, a in parsed_measures],
+            count=len(groups),
+        )
+
+    # ── Domain Builder ───────────────────────────────────────────────────────
+
+    #: Operators safe to use in Odoo domain triplets.
+    SAFE_DOMAIN_OPERATORS: frozenset[str] = frozenset({
+        "=", "!=", ">", ">=", "<", "<=",
+        "in", "not in",
+        "like", "not like", "ilike", "not ilike",
+        "=like", "=ilike",
+        "child_of", "parent_of",
+    })
+
+    @tool_schema(BuildDomainInput)
+    def build_domain(
+        self,
+        conditions: list[dict[str, Any]],
+        logical_operator: str = "and",
+    ) -> DomainBuildResult:
+        """Build and validate an Odoo domain array from structured conditions.
+
+        Args:
+            conditions: List of condition dicts, each with keys ``field``,
+                ``operator``, and ``value``.
+            logical_operator: ``"and"`` (default, uses ``&`` prefix) or
+                ``"or"`` (uses ``|`` prefix).
+
+        Returns:
+            DomainBuildResult with the domain array, warnings, and validity flag.
+
+        Note:
+            This is a **pure synchronous function** — no Odoo network call is made.
+        """
+        if not conditions:
+            return DomainBuildResult(domain=[], warnings=[], valid=True)
+
+        warnings: list[str] = []
+        valid = True
+        triplets: list[Any] = []
+
+        for cond in conditions:
+            field = cond.get("field", "")
+            operator = cond.get("operator", "=")
+            value = cond.get("value")
+            if operator not in self.SAFE_DOMAIN_OPERATORS:
+                warnings.append(
+                    f"Unsafe operator {operator!r} on field {field!r}; "
+                    f"condition skipped. Allowed: {sorted(self.SAFE_DOMAIN_OPERATORS)}"
+                )
+                valid = False
+                continue
+            triplets.append((field, operator, value))
+
+        if not triplets:
+            return DomainBuildResult(domain=[], warnings=warnings, valid=valid)
+
+        # Build prefix-notation domain
+        prefix_op = "&" if logical_operator.lower() == "and" else "|"
+        domain: list[Any] = []
+        if len(triplets) > 1:
+            domain = [prefix_op] * (len(triplets) - 1) + list(triplets)
+        else:
+            domain = list(triplets)
+
+        return DomainBuildResult(domain=domain, warnings=warnings, valid=valid)
+
+    # ── Profile & Schema Catalog ─────────────────────────────────────────────
+
+    @tool_schema(GetOdooProfileInput)
+    async def get_odoo_profile(
+        self,
+        include_modules: bool = True,
+        module_limit: int = 100,
+    ) -> OdooProfileResult:
+        """Return a comprehensive Odoo server and environment snapshot.
+
+        Includes server version, transport, database, user context, and the
+        list of installed modules (bounded by ``module_limit``).
+
+        Args:
+            include_modules: When True (default), queries ``ir.module.module``
+                for the installed module list.
+            module_limit: Maximum number of installed modules to return
+                (capped at 500).
+
+        Returns:
+            OdooProfileResult with version, transport, user context, and modules.
+        """
+        info = await self.server_info()
+        transport = await self._ensure_transport()
+
+        # User context
+        user_context: dict[str, Any] = {}
+        try:
+            user_context = await self._execute("res.users", "context_get", []) or {}
+        except OdooError as exc:
+            self.logger.debug("context_get failed: %s", exc)
+
+        # Installed modules
+        installed_modules: list[dict[str, Any]] = []
+        if include_modules:
+            try:
+                cap = min(module_limit, 500)
+                installed_modules = await self._execute(
+                    "ir.module.module",
+                    "search_read",
+                    [[("state", "=", "installed")]],
+                    {"fields": ["name", "shortdesc", "installed_version"], "limit": cap},
+                ) or []
+            except OdooError as exc:
+                self.logger.debug("module list fetch failed: %s", exc)
+
+        return OdooProfileResult(
+            server_version=info.server_version,
+            server_serie=info.server_serie,
+            odoo_url=self.config.url,
+            database=self.config.database,
+            uid=transport.uid,
+            user_context=user_context,
+            transport=info.transport,
+            installed_modules=installed_modules,
+        )
+
+    @tool_schema(SchemaCatalogInput)
+    async def schema_catalog(
+        self,
+        query: Optional[str] = None,
+        models: Optional[list[str]] = None,
+        include_fields: bool = False,
+        limit: int = 50,
+    ) -> SchemaCatalogResult:
+        """List Odoo models with optional field metadata.
+
+        Args:
+            query: Substring to filter model names or display names.
+            models: Explicit list of model technical names to include.
+            include_fields: When True, include ``fields_get`` metadata per model.
+            limit: Maximum models to return (capped at 500).
+
+        Returns:
+            SchemaCatalogResult with model list and metadata.
+        """
+        cap = min(limit, 500)
+        domain: list[Any] = []
+        if query:
+            domain = ["|", ("model", "ilike", query), ("name", "ilike", query)]
+        elif models:
+            domain = [("model", "in", models)]
+
+        raw_models: list[dict[str, Any]] = await self._execute(
+            "ir.model",
+            "search_read",
+            [domain],
+            {"fields": ["model", "name", "info"], "limit": cap},
+        ) or []
+
+        result_models: list[dict[str, Any]] = []
+        for m in raw_models:
+            entry: dict[str, Any] = {
+                "model": m.get("model", ""),
+                "name": m.get("name", ""),
+                "info": m.get("info", ""),
+            }
+            if include_fields:
+                try:
+                    entry["fields"] = await self._get_fields_metadata(m["model"])
+                except OdooError as exc:
+                    entry["fields_error"] = str(exc)
+            result_models.append(entry)
+
+        return SchemaCatalogResult(
+            models=result_models,
+            total=len(result_models),
+            include_fields=include_fields,
+        )
+
+    # ── Model Introspection & Diagnostics ────────────────────────────────────
+
+    @tool_schema(InspectModelRelationshipsInput)
+    async def inspect_model_relationships(
+        self,
+        model: str,
+    ) -> ModelRelationshipsResult:
+        """Inspect relational fields and produce create/write hints for a model.
+
+        Args:
+            model: Odoo model technical name (e.g. ``"sale.order"``).
+
+        Returns:
+            ModelRelationshipsResult grouping fields by relation type with hints.
+        """
+        fields_meta = await self._get_fields_metadata(model)
+
+        many2one: list[dict[str, Any]] = []
+        one2many: list[dict[str, Any]] = []
+        many2many: list[dict[str, Any]] = []
+        required_fields: list[dict[str, Any]] = []
+
+        for fname, fmeta in fields_meta.items():
+            ftype = fmeta.get("type", "")
+            info: dict[str, Any] = {
+                "name": fname,
+                "string": fmeta.get("string", fname),
+                "relation": fmeta.get("relation", ""),
+                "required": fmeta.get("required", False),
+                "readonly": fmeta.get("readonly", False),
+            }
+            if ftype == "many2one":
+                many2one.append(info)
+            elif ftype == "one2many":
+                one2many.append(info)
+            elif ftype == "many2many":
+                many2many.append(info)
+
+            if fmeta.get("required") and not fmeta.get("readonly"):
+                required_fields.append({"name": fname, "type": ftype, "string": fmeta.get("string", fname)})
+
+        # Build create hints
+        hints: list[str] = []
+        if required_fields:
+            hints.append(
+                f"Required non-readonly fields: "
+                + ", ".join(f["name"] for f in required_fields)
+            )
+        if many2one:
+            hints.append(
+                f"Many2one fields accept an integer id: "
+                + ", ".join(f["name"] for f in many2one[:5])
+                + ("..." if len(many2one) > 5 else "")
+            )
+        if one2many:
+            hints.append(
+                f"One2many fields use ORM commands [(0,0,{{...}}), ...]: "
+                + ", ".join(f["name"] for f in one2many[:3])
+            )
+
+        return ModelRelationshipsResult(
+            model=model,
+            many2one=many2one,
+            one2many=one2many,
+            many2many=many2many,
+            required_fields=required_fields,
+            create_hints=hints,
+        )
+
+    @tool_schema(DiagnoseAccessInput)
+    async def diagnose_access(
+        self,
+        model: str,
+        operation: str = "read",
+        domain: Optional[list[Any]] = None,
+        record_ids: Optional[list[int]] = None,
+    ) -> AccessDiagnosisResult:
+        """Diagnose ACL and record-rule visibility for a model and operation.
+
+        Args:
+            model: Odoo model technical name.
+            operation: Operation to check (``"read"``, ``"write"``, ``"create"``,
+                or ``"unlink"``).
+            domain: Optional domain to check against record rules.
+            record_ids: Specific record IDs to check visibility for.
+
+        Returns:
+            AccessDiagnosisResult with ACL status, record rules, groups, and
+            a human-readable diagnosis string.
+        """
+        # Check ACL via check_access_rights
+        acl_allowed = False
+        try:
+            acl_allowed = bool(await self._execute(
+                model, "check_access_rights", [operation], {"raise_exception": False}
+            ))
+        except OdooError as exc:
+            self.logger.debug("check_access_rights failed for %s: %s", model, exc)
+
+        # Fetch ir.model.access rules for the model
+        acl_rules: list[dict[str, Any]] = []
+        try:
+            acl_rules = await self._execute(
+                "ir.model.access",
+                "search_read",
+                [[("model_id.model", "=", model)]],
+                {"fields": ["name", f"perm_{operation}", "group_id", "active"]},
+            ) or []
+        except OdooError as exc:
+            self.logger.debug("ir.model.access query failed: %s", exc)
+
+        # Fetch ir.rule for the model
+        record_rules: list[dict[str, Any]] = []
+        try:
+            record_rules = await self._execute(
+                "ir.rule",
+                "search_read",
+                [[("model_id.model", "=", model)]],
+                {"fields": ["name", "domain_force", "global", f"perm_{operation}"]},
+            ) or []
+        except OdooError as exc:
+            self.logger.debug("ir.rule query failed: %s", exc)
+
+        # Fetch user's groups
+        user_groups: list[str] = []
+        try:
+            transport = await self._ensure_transport()
+            if transport.uid:
+                groups_data = await self._execute(
+                    "res.users",
+                    "read",
+                    [[transport.uid]],
+                    {"fields": ["groups_id"]},
+                )
+                if groups_data:
+                    group_ids = groups_data[0].get("groups_id", [])
+                    if group_ids:
+                        group_records = await self._execute(
+                            "res.groups",
+                            "read",
+                            [group_ids],
+                            {"fields": ["full_name"]},
+                        )
+                        user_groups = [g.get("full_name", "") for g in (group_records or [])]
+        except OdooError as exc:
+            self.logger.debug("user groups fetch failed: %s", exc)
+
+        # Build diagnosis string
+        if acl_allowed:
+            diagnosis = f"User has ACL permission to '{operation}' on '{model}'."
+            if record_rules:
+                diagnosis += f" {len(record_rules)} record rule(s) may further restrict visibility."
+        else:
+            diagnosis = (
+                f"User does NOT have ACL permission to '{operation}' on '{model}'. "
+                f"Check ir.model.access rules for this model."
+            )
+
+        return AccessDiagnosisResult(
+            model=model,
+            operation=operation,
+            acl_allowed=acl_allowed,
+            record_rules=record_rules,
+            user_groups=user_groups,
+            diagnosis=diagnosis,
+        )
+
+    async def health_check(self) -> HealthCheckResult:
+        """Return a runtime posture report without making any Odoo network call.
+
+        Reports toolkit version, transport type, connection status, and
+        the number of registered tools.
+
+        Returns:
+            HealthCheckResult with runtime posture information.
+        """
+        connected = self._transport is not None and self._transport.uid is not None
+        transport_name = (
+            self._transport.name if self._transport is not None else self.protocol
+        )
+        # Count public tool methods (tools registered by AbstractToolkit)
+        tool_count = len([
+            name for name in dir(self.__class__)
+            if not name.startswith("_")
+            and callable(getattr(self.__class__, name))
+            and name not in {"get_tools", "tool_prefix", "cleanup", "stop"}
+        ])
+        return HealthCheckResult(
+            toolkit_version="1.0.0",
+            transport=str(transport_name),
+            connected=connected,
+            write_permissions=[],  # read-only; left for future use
+            tool_count=tool_count,
+        )
+
+    # ── HR Convenience Methods ───────────────────────────────────────────────
+
+    _HR_EMPLOYEE_DEFAULT_FIELDS: list[str] = [
+        "id", "display_name", "name", "job_id", "job_title",
+        "department_id", "parent_id", "work_email", "work_phone",
+        "mobile_phone", "company_id", "active",
+    ]
+
+    _HR_LEAVE_DEFAULT_FIELDS: list[str] = [
+        "id", "display_name", "name", "employee_id", "holiday_status_id",
+        "date_from", "date_to", "number_of_days", "state",
+    ]
+
+    @tool_schema(SearchEmployeeInput)
+    async def search_employee(
+        self,
+        name: str,
+        limit: int = 20,
+    ) -> list[HrEmployee]:
+        """Search ``hr.employee`` records by name.
+
+        Args:
+            name: Employee name (partial match, case-insensitive).
+            limit: Maximum employees to return (default 20).
+
+        Returns:
+            List of typed :class:`HrEmployee` instances.
+
+        Raises:
+            OdooRPCError: When the HR module is not installed on the target
+                instance (caught and re-raised with a clear message).
+        """
+        try:
+            records = await self._execute(
+                "hr.employee",
+                "search_read",
+                [[("name", "ilike", name), ("active", "=", True)]],
+                {"fields": self._HR_EMPLOYEE_DEFAULT_FIELDS, "limit": limit},
+            )
+        except OdooRPCError as exc:
+            raise OdooRPCError(
+                f"search_employee failed — is the 'hr' module installed? Error: {exc}"
+            ) from exc
+        return [HrEmployee.model_validate(r) for r in (records or [])]
+
+    @tool_schema(SearchHolidaysInput)
+    async def search_holidays(
+        self,
+        start_date: str,
+        end_date: str,
+        employee_id: Optional[int] = None,
+    ) -> list[HrLeave]:
+        """Search ``hr.leave`` (leave requests) within a date range.
+
+        Args:
+            start_date: Start of the date range (``YYYY-MM-DD``).
+            end_date: End of the date range (``YYYY-MM-DD``).
+            employee_id: Optional employee ID to filter results.
+
+        Returns:
+            List of typed :class:`HrLeave` instances.
+
+        Raises:
+            OdooRPCError: When the HR module is not installed.
+        """
+        domain: list[Any] = [
+            ("date_from", "<=", end_date),
+            ("date_to", ">=", start_date),
+        ]
+        if employee_id is not None:
+            domain.append(("employee_id", "=", employee_id))
+        try:
+            records = await self._execute(
+                "hr.leave",
+                "search_read",
+                [domain],
+                {"fields": self._HR_LEAVE_DEFAULT_FIELDS},
+            )
+        except OdooRPCError as exc:
+            raise OdooRPCError(
+                f"search_holidays failed — is the 'hr_holidays' module installed? Error: {exc}"
+            ) from exc
+        return [HrLeave.model_validate(r) for r in (records or [])]
+
+    # ── Phase 2: Diagnostics, Audit & Planning ───────────────────────────────
+
+    #: ORM methods that are read-only (no Odoo data mutation).
+    _READ_ONLY_METHODS: frozenset[str] = frozenset({
+        "search", "search_count", "search_read", "read",
+        "fields_get", "name_get", "name_search", "context_get",
+        "read_group", "formatted_read_group",
+    })
+
+    #: ORM methods that permanently mutate Odoo data.
+    _DESTRUCTIVE_METHODS: frozenset[str] = frozenset({"create", "write", "unlink"})
+
+    #: JSON-2 positional-argument name mapping for common ORM methods.
+    _JSON2_ARG_MAP: dict[str, list[str]] = {
+        "search_read": ["domain", "fields", "offset", "limit", "order"],
+        "search":      ["domain", "offset", "limit", "order"],
+        "search_count": ["domain"],
+        "read":        ["ids", "fields"],
+        "create":      ["vals_list"],
+        "write":       ["ids", "vals"],
+        "unlink":      ["ids"],
+        "fields_get":  ["allfields", "attributes"],
+        "name_search": ["name", "args", "operator", "limit"],
+    }
+
+    #: Business pack definitions for ``business_pack_report``.
+    _BUSINESS_PACKS: dict[str, dict[str, list[str]]] = {
+        "sales": {
+            "modules": ["sale", "sale_management"],
+            "models": ["sale.order", "sale.order.line"],
+        },
+        "crm": {
+            "modules": ["crm"],
+            "models": ["crm.lead", "crm.team"],
+        },
+        "inventory": {
+            "modules": ["stock", "stock_account"],
+            "models": ["stock.picking", "stock.move"],
+        },
+        "accounting": {
+            "modules": ["account", "account_payment"],
+            "models": ["account.move", "account.payment"],
+        },
+        "hr": {
+            "modules": ["hr", "hr_holidays"],
+            "models": ["hr.employee", "hr.leave"],
+        },
+    }
+
+    @tool_schema(DiagnoseOdooCallInput)
+    def diagnose_odoo_call(
+        self,
+        model: str,
+        method: str,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
+        transport: str = "auto",
+        target_version: Optional[str] = None,
+        observed_error: Optional[str] = None,
+    ) -> OdooCallDiagnosisResult:
+        """Preview and debug an execute_kw call without executing it.
+
+        Validates model name format, classifies method safety, checks transport
+        compatibility, and flags Odoo 20 deprecation warnings.
+
+        Args:
+            model: Odoo model technical name to validate.
+            method: ORM method name to classify.
+            args: Positional arguments (for payload shape analysis).
+            kwargs: Keyword arguments (for payload shape analysis).
+            transport: Transport type context for compatibility checks.
+            target_version: Target Odoo version (e.g. ``"20.0"``).
+            observed_error: Error message from a previous failed call attempt.
+
+        Returns:
+            OdooCallDiagnosisResult with method safety, warnings, and next actions.
+
+        Note:
+            This is a **pure synchronous function** — no Odoo network call is made.
+        """
+        import re
+
+        warnings: list[str] = []
+        next_actions: list[str] = []
+        corrected_payload: Optional[dict[str, Any]] = None
+
+        # Validate model name format (e.g. "res.partner", not "SELECT * FROM")
+        if not re.match(r"^[a-z][a-z0-9_.]*$", model):
+            warnings.append(
+                f"Model name {model!r} contains invalid characters. "
+                "Odoo model names are lowercase with dots (e.g. 'res.partner')."
+            )
+
+        # Classify method safety
+        if method in self._READ_ONLY_METHODS:
+            method_safety = "read_only"
+        elif method in self._DESTRUCTIVE_METHODS:
+            method_safety = "destructive"
+            warnings.append(
+                f"Method {method!r} mutates Odoo data. Ensure you have write permissions."
+            )
+        elif method.startswith("action_") or method.startswith("_"):
+            method_safety = "side_effect"
+            warnings.append(
+                f"Method {method!r} may trigger business logic side-effects."
+            )
+        else:
+            method_safety = "unknown"
+            warnings.append(f"Method {method!r} is not a standard ORM method.")
+
+        # Transport compatibility check
+        transport_compat = "ok"
+        active_transport = transport if transport != "auto" else (
+            self._transport.name if self._transport else "unknown"
+        )
+        if active_transport == "xmlrpc" and method in {"formatted_read_group"}:
+            transport_compat = "error"
+            warnings.append(
+                f"Method {method!r} is only available via JSON-2 transport "
+                "(Odoo 19+). XML-RPC does not support it."
+            )
+        elif active_transport == "xmlrpc":
+            transport_compat = "warning"
+            warnings.append(
+                "XML-RPC transport detected. Consider migrating to JSON-2 for "
+                "better performance and Odoo 19+ compatibility."
+            )
+
+        # Odoo 20 deprecation warning
+        if target_version and target_version.startswith("20"):
+            warnings.append(
+                "Odoo 20 has removed XML-RPC support. Migrate to the JSON-2 endpoint "
+                "before upgrading."
+            )
+            next_actions.append("Use generate_json2_payload to preview the JSON-2 equivalent.")
+
+        # Observed error hints
+        if observed_error:
+            lower_err = observed_error.lower()
+            if "access" in lower_err or "right" in lower_err:
+                next_actions.append("Run diagnose_access to check ACL/record-rule visibility.")
+            if "model" in lower_err and "not found" in lower_err:
+                next_actions.append("Use schema_catalog to verify the model name.")
+            if "field" in lower_err:
+                next_actions.append("Use fields_get to inspect available fields.")
+
+        if not next_actions:
+            next_actions.append("Call looks structurally valid. Execute to confirm.")
+
+        # Build a corrected payload suggestion
+        if args or kwargs:
+            corrected_payload = {
+                "model": model,
+                "method": method,
+                "args": args or [],
+                "kwargs": kwargs or {},
+            }
+
+        return OdooCallDiagnosisResult(
+            model=model,
+            method=method,
+            method_safety=method_safety,
+            transport_compatibility=transport_compat,
+            warnings=warnings,
+            corrected_payload=corrected_payload,
+            next_actions=next_actions,
+        )
+
+    @tool_schema(GenerateJson2PayloadInput)
+    def generate_json2_payload(
+        self,
+        model: str,
+        method: str,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
+        base_url: Optional[str] = None,
+        database: Optional[str] = None,
+    ) -> Json2PayloadResult:
+        """Translate XML-RPC-style call into a JSON-2 endpoint + named body.
+
+        Args:
+            model: Odoo model technical name.
+            method: ORM method name.
+            args: Positional arguments (XML-RPC style list).
+            kwargs: Keyword arguments.
+            base_url: Override base URL (defaults to toolkit config).
+            database: Override database name (defaults to toolkit config).
+
+        Returns:
+            Json2PayloadResult with endpoint, headers, body, and notes.
+
+        Note:
+            This is a **pure synchronous function** — no Odoo network call is made.
+        """
+        resolved_url = (base_url or self.config.url or "https://your-odoo.example.com").rstrip("/")
+        resolved_db = database or self.config.database or "odoo"
+        notes: list[str] = []
+
+        # Build endpoint
+        endpoint = f"/json/2/{model}/{method}"
+
+        # Build headers
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        # Map positional args to named params
+        named_params: dict[str, Any] = {}
+        arg_list = args or []
+        kwarg_dict = kwargs or {}
+
+        if method in self._JSON2_ARG_MAP:
+            param_names = self._JSON2_ARG_MAP[method]
+            for i, val in enumerate(arg_list):
+                if i < len(param_names):
+                    named_params[param_names[i]] = val
+                else:
+                    notes.append(
+                        f"Extra positional arg[{i}] has no named mapping for '{method}'; "
+                        "added as positional."
+                    )
+        else:
+            notes.append(
+                f"Method '{method}' has no JSON-2 arg mapping. "
+                "Using generic args/kwargs body."
+            )
+            if arg_list:
+                named_params["args"] = arg_list
+
+        # Merge kwargs
+        named_params.update(kwarg_dict)
+
+        body: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "model": model,
+                "method": method,
+                **named_params,
+            },
+        }
+
+        notes.append(f"Full URL: {resolved_url}{endpoint}")
+        notes.append(f"Database context: {resolved_db}")
+        notes.append("Add Authorization header with a valid API key or session token.")
+
+        return Json2PayloadResult(
+            endpoint=endpoint,
+            headers=headers,
+            body=body,
+            notes=notes,
+        )
+
+    @tool_schema(ScanAddonsSourceInput)
+    def scan_addons_source(
+        self,
+        addons_paths: Optional[list[str]] = None,
+        max_files: int = 200,
+        max_file_bytes: int = 300_000,
+    ) -> AddonScanResult:
+        """Scan local Odoo addon directories for manifests and risky patterns.
+
+        Uses AST parsing — no addon code is imported or executed.
+
+        Args:
+            addons_paths: Directories to scan. Must be under the server's
+                configured allowed roots (path-traversal protection).
+            max_files: Maximum Python files to parse (default 200).
+            max_file_bytes: Maximum bytes per file (default 300 KB).
+
+        Returns:
+            AddonScanResult with discovered addons, model classes, risky methods,
+            and any scan warnings.
+        """
+        import ast
+        import os
+        from pathlib import Path
+
+        if not addons_paths:
+            return AddonScanResult(
+                addons_found=0,
+                addons=[],
+                warnings=["No addons_paths provided. Specify at least one directory to scan."],
+            )
+
+        all_warnings: list[str] = []
+        addons: list[dict[str, Any]] = []
+        files_parsed = 0
+        risky_method_names = frozenset({"create", "write", "unlink", "sudo"})
+
+        for raw_path in addons_paths:
+            try:
+                root = Path(raw_path).resolve()
+            except (ValueError, OSError) as exc:
+                all_warnings.append(f"Invalid path {raw_path!r}: {exc}")
+                continue
+
+            if not root.exists() or not root.is_dir():
+                all_warnings.append(f"Path does not exist or is not a directory: {root}")
+                continue
+
+            # Walk looking for addon manifests
+            for entry in root.iterdir():
+                if not entry.is_dir():
+                    continue
+                manifest_path = entry / "__manifest__.py"
+                openerp_path = entry / "__openerp__.py"
+                manifest_file = manifest_path if manifest_path.exists() else (
+                    openerp_path if openerp_path.exists() else None
+                )
+                if not manifest_file:
+                    continue
+
+                addon_info: dict[str, Any] = {
+                    "name": entry.name,
+                    "path": str(entry),
+                    "manifest_file": manifest_file.name,
+                    "models": [],
+                    "risky_methods": [],
+                    "security_files": [],
+                    "view_files": [],
+                    "parse_warnings": [],
+                }
+
+                # Parse manifest
+                try:
+                    manifest_bytes = manifest_file.read_bytes()
+                    if len(manifest_bytes) < max_file_bytes:
+                        manifest_text = manifest_bytes.decode("utf-8", errors="replace")
+                        tree = ast.parse(manifest_text)
+                        # Extract manifest dict via literal_eval of first Expr node
+                        for node in ast.walk(tree):
+                            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Dict):
+                                try:
+                                    manifest_data = ast.literal_eval(node.value)
+                                    addon_info["manifest_name"] = manifest_data.get("name", entry.name)
+                                    addon_info["version"] = manifest_data.get("version", "")
+                                    addon_info["depends"] = manifest_data.get("depends", [])
+                                except (ValueError, TypeError):
+                                    pass
+                                break
+                except (OSError, SyntaxError) as exc:
+                    addon_info["parse_warnings"].append(f"Manifest parse error: {exc}")
+
+                # Scan Python files for model classes and risky methods
+                for py_file in entry.rglob("*.py"):
+                    if files_parsed >= max_files:
+                        all_warnings.append(
+                            f"Reached max_files={max_files} limit. Scan truncated."
+                        )
+                        break
+                    try:
+                        file_size = py_file.stat().st_size
+                        if file_size > max_file_bytes:
+                            all_warnings.append(
+                                f"Skipping large file {py_file.name} ({file_size} bytes)."
+                            )
+                            continue
+                        source = py_file.read_text(encoding="utf-8", errors="replace")
+                        tree = ast.parse(source, filename=str(py_file))
+                        files_parsed += 1
+
+                        for node in ast.walk(tree):
+                            if isinstance(node, ast.ClassDef):
+                                # Look for Odoo model class (_name attribute)
+                                for body_node in node.body:
+                                    if (
+                                        isinstance(body_node, ast.Assign)
+                                        and any(
+                                            isinstance(t, ast.Name) and t.id == "_name"
+                                            for t in body_node.targets
+                                        )
+                                    ):
+                                        try:
+                                            model_name = ast.literal_eval(body_node.value)
+                                            if isinstance(model_name, str):
+                                                addon_info["models"].append(model_name)
+                                        except (ValueError, TypeError):
+                                            pass
+                            elif isinstance(node, ast.FunctionDef):
+                                if node.name in risky_method_names:
+                                    addon_info["risky_methods"].append({
+                                        "method": node.name,
+                                        "file": py_file.name,
+                                        "line": node.lineno,
+                                    })
+                    except SyntaxError as exc:
+                        addon_info["parse_warnings"].append(
+                            f"Syntax error in {py_file.name}: {exc}"
+                        )
+                    except OSError as exc:
+                        addon_info["parse_warnings"].append(
+                            f"Read error in {py_file.name}: {exc}"
+                        )
+
+                # Security files
+                for csv_file in entry.rglob("ir.model.access.csv"):
+                    addon_info["security_files"].append(str(csv_file.relative_to(entry)))
+
+                # View XML files
+                for xml_file in entry.rglob("*.xml"):
+                    if "view" in xml_file.name.lower() or "views" in xml_file.parts:
+                        addon_info["view_files"].append(str(xml_file.relative_to(entry)))
+
+                addons.append(addon_info)
+
+        return AddonScanResult(
+            addons_found=len(addons),
+            addons=addons,
+            warnings=all_warnings,
+        )
+
+    @tool_schema(FitGapReportInput)
+    async def fit_gap_report(
+        self,
+        requirements: list[dict[str, Any]],
+        business_context: Optional[dict[str, Any]] = None,
+    ) -> FitGapResult:
+        """Classify business requirements into fit/gap buckets.
+
+        Args:
+            requirements: List of requirement dicts. Each should have at least
+                a ``"description"`` key with the requirement text.
+            business_context: Optional context metadata (industry, installed
+                modules, etc.) to improve classification accuracy.
+
+        Returns:
+            FitGapResult with classified requirements, bucket summary, and
+            recommended follow-up Odoo calls.
+        """
+        # Heuristic keyword classifier
+        STANDARD_KEYWORDS = frozenset({
+            "sales order", "sale order", "quotation", "invoice", "payment",
+            "purchase order", "inventory", "stock", "picking", "delivery",
+            "crm", "lead", "opportunity", "employee", "leave", "holiday",
+            "payroll", "partner", "contact", "product", "accounting",
+            "journal", "report", "track", "manage", "view", "list",
+        })
+        STUDIO_KEYWORDS = frozenset({
+            "custom field", "add field", "new field", "rename field",
+            "custom view", "dashboard", "kanban", "form layout",
+        })
+        CONFIG_KEYWORDS = frozenset({
+            "setting", "configure", "enable", "disable", "activate",
+            "workflow", "stage", "status", "pipeline", "category",
+        })
+        AVOID_KEYWORDS = frozenset({
+            "delete all", "drop table", "truncate", "raw sql", "direct db",
+            "bypass", "hack", "workaround",
+        })
+
+        # Optionally fetch live model list for improved classification
+        live_models: set[str] = set()
+        try:
+            catalog = await self.schema_catalog(limit=500)
+            live_models = {m["model"] for m in catalog.models}
+        except OdooError:
+            pass
+
+        classified: list[dict[str, Any]] = []
+        summary: dict[str, int] = {
+            "standard": 0, "configuration": 0, "studio": 0,
+            "custom_module": 0, "avoid": 0, "unknown": 0,
+        }
+        recommended_calls: set[str] = set()
+
+        for req in requirements:
+            desc = str(req.get("description", req.get("text", ""))).lower()
+            bucket = "unknown"
+            confidence = "low"
+
+            if any(kw in desc for kw in AVOID_KEYWORDS):
+                bucket = "avoid"
+                confidence = "high"
+            elif any(kw in desc for kw in STUDIO_KEYWORDS):
+                bucket = "studio"
+                confidence = "medium"
+            elif any(kw in desc for kw in CONFIG_KEYWORDS):
+                bucket = "configuration"
+                confidence = "medium"
+            elif any(kw in desc for kw in STANDARD_KEYWORDS):
+                bucket = "standard"
+                confidence = "high"
+                recommended_calls.add("schema_catalog(query='sale')")
+            else:
+                bucket = "custom_module"
+                confidence = "low"
+                recommended_calls.add("inspect_model_relationships")
+
+            summary[bucket] = summary.get(bucket, 0) + 1
+            classified.append({
+                **req,
+                "classification": bucket,
+                "confidence": confidence,
+            })
+
+        return FitGapResult(
+            requirements=classified,
+            summary=summary,
+            recommended_calls=sorted(recommended_calls),
+        )
+
+    @tool_schema(BusinessPackReportInput)
+    async def business_pack_report(
+        self,
+        pack: str,
+    ) -> BusinessPackResult:
+        """Report expected modules, models, and live availability for a business pack.
+
+        Args:
+            pack: Business pack name — one of ``"sales"``, ``"crm"``,
+                ``"inventory"``, ``"accounting"``, or ``"hr"``.
+
+        Returns:
+            BusinessPackResult with expected/installed/missing split.
+
+        Raises:
+            ValueError: When an unknown pack name is given.
+        """
+        if pack not in self._BUSINESS_PACKS:
+            raise ValueError(
+                f"Unknown business pack {pack!r}. "
+                f"Supported packs: {sorted(self._BUSINESS_PACKS)}"
+            )
+
+        pack_def = self._BUSINESS_PACKS[pack]
+        expected_modules = [
+            {"name": m, "description": f"{pack.title()} module"} for m in pack_def["modules"]
+        ]
+        expected_models: list[str] = pack_def["models"]
+
+        # Try live check
+        installed: list[str] = []
+        missing: list[str] = []
+        try:
+            profile = await self.get_odoo_profile(include_modules=True, module_limit=500)
+            installed_names = {m.get("name", "") for m in profile.installed_modules}
+            for mod_name in pack_def["modules"]:
+                if mod_name in installed_names:
+                    installed.append(mod_name)
+                else:
+                    missing.append(mod_name)
+        except OdooError as exc:
+            self.logger.debug("business_pack_report live check failed: %s", exc)
+
+        return BusinessPackResult(
+            pack=pack,
+            expected_modules=expected_modules,
+            expected_models=expected_models,
+            installed=installed,
+            missing=missing,
         )
 
 
