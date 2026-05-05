@@ -32,7 +32,7 @@
       "feature_id": "FEAT-148",
       "feature": "formbuilder-list-created-forms",
       "spec": "sdd/specs/formbuilder-list-created-forms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only services/registry.py docstring; file-disjoint from sibling tasks.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1029-formstorage-abc-list-forms-docstring.md"
+      "completed_at": "2026-05-05T15:13:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1029-formstorage-abc-list-forms-docstring.md"
     },
     {
       "id": "TASK-1030",
