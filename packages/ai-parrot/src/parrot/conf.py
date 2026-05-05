@@ -269,6 +269,13 @@ REDIS_HOST = config.get('REDIS_HOST', fallback='localhost')
 REDIS_PORT = config.get('REDIS_PORT', fallback=6379)
 REDIS_DB = config.get('REDIS_DB', fallback=1)
 REDIS_URL = config.get('REDIS_URL', fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+
+# Crew/flow execution result storage (FEAT-147)
+CREW_RESULT_STORAGE = config.get('CREW_RESULT_STORAGE', fallback='documentdb')
+CREW_RESULT_STORAGE_PG_DSN = config.get('CREW_RESULT_STORAGE_PG_DSN', fallback=default_dsn)
+CREW_RESULT_STORAGE_REDIS_URL = config.get('CREW_RESULT_STORAGE_REDIS_URL', fallback=REDIS_URL)
+CREW_RESULT_STORAGE_REDIS_TTL = int(config.get('CREW_RESULT_STORAGE_REDIS_TTL', fallback=604800))
+
 REDIS_HISTORY_DB = config.get('REDIS_HISTORY_DB', fallback=3)
 REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
