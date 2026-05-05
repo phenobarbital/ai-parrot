@@ -24,14 +24,11 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from .registry import FormStorage
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
-
-if TYPE_CHECKING:
-    import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +95,12 @@ class PostgresFormStorage(FormStorage):
     """
 
     LIST_SQL = """
-    SELECT DISTINCT ON (form_id) form_id, version, schema_json, updated_at
+    SELECT DISTINCT ON (form_id)
+        form_id,
+        version,
+        schema_json,
+        created_at,
+        updated_at
     FROM form_schemas
     ORDER BY form_id, updated_at DESC
     """
@@ -214,7 +216,13 @@ class PostgresFormStorage(FormStorage):
         """List all persisted forms (latest version of each).
 
         Returns:
-            List of dicts with form_id, version, and title (if available).
+            List of dicts with keys ``form_id``, ``version``, ``title``,
+            ``description``, and ``created_at``. ``description`` may be
+            ``None`` when the form has no description; ``created_at`` is
+            an ISO-8601 string (e.g. ``"2026-04-12T10:31:00+00:00"``) or
+            ``None``. The dict's value type is therefore not strictly
+            ``str`` — the annotation is kept loose for backwards
+            compatibility.
         """
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(self.LIST_SQL)
@@ -225,19 +233,30 @@ class PostgresFormStorage(FormStorage):
                 "form_id": row["form_id"],
                 "version": row["version"],
             }
-            # Extract title from schema_json if possible
+            # Extract created_at from the row (asyncpg returns datetime for TIMESTAMPTZ)
+            ts = row["created_at"]
+            entry["created_at"] = ts.isoformat() if ts is not None else None
+
+            # Extract title and description from schema_json
             try:
                 raw = row["schema_json"]
                 if isinstance(raw, str):
                     data = json.loads(raw)
                 else:
                     data = raw
+
                 title = data.get("title", "")
                 if isinstance(title, dict):
                     title = next(iter(title.values()), "")
-                entry["title"] = str(title)
+                entry["title"] = str(title) if title else ""
+
+                desc = data.get("description")
+                if isinstance(desc, dict):
+                    desc = next(iter(desc.values()), None)
+                entry["description"] = str(desc) if desc else None
             except Exception:
                 entry["title"] = ""
+                entry["description"] = None
             result.append(entry)
 
         return result
