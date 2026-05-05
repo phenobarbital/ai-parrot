@@ -97,9 +97,7 @@ FORMAT_INSTRUCTIONS = """
 To respond directly, use the following format:
 
 Question: the input question you must answer.
-Thought: Explain your reasoning.
-Final Thought: Summarize your findings.
-Final Answer: Provide a clear and structured answer to the original question with relevant details, always include the final answer of the tool in your final answer, also include your internal thoughts.
+Final Answer: Provide a clear and structured answer to the original question with relevant details. Do not include internal thoughts or private reasoning.
 
 
 To respond using a Tool, use the following format:

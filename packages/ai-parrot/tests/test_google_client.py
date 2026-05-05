@@ -2,7 +2,7 @@ import pytest
 
 from unittest.mock import AsyncMock, MagicMock, patch
 from parrot.clients.google import GoogleGenAIClient
-from parrot.models import AIMessage
+from parrot.models import AIMessage, CompletionUsage
 
 @pytest.mark.asyncio
 async def test_google_ask():
@@ -32,13 +32,20 @@ async def test_google_ask():
 
         # Initialize our client
         client = GoogleGenAIClient(api_key="fake_key")
-        client.client = mock_client_instance  # Inject mock client
+        client.get_client = AsyncMock(return_value=mock_client_instance)
         client.logger = MagicMock() # Mock logger to handle 'notice' calls
 
         # Test ask
         with patch('parrot.clients.google.client.AIMessageFactory') as mock_factory:
             # Mock the factory method
-            mock_factory.from_gemini.return_value = AIMessage(content="Hello, world!")
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="Hi",
+                output="Hello, world!",
+                response="Hello, world!",
+                model="gemini-2.5-flash",
+                provider="google_genai",
+                usage=CompletionUsage(),
+            )
             
             response = await client.ask(prompt="Hi")
             
@@ -81,7 +88,8 @@ async def test_google_ask_stream():
         mock_client_instance.aio.chats.create = MagicMock(return_value=mock_chat)
 
         client = GoogleGenAIClient(api_key="fake_key")
-        client.client = mock_client_instance
+        client.get_client = AsyncMock(return_value=mock_client_instance)
+        await client._ensure_client(model="gemini-2.5-flash")
         
         chunks = []
         async for chunk in client.ask_stream("Hi"):
@@ -114,7 +122,8 @@ async def test_google_deep_research_ask_accepts_parameters():
     
     with patch('parrot.clients.google.client.genai', mock_genai):
         client = GoogleGenAIClient(api_key="fake_key")
-        client.client = mock_client
+        client.get_client = AsyncMock(return_value=mock_client)
+        await client._ensure_client()
         
         # Should not raise - falls back to standard ask
         response = await client.ask(
@@ -151,7 +160,8 @@ async def test_google_deep_research_ask_stream_accepts_parameters():
     
     with patch('parrot.clients.google.client.genai', mock_genai):
         client = GoogleGenAIClient(api_key="fake_key")
-        client.client = mock_client
+        client.get_client = AsyncMock(return_value=mock_client)
+        await client._ensure_client(model="gemini-2.5-flash")
         
         chunks = []
         async for chunk in client.ask_stream(
@@ -176,6 +186,64 @@ def test_google_tool_result_coerces_non_string_keys():
     assert output["result"]["1"] == "one"
     assert output["result"]["nested"]["2"] == "two"
     assert output["result"]["items"][0]["3"] == "three"
+
+
+class _FakeGeminiPart:
+    def __init__(
+        self,
+        text: str | None = None,
+        thought: bool = False,
+        thought_signature: bytes | None = None,
+    ) -> None:
+        self.text = text
+        self.thought = thought
+        self.thought_signature = thought_signature
+        self.function_call = None
+        self.executable_code = None
+        self.code_execution_result = None
+
+
+class _FakeGeminiContent:
+    def __init__(self, parts: list[_FakeGeminiPart]) -> None:
+        self.parts = parts
+
+
+class _FakeGeminiCandidate:
+    def __init__(self, parts: list[_FakeGeminiPart]) -> None:
+        self.content = _FakeGeminiContent(parts)
+
+
+class _FakeGeminiResponse:
+    def __init__(self, parts: list[_FakeGeminiPart], text: str) -> None:
+        self.candidates = [_FakeGeminiCandidate(parts)]
+        self.text = text
+
+
+def test_safe_extract_text_prefers_parts_over_flattened_response_text():
+    client = GoogleGenAIClient(api_key="fake_key")
+    response = _FakeGeminiResponse(
+        parts=[_FakeGeminiPart(text="Here are the available models.")],
+        text=(
+            "The user wants to list models.\n"
+            "I will call the model-listing tool.\n"
+            "Here are the available models."
+        ),
+    )
+
+    assert client._safe_extract_text(response) == "Here are the available models."
+
+
+def test_safe_extract_text_skips_thought_parts():
+    client = GoogleGenAIClient(api_key="fake_key")
+    response = _FakeGeminiResponse(
+        parts=[
+            _FakeGeminiPart(text="The user wants to list models.", thought=True),
+            _FakeGeminiPart(text="Here are the available models."),
+        ],
+        text="The user wants to list models.\nHere are the available models.",
+    )
+
+    assert client._safe_extract_text(response) == "Here are the available models."
 
 
 def test_truncate_large_list_result():
