@@ -47,9 +47,9 @@ class FinanceAgent(Agent):
             **kwargs,
         )
 
-    async def configure(self):
+    async def configure(self, app=None):
         """Wire up the NetSuite MCP server after base configuration."""
-        await super().configure()
+        await super().configure(app)
 
         missing = [
             name for name, val in [
