@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-147
 **Date**: 2026-05-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -72,6 +72,10 @@ DocumentDB cluster solely to persist crew execution logs is wasteful.
   canonical location at `parrot/bots/flows/core/storage/persistence.py`;
   point `parrot/bots/flow/fsm.py` at the canonical module and delete the
   legacy duplicate.
+- Provide explicit lifecycle cleanup: each backend owns an `async close()`
+  contract, and the host crew/flow exposes an `async aclose()` method
+  that releases the cached `ResultStorage` instance. Connections must
+  not be left dangling until process exit.
 
 ### Non-Goals (explicitly out of scope)
 - Migrating historical crew execution data already living in DocumentDB.
@@ -86,6 +90,11 @@ DocumentDB cluster solely to persist crew execution logs is wasteful.
 - Failure-recovery queues equivalent to `DocumentDb._failed_writes`. The
   Redis and Postgres backends do best-effort fire-and-forget; transient
   errors are logged and dropped, matching the current semantics.
+- Removing `parrot/bots/flow/storage/__init__.py`. The legacy package is
+  kept in place pending a user review of out-of-tree consumers. Only
+  `persistence.py` inside that package is deleted by this feature; the
+  remaining modules (`memory.py`, `mixin.py`, `synthesis.py`,
+  `__init__.py`) stay untouched until that review concludes.
 
 ---
 
@@ -112,6 +121,8 @@ changes beyond the constructor wiring of `persist_results` /
 │ AgentCrew (orchestration/crew.py)        AgentsFlow (flow/fsm.py)   │
 │   self._persist_results: bool                                        │
 │   self._result_storage: ResultStorage | None                         │
+│   self._persist_tasks: set[asyncio.Task]                             │
+│   async aclose() / __aenter__ / __aexit__                            │
 └────────────┬─────────────────────────────────────────────────────────┘
              │  inherits
              ▼
@@ -159,6 +170,44 @@ The backend is instantiated **lazily on first write**, not in
 - Keeps `AgentCrew`/`AgentsFlow` construction cheap (no I/O on init).
 - Allows `persist_results=False` to truly cost nothing.
 - Mirrors the existing fire-and-forget pattern.
+
+### Lifecycle & Cleanup
+
+Each `ResultStorage` implementation MUST expose an `async close()` that
+releases its underlying connection. The mixin stores the resolved backend
+on `self._result_storage` and adds a public `async aclose()` to the host
+crew/flow:
+
+```python
+async def aclose(self) -> None:
+    """Release storage connections held by this crew/flow."""
+    storage = getattr(self, "_result_storage", None)
+    if storage is not None:
+        try:
+            await storage.close()
+        except Exception as exc:
+            self.logger.warning("Failed to close result storage: %s", exc)
+        finally:
+            self._result_storage = None
+```
+
+`AgentCrew` and `AgentsFlow` also implement `__aenter__` / `__aexit__`
+that delegate to `aclose()` so callers can use:
+
+```python
+async with AgentCrew(name="x", result_storage="postgres") as crew:
+    await crew.run_flow(...)
+# connections released here
+```
+
+`aclose()` is idempotent (safe to call twice). Calling it before any
+`_save_result` has run is a no-op (no backend was instantiated).
+
+The fire-and-forget tasks scheduled by `_save_result` MUST be tracked on
+`self._persist_tasks: set[asyncio.Task]` (with a discard-on-done callback)
+so `aclose()` can `await asyncio.gather(*pending, return_exceptions=True)`
+before closing the backend. This guarantees in-flight writes complete
+before the connection is dropped.
 
 ### Backend: Redis
 
@@ -216,7 +265,7 @@ The backend is instantiated **lazily on first write**, not in
 | `parrot/bots/flows/core/storage/persistence.py::PersistenceMixin` | rewritten | Delegates to `self._result_storage`; honours `self._persist_results`. |
 | `parrot/bots/flow/storage/persistence.py` | deleted | Legacy duplicate; FSM imports re-pointed. |
 | `parrot/bots/flow/fsm.py:41` | updated | Import becomes `from ..flows.core.storage import PersistenceMixin, SynthesisMixin`. |
-| `parrot/bots/flow/storage/__init__.py` | updated | Re-exports from canonical location for backwards compat OR full removal — see Open Questions. |
+| `parrot/bots/flow/storage/__init__.py` | updated | Drop the `PersistenceMixin` re-export only. Other re-exports (`ExecutionMemory`, `VectorStoreMixin`, `SynthesisMixin`) stay until the user review concludes — see Open Questions. |
 | `parrot/bots/orchestration/crew.py::AgentCrew.__init__` | extended | New params `persist_results`, `result_storage`. |
 | `parrot/bots/flows/crew/crew.py::AgentCrew.__init__` | extended | Same new params. |
 | `parrot/bots/flow/fsm.py::AgentsFlow.__init__` | extended | Same new params. |
@@ -345,10 +394,13 @@ def __init__(
 ### Module 5: `PersistenceMixin` consolidation + rewrite
 - **Path**: `parrot/bots/flows/core/storage/persistence.py` (canonical),
   `parrot/bots/flow/storage/persistence.py` (deleted),
-  `parrot/bots/flow/storage/__init__.py` (updated).
-- **Responsibility**: Single mixin that respects `self._persist_results`
-  and delegates to `self._result_storage` (lazily resolved via factory on
-  first write). Replace both legacy copies.
+  `parrot/bots/flow/storage/__init__.py` (updated to drop the
+  `PersistenceMixin` re-export only).
+- **Responsibility**: Single mixin that respects `self._persist_results`,
+  delegates to `self._result_storage` (lazily resolved via factory on
+  first write), tracks in-flight persist tasks on `self._persist_tasks`,
+  and exposes `async aclose()` plus `__aenter__` / `__aexit__` for the
+  host class. Replace both legacy copies.
 - **Depends on**: Modules 1–4.
 
 ### Module 6: AgentCrew & AgentsFlow constructor wiring
@@ -357,8 +409,9 @@ def __init__(
   `parrot/bots/flow/fsm.py`.
 - **Responsibility**: Add `persist_results` and `result_storage` params;
   store them on `self`. Update FSM import to canonical mixin location.
-  No changes to `_save_result` call sites — they keep their current
-  signature.
+  Wire `_save_result` call sites so the scheduled task is registered on
+  `self._persist_tasks` (one-line change per call site — keeps the same
+  fire-and-forget semantics). No public method signature changes.
 - **Depends on**: Module 5.
 
 ### Module 7: Configuration plumbing
@@ -397,6 +450,10 @@ def __init__(
 | `test_persistence_mixin_skips_when_disabled` | M5 | `persist_results=False` → no factory call, no log message. |
 | `test_persistence_mixin_lazy_resolves_on_first_save` | M5 | First `_save_result` instantiates backend; second reuses. |
 | `test_persistence_mixin_logs_warning_on_backend_failure` | M5 | Backend `save()` raises → mixin logs warning, does not propagate. |
+| `test_aclose_awaits_pending_persist_tasks` | M5 | Two slow `_save_result` calls in flight; `await crew.aclose()` waits for both before calling `storage.close()`. |
+| `test_aclose_calls_storage_close` | M5 | After at least one save, `aclose()` invokes the backend's `close()` and resets `self._result_storage` to `None`. |
+| `test_aclose_is_idempotent` | M5 | Calling `aclose()` twice (or on a crew that never persisted) is a no-op and never raises. |
+| `test_async_context_manager_releases_storage` | M5 | `async with AgentCrew(...) as crew:` calls `aclose()` on exit. |
 
 ### Integration Tests
 | Test | Description |
@@ -456,6 +513,16 @@ def mock_documentdb(monkeypatch):
       `PersistenceMixin` from `parrot.bots.flows.core.storage`. A grep for
       `from .storage import PersistenceMixin` inside `parrot/bots/flow/`
       returns no results.
+- [ ] The legacy package `parrot/bots/flow/storage/` (minus `persistence.py`)
+      remains in place; only the `PersistenceMixin` re-export is dropped
+      from its `__init__.py` while the user reviews out-of-tree consumers.
+- [ ] `AgentCrew` and `AgentsFlow` expose `async aclose()`, `__aenter__`,
+      and `__aexit__`. `aclose()` awaits all in-flight persist tasks
+      registered in `self._persist_tasks` before calling `storage.close()`,
+      and is idempotent.
+- [ ] `async with AgentCrew(name="x", result_storage="postgres") as crew:`
+      runs the crew and releases the asyncdb connection on exit (verifiable
+      via mock recording exactly one `close()` call).
 - [ ] `pytest tests/bots/flows/core/storage/ -v` is green.
 - [ ] `ruff check parrot/bots/flows/core/storage/` and
       `ruff check parrot/bots/flow/fsm.py` are clean.
@@ -610,6 +677,8 @@ class DocumentDb:                                                      # line 63
 - ~~`PersistenceMixin._persist_results`~~ / ~~`PersistenceMixin._result_storage`~~ — attributes do not exist today; will be added on the host classes (`AgentCrew`/`AgentsFlow`), not the mixin itself.
 - ~~`AgentCrew(persist_results=...)`~~ / ~~`AgentCrew(result_storage=...)`~~ — kwargs do not exist today.
 - ~~`AgentsFlow(persist_results=...)`~~ / ~~`AgentsFlow(result_storage=...)`~~ — kwargs do not exist today.
+- ~~`AgentCrew.aclose`~~ / ~~`AgentCrew.__aenter__`~~ / ~~`AgentCrew.__aexit__`~~ — async lifecycle methods do not exist today; same for `AgentsFlow`.
+- ~~`PersistenceMixin._persist_tasks`~~ — task-tracking set does not exist today.
 - ~~`parrot.conf.CREW_RESULT_STORAGE`~~ et al. — env-var-backed keys do not exist today.
 
 ---
@@ -657,11 +726,17 @@ class DocumentDb:                                                      # line 63
   unless they set `CREW_RESULT_STORAGE=` to something else OR opt out
   with `persist_results=False`. This is intentional — silently changing
   the default would surprise existing deployments.
-- **Connection lifetime.** Backends are created on first write and live
-  for the lifetime of the host crew/flow instance. There is no explicit
-  `close()` call from `AgentCrew`/`AgentsFlow` today. We accept that the
-  Redis/Postgres connections leak until process exit, matching the
-  current DocumentDB behaviour. A future ticket may add explicit cleanup.
+- **Connection lifetime.** Backends are created on first write. The host
+  crew/flow now owns explicit cleanup via `async aclose()` and the async
+  context-manager protocol. Callers that do not use either still leak
+  the underlying connection until process exit (same as today's
+  DocumentDB code path) — this is the price of preserving the existing
+  fire-and-forget API. Recommend `async with` in documentation.
+- **In-flight persist tasks.** `aclose()` awaits all tasks in
+  `self._persist_tasks` with `return_exceptions=True` before closing the
+  backend. Slow Redis/Postgres writes therefore extend the close
+  duration; `__aexit__` does not impose a timeout. Callers needing a
+  bounded teardown can wrap the close in `asyncio.wait_for`.
 - **CrewResult serialization quirks.** When `result.to_dict()` is
   unavailable, the mixin falls back to `str(result)`. Postgres jsonb does
   not accept a bare string at the column type level — the backend must
@@ -697,16 +772,20 @@ No new third-party packages are introduced.
       constructor param wins; if absent, fall back to global env var
       `CREW_RESULT_STORAGE`; if that is absent too, default to
       `"documentdb"`.
-- [ ] **Should `parrot/bots/flow/storage/__init__.py` be removed entirely
-      or kept as a thin re-export shim for backwards compatibility with
-      out-of-tree code that imports from there?** — *Owner: Jesus Lara*.
-      Default plan: remove the package fully (no out-of-tree consumers
-      known); switch to a re-export shim only if a consumer is identified
-      during code review.
-- [ ] **Connection cleanup on crew teardown** — *Owner: Jesus Lara*. The
-      backends leak their underlying asyncdb connection until process
-      exit. Acceptable for v1 (matches current DocumentDB behaviour) but
-      worth a follow-up ticket.
+- [x] **Connection cleanup on crew teardown** — *Resolved with user*:
+      explicit cleanup is in scope. `ResultStorage` defines `async close()`,
+      the mixin tracks in-flight tasks on `self._persist_tasks`, and the
+      host crew/flow exposes `async aclose()` plus `__aenter__` /
+      `__aexit__` so callers can use `async with`. Connections are not
+      left to leak when the caller opts in to the lifecycle protocol.
+- [ ] **Removal of `parrot/bots/flow/storage/__init__.py` and its other
+      modules** — *Owner: Jesus Lara*. User will manually review whether
+      out-of-tree consumers import `ExecutionMemory`, `VectorStoreMixin`,
+      or `SynthesisMixin` from the legacy package. **Until that review
+      concludes, this feature only deletes `persistence.py` from the
+      legacy package and drops its re-export from `__init__.py`** —
+      everything else stays untouched. A follow-up will fully remove
+      the package once the review confirms it is safe.
 
 ---
 
@@ -730,3 +809,4 @@ No new third-party packages are introduced.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-05 | Jesus Lara | Initial draft (no prior brainstorm). Resolved Q1–Q4 with user during /sdd-spec. |
+| 0.2 | 2026-05-05 | Jesus Lara | Resolved Q6 (explicit cleanup via `aclose()` + async-context-manager); narrowed Q5 scope to deleting only `persistence.py` from the legacy package pending user review. Status → approved. |
