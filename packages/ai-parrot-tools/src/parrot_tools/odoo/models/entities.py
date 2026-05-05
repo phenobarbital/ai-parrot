@@ -239,6 +239,39 @@ class StockPicking(_OdooEntity):
     move_ids: Optional[list[int]] = None
 
 
+# ── hr.employee ─────────────────────────────────────────────────────────────
+
+
+class HrEmployee(_OdooEntity):
+    """Subset of ``hr.employee`` fields most agents need."""
+
+    name: Optional[str] = None
+    job_id: Optional[Many2one] = None
+    job_title: Optional[str] = None
+    department_id: Optional[Many2one] = None
+    parent_id: Optional[Many2one] = None
+    work_email: Optional[str] = None
+    work_phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    company_id: Optional[Many2one] = None
+    active: Optional[bool] = None
+
+
+# ── hr.leave ─────────────────────────────────────────────────────────────────
+
+
+class HrLeave(_OdooEntity):
+    """Subset of ``hr.leave`` (leave allocation/request) fields."""
+
+    employee_id: Optional[Many2one] = None
+    holiday_status_id: Optional[Many2one] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    number_of_days: Optional[float] = None
+    state: Optional[str] = None  # 'draft' | 'confirm' | 'validate' | 'refuse'
+    name: Optional[str] = None
+
+
 __all__ = [
     "Many2one",
     "ResPartner",
@@ -251,4 +284,6 @@ __all__ = [
     "AccountMoveLine",
     "CrmLead",
     "StockPicking",
+    "HrEmployee",
+    "HrLeave",
 ]
