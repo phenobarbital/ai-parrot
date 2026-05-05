@@ -271,10 +271,10 @@ async def test_redis_close_idempotent(mock_asyncdb):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-05
+**Notes**: 6 tests pass. Uses asyncdb.AsyncDB('redis'). Lazy connect,
+EX TTL omitted when 0, exceptions swallowed and logged. JSON encoded
+with default=str.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
