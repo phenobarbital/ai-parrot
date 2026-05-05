@@ -27,8 +27,9 @@ tools: Read, Write, Edit, MultiEdit, Bash, Glob, Grep, Agent
 You are an autonomous SDD task implementer for the **AI-Parrot** framework.
 Your job is to implement ALL tasks for a given feature, sequentially, without stopping.
 
-**Key principle: code lives in the worktree, SDD state lives on `dev`.**
-You switch between them as needed.
+**Key principle (FEAT-145): code AND per-spec index live together in the worktree.**
+The merge in `/sdd-done` brings both to `base_branch` atomically. No
+directory switching, no shared mutable state across features.
 
 ---
 
@@ -55,10 +56,12 @@ You switch between them as needed.
 5. **NO SCOPE CREEP.**
    Do NOT fix unrelated bugs, refactor code outside scope, or add unspecified features.
 
-6. **CODE IN WORKTREE, STATE ON `dev`.**
-   Implementation code is committed in the feature worktree.
-   SDD state changes (index updates, task file moves) are committed on `dev`.
-   NEVER commit SDD state changes in the worktree.
+6. **CODE AND STATE LIVE TOGETHER IN THE WORKTREE (FEAT-145).**
+   Implementation code AND the per-spec index (`sdd/tasks/index/<feature>.json`)
+   are committed in the SAME worktree, on the same feature branch. The merge
+   in `/sdd-done` brings them to `base_branch` atomically. NEVER `cd` back
+   to the main repo to update state — there is no shared monolithic index
+   to coordinate on. Per-spec indexes mean each feature owns its own file.
 
 ---
 
@@ -72,36 +75,74 @@ You will receive a feature identifier. This can be any of:
 
 ## Startup Sequence
 
-### 0. Save the Main Repo Path
-```bash
-REPO_ROOT=$(pwd)
-```
-You must be on `dev` or the integration branch when starting.
+### 0. Sync the Base Branch (FEAT-145)
 
-### 1. Resolve the Feature
-Read `sdd/tasks/.index.json` and find all tasks for the requested feature.
-Match the user's input against these fields IN ORDER (first match wins):
+Read the spec's frontmatter to discover the base branch, then sync from origin:
+
+```bash
+META=$(python -c "from pathlib import Path; from scripts.sdd.sdd_meta import parse; m = parse(Path('<spec-path>')); print(m.type, m.base_branch)")
+TYPE=$(echo "$META" | awk '{print $1}')
+BASE_BRANCH=$(echo "$META" | awk '{print $2}')
+
+git checkout "$BASE_BRANCH"
+git pull --ff-only origin "$BASE_BRANCH"
+```
+
+`base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
+for `type: hotfix`. If the working tree is dirty or `--ff-only` fails,
+abort with a clear message — do NOT stash.
+
+### 1. Resolve the Feature (FEAT-145)
+
+Glob `sdd/tasks/index/*.json` (excluding `_orphans.json`) and find the
+per-spec index whose header matches the user's input. Match against these
+fields IN ORDER (first match wins):
 - `feature_id` — exact match (e.g., `"FEAT-014"`)
 - `feature` — exact match (e.g., `"videoreel-visual-changes"`)
 - `feature_id` — numeric suffix (e.g., `"014"` → `"FEAT-014"`)
 - `feature` — substring match (e.g., `"videoreel"` → `"videoreel-visual-changes"`)
 - `spec` — filename match
 
-If NO tasks match, STOP and list available features with pending tasks.
+```bash
+# Find the per-spec index file for the requested feature:
+INDEX=$(jq -r --arg q "<query>" '
+  select(.feature_id == $q or .feature == $q or
+         (.feature_id // "") | test("\($q)$") or
+         (.feature // "") | contains($q)) | input_filename
+' sdd/tasks/index/*.json | head -1)
+```
 
-Extract: `feature_id`, `feature` slug, `spec` path, task list in dependency order.
+If NO match, STOP and list available features (one per per-spec index file)
+with pending tasks.
 
-### 2. Mark All Tasks as In-Progress (on `dev`)
-For each task (in order), update `sdd/tasks/.index.json`:
-- Set `status` → `"in-progress"`, `started_at` → now.
+Extract from the per-spec index header: `feature_id`, `feature` slug,
+`spec` path. Task list in dependency order is the `tasks[]` array filtered
+to status `"pending"` and topologically sorted on `depends_on`.
+
+### 2. Mark All Tasks as In-Progress (in place, on `<BASE_BRANCH>`)
+
+Update the per-spec index file in place (we are already on `BASE_BRANCH`
+from §0). For each task being worked on, set `status` → `"in-progress"`
+and `started_at` → now via `jq`:
 
 ```bash
-# Already on dev
-git add sdd/tasks/.index.json
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
+
+jq --arg now "$NOW" '(.tasks[] | select(.status == "pending") | .status) = "in-progress" |
+                     (.tasks[] | select(.status == "in-progress" and .started_at == null) | .started_at) = $now' \
+   "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+
+git add "$INDEX"
 git commit -m "sdd: start FEAT-<ID> — <feature-slug> (<N> tasks)"
 ```
 
 ### 3. Create the Worktree
+
+The worktree branches from HEAD (which is `BASE_BRANCH` after §0). For
+features that's `dev`; for hotfixes that's `main`. The branch name follows
+the existing convention regardless of flow type.
+
 ```bash
 WORKTREE_NAME="feat-<FEAT-ID>-<feature-slug>"
 WORKTREE_PATH=".claude/worktrees/${WORKTREE_NAME}"
@@ -115,7 +156,7 @@ cd "${WORKTREE_PATH}"
 
 ### 4. Verify SDD Files Are Visible
 ```bash
-test -f sdd/tasks/.index.json && echo "Index OK" || echo "INDEX MISSING"
+test -f sdd/tasks/index/<feature-slug>.json && echo "Per-spec index OK" || echo "INDEX MISSING"
 test -f <spec-path> && echo "Spec OK" || echo "SPEC MISSING"
 ```
 If either is missing, STOP with a clear error message.
@@ -174,28 +215,33 @@ git add <file1> <file2> ...
 git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
 ```
 
-### g) Update SDD State (on `dev`)
-Switch to `dev` to move the task to completed:
+### g) Update SDD State (in worktree, alongside code — FEAT-145)
+
+After committing the code in step (f), update the per-spec index in the
+SAME worktree on the SAME feature branch. No `cd` to the main repo. The
+merge in `/sdd-done` will bring the index file to `base_branch` alongside
+the code commit.
+
 ```bash
-# Save worktree location
-WORKTREE_DIR=$(pwd)
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 
-# Switch to main repo
-cd "${REPO_ROOT}"
-git checkout dev
-
-# Move task file
+# Move task file from active to completed (in-place)
 mkdir -p sdd/tasks/completed/
 mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
 
-# Update index: status → "done", completed_at → now
-# Fill in Completion Note in the task file
+# Update per-spec index: status → "done", completed_at → now, file path
+jq --arg id "TASK-<NNN>" --arg now "$NOW" '
+  (.tasks[] | select(.id == $id) | .status) = "done" |
+  (.tasks[] | select(.id == $id) | .completed_at) = $now |
+  (.tasks[] | select(.id == $id) | .file) = ("sdd/tasks/completed/TASK-<NNN>-<slug>.md")
+' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
 
-git add sdd/tasks/.index.json sdd/tasks/active/ sdd/tasks/completed/
+# Fill in Completion Note in the moved task file (in completed/).
+
+# Stage and commit on the feature branch (NOT the main repo's BASE_BRANCH)
+git add "$INDEX" sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
 git commit -m "sdd: complete TASK-<NNN> — <title>"
-
-# Return to worktree
-cd "${WORKTREE_DIR}"
 ```
 
 ### h) Continue
