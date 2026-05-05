@@ -69,7 +69,6 @@ async def test_orchestration_aclose_releases_storage():
 async def test_orchestration_constructor_sets_mixin_attrs():
     """All four mixin attributes are initialised on the crew."""
     from parrot.bots.orchestration.crew import AgentCrew
-    import asyncio
 
     crew = AgentCrew(name="Y", persist_results=False)
     assert crew._persist_results is False
