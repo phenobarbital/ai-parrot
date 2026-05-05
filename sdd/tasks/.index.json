@@ -16284,10 +16284,10 @@
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "parallel": false,
       "assigned_to": null,
-      "started_at": null
+      "started_at": "2026-05-05T00:57:45+00:00"
     },
     {
       "id": "TASK-996",
