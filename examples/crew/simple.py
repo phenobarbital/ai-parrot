@@ -58,8 +58,8 @@ async def quick_parallel_example():
     result = await crew.run_parallel(tasks)
 
     # Show results
-    print(f"\n✅ Completed in {result['total_execution_time']:.2f}s\n")
-    for agent_id, output in result['agent_results'].items():
+    print(f"\n✅ Completed in {result.total_time:.2f}s\n")
+    for agent_id, output in result.agent_results.items():
         print(f"{agent_id}:\n{output[:200]}...\n")
 
     return result
@@ -110,10 +110,10 @@ async def quick_sequential_example():
 
     # Show final result
     print(f"\n✅ Final Report:\n")
-    print(result['final_result'])
+    print(result.output)
 
     summary = crew.get_execution_summary()
-    print(f"\n⏱️  Total time: {summary['total_execution_time']:.2f}s")
+    print(f"\n⏱️  Total time: {summary.get('total_execution_time', result.total_time):.2f}s")
 
     return result
 
@@ -175,7 +175,7 @@ async def quick_flow_example():
 
     # Access results
     print("\nFinal Results:")
-    print(final_results["agent_results"]["final_reviewer"])
+    print(final_results.agent_results["final_reviewer"])
 
     return final_results
 
@@ -329,25 +329,25 @@ async def test_fsm():
     researcher = BasicAgent(
         name="Researcher",
         system_prompt="You research products thoroughly.",
-        llm='google'
+        use_llm='google'
     )
 
     analyzer = BasicAgent(
         name="Analyzer",
         system_prompt="You analyze research data and extract insights.",
-        llm='google'
+        use_llm='google'
     )
 
     writer = BasicAgent(
         name="Writer",
         system_prompt="You create clear, concise reports.",
-        llm='google'
+        use_llm='google'
     )
 
     error_handler = BasicAgent(
         name="ErrorHandler",
         system_prompt="You fix errors in analysis and retry tasks.",
-        llm='google'
+        use_llm='google'
     )
     # Add agents
     agents = [researcher, analyzer, writer, error_handler]

@@ -1,7 +1,6 @@
 import asyncio
-from dataclasses import asdict as as_dict
 from parrot.models.crew import CrewResult
-from parrot.bots.orchestration import AgentCrew, FlowContext
+from parrot.bots.orchestration import AgentCrew
 from parrot.bots import Agent
 from parrot.tools.google import GoogleSearchTool, GoogleSiteSearchTool
 from parrot.tools.ibisworld import IBISWorldTool
@@ -197,13 +196,13 @@ Provide a comprehensive overview covering:
 Include detailed paragraphs for each section with multiple data points and examples.
 Minimum output: 500+ words with comprehensive coverage.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search, ibis],
       ),
       Agent(
          name="services_data",
          system_prompt=services_prompt,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search, ibis],
       ),
       Agent(
@@ -215,7 +214,7 @@ forecasts (short-term and long-term) for a specified industry.
 
 Provide the current % market share of the top 5 companies in the industry and a brief analysis of their competitive positioning.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search, ibis],
       ),
       Agent(
@@ -252,7 +251,7 @@ Analyze major markets across multiple dimensions:
 Provide detailed analysis with specific percentages and data.
 Minimum output: 400+ words.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search]
       ),
       Agent(
@@ -297,7 +296,7 @@ Conduct deep competitive analysis:
 Provide comprehensive competitor profiles with all available data.
 Minimum output: 700+ words.
             """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search, ibis]
       ),
       Agent(
@@ -336,7 +335,7 @@ Research related and similar industries:
 Provide detailed analysis with market data for each related industry.
 Minimum output: 400+ words.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search]
       ),
       Agent(
@@ -385,7 +384,7 @@ Conduct comprehensive channel analysis:
 Provide exhaustive channel analysis with specific data.
 Minimum output: 500+ words.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search]
       ),
       Agent(
@@ -435,7 +434,7 @@ Gather comprehensive financial data:
 Include all financial data with sources and context.
 Minimum output: 500+ words.
          """,
-         llm='groq',
+         use_llm='groq',
          model="meta-llama/llama-4-maverick-17b-128e-instruct",
          tools=[google_search, site_search, ticker_tool]
       ),
@@ -457,7 +456,7 @@ Cost Structure:
    - Maintenance and Repairs: 5%: Regular maintenance and repairs are necessary to keep retail locations and equipment in good working condition.
 ```
          """,
-         llm='groq',
+         use_llm='groq',
          model="meta-llama/llama-4-maverick-17b-128e-instruct",
          tools=[google_search, site_search, ibis]
       ),
@@ -517,13 +516,13 @@ Analyze supply and demand dynamics:
 Provide quantitative analysis with specific metrics and trends.
 Minimum output: 400+ words.
          """,
-         llm='google',
+         use_llm='google',
          tools=[google_search, site_search]
       ),
       Agent(
          name="key_statistics",
          system_prompt=key_statistics_prompt,
-         llm='groq',
+         use_llm='groq',
          model="meta-llama/llama-4-maverick-17b-128e-instruct",
          tools=[google_search, site_search, ibis]
       ),
@@ -540,7 +539,7 @@ Minimum output: 400+ words.
             - U.S. Census Bureau
             - Bureau of Economic Analysis
          """,
-         llm='groq',
+         use_llm='groq',
          model="meta-llama/llama-4-maverick-17b-128e-instruct",
          tools=[google_search, site_search, ibis]
       ),
@@ -1529,7 +1528,7 @@ async def execute_workflow(data_crew, analysis_crew, report_crew, industry):
       all_results=True
    )
    print(
-      f"✓ Phase 1 complete: {len(data_result['results'])} datasets gathered\n"
+      f"✓ Phase 1 complete: {len(data_result.completed)} datasets gathered\n"
    )
    # data_result.output is a list of results from each agent
    market_research = '\n'.join(data_result.output)
@@ -1545,7 +1544,7 @@ async def execute_workflow(data_crew, analysis_crew, report_crew, industry):
 ## DATA GATHERING RESULTS:
 
 """
-   for agent_name, result in data_result['results'].items():
+   for agent_name, result in data_result.agent_results.items():
       analysis_context += f"\n### {agent_name.upper().replace('_', ' ')} DATA:\n{result}\n\n---\n"
 
    analysis_result: CrewResult = await analysis_crew.run_flow(
@@ -1613,10 +1612,10 @@ This is the master comprehensive Executive report document.
    print("\n" + "="*70)
    print("HYBRID WORKFLOW COMPLETE")
    print("="*70)
-   print(f"\nPhase 1 (Parallel): {data_result['total_execution_time']:.2f}s")
+   print(f"\nPhase 1 (Parallel): {data_result.total_time:.2f}s")
    print("Phase 2 (Flow): Multiple stages with auto-parallelization")
    print("Phase 3 (Sequential): Pipeline refinement")
-   print(f"\nFinal Report (first 400 chars):\n{report_result['final_result'][:400]}...")
+   print(f"\nFinal Report (first 400 chars):\n{report_result.output[:400]}...")
    print("\n" + "="*70)
 
    return {
