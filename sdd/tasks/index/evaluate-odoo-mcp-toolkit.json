@@ -52,7 +52,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Modifies toolkit.py — sequential with other toolkit.py tasks",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1015-smart-field-integration.md"
+      "completed_at": "2026-05-05T13:17:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1015-smart-field-integration.md"
     },
     {
       "id": "TASK-1016",
