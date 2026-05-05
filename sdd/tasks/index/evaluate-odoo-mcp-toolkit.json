@@ -177,7 +177,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -193,8 +193,8 @@
       "parallelism_notes": "Depends on all Phase 1 implementation tasks",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1021-phase1-tests.md"
+      "completed_at": "2026-05-05T13:38:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1021-phase1-tests.md"
     },
     {
       "id": "TASK-1022",
@@ -306,7 +306,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -320,8 +320,8 @@
       "parallelism_notes": "Depends on all Phase 2 implementation tasks",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1027-phase2-tests.md"
+      "completed_at": "2026-05-05T13:38:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1027-phase2-tests.md"
     }
   ]
 }

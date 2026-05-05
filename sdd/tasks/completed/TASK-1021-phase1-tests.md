@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-147 — Evaluate Odoo MCP Toolkit
 **Spec**: `sdd/specs/evaluate-odoo-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1014, TASK-1015, TASK-1016, TASK-1017, TASK-1018, TASK-1019, TASK-1020
@@ -109,4 +109,22 @@ All 22 Phase 1 test cases listed in the spec's Unit Tests table must be covered.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `test_odoo_smart_fields.py` (18 tests) covering all `_smart_field_score` and
+`select_smart_fields` behaviors: binary/html exclusion, id/display_name pinning, score
+ordering, always_include, max_fields cap, and constant assertions.
+
+Extended `test_odoo_toolkit.py` with 18 Phase 1 tests covering: smart-field auto
+selection (search_records, get_record), fields_get caching, aggregate_records (Odoo
+16-18 read_group + Odoo 19 formatted_read_group), build_domain (AND/OR/invalid/empty),
+get_odoo_profile (with/without modules), schema_catalog (with/without query),
+inspect_model_relationships, diagnose_access (allowed/denied), health_check,
+search_employee, and search_holidays (date range + employee filter).
+
+Bug fixes applied:
+- Removed "code" from HIGH_VALUE_PATTERNS (too generic; caused ref_code to score equal
+  to "name" field — test_score_name_field_high).
+- Updated test_get_record_uses_read to pass explicit fields (smart selection is now
+  default for fields=None — separate test covers that path).
+- Fixed aggregate_records mock: server_info() calls transport.version() not execute_kw.
+
+All 67 tests pass (18 smart_fields + 49 toolkit).

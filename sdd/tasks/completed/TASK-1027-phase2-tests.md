@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-147 — Evaluate Odoo MCP Toolkit
 **Spec**: `sdd/specs/evaluate-odoo-mcp-toolkit.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1022, TASK-1023, TASK-1024, TASK-1025, TASK-1026
@@ -111,5 +111,28 @@ class MyModel(models.Model):
 ---
 
 ## Completion Note
+
+Created `test_odoo_diagnostics.py` with 31 tests covering all Phase 2 methods:
+
+- **diagnose_odoo_call** (5 tests): read_only/destructive/side_effect/unknown
+  classification, invalid model name, Odoo 20 deprecation warning, observed-error hints,
+  corrected-payload pass-through.
+- **generate_json2_payload** (5 tests): endpoint format, positional-arg mapping for
+  search_read/create/write, unknown method fallback, URL note inclusion.
+- **scan_addons_source** (8 tests): manifest discovery, model class detection, risky
+  methods (unlink/sudo), security file detection, max_files cap, syntax error handling,
+  empty paths warning, non-existent path graceful warning.
+- **fit_gap_report** (5 tests): standard/custom_module/studio/avoid classification,
+  summary totals equal len(requirements).
+- **business_pack_report** (4 tests): sales pack expected modules+models, hr pack,
+  installed/missing live check from profile, invalid pack ValueError.
+
+Includes `sample_addon_dir` fixture with manifest, model with `_name`, risky method
+overrides, and `ir.model.access.csv`.
+
+Bug fix: business_pack_report tests removed spurious version dict from execute_kw
+side_effect (server_info uses transport.version() not execute_kw).
+
+All 31 tests pass.
 
 *(Agent fills this in when done)*
