@@ -14,7 +14,7 @@
       "feature_id": "FEAT-147",
       "feature": "crew-result-storage-backends",
       "spec": "sdd/specs/crew-result-storage-backends.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task. Blocks TASK-1014/1015/1016/1017. Must complete first.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1013-result-storage-foundation.md"
+      "completed_at": "2026-05-05T11:39:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1013-result-storage-foundation.md"
     },
     {
       "id": "TASK-1014",
