@@ -16198,7 +16198,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -16208,7 +16208,8 @@
       "parallelism_notes": "Depends on TASK-990 API client. Modifies AgentChat.svelte which TASK-992 also modifies.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-991-integrations-menu.md"
+      "file": "sdd/tasks/completed/TASK-991-integrations-menu.md",
+      "completed_at": "2026-05-05T03:05:00Z"
     },
     {
       "id": "TASK-992",
