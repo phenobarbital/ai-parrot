@@ -18,7 +18,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
@@ -82,7 +82,7 @@ class FormStorage(ABC):
         ...
 
     @abstractmethod
-    async def list_forms(self) -> list[dict[str, str]]:
+    async def list_forms(self) -> list[dict[str, Any]]:
         """List all persisted forms.
 
         Each dict in the returned list MUST include ``form_id`` and
