@@ -73,17 +73,18 @@ class FakeStorage(FormStorage):
 
 
 @pytest.fixture
-def app_with_storage(registry):
-    """Fixture that attaches a FakeStorage to the registry and sets up routes.
+def app_with_storage():
+    """Fixture that creates a registry with FakeStorage and sets up routes.
 
     Returns:
         Callable that accepts rows and raise_on_list kwargs, returns a
-        configured :class:`web.Application`.
+        configured :class:`web.Application` with a fresh registry and storage.
     """
     def _build(rows, *, raise_on_list=False):
-        registry._storage = FakeStorage(rows, raise_on_list=raise_on_list)
+        storage = FakeStorage(rows, raise_on_list=raise_on_list)
+        reg = FormRegistry(storage=storage)
         app = web.Application()
-        setup_form_routes(app, registry=registry)
+        setup_form_routes(app, registry=reg)
         return app
     return _build
 

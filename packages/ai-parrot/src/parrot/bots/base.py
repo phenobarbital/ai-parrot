@@ -93,23 +93,23 @@ class BaseBot(AbstractBot):
         search_results = vec_meta.get('search_results_count', 0)
         sources = vec_meta.get('sources', [])
 
-        self.logger.debug(
-            "[%s] %s() prompt builder layers: %s",
-            self.name, method, layer_names,
-        )
-        self.logger.debug(
-            "[%s] %s() context sizes: system_prompt=%d, prompt=%d, "
-            "vector=%d (chunks=%d, sources=%d), kb=%d, user=%d, "
-            "history=%d, memory=%d",
-            self.name, method,
-            len(system_prompt or ""),
-            len(prompt_for_llm or ""),
-            len(vector_context or ""), search_results, len(sources),
-            len(kb_context or ""),
-            len(user_context or ""),
-            len(conversation_context or ""),
-            len(memory_context or ""),
-        )
+        # self.logger.debug(
+        #     "[%s] %s() prompt builder layers: %s",
+        #     self.name, method, layer_names,
+        # )
+        # self.logger.debug(
+        #     "[%s] %s() context sizes: system_prompt=%d, prompt=%d, "
+        #     "vector=%d (chunks=%d, sources=%d), kb=%d, user=%d, "
+        #     "history=%d, memory=%d",
+        #     self.name, method,
+        #     len(system_prompt or ""),
+        #     len(prompt_for_llm or ""),
+        #     len(vector_context or ""), search_results, len(sources),
+        #     len(kb_context or ""),
+        #     len(user_context or ""),
+        #     len(conversation_context or ""),
+        #     len(memory_context or ""),
+        # )
 
     async def conversation(
         self,

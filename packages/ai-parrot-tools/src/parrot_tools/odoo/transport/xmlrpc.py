@@ -150,15 +150,15 @@ class XmlRpcTransport(AbstractOdooTransport):
         return int(uid)
 
     async def authenticate(self) -> int:
-        self.logger.info(
-            "Authenticating to Odoo db=%r as user=%r (xmlrpc)",
-            self.config.database,
-            self.config.username,
-        )
+        # self.logger.info(
+        #     "Authenticating to Odoo db=%r as user=%r (xmlrpc)",
+        #     self.config.database,
+        #     self.config.username,
+        # )
         async with self._rpc_lock:
             uid = await asyncio.to_thread(self._authenticate_sync)
         self.uid = uid
-        self.logger.info("Authenticated successfully, uid=%d", uid)
+        # self.logger.info("Authenticated successfully, uid=%d", uid)
         return uid
 
     # ── execute_kw ──────────────────────────────────────────────────────────

@@ -1024,29 +1024,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         tool_results,
         original_prompt: Optional[str] = None
     ) -> Optional[Part]:
-        """Build a textual summary of tool outputs for the model to read easily."""
+        """Disabled. Returns ``None`` so the next-turn payload only carries
+        the canonical ``function_response`` parts.
 
-        if not function_calls or not tool_results:
-            return None
+        Why: gemini-2.5-pro intermittently treats any extra text part appended
+        after the tool responses as a section-header cue and echoes a chunk
+        of it verbatim at the start of the visible answer. Both flavours
+        observed:
 
-        # Plain data summary — no trailing "continue reasoning" instruction.
-        # The function_response Parts already carry the canonical tool output;
-        # this textual summary is a readability aid for Gemini, not a place
-        # for meta-instructions. Telling the model to "continue reasoning"
-        # here was priming Gemini-2.5-pro to emit imperative-to-self text
-        # ("If you have sufficient information, provide a final answer…")
-        # in place of an actual answer when a tool returned no data.
-        summary_lines = ["Tool execution summaries:"]
-        for fc, result in zip(function_calls, tool_results):
-            summary_lines.append(
-                f"- {fc.name}: {self._summarize_tool_result(result)}"
-            )
+        - ``Original Request: <prompt>`` → prompt-echo at the start of the
+          response.
+        - ``Tool execution summaries:\\n- <tool>: <truncated JSON>`` → a
+          slice of the JSON tool dump prefixed to the response.
 
-        if original_prompt:
-            summary_lines.append(f"Original Request: {original_prompt}")
+        The ``function_response`` parts already carry the tool output in the
+        format Gemini consumes natively (see SDK
+        ``tests/afc/test_generate_content_stream_afc_thoughts.py``), so the
+        textual summary is redundant.
 
-        summary_text = "\n".join(summary_lines)
-        return Part(text=summary_text)
+        Both call sites guard against ``None`` (``if summary_part :=`` and
+        ``if summary_part:``), so no other code needs to change.
+        """
+        return None
 
     async def _handle_multiturn_function_calls(
         self,
@@ -1391,13 +1390,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             f"Found proper function call: {part.function_call.name}"
                         )
 
-                    # Handle reasoning content types (ignore for function calling)
-                    # Check value is truthy: all Pydantic Part objects have these fields defined
-                    # even when None, so hasattr alone is not sufficient.
-                    elif (
-                        (hasattr(part, 'thought_signature') and part.thought_signature) or
-                        (hasattr(part, 'thought') and part.thought)
-                    ):
+                    # Skip reasoning/thought parts. Match the SDK contract
+                    # exactly (``google.genai`` v1.75 ``GenerateContentResponse._get_text``,
+                    # ``types.py:7993``): ``part.thought is True`` is the only
+                    # canonical thought marker. ``thought_signature`` is opaque
+                    # cross-turn metadata that legitimately appears on real
+                    # answer parts (see SDK test ``test_thought_signature_no_warning_in_text``)
+                    # and MUST NOT be used as a filter.
+                    elif part.thought is True:
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
@@ -1434,8 +1434,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, 'function_call') and part.function_call:
                         has_function_call = True
-                    if (hasattr(part, 'thought') and part.thought) or \
-                       (hasattr(part, 'thought_signature') and part.thought_signature):
+                    # Match SDK filter exactly (``types.py:7993``):
+                    # only ``part.thought is True`` marks a thought.
+                    if part.thought is True:
                         has_thought = True
         except Exception:
             pass
@@ -1465,18 +1466,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 text_parts = []
                 thought_parts_found = 0
 
-                # Extract text from each part, handling special cases
+                # Extract text from each part, handling special cases.
+                # Skip reasoning/thought parts using the SDK's canonical
+                # predicate only (``part.thought is True``, see
+                # ``google.genai`` v1.75 ``types.py:7993``).
+                # ``thought_signature`` is opaque cross-turn metadata that
+                # legitimately appears on real answer parts (SDK test
+                # ``test_thought_signature_no_warning_in_text``); using it as
+                # a filter silently drops valid output.
                 for part in response.candidates[0].content.parts:
-                    # Skip reasoning/thought parts — both `thought=True` (Gemini
-                    # 2.5/3 thinking trace) and `thought_signature` markers —
-                    # BEFORE looking at `part.text`. A thought part carries its
-                    # reasoning text in `part.text`, so without this guard the
-                    # model's internal monologue leaks into the user response.
-                    is_thought = (
-                        (hasattr(part, 'thought') and part.thought) or
-                        (hasattr(part, 'thought_signature') and part.thought_signature)
-                    )
-                    if is_thought:
+                    if part.thought is True:
                         thought_parts_found += 1
                         self.logger.debug("Skipping reasoning/thought part")
                         continue

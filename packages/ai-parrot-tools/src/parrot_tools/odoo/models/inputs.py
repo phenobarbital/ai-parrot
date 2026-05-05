@@ -17,9 +17,9 @@ OdooDomain = list[Any]
 
 
 class _OdooBaseInput(BaseModel):
-    """Base input model — forbids extra args so typos surface early."""
+    """Base input model — ignores extra fields (e.g. LLM client metadata)."""
 
-    model_config = ConfigDict(extra="forbid", protected_namespaces=())
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
 
 
 # ── Discovery ───────────────────────────────────────────────────────────────

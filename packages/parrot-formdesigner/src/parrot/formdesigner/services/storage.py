@@ -77,14 +77,14 @@ class PostgresFormStorage(FormStorage):
     """
 
     LOAD_SQL = """
-    SELECT schema_json FROM form_schemas
+    SELECT schema_json, created_at FROM form_schemas
     WHERE form_id = $1
     ORDER BY updated_at DESC
     LIMIT 1
     """
 
     LOAD_VERSION_SQL = """
-    SELECT schema_json FROM form_schemas
+    SELECT schema_json, created_at FROM form_schemas
     WHERE form_id = $1 AND version = $2
     ORDER BY updated_at DESC
     LIMIT 1
@@ -186,7 +186,14 @@ class PostgresFormStorage(FormStorage):
                 data = json.loads(raw)
             else:
                 data = raw
-            return FormSchema.model_validate(data)
+            form = FormSchema.model_validate(data)
+
+            # Inject created_at from the DB row if the form doesn't have it
+            row_created_at = row.get("created_at")
+            if row_created_at is not None and form.created_at is None:
+                form = form.model_copy(update={"created_at": row_created_at})
+
+            return form
         except Exception as exc:
             self.logger.error(
                 "Failed to deserialize form %s: %s", form_id, exc
@@ -212,7 +219,7 @@ class PostgresFormStorage(FormStorage):
         except (ValueError, IndexError):
             return False
 
-    async def list_forms(self) -> list[dict[str, str]]:
+    async def list_forms(self) -> list[dict[str, Any]]:
         """List all persisted forms (latest version of each).
 
         Returns:
@@ -254,7 +261,12 @@ class PostgresFormStorage(FormStorage):
                 if isinstance(desc, dict):
                     desc = next(iter(desc.values()), None)
                 entry["description"] = str(desc) if desc else None
-            except Exception:
+            except Exception as exc:
+                self.logger.debug(
+                    "Malformed schema_json for form %s: %s",
+                    row["form_id"],
+                    exc,
+                )
                 entry["title"] = ""
                 entry["description"] = None
             result.append(entry)
