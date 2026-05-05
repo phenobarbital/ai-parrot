@@ -1436,7 +1436,8 @@ class AbstractBot(
         question: str,
         user_id: str,
         session_id: str,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
+        _trusted_source: bool = False,
     ) -> str:
         """
         Sanitize user question to prevent prompt injection.
@@ -1448,6 +1449,7 @@ class AbstractBot(
             user_id: User identifier
             session_id: Session identifier
             context: Additional context for logging
+            _trusted_source: If True, skip injection checks (internal agent-to-agent calls).
 
         Returns:
             Sanitized question
@@ -1455,6 +1457,8 @@ class AbstractBot(
         Raises:
             PromptInjectionException: If block_on_threat=True and critical threat detected
         """
+        if _trusted_source:
+            return question
         if not self.strict_mode or not self.injection_detection:
             # Permissive mode or detection disabled for this bot.
             return question
