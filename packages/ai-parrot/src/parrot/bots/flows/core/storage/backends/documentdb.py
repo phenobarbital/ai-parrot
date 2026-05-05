@@ -1,13 +1,15 @@
 """DocumentDbResultStorage — default backend wrapping DocumentDb (FEAT-147).
 
-This file is a placeholder created during TASK-1013. The full implementation
-is provided by TASK-1014.
+Preserves today's behaviour exactly: each ``save()`` opens a fresh
+``async with DocumentDb()`` context and calls ``db.write()``.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from navconfig.logging import logging
+
+from parrot.interfaces.documentdb import DocumentDb
 
 from .base import ResultStorage
 
@@ -30,8 +32,6 @@ class DocumentDbResultStorage(ResultStorage):
             collection: Target MongoDB collection name.
             document: Execution result document.
         """
-        from parrot.interfaces.documentdb import DocumentDb
-
         async with DocumentDb() as db:
             await db.write(collection, document)
 
