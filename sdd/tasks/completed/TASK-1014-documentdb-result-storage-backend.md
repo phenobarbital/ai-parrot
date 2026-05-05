@@ -190,10 +190,9 @@ async def test_documentdb_close_is_noop():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-05
+**Notes**: 3 tests pass. DocumentDb moved to module-level import for proper
+monkeypatching in tests. Preserves per-call async-with contract exactly.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
