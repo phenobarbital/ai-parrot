@@ -1,0 +1,181 @@
+{
+  "feature": "ai-parrot-loaders-metadata-standarization",
+  "feature_id": "FEAT-125",
+  "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-27T02:51:46.284943+00:00",
+  "tasks": [
+    {
+      "id": "TASK-855",
+      "slug": "abstractloader-contract-changes",
+      "title": "AbstractLoader contract changes \u2014 language, title, validate_metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on AbstractLoader contract changes",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-855-abstractloader-contract-changes.md",
+      "completed_at": "2026-04-27T01:05:45.114449+00:00"
+    },
+    {
+      "id": "TASK-856",
+      "slug": "base-loader-helpers",
+      "title": "Base loader helpers \u2014 basepdf and basevideo build_default_meta",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches basepdf.py and basevideo.py which are base classes for tasks 857-859; sequential to avoid merge conflicts",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-856-base-loader-helpers.md",
+      "completed_at": "2026-04-27T01:23:13.194357+00:00"
+    },
+    {
+      "id": "TASK-857",
+      "slug": "refactor-file-document-loaders",
+      "title": "Refactor file/document loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches different files than 858-860 but shares test fixtures and LOADER_REGISTRY integration test; sequential per spec worktree strategy",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "completed_at": "2026-04-27T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-857-refactor-file-document-loaders.md"
+    },
+    {
+      "id": "TASK-858",
+      "slug": "refactor-video-audio-loaders",
+      "title": "Refactor video/audio loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on basevideo build_default_meta from TASK-856; shares test fixtures with TASK-859",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "completed_at": "2026-04-27T02:46:42.437731+00:00",
+      "file": "sdd/tasks/completed/TASK-858-bot-parent-expansion-wiring.md"
+    },
+    {
+      "id": "TASK-859",
+      "slug": "refactor-youtube-vimeo-loaders",
+      "title": "Refactor YouTube and Vimeo loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on basevideo build_default_meta; touches youtube.py/vimeo.py only but shares integration test with TASK-858",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "completed_at": "2026-04-27T02:50:33.792488+00:00",
+      "file": "sdd/tasks/completed/TASK-859-pgvector-and-bot-integration-tests.md"
+    },
+    {
+      "id": "TASK-860",
+      "slug": "refactor-web-loaders",
+      "title": "Refactor web and webscraping loaders to use canonical metadata",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches web.py/webscraping.py only but shares integration test fixtures; sequential per spec worktree strategy",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-860-parent-child-retrieval-docs.md",
+      "completed_at": "2026-04-27T02:51:46.284943+00:00"
+    },
+    {
+      "id": "TASK-861",
+      "slug": "tests-canonical-metadata",
+      "title": "Tests for canonical metadata standardization",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856",
+        "TASK-857",
+        "TASK-858",
+        "TASK-859",
+        "TASK-860"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after ALL refactors complete; validates entire feature end-to-end",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-861-tests-canonical-metadata.md",
+      "completed_at": "2026-04-27T00:00:00"
+    },
+    {
+      "id": "TASK-862",
+      "slug": "documentation-canonical-metadata",
+      "title": "Documentation for canonical metadata shape",
+      "feature_id": "FEAT-125",
+      "feature": "ai-parrot-loaders-metadata-standarization",
+      "spec": "sdd/specs/ai-parrot-loaders-metadata-standarization.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-855",
+        "TASK-856",
+        "TASK-857",
+        "TASK-858",
+        "TASK-859",
+        "TASK-860"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Documentation task; depends on all implementation tasks for accurate content",
+      "assigned_to": "sdd-worker-feat-125",
+      "started_at": "2026-04-26T23:46:53.342662+00:00",
+      "file": "sdd/tasks/completed/TASK-862-documentation-canonical-metadata.md",
+      "completed_at": "2026-04-27T00:00:00"
+    }
+  ]
+}

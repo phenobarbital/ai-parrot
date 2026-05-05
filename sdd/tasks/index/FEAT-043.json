@@ -1,0 +1,155 @@
+{
+  "feature": "FEAT-043",
+  "feature_id": null,
+  "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-11T00:25:00Z",
+  "tasks": [
+    {
+      "id": "TASK-289",
+      "slug": "model-storage-fields",
+      "title": "Add Storage Backend Fields to VideoReelRequest",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Other tasks import VideoReelRequest and depend on these new fields existing.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:00:00Z",
+      "completed_at": "2026-03-11T00:01:00Z",
+      "file": "sdd/tasks/completed/TASK-289-model-storage-fields.md"
+    },
+    {
+      "id": "TASK-290",
+      "slug": "pipeline-filemanager-init",
+      "title": "Add FileManager Initialization to generate_video_reel()",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-289"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies generation.py which is also modified by TASK-291, TASK-292, TASK-293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:02:00Z",
+      "completed_at": "2026-03-11T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-290-pipeline-filemanager-init.md"
+    },
+    {
+      "id": "TASK-291",
+      "slug": "scene-processing-filemanager",
+      "title": "Refactor _process_scene() to Use FileManager",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _process_scene() in generation.py, same file as TASK-290/292/293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:06:00Z",
+      "completed_at": "2026-03-11T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-291-scene-processing-filemanager.md"
+    },
+    {
+      "id": "TASK-292",
+      "slug": "music-generation-filemanager",
+      "title": "Refactor _generate_reel_music() to Use FileManager",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _generate_reel_music() in generation.py, same file as TASK-290/291/293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:11:00Z",
+      "completed_at": "2026-03-11T00:13:00Z",
+      "file": "sdd/tasks/completed/TASK-292-music-generation-filemanager.md"
+    },
+    {
+      "id": "TASK-293",
+      "slug": "assembly-hybrid-storage",
+      "title": "Refactor _create_reel_assembly() with Hybrid Storage Pattern",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-291",
+        "TASK-292"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-291/292 outputs (storage keys). Modifies same file.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:14:00Z",
+      "completed_at": "2026-03-11T00:18:00Z",
+      "file": "sdd/tasks/completed/TASK-293-assembly-hybrid-storage.md"
+    },
+    {
+      "id": "TASK-294",
+      "slug": "handler-storage-config",
+      "title": "Update VideoReelHandler for Storage Configuration",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies video_reel.py handler which dispatches to the pipeline modified in TASK-290.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:19:00Z",
+      "completed_at": "2026-03-11T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-294-handler-storage-config.md"
+    },
+    {
+      "id": "TASK-295",
+      "slug": "storage-tests",
+      "title": "Unit and Integration Tests for Video Reel Storage",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-289",
+        "TASK-290",
+        "TASK-291",
+        "TASK-292",
+        "TASK-293",
+        "TASK-294"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all prior tasks; must run after all pipeline changes are complete.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:21:00Z",
+      "completed_at": "2026-03-11T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-295-storage-tests.md"
+    }
+  ]
+}

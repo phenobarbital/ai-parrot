@@ -1,0 +1,64 @@
+{
+  "feature": "rest-api-generate-video-reel",
+  "feature_id": null,
+  "spec": "sdd/specs/rest-api-generate-video-reel.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-02-19T22:54:27+01:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-005",
+      "slug": "video-reel-handler",
+      "title": "Implement VideoReelHandler",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-005-video-reel-handler.md"
+    },
+    {
+      "id": "TASK-006",
+      "slug": "update-schema-helper-reel",
+      "title": "Update GoogleGenerationHelper with Video Reel Schema",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-006-update-schema-helper-reel.md"
+    },
+    {
+      "id": "TASK-007",
+      "slug": "register-video-reel-handler",
+      "title": "Register VideoReelHandler Routes",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-005"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-007-register-video-reel-handler.md"
+    },
+    {
+      "id": "TASK-008",
+      "slug": "video-reel-tests",
+      "title": "Write Tests for VideoReelHandler",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-005",
+        "TASK-006"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-008-video-reel-tests.md"
+    }
+  ]
+}

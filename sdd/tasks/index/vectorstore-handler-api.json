@@ -1,0 +1,154 @@
+{
+  "feature": "vectorstore-handler-api",
+  "feature_id": "FEAT-087",
+  "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-07T02:22:54.497416Z",
+  "tasks": [
+    {
+      "id": "TASK-606",
+      "slug": "config-and-package-init",
+      "title": "Config Variable & Package Init",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No shared files with TASK-607; both create new files only",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-606-config-and-package-init.md",
+      "completed_at": "2026-04-07T01:36:32.990649Z"
+    },
+    {
+      "id": "TASK-607",
+      "slug": "vectorstore-helper",
+      "title": "VectorStoreHelper (Metadata Endpoints)",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-606"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Creates helpers.py; no overlap with handler.py tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md",
+      "completed_at": "2026-04-07T01:38:27.377423Z"
+    },
+    {
+      "id": "TASK-608",
+      "slug": "handler-skeleton-store-cache",
+      "title": "Handler Skeleton, Store Connection Cache & Lifecycle",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-606",
+        "TASK-607"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates handler.py which all subsequent tasks modify",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md",
+      "completed_at": "2026-04-07T02:02:00.078078Z"
+    },
+    {
+      "id": "TASK-609",
+      "slug": "post-create-collection",
+      "title": "POST Endpoint \u2014 Create Collection",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py post() \u2014 sequential with other handler method tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-609-post-create-collection.md",
+      "completed_at": "2026-04-07T02:06:35.613238Z"
+    },
+    {
+      "id": "TASK-610",
+      "slug": "patch-search-test",
+      "title": "PATCH Endpoint \u2014 Search Test",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py patch() \u2014 sequential with other handler method tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-610-patch-search-test.md",
+      "completed_at": "2026-04-07T02:09:30.014195Z"
+    },
+    {
+      "id": "TASK-611",
+      "slug": "put-data-loading",
+      "title": "PUT Endpoint \u2014 Data Loading",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py put() \u2014 most complex task, sequential",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-611-put-data-loading.md",
+      "completed_at": "2026-04-07T02:21:06.180824Z"
+    },
+    {
+      "id": "TASK-612",
+      "slug": "route-registration",
+      "title": "Route Registration & Package Exports",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-607",
+        "TASK-608",
+        "TASK-609",
+        "TASK-610",
+        "TASK-611"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration \u2014 must run after all implementation tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-612-route-registration.md",
+      "completed_at": "2026-04-07T02:22:54.497416Z"
+    }
+  ]
+}

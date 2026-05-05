@@ -1,0 +1,288 @@
+{
+  "feature": "FEAT-011",
+  "feature_id": null,
+  "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-032",
+      "slug": "shared-security-models",
+      "title": "Shared Security Models",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-032-shared-security-models.md"
+    },
+    {
+      "id": "TASK-033",
+      "slug": "base-executor",
+      "title": "Base Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-033-base-executor.md"
+    },
+    {
+      "id": "TASK-034",
+      "slug": "base-parser",
+      "title": "Base Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-034-base-parser.md"
+    },
+    {
+      "id": "TASK-035",
+      "slug": "prowler-config-executor",
+      "title": "Prowler Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-035-prowler-config-executor.md"
+    },
+    {
+      "id": "TASK-036",
+      "slug": "prowler-parser",
+      "title": "Prowler Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-036-prowler-parser.md"
+    },
+    {
+      "id": "TASK-037",
+      "slug": "cloud-posture-toolkit",
+      "title": "CloudPostureToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-035",
+        "TASK-036"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-037-cloud-posture-toolkit.md"
+    },
+    {
+      "id": "TASK-038",
+      "slug": "trivy-config-executor",
+      "title": "Trivy Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-038-trivy-config-executor.md"
+    },
+    {
+      "id": "TASK-039",
+      "slug": "trivy-parser",
+      "title": "Trivy Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-039-trivy-parser.md"
+    },
+    {
+      "id": "TASK-040",
+      "slug": "container-security-toolkit",
+      "title": "ContainerSecurityToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-038",
+        "TASK-039"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-040-container-security-toolkit.md"
+    },
+    {
+      "id": "TASK-041",
+      "slug": "checkov-config-executor",
+      "title": "Checkov Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-041-checkov-config-executor.md"
+    },
+    {
+      "id": "TASK-042",
+      "slug": "checkov-parser",
+      "title": "Checkov Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-042-checkov-parser.md"
+    },
+    {
+      "id": "TASK-043",
+      "slug": "secrets-iac-toolkit",
+      "title": "SecretsIaCToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-041",
+        "TASK-042"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-043-secrets-iac-toolkit.md"
+    },
+    {
+      "id": "TASK-044",
+      "slug": "compliance-mapper",
+      "title": "Compliance Mapper",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-044-compliance-mapper.md"
+    },
+    {
+      "id": "TASK-045",
+      "slug": "report-generator",
+      "title": "Report Generator",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-044"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-045-report-generator.md"
+    },
+    {
+      "id": "TASK-046",
+      "slug": "compliance-report-toolkit",
+      "title": "ComplianceReportToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-035",
+        "TASK-036",
+        "TASK-038",
+        "TASK-039",
+        "TASK-041",
+        "TASK-042",
+        "TASK-044",
+        "TASK-045"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-046-compliance-report-toolkit.md"
+    },
+    {
+      "id": "TASK-047",
+      "slug": "security-package-exports",
+      "title": "Security Package Exports",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-037",
+        "TASK-040",
+        "TASK-043",
+        "TASK-046"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-047-security-package-exports.md"
+    },
+    {
+      "id": "TASK-048",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-037",
+        "TASK-040",
+        "TASK-043",
+        "TASK-046",
+        "TASK-047"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-048-integration-tests.md"
+    }
+  ]
+}

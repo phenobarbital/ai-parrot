@@ -1,0 +1,123 @@
+{
+  "feature": "FEAT-026",
+  "feature_id": null,
+  "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-177",
+      "slug": "schema-enhancements",
+      "title": "Schema Enhancements (RoutingMode, FUTURES, Capabilities, IBKR Profile)",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-177-schema-enhancements.md"
+    },
+    {
+      "id": "TASK-178",
+      "slug": "ibkr-executor-prompt",
+      "title": "IBKR Executor Prompt",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-178-ibkr-executor-prompt.md"
+    },
+    {
+      "id": "TASK-179",
+      "slug": "ibkr-executor-agent-factory",
+      "title": "IBKR Executor Agent Factory",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-179-ibkr-executor-agent-factory.md"
+    },
+    {
+      "id": "TASK-180",
+      "slug": "orchestrator-multi-executor",
+      "title": "Orchestrator Multi-Executor Registration",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178",
+        "TASK-179"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-180-orchestrator-multi-executor.md"
+    },
+    {
+      "id": "TASK-181",
+      "slug": "pm-platform-update",
+      "title": "Portfolio Manager Platform Update",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-181-pm-platform-update.md"
+    },
+    {
+      "id": "TASK-182",
+      "slug": "exports-update",
+      "title": "Exports Update",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177",
+        "TASK-179"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-182-exports-update.md"
+    },
+    {
+      "id": "TASK-183",
+      "slug": "multi-executor-integration-tests",
+      "title": "Multi-Executor Integration Tests",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178",
+        "TASK-179",
+        "TASK-180",
+        "TASK-181",
+        "TASK-182"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-183-multi-executor-integration-tests.md"
+    }
+  ]
+}

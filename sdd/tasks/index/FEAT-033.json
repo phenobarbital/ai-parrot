@@ -1,0 +1,132 @@
+{
+  "feature": "FEAT-033",
+  "feature_id": null,
+  "spec": "sdd/specs/docker-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-233",
+      "slug": "docker-config",
+      "title": "Docker Configuration & Environment Variable",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-233-docker-config.md"
+    },
+    {
+      "id": "TASK-234",
+      "slug": "docker-models",
+      "title": "Docker Data Models",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-234-docker-models.md"
+    },
+    {
+      "id": "TASK-235",
+      "slug": "docker-executor",
+      "title": "Docker Executor",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-233",
+        "TASK-234"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-235-docker-executor.md"
+    },
+    {
+      "id": "TASK-236",
+      "slug": "docker-compose-generator",
+      "title": "Docker Compose Generator",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-234"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-236-docker-compose-generator.md"
+    },
+    {
+      "id": "TASK-237",
+      "slug": "docker-toolkit",
+      "title": "Docker Toolkit (AbstractToolkit)",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-233",
+        "TASK-234",
+        "TASK-235",
+        "TASK-236"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-237-docker-toolkit.md"
+    },
+    {
+      "id": "TASK-238",
+      "slug": "docker-package-init",
+      "title": "Docker Package Init & Registry",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-237"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-238-docker-package-init.md"
+    },
+    {
+      "id": "TASK-239",
+      "slug": "docker-unit-tests",
+      "title": "Docker Toolkit Unit Tests",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-237",
+        "TASK-238"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-239-docker-unit-tests.md"
+    },
+    {
+      "id": "TASK-240",
+      "slug": "docker-integration-tests",
+      "title": "Docker Toolkit Integration Tests",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-239"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-240-docker-integration-tests.md"
+    }
+  ]
+}

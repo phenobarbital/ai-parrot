@@ -1,0 +1,72 @@
+{
+  "feature": "FEAT-028",
+  "feature_id": null,
+  "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-198",
+      "slug": "scheduler-report-decorators",
+      "title": "New Report Scheduler Decorators (schedule_daily_report, schedule_weekly_report)",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-198-scheduler-report-decorators.md"
+    },
+    {
+      "id": "TASK-199",
+      "slug": "scheduler-envvar-helpers",
+      "title": "Env Var Resolution Helpers (_resolve_report_schedule, _parse_daily/weekly_schedule)",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-198"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-199-scheduler-envvar-helpers.md"
+    },
+    {
+      "id": "TASK-200",
+      "slug": "register-bot-schedules-enhancement",
+      "title": "register_bot_schedules() \u2014 detect _schedule_report_type and call env var resolver",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-198",
+        "TASK-199"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-200-register-bot-schedules-enhancement.md"
+    },
+    {
+      "id": "TASK-201",
+      "slug": "scheduler-decorators-tests",
+      "title": "Unit Tests + verify_scheduler.py Section 5 for report decorators",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-198",
+        "TASK-199",
+        "TASK-200"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-201-scheduler-decorators-tests.md"
+    }
+  ]
+}

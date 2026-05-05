@@ -39,6 +39,26 @@ If the user provided notes, extract these from context. Otherwise, ask briefly.
 **DO NOT skip this step.** Before writing anything, conduct at least **two full rounds**
 of questions-and-answers with the user to deeply understand the feature.
 
+**Round 0 — Flow type (always ask first; FEAT-145):**
+
+Ask exactly two questions before Round 1:
+
+1. Is this a regular **feature** (lands on `dev` or another integration branch) or a **hotfix** (lands on `main`)?
+2. If `feature`, which base branch? (default: `dev`; for sub-features pick the parent feature branch.)
+   If `hotfix`, base is fixed to `main` — no choice.
+
+Record the answers; they will populate the YAML frontmatter at the top of the
+generated brainstorm doc. Validation rule: `type: hotfix` REQUIRES `base_branch: main`.
+
+```yaml
+---
+type: feature | hotfix
+base_branch: dev | main | <other>
+---
+```
+
+If the user does not answer, default to `type: feature, base_branch: dev`.
+
 **Round 1 — Clarify intent and scope:**
 Ask 3–5 targeted questions about:
 - The core use case and expected behavior.
@@ -125,8 +145,11 @@ Evaluate the feature's decomposition potential for parallel development:
 - **Rationale**: Brief explanation of why the recommended isolation makes sense.
 
 ### 10. Save and Commit
-1. Read the template at `sdd/templates/brainstorm.md`.
+1. Read the template at `sdd/templates/brainstorm.md`. The template already
+   contains a YAML frontmatter block at the top (FEAT-145).
 2. Create `sdd/proposals/<feature-name>.brainstorm.md` with today's date.
+   **Update the frontmatter `type` and `base_branch` values to match the
+   user's Round 0 answers.** Do NOT strip the frontmatter.
 3. Set `Status: exploration`.
 4. **Commit (ONLY the brainstorm file — NEVER unrelated changes):**
    ```bash

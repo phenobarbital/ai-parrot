@@ -1,0 +1,102 @@
+{
+  "feature": "FEAT-021",
+  "feature_id": null,
+  "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-119",
+      "slug": "user-objects-handler",
+      "title": "UserObjectsHandler Class",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-119-user-objects-handler.md"
+    },
+    {
+      "id": "TASK-120",
+      "slug": "agenttalk-refactor",
+      "title": "AgentTalk Refactor to Use UserObjectsHandler",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-119"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-120-agenttalk-refactor.md"
+    },
+    {
+      "id": "TASK-121",
+      "slug": "dataset-request-response-models",
+      "title": "DatasetManager Request/Response Models",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-121-dataset-request-response-models.md"
+    },
+    {
+      "id": "TASK-122",
+      "slug": "dataset-manager-handler",
+      "title": "DatasetManagerHandler HTTP Handler",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-119",
+        "TASK-121"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-122-dataset-manager-handler.md"
+    },
+    {
+      "id": "TASK-123",
+      "slug": "route-registration",
+      "title": "DatasetManagerHandler Route Registration",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-122"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-123-route-registration.md"
+    },
+    {
+      "id": "TASK-124",
+      "slug": "dataset-handler-tests",
+      "title": "DatasetManager Handler Unit Tests",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-119",
+        "TASK-120",
+        "TASK-121",
+        "TASK-122",
+        "TASK-123"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-124-dataset-handler-tests.md"
+    }
+  ]
+}

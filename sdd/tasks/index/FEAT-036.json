@@ -1,0 +1,135 @@
+{
+  "feature": "FEAT-036",
+  "feature_id": null,
+  "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-241",
+      "slug": "config-model-oauth2-fields",
+      "title": "Config Model \u2014 Add OAuth2 Fields to TelegramAgentConfig",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-241-config-model-oauth2-fields.md"
+    },
+    {
+      "id": "TASK-242",
+      "slug": "auth-strategy-abstraction",
+      "title": "Auth Strategy Abstraction & BasicAuthStrategy",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-242-auth-strategy-abstraction.md"
+    },
+    {
+      "id": "TASK-243",
+      "slug": "oauth2-provider-registry",
+      "title": "OAuth2 Provider Registry",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-243-oauth2-provider-registry.md"
+    },
+    {
+      "id": "TASK-244",
+      "slug": "oauth2-auth-strategy",
+      "title": "OAuth2 Auth Strategy with PKCE Support",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-242",
+        "TASK-243"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-244-oauth2-auth-strategy.md"
+    },
+    {
+      "id": "TASK-245",
+      "slug": "wrapper-auth-delegation",
+      "title": "Wrapper \u2014 Delegate Auth to Strategy",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241",
+        "TASK-242",
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-245-wrapper-auth-delegation.md"
+    },
+    {
+      "id": "TASK-246",
+      "slug": "oauth2-callback-endpoint",
+      "title": "OAuth2 Callback aiohttp Endpoint",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-246-oauth2-callback-endpoint.md"
+    },
+    {
+      "id": "TASK-247",
+      "slug": "unit-tests-auth-strategies",
+      "title": "Unit Tests \u2014 Auth Strategies & Config",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241",
+        "TASK-242",
+        "TASK-243",
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-247-unit-tests-auth-strategies.md"
+    },
+    {
+      "id": "TASK-248",
+      "slug": "integration-tests-oauth2-flow",
+      "title": "Integration Tests \u2014 OAuth2 Full Flow",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-245",
+        "TASK-246",
+        "TASK-247"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-248-integration-tests-oauth2-flow.md"
+    }
+  ]
+}

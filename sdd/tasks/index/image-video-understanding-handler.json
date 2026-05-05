@@ -1,0 +1,90 @@
+{
+  "feature": "image-video-understanding-handler",
+  "feature_id": null,
+  "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-03-27T18:00:00+00:00",
+  "completed_at": "2026-03-27T23:16:58.489734",
+  "tasks": [
+    {
+      "id": "TASK-465",
+      "slug": "understanding-request-models",
+      "title": "Understanding Request & Response Models",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation models needed by handler task",
+      "assigned_to": null,
+      "started_at": "2026-03-27T21:41:01.327436",
+      "file": "sdd/tasks/active/TASK-465-understanding-request-models.md",
+      "completed_at": "2026-03-27T22:22:30.723636"
+    },
+    {
+      "id": "TASK-466",
+      "slug": "understanding-handler",
+      "title": "Understanding Handler Implementation",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-465"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on request models from TASK-465",
+      "assigned_to": null,
+      "started_at": "2026-03-27T21:41:01.327436",
+      "file": "sdd/tasks/active/TASK-466-understanding-handler.md",
+      "completed_at": "2026-03-27T23:02:44.443260"
+    },
+    {
+      "id": "TASK-467",
+      "slug": "understanding-route-registration",
+      "title": "Route Registration for Understanding Handler",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-466"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs handler to exist before registration",
+      "assigned_to": null,
+      "started_at": "2026-03-27T21:41:01.327436",
+      "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md",
+      "completed_at": "2026-03-27T23:05:41.290447"
+    },
+    {
+      "id": "TASK-468",
+      "slug": "understanding-integration-tests",
+      "title": "Integration Tests for Understanding Handler",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-466",
+        "TASK-467"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all handler code complete",
+      "assigned_to": null,
+      "started_at": "2026-03-27T21:41:01.327436",
+      "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md",
+      "completed_at": "2026-03-27T23:16:58.489734"
+    }
+  ]
+}

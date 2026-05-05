@@ -1,0 +1,91 @@
+{
+  "feature": "netsuite-mcp-integration",
+  "feature_id": "FEAT-135",
+  "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-04-29T10:32:39.763139+00:00",
+  "completed_at": "2026-04-29T11:36:47.090023+00:00",
+  "tasks": [
+    {
+      "id": "TASK-922",
+      "slug": "vault-token-store",
+      "title": "Implement VaultTokenStore",
+      "feature_id": "FEAT-135",
+      "feature": "netsuite-mcp-integration",
+      "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 VaultTokenStore is imported by factory (TASK-923)",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:44.537480+00:00",
+      "file": "sdd/tasks/completed/TASK-922-vault-token-store.md",
+      "completed_at": "2026-04-29T11:17:13.531479+00:00"
+    },
+    {
+      "id": "TASK-923",
+      "slug": "netsuite-factory-helper",
+      "title": "NetSuite MCP Factory & Mixin Helper",
+      "feature_id": "FEAT-135",
+      "feature": "netsuite-mcp-integration",
+      "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-922"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports VaultTokenStore from TASK-922; must complete first",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:44.537480+00:00",
+      "file": "sdd/tasks/completed/TASK-923-netsuite-factory-helper.md",
+      "completed_at": "2026-04-29T11:14:58.805057+00:00"
+    },
+    {
+      "id": "TASK-924",
+      "slug": "netsuite-registry-entry",
+      "title": "NetSuite Registry Entry & Factory Map",
+      "feature_id": "FEAT-135",
+      "feature": "netsuite-mcp-integration",
+      "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-923"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports create_netsuite_mcp_server from TASK-923 in factory map",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:44.537480+00:00",
+      "file": "sdd/tasks/completed/TASK-924-netsuite-registry-entry.md",
+      "completed_at": "2026-04-29T11:19:34.063470+00:00"
+    },
+    {
+      "id": "TASK-925",
+      "slug": "netsuite-mcp-tests",
+      "title": "NetSuite MCP Integration Tests",
+      "feature_id": "FEAT-135",
+      "feature": "netsuite-mcp-integration",
+      "spec": "sdd/specs/netsuite-mcp-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-922",
+        "TASK-923",
+        "TASK-924"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all prior tasks \u2014 must run after all are complete",
+      "assigned_to": null,
+      "started_at": "2026-04-29T11:05:44.537480+00:00",
+      "file": "sdd/tasks/completed/TASK-925-netsuite-mcp-tests.md",
+      "completed_at": "2026-04-29T11:36:47.090023+00:00"
+    }
+  ]
+}

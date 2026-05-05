@@ -1,0 +1,128 @@
+{
+  "feature": "FEAT-015",
+  "feature_id": null,
+  "spec": "sdd/specs/options-analytics.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-077",
+      "slug": "options-data-models",
+      "title": "Options Analytics Data Models",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-077-options-data-models.md"
+    },
+    {
+      "id": "TASK-078",
+      "slug": "black-scholes-engine",
+      "title": "Black-Scholes Pricing Engine",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-077"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-078-black-scholes-engine.md"
+    },
+    {
+      "id": "TASK-079",
+      "slug": "spread-analyzer",
+      "title": "Spread Strategy Analyzer",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-079-spread-analyzer.md"
+    },
+    {
+      "id": "TASK-080",
+      "slug": "pmcc-scanner",
+      "title": "PMCC Scanner",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-080-pmcc-scanner.md"
+    },
+    {
+      "id": "TASK-081",
+      "slug": "options-toolkit",
+      "title": "Options Analytics Toolkit Class",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-081-options-toolkit.md"
+    },
+    {
+      "id": "TASK-082",
+      "slug": "options-unit-tests",
+      "title": "Options Analytics Unit Tests",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080",
+        "TASK-081"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-082-options-unit-tests.md"
+    },
+    {
+      "id": "TASK-083",
+      "slug": "options-integration-tests",
+      "title": "Options Analytics Integration Tests",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080",
+        "TASK-081",
+        "TASK-082"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-083-options-integration-tests.md"
+    }
+  ]
+}

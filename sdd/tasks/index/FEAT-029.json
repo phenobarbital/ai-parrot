@@ -1,0 +1,87 @@
+{
+  "feature": "FEAT-029",
+  "feature_id": null,
+  "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-208",
+      "slug": "videoreel-model-changes",
+      "title": "Model Changes \u2014 VideoReelScene.reference_image + VideoReelRequest.reference_images",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-208-videoreel-model-changes.md"
+    },
+    {
+      "id": "TASK-209",
+      "slug": "process-scene-reference-image",
+      "title": "_process_scene() \u2014 Pass reference_image to generate_image()",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-209-process-scene-reference-image.md"
+    },
+    {
+      "id": "TASK-210",
+      "slug": "generate-video-reel-reference-images",
+      "title": "_generate_video_reel() \u2014 Apply reference_images onto scenes",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-210-generate-video-reel-reference-images.md"
+    },
+    {
+      "id": "TASK-211",
+      "slug": "handler-multipart-upload",
+      "title": "VideoReelHandler \u2014 Multipart Upload + Temp File Cleanup",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-211-handler-multipart-upload.md"
+    },
+    {
+      "id": "TASK-212",
+      "slug": "videoreel-upload-tests",
+      "title": "Tests \u2014 VideoReel Reference Image Upload",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-208",
+        "TASK-209",
+        "TASK-210",
+        "TASK-211"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-212-videoreel-upload-tests.md"
+    }
+  ]
+}

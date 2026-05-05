@@ -1,0 +1,119 @@
+{
+  "feature": "FEAT-040",
+  "feature_id": null,
+  "spec": "sdd/specs/integrations-hooks.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-268",
+      "slug": "core-package-init",
+      "title": "Create parrot/core/ Package",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-268-core-package-init.md"
+    },
+    {
+      "id": "TASK-269",
+      "slug": "move-hooks-to-core",
+      "title": "Move Hooks to parrot/core/hooks/",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-268"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-269-move-hooks-to-core.md"
+    },
+    {
+      "id": "TASK-270",
+      "slug": "move-eventbus-to-core",
+      "title": "Move EventBus to parrot/core/events/",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-268"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-270-move-eventbus-to-core.md"
+    },
+    {
+      "id": "TASK-271",
+      "slug": "update-autonomous-imports",
+      "title": "Update parrot/autonomous/ Imports",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-271-update-autonomous-imports.md"
+    },
+    {
+      "id": "TASK-272",
+      "slug": "hookmanager-eventbus-integration",
+      "title": "HookManager EventBus Dual-Emit",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-272-hookmanager-eventbus-integration.md"
+    },
+    {
+      "id": "TASK-273",
+      "slug": "hookable-agent-mixin",
+      "title": "HookableAgent Mixin",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-273-hookable-agent-mixin.md"
+    },
+    {
+      "id": "TASK-274",
+      "slug": "core-hooks-unit-tests",
+      "title": "Core Hooks & Events Unit Tests",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270",
+        "TASK-272",
+        "TASK-273"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-274-core-hooks-unit-tests.md"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "feature": "rest-api-for-lyria-music",
+  "feature_id": null,
+  "spec": "sdd/specs/rest-api-for-lyria-music.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-02-19T21:46:12+01:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "slug": "music-generation-model",
+      "title": "Define MusicGenerationRequest Pydantic Model",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-001-music-generation-model.md"
+    },
+    {
+      "id": "TASK-002",
+      "slug": "lyria-music-handler",
+      "title": "Implement LyriaMusicHandler",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-002-lyria-music-handler.md"
+    },
+    {
+      "id": "TASK-003",
+      "slug": "update-schema-helper",
+      "title": "Update GoogleGenerationHelper with Music Schema",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-003-update-schema-helper.md"
+    },
+    {
+      "id": "TASK-004",
+      "slug": "lyria-music-tests",
+      "title": "Write Tests for LyriaMusicHandler",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-004-lyria-music-tests.md"
+    }
+  ]
+}

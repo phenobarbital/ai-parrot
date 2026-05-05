@@ -1,0 +1,115 @@
+{
+  "feature": "FEAT-038",
+  "feature_id": null,
+  "spec": "sdd/specs/shelltool-security.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-255",
+      "slug": "security-data-models",
+      "title": "Security Data Models \u2014 Enums, ValidationResult, CommandRule, CommandSecurityError",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-255-security-data-models.md"
+    },
+    {
+      "id": "TASK-256",
+      "slug": "security-policy",
+      "title": "SecurityPolicy Dataclass & Defaults",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-255"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-256-security-policy.md"
+    },
+    {
+      "id": "TASK-257",
+      "slug": "command-sanitizer",
+      "title": "CommandSanitizer \u2014 6-Layer Validation Pipeline",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-255",
+        "TASK-256"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-257-command-sanitizer.md"
+    },
+    {
+      "id": "TASK-258",
+      "slug": "secure-shell-mixin",
+      "title": "SecureShellMixin \u2014 Integration Mixin",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-257"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-258-secure-shell-mixin.md"
+    },
+    {
+      "id": "TASK-259",
+      "slug": "shelltool-integration",
+      "title": "ShellTool Integration \u2014 Wire Security into Existing Code",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-258"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-259-shelltool-integration.md"
+    },
+    {
+      "id": "TASK-260",
+      "slug": "permissive-rm-rule",
+      "title": "Permissive Mode \u2014 rm CommandRule for Safe Single-File Deletion",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-257"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-260-permissive-rm-rule.md"
+    },
+    {
+      "id": "TASK-261",
+      "slug": "security-comprehensive-tests",
+      "title": "Comprehensive Unit Tests \u2014 ShellTool Security",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-259"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-261-security-comprehensive-tests.md"
+    }
+  ]
+}

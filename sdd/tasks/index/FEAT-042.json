@@ -1,0 +1,119 @@
+{
+  "feature": "FEAT-042",
+  "feature_id": null,
+  "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-282",
+      "slug": "conf-feature-flags",
+      "title": "Add ENABLE_DATABASE_BOTS and ENABLE_REGISTRY_BOTS to parrot/conf.py",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-282-conf-feature-flags.md"
+    },
+    {
+      "id": "TASK-283",
+      "slug": "botmanager-init-flags",
+      "title": "BotManager.__init__ \u2014 Add 4 flags and store as instance attributes",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-282"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-283-botmanager-init-flags.md"
+    },
+    {
+      "id": "TASK-284",
+      "slug": "load-bots-gating",
+      "title": "BotManager.load_bots \u2014 Gate registry and database steps",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-284-load-bots-gating.md"
+    },
+    {
+      "id": "TASK-285",
+      "slug": "on-startup-gating",
+      "title": "BotManager.on_startup \u2014 Replace global ENABLE_CREWS and skip BotConfigStorage",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-285-on-startup-gating.md"
+    },
+    {
+      "id": "TASK-286",
+      "slug": "setup-swagger-flag",
+      "title": "BotManager.setup \u2014 Use self.enable_swagger_api instead of global",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-286-setup-swagger-flag.md"
+    },
+    {
+      "id": "TASK-287",
+      "slug": "update-app-py",
+      "title": "Update app.py to pass enable_database_bots=True",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-287-update-app-py.md"
+    },
+    {
+      "id": "TASK-288",
+      "slug": "unit-tests-botmanager-flags",
+      "title": "Unit Tests for BotManager initialization flags",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-282",
+        "TASK-283",
+        "TASK-284",
+        "TASK-285",
+        "TASK-286",
+        "TASK-287"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-288-unit-tests-botmanager-flags.md"
+    }
+  ]
+}

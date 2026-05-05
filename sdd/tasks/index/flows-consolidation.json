@@ -1,0 +1,153 @@
+{
+  "feature": "flows-consolidation",
+  "feature_id": "FEAT-143",
+  "spec": "sdd/specs/flows-consolidation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-04T19:00:00+00:00",
+  "completed_at": "2026-05-04T18:14:53.398611+00:00",
+  "tasks": [
+    {
+      "id": "TASK-976",
+      "slug": "add-shared-data-and-noderesult",
+      "title": "Add shared_data to FlowContext + introduce NodeResult",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies core primitives that all subsequent tasks depend on",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-976-add-shared-data-and-noderesult.md",
+      "completed_at": "2026-05-04T16:50:53.363116+00:00"
+    },
+    {
+      "id": "TASK-977",
+      "slug": "extract-crewagentnode",
+      "title": "Extract CrewAgentNode to flows/crew/nodes.py",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-976"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-978 \u2014 different files, no overlap",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-977-extract-crewagentnode.md",
+      "completed_at": "2026-05-04T16:53:37.607224+00:00"
+    },
+    {
+      "id": "TASK-978",
+      "slug": "move-resultretrievaltool",
+      "title": "Move ResultRetrievalTool to flows/tools.py",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-976"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-977 \u2014 different files, no overlap",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-978-move-resultretrievaltool.md",
+      "completed_at": "2026-05-04T17:54:42.977873+00:00"
+    },
+    {
+      "id": "TASK-979",
+      "slug": "move-agentcrew-and-result-migration",
+      "title": "Move AgentCrew to flows/crew/crew.py + result model migration",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-976",
+        "TASK-977",
+        "TASK-978"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all prior tasks \u2014 touches the same crew.py file as TASK-977",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-979-move-agentcrew-and-result-migration.md",
+      "completed_at": "2026-05-04T18:14:53.398611+00:00"
+    },
+    {
+      "id": "TASK-980",
+      "slug": "refactor-modes-to-flowcontext",
+      "title": "Refactor sequential/loop/parallel modes to use FlowContext",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-979"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies the same crew.py as TASK-979 \u2014 must run after it",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-980-refactor-modes-to-flowcontext.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    },
+    {
+      "id": "TASK-981",
+      "slug": "move-orchestrator-agents",
+      "title": "Create flows/agents/ package and move orchestrator agents",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-979"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-980 \u2014 different files (agents/ vs crew.py)",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-981-move-orchestrator-agents.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    },
+    {
+      "id": "TASK-982",
+      "slug": "update-flows-init-exports",
+      "title": "Update flows/__init__.py exports",
+      "feature_id": "FEAT-143",
+      "feature": "flows-consolidation",
+      "spec": "sdd/specs/flows-consolidation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-979",
+        "TASK-980",
+        "TASK-981"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration \u2014 depends on all prior move tasks being complete",
+      "assigned_to": null,
+      "started_at": "2026-05-04T13:13:30.336584+00:00",
+      "file": "sdd/tasks/completed/TASK-982-update-flows-init-exports.md",
+      "completed_at": "2026-05-04T00:00:00Z"
+    }
+  ]
+}

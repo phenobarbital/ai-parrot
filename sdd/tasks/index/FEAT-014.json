@@ -1,0 +1,136 @@
+{
+  "feature": "FEAT-014",
+  "feature_id": null,
+  "spec": "sdd/specs/granular-permission-system.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-059",
+      "slug": "permission-data-models",
+      "title": "Permission Data Models",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-059-permission-data-models.md"
+    },
+    {
+      "id": "TASK-060",
+      "slug": "permission-resolver",
+      "title": "Permission Resolver",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-060-permission-resolver.md"
+    },
+    {
+      "id": "TASK-061",
+      "slug": "requires-permission-decorator",
+      "title": "Requires Permission Decorator",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-061-requires-permission-decorator.md"
+    },
+    {
+      "id": "TASK-062",
+      "slug": "abstracttool-layer2-enforcement",
+      "title": "AbstractTool Layer 2 Enforcement",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-062-abstracttool-layer2-enforcement.md"
+    },
+    {
+      "id": "TASK-063",
+      "slug": "abstracttoolkit-layer1-filtering",
+      "title": "AbstractToolkit Layer 1 Filtering",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-063-abstracttoolkit-layer1-filtering.md"
+    },
+    {
+      "id": "TASK-064",
+      "slug": "toolmanager-resolver-injection",
+      "title": "ToolManager Resolver Injection",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060",
+        "TASK-062"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-064-toolmanager-resolver-injection.md"
+    },
+    {
+      "id": "TASK-065",
+      "slug": "jiratoolkit-permissions",
+      "title": "JiraToolkit Permission Annotations",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-061"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-065-jiratoolkit-permissions.md"
+    },
+    {
+      "id": "TASK-066",
+      "slug": "permission-integration-tests",
+      "title": "Permission System Integration Tests",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060",
+        "TASK-061",
+        "TASK-062",
+        "TASK-063",
+        "TASK-064"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-066-permission-integration-tests.md"
+    }
+  ]
+}

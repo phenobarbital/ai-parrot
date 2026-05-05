@@ -1,0 +1,140 @@
+{
+  "feature": "openai-model-deprecation",
+  "feature_id": "FEAT-138",
+  "spec": "sdd/specs/openai-model-deprecation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-05-01T00:56:35.730744+00:00",
+  "tasks": [
+    {
+      "id": "TASK-944",
+      "slug": "openai-model-catalog-and-deprecations",
+      "title": "Refresh OpenAIModel enum + add DEPRECATIONS registry and helpers",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; nothing depends on its parallelism. Per-spec sequential strategy.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-944-openai-model-catalog-and-deprecations.md",
+      "completed_at": "2026-04-29T23:51:27.170395+00:00"
+    },
+    {
+      "id": "TASK-945",
+      "slug": "openai-client-deprecation-warning-chokepoint",
+      "title": "Add _normalize_model chokepoint that emits one-shot DeprecationWarning",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-944"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits parrot/clients/gpt.py \u2014 same file as TASK-946. Sequential within spec.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-945-openai-client-deprecation-warning-chokepoint.md",
+      "completed_at": "2026-04-30T00:17:10.855623+00:00"
+    },
+    {
+      "id": "TASK-946",
+      "slug": "openai-client-defaults-and-model-sets",
+      "title": "Bump OpenAIClient defaults to gpt-5-mini + refresh model sets",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-944",
+        "TASK-945"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as TASK-945 (parrot/clients/gpt.py). Must run after TASK-945 to avoid merge churn.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-946-openai-client-defaults-and-model-sets.md",
+      "completed_at": "2026-04-30T00:17:10.855623+00:00"
+    },
+    {
+      "id": "TASK-947",
+      "slug": "migrate-chat-handler-and-loaders-defaults",
+      "title": "Migrate hard-coded model strings in handlers/chat.py and loaders/abstract.py",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-944"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could parallelise with TASK-945/948 (different files), but per spec Worktree Strategy keep all tasks sequential in one worktree.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-947-migrate-chat-handler-and-loaders-defaults.md",
+      "completed_at": "2026-04-30T00:33:07.474781+00:00"
+    },
+    {
+      "id": "TASK-948",
+      "slug": "llm-handler-partition-active-deprecated",
+      "title": "Partition LLMClient._get_supported_models into active/deprecated",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-944"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Different file from TASK-945/946/947 but kept sequential per spec.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-948-llm-handler-partition-active-deprecated.md",
+      "completed_at": "2026-04-30T01:00:33.487918+00:00"
+    },
+    {
+      "id": "TASK-949",
+      "slug": "deprecation-test-suite",
+      "title": "Test suite for OpenAIModel catalog refresh + deprecation registry",
+      "feature_id": "FEAT-138",
+      "feature": "openai-model-deprecation",
+      "spec": "sdd/specs/openai-model-deprecation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-944",
+        "TASK-945",
+        "TASK-946",
+        "TASK-947",
+        "TASK-948"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final verification task \u2014 must run after all implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-29T23:21:08.346201+00:00",
+      "created_at": "2026-04-29T23:01:56.266377+00:00",
+      "file": "sdd/tasks/completed/TASK-942-deprecation-test-suite.md",
+      "completed_at": "2026-05-01T00:56:35.730744+00:00"
+    }
+  ]
+}

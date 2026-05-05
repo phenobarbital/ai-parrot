@@ -1,0 +1,129 @@
+{
+  "feature": "product-on-shelves-illumination",
+  "feature_id": "FEAT-091",
+  "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-10T12:10:00+00:00",
+  "tasks": [
+    {
+      "id": "TASK-628",
+      "slug": "promote-check-illumination-to-base",
+      "title": "Promote _check_illumination() to AbstractPlanogramType",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "First task \u2014 no dependencies; all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-628-promote-check-illumination-to-base.md"
+    },
+    {
+      "id": "TASK-629",
+      "slug": "remove-duplicate-check-illumination-endcap",
+      "title": "Remove duplicate _check_illumination() from EndcapNoShelvesPromotional",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-628"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires base class promotion (TASK-628) to be complete first",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-629-remove-duplicate-check-illumination-endcap.md"
+    },
+    {
+      "id": "TASK-630",
+      "slug": "plan-py-illumination-orchestration",
+      "title": "Add illumination enrichment hook in plan.py (Step 3.5)",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-628"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires TASK-628; targets plan.py (different file from TASK-629)",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-630-plan-py-illumination-orchestration.md"
+    },
+    {
+      "id": "TASK-631",
+      "slug": "compliance-illumination-penalty",
+      "title": "Add illumination penalty to ProductOnShelves.check_planogram_compliance()",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-628",
+        "TASK-630",
+        "TASK-633"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-630 (enrichment) and TASK-633 (insertion-index-capture pattern reused for label updates)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-631-compliance-illumination-penalty.md"
+    },
+    {
+      "id": "TASK-632",
+      "slug": "unit-tests-product-on-shelves-illumination",
+      "title": "Unit tests for ProductOnShelves illumination",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-628",
+        "TASK-630",
+        "TASK-631",
+        "TASK-633"
+      ],
+      "parallel": false,
+      "parallelism_notes": "All implementation tasks (including TASK-633 FEAT-090 fixes) must be done before tests",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-632-unit-tests-product-on-shelves-illumination.md"
+    },
+    {
+      "id": "TASK-633",
+      "slug": "fix-feat090-bugs-endcap",
+      "title": "Fix FEAT-090 latent bugs in EndcapNoShelvesPromotional",
+      "feature_id": "FEAT-091",
+      "feature": "product-on-shelves-illumination",
+      "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-629"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must follow TASK-629 (same method area in endcap_no_shelves_promotional.py); prerequisite for TASK-631 which reuses the insertion-index-capture pattern",
+      "assigned_to": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
+      "completed_at": "2026-04-10T12:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-633-fix-feat090-bugs-endcap.md"
+    }
+  ]
+}

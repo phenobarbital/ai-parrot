@@ -1,0 +1,88 @@
+{
+  "feature": "jira-analyst-systemprompt-hardening",
+  "feature_id": "FEAT-139",
+  "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-01T00:10:19.619493+00:00",
+  "completed_at": "2026-05-01T02:15:00.000000+00:00",
+  "tasks": [
+    {
+      "id": "TASK-950",
+      "slug": "jira-grounding-layer",
+      "title": "Define JIRA_GROUNDING_LAYER anti-hallucination prompt layer",
+      "feature_id": "FEAT-139",
+      "feature": "jira-analyst-systemprompt-hardening",
+      "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies domain_layers.py \u2014 shared with TASK-951",
+      "assigned_to": null,
+      "started_at": "2026-05-01T00:20:09.112764+00:00",
+      "file": "sdd/tasks/completed/TASK-950-jira-grounding-layer.md",
+      "completed_at": "2026-05-01T00:53:52.132830+00:00"
+    },
+    {
+      "id": "TASK-951",
+      "slug": "jira-operations-layer",
+      "title": "Extract JIRA_OPERATIONS_LAYER from monolithic prompt",
+      "feature_id": "FEAT-139",
+      "feature": "jira-analyst-systemprompt-hardening",
+      "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-950"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-950; modifies same file (domain_layers.py)",
+      "assigned_to": null,
+      "started_at": "2026-05-01T00:20:09.112764+00:00",
+      "file": "sdd/tasks/completed/TASK-951-jira-operations-layer.md",
+      "completed_at": "2026-05-01T00:58:27.146034+00:00"
+    },
+    {
+      "id": "TASK-952",
+      "slug": "jiraspecialist-promptbuilder-migration",
+      "title": "Migrate JiraSpecialist from system_prompt_template to PromptBuilder",
+      "feature_id": "FEAT-139",
+      "feature": "jira-analyst-systemprompt-hardening",
+      "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-950",
+        "TASK-951"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both layer tasks; touches jira_specialist.py",
+      "assigned_to": null,
+      "started_at": "2026-05-01T00:20:09.112764+00:00",
+      "file": "sdd/tasks/completed/TASK-952-jiraspecialist-promptbuilder-migration.md",
+      "completed_at": "2026-05-01T01:03:48.870069+00:00"
+    },
+    {
+      "id": "TASK-953",
+      "slug": "jiratoolkit-error-hardening",
+      "title": "Harden JiraToolkit error messages for LLM consumption",
+      "feature_id": "FEAT-139",
+      "feature": "jira-analyst-systemprompt-hardening",
+      "spec": "sdd/specs/jira-analyst-systemprompt-hardening.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of prompt layer tasks \u2014 touches jiratoolkit.py only (different package)",
+      "assigned_to": null,
+      "started_at": "2026-05-01T00:20:09.112764+00:00",
+      "completed_at": "2026-05-01T02:15:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-953-jiratoolkit-error-hardening.md"
+    }
+  ]
+}

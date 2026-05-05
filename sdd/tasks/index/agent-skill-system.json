@@ -1,0 +1,137 @@
+{
+  "feature": "agent-skill-system",
+  "feature_id": "FEAT-088",
+  "spec": "sdd/specs/agent-skill-system.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-07T11:09:31.488234+00:00",
+  "tasks": [
+    {
+      "id": "TASK-613",
+      "slug": "skill-definition-model",
+      "title": "Skill Definition Model & YAML Parser",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation model \u2014 all other tasks depend on SkillDefinition and parse_skill_file",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-613-skill-definition-model.md",
+      "completed_at": "2026-04-07T10:45:49.743639+00:00"
+    },
+    {
+      "id": "TASK-614",
+      "slug": "skill-file-registry",
+      "title": "Skill File Registry",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillDefinition model and parse_skill_file from TASK-613",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-614-skill-file-registry.md",
+      "completed_at": "2026-04-07T10:54:27.343567+00:00"
+    },
+    {
+      "id": "TASK-615",
+      "slug": "skill-trigger-middleware",
+      "title": "Skill Trigger Middleware",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillFileRegistry (TASK-614) for trigger lookup and SkillDefinition (TASK-613)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-615-skill-trigger-middleware.md",
+      "completed_at": "2026-04-07T11:00:35.534363+00:00"
+    },
+    {
+      "id": "TASK-616",
+      "slug": "mixin-prompt-integration",
+      "title": "Mixin & Prompt Integration",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-614",
+        "TASK-615"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires registry + middleware into bot lifecycle; modifies create_system_prompt in abstract.py",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-616-mixin-prompt-integration.md",
+      "completed_at": "2026-04-07T11:03:11.895198+00:00"
+    },
+    {
+      "id": "TASK-617",
+      "slug": "learned-skill-persistence-tool",
+      "title": "Learned Skill Persistence Tool",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-616"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on file registry + mixin save_learned_skill integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-617-learned-skill-persistence-tool.md",
+      "completed_at": "2026-04-07T11:05:26.030640+00:00"
+    },
+    {
+      "id": "TASK-618",
+      "slug": "skill-system-integration-tests",
+      "title": "Skill System Integration Tests",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-615",
+        "TASK-616",
+        "TASK-617"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all previous tasks \u2014 verifies full system integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-618-skill-system-integration-tests.md",
+      "completed_at": "2026-04-07T11:09:31.488234+00:00"
+    }
+  ]
+}
