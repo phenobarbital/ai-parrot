@@ -91,6 +91,7 @@ from .models.inputs import (
     UpdateRecordInput,
     UpdateRecordsInput,
 )
+from .smart_fields import select_smart_fields
 from .transport import (
     AbstractOdooTransport,
     Protocol,
@@ -183,6 +184,7 @@ class OdooToolkit(AbstractToolkit):
         self.protocol: Protocol = protocol
         self._transport: AbstractOdooTransport | None = transport
         self._auth_lock = asyncio.Lock()
+        self._fields_cache: dict[str, dict[str, Any]] = {}
         self.logger = logging.getLogger("OdooToolkit")
 
     # ── Lifecycle ───────────────────────────────────────────────────────────
@@ -253,6 +255,17 @@ class OdooToolkit(AbstractToolkit):
             kw["fields"] = fields
         rows = await self._execute(model, "read", [[record_id]], kw)
         return rows[0] if rows else {}
+
+    async def _get_fields_metadata(self, model: str) -> dict[str, Any]:
+        """Return cached ``fields_get`` metadata for *model*.
+
+        Calls Odoo once on cache miss, then stores the result.  Cache is
+        per-toolkit-instance and has no TTL (field schemas don't change
+        during a session).
+        """
+        if model not in self._fields_cache:
+            self._fields_cache[model] = await self.fields_get(model)
+        return self._fields_cache[model]
 
     @staticmethod
     async def _resolve_binary_source(source: str) -> bytes:
@@ -347,7 +360,20 @@ class OdooToolkit(AbstractToolkit):
         offset: int = 0,
         order: Optional[str] = None,
     ) -> SearchResult:
-        """Search records in any Odoo model with domain filters & pagination."""
+        """Search records in any Odoo model with domain filters & pagination.
+
+        When ``fields`` is omitted, smart field selection automatically picks
+        the top 15 most LLM-useful fields for the model (avoiding binary blobs
+        and technical audit columns).
+        """
+        # Smart-field fallback: auto-select when caller omits fields
+        auto_selected = False
+        fields_meta: Optional[dict[str, Any]] = None
+        if fields is None:
+            fields_meta = await self._get_fields_metadata(model)
+            fields = select_smart_fields(fields_meta)
+            auto_selected = True
+
         kwargs: dict[str, Any] = {"limit": limit, "offset": offset}
         if fields:
             kwargs["fields"] = fields
@@ -362,6 +388,17 @@ class OdooToolkit(AbstractToolkit):
             offset=offset,
             model=model,
             fields=fields,
+            metadata=FieldSelectionMetadata(
+                fields_returned=len(fields) if fields else 0,
+                field_selection_method="auto" if auto_selected else "requested",
+                total_fields_available=len(fields_meta) if fields_meta else None,
+                note=(
+                    f"Smart field selection chose {len(fields)} of "
+                    f"{len(fields_meta)} available fields."
+                    if auto_selected and fields_meta
+                    else "Caller-requested fields used."
+                ),
+            ),
         )
 
     @tool_schema(GetRecordInput)
@@ -371,12 +408,30 @@ class OdooToolkit(AbstractToolkit):
         record_id: int,
         fields: Optional[list[str]] = None,
     ) -> RecordResult:
-        """Read a single record by id."""
+        """Read a single record by id.
+
+        When ``fields`` is omitted, smart field selection automatically picks
+        the top 15 most LLM-useful fields for the model.
+        """
+        # Smart-field fallback: auto-select when caller omits fields
+        auto_selected = False
+        fields_meta: Optional[dict[str, Any]] = None
+        if fields is None:
+            fields_meta = await self._get_fields_metadata(model)
+            fields = select_smart_fields(fields_meta)
+            auto_selected = True
+
         record = await self._read_one(model, record_id, fields)
         metadata = FieldSelectionMetadata(
             fields_returned=len(record),
-            field_selection_method="requested" if fields else "all",
-            note="Requested fields were used." if fields else "No explicit fields requested.",
+            field_selection_method="auto" if auto_selected else "requested",
+            total_fields_available=len(fields_meta) if fields_meta else None,
+            note=(
+                f"Smart field selection chose {len(fields)} of "
+                f"{len(fields_meta)} available fields."
+                if auto_selected and fields_meta
+                else "Caller-requested fields used."
+            ),
         )
         return RecordResult(record=record, model=model, metadata=metadata)
 

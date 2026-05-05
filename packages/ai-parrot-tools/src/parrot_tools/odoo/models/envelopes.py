@@ -58,6 +58,9 @@ class SearchResult(BaseModel):
     offset: int = 0
     model: str
     fields: Optional[list[str]] = None
+    metadata: Optional[FieldSelectionMetadata] = None
+
+    model_config = ConfigDict(protected_namespaces=())
 
 
 class RecordResult(BaseModel):
