@@ -14,7 +14,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,7 +22,8 @@
       "parallelism_notes": "Foundation task \u2014 all other tasks import from modules created here. Must complete first.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-983-oauth2-models-and-registry.md"
+      "completed_at": "2026-05-05T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-983-oauth2-models-and-registry.md"
     },
     {
       "id": "TASK-984",
@@ -31,7 +32,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,7 +42,8 @@
       "parallelism_notes": "Extends TASK-983 models and registry. Shares parrot/integrations/oauth2/ package.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-984-jira-provider-and-persistence.md"
+      "completed_at": "2026-05-05T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-984-jira-provider-and-persistence.md"
     },
     {
       "id": "TASK-985",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,7 +63,8 @@
       "parallelism_notes": "Orchestrates registry + persistence from TASK-983 and TASK-984.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-985-integrations-service.md"
+      "completed_at": "2026-05-05T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-985-integrations-service.md"
     },
     {
       "id": "TASK-986",
