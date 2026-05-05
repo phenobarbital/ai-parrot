@@ -20,13 +20,7 @@ from parrot.integrations.oauth2.models import AuthRequiredEnvelope
 from parrot.integrations.oauth2.service import IntegrationsService
 
 
-def _make_mock_db() -> tuple[MagicMock, AsyncMock]:
-    """Return (mock_db_cls, mock_db_instance) for patching DocumentDb."""
-    mock_db_instance = AsyncMock()
-    mock_db_cls = MagicMock()
-    mock_db_cls.return_value.__aenter__ = AsyncMock(return_value=mock_db_instance)
-    mock_db_cls.return_value.__aexit__ = AsyncMock(return_value=False)
-    return mock_db_cls, mock_db_instance
+from .helpers import make_mock_db as _make_mock_db
 
 
 class TestE2EAuthRequiredEnvelopeWhenNotConnected:

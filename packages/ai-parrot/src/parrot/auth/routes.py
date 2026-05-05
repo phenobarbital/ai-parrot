@@ -102,7 +102,9 @@ async def _handle_web_callback(
     extra: Dict[str, Any] = state_payload.get("extra") or {}
     return_origin: str | None = extra.get("return_origin")
     user_id: str | None = state_payload.get("user_id")
-    provider = "jira"
+    # provider_id is embedded into extra_state by IntegrationsService.start_connect();
+    # fall back to "jira" only for backward-compatibility with pre-FEAT-144 state tokens.
+    provider: str = extra.get("provider_id") or "jira"
 
     # Validate return_origin against the server-side allowlist.
     if not return_origin or return_origin not in WEB_OAUTH_ALLOWED_ORIGINS:
