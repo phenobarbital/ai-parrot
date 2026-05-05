@@ -44,6 +44,9 @@ from .credentials_utils import decrypt_credential as _decrypt_credential
 if TYPE_CHECKING:
     from ..manager import BotManager
 
+# FEAT-146: Web HITL ContextVar helpers
+from .web_hitl import set_current_web_session, reset_current_web_session
+
 
 @is_authenticated()
 @user_session()
@@ -1380,6 +1383,11 @@ class AgentTalk(BaseView):
         # Extract ws_channel_id for notification
         ws_channel_id = data.pop('ws_channel_id', None)
 
+        # FEAT-146: Set the current_web_session ContextVar so WebHumanTool can
+        # resolve the active WebSocket channel without being passed it explicitly.
+        # Reset in the finally block below to ensure clean teardown.
+        _hitl_token = set_current_web_session(ws_channel_id or session_id)
+
         # --- WebSearchAgent-specific flags ---
         _ws_originals = {}  # saved originals for restore
         if isinstance(agent, WebSearchAgent):
@@ -1551,6 +1559,8 @@ class AgentTalk(BaseView):
             # Restore WebSearchAgent flags
             for key, original_value in _ws_originals.items():
                 setattr(agent, key, original_value)
+            # FEAT-146: Reset the current_web_session ContextVar
+            reset_current_web_session(_hitl_token)
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Notify WebSocket channel if requested
