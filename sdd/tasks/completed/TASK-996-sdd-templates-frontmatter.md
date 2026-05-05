@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -139,4 +139,15 @@ done
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-996`
+**Date**: 2026-05-05
+**Notes**: Prepended an 8-line YAML frontmatter block (`type: feature`, `base_branch: dev`, with inline guidance comment) to the three templates. Sanity-checked all three with `scripts.sdd.sdd_meta.parse()` — each parses to `FlowMeta(type='feature', base_branch='dev')`.
+
+**Files modified** (exactly as scoped):
+- `sdd/templates/spec.md`
+- `sdd/templates/brainstorm.md`
+- `sdd/templates/proposal.md`
+
+**Heads-up for downstream tasks**: the worktree's `.gitignore` has a global `templates/` rule (line 245) that masks any future new template files. The three templates above were already tracked before that rule landed, so the edit committed cleanly — but TASK-1002 (docs) might want to flag this as a follow-up if new templates are ever added under `sdd/templates/`.
+
+**Deviations from contract**: none.

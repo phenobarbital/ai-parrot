@@ -16298,14 +16298,15 @@
       "effort": "S",
       "depends_on": [],
       "parallelism_notes": "Independent of TASK-994/995 but logically grouped with the refactor; sequential to keep the worktree single.",
-      "file": "sdd/tasks/active/TASK-996-sdd-templates-frontmatter.md",
+      "file": "sdd/tasks/completed/TASK-996-sdd-templates-frontmatter.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:09:45+00:00"
+      "started_at": "2026-05-05T01:09:45+00:00",
+      "completed_at": "2026-05-05T01:12:18+00:00"
     },
     {
       "id": "TASK-997",
