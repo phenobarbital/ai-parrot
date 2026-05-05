@@ -18,7 +18,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
@@ -85,8 +85,19 @@ class FormStorage(ABC):
     async def list_forms(self) -> list[dict[str, str]]:
         """List all persisted forms.
 
+        Each dict in the returned list MUST include ``form_id`` and
+        ``version`` (required keys). Implementations SHOULD also include
+        ``title``, ``description``, and ``created_at`` when the backend
+        has them available.
+
+        ``description`` may be ``None`` when the form has no description.
+        ``created_at`` is an ISO-8601 string produced via
+        ``datetime.isoformat()`` (e.g. ``"2026-04-12T10:31:00+00:00"``)
+        or ``None`` when not available.
+
         Returns:
-            List of dicts with at minimum {"form_id": ..., "title": ...}.
+            List of dicts with at minimum ``form_id`` and ``version``.
+            Optional keys: ``title``, ``description``, ``created_at``.
         """
         ...
 
