@@ -194,7 +194,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -205,7 +205,8 @@
       "parallelism_notes": "Shares AgentChat.svelte modification with TASK-991. Must run after TASK-991 to avoid merge conflicts.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-992-connect-integration-pill.md"
+      "completed_at": "2026-05-05T06:00:00Z",
+      "file": "sdd/tasks/completed/TASK-992-connect-integration-pill.md"
     },
     {
       "id": "TASK-993",
