@@ -32,7 +32,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1013 for model definitions but creates a new standalone file",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1014-smart-field-selection.md"
+      "completed_at": "2026-05-05T13:11:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1014-smart-field-selection.md"
     },
     {
       "id": "TASK-1015",
