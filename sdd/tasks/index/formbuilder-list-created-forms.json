@@ -68,7 +68,7 @@
       "feature_id": "FEAT-148",
       "feature": "formbuilder-list-created-forms",
       "spec": "sdd/specs/formbuilder-list-created-forms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -78,8 +78,8 @@
       "parallelism_notes": "Asserts the new dict shape produced by TASK-1030; cannot run before that task ships.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1031-postgres-list-forms-unit-tests.md"
+      "completed_at": "2026-05-05T15:16:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1031-postgres-list-forms-unit-tests.md"
     },
     {
       "id": "TASK-1032",
