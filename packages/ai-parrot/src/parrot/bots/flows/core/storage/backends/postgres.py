@@ -63,7 +63,7 @@ class PostgresResultStorage(ResultStorage):
             raise ValueError(
                 f"Refusing to issue DDL for unsafe table name: {table!r}"
             )
-        ddl = (
+        await conn.execute(
             f"CREATE TABLE IF NOT EXISTS {table} ("
             f"  id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),"
             f"  crew_name   text        NOT NULL,"
@@ -72,11 +72,14 @@ class PostgresResultStorage(ResultStorage):
             f"  session_id  text,"
             f"  timestamp   timestamptz NOT NULL DEFAULT now(),"
             f"  payload     jsonb       NOT NULL"
-            f");"
-            f"CREATE INDEX IF NOT EXISTS {table}_crew_name_idx ON {table} (crew_name);"
-            f"CREATE INDEX IF NOT EXISTS {table}_session_id_idx ON {table} (session_id);"
+            f")"
         )
-        await conn.execute(ddl)
+        await conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {table}_crew_name_idx ON {table} (crew_name)"
+        )
+        await conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {table}_session_id_idx ON {table} (session_id)"
+        )
         self._initialised.add(table)
 
     async def save(self, collection: str, document: dict[str, Any]) -> None:

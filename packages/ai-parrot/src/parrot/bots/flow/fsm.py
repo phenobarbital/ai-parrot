@@ -398,7 +398,7 @@ class AgentsFlow(PersistenceMixin, SynthesisMixin):
         self._result_storage: Optional["ResultStorage"] = (
             result_storage if isinstance(result_storage, ResultStorage) else None
         )
-        self._persist_tasks: set = set()
+        self._persist_tasks: set[asyncio.Task] = set()
 
         # Add initial agents
         if agents:

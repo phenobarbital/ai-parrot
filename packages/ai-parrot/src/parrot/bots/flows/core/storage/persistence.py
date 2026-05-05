@@ -19,14 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from navconfig.logging import logging
 
 from .backends import ResultStorage, get_result_storage
-
-if TYPE_CHECKING:
-    pass
 
 
 class PersistenceMixin:

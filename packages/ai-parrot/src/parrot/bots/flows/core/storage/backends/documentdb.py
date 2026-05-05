@@ -32,8 +32,15 @@ class DocumentDbResultStorage(ResultStorage):
             collection: Target MongoDB collection name.
             document: Execution result document.
         """
-        async with DocumentDb() as db:
-            await db.write(collection, document)
+        try:
+            async with DocumentDb() as db:
+                await db.write(collection, document)
+        except Exception as exc:
+            self.logger.warning(
+                "DocumentDbResultStorage save failed for collection=%s: %s",
+                collection,
+                exc,
+            )
 
     async def close(self) -> None:
         """No-op — connection lifecycle is per-write in this backend."""

@@ -61,6 +61,9 @@ class RedisResultStorage(ResultStorage):
             conn = await self._ensure()
             crew_name = document.get("crew_name", "unknown")
             ts_ms = int(time.time() * 1000)
+            # NOTE: Millisecond precision means two concurrent runs of the same crew
+            # in the same millisecond produce the same key. The second write overwrites
+            # the first. This is acceptable under the fire-and-forget semantics.
             key = f"{collection}:{crew_name}:{ts_ms}"
             value = json.dumps(document, default=str)
             if self._ttl > 0:
