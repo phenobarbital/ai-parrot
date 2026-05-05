@@ -1,7 +1,7 @@
 """File manager interfaces — re-exported from navigator.utils.file.
 
 This module is a backward-compat shim. The single source of truth
-is navigator.utils.file (navigator-api >= 2.14.1). New code SHOULD
+is navigator.utils.file (navigator-api >= 3.0.3). New code SHOULD
 import directly from navigator.utils.file; existing code that
 uses parrot.interfaces.file continues to work via this shim.
 

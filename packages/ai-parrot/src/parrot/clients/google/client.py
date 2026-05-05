@@ -978,12 +978,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return {"result": json_compatible_result}
 
     def _summarize_tool_result(self, result: Any, max_length: int = 1200) -> str:
-        """Create a short, human-readable summary of a tool result."""
+        """Create a short, human-readable summary of a tool result.
+
+        Empty / None / `[]` / `{}` results are surfaced as the explicit
+        sentinel ``"returned no data"`` instead of the literal string
+        ``"None"``. Without this, Gemini-2.5-pro tends to treat a bare
+        ``None`` as ambiguous and reply with imperative-to-self meta
+        text ("If you have sufficient information, provide a final
+        answer…") rather than reporting the empty result.
+        """
 
         try:
+            if result is None:
+                return "returned no data"
             if isinstance(result, Exception):
                 summary = f"Error: {result}"
             elif isinstance(result, pd.DataFrame):
+                if result.empty:
+                    return "returned no data (empty DataFrame)"
                 preview = result.head(5)
                 summary = preview.to_string(index=True)
             elif hasattr(result, 'model_dump'):
@@ -991,6 +1003,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     self._coerce_json_keys_to_str(result.model_dump())
                 )
             elif isinstance(result, (dict, list)):
+                if not result:
+                    return "returned no data (empty result)"
                 summary = self._json.dumps(
                     self._coerce_json_keys_to_str(result)
                 )
@@ -999,7 +1013,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         except Exception as exc:  # pylint: disable=broad-except
             summary = f"Unable to summarize result: {exc}"
 
-        summary = summary.strip() or "[empty result]"
+        summary = summary.strip() or "returned no data"
         if len(summary) > max_length:
             summary = summary[:max_length].rstrip() + "…"
         return summary
@@ -1015,6 +1029,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if not function_calls or not tool_results:
             return None
 
+        # Plain data summary — no trailing "continue reasoning" instruction.
+        # The function_response Parts already carry the canonical tool output;
+        # this textual summary is a readability aid for Gemini, not a place
+        # for meta-instructions. Telling the model to "continue reasoning"
+        # here was priming Gemini-2.5-pro to emit imperative-to-self text
+        # ("If you have sufficient information, provide a final answer…")
+        # in place of an actual answer when a tool returned no data.
         summary_lines = ["Tool execution summaries:"]
         for fc, result in zip(function_calls, tool_results):
             summary_lines.append(
@@ -1023,10 +1044,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         if original_prompt:
             summary_lines.append(f"Original Request: {original_prompt}")
-
-        summary_lines.append(
-            "Use the information above to continue reasoning. Call additional tools if needed to fully answer the request."
-        )
 
         summary_text = "\n".join(summary_lines)
         return Part(text=summary_text)

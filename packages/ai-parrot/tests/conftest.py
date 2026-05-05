@@ -94,9 +94,9 @@ def _install_navigator_stubs() -> None:
 
     # ── navigator.utils.file stubs ─────────────────────────────────────────
     # FEAT-124 added parrot.interfaces.file and parrot.tools.filemanager that
-    # import symbols from navigator.utils.file which only exist in
-    # navigator-api >= 2.15.  Install stubs so tests can collect without
-    # requiring that version.
+    # import symbols from navigator.utils.file. The full FileManager interface
+    # ships with navigator-api >= 3.0.3 (see pyproject.toml). Install stubs so
+    # tests can collect without requiring that version installed.
     import navigator.utils.file as _nuf  # already importable, just missing attrs
 
     _FileManagerInterface = type(
