@@ -14,7 +14,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all others import these models",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1013-odoo-pydantic-models-phase1-phase2.md"
+      "completed_at": "2026-05-05T13:10:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1013-odoo-pydantic-models-phase1-phase2.md"
     },
     {
       "id": "TASK-1014",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1013"],
+      "depends_on": [
+        "TASK-1013"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1013 for model definitions but creates a new standalone file",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1014"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1014"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential with other toolkit.py tasks",
       "assigned_to": null,
@@ -71,7 +76,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1015"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1015"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential after TASK-1015",
       "assigned_to": null,
@@ -89,7 +97,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1013"],
+      "depends_on": [
+        "TASK-1013"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential with other toolkit.py tasks",
       "assigned_to": null,
@@ -107,7 +117,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1015"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1015"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential; Phase 2 tasks depend on this",
       "assigned_to": null,
@@ -125,7 +138,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1013", "TASK-1015"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1015"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential",
       "assigned_to": null,
@@ -143,7 +159,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1015"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1015"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential",
       "assigned_to": null,
@@ -161,7 +180,15 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1014", "TASK-1015", "TASK-1016", "TASK-1017", "TASK-1018", "TASK-1019", "TASK-1020"],
+      "depends_on": [
+        "TASK-1014",
+        "TASK-1015",
+        "TASK-1016",
+        "TASK-1017",
+        "TASK-1018",
+        "TASK-1019",
+        "TASK-1020"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on all Phase 1 implementation tasks",
       "assigned_to": null,
@@ -179,7 +206,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1015"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1015"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential after Phase 1",
       "assigned_to": null,
@@ -197,7 +227,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1013"],
+      "depends_on": [
+        "TASK-1013"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential",
       "assigned_to": null,
@@ -215,7 +247,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1013"],
+      "depends_on": [
+        "TASK-1013"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py — sequential",
       "assigned_to": null,
@@ -233,7 +267,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1018"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1018"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py; depends on schema_catalog from TASK-1018",
       "assigned_to": null,
@@ -251,7 +288,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1013", "TASK-1018"],
+      "depends_on": [
+        "TASK-1013",
+        "TASK-1018"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies toolkit.py; depends on get_odoo_profile from TASK-1018",
       "assigned_to": null,
@@ -269,7 +309,13 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1022", "TASK-1023", "TASK-1024", "TASK-1025", "TASK-1026"],
+      "depends_on": [
+        "TASK-1022",
+        "TASK-1023",
+        "TASK-1024",
+        "TASK-1025",
+        "TASK-1026"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on all Phase 2 implementation tasks",
       "assigned_to": null,
