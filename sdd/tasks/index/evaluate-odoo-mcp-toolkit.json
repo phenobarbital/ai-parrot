@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-05T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-05T13:57:22.346004+00:00",
   "tasks": [
     {
       "id": "TASK-1013",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all others import these models",
+      "parallelism_notes": "Foundation task \u2014 all others import these models",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1013-odoo-pydantic-models-phase1-phase2.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1013-odoo-pydantic-models-phase1-phase2.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1014",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Depends on TASK-1013 for model definitions but creates a new standalone file",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1014-smart-field-selection.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1014-smart-field-selection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1015",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,11 +62,12 @@
         "TASK-1014"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential with other toolkit.py tasks",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential with other toolkit.py tasks",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1015-smart-field-integration.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1015-smart-field-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1016",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,11 +84,12 @@
         "TASK-1015"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential after TASK-1015",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential after TASK-1015",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1016-aggregate-records.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1016-aggregate-records.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1017",
@@ -94,18 +98,19 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-1013"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential with other toolkit.py tasks",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential with other toolkit.py tasks",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1017-domain-builder.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1017-domain-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1018",
@@ -114,7 +119,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,11 +127,12 @@
         "TASK-1015"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential; Phase 2 tasks depend on this",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential; Phase 2 tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1018-profile-and-schema-catalog.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1018-profile-and-schema-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1019",
@@ -135,7 +141,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -143,11 +149,12 @@
         "TASK-1015"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1019-introspection-and-diagnostics.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1019-introspection-and-diagnostics.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1020",
@@ -156,7 +163,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,11 +171,12 @@
         "TASK-1015"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1020-hr-convenience-methods.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1020-hr-convenience-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1021",
@@ -177,7 +185,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -193,8 +201,9 @@
       "parallelism_notes": "Depends on all Phase 1 implementation tasks",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1021-phase1-tests.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1021-phase1-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1022",
@@ -203,7 +212,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -211,11 +220,12 @@
         "TASK-1015"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential after Phase 1",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential after Phase 1",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1022-diagnose-odoo-call.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1022-diagnose-odoo-call.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1023",
@@ -224,18 +234,19 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-1013"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1023-generate-json2-payload.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1023-generate-json2-payload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1024",
@@ -244,18 +255,19 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
         "TASK-1013"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies toolkit.py — sequential",
+      "parallelism_notes": "Modifies toolkit.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1024-scan-addons-source.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1024-scan-addons-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1025",
@@ -264,7 +276,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -275,8 +287,9 @@
       "parallelism_notes": "Modifies toolkit.py; depends on schema_catalog from TASK-1018",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1025-fit-gap-report.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1025-fit-gap-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1026",
@@ -285,7 +298,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -296,8 +309,9 @@
       "parallelism_notes": "Modifies toolkit.py; depends on get_odoo_profile from TASK-1018",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1026-business-pack-report.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1026-business-pack-report.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1027",
@@ -306,7 +320,7 @@
       "feature_id": "FEAT-147",
       "feature": "evaluate-odoo-mcp-toolkit",
       "spec": "sdd/specs/evaluate-odoo-mcp-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -320,8 +334,9 @@
       "parallelism_notes": "Depends on all Phase 2 implementation tasks",
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1027-phase2-tests.md"
+      "completed_at": "2026-05-05T13:57:22.346004+00:00",
+      "file": "sdd/tasks/active/TASK-1027-phase2-tests.md",
+      "verification": "verified"
     }
   ]
 }
