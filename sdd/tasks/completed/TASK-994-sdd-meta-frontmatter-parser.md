@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -196,4 +196,19 @@ def test_emit_round_trips(tmp_path: Path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-994`
+**Date**: 2026-05-05
+**Notes**: Implemented `FlowMeta` (Pydantic v2) + `parse()` + `emit()` in `scripts/sdd/sdd_meta.py`. All 5 unit tests pass.
+
+**Deviations from scope** (each justified by integration friction discovered at runtime):
+
+1. **Renamed `tests/scripts/` → `tests/sdd_scripts/`.** The original name shadowed the worktree's real `scripts/` package via pytest's `tests/`-on-`sys.path[0]` behaviour (PEP 420 namespace package collision). Renaming is the minimal fix; tests still discovered cleanly by `python_files = "test_*.py"`.
+2. **Edited `conftest.py` (worktree root):** added `_WORKTREE_ROOT` to the existing `_EXTRA_PATHS` list so `from scripts.sdd.sdd_meta import …` resolves under pytest. Single-line addition that follows the conftest's documented pattern.
+3. **Lint step substituted.** Neither `ruff` nor `pyflakes` are available in the worktree `.venv`. `python -m py_compile` succeeds on both new files; ruff should run cleanly under TASK-1002 once a lint pass is added to the suite.
+
+**Files actually touched (vs contract):**
+- `scripts/sdd/__init__.py` (CREATE — as specified)
+- `scripts/sdd/sdd_meta.py` (CREATE — as specified)
+- `tests/sdd_scripts/__init__.py` (CREATE — renamed from `tests/scripts/`)
+- `tests/sdd_scripts/test_sdd_meta.py` (CREATE — renamed; +1 round-trip test for `emit`)
+- `conftest.py` (MODIFY — sys.path fix for namespace package)

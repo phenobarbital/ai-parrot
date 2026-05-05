@@ -16260,14 +16260,15 @@
       "effort": "M",
       "depends_on": [],
       "parallelism_notes": "Foundation module. All other tasks depend on this.",
-      "file": "sdd/tasks/active/TASK-994-sdd-meta-frontmatter-parser.md",
+      "file": "sdd/tasks/completed/TASK-994-sdd-meta-frontmatter-parser.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-04T23:15:44+00:00"
+      "started_at": "2026-05-04T23:15:44+00:00",
+      "completed_at": "2026-05-05T00:56:03+00:00"
     },
     {
       "id": "TASK-995",
