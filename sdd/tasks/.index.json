@@ -16407,14 +16407,15 @@
         "TASK-998"
       ],
       "parallelism_notes": "Sequential \u2014 agent must mirror /sdd-start logic from TASK-998.",
-      "file": "sdd/tasks/active/TASK-1001-sdd-worker-flow-aware.md",
+      "file": "sdd/tasks/completed/TASK-1001-sdd-worker-flow-aware.md",
       "feature_id": "FEAT-145",
       "feature": "sdd-flow-types-and-per-spec-index",
       "spec": "sdd/specs/sdd-flow-types-and-per-spec-index.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T01:27:57+00:00"
+      "started_at": "2026-05-05T01:27:57+00:00",
+      "completed_at": "2026-05-05T01:29:57+00:00"
     },
     {
       "id": "TASK-1002",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-994, TASK-995, TASK-998
@@ -193,4 +193,31 @@ worktree, no `cd` calls.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-1001`
+**Date**: 2026-05-05
+**Notes**: The sdd-worker agent now mirrors `/sdd-start` exactly (TASK-998's contract). No more cd-dance; per-spec index lives with the code in the worktree.
+
+**What landed:**
+- **Key principle (line 30-32)**: rewritten — "code AND per-spec index live together in the worktree".
+- **Cardinal Rule #6**: replaced with the FEAT-145 model. Explicitly forbids `cd` to the main repo for state updates.
+- **§0 Save Main Repo Path** → **§0 Sync the Base Branch**: drops `REPO_ROOT=$(pwd)`, replaces with `python -c "from scripts.sdd.sdd_meta import parse; ..."` to read frontmatter, then `git checkout $BASE_BRANCH && git pull --ff-only`.
+- **§1 Resolve the Feature**: globs `sdd/tasks/index/*.json` (excluding `_orphans.json`) instead of reading the monolith. Includes a working `jq` snippet that finds the per-spec index file matching the user's input.
+- **§2 Mark All Tasks as In-Progress**: `jq` mutation of the per-spec index in place; commit on the current branch (no `cd`).
+- **§3 Create the Worktree**: unchanged structurally — branches from HEAD, which is now BASE_BRANCH after §0. Documented that the branch name `feat-<FEAT-ID>-…` is used regardless of flow type.
+- **§4 Verify SDD Files Are Visible**: replaced the test for `sdd/tasks/.index.json` with `sdd/tasks/index/<feature>.json`.
+- **Step (g) Update SDD State**: completely rewritten — drops the entire `cd "${REPO_ROOT}" && git checkout dev && ... && cd "${WORKTREE_DIR}"` block. Uses `jq` to mutate the per-spec index in the worktree, then commits on the feature branch.
+
+**Acceptance grep results:**
+| Check                                | Value | Required |
+|--------------------------------------|-------|----------|
+| `sdd/tasks/.index.json` refs         | 0     | = 0 ✅   |
+| `sdd/tasks/index/` refs              | 6     | ≥ 2 ✅   |
+| `cd .*REPO_ROOT` blocks              | 0     | = 0 ✅   |
+| `git checkout dev`                   | 0     | = 0 ✅   |
+| `BASE_BRANCH` references             | 12    | ≥ 1 ✅   |
+| Numbered cardinal rules (1-6)        | 6     | = 6 ✅   |
+| STOP Conditions section unchanged    | yes   | yes ✅   |
+
+**Deviations from contract**: none.
+
+**Heads-up**: this rewrite changes the cardinal rules of the agent's prompt. **An sdd-worker process that is already running keeps its OLD prompt** until restarted. Future sessions of the agent will use the new flow. For this very feature (FEAT-145), all subsequent work is happening through the user's interactive `/sdd-start` invocations, NOT through sdd-worker — so this rewrite has no impact on the in-flight work.
