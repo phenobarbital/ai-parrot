@@ -45,7 +45,6 @@ HIGH_VALUE_PATTERNS: tuple[str, ...] = (
     "user_id",
     "reference",
     "description",
-    "code",
     "number",
 )
 
