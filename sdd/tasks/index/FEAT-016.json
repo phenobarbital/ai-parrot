@@ -1,0 +1,185 @@
+{
+  "feature": "FEAT-016",
+  "feature_id": null,
+  "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-067",
+      "slug": "data-models",
+      "title": "Technical Analysis Data Models",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-067-data-models.md"
+    },
+    {
+      "id": "TASK-068",
+      "slug": "adx-indicator",
+      "title": "ADX Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-068-adx-indicator.md"
+    },
+    {
+      "id": "TASK-069",
+      "slug": "atr-indicator",
+      "title": "ATR Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-069-atr-indicator.md"
+    },
+    {
+      "id": "TASK-070",
+      "slug": "ema-indicator",
+      "title": "EMA Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-070-ema-indicator.md"
+    },
+    {
+      "id": "TASK-071",
+      "slug": "signal-engine",
+      "title": "Signal Generation Engine",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-071-signal-engine.md"
+    },
+    {
+      "id": "TASK-072",
+      "slug": "composite-score-tool",
+      "title": "CompositeScoreTool Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-072-composite-score-tool.md"
+    },
+    {
+      "id": "TASK-073",
+      "slug": "multi-timeframe",
+      "title": "Multi-Timeframe Analysis",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-073-multi-timeframe.md"
+    },
+    {
+      "id": "TASK-074",
+      "slug": "output-restructuring",
+      "title": "Output Restructuring",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-074-output-restructuring.md"
+    },
+    {
+      "id": "TASK-075",
+      "slug": "unit-tests",
+      "title": "Unit Tests for Technical Analysis Improvements",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071",
+        "TASK-074"
+      ],
+      "assigned_to": "9e0d37e2-05e8-40b2-9ab1-a1a457a700f9",
+      "file": "sdd/tasks/completed/TASK-075-unit-tests.md"
+    },
+    {
+      "id": "TASK-076",
+      "slug": "integration-tests",
+      "title": "Integration Tests with Live Data",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071",
+        "TASK-072",
+        "TASK-073",
+        "TASK-074",
+        "TASK-075"
+      ],
+      "assigned_to": "9e0d37e2-05e8-40b2-9ab1-a1a457a700f9",
+      "file": "sdd/tasks/completed/TASK-076-integration-tests.md"
+    }
+  ]
+}

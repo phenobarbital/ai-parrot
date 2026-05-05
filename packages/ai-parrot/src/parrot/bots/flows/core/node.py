@@ -208,11 +208,11 @@ class AgentNode(Node):
         try:
             if timeout:
                 response = await asyncio.wait_for(
-                    self.agent.ask(prompt=prompt, **ctx),
+                    self.agent.ask(question=prompt, _trusted_source=True, **ctx),
                     timeout=timeout,
                 )
             else:
-                response = await self.agent.ask(prompt=prompt, **ctx)
+                response = await self.agent.ask(question=prompt, _trusted_source=True, **ctx)
             end_time = asyncio.get_running_loop().time()
             output = (
                 response.content

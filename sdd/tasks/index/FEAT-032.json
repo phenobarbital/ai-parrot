@@ -1,0 +1,83 @@
+{
+  "feature": "FEAT-032",
+  "feature_id": null,
+  "spec": "sdd/specs/tools-database.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-228",
+      "slug": "database-tools-package-exports",
+      "title": "Database Tools \u2014 Package Exports (__init__.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-228-database-tools-package-exports.md"
+    },
+    {
+      "id": "TASK-229",
+      "slug": "database-tools-credential-resolution",
+      "title": "Database Tools \u2014 Credential Resolution (abstract.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-229-database-tools-credential-resolution.md"
+    },
+    {
+      "id": "TASK-230",
+      "slug": "database-tools-vector-cache-tier",
+      "title": "Database Tools \u2014 Complete Vector-Store Cache Tier (cache.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-230-database-tools-vector-cache-tier.md"
+    },
+    {
+      "id": "TASK-231",
+      "slug": "database-tools-bigquery-engine",
+      "title": "Database Tools \u2014 BigQuery Engine Fix & _search_in_database (bq.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-229"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-231-database-tools-bigquery-engine.md"
+    },
+    {
+      "id": "TASK-232",
+      "slug": "database-tools-tests",
+      "title": "Database Tools \u2014 Tests (tests/tools/database/)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-228",
+        "TASK-229",
+        "TASK-230",
+        "TASK-231"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-232-database-tools-tests.md"
+    }
+  ]
+}

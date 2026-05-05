@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Authorization Successful</title>
+  <style>
+    body { font-family: sans-serif; display: flex; justify-content: center;
+           align-items: center; min-height: 100vh; margin: 0; background: #f5f5f5; }
+    .container { text-align: center; padding: 2rem; }
+    .check { font-size: 3rem; color: #36b37e; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="check">&#10003;</div>
+  <h2>Authorization Successful</h2>
+  <p>This window will close automatically.</p>
+</div>
+<script>
+  if (window.opener) {
+    window.opener.postMessage({
+      type: "ai-parrot-oauth-callback",
+      provider: "$provider",
+      success: true,
+      account_id: "$account_id",
+      display_name: "$display_name"
+    }, "$target_origin");
+  }
+  window.close();
+</script>
+</body>
+</html>

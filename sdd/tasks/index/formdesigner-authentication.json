@@ -1,0 +1,70 @@
+{
+  "feature": "formdesigner-authentication",
+  "feature_id": null,
+  "spec": "sdd/specs/formdesigner-authentication.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-04-04T18:00:00+00:00",
+  "completed_at": "2026-04-04T18:45:00.000000Z",
+  "tasks": [
+    {
+      "id": "TASK-580",
+      "slug": "formapi-auth-cleanup",
+      "title": "FormAPIHandler Auth Cleanup & User Context Helpers",
+      "feature_id": "FEAT-083",
+      "feature": "formdesigner-authentication",
+      "spec": "sdd/specs/formdesigner-authentication.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 TASK-581 and TASK-582 depend on this.",
+      "assigned_to": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
+      "completed_at": "2026-04-04T18:05:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-580-formapi-auth-cleanup.md"
+    },
+    {
+      "id": "TASK-581",
+      "slug": "route-auth-wrappers",
+      "title": "Route Registration Auth Wrappers",
+      "feature_id": "FEAT-083",
+      "feature": "formdesigner-authentication",
+      "spec": "sdd/specs/formdesigner-authentication.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-580"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-580 (needs cleaned-up handler methods).",
+      "assigned_to": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
+      "completed_at": "2026-04-04T18:35:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-581-route-auth-wrappers.md"
+    },
+    {
+      "id": "TASK-582",
+      "slug": "formdesigner-auth-tests",
+      "title": "FormDesigner Authentication Tests",
+      "feature_id": "FEAT-083",
+      "feature": "formdesigner-authentication",
+      "spec": "sdd/specs/formdesigner-authentication.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-580",
+        "TASK-581"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
+      "completed_at": "2026-04-04T18:45:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-582-formdesigner-auth-tests.md"
+    }
+  ]
+}

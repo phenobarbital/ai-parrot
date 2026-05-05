@@ -1,0 +1,102 @@
+{
+  "feature": "FEAT-037",
+  "feature_id": null,
+  "spec": "sdd/specs/integration-user-limit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-249",
+      "slug": "msteams-config-whitelist",
+      "title": "MS Teams Config \u2014 Whitelist Fields",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-249-msteams-config-whitelist.md"
+    },
+    {
+      "id": "TASK-250",
+      "slug": "msteams-wrapper-authorization",
+      "title": "MS Teams Wrapper \u2014 Authorization Check",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-249"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-250-msteams-wrapper-authorization.md"
+    },
+    {
+      "id": "TASK-251",
+      "slug": "slack-config-user-whitelist",
+      "title": "Slack Config \u2014 User Whitelist Field",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-251-slack-config-user-whitelist.md"
+    },
+    {
+      "id": "TASK-252",
+      "slug": "slack-wrapper-user-authorization",
+      "title": "Slack Wrapper \u2014 Extend Authorization to Users",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-251"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-252-slack-wrapper-user-authorization.md"
+    },
+    {
+      "id": "TASK-253",
+      "slug": "whitelist-unit-tests",
+      "title": "Unit Tests \u2014 Whitelist Config & Authorization",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-249",
+        "TASK-250",
+        "TASK-251",
+        "TASK-252"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-253-whitelist-unit-tests.md"
+    },
+    {
+      "id": "TASK-254",
+      "slug": "whitelist-integration-tests",
+      "title": "Integration Tests \u2014 Whitelist Full Flow",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-250",
+        "TASK-252",
+        "TASK-253"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-254-whitelist-integration-tests.md"
+    }
+  ]
+}

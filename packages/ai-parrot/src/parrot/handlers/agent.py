@@ -41,8 +41,13 @@ from .user_objects import UserObjectsHandler
 from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
+from ..auth.exceptions import AuthorizationRequired
+from ..integrations.oauth2.models import AuthRequiredEnvelope
 if TYPE_CHECKING:
     from ..manager import BotManager
+
+# FEAT-146: Web HITL ContextVar helpers
+from .web_hitl import set_current_web_session, reset_current_web_session
 
 
 @is_authenticated()
@@ -1380,6 +1385,12 @@ class AgentTalk(BaseView):
         # Extract ws_channel_id for notification
         ws_channel_id = data.pop('ws_channel_id', None)
 
+        # FEAT-146: Set the current_web_session ContextVar so WebHumanTool can
+        # resolve the active WebSocket channel without being passed it explicitly.
+        # Reset in the finally block below to ensure clean teardown.
+        _hitl_token = set_current_web_session(ws_channel_id or session_id)
+        start_time = time.perf_counter()  # safe default; overwritten inside try
+
         # --- WebSearchAgent-specific flags ---
         _ws_originals = {}  # saved originals for restore
         if isinstance(agent, WebSearchAgent):
@@ -1523,6 +1534,18 @@ class AgentTalk(BaseView):
                         llm=llm,
                         **data,
                     )
+        except AuthorizationRequired as exc:
+            # Translate the exception into a structured envelope so the web
+            # frontend can render a "Connect" pill.  HTTP 200 — the chat call
+            # succeeded; the envelope IS the agent's reply.
+            envelope = AuthRequiredEnvelope(
+                provider=exc.provider,
+                tool_name=exc.tool_name,
+                auth_url=exc.auth_url,
+                scopes=exc.scopes or [],
+                message=str(exc),
+            )
+            return web.json_response(envelope.model_dump(), status=200)
         finally:
             # Restore session-isolated PythonPandasTool
             if original_pandas_tool and session_pandas_tool:
@@ -1551,6 +1574,8 @@ class AgentTalk(BaseView):
             # Restore WebSearchAgent flags
             for key, original_value in _ws_originals.items():
                 setattr(agent, key, original_value)
+            # FEAT-146: Reset the current_web_session ContextVar
+            reset_current_web_session(_hitl_token)
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Notify WebSocket channel if requested

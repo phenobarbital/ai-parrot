@@ -7,13 +7,16 @@ Extracted from AgentTalk to reduce complexity and centralize user object
 configuration logic.
 """
 from __future__ import annotations
-from typing import Dict, Any, List, Union, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from pydantic import ValidationError
 from navconfig.logging import logging
 from ..tools.manager import ToolManager
 from ..tools.dataset_manager import DatasetManager
 from ..models import ToolConfig
 from ..mcp.integration import MCPServerConfig
+from ..integrations.oauth2.registry import OAuth2ProviderRegistry
+from ..integrations.oauth2.persistence import list_user_agent_toolkits
+from ..auth.credentials import OAuthCredentialResolver
 
 if TYPE_CHECKING:
     from ..bots.data import PandasAgent
@@ -97,7 +100,9 @@ class UserObjectsHandler:
         self,
         data: Dict[str, Any],
         request_session: Any,
-        agent_name: str = None
+        agent_name: str = None,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
         """
         Configure a ToolManager from request payload or session.
@@ -107,12 +112,18 @@ class UserObjectsHandler:
         2. Creating or retrieving existing ToolManager from session
         3. Registering tools and MCP servers
         4. Persisting the ToolManager back to session
+        5. Cold-session hydration from DocumentDB when user_id and agent_id
+           are provided and no ToolManager exists in the session.
 
         Args:
             data: Request body data (will be mutated - tool_config, tools,
                   mcp_servers keys will be popped)
             request_session: Session object for storing/retrieving ToolManager
             agent_name: Agent name used to namespace the session key
+            user_id: Authenticated user identifier used for cold-session
+                hydration (optional; hydration skipped when absent).
+            agent_id: Agent identifier used to query ``user_agent_toolkits``
+                (optional; hydration skipped when absent).
 
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
@@ -173,7 +184,74 @@ class UserObjectsHandler:
         if request_session:
             tool_manager = request_session.get(session_key)
 
+        # Cold-session hydration: re-add OAuth toolkits that were persisted in
+        # DocumentDB but are missing from the (empty/new) session.
+        if tool_manager is None and user_id and agent_id:
+            tool_manager = await self._hydrate_oauth_toolkits(
+                user_id, agent_id, session_key, request_session
+            )
+
         return tool_manager, mcp_servers
+
+    async def _hydrate_oauth_toolkits(
+        self,
+        user_id: str,
+        agent_id: str,
+        session_key: str,
+        request_session: Any,
+    ) -> Optional[ToolManager]:
+        """Re-populate OAuth toolkits from DocumentDB on a cold session.
+
+        Reads ``user_agent_toolkits`` rows for the given ``(user_id, agent_id)``
+        pair and registers each enabled toolkit via the provider's
+        :meth:`~parrot.integrations.oauth2.registry.OAuth2Provider.toolkit_factory`.
+
+        The resulting :class:`~parrot.tools.manager.ToolManager` is persisted
+        back to *request_session* under *session_key* so subsequent requests
+        benefit from the warm session.
+
+        Returns:
+            A populated :class:`~parrot.tools.manager.ToolManager`, or ``None``
+            if DocumentDB returned no enablements or an error occurred.
+        """
+        try:
+            enablements = await list_user_agent_toolkits(user_id, agent_id)
+            if not enablements:
+                return None
+
+            tool_manager = ToolManager(debug=True)
+            registry = OAuth2ProviderRegistry()
+            for row in enablements:
+                provider = registry.get(row.provider)
+                if provider is None:
+                    self.logger.warning(
+                        "Unknown OAuth provider %r in user_agent_toolkits "
+                        "(user=%s agent=%s) — skipping",
+                        row.provider, user_id, agent_id,
+                    )
+                    continue
+                # Skip if toolkit already registered (idempotency guard).
+                if tool_manager.get_tool(row.toolkit_id) is not None:
+                    continue
+                resolver = OAuthCredentialResolver(provider.manager)
+                toolkit = provider.toolkit_factory(resolver)
+                tool_manager.register_toolkit(toolkit)
+                self.logger.debug(
+                    "Hydrated toolkit %r for user=%s agent=%s",
+                    row.toolkit_id, user_id, agent_id,
+                )
+
+            if request_session is not None:
+                request_session[session_key] = tool_manager
+
+            return tool_manager
+        except Exception:  # noqa: BLE001
+            self.logger.exception(
+                "Failed to hydrate OAuth toolkits for user=%s agent=%s — "
+                "proceeding without hydration",
+                user_id, agent_id,
+            )
+            return None
 
     async def configure_dataset_manager(
         self,

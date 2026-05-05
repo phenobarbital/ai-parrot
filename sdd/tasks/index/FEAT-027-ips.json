@@ -1,0 +1,132 @@
+{
+  "feature": "FEAT-027-ips",
+  "feature_id": null,
+  "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-190",
+      "slug": "ips-dataclass",
+      "title": "InvestmentPolicyStatement Dataclass",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-190-ips-dataclass.md"
+    },
+    {
+      "id": "TASK-191",
+      "slug": "ips-analysts-injection",
+      "title": "IPS Injection \u2014 Analyst Factory Functions",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-191-ips-analysts-injection.md"
+    },
+    {
+      "id": "TASK-192",
+      "slug": "ips-cio-secretary-injection",
+      "title": "IPS Injection \u2014 CIO and Secretary Factory Functions",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-192-ips-cio-secretary-injection.md"
+    },
+    {
+      "id": "TASK-193",
+      "slug": "ips-swarm-threading",
+      "title": "IPS Threading Through TradingSwarm",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-191",
+        "TASK-192"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-193-ips-swarm-threading.md"
+    },
+    {
+      "id": "TASK-194",
+      "slug": "ips-research-runner",
+      "title": "IPS Parameter in Research Runner",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-193"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-194-ips-research-runner.md"
+    },
+    {
+      "id": "TASK-195",
+      "slug": "ips-demo-and-sample-yaml",
+      "title": "IPS Demo Integration and Sample YAML",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-194"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-195-ips-demo-and-sample-yaml.md"
+    },
+    {
+      "id": "TASK-196",
+      "slug": "ips-exports",
+      "title": "IPS Exports Update",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-196-ips-exports.md"
+    },
+    {
+      "id": "TASK-197",
+      "slug": "ips-unit-tests",
+      "title": "IPS Unit Tests",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-190",
+        "TASK-191",
+        "TASK-192"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-197-ips-unit-tests.md"
+    }
+  ]
+}

@@ -51,6 +51,7 @@ from ..core.result import (
     determine_run_status,
 )
 from ..core.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
+from ..core.storage.backends import ResultStorage
 from ..core.storage.synthesis import SYNTHESIS_PROMPT
 from ..core.context import FlowContext  # noqa: F401 — re-export for backward compat
 from ..core.types import (
@@ -137,6 +138,8 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
         agent_execution_timeout: float = 600.0, # Timeout in seconds per agent execution
+        persist_results: bool = True,
+        result_storage: Union[str, "ResultStorage", None] = None,
         **kwargs
     ):
         """
@@ -205,6 +208,14 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         # Status Tracking
         self._agent_statuses: Dict[str, Dict[str, Any]] = {}
         
+        # Result persistence (FEAT-147)
+        self._persist_results: bool = persist_results
+        self._result_storage_arg: Union[str, "ResultStorage", None] = result_storage
+        self._result_storage: Optional["ResultStorage"] = (
+            result_storage if isinstance(result_storage, ResultStorage) else None
+        )
+        self._persist_tasks: set[asyncio.Task] = set()
+
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -1289,8 +1300,8 @@ Current task: {current_input}"""
                     }
                 )
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 result,
                 'run_sequential',
@@ -1298,6 +1309,8 @@ Current task: {current_input}"""
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return result
 
@@ -1750,8 +1763,8 @@ Current task: {current_input}"""
                     }
                 )
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 result,
                 'run_loop',
@@ -1759,6 +1772,8 @@ Current task: {current_input}"""
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return result
 
@@ -2068,8 +2083,8 @@ Current task: {current_input}"""
                     }
                 )
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 result,
                 'run_parallel',
@@ -2077,6 +2092,8 @@ Current task: {current_input}"""
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return result
 
@@ -2300,8 +2317,8 @@ Current task: {current_input}"""
                     }
                 )
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 result,
                 'run_flow',
@@ -2309,6 +2326,8 @@ Current task: {current_input}"""
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return result
 
@@ -2556,8 +2575,8 @@ Create a clear, well-structured response."""
             synthesis_response.metadata['agents_used'] = list(parallel_result['results'].keys())
             synthesis_response.metadata['total_execution_time'] = parallel_result['total_execution_time']
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 synthesis_response,
                 'run',
@@ -2565,6 +2584,8 @@ Create a clear, well-structured response."""
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return synthesis_response
 
@@ -3064,8 +3085,8 @@ analyze, and present information in the most helpful way for the user.
             f"ask() completed in {end_time - start_time:.2f}s"
         )
 
-        # Save result to DocumentDB
-        asyncio.get_running_loop().create_task(
+        # Save result (fire-and-forget, tracked for lifecycle cleanup)
+        _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
                 response,
                 'ask',
@@ -3073,6 +3094,8 @@ analyze, and present information in the most helpful way for the user.
                 session_id=session_id
             )
         )
+        self._persist_tasks.add(_persist_task)
+        _persist_task.add_done_callback(self._persist_tasks.discard)
 
         return response
 

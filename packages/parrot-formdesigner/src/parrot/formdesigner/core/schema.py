@@ -7,6 +7,7 @@ These models are the foundation of the entire forms abstraction layer.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -120,6 +121,9 @@ class FormSchema(BaseModel):
         submit: Optional submission action configuration.
         cancel_allowed: Whether the user can cancel/dismiss the form.
         meta: Arbitrary metadata for renderer-specific extensions.
+        created_at: Optional creation timestamp (UTC). Populated by storage
+            backends when forms are loaded from persistence; ``None`` for
+            ad-hoc forms registered in memory.
     """
 
     form_id: str
@@ -130,6 +134,7 @@ class FormSchema(BaseModel):
     submit: SubmitAction | None = None
     cancel_allowed: bool = True
     meta: dict[str, Any] | None = None
+    created_at: datetime | None = None
 
 
 class RenderedForm(BaseModel):

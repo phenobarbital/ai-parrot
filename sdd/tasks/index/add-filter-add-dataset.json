@@ -1,0 +1,49 @@
+{
+  "feature": "add-filter-add-dataset",
+  "feature_id": "FEAT-050",
+  "spec": "sdd/specs/add-filter-add-dataset.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-18T01:20:44.394946",
+  "tasks": [
+    {
+      "id": "TASK-349",
+      "slug": "apply-filter-helper",
+      "title": "Implement _apply_filter Helper and add_dataset filter Parameter",
+      "feature_id": "FEAT-050",
+      "feature": "add-filter-add-dataset",
+      "spec": "sdd/specs/add-filter-add-dataset.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single file change, no parallelization benefit",
+      "assigned_to": null,
+      "started_at": "2026-03-18T00:51:53.616477",
+      "file": "sdd/tasks/active/TASK-349-apply-filter-helper.md",
+      "completed_at": "2026-03-18T01:16:06.090049"
+    },
+    {
+      "id": "TASK-437",
+      "slug": "filter-tests",
+      "title": "Unit and Integration Tests for add_dataset Filter",
+      "feature_id": "FEAT-050",
+      "feature": "add-filter-add-dataset",
+      "spec": "sdd/specs/add-filter-add-dataset.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-349"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-349 implementation to test against",
+      "assigned_to": null,
+      "started_at": "2026-03-18T01:16:15.395665",
+      "file": "sdd/tasks/active/TASK-350-filter-tests.md",
+      "completed_at": "2026-03-18T01:20:44.394946"
+    }
+  ]
+}

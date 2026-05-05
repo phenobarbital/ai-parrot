@@ -1,0 +1,242 @@
+{
+  "feature": "composable-prompt-layers",
+  "feature_id": "FEAT-046",
+  "spec": "sdd/specs/composable-prompt-layer.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-14T12:30:00+01:00",
+  "tasks": [
+    {
+      "id": "TASK-325",
+      "slug": "prompt-layer-dataclass",
+      "title": "PromptLayer Dataclass & Built-in Layers",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure new module with no existing code dependencies.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T14:23:37.176958",
+      "file": "sdd/tasks/active/TASK-325-prompt-layer-dataclass.md",
+      "completed_at": "2026-03-13T15:12:23.225033"
+    },
+    {
+      "id": "TASK-326",
+      "slug": "prompt-builder",
+      "title": "PromptBuilder Class",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-325"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports PromptLayer from layers.py (TASK-325).",
+      "assigned_to": null,
+      "started_at": "2026-03-13T15:13:04.440362",
+      "file": "sdd/tasks/active/TASK-326-prompt-builder.md",
+      "completed_at": "2026-03-13T15:17:49.586227"
+    },
+    {
+      "id": "TASK-327",
+      "slug": "presets-registry",
+      "title": "Presets Registry",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-326"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports PromptBuilder factories.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T15:19:39.409437",
+      "file": "sdd/tasks/active/TASK-327-presets-registry.md",
+      "completed_at": "2026-03-13T15:20:31.629137"
+    },
+    {
+      "id": "TASK-328",
+      "slug": "domain-layers",
+      "title": "Domain-Specific Layers",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-325"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only imports PromptLayer. Can run in parallel with TASK-326.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T15:25:04.779135",
+      "file": "sdd/tasks/active/TASK-328-domain-layers.md",
+      "completed_at": "2026-03-13T16:22:05.963437"
+    },
+    {
+      "id": "TASK-329",
+      "slug": "abstractbot-integration",
+      "title": "AbstractBot PromptBuilder Integration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-326",
+        "TASK-327"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies AbstractBot to use PromptBuilder.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T16:22:42.008715",
+      "file": "sdd/tasks/active/TASK-329-abstractbot-integration.md",
+      "completed_at": "2026-03-13T16:58:41.475727"
+    },
+    {
+      "id": "TASK-330",
+      "slug": "voicebot-migration",
+      "title": "VoiceBot Prompt Migration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-329"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires AbstractBot integration.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T17:05:25.132959",
+      "file": "sdd/tasks/active/TASK-330-voicebot-migration.md",
+      "completed_at": "2026-03-13T17:55:30.036081"
+    },
+    {
+      "id": "TASK-331",
+      "slug": "pandasagent-migration",
+      "title": "PandasAgent Prompt Migration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-329",
+        "TASK-328"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent from TASK-330. Can run in parallel with VoiceBot migration.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T18:02:34.914213",
+      "file": "sdd/tasks/active/TASK-331-pandasagent-migration.md",
+      "completed_at": "2026-03-13T19:09:23.089950"
+    },
+    {
+      "id": "TASK-332",
+      "slug": "yaml-botmanager-integration",
+      "title": "YAML & BotManager Prompt Config Integration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-327",
+        "TASK-328",
+        "TASK-329"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires presets, domain layers, and AbstractBot integration.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T19:13:16.213880",
+      "file": "sdd/tasks/active/TASK-332-yaml-botmanager-integration.md",
+      "completed_at": "2026-03-13T19:54:29.917738"
+    },
+    {
+      "id": "TASK-333",
+      "slug": "prompts-package-init",
+      "title": "Prompts Package __init__.py & Legacy Compat",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-325",
+        "TASK-326",
+        "TASK-327",
+        "TASK-328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all prompt modules created first.",
+      "assigned_to": null,
+      "started_at": "2026-03-13T21:57:48.327004",
+      "file": "sdd/tasks/active/TASK-333-prompts-package-init.md",
+      "completed_at": "2026-03-14T00:29:54.821804"
+    },
+    {
+      "id": "TASK-334",
+      "slug": "unit-tests",
+      "title": "Unit Tests for Prompt Layer System",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "completed_at": "2026-03-14T12:00:00+01:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-325",
+        "TASK-326",
+        "TASK-327",
+        "TASK-328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests core modules. Must run after all prompt modules.",
+      "assigned_to": null,
+      "started_at": "2026-03-14T00:30:25.350063",
+      "file": "sdd/tasks/active/TASK-334-unit-tests.md"
+    },
+    {
+      "id": "TASK-335",
+      "slug": "integration-tests",
+      "title": "Integration Tests for Prompt Layer System",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "done",
+      "started_at": null,
+      "completed_at": "2026-03-14T12:30:00+01:00",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-329",
+        "TASK-330",
+        "TASK-331",
+        "TASK-332"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests bot integrations. Must run after all migration tasks.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-335-integration-tests.md"
+    }
+  ]
+}

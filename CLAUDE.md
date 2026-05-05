@@ -99,9 +99,11 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 
 ## Git Configuration
 
-- **Integration branch**: `dev`
-- **Production branch**: `main`
-- **Worktrees branch from**: the CURRENT branch (`HEAD`), never hardcoded to `main`
+- **Integration branch**: `dev` (default base for `type: feature`)
+- **Production branch**: `main` (mandatory base for `type: hotfix`)
+- **Flow types** (FEAT-145): every brainstorm/proposal/spec declares `type` and `base_branch` via YAML frontmatter at the top.
+- **Worktrees branch from `base_branch`** (which `/sdd-task` and `sdd-worker` ensure HEAD is on before creating the worktree). Hotfix worktrees branch from `main`; feature worktrees branch from `dev` (or any non-main branch the user picks for sub-features).
+- **`/sdd-done` NEVER pushes to or opens a PR against `main`** — hotfix PRs are user-initiated. After the user merges the hotfix into `main`, run `/sdd-done <FEAT-ID> --sync-dev` to propagate the change back to `dev`.
 
 ## Worktree Creation
 
@@ -152,23 +154,28 @@ git worktree prune
 
 ## SDD Auto-Commit Rule
 
-> **CRITICAL**: Every SDD command that creates or modifies files MUST commit them
-> to the current branch before finishing. Uncommitted files are invisible to
-> worktrees and other sessions.
+> **CRITICAL**: Every SDD command that creates or modifies files MUST commit
+> them on the appropriate branch before finishing. Uncommitted files are
+> invisible to worktrees and other sessions.
 
-| Command | What it commits |
-|---------|----------------|
-| `/sdd-brainstorm` | `sdd/proposals/<n>.brainstorm.md` |
-| `/sdd-proposal` | `sdd/proposals/<n>.proposal.md` |
-| `/sdd-spec` | `sdd/specs/<n>.spec.md` |
-| `/sdd-task` | `sdd/tasks/active/TASK-*` + `sdd/tasks/.index.json` |
-| `/sdd-start` | Index status update (`in-progress`) + implementation code |
-| `/sdd-done` | Index status update (`done`) + task file moves |
+| Command | What it commits | Where (FEAT-145) |
+|---------|-----------------|------------------|
+| `/sdd-brainstorm` | `sdd/proposals/<n>.brainstorm.md` (with frontmatter) | `base_branch` |
+| `/sdd-proposal`   | `sdd/proposals/<n>.proposal.md` (with frontmatter)  | `base_branch` |
+| `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter)          | `base_branch` |
+| `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` | `base_branch` |
+| `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
+| `/sdd-done`       | Per-spec index final state + task file moves; merges feature → `base_branch` | `base_branch` (NEVER `main`) |
 
 Commit message convention:
 ```
 sdd: <action> for <feature-name>
 ```
+
+**Note (FEAT-145)**: `/sdd-start` no longer needs to `cd` back to the main
+repo to update SDD state — per-spec indexes mean each feature owns its own
+index file, so the worktree's commit covers code AND state in one stroke.
+The merge in `/sdd-done` brings them to `base_branch` atomically.
 
 ## Isolation Model
 
@@ -240,17 +247,53 @@ tmux new -s feat-014 \
 # Ctrl+B, D to detach — tmux attach -t feat-014 to reconnect
 ```
 
-## Task Index Schema
+## Task Index Schema (FEAT-145 — per-spec)
 
-Both `feature_id` and `feature` must be present in `sdd/tasks/.index.json`:
+Each feature has its own per-spec index at `sdd/tasks/index/<feature-slug>.json`.
+The header carries flow metadata cached from the spec frontmatter; the
+`tasks[]` array is local to that feature only.
+
 ```json
 {
-  "id": "TASK-<NNN>",
+  "feature": "<feature-slug>",
   "feature_id": "FEAT-<NNN>",
-  "feature": "<feature-slug>"
+  "spec": "sdd/specs/<feature-slug>.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "<ISO-8601>",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-<NNN>",
+      "feature_id": "FEAT-<NNN>",
+      "feature": "<feature-slug>",
+      "status": "pending",
+      "depends_on": [],
+      "...": "..."
+    }
+  ]
 }
 ```
-Commands resolve features by matching either field (exact, numeric suffix, or substring).
+
+Both `feature_id` and `feature` must be present on every task entry.
+Commands resolve features by matching either field (exact, numeric suffix,
+or substring) against the per-spec index headers.
+
+**Migration history**: the legacy `sdd/tasks/.index.json` monolith was
+split per-spec by `scripts/sdd/migrate_index.py`. The monolith is preserved
+as a historical artifact and ignored by all FEAT-145 commands. Tasks the
+migration could not attribute to a feature live in
+`sdd/tasks/index/_orphans.json` and are surfaced (but not assigned) by
+`/sdd-status` / `/sdd-next`.
+
+Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
+(FEAT-145).
+
+> **Heads-up**: `.gitignore` has a global `templates/` rule (line 245).
+> The three `sdd/templates/*.md` files were already tracked before the
+> rule landed, so they remain editable. If you ever need to add a NEW
+> template file, you must `git add -f` it and consider tightening the
+> ignore pattern.
 
 ### When NOT to Use Worktrees
 

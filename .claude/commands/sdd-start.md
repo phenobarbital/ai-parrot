@@ -13,16 +13,27 @@ Accept either the full ID (`TASK-NNN`) or the slug. If nothing is provided, run 
 ## Guardrails
 - Do NOT start a task whose dependencies are not all `"done"`.
 - Do NOT start a task that is already `"in-progress"` or `"done"` unless the user explicitly confirms.
-- **Code changes happen in the worktree.**
-- **SDD state changes (index, task file moves) happen on `dev`.**
-- This separation prevents merge conflicts between parallel features.
+- **Code AND per-spec index live together in the worktree (FEAT-145).**
+  Each feature owns its own `sdd/tasks/index/<feature>.json`, so parallel
+  worktrees never collide. The merge in `/sdd-done` brings the index file
+  to `base_branch` alongside the code.
 
 ## Steps
 
 ### 1. Resolve the Task
-1. Read `sdd/tasks/.index.json`.
-2. Match the user's input against `id` or `slug` (case-insensitive).
-3. If no match is found, print available tasks and ask the user to pick one.
+1. Glob `sdd/tasks/index/*.json` (excluding `_orphans.json`) and find the
+   per-spec index whose `tasks[]` array contains the requested ID or slug.
+   ```bash
+   for f in sdd/tasks/index/*.json; do
+       [[ "$(basename "$f")" == "_orphans.json" ]] && continue
+       if jq -e --arg q "<TASK-NNN-or-slug>" '.tasks[] | select(.id == $q or .slug == $q)' "$f" > /dev/null; then
+           INDEX="$f"
+           break
+       fi
+   done
+   ```
+2. Resolve `feature_id`, `feature` slug, and `spec` from the per-spec index header.
+3. If no match is found, print available tasks (aggregate across all per-spec indexes) and ask the user to pick one.
 
 ### 2. Validate Readiness
 Check:
@@ -37,55 +48,48 @@ Check:
   and STOP.
 
 ### 3. Detect Context
-Determine where we are:
+
+With per-spec indexes (FEAT-145), commits land in whatever branch you are on
+— worktree or main repo. Both are safe because each feature owns its own
+index file, so there is no shared mutable state to collide on.
+
 ```bash
 CURRENT_DIR=$(pwd)
-REPO_ROOT=$(git rev-parse --show-toplevel)
+CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-- **In a worktree** (path contains `.claude/worktrees/`): good, proceed.
-- **On `dev` directly**: warn that implementation should happen in a worktree:
-  ```
-  ⚠️  You're on dev. Implementation should happen in a worktree.
-     Create one with:
-       git worktree add -b feat-<FEAT-ID>-<slug> .claude/worktrees/feat-<FEAT-ID>-<slug> HEAD
-       cd .claude/worktrees/feat-<FEAT-ID>-<slug>
-     Then run /sdd-start TASK-<NNN> again.
+For the recommended layout, you should be inside a feature worktree (path
+contains `.claude/worktrees/`). If not, that's fine — just confirm the
+branch matches the feature you intend to work on.
 
-     Continue on dev anyway? (y/N)
-  ```
-- **On another branch**: proceed (user knows what they're doing).
+### 4. Mark In-Progress (in place)
 
-Save `REPO_ROOT` for later — we'll need the path to the main repo to update `dev`.
+Update the per-spec index file directly in the current branch — no
+directory switching needed (FEAT-145).
 
-### 4. Mark In-Progress (on `dev`)
-Switch to the main repo and update `dev`:
 ```bash
-# Save current worktree path
-WORKTREE_DIR=$(pwd)
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 
-# Go to main repo root (parent of .claude/worktrees/)
-cd <REPO_ROOT>   # the main repo, NOT the worktree
-git checkout dev
+jq --arg id "<TASK-NNN>" --arg now "$NOW" '
+  (.tasks[] | select(.id == $id) | .status) = "in-progress" |
+  (.tasks[] | select(.id == $id) | .started_at) = $now
+' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
 
 # CRITICAL: Unstage everything first — NEVER commit unrelated changes
 git reset HEAD
-
-# Update index — stage ONLY the index file
-# Set status → "in-progress", started_at → now
-git add sdd/tasks/.index.json
-
-# Verify ONLY the index is staged
+# Stage ONLY the per-spec index — NEVER use "git add ." or "git add -A"
+git add "$INDEX"
+# Verify
 git diff --cached --name-only
 # If ANY other files appear, run "git reset HEAD" and start over
 
 git commit -m "sdd: start TASK-<NNN> — <title>"
-
-# Return to worktree
-cd "${WORKTREE_DIR}"
 ```
 
-If already inside the main repo (not a worktree), just update in place.
+The commit lives on the current branch. The merge in `/sdd-done` brings it
+to `base_branch` alongside the code commit — atomically, with no conflict
+surface (other features touch other per-spec index files).
 
 ### 5. Read Context
 1. Read the **task file** at the path from the index.
@@ -162,43 +166,43 @@ Follow the **Agent Instructions** section in the task file:
 
 Otherwise, keep going until the task is **done**.
 
-### 8. Mark Done (on `dev`)
-After the code is committed in the worktree, switch to `dev` to update SDD state:
+### 8. Mark Done (in place)
+
+After the code is committed, update the per-spec index in the same branch
+— no `cd` to the main repo (FEAT-145).
 
 ```bash
-# Save worktree path
-WORKTREE_DIR=$(pwd)
+INDEX="sdd/tasks/index/<feature-slug>.json"
+NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
 
-# Go to main repo
-cd <REPO_ROOT>
-git checkout dev
-
-# Move task file to completed
+# Move task file from active to completed (in-place)
 mkdir -p sdd/tasks/completed/
 mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
 
 # Update index: set status → "done", completed_at → now
-# Fill in the Completion Note section of the task file
+jq --arg id "<TASK-NNN>" --arg now "$NOW" '
+  (.tasks[] | select(.id == $id) | .status) = "done" |
+  (.tasks[] | select(.id == $id) | .completed_at) = $now |
+  (.tasks[] | select(.id == $id) | .file) = ("sdd/tasks/completed/TASK-<NNN>-<slug>.md")
+' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+
+# Fill in the Completion Note section of the moved task file (in completed/).
 
 # CRITICAL: Unstage everything first — NEVER commit unrelated changes
 git reset HEAD
 # Stage ONLY the SDD task state files — NEVER use "git add ." or "git add -A"
-git add sdd/tasks/.index.json sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
+git add "$INDEX" sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
 # Verify ONLY task-related files are staged
 git diff --cached --name-only
 # If ANY unrelated files appear, run "git reset HEAD" and start over
 git commit -m "sdd: complete TASK-<NNN> — <title>"
-
-# Return to worktree
-cd "${WORKTREE_DIR}"
 ```
 
 ### 9. Post-Completion Hint
 After marking the task done, suggest next steps:
 ```
 ✅ TASK-<NNN> completed.
-   Code committed in worktree: <worktree-branch>
-   Index updated on dev.
+   Code + per-spec index committed on branch: <current branch>
 
 Next in this feature:
   → /sdd-start TASK-<NEXT>  (<title>)
@@ -216,6 +220,7 @@ Next:
 ```
 
 ## Reference
-- Index file: `sdd/tasks/.index.json`
+- Per-spec index files: `sdd/tasks/index/<feature>.json`
 - Task template: `sdd/templates/task.md`
 - SDD methodology: `sdd/WORKFLOW.md`
+- Frontmatter parser: `scripts/sdd/sdd_meta.py`

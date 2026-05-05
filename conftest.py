@@ -27,6 +27,8 @@ _WORKTREE_ROOT = os.path.dirname(os.path.abspath(__file__))
 # Prepend the worktree package src directories so they shadow the main-repo
 # editable-install .pth entries.
 _EXTRA_PATHS = [
+    # Worktree root — exposes scripts/ to tests (FEAT-145 / TASK-994).
+    _WORKTREE_ROOT,
     # ai-parrot core: prepend worktree src so changes are visible to tests.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot", "src"),
     # ai-parrot-loaders: include worktree version.

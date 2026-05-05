@@ -1,0 +1,111 @@
+{
+  "feature": "filemanagertool-migration-toolkit",
+  "feature_id": "FEAT-127",
+  "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-27T02:51:36.540701+00:00",
+  "tasks": [
+    {
+      "id": "TASK-869",
+      "slug": "filemanager-toolkit-core",
+      "title": "Implement FileManagerToolkit Core Class",
+      "feature_id": "FEAT-127",
+      "feature": "filemanagertool-migration-toolkit",
+      "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Core implementation \u2014 all other tasks depend on this.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:57:38.220676Z",
+      "file": "sdd/tasks/completed/TASK-869-filemanager-toolkit-core.md",
+      "completed_at": "2026-04-27T02:51:36.540701+00:00"
+    },
+    {
+      "id": "TASK-870",
+      "slug": "filemanager-toolkit-exports",
+      "title": "Update parrot.tools Exports for FileManagerToolkit",
+      "feature_id": "FEAT-127",
+      "feature": "filemanagertool-migration-toolkit",
+      "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-869"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only modifies __init__.py exports \u2014 can run in parallel with TASK-871.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:57:38.220676Z",
+      "file": "sdd/tasks/completed/TASK-870-filemanager-toolkit-exports.md",
+      "completed_at": "2026-04-27T02:25:45.855346+00:00"
+    },
+    {
+      "id": "TASK-871",
+      "slug": "filemanager-toolkit-registry",
+      "title": "Update parrot_tools Registry for FileManagerToolkit",
+      "feature_id": "FEAT-127",
+      "feature": "filemanagertool-migration-toolkit",
+      "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-869"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only modifies parrot_tools/__init__.py \u2014 can run in parallel with TASK-870.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:57:38.220676Z",
+      "file": "sdd/tasks/completed/TASK-871-filemanager-toolkit-registry.md",
+      "completed_at": "2026-04-27T02:27:21.701398+00:00"
+    },
+    {
+      "id": "TASK-872",
+      "slug": "filemanager-toolkit-tests",
+      "title": "Unit Tests for FileManagerToolkit",
+      "feature_id": "FEAT-127",
+      "feature": "filemanagertool-migration-toolkit",
+      "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-869",
+        "TASK-870"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests require both core implementation and exports to be in place.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:57:38.220676Z",
+      "file": "sdd/tasks/completed/TASK-872-filemanager-toolkit-tests.md",
+      "completed_at": "2026-04-27T02:33:05.943773+00:00"
+    },
+    {
+      "id": "TASK-873",
+      "slug": "filemanager-toolkit-example",
+      "title": "Update FileManager Example for Toolkit API",
+      "feature_id": "FEAT-127",
+      "feature": "filemanagertool-migration-toolkit",
+      "spec": "sdd/specs/filemanagertool-migration-toolkit.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-869",
+        "TASK-870"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only modifies examples/ \u2014 can run in parallel with TASK-872.",
+      "assigned_to": null,
+      "started_at": "2026-04-27T01:57:38.220676Z",
+      "file": "sdd/tasks/completed/TASK-873-filemanager-toolkit-example.md",
+      "completed_at": "2026-04-27T02:34:09.665839+00:00"
+    }
+  ]
+}

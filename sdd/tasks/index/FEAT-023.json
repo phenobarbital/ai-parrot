@@ -1,0 +1,268 @@
+{
+  "feature": "FEAT-023",
+  "feature_id": null,
+  "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-141",
+      "slug": "options-schemas",
+      "title": "Options Strategy Schemas",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-141-options-schemas.md"
+    },
+    {
+      "id": "TASK-142",
+      "slug": "alpaca-options-toolkit-base",
+      "title": "AlpacaOptionsToolkit Base Class",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-141"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-142-alpaca-options-toolkit-base.md"
+    },
+    {
+      "id": "TASK-143",
+      "slug": "strategy-factory",
+      "title": "Strategy Factory",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-141"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-143-strategy-factory.md"
+    },
+    {
+      "id": "TASK-144",
+      "slug": "get-options-chain",
+      "title": "Get Options Chain with Greeks",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-142"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-144-get-options-chain.md"
+    },
+    {
+      "id": "TASK-145",
+      "slug": "strike-selection-engine",
+      "title": "Strike Selection Engine",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-144"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-145-strike-selection-engine.md"
+    },
+    {
+      "id": "TASK-146",
+      "slug": "place-iron-butterfly",
+      "title": "Place Iron Butterfly",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-143",
+        "TASK-145"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-146-place-iron-butterfly.md"
+    },
+    {
+      "id": "TASK-147",
+      "slug": "place-iron-condor",
+      "title": "Place Iron Condor",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-143",
+        "TASK-145"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-147-place-iron-condor.md"
+    },
+    {
+      "id": "TASK-148",
+      "slug": "get-options-positions",
+      "title": "Get Options Positions",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-142"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-148-get-options-positions.md"
+    },
+    {
+      "id": "TASK-149",
+      "slug": "close-options-position",
+      "title": "Close Options Position",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-149-close-options-position.md"
+    },
+    {
+      "id": "TASK-150",
+      "slug": "options-toolkit-unit-tests",
+      "title": "Options Toolkit Unit Tests",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-146",
+        "TASK-147"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-150-options-toolkit-unit-tests.md"
+    },
+    {
+      "id": "TASK-151",
+      "slug": "cio-options-prompt",
+      "title": "CIO Options Strategy Prompt",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-146",
+        "TASK-147"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-151-cio-options-prompt.md"
+    },
+    {
+      "id": "TASK-152",
+      "slug": "cio-toolset-integration",
+      "title": "CIO Toolset Integration",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-151"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-152-cio-toolset-integration.md"
+    },
+    {
+      "id": "TASK-153",
+      "slug": "risk-analyst-options-tools",
+      "title": "Risk Analyst Options Tools",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-153-risk-analyst-options-tools.md"
+    },
+    {
+      "id": "TASK-154",
+      "slug": "options-integration-tests",
+      "title": "Options Integration Tests (Paper Trading)",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-150"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-154-options-integration-tests.md"
+    },
+    {
+      "id": "TASK-155",
+      "slug": "greeks-caching",
+      "title": "Greeks Caching",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-144"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-155-greeks-caching.md"
+    },
+    {
+      "id": "TASK-156",
+      "slug": "position-pnl-tracking",
+      "title": "Position P&L Tracking",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-156-position-pnl-tracking.md"
+    },
+    {
+      "id": "TASK-157",
+      "slug": "options-documentation",
+      "title": "Options Toolkit Documentation",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-154"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-157-options-documentation.md"
+    }
+  ]
+}

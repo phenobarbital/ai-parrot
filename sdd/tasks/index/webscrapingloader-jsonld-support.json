@@ -1,0 +1,32 @@
+{
+  "feature": "webscrapingloader-jsonld-support",
+  "feature_id": "FEAT-142",
+  "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-04T11:22:42.330048+00:00",
+  "completed_at": "2026-05-04T20:22:36.221874",
+  "tasks": [
+    {
+      "id": "TASK-975",
+      "slug": "jsonld-integration-tests",
+      "title": "Integration tests and backward compatibility regression suite",
+      "feature_id": "FEAT-142",
+      "feature": "webscrapingloader-jsonld-support",
+      "spec": "sdd/specs/webscrapingloader-jsonld-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-973",
+        "TASK-974"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests the integrated pipeline \u2014 requires both TASK-973 and TASK-974 complete",
+      "assigned_to": null,
+      "started_at": "2026-05-04T16:29:52.259293+00:00",
+      "completed_at": "2026-05-04T20:22:36.221874",
+      "file": "sdd/tasks/completed/TASK-975-jsonld-integration-tests.md"
+    }
+  ]
+}

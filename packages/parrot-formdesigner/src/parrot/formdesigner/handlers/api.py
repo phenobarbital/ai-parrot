@@ -59,6 +59,29 @@ def _deep_merge(base: dict, patch: dict) -> dict:
     return result
 
 
+def _loc_to_str(value: object) -> str | None:
+    """Flatten a LocalizedString (str | dict[str, str]) to a plain str.
+
+    Mirrors the title-extraction pattern used in
+    ``PostgresFormStorage.list_forms`` so the API and storage layers
+    agree on rendering.
+
+    Args:
+        value: Raw value — string, ``{lang: text}`` dict, or ``None``.
+
+    Returns:
+        Plain string if a non-empty value was provided; ``None`` if the
+        input is ``None`` or an empty string/dict.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        value = next(iter(value.values()), None)
+    if not value:
+        return None
+    return str(value)
+
+
 def _bump_version(version: str) -> str:
     """Increment the minor component of a version string.
 
@@ -198,16 +221,64 @@ class FormAPIHandler:
         return userinfo.get("programs", [])
 
     async def list_forms(self, request: web.Request) -> web.Response:
-        """GET /api/forms — List all registered forms.
+        """GET /api/v1/forms — List all registered forms with rich metadata.
+
+        Merges in-memory FormRegistry entries with persisted FormStorage rows
+        (when a storage backend is configured). Each entry includes form_id,
+        title, description, version, source ("memory" | "db"), and an
+        ISO-8601 created_at (or None).
 
         Args:
             request: Incoming HTTP request.
 
         Returns:
-            JSON response with a ``forms`` list of form ID strings.
+            JSON response ``{"forms": [<descriptor>, ...]}`` sorted by form_id.
         """
-        form_ids = await self.registry.list_form_ids()
-        return web.json_response({"forms": form_ids})
+        in_memory = await self.registry.list_forms()
+        descriptors: dict[str, dict] = {}
+
+        for form in in_memory:
+            ts = form.created_at
+            descriptors[form.form_id] = {
+                "form_id": form.form_id,
+                "title": _loc_to_str(form.title),
+                "description": _loc_to_str(form.description),
+                "version": form.version,
+                "source": "memory",
+                "created_at": ts.isoformat() if ts is not None else None,
+            }
+
+        storage = self.registry._storage
+        if storage is not None:
+            try:
+                persisted = await storage.list_forms()
+            except Exception as exc:
+                self.logger.warning("FormStorage.list_forms failed: %s", exc)
+                persisted = []
+
+            for row in persisted:
+                fid = row.get("form_id")
+                if not fid:
+                    continue
+                existing = descriptors.get(fid)
+                if existing is not None:
+                    # In both: registry wins for title/description/version,
+                    # storage wins for created_at; mark source as "db".
+                    existing["source"] = "db"
+                    if row.get("created_at") is not None:
+                        existing["created_at"] = row["created_at"]
+                else:
+                    descriptors[fid] = {
+                        "form_id": fid,
+                        "title": _loc_to_str(row.get("title")),
+                        "description": _loc_to_str(row.get("description")),
+                        "version": row.get("version", "1.0"),
+                        "source": "db",
+                        "created_at": row.get("created_at"),
+                    }
+
+        forms = sorted(descriptors.values(), key=lambda d: d["form_id"])
+        return web.json_response({"forms": forms})
 
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/forms/{form_id} — Get full FormSchema as JSON.

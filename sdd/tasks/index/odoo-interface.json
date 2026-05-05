@@ -1,0 +1,109 @@
+{
+  "feature": "odoo-interface",
+  "feature_id": "FEAT-054",
+  "spec": "sdd/specs/odoo-interface.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-21T00:25:00Z",
+  "tasks": [
+    {
+      "id": "TASK-438",
+      "slug": "odoo-config-variables",
+      "title": "Odoo Config Variables",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies parrot/conf.py \u2014 must complete before core interface",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-373-odoo-config-variables.md"
+    },
+    {
+      "id": "TASK-439",
+      "slug": "odoo-core-interface",
+      "title": "Odoo Core Interface (Auth + execute_kw + Context Manager)",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-373"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports config from TASK-373, creates main module",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
+    },
+    {
+      "id": "TASK-440",
+      "slug": "odoo-crud-methods",
+      "title": "Odoo CRUD Convenience Methods",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-374"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends OdooInterface class from TASK-374",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:15:00Z",
+      "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
+    },
+    {
+      "id": "TASK-441",
+      "slug": "odoo-export-registration",
+      "title": "Odoo Interface Export & Registration",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-375"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs completed module from TASK-375",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
+    },
+    {
+      "id": "TASK-442",
+      "slug": "odoo-unit-tests",
+      "title": "Odoo Interface Unit Tests",
+      "feature_id": "FEAT-054",
+      "feature": "odoo-interface",
+      "spec": "sdd/specs/odoo-interface.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-376"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests require all implementation tasks complete",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
+      "completed_at": "2026-03-21T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-377-odoo-unit-tests.md"
+    }
+  ]
+}

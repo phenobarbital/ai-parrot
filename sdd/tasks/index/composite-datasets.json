@@ -1,0 +1,150 @@
+{
+  "feature": "composite-datasets",
+  "feature_id": "FEAT-062",
+  "spec": "sdd/specs/composite-datasets.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-25T13:41:28.720516Z",
+  "tasks": [
+    {
+      "id": "TASK-427",
+      "slug": "computed-columns-foundation",
+      "title": "Computed Columns Foundation",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-427-computed-columns-foundation.md",
+      "completed_at": "2026-03-25T00:00:00Z"
+    },
+    {
+      "id": "TASK-428",
+      "slug": "datasetentry-computed-integration",
+      "title": "DatasetEntry Computed Column Integration",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-427"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-428-datasetentry-computed-integration.md",
+      "completed_at": "2026-03-25T00:00:00Z"
+    },
+    {
+      "id": "TASK-429",
+      "slug": "dbtoolkit-sql-sources-core",
+      "title": "Core SQL Sources \u2014 PostgreSQL, MySQL, SQLite",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-428"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same file as TASK-428, must run after",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-429-add-methods-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
+    },
+    {
+      "id": "TASK-430",
+      "slug": "dbtoolkit-sql-sources-extended",
+      "title": "Extended SQL Sources \u2014 BigQuery, Oracle, ClickHouse, DuckDB",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-428"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies tool.py \u2014 sequential with TASK-429 to avoid conflicts",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-430-llm-runtime-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
+    },
+    {
+      "id": "TASK-431",
+      "slug": "composite-datasource",
+      "title": "CompositeDataSource",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-427"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file (sources/composite.py) \u2014 could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-431-composite-datasource.md",
+      "completed_at": "2026-03-25T13:36:15.050071Z"
+    },
+    {
+      "id": "TASK-432",
+      "slug": "add-composite-dataset",
+      "title": "DatasetManager.add_composite_dataset",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-431",
+        "TASK-428"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on CompositeDataSource (TASK-431) and DatasetEntry computed integration (TASK-428)",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-432-add-composite-dataset.md",
+      "completed_at": "2026-03-25T13:41:28.720516Z"
+    },
+    {
+      "id": "TASK-433",
+      "slug": "datasetinfo-guide-fetch-integration",
+      "title": "DatasetInfo, Guide & Fetch Integration",
+      "feature_id": "FEAT-062",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-432"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on MongoSource (TASK-432) \u2014 extends it",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
+      "file": "sdd/tasks/completed/TASK-433-dbtoolkit-documentdb-atlas.md",
+      "completed_at": "2026-03-25T13:41:27.318027Z"
+    }
+  ]
+}

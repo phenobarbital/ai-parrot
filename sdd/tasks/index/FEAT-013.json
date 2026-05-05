@@ -1,0 +1,85 @@
+{
+  "feature": "FEAT-013",
+  "feature_id": null,
+  "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-054",
+      "slug": "pulumi-config",
+      "title": "Pulumi Configuration",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-054-pulumi-config.md"
+    },
+    {
+      "id": "TASK-055",
+      "slug": "pulumi-executor",
+      "title": "Pulumi Executor",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-055-pulumi-executor.md"
+    },
+    {
+      "id": "TASK-056",
+      "slug": "pulumi-toolkit",
+      "title": "Pulumi Toolkit",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054",
+        "TASK-055"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-056-pulumi-toolkit.md"
+    },
+    {
+      "id": "TASK-057",
+      "slug": "pulumi-cli-install",
+      "title": "Pulumi CLI Install Command",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-057-pulumi-cli-install.md"
+    },
+    {
+      "id": "TASK-058",
+      "slug": "pulumi-integration-tests",
+      "title": "Pulumi Integration Tests & Package Export",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054",
+        "TASK-055",
+        "TASK-056"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-058-pulumi-integration-tests.md"
+    }
+  ]
+}

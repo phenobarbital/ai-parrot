@@ -1,0 +1,86 @@
+{
+  "feature": "FEAT-019",
+  "feature_id": null,
+  "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-098",
+      "slug": "candidate-ticker-model",
+      "title": "CandidateTicker Model & Data Needs Classifier",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-098-candidate-ticker-model.md"
+    },
+    {
+      "id": "TASK-099",
+      "slug": "enrichment-service",
+      "title": "EnrichmentService Core Implementation",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-098",
+        "TASK-095"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-099-enrichment-service.md"
+    },
+    {
+      "id": "TASK-100",
+      "slug": "pipeline-fsm-execution",
+      "title": "Pipeline FSM & Execution Updates",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-099"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-100-pipeline-fsm-execution.md"
+    },
+    {
+      "id": "TASK-101",
+      "slug": "analyst-prompts-update",
+      "title": "Analyst Prompts Update",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-101-analyst-prompts-update.md"
+    },
+    {
+      "id": "TASK-102",
+      "slug": "integration-tests",
+      "title": "Integration Tests & Degradation Tests",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-098",
+        "TASK-099",
+        "TASK-100",
+        "TASK-101"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-102-integration-tests.md"
+    }
+  ]
+}

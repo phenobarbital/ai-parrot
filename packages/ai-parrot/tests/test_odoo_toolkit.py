@@ -191,15 +191,18 @@ async def test_get_record_uses_read():
     transport.execute_kw.return_value = [{"id": 7, "name": "Acme"}]
     toolkit = _make_toolkit(transport)
 
-    result = await toolkit.get_record(model="res.partner", record_id=7)
+    # Pass explicit fields to bypass smart-field selection (which would call fields_get first)
+    result = await toolkit.get_record(model="res.partner", record_id=7, fields=["id", "name"])
 
     assert isinstance(result, RecordResult)
     assert result.record == {"id": 7, "name": "Acme"}
     assert result.model == "res.partner"
     assert result.metadata is not None
     assert result.metadata.fields_returned == 2
-    assert result.metadata.field_selection_method == "all"
-    transport.execute_kw.assert_awaited_once_with("res.partner", "read", [[7]], {})
+    assert result.metadata.field_selection_method == "requested"
+    transport.execute_kw.assert_awaited_once_with(
+        "res.partner", "read", [[7]], {"fields": ["id", "name"]}
+    )
 
 
 @pytest.mark.asyncio
@@ -570,3 +573,457 @@ async def test_pre_execute_authenticates_only_once():
     await toolkit.delete_record(model="res.partner", record_id=2)
 
     transport.authenticate.assert_awaited_once()
+
+
+# ── Phase 1: Smart Field Selection ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_records_auto_fields_when_fields_omitted():
+    """When fields=None, search_records calls fields_get and uses smart selection."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    fields_meta = {
+        "name": {"type": "char", "string": "Name"},
+        "state": {"type": "selection", "string": "Status"},
+        "image_1920": {"type": "binary", "string": "Image"},
+    }
+    # fields_get, search_read, search_count
+    transport.execute_kw.side_effect = [
+        fields_meta,
+        [{"id": 1, "name": "Test", "state": "draft"}],
+        1,
+    ]
+    result = await toolkit.search_records(model="res.partner")
+
+    assert isinstance(result, SearchResult)
+    assert result.metadata is not None
+    assert result.metadata.field_selection_method == "auto"
+    assert result.metadata.total_fields_available == 3
+    # Binary fields must not appear in auto-selected fields
+    assert "image_1920" not in (result.fields or [])
+
+
+@pytest.mark.asyncio
+async def test_search_records_explicit_fields_bypasses_smart_selection():
+    """When explicit fields are given, fields_get is NOT called."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.side_effect = [
+        [{"id": 1, "name": "Test"}],
+        1,
+    ]
+    result = await toolkit.search_records(model="res.partner", fields=["name"])
+
+    assert result.fields == ["name"]
+    assert result.metadata is not None
+    assert result.metadata.field_selection_method == "requested"
+    # Only 2 calls: search_read + search_count (no fields_get)
+    assert transport.execute_kw.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_record_auto_fields_when_fields_omitted():
+    """When fields=None, get_record uses smart selection."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    fields_meta = {
+        "name": {"type": "char", "string": "Name"},
+        "notes": {"type": "html", "string": "Notes"},
+    }
+    # fields_get, read
+    transport.execute_kw.side_effect = [
+        fields_meta,
+        [{"id": 1, "name": "Alice"}],
+    ]
+    result = await toolkit.get_record(model="res.partner", record_id=1)
+
+    assert isinstance(result, RecordResult)
+    assert result.metadata is not None
+    assert result.metadata.field_selection_method == "auto"
+    assert result.metadata.total_fields_available == 2
+
+
+@pytest.mark.asyncio
+async def test_fields_cache_prevents_redundant_fields_get():
+    """A second call to search_records for the same model must NOT call fields_get again."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    fields_meta = {"name": {"type": "char", "string": "Name"}}
+    transport.execute_kw.side_effect = [
+        fields_meta,                        # fields_get (first call)
+        [{"id": 1, "name": "A"}], 1,       # search_read + search_count (first call)
+        [{"id": 2, "name": "B"}], 2,       # search_read + search_count (second call)
+    ]
+    await toolkit.search_records(model="res.partner")
+    await toolkit.search_records(model="res.partner")
+
+    # fields_get should have been called only once (5 total calls, not 6)
+    assert transport.execute_kw.await_count == 5
+
+
+# ── Phase 1: Aggregate Records ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_calls_read_group_for_odoo_16_18():
+    """For Odoo versions < 19, uses read_group."""
+    transport = _fake_transport()
+    # version() returns 17.0
+    transport.version.return_value = {"server_serie": "17.0", "server_version": "17.0"}
+    toolkit = _make_toolkit(transport)
+
+    groups_data = [{"state": "sale", "amount_total": 1000.0, "__count": 5}]
+    # server_info() calls transport.version() directly — not execute_kw
+    transport.execute_kw.side_effect = [
+        groups_data,  # read_group (first and only execute_kw call)
+    ]
+    result = await toolkit.aggregate_records(
+        model="sale.order",
+        group_by=["state"],
+        measures=["amount_total:sum"],
+    )
+
+    from parrot_tools.odoo.models.envelopes import AggregateResult
+    assert isinstance(result, AggregateResult)
+    assert result.model == "sale.order"
+    assert result.group_by == ["state"]
+    assert result.count == 1
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_calls_formatted_read_group_for_odoo_19():
+    """For Odoo 19+, uses formatted_read_group."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "19.0", "server_version": "19.0"}
+    toolkit = _make_toolkit(transport)
+
+    groups_data = [{"state": "sale", "amount_total": 2000.0}]
+    # server_info() calls transport.version() directly — not execute_kw
+    transport.execute_kw.side_effect = [
+        groups_data,  # formatted_read_group (first and only execute_kw call)
+    ]
+    result = await toolkit.aggregate_records(
+        model="sale.order",
+        group_by=["state"],
+    )
+
+    assert result.count == 1
+    # Verify formatted_read_group was called (second call)
+    calls = transport.execute_kw.call_args_list
+    assert any("formatted_read_group" in str(c) for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_aggregate_records_rejects_invalid_aggregator():
+    """Unknown aggregator names raise ValueError."""
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "17.0", "server_version": "17.0"}
+    toolkit = _make_toolkit(transport)
+
+    # ValueError is raised before any execute_kw call (during measure validation)
+    with pytest.raises(ValueError, match="aggregator"):
+        await toolkit.aggregate_records(
+            model="sale.order",
+            group_by=["state"],
+            measures=["amount_total:evil"],
+        )
+
+
+# ── Phase 1: Domain Builder ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_build_domain_and_operator():
+    """AND conditions produce correct & prefix."""
+    toolkit = _make_toolkit()
+    result = await toolkit.build_domain(
+        conditions=[
+            {"field": "name", "operator": "ilike", "value": "test"},
+            {"field": "active", "operator": "=", "value": True},
+        ],
+        logical_operator="and",
+    )
+    from parrot_tools.odoo.models.envelopes import DomainBuildResult
+    assert isinstance(result, DomainBuildResult)
+    assert result.valid is True
+    assert "&" in result.domain
+    assert ("name", "ilike", "test") in result.domain
+
+
+@pytest.mark.asyncio
+async def test_build_domain_or_operator():
+    """OR conditions produce correct | prefix."""
+    toolkit = _make_toolkit()
+    result = await toolkit.build_domain(
+        conditions=[
+            {"field": "email", "operator": "ilike", "value": "@acme"},
+            {"field": "phone", "operator": "!=", "value": False},
+        ],
+        logical_operator="or",
+    )
+    assert result.valid is True
+    assert "|" in result.domain
+
+
+@pytest.mark.asyncio
+async def test_build_domain_invalid_operator():
+    """Unsafe operators produce valid=False with a warning."""
+    toolkit = _make_toolkit()
+    result = await toolkit.build_domain(
+        conditions=[{"field": "name", "operator": "EVIL; DROP TABLE", "value": "x"}]
+    )
+    assert result.valid is False
+    assert len(result.warnings) > 0
+
+
+@pytest.mark.asyncio
+async def test_build_domain_empty_conditions():
+    """Empty conditions list returns empty domain."""
+    toolkit = _make_toolkit()
+    result = await toolkit.build_domain(conditions=[])
+    assert result.domain == []
+    assert result.valid is True
+
+
+@pytest.mark.asyncio
+async def test_build_domain_single_condition_no_prefix():
+    """Single condition needs no prefix operator."""
+    toolkit = _make_toolkit()
+    result = await toolkit.build_domain(
+        conditions=[{"field": "name", "operator": "=", "value": "Alice"}]
+    )
+    assert result.valid is True
+    assert len(result.domain) == 1  # just one triplet, no prefix
+
+
+# ── Phase 1: get_odoo_profile ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_odoo_profile_returns_typed_envelope():
+    """get_odoo_profile assembles server version, user context, and modules."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.side_effect = [
+        {"lang": "en_US"},          # context_get
+        [{"name": "sale", "shortdesc": "Sales", "installed_version": "17.0.1.0"}],  # module list
+    ]
+    result = await toolkit.get_odoo_profile()
+
+    from parrot_tools.odoo.models.envelopes import OdooProfileResult
+    assert isinstance(result, OdooProfileResult)
+    assert result.server_version != "" or result.server_serie != ""
+    assert result.transport in ("jsonrpc", "json2", "xmlrpc", "auto", "unknown")
+
+
+@pytest.mark.asyncio
+async def test_get_odoo_profile_skips_modules_when_disabled():
+    """include_modules=False must not call ir.module.module."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.side_effect = [{"lang": "en_US"}]  # only context_get
+    result = await toolkit.get_odoo_profile(include_modules=False)
+
+    assert result.installed_modules == []
+    assert transport.execute_kw.await_count == 1
+
+
+# ── Phase 1: schema_catalog ───────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_schema_catalog_returns_typed_envelope():
+    """schema_catalog returns a SchemaCatalogResult with model list."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = [
+        {"model": "sale.order", "name": "Sales Order", "info": ""},
+        {"model": "sale.order.line", "name": "Sales Order Line", "info": ""},
+    ]
+    result = await toolkit.schema_catalog()
+
+    from parrot_tools.odoo.models.envelopes import SchemaCatalogResult
+    assert isinstance(result, SchemaCatalogResult)
+    assert result.total == 2
+
+
+@pytest.mark.asyncio
+async def test_schema_catalog_with_query():
+    """schema_catalog passes query filter to ir.model domain."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = [{"model": "sale.order", "name": "Sales Order", "info": ""}]
+    result = await toolkit.schema_catalog(query="sale")
+
+    assert result.total == 1
+    # Verify the domain contained an ilike filter
+    call_kwargs = transport.execute_kw.call_args
+    domain_arg = call_kwargs[0][2][0] if call_kwargs[0][2] else []
+    domain_str = str(domain_arg)
+    assert "sale" in domain_str or "ilike" in domain_str
+
+
+# ── Phase 1: inspect_model_relationships ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_inspect_model_relationships_groups_fields_by_type():
+    """inspect_model_relationships correctly partitions relational fields."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = {
+        "partner_id": {"type": "many2one", "string": "Partner", "relation": "res.partner"},
+        "line_ids": {"type": "one2many", "string": "Lines", "relation": "sale.order.line"},
+        "tag_ids": {"type": "many2many", "string": "Tags", "relation": "account.tag"},
+        "name": {"type": "char", "string": "Name", "required": True},
+    }
+    result = await toolkit.inspect_model_relationships(model="sale.order")
+
+    from parrot_tools.odoo.models.envelopes import ModelRelationshipsResult
+    assert isinstance(result, ModelRelationshipsResult)
+    assert any(f["name"] == "partner_id" for f in result.many2one)
+    assert any(f["name"] == "line_ids" for f in result.one2many)
+    assert any(f["name"] == "tag_ids" for f in result.many2many)
+    assert any(f["name"] == "name" for f in result.required_fields)
+    assert len(result.create_hints) > 0
+
+
+# ── Phase 1: diagnose_access ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_diagnose_access_when_allowed():
+    """diagnose_access reports acl_allowed=True when check_access_rights returns True."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    # check_access_rights → True, ir.model.access → [], ir.rule → [], groups → [{groups_id:[1]}], res.groups → [{full_name:"..."}]
+    transport.execute_kw.side_effect = [
+        True,   # check_access_rights
+        [],     # ir.model.access
+        [],     # ir.rule
+        [{"groups_id": [1]}],           # res.users.read
+        [{"full_name": "Technical"}],   # res.groups.read
+    ]
+    result = await toolkit.diagnose_access(model="res.partner", operation="read")
+
+    from parrot_tools.odoo.models.envelopes import AccessDiagnosisResult
+    assert isinstance(result, AccessDiagnosisResult)
+    assert result.acl_allowed is True
+    assert "permission" in result.diagnosis.lower() or "acl" in result.diagnosis.lower()
+
+
+@pytest.mark.asyncio
+async def test_diagnose_access_when_denied():
+    """diagnose_access reports acl_allowed=False when check_access_rights returns False."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.side_effect = [
+        False,  # check_access_rights
+        [],     # ir.model.access
+        [],     # ir.rule
+        [{"groups_id": []}],  # res.users.read
+    ]
+    result = await toolkit.diagnose_access(model="res.partner", operation="write")
+
+    assert result.acl_allowed is False
+    assert "not" in result.diagnosis.lower()
+
+
+# ── Phase 1: health_check ─────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_health_check_no_network_call():
+    """health_check makes no Odoo network call."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    result = await toolkit.health_check()
+
+    from parrot_tools.odoo.models.envelopes import HealthCheckResult
+    assert isinstance(result, HealthCheckResult)
+    # health_check should not have called execute_kw
+    transport.execute_kw.assert_not_awaited()
+    assert result.connected is True  # transport uid=1 (from _fake_transport)
+    assert result.tool_count > 0
+
+
+# ── Phase 1: search_employee & search_holidays ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_search_employee_returns_typed_entities():
+    """search_employee returns a list of HrEmployee instances."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = [
+        {
+            "id": 1, "display_name": "Alice", "name": "Alice",
+            "job_id": [1, "Engineer"], "department_id": [2, "R&D"],
+            "work_email": "alice@example.com", "work_phone": "555-1234",
+            "company_id": [1, "My Company"], "active": True,
+        }
+    ]
+    result = await toolkit.search_employee(name="Alice")
+
+    from parrot_tools.odoo.models.entities import HrEmployee
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], HrEmployee)
+    assert result[0].name == "Alice"
+
+
+@pytest.mark.asyncio
+async def test_search_holidays_date_range():
+    """search_holidays queries hr.leave with a date domain."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = [
+        {
+            "id": 10, "display_name": "Leave #10", "name": "Annual Leave",
+            "employee_id": [1, "Alice"], "date_from": "2026-06-01",
+            "date_to": "2026-06-05", "number_of_days": 5.0,
+            "state": "validate",
+        }
+    ]
+    result = await toolkit.search_holidays(start_date="2026-06-01", end_date="2026-06-30")
+
+    from parrot_tools.odoo.models.entities import HrLeave
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], HrLeave)
+    assert result[0].state == "validate"
+
+
+@pytest.mark.asyncio
+async def test_search_holidays_with_employee_filter():
+    """search_holidays adds employee_id to domain when provided."""
+    transport = _fake_transport()
+    toolkit = _make_toolkit(transport)
+
+    transport.execute_kw.return_value = []
+    await toolkit.search_holidays(
+        start_date="2026-06-01", end_date="2026-06-30", employee_id=5
+    )
+
+    call_args = transport.execute_kw.call_args
+    domain_arg = call_args[0][2][0]  # positional args[2][0] = domain
+    assert any(
+        len(item) == 3 and item[0] == "employee_id" and item[2] == 5
+        for item in domain_arg
+        if isinstance(item, (list, tuple))
+    )

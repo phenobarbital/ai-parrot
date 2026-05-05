@@ -1,6 +1,9 @@
-"""Unit tests for parrot-formdesigner core models (TASK-548)."""
+"""Unit tests for parrot-formdesigner core models (TASK-548, TASK-1033)."""
+
+from datetime import datetime, timezone
 
 import pytest
+
 from parrot.formdesigner.core import FormSchema, FormField, FieldType, FormSection
 from parrot.formdesigner.core.style import FormStyle, StyleSchema
 from parrot.formdesigner.core.constraints import FieldConstraints
@@ -74,4 +77,20 @@ class TestFormSchema:
         assert FieldType.EMAIL == "email"
         assert FieldType.SELECT == "select"
         assert FieldType.BOOLEAN == "boolean"
+
+    def test_form_schema_created_at_optional(self) -> None:
+        """FormSchema without created_at parses correctly with created_at=None."""
+        f = FormSchema(form_id="x", title="t", sections=[])
+        assert f.created_at is None
+
+    def test_form_schema_created_at_serializes_iso(self) -> None:
+        """FormSchema with a tz-aware datetime serializes created_at as ISO-8601."""
+        ts = datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc)
+        f = FormSchema(form_id="x", title="t", sections=[], created_at=ts)
+        js = f.model_dump_json()
+        # Pydantic v2 may emit "Z" or "+00:00" suffix — both are valid ISO-8601.
+        assert '"created_at":"2026-04-12T10:31:00' in js
+        assert "created_at" in js
+        f2 = FormSchema.model_validate_json(js)
+        assert f2.created_at == ts
 

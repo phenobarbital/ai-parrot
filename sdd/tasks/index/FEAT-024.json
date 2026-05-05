@@ -1,0 +1,209 @@
+{
+  "feature": "FEAT-024",
+  "feature_id": null,
+  "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-158",
+      "slug": "memo-store-interface",
+      "title": "AbstractMemoStore Interface",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-158-memo-store-interface.md"
+    },
+    {
+      "id": "TASK-159",
+      "slug": "file-memo-store",
+      "title": "FileMemoStore Implementation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-158"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-159-file-memo-store.md"
+    },
+    {
+      "id": "TASK-160",
+      "slug": "memo-store-lru-cache",
+      "title": "MemoStore LRU Cache",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-160-memo-store-lru-cache.md"
+    },
+    {
+      "id": "TASK-161",
+      "slug": "memo-event-log",
+      "title": "MemoEventLog Implementation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-158"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-161-memo-event-log.md"
+    },
+    {
+      "id": "TASK-162",
+      "slug": "memo-store-unit-tests",
+      "title": "FileMemoStore Unit Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159",
+        "TASK-161"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-162-memo-store-unit-tests.md"
+    },
+    {
+      "id": "TASK-163",
+      "slug": "orchestrator-memo-store",
+      "title": "Add MemoStore to ExecutionOrchestrator",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-163-orchestrator-memo-store.md"
+    },
+    {
+      "id": "TASK-164",
+      "slug": "memo-persistence-hook",
+      "title": "Hook Memo Persistence After Deliberation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-163"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-164-memo-persistence-hook.md"
+    },
+    {
+      "id": "TASK-165",
+      "slug": "event-logging-hook",
+      "title": "Hook Event Logging After Execution",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-163",
+        "TASK-161"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-165-event-logging-hook.md"
+    },
+    {
+      "id": "TASK-166",
+      "slug": "memo-integration-tests",
+      "title": "Memo Persistence Integration Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-164",
+        "TASK-165"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-166-memo-integration-tests.md"
+    },
+    {
+      "id": "TASK-167",
+      "slug": "get-recent-memos-tool",
+      "title": "get_recent_memos Tool",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-167-get-recent-memos-tool.md"
+    },
+    {
+      "id": "TASK-168",
+      "slug": "get-memo-detail-tool",
+      "title": "get_memo_detail Tool",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-168-get-memo-detail-tool.md"
+    },
+    {
+      "id": "TASK-169",
+      "slug": "analyst-toolkit-integration",
+      "title": "Add Memo Tools to Analyst Toolkit",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-167",
+        "TASK-168"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-169-analyst-toolkit-integration.md"
+    },
+    {
+      "id": "TASK-170",
+      "slug": "memo-tools-tests",
+      "title": "Memo Tools Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-167",
+        "TASK-168"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-170-memo-tools-tests.md"
+    }
+  ]
+}

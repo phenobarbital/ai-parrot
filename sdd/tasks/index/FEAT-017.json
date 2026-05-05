@@ -1,0 +1,135 @@
+{
+  "feature": "FEAT-017",
+  "feature_id": null,
+  "spec": "sdd/specs/quant-toolkit.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-084",
+      "slug": "quant-data-models",
+      "title": "QuantToolkit Data Models",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-084-quant-data-models.md"
+    },
+    {
+      "id": "TASK-085",
+      "slug": "risk-metrics-engine",
+      "title": "Risk Metrics Engine",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-085-risk-metrics-engine.md"
+    },
+    {
+      "id": "TASK-086",
+      "slug": "correlation-engine",
+      "title": "Correlation Engine",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-086-correlation-engine.md"
+    },
+    {
+      "id": "TASK-087",
+      "slug": "piotroski-fscore",
+      "title": "Piotroski F-Score",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-087-piotroski-fscore.md"
+    },
+    {
+      "id": "TASK-088",
+      "slug": "volatility-analytics",
+      "title": "Volatility Analytics",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-088-volatility-analytics.md"
+    },
+    {
+      "id": "TASK-089",
+      "slug": "stress-testing",
+      "title": "Stress Testing",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084",
+        "TASK-085"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-089-stress-testing.md"
+    },
+    {
+      "id": "TASK-090",
+      "slug": "quant-toolkit-main",
+      "title": "QuantToolkit Main Class",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084",
+        "TASK-085",
+        "TASK-086",
+        "TASK-087",
+        "TASK-088",
+        "TASK-089"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-090-quant-toolkit-main.md"
+    },
+    {
+      "id": "TASK-091",
+      "slug": "quant-integration-tests",
+      "title": "QuantToolkit Integration Tests",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-090"
+      ],
+      "assigned_to": "a2e5d1ea-a67b-47dd-9439-216d1d078fb1",
+      "file": "sdd/tasks/completed/TASK-091-quant-integration-tests.md"
+    }
+  ]
+}

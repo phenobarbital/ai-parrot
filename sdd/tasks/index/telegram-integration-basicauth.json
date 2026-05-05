@@ -1,0 +1,110 @@
+{
+  "feature": "telegram-integration-basicauth",
+  "feature_id": "FEAT-109",
+  "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-04-19T15:09:30.114623+00:00",
+  "tasks": [
+    {
+      "id": "TASK-764",
+      "slug": "azure-config-model",
+      "title": "Add azure_auth_url to TelegramAgentConfig",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Only touches models.py \u2014 no overlap with TASK-767 (HTML file).",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-764-azure-config-model.md",
+      "completed_at": "2026-04-19T15:04:40.220606+00:00"
+    },
+    {
+      "id": "TASK-765",
+      "slug": "azure-auth-strategy",
+      "title": "Implement AzureAuthStrategy",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-764 config fields. Touches auth.py which is shared.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-765-azure-auth-strategy.md",
+      "completed_at": "2026-04-19T15:06:15.124529+00:00"
+    },
+    {
+      "id": "TASK-766",
+      "slug": "wrapper-azure-integration",
+      "title": "Integrate AzureAuthStrategy into TelegramAgentWrapper",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both config (764) and strategy (765). Touches wrapper.py.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-766-wrapper-azure-integration.md",
+      "completed_at": "2026-04-19T15:08:20.402432+00:00"
+    },
+    {
+      "id": "TASK-767",
+      "slug": "azure-login-html",
+      "title": "Create Azure Login HTML Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Standalone static HTML file \u2014 no Python dependencies. Can run in parallel with all tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-767-azure-login-html.md",
+      "completed_at": "2026-04-19T15:07:14.519896+00:00"
+    },
+    {
+      "id": "TASK-768",
+      "slug": "azure-integration-tests",
+      "title": "Azure Auth Integration Tests",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765",
+        "TASK-766"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation task \u2014 depends on all Python implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-768-azure-integration-tests.md",
+      "completed_at": "2026-04-19T15:09:30.114623+00:00"
+    }
+  ]
+}

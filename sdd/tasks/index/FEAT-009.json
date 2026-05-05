@@ -1,0 +1,118 @@
+{
+  "feature": "FEAT-009",
+  "feature_id": null,
+  "spec": "sdd/specs/agentsflow-persistency.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-009",
+      "slug": "flow-definition-models",
+      "title": "Flow Definition Pydantic Models",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-009-flow-definition-models.md"
+    },
+    {
+      "id": "TASK-010",
+      "slug": "endnode-implementation",
+      "title": "EndNode Implementation",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-010-endnode-implementation.md"
+    },
+    {
+      "id": "TASK-011",
+      "slug": "action-registry",
+      "title": "Action Registry",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-009"
+      ],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-011-action-registry.md"
+    },
+    {
+      "id": "TASK-012",
+      "slug": "cel-evaluator",
+      "title": "CEL Predicate Evaluator",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-012-cel-evaluator.md"
+    },
+    {
+      "id": "TASK-013",
+      "slug": "flow-loader",
+      "title": "Flow Loader",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-009",
+        "TASK-010",
+        "TASK-011",
+        "TASK-012"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-013-flow-loader.md"
+    },
+    {
+      "id": "TASK-014",
+      "slug": "svelteflow-adapter",
+      "title": "SvelteFlow Adapter",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-009"
+      ],
+      "assigned_to": "c5c51100-9236-4823-bdc3-26829271174f",
+      "file": "sdd/tasks/completed/TASK-014-svelteflow-adapter.md"
+    },
+    {
+      "id": "TASK-015",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-009",
+        "TASK-010",
+        "TASK-011",
+        "TASK-012",
+        "TASK-013",
+        "TASK-014"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-015-integration-tests.md"
+    }
+  ]
+}

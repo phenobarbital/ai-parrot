@@ -1,0 +1,91 @@
+{
+  "feature": "formbuilder-database",
+  "feature_id": null,
+  "spec": "sdd/specs/formbuilder-database.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-04-03T22:00:00+00:00",
+  "completed_at": "2026-04-03T14:55:00.000000+00:00",
+  "tasks": [
+    {
+      "id": "TASK-544",
+      "slug": "database-form-tool",
+      "title": "DatabaseFormTool \u2014 Core Implementation",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Core implementation \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-04-03T09:45:07.788037+00:00",
+      "file": "sdd/tasks/active/TASK-544-database-form-tool.md",
+      "completed_at": "2026-04-03T14:24:42.640904+00:00"
+    },
+    {
+      "id": "TASK-545",
+      "slug": "package-exports",
+      "title": "Package Exports for DatabaseFormTool",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-544"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must import from TASK-544 implementation",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:30:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-545-package-exports.md",
+      "completed_at": "2026-04-03T14:35:00.000000+00:00"
+    },
+    {
+      "id": "TASK-546",
+      "slug": "example-ui-integration",
+      "title": "Example UI Integration for Database Forms",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-544",
+        "TASK-545"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on tool being importable (TASK-544 + TASK-545)",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:31:59.241140+00:00",
+      "file": "sdd/tasks/active/TASK-546-example-ui-integration.md",
+      "completed_at": "2026-04-03T14:42:00.938969+00:00"
+    },
+    {
+      "id": "TASK-547",
+      "slug": "database-form-tests",
+      "title": "Unit & Integration Tests for DatabaseFormTool",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-544",
+        "TASK-545"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs importable tool to test (TASK-544 + TASK-545)",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:40:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-547-database-form-tests.md",
+      "completed_at": "2026-04-03T14:55:00.000000+00:00"
+    }
+  ]
+}

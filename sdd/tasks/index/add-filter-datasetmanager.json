@@ -1,0 +1,50 @@
+{
+  "feature": "add-filter-datasetmanager",
+  "feature_id": "FEAT-051",
+  "spec": "sdd/specs/add-filter-datasetmanager.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-03-18T02:02:44.667925",
+  "tasks": [
+    {
+      "id": "TASK-350",
+      "slug": "tablesource-permanent-filter",
+      "title": "TableSource Permanent Filter",
+      "feature_id": "FEAT-051",
+      "feature": "add-filter-datasetmanager",
+      "spec": "sdd/specs/add-filter-datasetmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Modifies only table.py \u2014 no file overlap with TASK-349 (query_slug.py)",
+      "assigned_to": null,
+      "started_at": "2026-03-18T01:18:02.321281",
+      "file": "sdd/tasks/active/TASK-350-tablesource-permanent-filter.md",
+      "completed_at": "2026-03-18T01:44:10.654806"
+    },
+    {
+      "id": "TASK-351",
+      "slug": "datasetmanager-permanent-filter-integration",
+      "title": "DatasetManager Permanent Filter Integration",
+      "feature_id": "FEAT-051",
+      "feature": "add-filter-datasetmanager",
+      "spec": "sdd/specs/add-filter-datasetmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-349",
+        "TASK-350"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports from both QuerySlugSource and TableSource \u2014 must run after TASK-349 and TASK-350",
+      "assigned_to": null,
+      "started_at": "2026-03-18T01:47:01.341734",
+      "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
+      "completed_at": "2026-03-18T02:02:44.667925"
+    }
+  ]
+}

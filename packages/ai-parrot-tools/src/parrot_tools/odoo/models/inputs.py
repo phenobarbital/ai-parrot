@@ -251,3 +251,226 @@ class AttachDocumentInput(_OdooBaseInput):
     )
     mimetype: Optional[str] = None
     description: Optional[str] = None
+
+
+# ── Phase 1: Introspection & Smart Tool Inputs ──────────────────────────────
+
+
+class AggregateRecordsInput(_OdooBaseInput):
+    """Input schema for ``aggregate_records`` — server-side grouping via read_group."""
+
+    model: str = Field(..., description="Odoo model technical name, e.g. 'sale.order'")
+    group_by: list[str] = Field(..., min_length=1, description="Fields to group by")
+    measures: Optional[list[str]] = Field(
+        default=None,
+        description="Aggregation measures as 'field:agg' strings, e.g. 'amount_total:sum'",
+    )
+    domain: Optional[OdooDomain] = Field(
+        default=None,
+        description="Domain filter for the aggregation",
+    )
+    lazy: bool = Field(
+        default=False,
+        description="Use lazy grouping (only first group_by level resolved)",
+    )
+    limit: Optional[int] = Field(default=None, ge=1, description="Max groups to return")
+    offset: int = Field(default=0, ge=0, description="Groups to skip (pagination)")
+    order: Optional[str] = Field(default=None, description="Sort order for groups")
+
+
+class BuildDomainInput(_OdooBaseInput):
+    """Input schema for ``build_domain`` — structured domain construction."""
+
+    conditions: list[dict[str, Any]] = Field(
+        ...,
+        description="List of condition dicts with keys: field, operator, value. "
+        "An empty list returns an empty (match-all) domain.",
+    )
+    logical_operator: str = Field(
+        default="and",
+        description="Logical operator joining conditions: 'and' | 'or'",
+    )
+
+
+class GetOdooProfileInput(_OdooBaseInput):
+    """Input schema for ``get_odoo_profile`` — comprehensive server snapshot."""
+
+    include_modules: bool = Field(
+        default=True,
+        description="Whether to fetch the installed modules list",
+    )
+    module_limit: int = Field(
+        default=100,
+        ge=1,
+        le=5000,
+        description="Max installed modules to return",
+    )
+
+
+class SchemaCatalogInput(_OdooBaseInput):
+    """Input schema for ``schema_catalog`` — bounded model catalog."""
+
+    query: Optional[str] = Field(
+        default=None,
+        description="Substring to filter model names or descriptions",
+    )
+    models: Optional[list[str]] = Field(
+        default=None,
+        description="Explicit list of model technical names to include",
+    )
+    include_fields: bool = Field(
+        default=False,
+        description="Include field metadata for each model",
+    )
+    limit: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Max models to return",
+    )
+
+
+class InspectModelRelationshipsInput(_OdooBaseInput):
+    """Input schema for ``inspect_model_relationships``."""
+
+    model: str = Field(..., description="Odoo model technical name to inspect")
+
+
+class DiagnoseAccessInput(_OdooBaseInput):
+    """Input schema for ``diagnose_access`` — ACL and record-rule diagnosis."""
+
+    model: str = Field(..., description="Odoo model technical name to diagnose")
+    operation: Literal["read", "write", "create", "unlink"] = Field(
+        default="read",
+        description="Operation to check",
+    )
+    domain: Optional[OdooDomain] = Field(
+        default=None,
+        description="Optional domain to check against record rules",
+    )
+    record_ids: Optional[list[int]] = Field(
+        default=None,
+        description="Specific record IDs to check visibility for",
+    )
+
+
+class SearchEmployeeInput(_OdooBaseInput):
+    """Input schema for ``search_employee``."""
+
+    name: str = Field(..., description="Employee name (partial match supported)")
+    limit: int = Field(default=20, ge=1, le=200, description="Max employees to return")
+
+
+class SearchHolidaysInput(_OdooBaseInput):
+    """Input schema for ``search_holidays`` — leave/holiday queries."""
+
+    start_date: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Start of date range (YYYY-MM-DD)",
+    )
+    end_date: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="End of date range (YYYY-MM-DD)",
+    )
+    employee_id: Optional[int] = Field(
+        default=None,
+        description="Filter to a specific employee by ID",
+    )
+
+
+# ── Phase 2: Diagnostics, Audit & Planning Inputs ──────────────────────────
+
+
+class DiagnoseOdooCallInput(_OdooBaseInput):
+    """Input schema for ``diagnose_odoo_call`` — call preview/debug."""
+
+    model: str = Field(..., description="Odoo model technical name")
+    method: str = Field(..., description="ORM method name, e.g. 'search_read'")
+    args: Optional[list[Any]] = Field(
+        default=None,
+        description="Positional arguments for the call",
+    )
+    kwargs: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Keyword arguments for the call",
+    )
+    transport: Literal["auto", "json2", "xmlrpc", "jsonrpc"] = Field(
+        default="auto",
+        description="Transport type to assume for compatibility checks",
+    )
+    target_version: Optional[str] = Field(
+        default=None,
+        description="Target Odoo version string for version-specific checks",
+    )
+    observed_error: Optional[str] = Field(
+        default=None,
+        description="Error message observed in a previous call attempt",
+    )
+
+
+class GenerateJson2PayloadInput(_OdooBaseInput):
+    """Input schema for ``generate_json2_payload`` — JSON-2 request preview."""
+
+    model: str = Field(..., description="Odoo model technical name")
+    method: str = Field(..., description="ORM method name")
+    args: Optional[list[Any]] = Field(
+        default=None,
+        description="Positional arguments (XML-RPC style)",
+    )
+    kwargs: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Keyword arguments",
+    )
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Override base URL for the endpoint (defaults to toolkit config)",
+    )
+    database: Optional[str] = Field(
+        default=None,
+        description="Override database name (defaults to toolkit config)",
+    )
+
+
+class ScanAddonsSourceInput(_OdooBaseInput):
+    """Input schema for ``scan_addons_source`` — local addon scanning."""
+
+    addons_paths: Optional[list[str]] = Field(
+        default=None,
+        description="Directories to scan for Odoo addons (must be under allowed roots)",
+    )
+    max_files: int = Field(
+        default=200,
+        ge=1,
+        le=10000,
+        description="Max Python files to parse per scan",
+    )
+    max_file_bytes: int = Field(
+        default=300_000,
+        ge=1024,
+        description="Max bytes per file before skipping it",
+    )
+
+
+class FitGapReportInput(_OdooBaseInput):
+    """Input schema for ``fit_gap_report`` — requirement classification."""
+
+    requirements: list[dict[str, Any]] = Field(
+        ...,
+        min_length=1,
+        description="List of business requirements to classify",
+    )
+    business_context: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Optional context metadata (industry, modules, etc.)",
+    )
+
+
+class BusinessPackReportInput(_OdooBaseInput):
+    """Input schema for ``business_pack_report``."""
+
+    pack: Literal["sales", "crm", "inventory", "accounting", "hr"] = Field(
+        ...,
+        description="Business pack to evaluate",
+    )

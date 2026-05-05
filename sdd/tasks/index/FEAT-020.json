@@ -1,0 +1,99 @@
+{
+  "feature": "FEAT-020",
+  "feature_id": null,
+  "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-103",
+      "slug": "lyria-batch-models",
+      "title": "Add Lyria Batch Data Models",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-103-lyria-batch-models.md"
+    },
+    {
+      "id": "TASK-104",
+      "slug": "lyria-batch-method",
+      "title": "Implement generate_music_batch Method",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-103"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-104-lyria-batch-method.md"
+    },
+    {
+      "id": "TASK-105",
+      "slug": "rename-generate-music",
+      "title": "Rename generate_music to generate_music_stream",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "ad88ddfc-fd84-406a-9983-d6470af955f8",
+      "file": "sdd/tasks/completed/TASK-105-rename-generate-music.md"
+    },
+    {
+      "id": "TASK-106",
+      "slug": "update-internal-callers",
+      "title": "Update Internal Callers to Use generate_music_stream",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-105"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-106-update-internal-callers.md"
+    },
+    {
+      "id": "TASK-107",
+      "slug": "lyria-batch-tests",
+      "title": "Add Lyria Batch Unit and Integration Tests",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-103",
+        "TASK-104",
+        "TASK-105"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-107-lyria-batch-tests.md"
+    },
+    {
+      "id": "TASK-108",
+      "slug": "lyria-batch-example",
+      "title": "Add Lyria Batch Usage Example",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-104"
+      ],
+      "assigned_to": "ad88ddfc-fd84-406a-9983-d6470af955f8",
+      "file": "sdd/tasks/completed/TASK-108-lyria-batch-example.md"
+    }
+  ]
+}

@@ -1,0 +1,266 @@
+{
+  "feature": "FEAT-022",
+  "feature_id": null,
+  "spec": "sdd/specs/vllm-client.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-125",
+      "slug": "vllm-models",
+      "title": "vLLM Pydantic Models",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-125-vllm-models.md"
+    },
+    {
+      "id": "TASK-126",
+      "slug": "vllm-client",
+      "title": "vLLMClient Implementation",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-125"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-126-vllm-client.md"
+    },
+    {
+      "id": "TASK-127",
+      "slug": "vllm-registration",
+      "title": "vLLM Factory Registration and Exports",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-126"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-127-vllm-registration.md"
+    },
+    {
+      "id": "TASK-128",
+      "slug": "vllm-tests",
+      "title": "vLLM Client Unit Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-125",
+        "TASK-126",
+        "TASK-127"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-128-vllm-tests.md"
+    },
+    {
+      "id": "TASK-129",
+      "slug": "paper-trading-models",
+      "title": "Core Data Models",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-129-paper-trading-models.md"
+    },
+    {
+      "id": "TASK-130",
+      "slug": "virtual-portfolio-engine",
+      "title": "Virtual Portfolio Engine",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-130-virtual-portfolio-engine.md"
+    },
+    {
+      "id": "TASK-131",
+      "slug": "paper-trading-mixin",
+      "title": "Paper Trading Mixin",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "cb17b7f5-7165-4d86-b3d3-3153055b6e08",
+      "file": "sdd/tasks/completed/TASK-131-paper-trading-mixin.md"
+    },
+    {
+      "id": "TASK-132",
+      "slug": "alpaca-paper-enhancement",
+      "title": "Alpaca Paper Trading Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-132-alpaca-paper-enhancement.md"
+    },
+    {
+      "id": "TASK-133",
+      "slug": "binance-testnet-enhancement",
+      "title": "Binance Testnet Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-133-binance-testnet-enhancement.md"
+    },
+    {
+      "id": "TASK-134",
+      "slug": "ibkr-paper-enhancement",
+      "title": "IBKR Paper Trading Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-134-ibkr-paper-enhancement.md"
+    },
+    {
+      "id": "TASK-135",
+      "slug": "kraken-demo-enhancement",
+      "title": "Kraken Demo Mode Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-135-kraken-demo-enhancement.md"
+    },
+    {
+      "id": "TASK-136",
+      "slug": "execution-report-enhancement",
+      "title": "Execution Report Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-136-execution-report-enhancement.md"
+    },
+    {
+      "id": "TASK-137",
+      "slug": "orchestrator-paper-mode",
+      "title": "Orchestrator Paper Mode",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-136"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-137-orchestrator-paper-mode.md"
+    },
+    {
+      "id": "TASK-138",
+      "slug": "paper-trading-exports",
+      "title": "Package Init and Exports",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-138-paper-trading-exports.md"
+    },
+    {
+      "id": "TASK-139",
+      "slug": "paper-trading-unit-tests",
+      "title": "Unit Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-131",
+        "TASK-132",
+        "TASK-133",
+        "TASK-134",
+        "TASK-135",
+        "TASK-136",
+        "TASK-137",
+        "TASK-138"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-139-paper-trading-unit-tests.md"
+    },
+    {
+      "id": "TASK-140",
+      "slug": "paper-trading-integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-139"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-140-paper-trading-integration-tests.md"
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "feature": "FEAT-041",
+  "feature_id": null,
+  "spec": "sdd/specs/cli-wizard-setup.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-275",
+      "slug": "wizard-data-models",
+      "title": "Wizard Data Models (ProviderConfig, AgentConfig, WizardResult)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-275-wizard-data-models.md"
+    },
+    {
+      "id": "TASK-276",
+      "slug": "base-client-wizard",
+      "title": "BaseClientWizard ABC and WizardRunner",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-275"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-276-base-client-wizard.md"
+    },
+    {
+      "id": "TASK-277",
+      "slug": "provider-wizards",
+      "title": "Provider Wizard Implementations (5 providers)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-276"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-277-provider-wizards.md"
+    },
+    {
+      "id": "TASK-278",
+      "slug": "scaffolding-module",
+      "title": "Scaffolding Module (env writer, agent scaffolder, app bootstrapper)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-275",
+        "TASK-279"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-278-scaffolding-module.md"
+    },
+    {
+      "id": "TASK-279",
+      "slug": "code-templates",
+      "title": "Code Templates (agent.py.tpl, app.py.tpl, run.py.tpl)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-279-code-templates.md"
+    },
+    {
+      "id": "TASK-280",
+      "slug": "setup-cli-command",
+      "title": "Setup CLI Command and Registration in parrot/cli.py",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-276",
+        "TASK-277",
+        "TASK-278"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-280-setup-cli-command.md"
+    },
+    {
+      "id": "TASK-281",
+      "slug": "unit-tests",
+      "title": "Unit and Integration Tests for CLI Wizard Setup",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-276",
+        "TASK-277",
+        "TASK-278",
+        "TASK-280"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-281-unit-tests.md"
+    }
+  ]
+}

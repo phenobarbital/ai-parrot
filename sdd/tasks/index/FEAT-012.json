@@ -1,0 +1,84 @@
+{
+  "feature": "FEAT-012",
+  "feature_id": null,
+  "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": null,
+  "completed_at": "2026-02-27T00:00:00",
+  "tasks": [
+    {
+      "id": "TASK-049",
+      "slug": "websearchagent-config-component",
+      "title": "WebSearchAgent Config Svelte Component",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-049-websearchagent-config-component.md"
+    },
+    {
+      "id": "TASK-050",
+      "slug": "agent-type-detection",
+      "title": "Agent Type Detection in Config Panel",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-049"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-050-agent-type-detection.md"
+    },
+    {
+      "id": "TASK-051",
+      "slug": "json-serialization",
+      "title": "JSON Serialization for WebSearchAgent Config",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-049",
+        "TASK-050"
+      ],
+      "assigned_to": "jesuslara",
+      "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
+    },
+    {
+      "id": "TASK-052",
+      "slug": "backend-config-passthrough",
+      "title": "Backend WebSearchAgent Config Passthrough Verification",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "completed_at": "2026-02-27T00:00:00",
+      "file": "sdd/tasks/completed/TASK-052-backend-config-passthrough.md"
+    },
+    {
+      "id": "TASK-053",
+      "slug": "websearchagent-integration-tests",
+      "title": "WebSearchAgent Crew Integration Tests",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-053-websearchagent-integration-tests.md"
+    }
+  ]
+}
