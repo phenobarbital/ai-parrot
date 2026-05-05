@@ -1,3 +1,11 @@
+---
+# SDD flow type and base branch (FEAT-145).
+# - type: feature  (default)  → base_branch: dev (or any non-main branch)
+# - type: hotfix              → base_branch MUST be: main
+type: feature
+base_branch: dev
+---
+
 # Brainstorm: <Title>
 
 **Date**: YYYY-MM-DD
