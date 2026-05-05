@@ -38,7 +38,7 @@ from ...models.crew import (
     determine_run_status,
 )
 from ...clients import AbstractClient
-from .storage import PersistenceMixin, SynthesisMixin
+from ..flows.core.storage import PersistenceMixin, SynthesisMixin
 from .storage.synthesis import SYNTHESIS_PROMPT
 
 
