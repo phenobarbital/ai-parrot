@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task. Blocks TASK-1014/1015/1016/1017. Must complete first.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1013-result-storage-foundation.md"
+      "completed_at": "2026-05-05T11:39:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1013-result-storage-foundation.md"
     },
     {
       "id": "TASK-1014",
@@ -42,8 +42,8 @@
       "parallelism_notes": "Conceptually parallel with TASK-1015 and TASK-1016 — share no source files. Per repo policy, runs sequentially in the same worktree.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1014-documentdb-result-storage-backend.md"
+      "completed_at": "2026-05-05T11:41:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1014-documentdb-result-storage-backend.md"
     },
     {
       "id": "TASK-1015",
@@ -62,8 +62,8 @@
       "parallelism_notes": "Conceptually parallel with TASK-1014 and TASK-1016 — share no source files.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1015-redis-result-storage-backend.md"
+      "completed_at": "2026-05-05T11:41:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1015-redis-result-storage-backend.md"
     },
     {
       "id": "TASK-1016",
@@ -82,8 +82,8 @@
       "parallelism_notes": "Conceptually parallel with TASK-1014 and TASK-1015 — share no source files.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1016-postgres-result-storage-backend.md"
+      "completed_at": "2026-05-05T11:42:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1016-postgres-result-storage-backend.md"
     },
     {
       "id": "TASK-1017",
@@ -105,8 +105,8 @@
       "parallelism_notes": "Touches the canonical mixin and deletes the legacy duplicate; depends on all three backends being importable via the factory.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1017-persistence-mixin-rewrite-and-consolidation.md"
+      "completed_at": "2026-05-05T11:44:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1017-persistence-mixin-rewrite-and-consolidation.md"
     },
     {
       "id": "TASK-1018",
@@ -125,8 +125,8 @@
       "parallelism_notes": "Touches three host classes (two AgentCrew duplicates + AgentsFlow); must keep the duplicates in lockstep.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1018-crew-flow-constructor-wiring-and-lifecycle.md"
+      "completed_at": "2026-05-05T11:52:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1018-crew-flow-constructor-wiring-and-lifecycle.md"
     },
     {
       "id": "TASK-1019",
@@ -145,8 +145,8 @@
       "parallelism_notes": "Validates the full wiring end-to-end after constructors are wired.",
       "assigned_to": null,
       "started_at": "2026-05-05T11:33:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1019-result-storage-integration-tests.md"
+      "completed_at": "2026-05-05T11:54:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1019-result-storage-integration-tests.md"
     }
   ]
 }

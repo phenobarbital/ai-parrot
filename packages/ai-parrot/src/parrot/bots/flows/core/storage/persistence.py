@@ -1,21 +1,66 @@
-"""Flow Primitives — PersistenceMixin.
+"""PersistenceMixin — pluggable persistence for crew/flow execution results (FEAT-147).
 
-Copied from ``parrot.bots.flow.storage.persistence`` into the shared
-core storage location.  Relative imports updated for the new package depth.
+Replaces the former hard-wired DocumentDB persistence with a delegating
+mixin that respects ``self._persist_results`` (opt-out) and lazily resolves
+a ``ResultStorage`` backend on first write.
+
+The host class is responsible for initialising four attributes in its
+``__init__``:
+
+    self._persist_results: bool                        # default True
+    self._result_storage_arg: str | ResultStorage | None
+    self._result_storage: Optional[ResultStorage]      # populated lazily
+    self._persist_tasks: set[asyncio.Task]             # initialised to set()
+
+All four are accessed via ``getattr`` with safe defaults so the mixin
+remains backwards-compatible with host classes that have not yet been wired.
 """
 from __future__ import annotations
 
+import asyncio
 import time
+from typing import Any, Optional
 
 from navconfig.logging import logging
-from typing import Any
+
+from .backends import ResultStorage, get_result_storage
 
 
 class PersistenceMixin:
-    """Mixin that adds DocumentDB persistence to crew/flow orchestrators.
+    """Pluggable persistence for crew/flow execution results.
 
-    Requires the host class to have a ``name`` attribute and a ``logger``.
+    The mixin exposes three public async methods:
+        - ``_save_result``    — fire-and-forget write (same public contract as before).
+        - ``aclose``          — wait for in-flight tasks, release the backend.
+        - ``__aenter__`` / ``__aexit__`` — async context-manager protocol.
+
+    Attributes:
+        (All owned by the host class — accessed via getattr.)
     """
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Internal helpers
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _ensure_result_storage(self) -> ResultStorage:
+        """Lazily resolve and cache the ``ResultStorage`` instance.
+
+        On first call the backend is instantiated via ``get_result_storage``
+        using the value of ``self._result_storage_arg``. On subsequent calls
+        the cached instance on ``self._result_storage`` is returned.
+
+        Returns:
+            A ready-to-use ``ResultStorage`` implementation.
+        """
+        storage: Optional[ResultStorage] = getattr(self, "_result_storage", None)
+        if storage is None:
+            storage = get_result_storage(getattr(self, "_result_storage_arg", None))
+            self._result_storage = storage  # type: ignore[attr-defined]
+        return storage
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Public API
+    # ──────────────────────────────────────────────────────────────────────────
 
     async def _save_result(
         self,
@@ -23,31 +68,80 @@ class PersistenceMixin:
         method: str,
         *,
         collection: str = "crew_executions",
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
-        """Save execution result to DocumentDB in the background.
+        """Persist one crew/flow execution result to the configured backend.
+
+        Returns immediately when ``self._persist_results`` is ``False`` —
+        no backend is contacted and no log line is emitted.
 
         Args:
-            result: The execution result (must support ``.to_dict()`` or ``str()``).
+            result: The execution result.  ``result.to_dict()`` is used when
+                available; otherwise ``str(result)`` is stored.
             method: Execution method name (e.g. ``"run_flow"``).
-            collection: Target DocumentDB collection name.
-            **kwargs: Extra fields merged into the saved document.
+            collection: Target collection / table name.
+            **kwargs: Extra fields merged into the persisted document
+                (e.g. ``user_id``, ``session_id``).
         """
+        if not getattr(self, "_persist_results", True):
+            return
+
         logger = getattr(self, "logger", logging.getLogger(__name__))
         try:
-            from .....interfaces.documentdb import DocumentDb
-
-            data = {
+            storage = self._ensure_result_storage()
+            data: dict[str, Any] = {
                 "crew_name": getattr(self, "name", "unknown"),
                 "method": method,
                 "timestamp": time.time(),
-                "result": result.to_dict() if hasattr(result, "to_dict") else str(result),
+                "result": (
+                    result.to_dict() if hasattr(result, "to_dict") else str(result)
+                ),
                 **kwargs,
             }
-            if "user_id" not in data:
-                data["user_id"] = "unknown"
+            data.setdefault("user_id", "unknown")
+            await storage.save(collection, data)
+        except Exception as exc:
+            logger.warning(
+                "Failed to save result to '%s': %s",
+                collection,
+                exc,
+            )
 
-            async with DocumentDb() as db:
-                await db.write(collection, data)
-        except Exception as e:
-            logger.warning("Failed to save result to '%s': %s", collection, e)
+    async def aclose(self) -> None:
+        """Wait for all in-flight persist tasks, then release the storage backend.
+
+        Idempotent: safe to call multiple times and safe to call before any
+        ``_save_result`` has been scheduled (no-op in that case).
+
+        The method awaits every task in ``self._persist_tasks`` with
+        ``return_exceptions=True`` so a failing background save does not
+        block the close sequence.
+        """
+        logger = getattr(self, "logger", logging.getLogger(__name__))
+
+        pending: set[asyncio.Task] = getattr(self, "_persist_tasks", set())  # type: ignore[type-arg]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            pending.clear()
+
+        storage: Optional[ResultStorage] = getattr(self, "_result_storage", None)
+        if storage is not None:
+            try:
+                await storage.close()
+            except Exception as exc:
+                logger.warning("Failed to close result storage: %s", exc)
+            finally:
+                self._result_storage = None  # type: ignore[attr-defined]
+
+    async def __aenter__(self) -> "PersistenceMixin":
+        """Enter the async context manager — returns self."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Any,
+        exc_val: Any,
+        exc_tb: Any,
+    ) -> None:
+        """Exit the async context manager — delegates to ``aclose()``."""
+        await self.aclose()
