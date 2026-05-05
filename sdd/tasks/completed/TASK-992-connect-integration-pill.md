@@ -177,10 +177,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-05
+**Notes**: Implemented as specified. `ConnectIntegrationPill.svelte` creates an
+inline amber-styled pill with lock icon, message text, and "Connect [Provider]"
+button. `AgentChat.svelte` imports the pill and detects `type === "auth_required"`
+in the message renderer. `AgentMessage` type extended with `type`, `provider`,
+`auth_url`, `scopes` fields. `handleSend` detects `auth_required` envelopes from
+the backend and stores them with the new type fields. TypeScript check: 0 errors.
 
 **Deviations from spec**: none | describe if any
