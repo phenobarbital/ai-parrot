@@ -14,7 +14,7 @@
       "feature_id": "FEAT-148",
       "feature": "formbuilder-list-created-forms",
       "spec": "sdd/specs/formbuilder-list-created-forms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only core/schema.py; file-disjoint from all sibling tasks. In a per-spec worktree the tasks run sequentially anyway, but no shared-file conflict if run in parallel.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1028-formschema-created-at-field.md"
+      "completed_at": "2026-05-05T15:12:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1028-formschema-created-at-field.md"
     },
     {
       "id": "TASK-1029",
@@ -71,7 +71,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1030"],
+      "depends_on": [
+        "TASK-1030"
+      ],
       "parallel": false,
       "parallelism_notes": "Asserts the new dict shape produced by TASK-1030; cannot run before that task ships.",
       "assigned_to": null,
@@ -89,7 +91,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1028", "TASK-1030"],
+      "depends_on": [
+        "TASK-1028",
+        "TASK-1030"
+      ],
       "parallel": false,
       "parallelism_notes": "Reads FormSchema.created_at (TASK-1028) and PostgresFormStorage.list_forms() new shape (TASK-1030). Must run after both.",
       "assigned_to": null,
@@ -107,7 +112,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1028", "TASK-1032"],
+      "depends_on": [
+        "TASK-1028",
+        "TASK-1032"
+      ],
       "parallel": false,
       "parallelism_notes": "Asserts the new response shape (TASK-1032) and FormSchema.created_at round-trip (TASK-1028). Sequential.",
       "assigned_to": null,
