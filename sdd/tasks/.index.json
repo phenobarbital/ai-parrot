@@ -16457,14 +16457,15 @@
       "effort": "S",
       "depends_on": [],
       "parallelism_notes": "Per-spec sequential per spec \u00a7Worktree Strategy \u2014 multiple tasks share `parrot/handlers/web_hitl.py`.",
-      "file": "sdd/tasks/active/TASK-1004-hitl-context-var.md",
+      "file": "sdd/tasks/completed/TASK-1004-hitl-context-var.md",
       "feature_id": "FEAT-146",
       "feature": "web-hitl-and-demo-agent",
       "spec": "sdd/specs/web-hitl-and-demo-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T00:31:38.474896+00:00"
+      "started_at": "2026-05-05T00:31:38.474896+00:00",
+      "completed_at": "2026-05-05T00:38:35.956970+00:00"
     },
     {
       "id": "TASK-1005",
@@ -16477,14 +16478,15 @@
         "TASK-1004"
       ],
       "parallelism_notes": "Per-spec sequential per spec \u00a7Worktree Strategy \u2014 multiple tasks share `parrot/handlers/web_hitl.py`.",
-      "file": "sdd/tasks/active/TASK-1005-webhumantool.md",
+      "file": "sdd/tasks/completed/TASK-1005-webhumantool.md",
       "feature_id": "FEAT-146",
       "feature": "web-hitl-and-demo-agent",
       "spec": "sdd/specs/web-hitl-and-demo-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T00:31:38.474896+00:00"
+      "started_at": "2026-05-05T00:31:38.474896+00:00",
+      "completed_at": "2026-05-05T00:38:35.956970+00:00"
     },
     {
       "id": "TASK-1006",
@@ -16496,14 +16498,15 @@
         "TASK-1004"
       ],
       "parallelism_notes": "Per-spec sequential per spec \u00a7Worktree Strategy \u2014 multiple tasks share `parrot/handlers/web_hitl.py`.",
-      "file": "sdd/tasks/active/TASK-1006-hitl-response-handler.md",
+      "file": "sdd/tasks/completed/TASK-1006-hitl-response-handler.md",
       "feature_id": "FEAT-146",
       "feature": "web-hitl-and-demo-agent",
       "spec": "sdd/specs/web-hitl-and-demo-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T00:31:38.474896+00:00"
+      "started_at": "2026-05-05T00:31:38.474896+00:00",
+      "completed_at": "2026-05-05T00:38:35.956970+00:00"
     },
     {
       "id": "TASK-1007",
@@ -16516,14 +16519,15 @@
         "TASK-1006"
       ],
       "parallelism_notes": "Per-spec sequential per spec \u00a7Worktree Strategy \u2014 multiple tasks share `parrot/handlers/web_hitl.py`.",
-      "file": "sdd/tasks/active/TASK-1007-setup-web-hitl-bootstrap.md",
+      "file": "sdd/tasks/completed/TASK-1007-setup-web-hitl-bootstrap.md",
       "feature_id": "FEAT-146",
       "feature": "web-hitl-and-demo-agent",
       "spec": "sdd/specs/web-hitl-and-demo-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "parallel": false,
       "assigned_to": null,
-      "started_at": "2026-05-05T00:31:38.474896+00:00"
+      "started_at": "2026-05-05T00:31:38.474896+00:00",
+      "completed_at": "2026-05-05T00:38:35.956970+00:00"
     },
     {
       "id": "TASK-1008",
