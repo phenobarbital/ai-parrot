@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-145 — SDD Flow Types and Per-Spec Index
 **Spec**: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-994, TASK-996
@@ -194,4 +194,21 @@ Expected: at least one match per file for `type: feature` (placeholder) and one 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (Opus 4.7) — interactive session via `/sdd-start TASK-997`
+**Date**: 2026-05-05
+**Notes**: Markdown-only edits to all four generation commands. All grep acceptance checks pass.
+
+**What landed per file:**
+- **`sdd-brainstorm.md`**: new `Round 0 — Flow type` block in §3 (asks two questions before Round 1, with default `feature`/`dev`); §10 step 2 now instructs the agent to update — not strip — the template's frontmatter from the user's Round 0 answers.
+- **`sdd-proposal.md`**: new `Flow type (always ask first)` block at the top of §3; §2 step 2 now mentions preserving the template frontmatter.
+- **`sdd-spec.md`**: new `§2d Sync the Base Branch` (after §2c, before §3 clarifying questions). Reads frontmatter via `python -c "from scripts.sdd.sdd_meta import parse; ..."`, validates `type: hotfix ⇒ base_branch == "main"`, runs `git checkout <BASE> && git pull --ff-only origin <BASE>` with documented dirty-tree and FF-fail abort messages. §5 step 2 now requires writing the literal `type:`/`base_branch:` frontmatter at the top of the spec, with an inline YAML example.
+- **`sdd-fromjira.md`**: existing Jira-metadata frontmatter block in §12 step 3 now also includes `type: feature` and `base_branch: dev` (plus a comment guiding the user to flip to `hotfix`/`main` for hotfix-tagged issues).
+
+**Acceptance grep results:**
+- `type: feature|hotfix` references — sdd-brainstorm: 3, sdd-proposal: 2, sdd-spec: 1, sdd-fromjira: 2 (all ≥ 1 as required).
+- `--ff-only` in sdd-spec: 2 (≥ 1 required).
+- `base_branch` in sdd-spec: 3 (≥ 1 required).
+
+**Deviations from contract**: none.
+
+**Heads-up for downstream tasks**: TASK-998 (`/sdd-task` rewrite) will rely on the spec frontmatter that this task ensures is now written. The contract chain holds.
