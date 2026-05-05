@@ -16178,7 +16178,7 @@
       "feature_id": "FEAT-144",
       "feature": "cross-repository-jiratoolkit-oauth2-3lo",
       "spec": "sdd/specs/cross-repository-jiratoolkit-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -16188,7 +16188,8 @@
       "parallelism_notes": "Cross-repo (navigator-frontend-next). No shared files with any ai-parrot task.",
       "assigned_to": null,
       "started_at": "2026-05-04T22:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-990-frontend-api-client-and-popup.md"
+      "file": "sdd/tasks/completed/TASK-990-frontend-api-client-and-popup.md",
+      "completed_at": "2026-05-05T02:55:00Z"
     },
     {
       "id": "TASK-991",

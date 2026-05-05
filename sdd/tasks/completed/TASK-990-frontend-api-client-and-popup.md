@@ -228,10 +228,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-05
+**Notes**: Implemented both modules exactly as specified.
+- `src/lib/api/integrations.ts`: typed API wrappers for all four integrations endpoints
+  using `createApiClient()` from `$lib/api/http`.
+- `src/lib/oauth/popup.ts`: `awaitOAuthCallback()` with popup-blocked detection,
+  postMessage listener (validates origin + type), 500ms poll, 60s default timeout,
+  cleanup on all exit paths.
+- `src/lib/oauth/__tests__/popup.test.ts`: 7 vitest/jsdom tests — popup-blocked,
+  valid postMessage, wrong origin, wrong type, timeout, cancelled (user closes popup),
+  error postMessage. All 7 pass.
+- Installed vitest and jsdom as devDependencies in navigator-frontend-next to support
+  browser-environment tests (existing tests don't need jsdom but popup tests do).
+- TypeScript compiles without errors in our new files (pre-existing shadcn errors unaffected).
+- Committed in navigator-frontend-next repo on dev branch (commit 3eedf19).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
