@@ -304,9 +304,7 @@ class TestMatryoshkaEncoding:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-06
+**Notes**: Implemented matryoshka kwarg, _apply_matryoshka() helper, _dimension override, hooks in embed_documents/embed_query. Added model property override to sync _dimension when registry-cached path is used. 15/15 new tests pass; full suite 233/233 pass.
+**Deviations from spec**: Added model property override (not explicitly mentioned) to propagate _dimension to the calling instance when the registry lazy-load path is used.
