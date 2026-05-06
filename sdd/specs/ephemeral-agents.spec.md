@@ -189,6 +189,17 @@ async def promote_user_bot(
     user_id: int,
 ) -> UserBotModel: ...
 
+async def save_user_bot(
+    self,
+    model: UserBotModel,
+) -> UserBotModel:
+    """INSERT (or UPSERT) into navigator.users_bots via UserBotModel.
+
+    Distinct from save_agent (which targets navigator.ai_bots). Used
+    by promote_user_bot and reusable for any future flow that needs
+    to write to users_bots from BotManager.
+    """
+
 def get_ephemeral_status(
     self,
     chatbot_id: str,
@@ -230,15 +241,20 @@ class ToolCatalogHandler(BaseView):
   `BotManager._cleanup_expired_bots`.
 - **Depends on**: existing BotManager.
 
-### Module 2: BotManager ephemeral methods
+### Module 2: BotManager ephemeral methods + `save_user_bot`
 - **Path**: `packages/ai-parrot/src/parrot/manager/manager.py`
 - **Responsibility**: implement `create_ephemeral_user_bot`,
   `promote_user_bot`, `get_ephemeral_status`,
-  `discard_ephemeral_user_bot`. Builds the `UserBotModel` in-memory,
+  `discard_ephemeral_user_bot`, and a NEW
+  `save_user_bot(model: UserBotModel) -> UserBotModel` that INSERTs
+  into `navigator.users_bots` via `UserBotModel` (the existing
+  `save_agent` writes `navigator.ai_bots` via `BotModel` and is NOT
+  reusable here). Builds the `UserBotModel` in-memory for ephemerals,
   invokes the same instantiation path used by `get_user_bot`, and
-  schedules warm-up via `asyncio.create_task`.
-- **Depends on**: Module 1; existing `add_agent`, `save_agent`,
-  encrypted-fields helpers in `_encrypted_field.py`.
+  schedules warm-up via `asyncio.create_task`. `promote_user_bot`
+  delegates the actual DB write to `save_user_bot`.
+- **Depends on**: Module 1; existing `add_agent`, encrypted-fields
+  helpers in `_encrypted_field.py`. Does **not** call `save_agent`.
 
 ### Module 3: Warm-up coroutine (`_warm_up`)
 - **Path**: `packages/ai-parrot/src/parrot/manager/ephemeral.py`
@@ -320,6 +336,7 @@ class ToolCatalogHandler(BaseView):
 | `test_ephemeral_status_lifecycle` | Module 1 | phase transitions creating → warming → ready, expiration math. |
 | `test_create_ephemeral_persists_nothing` | Module 2 | After `create_ephemeral_user_bot`, no row exists in `users_bots`; bot is in `BotManager._bots`. |
 | `test_promote_inserts_users_bots_row` | Module 2 | `promote_user_bot` writes the row with encrypted `mcp_config` / `tools_config`, removes ephemeral status. |
+| `test_save_user_bot_targets_users_bots_table` | Module 2 | `save_user_bot` writes `navigator.users_bots` (not `ai_bots`); `save_agent` is untouched. |
 | `test_warm_up_marks_ready` | Module 3 | Mock `agent.configure`, MCP handshake, FAISS build → status reaches `ready`. |
 | `test_warm_up_records_error_on_mcp_failure` | Module 3 | MCP handshake raises → status `error`, error string surfaced. |
 | `test_handler_post_returns_creating` | Module 4 | `POST /api/v1/agents/user/` returns 201 with `status="creating"` immediately. |
@@ -376,9 +393,11 @@ def ephemeral_config():
   changes.
 - [ ] Default ephemeral TTL is 24h; configurable via env. Cleanup runs
   through the existing `BotManager._cleanup_expired_bots` task.
-- [ ] `PUT /api/v1/agents/user/{id}` INSERTs the row, removes the
-  ephemeral entry, and returns the persisted `UserBotModel` payload.
-  Calling it twice returns 409.
+- [ ] `PUT /api/v1/agents/user/{id}` INSERTs the row via the new
+  `BotManager.save_user_bot` (writes `navigator.users_bots` via
+  `UserBotModel` — NOT through `save_agent`), removes the ephemeral
+  entry, and returns the persisted `UserBotModel` payload. Calling
+  it twice returns 409.
 - [ ] `DELETE /api/v1/agents/user/{id}` works for ephemeral and
   persisted states, removing S3 documents on the persisted path
   (matching today's DELETE behavior in `UserAgentHandler`).
@@ -508,7 +527,7 @@ class FAISSStore(AbstractStore):                                     # line 32
 |---|---|---|---|
 | `EphemeralUserAgentHandler.post` | `BotManager.create_ephemeral_user_bot` | direct call | `parrot/manager/manager.py` (NEW method) |
 | `BotManager.create_ephemeral_user_bot` | `BotManager.add_agent` | direct call | `manager.py:809` |
-| `BotManager.promote_user_bot` | `BotManager.save_agent` | direct call | `manager.py:817` (verify behavior matches users_bots, not ai_bots — may need a sibling `save_user_bot`) |
+| `BotManager.promote_user_bot` | `BotManager.save_user_bot` (NEW) | direct call | added in Module 2 — writes `navigator.users_bots` via `UserBotModel` |
 | `EphemeralUserAgentHandler` request parsing | `UserAgentHandler._parse_request` | shared mixin (refactor) | `users.py:188` |
 | Document upload | `UserAgentHandler._ingest_uploads` | shared mixin or call | `users.py:321` |
 | FAISS dump on promote | `FileManagerToolkit.put_object` (s3) | new `dump_to_s3` method on FAISSStore | needs verification of FileManagerToolkit S3 API surface during impl |
@@ -520,10 +539,10 @@ class FAISSStore(AbstractStore):                                     # line 32
 
 - ~~`navigator.user_bots`~~ — table is `navigator.users_bots` (with `s`).
   See `UserBotModel.Meta` and `PARROT_SCHEMA`.
-- ~~`BotManager.save_user_bot`~~ — only `save_agent` exists (writes
-  `navigator.ai_bots` via `BotModel`). Promote may need a NEW
-  `save_user_bot` method that writes `users_bots` instead — confirm
-  behavior of `save_agent` during impl and add a sibling if needed.
+- `BotManager.save_user_bot` — does NOT exist today. Module 2 adds
+  it. Only `save_agent` exists currently (line 817), and it writes
+  `navigator.ai_bots` via `BotModel` — do NOT overload it for the
+  promote path.
 - ~~`AbstractBot.warm_up`~~ — the readiness contract is `await
   agent.configure(app)`. No explicit `warm_up()`.
 - ~~`PgVectorStore.create_namespace()` / dynamic per-agent namespace~~
@@ -559,10 +578,12 @@ class FAISSStore(AbstractStore):                                     # line 32
 
 ### Known Risks / Gotchas
 
-- **`save_agent` writes the wrong table.** `BotManager.save_agent`
-  goes through `BotModel` (`navigator.ai_bots`), not `UserBotModel`.
-  The promote path likely needs a new `save_user_bot` method. Verify
-  before coding Module 2; do not silently overload `save_agent`.
+- **`save_agent` is for `ai_bots`, not `users_bots`.**
+  `BotManager.save_agent` (line 817) writes `navigator.ai_bots` via
+  `BotModel`. Module 2 adds a sibling `save_user_bot` that writes
+  `navigator.users_bots` via `UserBotModel`. Do not overload
+  `save_agent`; do not delete it (existing `save_agent` callers stay
+  intact).
 - **PageIndex API surface.** `parrot.pageindex.builder` exposes a set
   of async free functions, not a single Builder class. The warm-up
   must call them in order; document the chosen entrypoint in the
