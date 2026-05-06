@@ -214,7 +214,11 @@ class BaseVideoLoader(AbstractLoader):
             del self._summarizer
             self._summarizer = None
             gc.collect()
-            if self._summarizer_device.startswith('cuda'):
+            device = self._summarizer_device
+            if is_gpu := (
+                (isinstance(device, str) and device.startswith('cuda'))
+                or (isinstance(device, int) and device >= 0)
+            ):
                 torch.cuda.empty_cache()
             print("[ParrotBot] 🧹 Summarizer freed from VRAM")
 
@@ -418,7 +422,7 @@ class BaseVideoLoader(AbstractLoader):
             raise ValueError(
                 "audio_to_srt requires the WhisperX transcript (chunks with words)."
             )
-        
+
         import whisperx
         import torch
 
@@ -1273,6 +1277,7 @@ class BaseVideoLoader(AbstractLoader):
         4. Chunk processing stability
         """
         # Lazy load transformers components (only when needed)
+        import torch
         from transformers import (
             pipeline,
             WhisperForConditionalGeneration,
@@ -1624,8 +1629,13 @@ class BaseVideoLoader(AbstractLoader):
 
         # Clear CUDA cache if on GPU
         device = getattr(self, '_summarizer_device', None)
-        if device and (device.startswith('cuda') or isinstance(device, int) and device >= 0):
+        is_gpu = (
+            (isinstance(device, str) and device.startswith('cuda'))
+            or (isinstance(device, int) and device >= 0)
+        )
+        if is_gpu:
             try:
+                import torch
                 torch.cuda.empty_cache()
                 freed_items.append("CUDA cache")
             except Exception as e:
