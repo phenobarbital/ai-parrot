@@ -14,7 +14,7 @@
       "feature_id": "FEAT-150",
       "feature": "matryoshka-embedding-truncation",
       "spec": "sdd/specs/matryoshka-embedding-truncation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Sequential per spec Worktree Strategy — all six modules land together on one feature branch.",
       "assigned_to": null,
       "started_at": "2026-05-06T17:02:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1034-matryoshka-config-and-validation.md"
+      "completed_at": "2026-05-06T17:04:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1034-matryoshka-config-and-validation.md"
     },
     {
       "id": "TASK-1035",
