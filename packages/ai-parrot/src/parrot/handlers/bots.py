@@ -863,6 +863,37 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         dimension = vector_store_config.get('dimension', 384)
         embedding_model = vector_store_config.get('embedding_model')
 
+        # FEAT-150: validate Matryoshka config at provision time so mismatches
+        # are caught with a clear ConfigError before the pgvector table is
+        # created.  Without this, a dim disagreement would surface as a
+        # cryptic pgvector error at insert time.
+        if embedding_model:
+            matryoshka_dict = embedding_model.get("matryoshka")
+            if isinstance(matryoshka_dict, dict) and matryoshka_dict.get("enabled"):
+                from parrot.embeddings.matryoshka import (
+                    MatryoshkaConfig,
+                    validate_against_catalog,
+                )
+                from parrot.exceptions import ConfigError
+                try:
+                    cfg = MatryoshkaConfig(**matryoshka_dict)
+                except Exception as exc:
+                    raise ConfigError(
+                        f"Invalid matryoshka config in "
+                        f"vector_store_config.embedding_model: {exc}"
+                    ) from exc
+                # Validate against the catalog (model in catalog + dim allowed).
+                validate_against_catalog(cfg, embedding_model.get("model_name", ""))
+                # Enforce dimension equality between the pgvector column width
+                # (vector_store_config.dimension) and the Matryoshka truncation dim.
+                if cfg.dimension != dimension:
+                    raise ConfigError(
+                        f"vector_store_config.dimension ({dimension}) must equal "
+                        f"embedding_model.matryoshka.dimension ({cfg.dimension}) "
+                        f"because the pgvector column is created with the former. "
+                        f"Update both values to match."
+                    )
+
         store_kwargs = {
             'table': table,
             'schema': schema,
