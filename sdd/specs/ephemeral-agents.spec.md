@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-149
 **Date**: 2026-05-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: tbd
 
 ---
@@ -709,24 +709,24 @@ The document is plain Markdown, written so it can be pasted as the
 
 ## 8. Open Questions
 
-- [ ] Sharing scheme — *Owner: Jesus*: how do we share an agent with
+- [x] Sharing scheme — *Owner: Jesus*: how do we share an agent with
   another user? Two candidates: (a) a one-time signed share key that
   promotes the recipient to a co-owner row, (b) a per-user permission
   list on `users_bots.permissions`. Implementation deferred to a
-  follow-up FEAT.
-- [ ] FAISS-on-S3 packaging — *Owner: implementer*: tar + pickle,
+  follow-up FEAT: a per-user permission list under `users_bots.permissions`
+- [x] FAISS-on-S3 packaging — *Owner: implementer*: tar + pickle,
   parquet, or a custom format? Decide in the task that adds
-  `dump_to_s3` / `load_from_s3`.
-- [ ] Should `discard_ephemeral_user_bot` also delete the temp S3
+  `dump_to_s3` / `load_from_s3`.: parquet for easily upload to s3.
+- [x] Should `discard_ephemeral_user_bot` also delete the temp S3
   docs the user uploaded, or keep them for a grace period? Default
-  proposal: delete on discard; keep on TTL expiry for 24h then sweep.
-- [ ] Tool catalog payload shape — minimal `{slug, dotted_path}` or
+  proposal: delete on discard; keep on TTL expiry for 24h then sweep: delete on discard.
+- [x] Tool catalog payload shape — minimal `{slug, dotted_path}` or
   enriched with description/category metadata? Depends on what
-  metadata `TOOL_REGISTRY` carries today; verify in impl.
-- [ ] Should ephemeral status surface granular `progress` per
+  metadata `TOOL_REGISTRY` carries today; verify in impl.: we need to enrich the TOOL_REGISTRY metadata.
+- [x] Should ephemeral status surface granular `progress` per
   subsystem (tools / mcp / rag) or just the top-level phase?
   Recommend granular for better UX; cost is one extra dict in
-  status responses.
+  status responses: granular.
 
 ---
 

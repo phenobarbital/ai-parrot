@@ -2,6 +2,7 @@
 
 TASK-829: Backend Factory and Configuration Wiring — FEAT-116.
 """
+import sys
 from pathlib import Path
 
 import pytest
@@ -136,6 +137,52 @@ def test_overflow_local(monkeypatch, tmp_path):
     monkeypatch.setenv("PARROT_OVERFLOW_LOCAL_PATH", str(tmp_path))
     store = build_overflow_store()
     assert isinstance(store, OverflowStore)
+
+
+def test_overflow_s3_uses_overflow_bucket(monkeypatch):
+    class RecordingS3FileManager:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+    monkeypatch.setenv("PARROT_OVERFLOW_STORE", "s3")
+    monkeypatch.setenv("PARROT_OVERFLOW_BUCKET", "parrot-overflow")
+    monkeypatch.setattr(
+        sys.modules["parrot.interfaces.file.s3"],
+        "S3FileManager",
+        RecordingS3FileManager,
+    )
+
+    store = build_overflow_store()
+
+    assert isinstance(store, OverflowStore)
+    assert store._fm.bucket_name == "parrot-overflow"
+
+
+def test_overflow_gcs_requires_overflow_bucket(monkeypatch):
+    monkeypatch.setenv("PARROT_OVERFLOW_STORE", "gcs")
+    monkeypatch.delenv("PARROT_OVERFLOW_BUCKET", raising=False)
+
+    with pytest.raises(RuntimeError, match="PARROT_OVERFLOW_BUCKET"):
+        build_overflow_store()
+
+
+def test_overflow_gcs_uses_overflow_bucket(monkeypatch):
+    class RecordingGCSFileManager:
+        def __init__(self, bucket_name):
+            self.bucket_name = bucket_name
+
+    monkeypatch.setenv("PARROT_OVERFLOW_STORE", "gcs")
+    monkeypatch.setenv("PARROT_OVERFLOW_BUCKET", "parrot-overflow")
+    monkeypatch.setattr(
+        sys.modules["parrot.interfaces.file.gcs"],
+        "GCSFileManager",
+        RecordingGCSFileManager,
+    )
+
+    store = build_overflow_store()
+
+    assert isinstance(store, OverflowStore)
+    assert store._fm.bucket_name == "parrot-overflow"
 
 
 def test_overflow_unknown_raises(monkeypatch):

@@ -486,6 +486,7 @@ PARROT_SQLITE_PATH = config.get(
 PARROT_POSTGRES_DSN = config.get("PARROT_POSTGRES_DSN", fallback=None)
 PARROT_MONGODB_DSN = config.get("PARROT_MONGODB_DSN", fallback=None)
 PARROT_OVERFLOW_STORE = config.get("PARROT_OVERFLOW_STORE", fallback=None)
+PARROT_OVERFLOW_BUCKET = config.get("PARROT_OVERFLOW_BUCKET", fallback=None)
 PARROT_OVERFLOW_LOCAL_PATH = config.get(
     "PARROT_OVERFLOW_LOCAL_PATH",
     fallback=str(Path(_parrot_home_default) / "artifacts"),

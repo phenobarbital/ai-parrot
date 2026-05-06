@@ -36,6 +36,7 @@ variable. There is no runtime auto-switching — changing the backend requires a
 | `PARROT_POSTGRES_DSN` | PostgreSQL connection string | *(unset; required for postgres)* |
 | `PARROT_MONGODB_DSN` | MongoDB connection string | *(unset; required for mongodb)* |
 | `PARROT_OVERFLOW_STORE` | Overflow file manager: `s3`, `gcs`, `local`, `tmp` | `s3` if dynamodb else `local` |
+| `PARROT_OVERFLOW_BUCKET` | Bucket used by `s3` or `gcs` overflow stores | *(unset; required for gcs)* |
 | `PARROT_OVERFLOW_LOCAL_PATH` | Base path for `local` overflow | `~/.parrot/artifacts` |
 | `PARROT_STORAGE_METRICS` | `module:attribute` path to a `StorageMetrics` instance | *(unset; no instrumentation)* |
 | `DYNAMODB_CONVERSATIONS_TABLE` | DynamoDB conversations table name | `parrot-conversations` |
@@ -72,7 +73,7 @@ export DYNAMODB_REGION=us-east-1
 export AWS_ACCESS_KEY=<key>
 export AWS_SECRET_KEY=<secret>
 # Overflow to S3 (default when dynamodb backend)
-export AWS_BUCKET=my-artifact-bucket
+export PARROT_OVERFLOW_BUCKET=my-artifact-bucket
 ```
 
 Tables must be pre-provisioned (PAY_PER_REQUEST) with `PK` (hash) + `SK` (range) keys.
@@ -83,6 +84,7 @@ Tables must be pre-provisioned (PAY_PER_REQUEST) with `PK` (hash) + `SK` (range)
 export PARROT_STORAGE_BACKEND=postgres
 export PARROT_POSTGRES_DSN=postgresql://parrot:secret@10.0.0.5:5432/parrot
 export PARROT_OVERFLOW_STORE=gcs
+export PARROT_OVERFLOW_BUCKET=my-gcs-artifact-bucket
 # Tables are auto-created on first initialize()
 ```
 
@@ -143,8 +145,8 @@ Artifact `definition` payloads larger than **200 KB** are offloaded to an
 
 | `PARROT_OVERFLOW_STORE` | FileManagerInterface | Notes |
 |---|---|---|
-| `s3` | `parrot.interfaces.file.s3.S3FileManager` | Default for dynamodb backend |
-| `gcs` | `parrot.interfaces.file.gcs.GCSFileManager` | For GCP deployments |
+| `s3` | `parrot.interfaces.file.s3.S3FileManager` | Default for dynamodb backend; uses `PARROT_OVERFLOW_BUCKET` when set |
+| `gcs` | `parrot.interfaces.file.gcs.GCSFileManager` | Requires `PARROT_OVERFLOW_BUCKET` |
 | `local` | `parrot.interfaces.file.local.LocalFileManager` | Default for non-DynamoDB backends |
 | `tmp` | `parrot.interfaces.file.tmp.TempFileManager` | Ephemeral; data lost on restart |
 
