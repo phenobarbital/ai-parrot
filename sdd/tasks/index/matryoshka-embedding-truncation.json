@@ -112,7 +112,7 @@
       "feature_id": "FEAT-150",
       "feature": "matryoshka-embedding-truncation",
       "spec": "sdd/specs/matryoshka-embedding-truncation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Final integration step — must run last.",
       "assigned_to": null,
       "started_at": "2026-05-06T17:02:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1039-matryoshka-integration-and-docs.md"
+      "completed_at": "2026-05-06T17:22:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1039-matryoshka-integration-and-docs.md"
     }
   ]
 }

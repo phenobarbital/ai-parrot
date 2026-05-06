@@ -230,9 +230,14 @@ async def test_disabled_path_bit_equal(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-06
+**Notes**: Implemented all deliverables: integration E2E test (skips without PG_VECTOR_DSN),
+snapshot test (4 tests, all pass), `__init__.py` exports for `MatryoshkaConfig` and
+`validate_against_catalog`, and `docs/matryoshka-embeddings.md` operator documentation
+covering all 4 catalog models with their allowed dims, validation rules, operational
+caveat, performance hints, and a worked example. 247/247 embedding tests pass. Lint clean.
+**Deviations from spec**: Documentation placed at `docs/matryoshka-embeddings.md` (not
+`docs/architecture/embeddings.md`) because the `docs/architecture/` directory does not
+exist in the codebase; existing convention is flat files in `docs/` (e.g.
+`docs/contextual-embedding.md`).
