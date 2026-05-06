@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-150
 **Date**: 2026-05-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 ---
@@ -689,15 +689,15 @@ Verified at `parrot/embeddings/catalog.py`:
 
 ## 8. Open Questions
 
-- [ ] Should `validate_against_catalog` be promoted to a public helper in
+- [x] Should `validate_against_catalog` be promoted to a public helper in
       `parrot.embeddings` (alongside `get_model_recommendations`), or stay
       module-private? — *Owner: implementer*. Pick whichever is consistent
       with how other configure-time validators are exposed in the
-      package; not a design blocker.
-- [ ] Should the registry cache key also include relevant `**kwargs` in
+      package; not a design blocker: promoted to public helper.
+- [x] Should the registry cache key also include relevant `**kwargs` in
       general (defensive), or only `matryoshka_dim`? — *Owner: implementer*.
       Recommendation: only `matryoshka_dim` for now — generalising the
-      cache-key contract is a separate scope.
+      cache-key contract is a separate scope: only matryoshka_dim
 
 ---
 
