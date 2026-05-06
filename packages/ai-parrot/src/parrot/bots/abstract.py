@@ -209,6 +209,31 @@ class AbstractBot(
             'model_type': 'huggingface',
         }
 
+    def _refresh_context_recs_from_store(self) -> None:
+        """Re-derive search-limit / score-threshold from the resolved embedding.
+
+        Called from :meth:`configure` after :meth:`configure_store` so that
+        bots built via :meth:`define_store` (where the embedding model is
+        not known at ``__init__`` time) end up with recommendations matching
+        the model their store actually uses. User-supplied explicit values
+        are preserved.
+        """
+        if self._user_set_search_limit and self._user_set_score_threshold:
+            return
+        emb = self.embedding_model or {}
+        model_name = (
+            emb.get('model_name') if isinstance(emb, dict) else None
+        ) or EMBEDDING_DEFAULT_MODEL
+        recs = get_model_recommendations(model_name) or {}
+        if not self._user_set_search_limit:
+            self.context_search_limit = int(
+                recs.get('recommended_search_limit', self.context_search_limit)
+            )
+        if not self._user_set_score_threshold:
+            self.context_score_threshold = float(
+                recs.get('recommended_score_threshold', self.context_score_threshold)
+            )
+
     def __init__(
         self,
         name: str = 'Nav',
@@ -468,6 +493,15 @@ class AbstractBot(
         # legacy hardcoded defaults. The global 0.61/0.7 threshold is too
         # aggressive for models such as multi-qa-mpnet-base-cos-v1, whose
         # natural score range sits at 0.30-0.55.
+        #
+        # NOTE: when the bot is built via define_store(...) instead of the
+        # constructor, the real embedding model is not known yet at this
+        # point — self.embedding_model still holds the EMBEDDING_DEFAULT_MODEL
+        # fallback. We therefore record whether the user supplied explicit
+        # values and re-derive the recommendations later in configure(),
+        # after configure_store() has resolved the actual embedding model.
+        self._user_set_search_limit: bool = 'context_search_limit' in kwargs
+        self._user_set_score_threshold: bool = 'context_score_threshold' in kwargs
         _emb_model_cfg = kwargs.get('embedding_model') or {}
         _emb_model_name = (
             _emb_model_cfg.get('model_name') if isinstance(_emb_model_cfg, dict) else None
@@ -475,12 +509,12 @@ class AbstractBot(
         _recs = get_model_recommendations(_emb_model_name) or {}
         self.context_search_limit: int = int(
             kwargs['context_search_limit']
-            if 'context_search_limit' in kwargs
+            if self._user_set_search_limit
             else _recs.get('recommended_search_limit', 10)
         )
         self.context_score_threshold: float = float(
             kwargs['context_score_threshold']
-            if 'context_score_threshold' in kwargs
+            if self._user_set_score_threshold
             else _recs.get('recommended_score_threshold', 0.61)
         )
         # NOTE: context_score_threshold is applied PRE-RERANK (in cosine space,
@@ -1188,6 +1222,10 @@ class AbstractBot(
                     f"Error configuring VectorStore: {e}"
                 )
                 raise
+        # Re-derive context_search_limit / context_score_threshold against
+        # the *actual* embedding model now that configure_store() has run.
+        # Skips any value the user passed explicitly to the constructor.
+        self._refresh_context_recs_from_store()
         if store_config and store_config.auto_create and self.store:
             # Auto-create collection if configured
             await self._ensure_collection(store_config)
