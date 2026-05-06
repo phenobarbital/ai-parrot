@@ -92,7 +92,7 @@
       "feature_id": "FEAT-150",
       "feature": "matryoshka-embedding-truncation",
       "spec": "sdd/specs/matryoshka-embedding-truncation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Logically parallel with 1035-1037 (only depends on MatryoshkaConfig), but per spec Worktree Strategy all tasks run sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-05-06T17:02:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1038-provision-store-dim-equality-check.md"
+      "completed_at": "2026-05-06T17:18:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1038-provision-store-dim-equality-check.md"
     },
     {
       "id": "TASK-1039",
