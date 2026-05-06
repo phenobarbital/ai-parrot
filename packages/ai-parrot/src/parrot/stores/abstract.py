@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
-import importlib
 import contextlib
 from collections.abc import Callable
 from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
@@ -325,6 +324,16 @@ class AbstractStore(ABC):
             raise ConfigError(
                 f"Embedding Model Type: {model_type} not supported."
             )
+
+        # FEAT-150: forward the Matryoshka config from the embedding_model dict
+        # into the registry call so SentenceTransformerModel.__init__ receives
+        # the truncation kwarg and the registry cache key includes the dim.
+        # The explicit caller-supplied kwarg wins over the dict-supplied one so
+        # tests can override config without rebuilding the dict.
+        matryoshka = embedding_model.get("matryoshka")
+        if matryoshka is not None and "matryoshka" not in kwargs:
+            kwargs = {**kwargs, "matryoshka": matryoshka}
+
         registry = EmbeddingRegistry.instance()
         return registry.get_or_create_sync(model_name, model_type, **kwargs)
 

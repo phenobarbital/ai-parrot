@@ -192,6 +192,7 @@ def build_overflow_store(override: Optional[str] = None) -> OverflowStore:
 
     PARROT_STORAGE_BACKEND = os.environ.get("PARROT_STORAGE_BACKEND", "sqlite")
     PARROT_OVERFLOW_STORE = os.environ.get("PARROT_OVERFLOW_STORE") or None
+    PARROT_OVERFLOW_BUCKET = os.environ.get("PARROT_OVERFLOW_BUCKET") or None
     PARROT_OVERFLOW_LOCAL_PATH = os.environ.get("PARROT_OVERFLOW_LOCAL_PATH") or str(
         Path.home() / ".parrot" / "artifacts"
     )
@@ -202,10 +203,18 @@ def build_overflow_store(override: Optional[str] = None) -> OverflowStore:
 
     if name == "s3":
         from parrot.interfaces.file.s3 import S3FileManager  # noqa: E501 pylint: disable=import-outside-toplevel
-        return OverflowStore(file_manager=S3FileManager())
+        return OverflowStore(
+            file_manager=S3FileManager(bucket_name=PARROT_OVERFLOW_BUCKET)
+        )
     if name == "gcs":
+        if not PARROT_OVERFLOW_BUCKET:
+            raise RuntimeError(
+                "PARROT_OVERFLOW_BUCKET is required for gcs overflow store"
+            )
         from parrot.interfaces.file.gcs import GCSFileManager  # noqa: E501 pylint: disable=import-outside-toplevel
-        return OverflowStore(file_manager=GCSFileManager())
+        return OverflowStore(
+            file_manager=GCSFileManager(bucket_name=PARROT_OVERFLOW_BUCKET)
+        )
     if name == "local":
         return OverflowStore(file_manager=LocalFileManager(base_path=PARROT_OVERFLOW_LOCAL_PATH))
     if name == "tmp":

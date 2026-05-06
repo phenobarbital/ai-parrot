@@ -23,14 +23,18 @@ import asyncio
 import threading
 import importlib
 from collections import OrderedDict
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Any
 
 from navconfig.logging import logging
 from parrot._imports import lazy_import  # noqa: F401 — used by subclasses for lazy sentence-transformers
 
 
-CacheKey = Tuple[str, str]  # (model_name, model_type)
+# FEAT-150: CacheKey extended from 2-tuple to 3-tuple to include the
+# Matryoshka truncation dimension.  The third element is None when no
+# truncation is requested, preserving backward-compat for all existing
+# callers that pass only (model_name, model_type).
+CacheKey = Tuple[str, str, Optional[int]]  # (model_name, model_type, matryoshka_dim)
 
 
 @dataclass
@@ -112,6 +116,36 @@ class EmbeddingRegistry:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _extract_matryoshka_dim(kwargs: dict) -> Optional[int]:
+        """Extract the Matryoshka truncation dimension from kwargs.
+
+        Returns ``None`` when the caller did not pass ``matryoshka``,
+        passed ``None``, or set ``enabled=False``.  This value becomes
+        the third element of the cache key so two bots that use the same
+        model but different truncation dimensions always land in separate
+        cache slots.
+
+        This helper is intentionally permissive — full validation belongs
+        to ``validate_against_catalog`` which is invoked inside
+        ``SentenceTransformerModel.__init__``.  The registry only needs a
+        stable cache discriminator.
+
+        Args:
+            kwargs: The ``**kwargs`` dict passed to ``get_or_create`` /
+                ``get_or_create_sync``.
+
+        Returns:
+            The requested truncation dimension as an ``int``, or ``None``.
+        """
+        cfg = kwargs.get("matryoshka")
+        if not isinstance(cfg, dict):
+            return None
+        if not cfg.get("enabled"):
+            return None
+        dim = cfg.get("dimension")
+        return int(dim) if isinstance(dim, int) and dim > 0 else None
+
     def _build_model(self, model_name: str, model_type: str, **kwargs) -> Any:
         """Instantiate an embedding model using ``supported_embeddings``.
 
@@ -154,11 +188,13 @@ class EmbeddingRegistry:
             # popitem(last=False) removes the *oldest* (LRU) entry
             evicted_key, evicted_model = self._cache.popitem(last=False)
             self._stats["evictions"] += 1
+            # evicted_key is a 3-tuple (model_name, model_type, matryoshka_dim)
             self.logger.warning(
-                "Evicting embedding model '%s' (type=%s) from cache "
-                "(cache full: %d/%d)",
+                "Evicting embedding model '%s' (type=%s, matryoshka_dim=%s) "
+                "from cache (cache full: %d/%d)",
                 evicted_key[0],
                 evicted_key[1],
+                evicted_key[2] if len(evicted_key) > 2 else None,
                 len(self._cache),
                 self._max_models,
             )
@@ -199,7 +235,12 @@ class EmbeddingRegistry:
         Returns:
             A cached (or freshly created) ``EmbeddingModel`` instance.
         """
-        key: CacheKey = (model_name, model_type)
+        # FEAT-150: include matryoshka_dim in the cache key so two bots
+        # using the same model with different truncation dims do not share
+        # a cached instance.  A null third element (no truncation) is
+        # backward-compatible with all pre-FEAT-150 callers.
+        matryoshka_dim = self._extract_matryoshka_dim(kwargs)
+        key: CacheKey = (model_name, model_type, matryoshka_dim)
 
         # Fast path — already cached
         if key in self._cache:
@@ -260,28 +301,41 @@ class EmbeddingRegistry:
     async def unload(self, model_name: str, model_type: str = "huggingface") -> bool:
         """Remove a model from the cache and free its resources.
 
+        FEAT-150: removes ALL Matryoshka variants of the model (i.e. all
+        3-tuple keys whose first two elements match ``model_name`` and
+        ``model_type``).  This matches operator intent — "forget this model"
+        means all cached truncation-dim variants should be evicted.
+
         Args:
             model_name: Model identifier.
             model_type: Embedding backend (default ``"huggingface"``).
 
         Returns:
-            ``True`` if the model was cached and removed; ``False`` if not found.
+            ``True`` if at least one cached entry was removed; ``False`` if
+            the model was not found in the cache.
         """
-        key: CacheKey = (model_name, model_type)
-        if key not in self._cache:
+        # Collect all keys whose (model_name, model_type) prefix matches.
+        keys_to_remove = [
+            k for k in self._cache
+            if k[0] == model_name and k[1] == model_type
+        ]
+        if not keys_to_remove:
             return False
 
-        model = self._cache.pop(key)
-        self._async_locks.pop(key, None)
-        self.logger.info(
-            "Unloading embedding model '%s' (type=%s) from registry",
-            model_name,
-            model_type,
-        )
-        try:
-            model.free()
-        except Exception:  # pragma: no cover
-            pass
+        for key in keys_to_remove:
+            model = self._cache.pop(key)
+            self._async_locks.pop(key, None)
+            self.logger.info(
+                "Unloading embedding model '%s' (type=%s, matryoshka_dim=%s) "
+                "from registry",
+                model_name,
+                model_type,
+                key[2],
+            )
+            try:
+                model.free()
+            except Exception:  # pragma: no cover
+                pass
         return True
 
     # ------------------------------------------------------------------
@@ -307,7 +361,9 @@ class EmbeddingRegistry:
         Returns:
             A cached (or freshly created) ``EmbeddingModel`` instance.
         """
-        key: CacheKey = (model_name, model_type)
+        # FEAT-150: include matryoshka_dim in the cache key (see get_or_create).
+        matryoshka_dim = self._extract_matryoshka_dim(kwargs)
+        key: CacheKey = (model_name, model_type, matryoshka_dim)
 
         # Fast path — no lock needed if already cached
         if key in self._cache:

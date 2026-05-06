@@ -3,9 +3,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.formdesigner.core.schema import SubmitAction
-from parrot.formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
-from parrot.formdesigner.services.forwarder import ForwardResult, SubmissionForwarder
+from parrot_formdesigner.core.schema import SubmitAction
+from parrot_formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
+from parrot_formdesigner.services.forwarder import ForwardResult, SubmissionForwarder
 
 
 # ---------------------------------------------------------------------------

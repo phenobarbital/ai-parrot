@@ -12,10 +12,10 @@ from unittest.mock import patch
 from aiohttp import web
 from aiohttp.test_utils import TestClient
 
-from parrot.formdesigner.core.schema import FormField, FormSchema, FormSection, SubmitAction
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.handlers.routes import setup_form_routes
-from parrot.formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection, SubmitAction
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.handlers.routes import setup_form_routes
+from parrot_formdesigner.services.registry import FormRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ def registry() -> FormRegistry:
 @pytest.fixture
 def app(registry: FormRegistry) -> web.Application:
     """An aiohttp app with form routes registered (auth disabled for tests)."""
-    with patch("parrot.formdesigner.handlers.routes._AUTH_AVAILABLE", False):
+    with patch("parrot_formdesigner.handlers.routes._AUTH_AVAILABLE", False):
         application = web.Application()
         setup_form_routes(application, registry=registry)
     return application
@@ -330,8 +330,8 @@ async def test_put_then_submit(
 
 @pytest.mark.asyncio
 async def test_exports_accessible(aiohttp_client, app: web.Application) -> None:
-    """All new public classes are importable from parrot.formdesigner."""
-    from parrot.formdesigner import (  # noqa: F401
+    """All new public classes are importable from parrot_formdesigner."""
+    from parrot_formdesigner import (  # noqa: F401
         ApiKeyAuth,
         AuthConfig,
         BearerAuth,

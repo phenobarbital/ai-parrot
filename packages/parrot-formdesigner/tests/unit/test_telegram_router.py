@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from aiogram import Router
 
-from parrot.formdesigner.core.options import FieldOption
-from parrot.formdesigner.core.schema import FormField, FormSchema, FormSection
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.renderers.telegram.models import TelegramRenderMode
-from parrot.formdesigner.renderers.telegram.renderer import TelegramRenderer
-from parrot.formdesigner.renderers.telegram.router import TelegramFormRouter
-from parrot.formdesigner.services.registry import FormRegistry
-from parrot.formdesigner.services.validators import FormValidator, ValidationResult
+from parrot_formdesigner.core.options import FieldOption
+from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.renderers.telegram.models import TelegramRenderMode
+from parrot_formdesigner.renderers.telegram.renderer import TelegramRenderer
+from parrot_formdesigner.renderers.telegram.router import TelegramFormRouter
+from parrot_formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.services.validators import FormValidator, ValidationResult
 
 
 @pytest.fixture

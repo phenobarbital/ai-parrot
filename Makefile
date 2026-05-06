@@ -394,7 +394,7 @@ VERSION_FILE := packages/ai-parrot/src/parrot/version.py
 TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
 LOADERS_VERSION_FILE := packages/ai-parrot-loaders/src/parrot_loaders/version.py
 PIPELINES_VERSION_FILE := packages/ai-parrot-pipelines/src/parrot_pipelines/version.py
-FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot/formdesigner/version.py
+FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot_formdesigner/version.py
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
 # part: patch=2, minor=1, major=0

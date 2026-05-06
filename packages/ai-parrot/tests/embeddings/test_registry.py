@@ -225,8 +225,10 @@ class TestLRUEviction:
             await registry.get_or_create("model-2", "huggingface")
 
         loaded = registry.loaded_models()
-        assert ("model-1", "huggingface") not in loaded
-        assert ("model-0", "huggingface") in loaded
+        # FEAT-150: cache keys are now 3-tuples (model_name, model_type, matryoshka_dim).
+        # Calls without matryoshka use None as the third element.
+        assert ("model-1", "huggingface", None) not in loaded
+        assert ("model-0", "huggingface", None) in loaded
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +252,9 @@ class TestPreloadUnload:
             ])
 
         loaded = registry.loaded_models()
-        assert ("model-a", "huggingface") in loaded
-        assert ("model-b", "huggingface") in loaded
+        # FEAT-150: cache keys are now 3-tuples.
+        assert ("model-a", "huggingface", None) in loaded
+        assert ("model-b", "huggingface", None) in loaded
 
     @pytest.mark.asyncio
     async def test_unload_removes_and_calls_free(self):

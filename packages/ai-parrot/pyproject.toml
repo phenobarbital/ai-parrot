@@ -284,6 +284,16 @@ embeddings = [
     "simsimd>=4.3.1",
     "tokenizers>=0.20.0,<=0.22.2",
     "safetensors>=0.4.3",
+    # Required by HF custom-code models (e.g. nomic-ai/nomic-embed-text-v1.5
+    # uses it inside modeling_hf_nomic.py).
+    "einops>=0.7.0",
+    # Optional but commonly required by HF models loaded with
+    # trust_remote_code=True: accelerate enables device_map / efficient
+    # loading; peft is needed by LoRA-adapted models; xformers provides
+    # memory-efficient attention used by several retrieval models.
+    "accelerate>=0.30.0",
+    "peft>=0.10.0",
+    "xformers>=0.0.27",
 ]
 
 mcp = [

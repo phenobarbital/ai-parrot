@@ -5,7 +5,7 @@ Can be used standalone or as a complement to ai-parrot.
 
 Usage::
 
-    from parrot.formdesigner import FormSchema, setup_form_routes
+    from parrot_formdesigner import FormSchema, setup_form_routes
 """
 
 from .version import __author__, __author_email__, __description__, __title__, __version__

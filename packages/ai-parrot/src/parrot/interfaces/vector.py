@@ -106,6 +106,12 @@ class VectorInterface:
             "name": vector_store,
             **kwargs
         }
+        # Keep self.embedding_model aligned with the store config so the
+        # warmup preloads the model the store will actually use, instead of
+        # the global EMBEDDING_DEFAULT_MODEL fallback set in __init__.
+        emb = kwargs.get('embedding_model')
+        if isinstance(emb, dict) and emb:
+            self.embedding_model = emb
 
     async def _ensemble_search(
         self,

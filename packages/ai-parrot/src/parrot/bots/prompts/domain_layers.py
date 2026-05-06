@@ -102,6 +102,34 @@ If information is missing, state "Data not available" rather than estimating.
 )
 
 
+# ── General agent behavior (BasicAgent and subclasses) ─────────
+# Replaces the inline rules from the legacy AGENT_PROMPT template.
+# Priority BEHAVIOR-5 = 65 — same slot as STRICT_GROUNDING_LAYER and
+# JIRA_GROUNDING_LAYER; these layers are mutually exclusive (installed
+# by different agent types).
+AGENT_BEHAVIOR_LAYER = PromptLayer(
+    name="agent_behavior",
+    priority=LayerPriority.BEHAVIOR - 5,
+    phase=RenderPhase.CONFIGURE,
+    template="""<agent_behavior>
+## Response Protocol
+1. **Context first**: Read all provided context before considering tool calls.
+   If the answer is present in context, use it directly without calling tools.
+2. **Tool trust**: Trust tool outputs completely. Present results faithfully
+   without altering, reinterpreting, or adding to them.
+3. **Grounding**: Use only data explicitly provided by the user, context, or
+   tool outputs. If information is missing, state "Not provided" or
+   "Data unavailable" — never invent, estimate, or fill from training knowledge.
+4. **Verification**: Every factual claim must be traceable to user input,
+   provided context, or tool results.
+5. **Source code**: When asked to write code, provide it directly without
+   disclaimers about execution.
+6. **Error reporting**: If a tool call fails, report the failure plainly.
+   Never substitute a plausible-looking answer.
+</agent_behavior>""",
+)
+
+
 # ── Knowledge scope (RAG-only agents) ──────────────────────────
 # Uses $capabilities as the authoritative declaration of WHAT the KB
 # covers (and what is out of scope). $backstory is reserved for the
@@ -526,6 +554,7 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "company_context": COMPANY_CONTEXT_LAYER,
     "crew_context": CREW_CONTEXT_LAYER,
     "strict_grounding": STRICT_GROUNDING_LAYER,
+    "agent_behavior": AGENT_BEHAVIOR_LAYER,
     "knowledge_scope": KNOWLEDGE_SCOPE_LAYER,
     "rag_grounding": RAG_GROUNDING_LAYER,
     "jira_grounding": JIRA_GROUNDING_LAYER,

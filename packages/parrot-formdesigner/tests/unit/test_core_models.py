@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-from parrot.formdesigner.core import FormSchema, FormField, FieldType, FormSection
-from parrot.formdesigner.core.style import FormStyle, StyleSchema
-from parrot.formdesigner.core.constraints import FieldConstraints
-from parrot.formdesigner.core.options import FieldOption
+from parrot_formdesigner.core import FormSchema, FormField, FieldType, FormSection
+from parrot_formdesigner.core.style import FormStyle, StyleSchema
+from parrot_formdesigner.core.constraints import FieldConstraints
+from parrot_formdesigner.core.options import FieldOption
 
 
 @pytest.fixture

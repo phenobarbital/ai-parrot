@@ -4,10 +4,10 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase
 
-from parrot.formdesigner.core.schema import FormField, FormSchema, FormSection
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.handlers.telegram import TelegramWebAppHandler
-from parrot.formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.handlers.telegram import TelegramWebAppHandler
+from parrot_formdesigner.services.registry import FormRegistry
 
 
 @pytest.fixture

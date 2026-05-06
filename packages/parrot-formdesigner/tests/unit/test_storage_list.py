@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from parrot.formdesigner.services.registry import FormStorage
-from parrot.formdesigner.services.storage import PostgresFormStorage
+from parrot_formdesigner.services.registry import FormStorage
+from parrot_formdesigner.services.storage import PostgresFormStorage
 
 
 # ---------------------------------------------------------------------------
