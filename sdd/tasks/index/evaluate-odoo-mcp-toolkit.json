@@ -23,7 +23,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1013-odoo-pydantic-models-phase1-phase2.md",
+      "file": "sdd/tasks/completed/TASK-1013-odoo-pydantic-models-phase1-phase2.md",
       "verification": "verified"
     },
     {
@@ -44,7 +44,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1014-smart-field-selection.md",
+      "file": "sdd/tasks/completed/TASK-1014-smart-field-selection.md",
       "verification": "verified"
     },
     {
@@ -66,7 +66,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1015-smart-field-integration.md",
+      "file": "sdd/tasks/completed/TASK-1015-smart-field-integration.md",
       "verification": "verified"
     },
     {
@@ -88,7 +88,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1016-aggregate-records.md",
+      "file": "sdd/tasks/completed/TASK-1016-aggregate-records.md",
       "verification": "verified"
     },
     {
@@ -109,7 +109,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1017-domain-builder.md",
+      "file": "sdd/tasks/completed/TASK-1017-domain-builder.md",
       "verification": "verified"
     },
     {
@@ -131,7 +131,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1018-profile-and-schema-catalog.md",
+      "file": "sdd/tasks/completed/TASK-1018-profile-and-schema-catalog.md",
       "verification": "verified"
     },
     {
@@ -153,7 +153,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1019-introspection-and-diagnostics.md",
+      "file": "sdd/tasks/completed/TASK-1019-introspection-and-diagnostics.md",
       "verification": "verified"
     },
     {
@@ -175,7 +175,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1020-hr-convenience-methods.md",
+      "file": "sdd/tasks/completed/TASK-1020-hr-convenience-methods.md",
       "verification": "verified"
     },
     {
@@ -202,7 +202,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1021-phase1-tests.md",
+      "file": "sdd/tasks/completed/TASK-1021-phase1-tests.md",
       "verification": "verified"
     },
     {
@@ -224,7 +224,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1022-diagnose-odoo-call.md",
+      "file": "sdd/tasks/completed/TASK-1022-diagnose-odoo-call.md",
       "verification": "verified"
     },
     {
@@ -245,7 +245,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1023-generate-json2-payload.md",
+      "file": "sdd/tasks/completed/TASK-1023-generate-json2-payload.md",
       "verification": "verified"
     },
     {
@@ -266,7 +266,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1024-scan-addons-source.md",
+      "file": "sdd/tasks/completed/TASK-1024-scan-addons-source.md",
       "verification": "verified"
     },
     {
@@ -288,7 +288,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1025-fit-gap-report.md",
+      "file": "sdd/tasks/completed/TASK-1025-fit-gap-report.md",
       "verification": "verified"
     },
     {
@@ -310,7 +310,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1026-business-pack-report.md",
+      "file": "sdd/tasks/completed/TASK-1026-business-pack-report.md",
       "verification": "verified"
     },
     {
@@ -335,7 +335,7 @@
       "assigned_to": null,
       "started_at": "2026-05-05T12:17:37+00:00",
       "completed_at": "2026-05-05T13:57:22.346004+00:00",
-      "file": "sdd/tasks/active/TASK-1027-phase2-tests.md",
+      "file": "sdd/tasks/completed/TASK-1027-phase2-tests.md",
       "verification": "verified"
     }
   ]
