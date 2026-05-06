@@ -240,9 +240,7 @@ class TestCreateEmbeddingForwarding:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-06
+**Notes**: Surgical change to create_embedding() forwarding matryoshka kwarg. Also removed pre-existing unused `importlib` import from abstract.py. 4/4 new tests pass, 247/247 total.
+**Deviations from spec**: None
