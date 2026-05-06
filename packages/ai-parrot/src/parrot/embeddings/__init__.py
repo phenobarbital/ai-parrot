@@ -6,6 +6,7 @@ from .catalog import (  # noqa: E402
     get_model_recommendations,
     get_use_cases,
 )
+from .matryoshka import MatryoshkaConfig, validate_against_catalog  # noqa: E402
 # EmbeddingModelEntry is intentionally NOT exported — it is a validation-only
 # schema used at catalog import time. Consumers should use EMBEDDING_MODELS
 # (plain dicts) for JSON-serialization compatibility with the consumer API.
@@ -25,4 +26,6 @@ __all__ = [
     "get_embedding_models",
     "get_model_recommendations",
     "get_use_cases",
+    "MatryoshkaConfig",
+    "validate_against_catalog",
 ]
