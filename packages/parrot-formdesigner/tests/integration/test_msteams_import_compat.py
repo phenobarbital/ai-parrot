@@ -51,4 +51,4 @@ class TestMSTeamsIntegrationImports:
         with open(form_server) as f:
             content = f.read()
         assert "setup_form_routes" in content
-        assert "parrot.formdesigner" in content
+        assert "parrot_formdesigner" in content

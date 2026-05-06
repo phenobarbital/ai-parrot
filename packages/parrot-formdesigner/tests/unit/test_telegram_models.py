@@ -2,8 +2,8 @@
 
 import pytest
 
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.renderers.telegram.models import (
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.renderers.telegram.models import (
     FormActionCallback,
     FormFieldCallback,
     TelegramFormPayload,

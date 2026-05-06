@@ -3,9 +3,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic import BaseModel, Field
-from parrot.formdesigner.core.schema import FormSchema, FormField, FormSection
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.tools.request_form import RequestFormTool
+from parrot_formdesigner.core.schema import FormSchema, FormField, FormSection
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.tools.request_form import RequestFormTool
 
 
 # ---------------------------------------------------------------------------

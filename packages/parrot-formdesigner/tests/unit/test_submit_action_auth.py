@@ -1,8 +1,8 @@
 """Unit tests for SubmitAction auth extension (TASK-598 / FEAT-086)."""
 
 import pytest
-from parrot.formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
-from parrot.formdesigner.core.schema import SubmitAction
+from parrot_formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
+from parrot_formdesigner.core.schema import SubmitAction
 
 
 class TestSubmitActionAuth:
@@ -93,8 +93,8 @@ class TestSubmitActionAuth:
         assert restored.auth.header_name == "X-Custom"  # type: ignore[union-attr]
 
     def test_export_from_package(self) -> None:
-        """Auth types are exportable from parrot.formdesigner package."""
-        from parrot.formdesigner import (  # noqa: F401
+        """Auth types are exportable from parrot_formdesigner package."""
+        from parrot_formdesigner import (  # noqa: F401
             ApiKeyAuth,
             AuthConfig,
             BearerAuth,

@@ -37,7 +37,6 @@ from parrot.handlers.programs import ProgramsUserHandler
 ## New Handlers:
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
-from parrot_pipelines.handlers import PlanogramComplianceHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.stores import VectorStoreHandler
 ## Jira Integration:
@@ -48,6 +47,9 @@ from parrot.conf import (
     JIRA_CLIENT_SECRET,
     JIRA_REDIRECT_URI,
 )
+# from parrot_formdesigner.handlers import setup_form_routes
+from parrot_pipelines.handlers import PlanogramComplianceHandler
+
 
 class Main(AppHandler):
     """

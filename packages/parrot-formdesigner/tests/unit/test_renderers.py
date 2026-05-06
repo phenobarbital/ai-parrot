@@ -1,10 +1,10 @@
 """Unit tests for parrot-formdesigner renderers."""
 import pytest
-from parrot.formdesigner.core import FormSchema, FormSection
-from parrot.formdesigner.core.schema import FormField
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.renderers import HTML5Renderer, JsonSchemaRenderer, AdaptiveCardRenderer
-from parrot.formdesigner.core.style import StyleSchema
+from parrot_formdesigner.core import FormSchema, FormSection
+from parrot_formdesigner.core.schema import FormField
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.renderers import HTML5Renderer, JsonSchemaRenderer, AdaptiveCardRenderer
+from parrot_formdesigner.core.style import StyleSchema
 
 
 @pytest.fixture

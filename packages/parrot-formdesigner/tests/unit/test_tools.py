@@ -1,6 +1,6 @@
 """Unit tests for parrot-formdesigner tools."""
 import pytest
-from parrot.formdesigner.tools import CreateFormTool, DatabaseFormTool, RequestFormTool
+from parrot_formdesigner.tools import CreateFormTool, DatabaseFormTool, RequestFormTool
 
 
 class TestCreateFormTool:

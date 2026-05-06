@@ -16,9 +16,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import web
 
-from parrot.formdesigner.handlers.api import FormAPIHandler
-from parrot.formdesigner.handlers.routes import setup_form_routes
-from parrot.formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.handlers.api import FormAPIHandler
+from parrot_formdesigner.handlers.routes import setup_form_routes
+from parrot_formdesigner.services.registry import FormRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -293,15 +293,15 @@ class TestRouteAuth:
         """aiohttp app with form routes and simple auth mock."""
         with (
             patch(
-                "parrot.formdesigner.handlers.routes.is_authenticated",
+                "parrot_formdesigner.handlers.routes.is_authenticated",
                 side_effect=_make_simple_is_authenticated(),
             ),
             patch(
-                "parrot.formdesigner.handlers.routes.user_session",
+                "parrot_formdesigner.handlers.routes.user_session",
                 side_effect=_make_simple_user_session(),
             ),
             patch(
-                "parrot.formdesigner.handlers.routes._AUTH_AVAILABLE",
+                "parrot_formdesigner.handlers.routes._AUTH_AVAILABLE",
                 True,
             ),
         ):
@@ -313,7 +313,7 @@ class TestRouteAuth:
     def no_auth_app(self, registry):
         """aiohttp app with form routes and auth disabled (standalone mode)."""
         with patch(
-            "parrot.formdesigner.handlers.routes._AUTH_AVAILABLE",
+            "parrot_formdesigner.handlers.routes._AUTH_AVAILABLE",
             False,
         ):
             app = web.Application()
@@ -384,7 +384,7 @@ class TestNoAuthBackwardCompat:
 
     async def test_api_routes_work_without_auth(self, aiohttp_client, registry):
         """Routes accessible without auth when navigator_auth is unavailable."""
-        with patch("parrot.formdesigner.handlers.routes._AUTH_AVAILABLE", False):
+        with patch("parrot_formdesigner.handlers.routes._AUTH_AVAILABLE", False):
             app = web.Application()
             setup_form_routes(app, registry=registry)
             client = await aiohttp_client(app)
@@ -396,7 +396,7 @@ class TestNoAuthBackwardCompat:
 
     async def test_page_routes_work_without_auth(self, aiohttp_client, registry):
         """Page routes accessible without auth when navigator_auth is unavailable."""
-        with patch("parrot.formdesigner.handlers.routes._AUTH_AVAILABLE", False):
+        with patch("parrot_formdesigner.handlers.routes._AUTH_AVAILABLE", False):
             app = web.Application()
             setup_form_routes(app, registry=registry)
             client = await aiohttp_client(app)

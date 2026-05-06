@@ -1,8 +1,8 @@
 """Unit tests for parrot-formdesigner services."""
 import pytest
-from parrot.formdesigner.core.schema import FormSchema, FormSection, FormField
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.services import FormValidator, FormRegistry, FormCache
+from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.services import FormValidator, FormRegistry, FormCache
 
 
 @pytest.fixture

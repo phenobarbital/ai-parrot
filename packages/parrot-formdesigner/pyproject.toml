@@ -50,16 +50,15 @@ Source = "https://github.com/phenobarbital/ai-parrot"
 Tracker = "https://github.com/phenobarbital/ai-parrot/issues"
 
 [tool.setuptools.dynamic]
-version = {attr = "parrot.formdesigner.version.__version__"}
+version = {attr = "parrot_formdesigner.version.__version__"}
 
 # ---------------------------------------------------------------------------
 # Setuptools — src/ layout
 # ---------------------------------------------------------------------------
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["parrot*"]
-namespaces = true
+include = ["parrot_formdesigner*"]
 
 [tool.setuptools.package-data]
-"parrot.formdesigner" = ["py.typed"]
-"parrot.formdesigner.renderers" = ["templates/*.j2"]
+"parrot_formdesigner" = ["py.typed"]
+"parrot_formdesigner.renderers" = ["templates/*.j2"]

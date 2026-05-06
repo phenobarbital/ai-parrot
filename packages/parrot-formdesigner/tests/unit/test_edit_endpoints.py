@@ -1,7 +1,7 @@
 """Unit tests for PUT/PATCH edit endpoints and utility functions (TASK-601 / FEAT-086)."""
 
 import pytest
-from parrot.formdesigner.handlers.api import _bump_version, _deep_merge
+from parrot_formdesigner.handlers.api import _bump_version, _deep_merge
 
 
 # ---------------------------------------------------------------------------
