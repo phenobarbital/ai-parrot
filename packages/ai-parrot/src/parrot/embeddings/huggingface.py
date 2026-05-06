@@ -7,6 +7,7 @@ from parrot._imports import lazy_import
 from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 from .catalog import EMBEDDING_MODELS
+from .matryoshka import MatryoshkaConfig, validate_against_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +103,44 @@ class ModelType(Enum):
 class SentenceTransformerModel(EmbeddingModel):
     """
     A wrapper class for HuggingFace sentence-transformers embeddings.
+
+    Supports optional Matryoshka Representation Learning (MRL) truncation via
+    the ``matryoshka`` kwarg.  When enabled, ``embed_documents`` and
+    ``embed_query`` slice the native-dim output to the requested dimension and
+    re-apply L2 normalisation so cosine similarity remains correct in the
+    lower-dimensional space.  ``get_embedding_dimension()`` then reports the
+    truncated dimension, so downstream consumers (pgvector table creation) see
+    the correct size.
+
+    The truncation is implemented with a plain numpy slice + renorm — we do NOT
+    rely on ``SentenceTransformer.encode(truncate_dim=N)`` because that
+    parameter is only available in newer sentence-transformers versions and the
+    project does not pin to those.
     """
+
     model_name: str = "sentence-transformers/all-mpnet-base-v2"
 
-    def __init__(self, model_name: str, **kwargs):
-        """
-        Initializes the embedding model with the specified model name.
+    def __init__(
+        self,
+        model_name: str,
+        matryoshka: Optional[dict] = None,
+        **kwargs,
+    ):
+        """Initializes the embedding model with the specified model name.
 
         Args:
             model_name: The name of the Hugging Face model to load.
-            **kwargs: Additional keyword arguments for SentenceTransformer.
+            matryoshka: Optional Matryoshka truncation config dict with shape
+                ``{"enabled": bool, "dimension": int}``.  When ``None`` or
+                ``{}`` the model behaves exactly as before FEAT-150.
+            **kwargs: Additional keyword arguments forwarded to the parent
+                ``EmbeddingModel.__init__`` and ultimately to
+                ``SentenceTransformer``.
+
+        Raises:
+            ConfigError: When ``matryoshka.enabled`` is ``True`` but the model
+                is not in the catalog, has no ``matryoshka_dimensions``, or the
+                requested dimension is not in the allowed list.
         """
         super().__init__(model_name=model_name, **kwargs)
         # Resolve model-family prefixes once at construction so
@@ -125,9 +154,53 @@ class SentenceTransformerModel(EmbeddingModel):
                 "Using instruction prefixes for %s — query=%r passage=%r",
                 self.model_name, self._query_prefix, self._passage_prefix,
             )
+
+        # FEAT-150: Matryoshka truncation support.
+        # Validate the config up-front so any misconfiguration is caught at
+        # construction time, not at the first embedding call.
+        if matryoshka and isinstance(matryoshka, dict):
+            _cfg = MatryoshkaConfig(**matryoshka)
+        else:
+            _cfg = MatryoshkaConfig()  # defaults: enabled=False, dimension=None
+
+        validate_against_catalog(_cfg, self.model_name)
+
+        # Store the truncated dim (None when disabled).  The hot path only
+        # pays one boolean check per batch.
+        self._matryoshka_dim: Optional[int] = (
+            _cfg.dimension if _cfg.enabled else None
+        )
+
+        if self._matryoshka_dim is not None:
+            self.logger.info(
+                "Matryoshka truncation active for %s — effective dimension: %d",
+                self.model_name,
+                self._matryoshka_dim,
+            )
+
         self.logger.info(
             "Initialized SentenceTransformerModel with model: %s", self.model_name
         )
+
+    @property
+    def model(self):
+        """Return the raw SentenceTransformer model, syncing dimension on load.
+
+        Extends the base ``model`` property to ensure ``self._dimension`` is
+        populated after the lazy load.  The base property sets ``_dimension``
+        only on the registry-cached wrapper, not on the calling instance.
+        This override propagates the effective dimension (honoring the
+        Matryoshka override) to ``self`` so that
+        :meth:`get_embedding_dimension` returns the correct value.
+        """
+        raw = super().model
+        if self._dimension is None and raw is not None and hasattr(raw, "get_embedding_dimension"):
+            # Sync native dim from the raw model.
+            self._dimension = raw.get_embedding_dimension()
+            # Apply Matryoshka override if active.
+            if self._matryoshka_dim is not None:
+                self._dimension = self._matryoshka_dim
+        return raw
 
     def _apply_query_prefix(self, text: str) -> str:
         """Prepend the model-family query prefix (if any)."""
@@ -141,6 +214,46 @@ class SentenceTransformerModel(EmbeddingModel):
             return [f"{self._passage_prefix}{t}" for t in texts]
         return texts
 
+    def _apply_matryoshka(
+        self,
+        vectors: "np.ndarray | list",
+    ) -> "np.ndarray | list":
+        """Slice and L2-renormalize vectors to the Matryoshka dimension.
+
+        This is a no-op when Matryoshka truncation is disabled
+        (``self._matryoshka_dim is None``).
+
+        The truncation is a plain numpy slice followed by L2 renormalisation.
+        We do NOT rely on ``SentenceTransformer.encode(truncate_dim=N)``
+        because that parameter is only available in newer sentence-transformers
+        versions; doing it ourselves keeps behaviour stable across versions.
+
+        A truncated unit vector is no longer unit-norm (only the full vector
+        was unit-norm). Re-normalising is required so cosine similarity stays
+        comparable across dimensions.
+
+        Args:
+            vectors: Output of :meth:`encode` — either a numpy array of shape
+                ``(n, native_dim)`` or a list of lists (when ``.tolist()`` was
+                already called on the numpy result).
+
+        Returns:
+            Truncated and L2-renormalised vectors in the same container type
+            as the input (numpy array → numpy array; list → list).
+        """
+        if self._matryoshka_dim is None:
+            return vectors
+
+        is_list = isinstance(vectors, list)
+        arr = np.asarray(vectors, dtype=np.float32)
+        sliced = arr[..., : self._matryoshka_dim]
+        norms = np.linalg.norm(sliced, axis=-1, keepdims=True)
+        # Avoid divide-by-zero: a zero vector remains zero (rare edge case
+        # but possible for empty or all-pad inputs).
+        norms = np.where(norms == 0, 1.0, norms)
+        normalized = sliced / norms
+        return normalized.tolist() if is_list else normalized
+
     async def embed_documents(
         self,
         texts: List[str],
@@ -152,9 +265,16 @@ class SentenceTransformerModel(EmbeddingModel):
         models receive the prefix they were trained on. Without this,
         retrieval quality collapses — similarity scores cluster near
         the centroid and ranking becomes essentially random.
+
+        When Matryoshka truncation is active (``self._matryoshka_dim`` is
+        set), the native-dim vectors are sliced to the requested dimension
+        and L2-renormalised before being returned.
         """
         prefixed = self._apply_passage_prefix(texts)
         result = await self.encode(prefixed, normalize_embeddings=True)
+        # Apply Matryoshka truncation before the optional tolist() so we
+        # can work on the numpy array when available (avoids a round-trip).
+        result = self._apply_matryoshka(result)
         if hasattr(result, "tolist"):
             return result.tolist()
         return result
@@ -170,6 +290,9 @@ class SentenceTransformerModel(EmbeddingModel):
         reason as :meth:`embed_documents` — E5 models in particular
         are trained with asymmetric ``query:`` / ``passage:`` markers
         and degrade badly when either side is omitted.
+
+        When Matryoshka truncation is active, the result is sliced and
+        renormalised before ``embedding = result[0]`` is extracted.
         """
         prefixed = self._apply_query_prefix(text)
         result = await self.encode(
@@ -180,6 +303,9 @@ class SentenceTransformerModel(EmbeddingModel):
         )
         if hasattr(result, "tolist"):
             result = result.tolist()
+        # Apply Matryoshka truncation on the list-of-lists before extracting
+        # the single embedding so the helper operates on the right shape.
+        result = self._apply_matryoshka(result)
         embedding = result[0]
         if as_nparray:
             return [np.array(embedding)]
@@ -228,9 +354,14 @@ class SentenceTransformerModel(EmbeddingModel):
         finally:
             st_logger.setLevel(prev_level)
         
-        # Set dimension after loading model
+        # Set dimension after loading model.
         self._dimension = model.get_embedding_dimension()
-        
+        # FEAT-150: when Matryoshka truncation is active, override _dimension
+        # to the truncated value so that downstream consumers (pgvector column
+        # creation, AbstractStore dimension checks) see the effective size.
+        if self._matryoshka_dim is not None:
+            self._dimension = self._matryoshka_dim
+
         # Production optimizations
         model.eval()
         if str(device) == "cuda":
