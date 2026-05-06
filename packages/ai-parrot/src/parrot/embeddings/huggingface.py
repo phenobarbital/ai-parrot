@@ -11,6 +11,14 @@ from .matryoshka import MatryoshkaConfig, validate_against_catalog
 
 logger = logging.getLogger(__name__)
 
+# HuggingFace models that ship custom modeling code in their repo and
+# therefore require ``trust_remote_code=True`` to load via SentenceTransformer.
+# Mirrors the pattern in parrot/rerankers/local.py:46.
+_TRUST_REMOTE_CODE_MODELS: set[str] = {
+    "nomic-ai/nomic-embed-text-v1.5",
+    "jinaai/jina-embeddings-v3",
+}
+
 # Built once at import time from the catalog — O(1) lookup at runtime.
 # Keys are lowercased model identifiers; values are (prefix_query, prefix_passage).
 # The catalog's Pydantic validator guarantees the pair is consistent with
@@ -345,12 +353,14 @@ class SentenceTransformerModel(EmbeddingModel):
         st_logger = logging.getLogger("sentence_transformers.SentenceTransformer")
         prev_level = st_logger.level
         st_logger.setLevel(logging.WARNING)
+        st_kwargs: dict[str, Any] = {
+            "device": device,
+            "cache_folder": HUGGINGFACE_EMBEDDING_CACHE_DIR,
+        }
+        if model_name in _TRUST_REMOTE_CODE_MODELS:
+            st_kwargs["trust_remote_code"] = True
         try:
-            model = SentenceTransformer(
-                model_name,
-                device=device,
-                cache_folder=HUGGINGFACE_EMBEDDING_CACHE_DIR
-            )
+            model = SentenceTransformer(model_name, **st_kwargs)
         finally:
             st_logger.setLevel(prev_level)
         
