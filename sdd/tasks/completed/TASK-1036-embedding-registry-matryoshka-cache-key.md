@@ -259,9 +259,7 @@ class TestMatryoshkaCacheKey:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-06
+**Notes**: Extended CacheKey to 3-tuple, added _extract_matryoshka_dim helper, updated get_or_create/get_or_create_sync/unload/_evict_if_needed. Also fixed pre-existing unused imports (field, TYPE_CHECKING). Updated 2 assertions in test_registry.py to use 3-tuple keys. All 243 tests pass.
+**Deviations from spec**: None (unused import cleanup was a pre-existing issue that ruff caught).
