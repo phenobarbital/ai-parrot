@@ -14,7 +14,7 @@
       "feature_id": "FEAT-149",
       "feature": "ephemeral-agents",
       "spec": "sdd/specs/ephemeral-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this model.",
       "assigned_to": null,
       "started_at": "2026-05-06T16:20:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1034-ephemeral-status-model.md"
+      "completed_at": "2026-05-06T22:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1034-ephemeral-status-model.md"
     },
     {
       "id": "TASK-1035",

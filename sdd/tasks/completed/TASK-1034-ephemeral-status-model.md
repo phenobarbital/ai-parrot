@@ -217,10 +217,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: All 16 tests pass. EphemeralAgentStatus Pydantic model with validate_assignment=True for phase transitions. EphemeralRegistry with ownership checks, expiration math, and snapshot. _warm_up coroutine added to ephemeral.py (Module 3 / TASK-1036 also lives in this file). conftest.py updated with Cython stubs to allow worktree test collection.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: _warm_up skeleton also added to ephemeral.py since TASK-1036 targets the same file; full warm-up wiring happens when TASK-1036 is processed.
