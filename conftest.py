@@ -105,6 +105,46 @@ except Exception:  # noqa: BLE001
 # that's already present.
 import importlib as _importlib
 
+# ── Cython extension stubs (compiled .so files absent in git worktrees) ─────
+# Worktrees contain only the .pyx sources, not the compiled .so modules.
+# Inject minimal pure-Python stubs so that package __init__ files can import
+# from Cython extensions without needing the compiled extensions present.
+
+# parrot.utils.types (SafeDict)
+if "parrot.utils.types" not in sys.modules:
+    _utils_types_mod = types.ModuleType("parrot.utils.types")
+
+    class _SafeDict(dict):
+        """Pure-Python stand-in for the Cython SafeDict."""
+
+        def __missing__(self, key):
+            return None
+
+    _utils_types_mod.SafeDict = _SafeDict
+    sys.modules["parrot.utils.types"] = _utils_types_mod
+
+# parrot.utils.parsers.toml (TOMLParser)
+if "parrot.utils.parsers.toml" not in sys.modules:
+    _parsers_toml_mod = types.ModuleType("parrot.utils.parsers.toml")
+
+    class _TOMLParser:
+        """Pure-Python stand-in for the Cython TOMLParser."""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def parse(self, content: str) -> dict:
+            import tomllib as _tomllib  # type: ignore[import]
+            return _tomllib.loads(content)
+
+    _parsers_toml_mod.TOMLParser = _TOMLParser
+    sys.modules["parrot.utils.parsers.toml"] = _parsers_toml_mod
+    # Ensure the parsers package is visible too
+    if "parrot.utils.parsers" not in sys.modules:
+        _parsers_pkg = types.ModuleType("parrot.utils.parsers")
+        _parsers_pkg.TOMLParser = _TOMLParser
+        sys.modules["parrot.utils.parsers"] = _parsers_pkg
+
 for _mod_name in (
     "parrot.models.responses",
     "parrot.clients.base",
