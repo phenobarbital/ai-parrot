@@ -204,10 +204,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: `_warm_up` was already fully implemented in `ephemeral.py` as part of TASK-1034 (skeleton added proactively since it lives in the same file). TASK-1036 added the formal unit test suite: 14 tests covering `creating→warming→ready` transitions, `progress` dict updates for all three subsystems (tools/mcp/rag), MCP validation with mock server configs, FAISS index build path, and `_extract_mcp_servers` helper. PageIndex path is stubbed (requires `PageIndexLLMAdapter` which is a follow-up integration).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `_build_page_index` logs and skips (rather than running the full pipeline) because the pageindex builder requires a `PageIndexLLMAdapter` that depends on the bot's LLM client — that wiring is a follow-up integration task.
