@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-152
 **Date**: 2026-05-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD — Wave 1 targets `parrot-formdesigner` 0.2.0 (breaking package layout); Wave 2 capabilities ship as 0.3.x point releases.
 
 ---
@@ -940,45 +940,45 @@ weasyprint 68.0      # not used (HTML→PDF static, can't produce AcroForm filla
 >
 > Unresolved (`[ ]`) — must be resolved before or during implementation.
 
-- [ ] **Q1 — `If-Match` concurrency in V1**: Should
+- [x] **Q1 — `If-Match` concurrency in V1**: Should
       `PATCH /api/v1/forms/{id}/operations` support optional `If-Match`
       concurrency control in V1, or is last-write-wins sufficient until
       the designer UI lands? — *Owner: Jesus Lara*
       *Brainstorm guidance: optional support is included in the
       Architectural Design above ("Optional optimistic concurrency").
       If V1 ships without it, `test_operations_if_match_412` is removed
-      from the AC list.*
-- [ ] **Q2 — Deprecate existing PUT/PATCH endpoints?** Do the existing
+      from the AC list.*: optimistic concurrency
+- [x] **Q2 — Deprecate existing PUT/PATCH endpoints?** Do the existing
       PUT (`api.update_form`) and RFC-7396 PATCH (`api.patch_form`)
       endpoints stay alongside the new `/operations`, or do we deprecate
       them in V1? — *Owner: Jesus Lara*
       *Brainstorm recommendation: keep both — full replace and
       merge-patch have different use cases (config imports, admin tools)
       than granular UI edits. This is the working assumption in §1
-      Goals / Non-Goals.*
-- [ ] **Q3 — Telegram WebApp template split**: `templates.py` is a
+      Goals / Non-Goals.*: stay, keep both.
+- [x] **Q3 — Telegram WebApp template split**: `templates.py` is a
       457 LoC monolith of inline HTML. Stay monolithic in `ui/templates.py`
       or split per-page? Pure organizational, no behavior change. —
-      *Owner: Jesus Lara*
+      *Owner: Jesus Lara*: stay.
       *Brainstorm guidance: defer; Wave 1 moves the file verbatim.*
-- [ ] **Q4 — PDF V1 scope for fields not natively expressible in
+- [x] **Q4 — PDF V1 scope for fields not natively expressible in
       AcroForm**: For `FieldType.FILE`, `FieldType.IMAGE`,
       `FieldType.ARRAY`, `FieldType.GROUP` — annotate with a "fill out
       elsewhere" textfield, or omit entirely? — *Owner: Jesus Lara*
       *Brainstorm recommendation (encoded in Module 7 + AC): flat
       textfield placeholder + form-level `meta` note listing unsupported
-      fields. Document in CHANGELOG.*
-- [ ] **Q5 — XForms V1 constraint binds**: Include `<xf:bind>` constraint
+      fields. Document in CHANGELOG.*: ok with recommendation.
+- [x] **Q5 — XForms V1 constraint binds**: Include `<xf:bind>` constraint
       expressions derived from `FieldConstraints` in V1, or only emit
       structural model + UI bindings? More semantic XForms is a longer
       task. — *Owner: Jesus Lara*
       *Brainstorm recommendation (encoded in Module 6): structural only
-      in V1; constraint mapping is a follow-up.*
-- [ ] **Q6 — `parrot_formdesigner.tools/` placement**: Belong under
+      in V1; constraint mapping is a follow-up.*: include
+- [x] **Q6 — `parrot_formdesigner.tools/` placement**: Belong under
       `api/tools/`, stay at root, or move to a separate `agents/`
       sub-package? — *Owner: Jesus Lara*
       *Brainstorm recommendation (encoded in §1 Non-Goals + §7 Patterns):
-      stay at root. The `api/` move is about HTTP, not Python tools.*
+      stay at root. The `api/` move is about HTTP, not Python tools.*: stay at root.
 
 ---
 
