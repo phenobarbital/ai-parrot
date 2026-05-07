@@ -9,12 +9,13 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 from __future__ import annotations
+import contextvars
 import io
 import re
 import warnings
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union, TYPE_CHECKING
+from typing import Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
 import redis.asyncio as aioredis
 from os import PathLike
@@ -26,6 +27,20 @@ from ..toolkit import AbstractToolkit
 from ...conf import REDIS_DATASET_URL
 from .sources.base import DataSource
 
+if TYPE_CHECKING:
+    from ...auth.dataset_guard import DatasetPolicyGuard
+    from ...auth.permission import PermissionContext
+    from ...auth.resolver import AbstractPermissionResolver
+
+# Module-level ContextVar that isolates the per-call PermissionContext for each
+# asyncio task running on a shared DatasetManager instance.  Set by
+# DatasetManager._pre_execute and read by _get_current_pctx.  Using a
+# ContextVar (rather than an instance attribute) ensures that two concurrent
+# requests processed by the same DatasetManager cannot bleed each other's
+# PermissionContext across an await boundary.
+_pctx_var: contextvars.ContextVar = contextvars.ContextVar(
+    "dataset_manager_pctx", default=None
+)
 
 try:
     logger = logging.getLogger(__name__)
@@ -503,6 +518,7 @@ class DatasetManager(AbstractToolkit):
         generate_guide: bool = True,
         include_summary_stats: bool = False,
         auto_detect_types: bool = True,
+        policy_guard: Optional["DatasetPolicyGuard"] = None,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -519,6 +535,13 @@ class DatasetManager(AbstractToolkit):
         self._redis: Optional[aioredis.Redis] = None
         self._file_entries: Dict[str, FileEntry] = {}
         self._artifacts: List[Dict[str, Any]] = []
+        # PBAC dataset-level policy enforcement (FEAT-151).
+        # None → no enforcement (opt-in backwards compat).
+        self._policy_guard: Optional["DatasetPolicyGuard"] = policy_guard
+        # Per-call permission context is stored in the module-level _pctx_var
+        # ContextVar (set by _pre_execute, read by _get_current_pctx).
+        # Using a ContextVar instead of an instance attribute isolates concurrent
+        # requests on a shared DatasetManager from cross-contaminating contexts.
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -2427,6 +2450,168 @@ class DatasetManager(AbstractToolkit):
         return list_computed_functions()
 
     # ─────────────────────────────────────────────────────────────
+    # PBAC Policy Enforcement (FEAT-151)
+    # ─────────────────────────────────────────────────────────────
+
+    def _get_current_pctx(self) -> Optional["PermissionContext"]:
+        """Return the per-call PermissionContext for the current asyncio task.
+
+        Reads from the module-level ``_pctx_var`` ContextVar, which is set by
+        ``_pre_execute`` when the toolkit dispatch mechanism invokes a tool.
+        Each asyncio task has its own copy of the ContextVar, so concurrent
+        requests on a shared ``DatasetManager`` instance cannot cross-contaminate
+        each other's permission contexts.
+
+        Returns:
+            ``PermissionContext`` for the current tool call, or ``None`` when
+            no permission context is available (e.g., direct method invocation
+            outside the toolkit dispatch path).
+        """
+        return _pctx_var.get()
+
+    async def _filter_dataset_info_columns(
+        self,
+        pctx: Optional["PermissionContext"],
+        info: DatasetInfo,
+    ) -> DatasetInfo:
+        """Filter columns in a ``DatasetInfo`` object via the policy guard.
+
+        Trims ``info.columns`` and ``info.column_types`` in lockstep — the two
+        fields are always filtered together so the model stays consistent.
+        Drop-silent: the caller MUST NOT surface any indication that columns
+        were hidden.
+
+        Args:
+            pctx: Per-call permission context. If ``None``, no filtering is
+                applied.
+            info: The ``DatasetInfo`` to filter.
+
+        Returns:
+            A new ``DatasetInfo`` instance with only the allowed columns, or
+            the original ``info`` when no guard is configured or ``pctx`` is
+            missing.
+        """
+        if not self._policy_guard or not pctx:
+            return info
+        allowed = await self._policy_guard.filter_columns(
+            pctx, info.name, info.columns
+        )
+        if allowed == info.columns:
+            return info  # no change
+        allowed_set: Set[str] = set(allowed)
+        col_types = info.column_types
+        return info.model_copy(update={
+            "columns": allowed,
+            "column_types": (
+                {k: v for k, v in col_types.items() if k in allowed_set}
+                if col_types is not None
+                else None
+            ),
+        })
+
+    async def get_tools_filtered(
+        self,
+        permission_context: "PermissionContext",
+        resolver: "AbstractPermissionResolver",
+    ) -> List:
+        """Filter toolkit tools by resolver and then by dataset policy.
+
+        Delegates to ``super().get_tools_filtered()`` for the standard
+        tool-level PBAC pass, then consults ``DatasetPolicyGuard.filter_datasets``
+        to compute the set of accessible datasets.  Tools whose associated
+        dataset name is denied are excluded; generic tools (no specific dataset
+        association) are always kept.
+
+        When ``self._policy_guard is None``, returns the base resolver result
+        unchanged (opt-in backwards compat).
+
+        Args:
+            permission_context: User context for permission filtering.
+            resolver: Permission resolver for the standard tool-level pass.
+
+        Returns:
+            Filtered list of ``AbstractTool`` instances.
+        """
+        tools = await super().get_tools_filtered(permission_context, resolver)
+        if not self._policy_guard:
+            return tools
+        # Compute the accessible datasets for this user (used for per-dataset
+        # tool registration in future; keeps all generic tools for now).
+        allowed_datasets: Set[str] = await self._policy_guard.filter_datasets(
+            permission_context, list(self._datasets.keys())
+        )
+        # All current DatasetManager tools are generic (they take 'name' as a
+        # runtime parameter, not bound to a specific dataset).  Return all
+        # tools whose optional dataset association is either None (generic) or
+        # in the allowed set.
+        def _tool_dataset_name(tool) -> Optional[str]:
+            """Dataset name bound to a specific tool, or None for generic tools."""
+            # Future: per-dataset tool registration would set a _dataset_name
+            # attribute on the tool at generation time.
+            return getattr(tool, "_dataset_name", None)
+
+        return [
+            t for t in tools
+            if _tool_dataset_name(t) is None or _tool_dataset_name(t) in allowed_datasets
+        ]
+
+    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+        """PBAC Layer-2 per-call enforcement hook.
+
+        Called by ``ToolkitTool._execute`` before invoking the bound method.
+        Stores the per-call ``PermissionContext`` for downstream use and — when
+        ``policy_guard`` is configured — performs a defence-in-depth dataset
+        access check for tools that take a ``name`` argument.
+
+        Failure mode: raises ``AuthorizationRequired`` when
+        ``can_read_dataset()`` returns ``False``.  This exception propagates
+        through ``AbstractTool.execute`` (which lets ``AuthorizationRequired``
+        bubble up) and is converted into a structured forbidden response by
+        ``ToolManager``.
+
+        Args:
+            tool_name: Name of the tool about to be executed.
+            **kwargs: Tool arguments, including ``_permission_context`` injected
+                by ``ToolkitTool._execute``.
+        """
+        # Store in the module-level ContextVar so concurrent tasks on this shared
+        # instance each see their own context (not another request's context).
+        pctx = kwargs.get("_permission_context")
+        _pctx_var.set(pctx)
+
+        if not self._policy_guard or not pctx:
+            return
+
+        # Perform the dataset-level check only for tools that take a dataset name.
+        # The 'name' kwarg is the dataset identifier for fetch_dataset, get_metadata,
+        # activate, deactivate, etc.
+        dataset_name = kwargs.get("name")
+        if dataset_name is None:
+            return
+
+        # Resolve the name (handles aliases) so the policy check uses the canonical name.
+        try:
+            resolved = self._resolve_name(str(dataset_name))
+        except Exception:
+            resolved = str(dataset_name)
+
+        allowed = await self._policy_guard.can_read_dataset(pctx, resolved)
+        if not allowed:
+            from ...auth.exceptions import AuthorizationRequired
+            _user_id = (
+                getattr(pctx.session, "user_id", "<unknown>")
+                if pctx.session is not None
+                else "<unknown>"
+            )
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message=(
+                    f"Access to dataset '{resolved}' denied by PBAC policy "
+                    f"for user '{_user_id}' (Layer-2 defence-in-depth)."
+                ),
+            )
+
+    # ─────────────────────────────────────────────────────────────
     # LLM-Exposed Tools (Async methods become tools via AbstractToolkit)
     # ─────────────────────────────────────────────────────────────
 
@@ -2501,6 +2686,13 @@ class DatasetManager(AbstractToolkit):
                         f"if you need column names."
                     )
             result.append(info)
+        # PBAC: filter out denied datasets (drop-silent)
+        pctx = self._get_current_pctx()
+        if self._policy_guard and pctx and result:
+            allowed_names: Set[str] = await self._policy_guard.filter_datasets(
+                pctx, [r["name"] for r in result]
+            )
+            result = [r for r in result if r["name"] in allowed_names]
         return result
 
     async def list_available(self) -> List[Dict[str, Any]]:
@@ -2513,10 +2705,16 @@ class DatasetManager(AbstractToolkit):
 
         Active datasets are available for analysis in python_repl_pandas.
         """
-        return [
+        names = [
             name for name, entry in self._datasets.items()
             if entry.is_active
         ]
+        # PBAC: filter out denied datasets (drop-silent)
+        pctx = self._get_current_pctx()
+        if self._policy_guard and pctx and names:
+            allowed: Set[str] = await self._policy_guard.filter_datasets(pctx, names)
+            names = [n for n in names if n in allowed]
+        return names
 
     async def get_datasets_summary(self) -> str:
         """Generate a bullet-list summary of all active datasets with descriptions.
@@ -2643,6 +2841,13 @@ class DatasetManager(AbstractToolkit):
             if info.columns:
                 response["columns"] = info.columns
                 response["column_types"] = info.column_types
+            # PBAC: filter columns in the unloaded schema (drop-silent)
+            pctx_unloaded = self._get_current_pctx()
+            if self._policy_guard and pctx_unloaded and info.columns:
+                info = await self._filter_dataset_info_columns(pctx_unloaded, info)
+                if "columns" in response:
+                    response["columns"] = info.columns
+                    response["column_types"] = info.column_types
             return response
 
         df = entry.df
@@ -2684,6 +2889,35 @@ class DatasetManager(AbstractToolkit):
 
         if include_metrics_guide:
             result["metrics_guide"] = self.generate_metrics_guide(df)
+
+        # PBAC: filter columns in the loaded metadata (drop-silent)
+        pctx_loaded = self._get_current_pctx()
+        if self._policy_guard and pctx_loaded:
+            _full_info = entry.to_info()
+            _filtered_info = await self._filter_dataset_info_columns(pctx_loaded, _full_info)
+            if set(_filtered_info.columns) != set(_full_info.columns):
+                _allowed_set: Set[str] = set(_filtered_info.columns)
+                # Filter _column_metadata dict (col → {description, dtype, ...})
+                if isinstance(result.get("columns"), dict):
+                    result["columns"] = {
+                        k: v for k, v in result["columns"].items()
+                        if k in _allowed_set
+                    }
+                # Filter column_types dict in lockstep
+                if isinstance(result.get("column_types"), dict):
+                    result["column_types"] = {
+                        k: v for k, v in result["column_types"].items()
+                        if k in _allowed_set
+                    }
+                # Filter sample_rows records if present
+                if "sample_rows" in result:
+                    result["sample_rows"] = [
+                        {k: v for k, v in row.items() if k in _allowed_set}
+                        for row in result["sample_rows"]
+                    ]
+                # Update shape column count to reflect filtering
+                if isinstance(result.get("shape"), dict):
+                    result["shape"]["columns"] = len(_allowed_set)
 
         return result
 
@@ -2781,6 +3015,24 @@ class DatasetManager(AbstractToolkit):
         alias = alias_map.get(resolved_name, "")
         df = entry.df
 
+        # PBAC: drop forbidden columns — drop-silent, same semantics as fetch_dataset.
+        pctx_gdf = self._get_current_pctx()
+        if self._policy_guard and pctx_gdf:
+            _all_cols_gdf = df.columns.tolist()
+            _allowed_cols_gdf: list = await self._policy_guard.filter_columns(
+                pctx_gdf, resolved_name, _all_cols_gdf
+            )
+            if set(_allowed_cols_gdf) != set(_all_cols_gdf):
+                df = df[_allowed_cols_gdf]
+
+        # Filter column_types to only the visible columns (drop-silent).
+        _visible_cols = set(df.columns)
+        filtered_col_types = (
+            {col: ct for col, ct in entry.column_types.items() if col in _visible_cols}
+            if entry.column_types
+            else None
+        )
+
         return {
             "name": resolved_name,
             "alias": alias,
@@ -2793,9 +3045,10 @@ class DatasetManager(AbstractToolkit):
             "shape": {"rows": df.shape[0], "columns": df.shape[1]},
             "columns": df.columns.tolist(),
             "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "column_types": entry.column_types,
+            "column_types": filtered_col_types,
             "is_active": entry.is_active,
-            "null_count": entry.null_count,
+            # Recompute from the visible-column df so the count is consistent.
+            "null_count": int(df.isnull().sum().sum()),
             "sample_rows": df.head(3).to_dict(orient='records'),
         }
 
@@ -3151,7 +3404,34 @@ class DatasetManager(AbstractToolkit):
                 "hint": hint,
             }
 
-        nan_warnings = self.check_dataframes_for_nans([resolved])
+        # PBAC: drop forbidden columns from the returned DataFrame (drop-silent).
+        # The registered entry keeps its full data; only the *returned* df is trimmed.
+        pctx_fetch = self._get_current_pctx()
+        if self._policy_guard and pctx_fetch:
+            _all_cols = df.columns.tolist()
+            _allowed_cols: list = await self._policy_guard.filter_columns(
+                pctx_fetch, resolved, _all_cols
+            )
+            if set(_allowed_cols) != set(_all_cols):
+                _denied_cols = [c for c in _all_cols if c not in set(_allowed_cols)]
+                df = df.drop(columns=_denied_cols)
+
+        # Compute NaN warnings from the already-column-filtered df when a guard
+        # is active, so denied column names never appear in warning messages.
+        # Fall back to the standard helper for the no-guard path.
+        if self._policy_guard:
+            nan_warnings = []
+            if not df.empty:
+                _null_counts = df.isnull().sum()
+                _total_rows = len(df)
+                for _col, _cnt in _null_counts[_null_counts > 0].items():
+                    _pct = (_cnt / _total_rows) * 100
+                    nan_warnings.append(
+                        f"- DataFrame '{resolved}' (column '{_col}'): "
+                        f"Contains {_cnt} NaNs ({_pct:.1f}% of {_total_rows} rows)"
+                    )
+        else:
+            nan_warnings = self.check_dataframes_for_nans([resolved])
 
         # Sync PythonPandasTool BEFORE reading alias map so aliases are
         # up-to-date with the just-materialized dataset.
@@ -3280,6 +3560,16 @@ class DatasetManager(AbstractToolkit):
                 f"Call fetch_dataset('{resolved}') first to load the data."
             )
 
+        # PBAC: drop forbidden columns from schema — drop-silent.
+        pctx_gss = self._get_current_pctx()
+        if self._policy_guard and pctx_gss and schema:
+            _all_schema_cols = list(schema.keys())
+            _allowed_schema_cols: list = await self._policy_guard.filter_columns(
+                pctx_gss, resolved, _all_schema_cols
+            )
+            if set(_allowed_schema_cols) != set(_all_schema_cols):
+                schema = {col: schema[col] for col in _allowed_schema_cols}
+
         lines = [f"Schema for '{resolved}' ({entry.source.describe()}):"]
         for col, dtype in schema.items():
             lines.append(f"  - {col}: {dtype}")
@@ -3313,9 +3603,7 @@ class DatasetManager(AbstractToolkit):
         Returns:
             Data quality report with NaN warnings and completeness metrics
         """
-        nan_warnings = self.check_dataframes_for_nans(names)
-
-        # Determine which datasets to report on
+        # Determine which datasets to report on.
         if names:
             check_names = [self._resolve_name(n) for n in names]
         else:
@@ -3324,18 +3612,43 @@ class DatasetManager(AbstractToolkit):
                 if entry.is_active and entry.loaded
             ]
 
-        dataset_quality = {}
-        for name in check_names:
-            entry = self._datasets.get(name)
+        pctx_dq = self._get_current_pctx()
+        nan_warnings: list = []
+        dataset_quality: dict = {}
+
+        for ds_name in check_names:
+            entry = self._datasets.get(ds_name)
             if not entry or not entry.loaded:
                 continue
 
             df = entry.df
+
+            # PBAC: apply column-level filtering before computing metrics so
+            # denied column names never appear in nan_warnings or counts.
+            if self._policy_guard and pctx_dq:
+                _all_cols_dq = df.columns.tolist()
+                _allowed_cols_dq: list = await self._policy_guard.filter_columns(
+                    pctx_dq, ds_name, _all_cols_dq
+                )
+                if set(_allowed_cols_dq) != set(_all_cols_dq):
+                    df = df[_allowed_cols_dq]
+
+            # Compute NaN warnings from the (already filtered) df.
+            if not df.empty:
+                null_counts = df.isnull().sum()
+                total_rows = len(df)
+                for col_name, count in null_counts[null_counts > 0].items():
+                    pct = (count / total_rows) * 100
+                    nan_warnings.append(
+                        f"- DataFrame '{ds_name}' (column '{col_name}'): "
+                        f"Contains {count} NaNs ({pct:.1f}% of {total_rows} rows)"
+                    )
+
             total_cells = df.size
             null_cells = int(df.isnull().sum().sum())
             duplicate_rows = int(df.duplicated().sum())
 
-            dataset_quality[name] = {
+            dataset_quality[ds_name] = {
                 "rows": len(df),
                 "columns": len(df.columns),
                 "total_cells": total_cells,

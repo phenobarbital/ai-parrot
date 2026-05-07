@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-07T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-07T13:31:20+00:00",
   "tasks": [
     {
       "id": "TASK-1044",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No file overlap with TASK-1045. Creates new parrot/auth/dataset_guard.py and tests/auth/test_dataset_guard.py — no shared files with setup_pbac extension.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1044-dataset-policy-guard.md"
+      "completed_at": "2026-05-07T11:12:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1044-dataset-policy-guard.md"
     },
     {
       "id": "TASK-1045",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No file overlap with TASK-1044. Modifies parrot/auth/pbac.py only — no shared files with DatasetPolicyGuard creation.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1045-setup-pbac-datasets-extension.md"
+      "completed_at": "2026-05-07T11:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1045-setup-pbac-datasets-extension.md"
     },
     {
       "id": "TASK-1046",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on TASK-1044 (imports DatasetPolicyGuard). Modifies parrot/tools/dataset_manager/tool.py — must run after guard class exists.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1046-datasetmanager-policy-integration.md"
+      "completed_at": "2026-05-07T11:44:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1046-datasetmanager-policy-integration.md"
     },
     {
       "id": "TASK-1047",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on all three prior tasks. Wires guard + extended setup_pbac + DatasetManager together for end-to-end verification.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1047-sample-policies-integration-tests.md"
+      "completed_at": "2026-05-07T13:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1047-sample-policies-integration-tests.md"
     }
   ]
 }
