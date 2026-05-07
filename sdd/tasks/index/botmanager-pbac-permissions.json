@@ -113,7 +113,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Modifies parrot/registry/registry.py — same file as TASK-1051. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1054-agentregistry-get-instance-enforcement.md"
+      "completed_at": "2026-05-07T13:55:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1054-agentregistry-get-instance-enforcement.md"
     },
     {
       "id": "TASK-1055",

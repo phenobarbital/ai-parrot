@@ -243,4 +243,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Added top-level imports to `registry.py`:
+  - `from aiohttp import web`
+  - `from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401`
+
+Modified `get_instance` signature to add `request: Optional[web.Request] = None`.
+Restructured the method to place `enforce_agent_access` OUTSIDE the existing
+`try/except Exception to return None` block, ensuring `AgentAccessDenied` propagates.
+
+5 integration tests created in `test_get_instance_pbac.py`:
+  - no-evaluator allows
+  - no-request allows (programmatic bypass), evaluator not called
+  - evaluator allows → instance returned
+  - evaluator denies → AgentAccessDenied raised (navigator-auth-dependent)
+  - AgentAccessDenied propagates (not swallowed by existing try/except)
+
+All 5 tests pass. ruff shows 1 pre-existing F841 (not introduced by this task).
