@@ -14,7 +14,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. All other tasks import from parrot/auth/agent_guard.py — must ship first. Spec §Worktree Strategy chose per-spec sequential isolation, so parallel: false even though this task only creates new files.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1049-agent-guard-module.md"
+      "completed_at": "2026-05-07T13:26:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1049-agent-guard-module.md"
     },
     {
       "id": "TASK-1050",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies parrot/handlers/models/bots.py only — no file overlap with other tasks. Could run parallel with TASK-1051..1054, but spec §Worktree Strategy chose per-spec sequential isolation.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1050-botmodel-permissions-docs.md"
+      "completed_at": "2026-05-07T13:28:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1050-botmodel-permissions-docs.md"
     },
     {
       "id": "TASK-1051",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Modifies parrot/registry/registry.py — same file as TASK-1054 (get_instance enforcement). Cannot run in parallel with TASK-1054.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1051-agentregistry-register-db-bot-policies.md"
+      "completed_at": "2026-05-07T13:36:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1051-agentregistry-register-db-bot-policies.md"
     },
     {
       "id": "TASK-1052",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Modifies parrot/manager/manager.py — same file as TASK-1053 (get_bot enforcement). Cannot run in parallel with TASK-1053. Also depends on TASK-1051 because it calls register_db_bot_policies.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1052-load-database-bots-policy-wiring.md"
+      "completed_at": "2026-05-07T13:53:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1052-load-database-bots-policy-wiring.md"
     },
     {
       "id": "TASK-1053",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Modifies parrot/manager/manager.py — same file as TASK-1052. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1053-botmanager-get-bot-enforcement.md"
+      "completed_at": "2026-05-07T13:53:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1053-botmanager-get-bot-enforcement.md"
     },
     {
       "id": "TASK-1054",
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Modifies parrot/registry/registry.py — same file as TASK-1051. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1054-agentregistry-get-instance-enforcement.md"
+      "completed_at": "2026-05-07T13:55:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1054-agentregistry-get-instance-enforcement.md"
     },
     {
       "id": "TASK-1055",
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -145,8 +145,8 @@
       "parallelism_notes": "Test-only task — creates a new test file under packages/ai-parrot/tests/. No production code change. Logically last because it locks in the exemption property after enforcement is live.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1055-user-bots-exemption-regression.md"
+      "completed_at": "2026-05-07T13:58:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1055-user-bots-exemption-regression.md"
     }
   ]
 }

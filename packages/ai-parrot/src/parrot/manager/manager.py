@@ -13,6 +13,8 @@ from aiohttp import web
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611 # noqa
 # Navigator:
 from navconfig.logging import logging
+# FEAT-153: PBAC agent-access enforcement
+from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 from asyncdb.exceptions import NoDataFound
 # FEAT-133: reranker + parent-searcher factories
 from ..rerankers.factory import create_reranker
@@ -460,6 +462,27 @@ class BotManager:
                         type(parent_searcher).__name__ if parent_searcher else None,
                     )
 
+                    # FEAT-153: Register DB-declared permissions into the evaluator
+                    # BEFORE adding the bot so a concurrent get_bot cannot resolve
+                    # the bot before its policies are loaded.
+                    try:
+                        n_policies = self.registry.register_db_bot_policies(
+                            bot_model.name,
+                            bot_model.permissions,
+                        )
+                        if n_policies:
+                            self.logger.info(
+                                "Bot %r: registered %d DB-declared policy rule(s).",
+                                bot_model.name, n_policies,
+                            )
+                    except ValueError as exc:
+                        self.logger.warning(
+                            "Bot %r has malformed 'permissions' JSON: %s. "
+                            "Skipping this bot.",
+                            bot_model.name, exc,
+                        )
+                        continue  # skip — do NOT add to self._bots
+
                     self.add_bot(bot_instance)
                     self.logger.info(
                         f"Successfully loaded bot '{bot_model.name}' "
@@ -580,21 +603,36 @@ class BotManager:
         name: str,
         new: bool = False,
         session_id: str = "",
+        request: Optional[web.Request] = None,
         **kwargs
     ) -> AbstractBot:
         """Get a Bot by name.
 
         Args:
-            name: Name of the bot to get
-            new: If True, create a new instance instead of returning existing one
-            session_id: Session identifier for creating unique temporary instances
-            **kwargs: Additional arguments to pass to bot constructor when new=True
+            name: Name of the bot to get.
+            new: If True, create a new instance instead of returning existing one.
+            session_id: Session identifier for creating unique temporary instances.
+            request: Optional aiohttp request.  When provided, the caller's subject
+                is checked against any PBAC policies registered for this bot via
+                FEAT-153 ``enforce_agent_access``.  ``None`` means programmatic
+                invocation — no PBAC check is performed (HTTP-scoped enforcement).
+            **kwargs: Additional arguments to pass to bot constructor when new=True.
 
         Returns:
-            Bot instance (existing or newly created)
+            Bot instance (existing or newly created).
+
+        Raises:
+            AgentAccessDenied: When ``request`` is provided and the caller's
+                subject does not match the bot's PBAC policies.
         """
         # Handle new instance creation
         if new:
+            # FEAT-153: Enforce PBAC on the base name BEFORE constructing the new
+            # instance.  Checking after construction causes a resource leak: the bot
+            # ends up registered in self._bots for up to 1 hour even though the
+            # caller was denied access.  AgentAccessDenied propagates to the caller.
+            await enforce_agent_access(self.registry.evaluator, name, request)
+
             # Get the class definition for this bot
             cls = self._botdef.get(name, BasicAgent)
 
@@ -675,8 +713,11 @@ class BotManager:
             if not getattr(_bot, 'is_configured', False):
                 self.logger.warning(f"Bot '{name}' found in _bots and is not configured.")
                 await _bot.configure(self.app)
+            # FEAT-153: Enforce PBAC before returning. AgentAccessDenied propagates.
+            await enforce_agent_access(self.registry.evaluator, name, request)
             return self._bots[name]
         if self.registry.has(name):
+            bot_instance = None
             try:
                 # Get instance (returns singleton if at_startup=True)
                 bot_instance = await self.registry.get_instance(name)
@@ -686,11 +727,15 @@ class BotManager:
                         self.logger.info(f"Configuring bot {name} on demand.")
                         await bot_instance.configure(self.app)
                     self.add_bot(bot_instance)
-                    return bot_instance
             except Exception as e:
                 self.logger.error(
                     f"Failed to get bot instance from registry: {e}"
                 )
+            if bot_instance:
+                # FEAT-153: Enforce PBAC OUTSIDE the try/except above so that
+                # AgentAccessDenied is NOT swallowed as "Failed to get bot instance".
+                await enforce_agent_access(self.registry.evaluator, name, request)
+                return bot_instance
         return None
 
     def remove_bot(self, name: str) -> None:

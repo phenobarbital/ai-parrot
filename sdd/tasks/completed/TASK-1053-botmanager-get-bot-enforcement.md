@@ -282,4 +282,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Added `request: Optional[web.Request] = None` kwarg to `get_bot` signature.
+Added `await enforce_agent_access(self.registry._evaluator, name, request)` before
+each of the 3 return paths:
+  1. `new=True` path (fresh instance)
+  2. Cache-hit path (`name in self._bots`)
+  3. Registry-fallback path (restructured to place enforcement OUTSIDE the
+     existing `try/except Exception` so `AgentAccessDenied` is not swallowed)
+
+Added top-level import: `from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied`
+
+6 integration tests created in `test_get_bot_pbac.py` covering:
+  - allow when evaluator has no policies
+  - allow when request=None (programmatic bypass)
+  - allow when evaluator is None
+  - deny raises AgentAccessDenied (with navigator-auth present)
+  - cache-hit path enforces
+  - request=None skips evaluator call even when evaluator denies
+
+All 6 tests pass. ruff reports no errors on `manager.py`.

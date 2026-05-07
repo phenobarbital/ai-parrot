@@ -381,4 +381,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Created `parrot/auth/agent_guard.py` with all three exports:
+- `AgentAccessDenied(PermissionError)` with `bot_name`, `user_id`, `matched_policy`, `reason` attributes.
+- `parse_bot_permissions(value)` accepting None, {}, {"permissions": []}, {"permissions": [<rules>]}, and bare list fallback. Raises ValueError on malformed input.
+- `enforce_agent_access(evaluator, bot_name, request)` async helper with lazy navigator-auth import (fail-open if absent). Allows when evaluator=None, request=None, or eval_ctx cannot be built. Raises AgentAccessDenied on deny, logs WARNING.
+
+Helper `_build_eval_context_from_request` mirrors `bots.py:_build_eval_context` pattern.
+
+20 unit tests written and passing. ruff check clean.

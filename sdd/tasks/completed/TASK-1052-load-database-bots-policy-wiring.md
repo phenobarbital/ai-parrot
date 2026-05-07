@@ -254,4 +254,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Added `register_db_bot_policies` call with `try/except ValueError → continue` in
+`_load_database_bots` before `self.add_bot(bot_instance)`. Placement is after
+`await bot_instance.configure(app)` on the confirmed line. The WARNING log and
+`continue` skip the bot when permissions are malformed.
+
+Also fixed the manager `tests/manager/conftest.py` stub for `navigator.background`
+to add `BackgroundService`, `TaskWrapper`, `JobRecord` class stubs (pre-existing
+gap that prevented any manager tests from importing `BotManager`).
+
+3 integration tests created in `test_load_database_bots_pbac.py`. One test was
+updated to use `patch.object` (auto-restoring) instead of direct attribute
+assignment on the singleton registry to avoid state leakage between tests.
+
+All 3 tests pass. ruff reports no errors on `manager.py`.

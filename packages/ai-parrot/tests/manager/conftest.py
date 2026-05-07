@@ -59,6 +59,16 @@ def _install_minimal_stubs() -> None:
             stub.__path__ = []  # type: ignore[attr-defined]
             sys.modules[_mod] = stub
 
+    # Add class stubs that abstract.py imports by name from navigator.background
+    _bg = sys.modules["navigator.background"]
+    for _cls_name in ("BackgroundService", "TaskWrapper", "JobRecord",
+                       "BackgroundTask", "BackgroundQueue", "JobTracker"):
+        if not hasattr(_bg, _cls_name):
+            setattr(_bg, _cls_name, type(_cls_name, (), {
+                "exists": classmethod(lambda cls, *a, **kw: False),
+                "from_app": classmethod(lambda cls, *a, **kw: None),
+            }))
+
     # navigator.services — parrot.handlers.agents.abstract imports it
     for _mod in ("navigator.services", "navigator.services.ws"):
         if _mod not in sys.modules:

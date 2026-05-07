@@ -38,6 +38,7 @@ from .resolver import (
 from .pbac import setup_pbac
 from .models import PolicyRuleConfig
 from .exceptions import AuthorizationRequired
+from .agent_guard import AgentAccessDenied
 from .credentials import (
     CredentialResolver,
     OAuthCredentialResolver,
@@ -62,6 +63,7 @@ __all__ = [
     "PolicyRuleConfig",
     # Exceptions
     "AuthorizationRequired",
+    "AgentAccessDenied",
     # Credential resolvers
     "CredentialResolver",
     "OAuthCredentialResolver",

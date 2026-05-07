@@ -330,4 +330,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Added `register_db_bot_policies(name, permissions) -> int` to `AgentRegistry`
+immediately after `_collect_and_register_policies` (line ~415). Method:
+- No-ops when `self._evaluator is None` → returns 0.
+- No-ops for empty/None permissions → returns 0.
+- Parses via `parse_bot_permissions` (may raise ValueError — caller catches).
+- Converts each rule via `PolicyRuleConfig.to_resource_policy(name)`.
+- Calls `self._evaluator.load_policies(policy_dicts)`.
+- Logs INFO on success, WARNING on `load_policies` exception.
+
+8 tests written and passing including parity test vs `_collect_and_register_policies`.
+ruff introduced no new errors (1 pre-existing F841 at line 102).

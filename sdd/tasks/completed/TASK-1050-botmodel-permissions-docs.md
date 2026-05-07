@@ -151,4 +151,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Updated `ui_help` on `BotModel.permissions` (bots.py:272) to describe the accepted JSON
+shapes, the public-when-empty rule, and to reference `parrot.auth.agent_guard.parse_bot_permissions`.
+No DDL change; default_factory=dict unchanged. ruff check introduced no new errors (3
+pre-existing F401s on unused imports remain from before this task).
