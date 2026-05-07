@@ -32,7 +32,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Wave 1. Sequential before TASK-1042 because the api/ package imports controls.builtin at __init__ time.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1041-formdesigner-controls-package.md"
+      "completed_at": "2026-05-07T11:29:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1041-formdesigner-controls-package.md"
     },
     {
       "id": "TASK-1042",
