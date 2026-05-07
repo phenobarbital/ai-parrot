@@ -315,10 +315,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-05-07
+**Notes**: Created `parrot/auth/dataset_guard.py` with `DatasetPolicyGuard` class implementing
+three async methods: `filter_datasets`, `filter_columns`, `can_read_dataset`. Added export to
+`parrot/auth/__init__.py`. Written 22 unit tests, all passing. Mirrors `PBACPermissionResolver`
+pattern exactly: lazy imports, fail-open on ImportError, fail-closed on runtime errors,
+WARNING-on-deny log format. Column filtering preserves input order; composite resource names
+used as specified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

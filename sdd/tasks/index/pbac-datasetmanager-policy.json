@@ -14,7 +14,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No file overlap with TASK-1045. Creates new parrot/auth/dataset_guard.py and tests/auth/test_dataset_guard.py — no shared files with setup_pbac extension.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1044-dataset-policy-guard.md"
+      "completed_at": "2026-05-07T11:12:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1044-dataset-policy-guard.md"
     },
     {
       "id": "TASK-1045",
