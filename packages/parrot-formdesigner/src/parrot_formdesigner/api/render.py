@@ -34,18 +34,34 @@ _RENDERERS: dict[str, AbstractFormRenderer] = {}
 
 
 def _seed_default_renderers() -> None:
-    """Seed the registry with the V1 default renderers (idempotent).
+    """Seed the registry with the V1 + V2 default renderers (idempotent).
 
-    Imports of ``HTML5Renderer`` and ``AdaptiveCardRenderer`` are deferred to
-    avoid pulling Jinja2 / heavy templates during ``import parrot_formdesigner.api``.
+    Imports of ``HTML5Renderer``, ``AdaptiveCardRenderer``, ``XFormsRenderer``,
+    and ``PdfRenderer`` are deferred to avoid pulling Jinja2 / lxml /
+    reportlab during ``import parrot_formdesigner.api``.
     """
-    if "html" in _RENDERERS and "adaptive" in _RENDERERS:
-        return
     from ..renderers.adaptive_card import AdaptiveCardRenderer
     from ..renderers.html5 import HTML5Renderer
 
     _RENDERERS.setdefault("html", HTML5Renderer())
     _RENDERERS.setdefault("adaptive", AdaptiveCardRenderer())
+
+    # Wave 2 renderers — imported lazily and registered if importable.
+    if "xml" not in _RENDERERS:
+        try:
+            from ..renderers.xforms import XFormsRenderer
+
+            _RENDERERS["xml"] = XFormsRenderer()
+        except ImportError as exc:  # pragma: no cover — lxml is hard dep
+            logger.debug("XFormsRenderer not available: %s", exc)
+
+    if "pdf" not in _RENDERERS:
+        try:
+            from ..renderers.pdf import PdfRenderer
+
+            _RENDERERS["pdf"] = PdfRenderer()
+        except ImportError as exc:  # pragma: no cover — reportlab is hard dep
+            logger.debug("PdfRenderer not available: %s", exc)
 
 
 def register_renderer(format_key: str, renderer: AbstractFormRenderer) -> None:
