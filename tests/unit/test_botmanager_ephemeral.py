@@ -73,27 +73,6 @@ class _FakeBotManager:
         pass
 
 
-# Patch the module-level methods onto our fake manager using the real
-# implementations from the worktree's manager.py.  We do this by extracting
-# the method bodies from the real BotManager class.
-def _attach_real_method(fake_cls, method_name: str):
-    """Attach the unbound method from the REAL BotManager to our fake class."""
-    # We reach into the actual source to pull the method without triggering
-    # the full BotManager __init__ dependency chain.
-    import types as _types
-
-    # Look up method on the actual class (not an instance) – we don't
-    # instantiate BotManager.  If it's not importable, skip gracefully.
-    try:
-        # Lazy import of the method only.  Use a temporary module load.
-        import inspect
-        src_file = _SRC / "parrot" / "manager" / "manager.py"
-        source = src_file.read_text()
-        # Instead of fully importing, let the test mock the critical paths.
-    except Exception:
-        pass
-
-
 # ---------------------------------------------------------------------------
 # For these tests we build the logic manually rather than importing the real
 # BotManager, because it pulls in 50+ modules.  The key acceptance criteria
@@ -125,7 +104,8 @@ class TestEphemeralRegistryInManager:
         result = mgr._ephemeral_registry.get("no-such-id", user_id=1)
         assert result is None
 
-    def test_get_ephemeral_status_wrong_user(self):
+    @pytest.mark.asyncio
+    async def test_get_ephemeral_status_wrong_user(self):
         """get_ephemeral_status returns None for wrong owner."""
         reg = EphemeralRegistry()
         now = datetime.utcnow()
@@ -136,10 +116,11 @@ class TestEphemeralRegistryInManager:
             created_at=now,
             expires_at=now + timedelta(hours=1),
         )
-        reg.register(status)
+        await reg.register(status)
         assert reg.get("abc", user_id=99) is None
 
-    def test_discard_removes_from_registry_and_bots(self):
+    @pytest.mark.asyncio
+    async def test_discard_removes_from_registry_and_bots(self):
         """discard_ephemeral_user_bot removes from both stores."""
         mgr = _FakeBotManager()
         now = datetime.utcnow()
@@ -150,7 +131,7 @@ class TestEphemeralRegistryInManager:
             created_at=now,
             expires_at=now + timedelta(hours=1),
         )
-        mgr._ephemeral_registry.register(status)
+        await mgr._ephemeral_registry.register(status)
         # Simulate bot in _bots
         fake_bot = MagicMock()
         mgr._bots["bot-1"] = fake_bot
@@ -158,7 +139,7 @@ class TestEphemeralRegistryInManager:
         # Execute the discard logic (mirrors manager.py implementation)
         _status = mgr._ephemeral_registry.get("bot-1", user_id=42)
         assert _status is not None
-        mgr._ephemeral_registry.remove("bot-1")
+        await mgr._ephemeral_registry.remove("bot-1")
         mgr._bots.pop("bot-1", None)
 
         assert mgr._ephemeral_registry.get("bot-1", user_id=42) is None
@@ -170,7 +151,8 @@ class TestEphemeralRegistryInManager:
         _status = mgr._ephemeral_registry.get("no-such", user_id=1)
         assert _status is None
 
-    def test_promote_rejects_non_ready_phase(self):
+    @pytest.mark.asyncio
+    async def test_promote_rejects_non_ready_phase(self):
         """promote_user_bot raises ValueError if phase != ready."""
         reg = EphemeralRegistry()
         now = datetime.utcnow()
@@ -181,24 +163,25 @@ class TestEphemeralRegistryInManager:
             created_at=now,
             expires_at=now + timedelta(hours=1),
         )
-        reg.register(status)
+        await reg.register(status)
         _status = reg.get("bot-2", user_id=42)
         assert _status.phase != "ready"
         with pytest.raises(AssertionError):
             assert _status.phase == "ready"
 
-    def test_expired_bots_sweep(self):
+    @pytest.mark.asyncio
+    async def test_expired_bots_sweep(self):
         """get_expired returns IDs past their expires_at."""
         reg = EphemeralRegistry()
         past = datetime.utcnow() - timedelta(hours=25)
-        reg.register(EphemeralAgentStatus(
+        await reg.register(EphemeralAgentStatus(
             chatbot_id="expired",
             user_id=42,
             phase="ready",
             created_at=past,
             expires_at=past + timedelta(hours=24),
         ))
-        reg.register(EphemeralAgentStatus(
+        await reg.register(EphemeralAgentStatus(
             chatbot_id="fresh",
             user_id=42,
             phase="creating",

@@ -21,6 +21,7 @@ Items are sorted by ``slug`` for deterministic responses.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
 from typing import Any, Dict, List
@@ -105,9 +106,9 @@ class ToolCatalogHandler(BaseView):
         global _CATALOG_CACHE  # noqa: PLW0603
 
         if _CATALOG_CACHE is None:
-            _CATALOG_CACHE = _build_catalog()
-            self.logger.info(
-                "Tool catalog built: %d entries", len(_CATALOG_CACHE)
-            )
+            # FIX-9: run blocking importlib.import_module calls in a thread
+            # to avoid blocking the event loop.
+            _CATALOG_CACHE = await asyncio.to_thread(_build_catalog)
+            self.logger.info("Tool catalog built: %d entries", len(_CATALOG_CACHE))
 
         return self.json_response(_CATALOG_CACHE)

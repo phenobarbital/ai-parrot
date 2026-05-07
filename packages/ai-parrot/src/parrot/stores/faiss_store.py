@@ -1056,10 +1056,13 @@ class FAISSStore(AbstractStore):
         for coll_name, coll_data in save_data['collections'].items():
             self._initialize_collection(coll_name)
 
-            # Load FAISS index
-            index_path = coll_data['index_path']
-            if Path(index_path).exists():
-                index = faiss.read_index(index_path)
+            # FIX-2: resolve index path relative to the pickle file's parent
+            # directory so S3 round-trips work (the stored absolute path is
+            # no longer valid after extraction into a fresh temp dir).
+            index_filename = Path(coll_data['index_path']).name
+            index_path = Path(file_path).parent / index_filename
+            if index_path.exists():
+                index = faiss.read_index(str(index_path))
 
                 self._collections[coll_name]['index'] = index
 
@@ -1236,9 +1239,21 @@ class FAISSStore(AbstractStore):
 
             await file_manager.download_file(path=key, destination=tar_path)
 
-            # Extract tar into tmpdir
+            # FIX-3: safe extraction to prevent path traversal attacks
             with _tarfile.open(tar_path, "r:gz") as tar:
-                tar.extractall(str(base))
+                try:
+                    tar.extractall(str(base), filter="data")   # Python 3.12+
+                except TypeError:
+                    # Python < 3.12: validate members manually
+                    for member in tar.getmembers():
+                        dest = (Path(base) / member.name).resolve()
+                        try:
+                            dest.relative_to(Path(base).resolve())
+                        except ValueError:
+                            raise ValueError(
+                                f"Tarball contains unsafe path: {member.name!r}"
+                            ) from None
+                    tar.extractall(str(base))
 
             # Find the main pickle file (the one without a .index extension)
             pickle_candidates = [

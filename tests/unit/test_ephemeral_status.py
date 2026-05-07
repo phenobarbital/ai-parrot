@@ -137,19 +137,21 @@ class TestEphemeralRegistry:
             expires_at=now + timedelta(hours=expires_in_hours),
         )
 
-    def test_register_and_get(self):
+    @pytest.mark.asyncio
+    async def test_register_and_get(self):
         """register() stores entry; get() returns it for the owning user."""
         reg = EphemeralRegistry()
         status = self._make_status()
-        reg.register(status)
+        await reg.register(status)
         result = reg.get("abc-123", user_id=42)
         assert result is status
 
-    def test_get_wrong_user_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_get_wrong_user_returns_none(self):
         """get() with a different user_id returns None (ownership check)."""
         reg = EphemeralRegistry()
         status = self._make_status()
-        reg.register(status)
+        await reg.register(status)
         assert reg.get("abc-123", user_id=999) is None
 
     def test_get_unknown_chatbot_returns_none(self):
@@ -157,21 +159,24 @@ class TestEphemeralRegistry:
         reg = EphemeralRegistry()
         assert reg.get("nonexistent", user_id=42) is None
 
-    def test_remove_existing(self):
+    @pytest.mark.asyncio
+    async def test_remove_existing(self):
         """remove() deletes the entry and subsequent get() returns None."""
         reg = EphemeralRegistry()
         status = self._make_status()
-        reg.register(status)
-        result = reg.remove("abc-123")
+        await reg.register(status)
+        result = await reg.remove("abc-123")
         assert result is True
         assert reg.get("abc-123", user_id=42) is None
 
-    def test_remove_nonexistent_returns_false(self):
+    @pytest.mark.asyncio
+    async def test_remove_nonexistent_returns_false(self):
         """remove() on a missing chatbot_id returns False."""
         reg = EphemeralRegistry()
-        assert reg.remove("does-not-exist") is False
+        assert await reg.remove("does-not-exist") is False
 
-    def test_get_expired_returns_expired_ids(self):
+    @pytest.mark.asyncio
+    async def test_get_expired_returns_expired_ids(self):
         """get_expired() returns chatbot_ids past their expires_at."""
         reg = EphemeralRegistry()
         past_status = self._make_status(
@@ -180,45 +185,49 @@ class TestEphemeralRegistry:
         future_status = self._make_status(
             chatbot_id="not-expired", expires_in_hours=24.0
         )
-        reg.register(past_status)
-        reg.register(future_status)
+        await reg.register(past_status)
+        await reg.register(future_status)
 
         expired = reg.get_expired()
         assert "expired-1" in expired
         assert "not-expired" not in expired
 
-    def test_get_expired_empty_when_all_fresh(self):
+    @pytest.mark.asyncio
+    async def test_get_expired_empty_when_all_fresh(self):
         """get_expired() returns empty list when all entries are fresh."""
         reg = EphemeralRegistry()
-        reg.register(self._make_status(expires_in_hours=24.0))
+        await reg.register(self._make_status(expires_in_hours=24.0))
         assert reg.get_expired() == []
 
-    def test_register_overwrites_existing(self):
+    @pytest.mark.asyncio
+    async def test_register_overwrites_existing(self):
         """Registering a new status for the same chatbot_id overwrites."""
         reg = EphemeralRegistry()
         s1 = self._make_status(phase="creating")
         s2 = self._make_status(phase="ready")
-        reg.register(s1)
-        reg.register(s2)
+        await reg.register(s1)
+        await reg.register(s2)
         result = reg.get("abc-123", user_id=42)
         assert result is s2
         assert result.phase == "ready"
 
-    def test_get_all_for_user(self):
+    @pytest.mark.asyncio
+    async def test_get_all_for_user(self):
         """get_all_for_user() returns only entries for the specified user."""
         reg = EphemeralRegistry()
-        reg.register(self._make_status(chatbot_id="bot-1", user_id=42))
-        reg.register(self._make_status(chatbot_id="bot-2", user_id=42))
-        reg.register(self._make_status(chatbot_id="bot-3", user_id=99))
+        await reg.register(self._make_status(chatbot_id="bot-1", user_id=42))
+        await reg.register(self._make_status(chatbot_id="bot-2", user_id=42))
+        await reg.register(self._make_status(chatbot_id="bot-3", user_id=99))
 
         user42_entries = reg.get_all_for_user(42)
         assert len(user42_entries) == 2
         assert all(s.user_id == 42 for s in user42_entries)
 
-    def test_snapshot_is_shallow_copy(self):
+    @pytest.mark.asyncio
+    async def test_snapshot_is_shallow_copy(self):
         """snapshot() returns a copy — mutations don't affect the registry."""
         reg = EphemeralRegistry()
-        reg.register(self._make_status())
+        await reg.register(self._make_status())
         snap = reg.snapshot()
         snap.pop("abc-123")
         assert reg.get("abc-123", user_id=42) is not None

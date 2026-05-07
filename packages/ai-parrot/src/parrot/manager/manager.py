@@ -911,7 +911,9 @@ class BotManager:
         self.add_agent(bot)
 
         # Create EphemeralAgentStatus with rag_mode derived from vector_config.
-        now = datetime.utcnow()
+        # FIX-13: replace deprecated datetime.utcnow()
+        from datetime import timezone as _tz  # noqa: PLC0415
+        now = datetime.now(_tz.utc).replace(tzinfo=None)
         rag_mode = None
         vector_config = config.get("vector_config") or {}
         if isinstance(vector_config, dict):
@@ -925,11 +927,15 @@ class BotManager:
             expires_at=now + timedelta(seconds=ttl_seconds),
             rag_mode=rag_mode,
         )
-        self._ephemeral_registry.register(status)
+        await self._ephemeral_registry.register(status)  # FIX-1: async register
 
         # Fire-and-forget warm-up (completes async in background).
         if self.app is not None:
-            asyncio.create_task(_warm_up(bot, status, self.app))
+            # FIX-12: pass remove_bot_callback so _warm_up can clean up on failure
+            asyncio.create_task(_warm_up(
+                bot, status, self.app,
+                remove_bot_callback=lambda cid: self._bots.pop(cid, None),
+            ))
         else:
             # No app context yet (test / standalone scenario) — mark ready immediately.
             status.phase = "ready"
@@ -1023,23 +1029,18 @@ class BotManager:
             )
 
         # Build the UserBotModel from the bot's state for DB persistence.
-        _BOT_FIELDS = (
-            "name", "description", "avatar", "enabled", "timezone",
-            "role", "goal", "backstory", "rationale", "capabilities",
-            "prompt_config", "system_prompt_template", "human_prompt_template",
-            "pre_instructions", "llm", "model_config", "use_vector",
-            "vector_config", "documents", "context_search_limit",
-            "context_score_threshold", "tools_enabled", "auto_tool_detection",
-            "tool_threshold", "operation_mode", "memory_type", "memory_config",
-            "max_context_turns", "use_conversation_history", "permissions",
-            "language", "disclaimer",
-        )
+        # FIX-10: dynamically derive the field set from UserBotModel.model_fields
+        # rather than maintaining a hardcoded list.
         try:
-            field_values = {
-                k: getattr(bot, k)
-                for k in _BOT_FIELDS
-                if getattr(bot, k, None) is not None
+            _model_fields = set(UserBotModel.model_fields.keys()) - {
+                "chatbot_id", "user_id", "created_at", "updated_at",
+                "mcp_config", "tools_config",  # handled separately below
             }
+            field_values = {}
+            for field_name in _model_fields:
+                val = getattr(bot, field_name, None)
+                if val is not None:
+                    field_values[field_name] = val
             model = UserBotModel(
                 chatbot_id=_uuid.UUID(chatbot_id),
                 user_id=user_id,
@@ -1080,7 +1081,7 @@ class BotManager:
         await self.save_user_bot(model)
 
         # Remove from ephemeral registry (bot remains accessible in _bots via normal path).
-        self._ephemeral_registry.remove(chatbot_id)
+        await self._ephemeral_registry.remove(chatbot_id)  # FIX-1: async remove
 
         self.logger.info(
             "promote_user_bot: promoted ephemeral bot %s for user %s",
@@ -1122,7 +1123,7 @@ class BotManager:
         status = self._ephemeral_registry.get(chatbot_id, user_id)
         if status is None:
             return False
-        self._ephemeral_registry.remove(chatbot_id)
+        await self._ephemeral_registry.remove(chatbot_id)  # FIX-1: async remove
         self._bots.pop(chatbot_id, None)
         self.logger.info(
             "discard_ephemeral_user_bot: discarded %s for user %s",
@@ -1566,22 +1567,22 @@ Available documentation UIs:
                     )
 
                 # Sweep expired ephemeral bots (FEAT-149).
-                try:
-                    expired_ephemerals = self._ephemeral_registry.get_expired()
-                    for cid in expired_ephemerals:
-                        try:
-                            self._ephemeral_registry.remove(cid)
-                            self._bots.pop(cid, None)
-                            self.logger.info(
-                                "Swept expired ephemeral bot: %s", cid
-                            )
-                        except Exception as sweep_exc:  # noqa: BLE001
-                            self.logger.error(
-                                "Error sweeping ephemeral bot %s: %s",
-                                cid, sweep_exc,
-                            )
-                except Exception:  # noqa: BLE001
-                    pass  # _ephemeral_registry may not exist yet if no ephemeral bots created
+                # FIX-8: removed outer bare except — the lazy _ephemeral_registry
+                # property never raises, so it is safe to call unconditionally.
+                # FIX-1: await the async remove()
+                expired_ephemerals = self._ephemeral_registry.get_expired()
+                for cid in expired_ephemerals:
+                    try:
+                        await self._ephemeral_registry.remove(cid)
+                        self._bots.pop(cid, None)
+                        self.logger.info(
+                            "Swept expired ephemeral bot: %s", cid
+                        )
+                    except Exception as sweep_exc:  # noqa: BLE001
+                        self.logger.error(
+                            "Error sweeping ephemeral bot %s: %s",
+                            cid, sweep_exc,
+                        )
 
             except asyncio.CancelledError:
                 self.logger.info("Cleanup task cancelled")
@@ -1633,7 +1634,6 @@ Available documentation UIs:
             await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
-        self.logger.info("Started background cleanup task for temporary bot instances")
         self.logger.info("Started background cleanup task for temporary bot instances")
         # Initialize ChatStorage (Redis + DocumentDB)
         chat_storage = ChatStorage()
