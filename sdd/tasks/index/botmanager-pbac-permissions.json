@@ -14,7 +14,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. All other tasks import from parrot/auth/agent_guard.py — must ship first. Spec §Worktree Strategy chose per-spec sequential isolation, so parallel: false even though this task only creates new files.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1049-agent-guard-module.md"
+      "completed_at": "2026-05-07T13:26:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1049-agent-guard-module.md"
     },
     {
       "id": "TASK-1050",
