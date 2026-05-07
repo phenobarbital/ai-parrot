@@ -264,3 +264,14 @@ async def test_endpoint_matches_schema(aiohttp_client):
 **Completed by**:
 **Date**:
 **Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**:
+- Created `tests/fixtures/form_controls_response_schema.json` — draft-2020-12 JSON Schema for the `{"controls": [...]}` payload, with `$ref` to a `FieldControlMetadata` def, full per-key descriptions, and `additionalProperties: false`.
+- Created `tests/unit/controls/test_metadata_dump_keys.py` (3 tests): exact-key dump assertion, model_fields match, `extra='forbid'` enforcement.
+- Created `tests/unit/controls/test_extension_registration.py` (2 tests): string-keyed type registration appears in `get_controls()` and in the HTTP response.
+- Created `tests/integration/test_form_controls_contract.py` (5 tests): envelope shape, schema validation via `jsonschema.validate`, len(controls) == len(FieldType), full key coverage per entry, fixture-is-valid-schema meta-check.
+- All 10 tests pass.
+- Note: TASK-1041 already added the extension docstring to `controls/registry.py`; no further edits needed there.
+- Installed `jsonschema` in dev environment (already declared in `pyproject.toml [project.optional-dependencies].test` from TASK-1040).
