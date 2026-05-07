@@ -1,0 +1,81 @@
+# AI-Parrot Dataset PBAC Sample Policies (FEAT-151)
+# ==================================================
+# These policies control access to DatasetManager datasets and their columns.
+# They are loaded by setup_pbac() from the policies/datasets/ subdirectory.
+#
+# NOTE: Dataset resource enforcement requires navigator-auth ResourceType.DATASET
+# (cross-repo PR pending). Once merged, these policies are applied by
+# DatasetPolicyGuard on every list_datasets, get_metadata, and fetch_dataset call.
+#
+# Action reference:
+#   dataset:read           — access a dataset (list_datasets, get_metadata, fetch_dataset)
+#   dataset:column:read    — access a specific column; resource name = "<dataset>:<column>"
+#
+# Priority: higher numbers = evaluated first.
+# At equal priority, DENY takes precedence over ALLOW.
+
+version: "1.0"
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Example 1: Dataset-level DENY
+  # Hide the 'financial_data' dataset from a specific user.
+  # The user will not see 'financial_data' in list_datasets, get_metadata,
+  # or fetch_dataset — as if the dataset does not exist (drop-silent).
+  # -----------------------------------------------------------------------
+  - name: deny-financial-data-jleon
+    effect: deny
+    description: >
+      Prevent jleon@trocglobal.com from accessing the financial_data dataset.
+      The dataset is invisible to this user — drop-silent semantics apply.
+    resources:
+      - "dataset:financial_data"
+    actions:
+      - "dataset:read"
+    subjects:
+      users:
+        - jleon@trocglobal.com
+    priority: 50
+    enforcing: true
+
+  # -----------------------------------------------------------------------
+  # Example 2: Column-level DENY
+  # Hide 'profit_margin' column inside 'sales' for tier-1 representatives.
+  # The column is absent from DatasetInfo.columns, column_types, and the
+  # returned DataFrame — drop-silent, no marker or warning.
+  # -----------------------------------------------------------------------
+  - name: deny-sales-profit-margin-tier1
+    effect: deny
+    description: >
+      Tier-1 sales representatives cannot see the profit_margin column in
+      the sales dataset. Column is absent from schema and data — drop-silent.
+    resources:
+      - "dataset:sales:profit_margin"
+    actions:
+      - "dataset:column:read"
+    subjects:
+      roles:
+        - tier-1-rep
+    priority: 40
+    enforcing: true
+
+  # -----------------------------------------------------------------------
+  # Example 3: Allow all dataset reads for authenticated users (baseline).
+  # Override or narrow with higher-priority DENY rules above.
+  # -----------------------------------------------------------------------
+  - name: allow-datasets-authenticated
+    effect: allow
+    description: >
+      All authenticated users can read datasets by default. Specific DENY
+      rules at higher priority override this for restricted datasets/columns.
+    resources:
+      - "dataset:*"
+    actions:
+      - "dataset:read"
+      - "dataset:column:read"
+    subjects:
+      groups:
+        - "*"   # wildcard = any authenticated user
+    priority: 5
+    enforcing: false
