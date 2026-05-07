@@ -32,7 +32,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies parrot/handlers/models/bots.py only — no file overlap with other tasks. Could run parallel with TASK-1051..1054, but spec §Worktree Strategy chose per-spec sequential isolation.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1050-botmodel-permissions-docs.md"
+      "completed_at": "2026-05-07T13:28:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1050-botmodel-permissions-docs.md"
     },
     {
       "id": "TASK-1051",
