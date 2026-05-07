@@ -162,10 +162,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**: Added `EphemeralUserAgentHandler` and `ToolCatalogHandler` imports to manager.py.
+Registered 4 ephemeral routes + 1 tool catalog route. The `{chatbot_id}/status`
+sub-route is placed before the bare `{chatbot_id}` route to avoid shadowing.
+All 6 smoke tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
