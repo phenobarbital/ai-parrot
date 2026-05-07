@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-151
 **Date**: 2026-05-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (pinned to `navigator-auth` release adding `ResourceType.DATASET`)
 
 ---
@@ -644,17 +644,17 @@ class DatasetManager(AbstractToolkit):                            # line 477
 
 - [x] **Dataset identity** — *Resolved in brainstorm Round 3*: `DatasetEntry.name` is the canonical resource identity used by YAML.
 
-- [ ] **Cross-repo version pin** — Which `navigator-auth` release ships `ResourceType.DATASET`? Pin in `pyproject.toml` during Module 1. *Owner: Jesus Lara* (carried from brainstorm Q1).
+- [ ] **Cross-repo version pin** — Which `navigator-auth` release ships `ResourceType.DATASET`? Pin in `pyproject.toml` during Module 1. *Owner: Jesus Lara* (carried from brainstorm Q1): latest, need to check it out
 
-- [ ] **Convenience return from `setup_pbac`** — Should `setup_pbac()` also return a pre-bound `DatasetPolicyGuard` (e.g. become `(pdp, evaluator, guardian, dataset_guard)` or expose it on `app['dataset_guard']`)? Convenience vs. one extra signature change. Defer to /sdd-task scoping. *Owner: spec author*.
+- [ ] **Convenience return from `setup_pbac`** — Should `setup_pbac()` also return a pre-bound `DatasetPolicyGuard` (e.g. become `(pdp, evaluator, guardian, dataset_guard)` or expose it on `app['dataset_guard']`)? Convenience vs. one extra signature change. Defer to /sdd-task scoping. *Owner: spec author*: expose in app.
 
-- [ ] **Audit-log format** — Mirror `PBACPermissionResolver`'s WARNING line format verbatim, or emit structured JSON for downstream SIEM? *Owner: ops* (carried from brainstorm Q4).
+- [ ] **Audit-log format** — Mirror `PBACPermissionResolver`'s WARNING line format verbatim, or emit structured JSON for downstream SIEM? *Owner: ops* (carried from brainstorm Q4): yes, mirror
 
-- [ ] **Hot-reload** — Is the existing 30s `cache_ttl_seconds` sufficient, or do we need a `PolicyEvaluator.invalidate()` call wired to a filesystem watcher? Out of scope for v1 (see §1 Non-Goals); reopen if ops reports the staleness window unacceptable. *Owner: ops* (carried from brainstorm Q5).
+- [ ] **Hot-reload** — Is the existing 30s `cache_ttl_seconds` sufficient, or do we need a `PolicyEvaluator.invalidate()` call wired to a filesystem watcher? Out of scope for v1 (see §1 Non-Goals); reopen if ops reports the staleness window unacceptable. *Owner: ops* (carried from brainstorm Q5): out of scope, ttl is sufficient.
 
-- [ ] **Dataset rename validator** — Add a startup-time check that warns about YAML resources whose `name` does not match any registered `DatasetEntry.name`? Helps ops detect orphan rules. *Owner: spec author* (carried from brainstorm Q6).
+- [ ] **Dataset rename validator** — Add a startup-time check that warns about YAML resources whose `name` does not match any registered `DatasetEntry.name`? Helps ops detect orphan rules. *Owner: spec author* (carried from brainstorm Q6): Yes.
 
-- [ ] **Telemetry** — Should denials emit a metric (e.g. `parrot_dataset_policy_denied_total{resource,user}`) for dashboarding? Out of scope for v1; tracked here for follow-up. *Owner: ops* (carried from brainstorm Q7).
+- [x] **Telemetry** — Should denials emit a metric (e.g. `parrot_dataset_policy_denied_total{resource,user}`) for dashboarding? Out of scope for v1; tracked here for follow-up. *Owner: ops* (carried from brainstorm Q7); yes
 
 ---
 
