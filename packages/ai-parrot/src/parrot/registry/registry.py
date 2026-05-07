@@ -413,6 +413,60 @@ class AgentRegistry:
                 name, exc,
             )
 
+    def register_db_bot_policies(
+        self,
+        name: str,
+        permissions: "dict | list | None",
+    ) -> int:
+        """Register policies for a DB-loaded bot into the shared ``PolicyEvaluator``.
+
+        Mirrors :meth:`_collect_and_register_policies` for the DB path.
+        Takes the raw value of ``navigator.ai_bots.permissions``, parses it via
+        :func:`parrot.auth.agent_guard.parse_bot_permissions`, converts each rule
+        to a policy dict via :meth:`parrot.auth.models.PolicyRuleConfig.to_resource_policy`,
+        and loads the result into ``self._evaluator`` via ``load_policies()``.
+
+        Args:
+            name: The bot name (used as resource identifier — matches the same
+                convention as the YAML/code path, producing ``agent:<name>``).
+            permissions: Raw value of ``BotModel.permissions``.  Accepted shapes
+                are documented in :func:`parrot.auth.agent_guard.parse_bot_permissions`.
+
+        Returns:
+            Number of policy dicts loaded into the evaluator.  ``0`` means the bot
+            is public (no rules) or PBAC is disabled.
+
+        Raises:
+            ValueError: When ``permissions`` has a malformed shape.  The caller
+                (``BotManager._load_database_bots``) is responsible for catching
+                this, logging a WARNING, and skipping that bot.
+        """
+        if self._evaluator is None:
+            return 0
+
+        from parrot.auth.agent_guard import parse_bot_permissions  # noqa: PLC0415
+
+        rules = parse_bot_permissions(permissions)  # may raise ValueError
+        if not rules:
+            return 0
+
+        policy_dicts = [rule.to_resource_policy(name) for rule in rules]
+
+        try:
+            self._evaluator.load_policies(policy_dicts)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "AgentRegistry: failed to register DB policies for %s: %s",
+                name, exc,
+            )
+            return 0
+
+        self.logger.info(
+            "AgentRegistry: registered %d DB policy rule(s) for agent '%s'",
+            len(policy_dicts), name,
+        )
+        return len(policy_dicts)
+
     def get_bot_instance(self, name: str) -> Optional[AbstractBot]:
         """Get a cached bot instance by name (sync, returns None if not yet instantiated)."""
         metadata = self._registered_agents.get(name)
