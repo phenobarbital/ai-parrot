@@ -148,6 +148,26 @@ def setup_pbac(
                 exc,
             )
 
+    # Load per-dataset YAML policies from policies/datasets/ subdirectory (if present)
+    datasets_subdir = policy_path / "datasets"
+    if datasets_subdir.exists() and datasets_subdir.is_dir():
+        try:
+            dataset_policies = PolicyLoader.load_from_directory(datasets_subdir)
+            if dataset_policies:
+                policies = list(policies) + list(dataset_policies)
+                logger.info(
+                    "PBAC: loaded %d per-dataset policies from '%s'",
+                    len(dataset_policies),
+                    str(datasets_subdir),
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "PBAC: error loading per-dataset policies from '%s': %s. "
+                "Continuing without per-dataset policies.",
+                str(datasets_subdir),
+                exc,
+            )
+
     try:
         evaluator.load_policies(policies)
     except Exception as exc:  # pylint: disable=broad-except
