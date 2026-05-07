@@ -411,3 +411,19 @@ async def test_if_match_mismatch_412(aiohttp_client, sample_form):
 **Completed by**:
 **Date**:
 **Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**:
+- Replaced the Wave 1 501 stub at `api/operations.py` with the full implementation.
+- Pydantic discriminated-union models for all 8 ops (`AddSection`, `AddField`, `MoveField`, `RemoveField`, `UpdateField`, `UpdateSectionMeta`, `UpdateFormMeta`, `DuplicateField`); `MoveField` and `DuplicateField` use `Field(alias="from")` + `populate_by_name=True` to handle the Python keyword.
+- Per-op apply functions raise `OperationError(index, op_name, message)` for any per-op failure including duplicate `field_id` within a section / unknown section / unknown field.
+- `_DISPATCH` map drives the op execution; atomicity is per-request (first failure aborts, registry unchanged).
+- Post-apply runs `FormValidator.check_schema(working_copy)` for circular `depends_on` detection; on failure returns 422 with `index: null`.
+- **Q1 RESOLVED**: `If-Match` header (optional) supports optimistic concurrency. Mismatched version returns 412 with `{detail: "version mismatch", current: <version>}`. Quote-stripping handles ETag-style values.
+- **Q2 RESOLVED**: existing PUT (`update_form`) and RFC-7396 PATCH (`patch_form`) endpoints stay alongside `/operations` — different use cases.
+- After all ops apply successfully, `_bump_version` increments the version and `registry.register(working_copy, persist=True, overwrite=True)` persists.
+- Removed `tests/unit/api/test_operations_stub.py` (TASK-1042 placeholder, no longer needed).
+- Tests: 18 unit (all 8 op types covered + duplicate/missing rejection + RFC-7396 null-deletion) + 9 integration (round-trip, atomic failure, duplicate, circular, If-Match, 404, 422 envelope, move). All pass.
+- **Final state**: full FEAT-152 test suite — 256 passed, 1 pre-existing failure (`test_example_form_server_is_short`, unrelated to FEAT-152, asserts unrelated example file's line count).
+- Set `completed_at` on the per-spec index header to mark FEAT-152 as feature-complete.
