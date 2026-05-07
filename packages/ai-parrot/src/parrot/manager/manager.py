@@ -49,6 +49,9 @@ from ..handlers.dashboard_handler import (
 from ..handlers.models import BotModel, UserBotModel
 # Per-user bot HTTP handler (PUT/PATCH/GET/DELETE)
 from ..handlers.agents.users import UserAgentHandler
+# FEAT-149: Ephemeral user agent handler + tool catalog
+from ..handlers.agents.ephemeral import EphemeralUserAgentHandler
+from ..handlers.tools_catalog import ToolCatalogHandler
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
@@ -1359,6 +1362,26 @@ class BotManager:
         router.add_view(
             '/api/v1/user_agents/{chatbot_id}',
             UserAgentHandler
+        )
+        # FEAT-149: Ephemeral user agents (POST/GET status/PUT promote/DELETE)
+        # The status sub-route MUST be registered before the bare {chatbot_id}
+        # route so aiohttp resolves /…/{id}/status correctly.
+        router.add_view(
+            '/api/v1/agents/user',
+            EphemeralUserAgentHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/user/{chatbot_id}/status',
+            EphemeralUserAgentHandler,
+        )
+        router.add_view(
+            '/api/v1/agents/user/{chatbot_id}',
+            EphemeralUserAgentHandler,
+        )
+        # FEAT-149: Tool catalog — read-only TOOL_REGISTRY surface
+        router.add_view(
+            '/api/v1/tools/catalog',
+            ToolCatalogHandler,
         )
         # Data Analyst creation route:
         router.add_view(
