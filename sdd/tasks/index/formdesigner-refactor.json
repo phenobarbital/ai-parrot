@@ -133,7 +133,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Wave 2b. Touches renderers/pdf.py (new), api/render.py (lazy-seed dict mutation), pyproject.toml test extras (pypdf). Overlaps with TASK-1045 on api/render.py only — minor merge, both follow the lazy-seed pattern.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1046-formdesigner-pdf-renderer.md"
+      "completed_at": "2026-05-07T13:38:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1046-formdesigner-pdf-renderer.md"
     },
     {
       "id": "TASK-1047",

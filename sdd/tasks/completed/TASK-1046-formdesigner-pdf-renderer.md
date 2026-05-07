@@ -291,3 +291,22 @@ async def test_unsupported_field_listed_in_meta(form_with_unsupported):
 **Completed by**:
 **Date**:
 **Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**:
+- Created `parrot_formdesigner/renderers/pdf.py` with `PdfRenderer(AbstractFormRenderer)`. Uses `reportlab.pdfgen.canvas.Canvas` + `canvas.acroForm` for fillable PDF output. A4 portrait, single-column vertical layout with section headers and label-above-input.
+- Field-type → AcroForm mapping per spec:
+  - `TEXT/NUMBER/INTEGER/EMAIL/URL/PHONE/DATE/DATETIME/TIME/COLOR` → `acroForm.textfield`
+  - `TEXT_AREA` → `textfield(fieldFlags="multiline")`
+  - `BOOLEAN` → `checkbox`
+  - `SELECT` → `choice`
+  - `MULTI_SELECT` → `listbox(fieldFlags="multiSelect")`
+  - `PASSWORD` → `textfield(fieldFlags="password")`
+  - `HIDDEN` → `textfield(fieldFlags="hidden")`
+- **Q4 RESOLVED**: `FILE`/`IMAGE`/`ARRAY`/`GROUP` get a flat textfield placeholder + form-level meta note ("Fields not fillable in this PDF (use the web UI):") + listed in `RenderedForm.metadata["unsupported_fields"]`.
+- Multi-page support via `_maybe_new_page` helper that calls `canvas.showPage()` when content overflows the bottom margin.
+- Wired into `api/render.py:_seed_default_renderers` under `"pdf"` (alongside the xforms wiring from TASK-1045).
+- All 9 unit tests pass; 1 integration test passes (E2E via `setup_form_api` dispatcher).
+- Test extras already include `pypdf>=6.0` (added in TASK-1040).
+- Metadata-only init contract (TASK-1044) verified still green.
