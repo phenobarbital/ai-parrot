@@ -1,126 +1,27 @@
-"""parrot-formdesigner — Standalone form designer package for AI-Parrot.
+"""parrot-formdesigner — Form design and rendering for AI-Parrot.
 
-Provides a complete form creation, rendering, validation, and HTTP serving system.
-Can be used standalone or as a complement to ai-parrot.
+Top-level imports are intentionally minimal. Consumers import from
+submodules:
 
-Usage::
-
-    from parrot_formdesigner import FormSchema, setup_form_routes
+    from parrot_formdesigner.core import FormSchema
+    from parrot_formdesigner.api import setup_form_api
+    from parrot_formdesigner.ui import setup_form_ui
 """
 
-from .version import __author__, __author_email__, __description__, __title__, __version__
-
-from .core import (
-    ApiKeyAuth,
-    AuthConfig,
-    BearerAuth,
-    ConditionOperator,
-    DependencyRule,
-    FieldCondition,
-    FieldConstraints,
-    FieldOption,
-    FieldSizeHint,
-    FieldStyleHint,
-    FieldType,
-    FormField,
-    FormSchema,
-    FormSection,
-    FormStyle,
-    LayoutType,
-    LocalizedString,
-    NoAuth,
-    OptionsSource,
-    RenderedForm,
-    StyleSchema,
-    SubmitAction,
-)
-from .extractors import (
-    JSONSchemaExtractor,
-    PydanticExtractor,
-    ToolExtractor,
-    YAMLExtractor,
-)
-from .handlers import FormAPIHandler, FormPageHandler, setup_form_routes
-from .renderers import AdaptiveCardRenderer, HTML5Renderer, JsonSchemaRenderer
-from .services import (
-    FormCache,
-    ForwardResult,
-    FormRegistry,
-    FormStorage,
-    FormSubmission,
-    FormSubmissionStorage,
-    FormValidator,
-    PostgresFormStorage,
-    SubmissionForwarder,
-    ValidationResult,
-)
-from .tools import (
-    CreateFormTool,
-    DatabaseFormTool,
-    RequestFormTool,
-    get_form_field_schema_snippets,
-    list_supported_form_field_types,
+from .version import (
+    __author__,
+    __author_email__,
+    __description__,
+    __license__,
+    __title__,
+    __version__,
 )
 
 __all__ = [
-    # core — types
-    "LocalizedString",
-    "FieldType",
-    # core — auth
-    "AuthConfig",
-    "NoAuth",
-    "BearerAuth",
-    "ApiKeyAuth",
-    # core — constraints
-    "FieldConstraints",
-    "ConditionOperator",
-    "FieldCondition",
-    "DependencyRule",
-    # core — options
-    "FieldOption",
-    "OptionsSource",
-    # core — schema
-    "FormField",
-    "FormSection",
-    "SubmitAction",
-    "FormSchema",
-    "RenderedForm",
-    # core — style
-    "LayoutType",
-    "FieldSizeHint",
-    "FieldStyleHint",
-    "StyleSchema",
-    "FormStyle",
-    # extractors
-    "PydanticExtractor",
-    "ToolExtractor",
-    "YAMLExtractor",
-    "JSONSchemaExtractor",
-    # renderers
-    "HTML5Renderer",
-    "AdaptiveCardRenderer",
-    "JsonSchemaRenderer",
-    # services
-    "FormValidator",
-    "FormRegistry",
-    "FormStorage",
-    "FormCache",
-    "PostgresFormStorage",
-    "ValidationResult",
-    # services — submissions
-    "FormSubmission",
-    "FormSubmissionStorage",
-    # services — forwarder
-    "SubmissionForwarder",
-    "ForwardResult",
-    # tools
-    "CreateFormTool",
-    "DatabaseFormTool",
-    "RequestFormTool",
-    "list_supported_form_field_types",
-    "get_form_field_schema_snippets",
-    # handlers
-    "setup_form_routes",
-    "FormAPIHandler",
-    "FormPageHandler",
+    "__author__",
+    "__author_email__",
+    "__description__",
+    "__license__",
+    "__title__",
+    "__version__",
 ]
