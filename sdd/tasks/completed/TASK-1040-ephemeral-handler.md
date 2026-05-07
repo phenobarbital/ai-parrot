@@ -218,10 +218,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: `parrot/handlers/agents/ephemeral.py` created with POST/GET/PUT/DELETE. POST creates and returns 201 immediately (background warm-up via `asyncio.create_task`). GET returns phase/progress/error. PUT promotes (409 if not ready). DELETE discards ephemeral via BotManager. No mixin created — shared helpers (session, user_id, parse_request) reimplemented inline. 16 tests pass using unbound-method borrowing pattern to work around navigator.views.BaseView's read-only `request` property.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `users.py` was not modified (no mixin created). Inline reimplementation preferred to avoid modifying a shared file. Persistent agent deletion (`DELETE` on promoted agents) returns 404 and instructs caller to use `UserAgentHandler` — keeping scope clean.
