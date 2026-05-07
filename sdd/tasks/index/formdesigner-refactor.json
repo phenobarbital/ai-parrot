@@ -92,7 +92,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Wave 1 final task. Deletes the dead handlers/ folder, rewrites __init__.py to metadata-only, adds the sys.modules snapshot test that future tasks must keep green. MUST run last in Wave 1.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1044-formdesigner-empty-init-and-delete-handlers.md"
+      "completed_at": "2026-05-07T13:32:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1044-formdesigner-empty-init-and-delete-handlers.md"
     },
     {
       "id": "TASK-1045",

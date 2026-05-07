@@ -276,3 +276,15 @@ See full skeleton in §Scope item 4 above
 **Completed by**:
 **Date**:
 **Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**:
+- `parrot_formdesigner/__init__.py` now exposes only metadata (~25 lines).
+- Deleted `handlers/` directory entirely (api.py, forms.py, routes.py, telegram.py, templates.py, __init__.py).
+- 4 metadata-only contract tests pass (`test_init_imports_metadata_only.py`).
+- Updated `parrot.forms` shim (`packages/ai-parrot/src/parrot/forms/__init__.py`) to import from `parrot_formdesigner.core`/`services`/`renderers`/`tools`/`extractors` since top-level re-exports are gone — necessary to keep backward-compat shim working.
+- Deleted 8 obsolete test files that exercised the deleted handlers module: `test_handlers.py`, `test_handlers_prefix.py`, `test_submit_endpoint.py`, `test_telegram_webapp.py`, `test_edit_endpoints.py`, `test_api_auth.py`, `test_form_edition_integration.py`, `test_backward_compat.py`.
+- Updated `test_submit_action_auth.test_export_from_package` to import from `parrot_formdesigner.core`.
+- CHANGELOG updated with 0.2.0 breaking-changes entry.
+- Final test run: 196 passed, 1 pre-existing failure unrelated to FEAT-152 (`test_example_form_server_is_short` — example file line-count test).
