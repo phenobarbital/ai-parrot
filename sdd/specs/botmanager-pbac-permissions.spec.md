@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-153
 **Date**: 2026-05-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
@@ -122,9 +122,11 @@ can resolve the bot.
 `AgentRegistry.get_instance()` (`registry.py:528`) each invoke
 `enforce_agent_access(...)` after they have resolved the bot. The request
 object is passed in via a new optional `request` kwarg (default `None`).
-When `request is None` (CLI / tests / startup), the helper allows only
-when no policies are registered for that bot — matching the "empty
-permissions = public" rule.
+When `request is None` (programmatic Python invocation — CLI scripts,
+tests, startup, internal crew composition), the helper **allows
+unconditionally**, regardless of whether the bot has policies registered.
+PBAC enforcement on agent resolution is therefore HTTP-scoped: it only
+fires when a request context is present.
 
 `user_bots` flow is left intact: `get_user_bot()` (`manager.py:737`),
 `_fetch_user_bot_model()`, and `_build_user_bot_instance()` are not
@@ -230,15 +232,16 @@ async def enforce_agent_access(
 
     Allow-paths (no exception raised):
       - evaluator is None (PBAC not initialized — backwards compat).
+      - request is None (programmatic invocation — Python scripts,
+        CLI, tests, internal crew composition). Enforcement is
+        HTTP-scoped: no request, no check.
       - no policies registered against resource ``agent:<bot_name>``
         (empty / public).
-      - request is None AND no policies registered (CLI / startup path).
       - PolicyEvaluator.check_access(...) returns allowed=True.
 
     Deny-paths (AgentAccessDenied raised):
-      - request is None AND policies are registered (cannot evaluate without
-        a subject — fail closed for non-public bots).
-      - PolicyEvaluator.check_access(...) returns allowed=False.
+      - request is provided AND policies are registered AND
+        PolicyEvaluator.check_access(...) returns allowed=False.
 
     The helper logs WARNING on denials, mirroring PBACPermissionResolver.
     """
@@ -337,9 +340,10 @@ class AgentRegistry:
 - **Responsibility**: After `bot_instance.configure(app)` succeeds and
   before `add_bot(...)`, call
   `self.registry.register_db_bot_policies(bot_model.name, bot_model.permissions)`.
-  A malformed `permissions` raises `ValueError` and is treated as a
-  fatal load error for that bot (same handling as the existing
-  reranker `ConfigError` path at lines 348-354).
+  A malformed `permissions` raises `ValueError`; the load loop **catches
+  it, logs a WARNING, and skips that bot** (the bot is not added to
+  `self._bots`). The rest of the load continues — one bad row never
+  blocks the whole startup.
 - **Depends on**: Modules 1, 3.
 
 ### Module 5: `BotManager.get_bot` enforcement
@@ -396,7 +400,7 @@ class AgentRegistry:
 | `test_parse_invalid_rule_raises` | M1 | rule missing required `action` raises `ValueError` |
 | `test_enforce_no_evaluator_allows` | M1 | `evaluator=None` → no exception (backwards compat) |
 | `test_enforce_no_policies_allows` | M1 | bot not registered in evaluator → no exception |
-| `test_enforce_no_request_with_policies_denies` | M1 | `request=None` + policies registered → `AgentAccessDenied` |
+| `test_enforce_no_request_allows_even_with_policies` | M1 | `request=None` + policies registered → no exception (programmatic invocation bypass) |
 | `test_enforce_allow_decision` | M1 | evaluator returns allowed=True → no exception |
 | `test_enforce_deny_decision_logs_warning` | M1 | evaluator returns allowed=False → `AgentAccessDenied` + WARNING log |
 | `test_register_db_bot_policies_loads_into_evaluator` | M3 | DB shape registered → evaluator returns expected policy dict |
@@ -411,9 +415,9 @@ class AgentRegistry:
 | `test_get_bot_empty_permissions_allows_anyone` | DB row with `permissions={}` → `get_bot(name, request=req_user_a)` and `get_bot(name, request=req_user_b)` both succeed. |
 | `test_get_bot_allow_by_group` | Rule allows `groups=["engineering"]`; engineering user passes, marketing user gets `AgentAccessDenied`. |
 | `test_get_bot_deny_overrides_allow_by_priority` | High-priority deny rule for role `contractors` overrides allow-everyone rule. |
-| `test_get_bot_no_request_denies_when_policies_present` | Calling `get_bot(name)` without `request` on a non-public bot raises. |
+| `test_get_bot_no_request_allows_programmatic_invocation` | Calling `get_bot(name)` without `request` on a non-public bot succeeds — programmatic Python callers are exempt from PBAC. |
 | `test_get_instance_mirrors_get_bot` | Same scenario as above through `AgentRegistry.get_instance` produces the SAME decision. |
-| `test_db_load_failure_on_malformed_permissions` | Bot row with malformed `permissions` aborts that bot's load (does not pollute `self._bots`) and logs ERROR. |
+| `test_db_load_skips_bot_with_malformed_permissions` | Bot row with malformed `permissions` is skipped (not in `self._bots`), a WARNING is logged, and other bots in the same load loop continue to be loaded. |
 | `test_user_bot_path_unaffected_by_agent_policies` | Register a deny-all `agent:<chatbot_id>` policy; `BotManager.get_user_bot(request, chatbot_id)` still returns the bot. |
 
 ### Test Data / Fixtures
@@ -461,7 +465,8 @@ This feature is complete when ALL of the following are true:
 - [ ] A bot row with `permissions = {}` resolves through `BotManager.get_bot(name, request=req)` for **any** authenticated `req` and through `AgentRegistry.get_instance(name, request=req)` for the same `req`.
 - [ ] A bot row with non-empty policies denies callers that don't match: `AgentAccessDenied` is raised by both `BotManager.get_bot` and `AgentRegistry.get_instance` for the same `(user, bot)` pair.
 - [ ] DB-declared policies and YAML/code-declared policies produce **identical** evaluator decisions for the same input — verified by `test_db_bot_policy_parity_with_yaml`.
-- [ ] `BotManager._load_database_bots` calls `register_db_bot_policies` for every loaded bot before `add_bot`. A malformed `permissions` aborts that bot's load with an ERROR log and does not put it in `self._bots`.
+- [ ] `BotManager._load_database_bots` calls `register_db_bot_policies` for every loaded bot before `add_bot`. A malformed `permissions` logs WARNING, skips that bot, and lets the load loop continue for the remaining bots — verified by `test_db_load_skips_bot_with_malformed_permissions`.
+- [ ] When `request=None` (programmatic Python invocation), both `BotManager.get_bot` and `AgentRegistry.get_instance` succeed for any bot — public or non-public. PBAC enforcement is HTTP-scoped.
 - [ ] `BotManager.get_user_bot` (`manager.py:737`) is unchanged and is not affected by any `agent:<name>` policy registered for a same-named user bot — verified by `test_user_bot_path_unaffected_by_agent_policies`.
 - [ ] When PBAC is not initialized (`evaluator is None`), all enforcement is no-op (allow). Existing tests / call sites that don't pass `request` keep working.
 - [ ] Existing handlers using `@requires_permission(ResourceType.AGENT, ...)` continue to work — the new check is additive, not a replacement.
@@ -644,19 +649,21 @@ class BotManager:                                                    # line 81
   call sites can `await` uniformly.
 - **No silent fallback for malformed input** — `parse_bot_permissions`
   must `raise ValueError` on bad shape. The `_load_database_bots` loop
-  catches it and skips that bot with an ERROR log; never treat a bad
-  row as public.
+  catches it, logs a WARNING, and skips that bot (the bot is not added
+  to `self._bots`); the loop continues for the remaining bots. Never
+  treat a malformed row as public.
 
 ### Known Risks / Gotchas
 
 - **Caller compatibility — `request=None` semantics.** Many existing
-  call sites (CLI, tests, startup) call `get_bot(name)` without a
-  request. After this change, those calls succeed for public bots and
-  raise for non-public bots. Mitigation: document this in the spec
-  (above), and require new tests to cover both paths. If a critical
-  startup path needs to resolve a non-public bot, it will need to pass
-  `request=None` AND opt out — out of scope here; raise it in §8 if
-  encountered during implementation.
+  call sites (CLI, tests, startup, internal crew composition) call
+  `get_bot(name)` without a request. By design (resolved §8 Q1),
+  `request=None` always allows: PBAC enforcement is HTTP-scoped and
+  does not apply to programmatic Python invocations. This trades a bit
+  of defense-in-depth for backwards-compat with existing callers and
+  for not breaking script-driven workflows. If a future story needs
+  programmatic enforcement, it will introduce an explicit subject
+  parameter — out of scope for v1.
 - **`_load_database_bots` ordering.** `register_db_bot_policies` MUST
   run before `add_bot(...)` so a concurrent `get_bot` cannot resolve
   the bot before its policies are loaded. The order in §3 Module 4 is
@@ -692,19 +699,23 @@ No new dependencies.
 
 ## 8. Open Questions
 
-- [ ] Should `request=None` + non-public bot **deny** (current spec) or
-  fall back to a "system principal" with admin rights? — *Owner: Jesus
-  Lara*. Default in this spec: deny (fail closed). Revisit if a
-  real startup call site is blocked during implementation.
-- [ ] Action name: use `"agent:resolve"` exclusively (this spec) or
-  reuse `"agent:chat"` to share rules with existing handler decorators?
-  — *Owner: Jesus Lara*. Default in this spec: `"agent:resolve"` is a
-  distinct action so admins can grant resolve-but-not-chat (relevant
-  for crew agents that resolve a sub-agent without ever chatting with it).
-- [ ] Should malformed `permissions` log + skip the bot (current spec)
-  or hard-fail the manager startup? — *Owner: Jesus Lara*. Default:
-  skip. Hard-fail is more secure but blocks all bots if a single row
-  is bad. Configurable in a follow-up.
+- [x] Should `request=None` + non-public bot deny or allow? — *Resolved
+  by Jesus Lara (2026-05-07)*: **allow**. When `request is None` the
+  caller is a programmatic Python invocation (script, CLI, internal
+  crew composition) and is not coming from an HTTP handler — PBAC
+  enforcement is HTTP-scoped and does not apply. See §2 Overview, §4
+  test row `test_get_bot_no_request_allows_programmatic_invocation`,
+  and §5 acceptance criterion on `request=None`.
+- [x] Action name for the bot-resolution check. — *Resolved by Jesus
+  Lara (2026-05-07)*: **`"agent:resolve"`**. Distinct from existing
+  handler-level actions like `"agent:chat"` so admins can grant
+  resolve-but-not-chat — relevant for crew agents that resolve a
+  sub-agent without ever chatting with it directly.
+- [x] What to do on malformed `permissions` JSON — hard-fail vs.
+  skip-and-continue? — *Resolved by Jesus Lara (2026-05-07)*: **log
+  WARNING and skip that bot**. The load loop continues for the
+  remaining bots; one bad row never blocks startup. Configurable
+  hard-fail mode is a follow-up if needed.
 
 ---
 
@@ -730,3 +741,4 @@ No new dependencies.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-07 | Jesus Lara | Initial draft |
+| 1.0 | 2026-05-07 | Jesus Lara | Resolved §8 Q1 (programmatic invocation = allow), Q2 (action `agent:resolve`), Q3 (malformed = WARNING + skip). Status → approved. |
