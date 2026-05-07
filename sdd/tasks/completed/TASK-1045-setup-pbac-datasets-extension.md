@@ -219,10 +219,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-05-07
+**Notes**: Added datasets subdir loading block in `setup_pbac()` at `parrot/auth/pbac.py`
+immediately after the existing agents block, before `evaluator.load_policies(policies)`.
+The block mirrors the agents block exactly: exists-check, PolicyLoader.load_from_directory,
+merge into policies list, INFO log on success, WARNING-and-continue on any exception.
+Written 4 unit tests covering: loads datasets subdir, continues when missing, warns on
+parse error, and merges both agents+datasets. All tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

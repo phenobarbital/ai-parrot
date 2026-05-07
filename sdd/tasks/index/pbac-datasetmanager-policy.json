@@ -32,7 +32,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No file overlap with TASK-1044. Modifies parrot/auth/pbac.py only — no shared files with DatasetPolicyGuard creation.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1045-setup-pbac-datasets-extension.md"
+      "completed_at": "2026-05-07T11:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1045-setup-pbac-datasets-extension.md"
     },
     {
       "id": "TASK-1046",
