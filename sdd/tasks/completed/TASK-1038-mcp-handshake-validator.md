@@ -191,10 +191,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: `MCPValidationError` and `validate_mcp_http()` added to tail of `parrot/mcp/integration.py`. `contextlib` added to imports. The function uses the existing `MCPClient` class; disconnect is always called in `finally` via `contextlib.suppress`. 12 unit tests pass using `patch.object` on the live module to work around the worktree's lack of a real `parrot.mcp` package namespace.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
