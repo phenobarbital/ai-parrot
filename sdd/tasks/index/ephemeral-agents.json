@@ -74,7 +74,7 @@
       "feature_id": "FEAT-149",
       "feature": "ephemeral-agents",
       "spec": "sdd/specs/ephemeral-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -82,8 +82,8 @@
       "parallelism_notes": "Only modifies faiss_store.py — no shared files with other tasks. Safe for parallel worktree.",
       "assigned_to": null,
       "started_at": "2026-05-06T16:20:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1037-faiss-s3-persistence.md"
+      "completed_at": "2026-05-07T01:37:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1037-faiss-s3-persistence.md"
     },
     {
       "id": "TASK-1038",
