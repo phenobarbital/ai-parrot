@@ -1,7 +1,7 @@
 """Unit tests for parrot-formdesigner extractors."""
 import pytest
-from parrot.formdesigner.core import FormSchema
-from parrot.formdesigner.extractors import (
+from parrot_formdesigner.core import FormSchema
+from parrot_formdesigner.extractors import (
     PydanticExtractor,
     ToolExtractor,
     YAMLExtractor,

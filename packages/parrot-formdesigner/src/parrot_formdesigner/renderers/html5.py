@@ -98,7 +98,7 @@ class HTML5Renderer(AbstractFormRenderer):
             loader = jinja2.FileSystemLoader(str(Path(template_dir)))
         else:
             loader = jinja2.PackageLoader(
-                "parrot.formdesigner.renderers", "templates"
+                "parrot_formdesigner.renderers", "templates"
             )
         self._env = jinja2.Environment(
             loader=loader,

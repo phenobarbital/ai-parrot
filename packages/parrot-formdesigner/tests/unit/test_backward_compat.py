@@ -40,12 +40,12 @@ class TestBackwardCompatImports:
         assert DatabaseFormTool is not None
 
     def test_no_circular_import(self):
-        import parrot.formdesigner  # noqa: F401
+        import parrot_formdesigner  # noqa: F401
         import parrot.forms  # noqa: F401
 
     def test_form_schema_is_same_class(self):
         """Both imports refer to the same class."""
-        from parrot.formdesigner import FormSchema as FD
+        from parrot_formdesigner import FormSchema as FD
         from parrot.forms import FormSchema as FS
         assert FD is FS
 

@@ -2,11 +2,11 @@
 import pytest
 from aiohttp import web
 
-from parrot.formdesigner.core.schema import FormSchema, FormSection, FormField
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.services import FormRegistry
-from parrot.formdesigner.services.registry import FormStorage
-from parrot.formdesigner.handlers import setup_form_routes
+from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.services import FormRegistry
+from parrot_formdesigner.services.registry import FormStorage
+from parrot_formdesigner.handlers import setup_form_routes
 
 
 @pytest.fixture

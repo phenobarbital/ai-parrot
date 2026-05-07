@@ -1,7 +1,7 @@
 """Unit tests for form field helper utilities."""
 
-from parrot.formdesigner.core.types import FieldType
-from parrot.formdesigner.tools.field_helpers import (
+from parrot_formdesigner.core.types import FieldType
+from parrot_formdesigner.tools.field_helpers import (
     get_form_field_schema_snippets,
     list_supported_form_field_types,
 )

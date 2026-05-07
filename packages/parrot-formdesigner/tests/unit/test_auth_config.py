@@ -1,7 +1,7 @@
 """Unit tests for AuthConfig models (TASK-597 / FEAT-086)."""
 
 import pytest
-from parrot.formdesigner.core.auth import ApiKeyAuth, AuthConfig, BearerAuth, NoAuth
+from parrot_formdesigner.core.auth import ApiKeyAuth, AuthConfig, BearerAuth, NoAuth
 
 
 # ---------------------------------------------------------------------------
@@ -138,8 +138,8 @@ class TestAuthConfig:
         assert auth.type == "api_key"
 
     def test_import_from_core_auth(self) -> None:
-        """All auth types are importable from parrot.formdesigner.core.auth."""
-        from parrot.formdesigner.core.auth import (  # noqa: F401
+        """All auth types are importable from parrot_formdesigner.core.auth."""
+        from parrot_formdesigner.core.auth import (  # noqa: F401
             ApiKeyAuth,
             AuthConfig,
             BearerAuth,

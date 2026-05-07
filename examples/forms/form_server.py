@@ -27,7 +27,7 @@ from navigator_auth import AuthHandler
 
 from parrot.autonomous.admin import admin_login_page
 from parrot.clients.factory import LLMFactory
-from parrot.formdesigner.handlers import setup_form_routes
+from parrot_formdesigner.handlers import setup_form_routes
 
 
 async def create_app() -> web.Application:

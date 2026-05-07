@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.formdesigner.handlers.api import FormAPIHandler
-from parrot.formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.handlers.api import FormAPIHandler
+from parrot_formdesigner.services.registry import FormRegistry
 
 
 class TestFormAPIHandlerConstructor:
