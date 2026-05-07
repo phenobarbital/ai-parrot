@@ -32,7 +32,7 @@
       "feature_id": "FEAT-149",
       "feature": "ephemeral-agents",
       "spec": "sdd/specs/ephemeral-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies manager.py — shared with route registration (TASK-1041). Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-06T16:20:27+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1035-botmanager-ephemeral-methods.md"
+      "completed_at": "2026-05-07T00:49:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1035-botmanager-ephemeral-methods.md"
     },
     {
       "id": "TASK-1036",
