@@ -356,10 +356,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-05-07
+**Notes**: Added PBAC enforcement to DatasetManager at all six points specified:
+constructor kwarg, get_tools_filtered, _pre_execute, list_datasets, get_active,
+get_metadata (both loaded and unloaded paths), and fetch_dataset. Fixed a bug in
+_pre_execute: AuthorizationRequired was called with wrong kwargs (`user_id`/`reason`)
+— corrected to positional `message` arg per exceptions.py contract. Also added
+`AbstractPermissionResolver` to the TYPE_CHECKING block (ruff F821) and removed
+an unused import from get_tools_filtered. 27 unit tests in 4 test classes, all passing.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
