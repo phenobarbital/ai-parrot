@@ -72,7 +72,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Modifies parrot/manager/manager.py — same file as TASK-1053 (get_bot enforcement). Cannot run in parallel with TASK-1053. Also depends on TASK-1051 because it calls register_db_bot_policies.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1052-load-database-bots-policy-wiring.md"
+      "completed_at": "2026-05-07T13:53:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1052-load-database-bots-policy-wiring.md"
     },
     {
       "id": "TASK-1053",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-153",
       "feature": "botmanager-pbac-permissions",
       "spec": "sdd/specs/botmanager-pbac-permissions.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Modifies parrot/manager/manager.py — same file as TASK-1052. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-07T13:22:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1053-botmanager-get-bot-enforcement.md"
+      "completed_at": "2026-05-07T13:53:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1053-botmanager-get-bot-enforcement.md"
     },
     {
       "id": "TASK-1054",
