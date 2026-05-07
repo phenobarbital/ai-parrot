@@ -126,10 +126,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**: Created `docs/api/feat-149-ephemeral-agents-api.md` with all 10 sections
+from spec §7. Document is 699 lines and includes full request/response examples,
+field tables, polling guidance, MCP config, file upload protocol, tool catalog
+payload description, promote identity notes, 8 open questions for the frontend
+team, and an out-of-scope reminders section.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
