@@ -45,6 +45,23 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 - PDF AcroForm fillable renderer (`/render/pdf`).
 - Atomic batched-edit endpoint (`PATCH /forms/{id}/operations`).
 
+### Known Limitations of `PATCH /forms/{id}/operations`
+
+The 0.2.0 `/operations` endpoint ships with these 8 ops:
+
+- `add_section`, `add_field`, `move_field`, `remove_field`,
+  `update_field`, `update_section_meta`, `update_form_meta`,
+  `duplicate_field`.
+
+The corresponding **section-level** ops (`remove_section`,
+`move_section`, `duplicate_section`) are **not** included in 0.2.0 —
+they were not part of the FEAT-152 spec's operation table. As a
+workaround, sections can still be removed via the existing
+`PUT /api/v1/forms/{form_id}` (full replace) and `PATCH
+/api/v1/forms/{form_id}` (RFC 7396 merge-patch) endpoints, which
+remain in place per Q2 (resolved). Section-level ops will be added
+in a follow-up minor release if real-world usage demands them.
+
 ## [Unreleased]
 
 ### Breaking Changes

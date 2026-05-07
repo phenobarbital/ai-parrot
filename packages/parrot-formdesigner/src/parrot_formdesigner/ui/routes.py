@@ -52,7 +52,9 @@ def _page_wrap(handler: _Handler, *, protect: bool) -> _Handler:
         return await handler(request)
 
     decorated = user_session()(_inner)
-    decorated = is_authenticated(content_type="application/json")(decorated)
+    # HTML page routes — return text/html on auth failure so browsers
+    # render the response, not a raw JSON 401 body.
+    decorated = is_authenticated(content_type="text/html")(decorated)
     return decorated
 
 

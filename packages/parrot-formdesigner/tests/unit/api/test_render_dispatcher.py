@@ -152,6 +152,43 @@ async def test_dispatcher_html_delegates(aiohttp_client, sample_form):
     assert captured["locale"] == "en"
 
 
+async def test_dispatcher_adaptive_delegates(aiohttp_client, sample_form):
+    """Companion to ``test_dispatcher_html_delegates`` for the adaptive key.
+
+    Spec §4 Test Specification — both `html` and `adaptive` paths must be
+    exercised through the dispatcher.
+    """
+    captured: dict[str, Any] = {}
+
+    class _R(AbstractFormRenderer):
+        async def render(self, form, style=None, *, locale="en",
+                         prefilled=None, errors=None):
+            captured["form_id"] = form.form_id
+            captured["locale"] = locale
+            return RenderedForm(
+                content={"type": "AdaptiveCard"},
+                content_type="application/json",
+            )
+
+    register_renderer("adaptive", _R())
+    registry = FormRegistry()
+    await registry.register(sample_form)
+
+    app = web.Application()
+    app["form_registry"] = registry
+    app.router.add_get(
+        "/api/v1/forms/{form_id}/render/{format}", handle_render
+    )
+
+    client = await aiohttp_client(app)
+    resp = await client.get(
+        f"/api/v1/forms/{sample_form.form_id}/render/adaptive"
+    )
+    assert resp.status == 200
+    assert resp.content_type == "application/json"
+    assert captured["form_id"] == sample_form.form_id
+
+
 async def test_dispatcher_404_when_form_unknown(aiohttp_client):
     register_renderer("html", _make_dummy_renderer())
     registry = FormRegistry()

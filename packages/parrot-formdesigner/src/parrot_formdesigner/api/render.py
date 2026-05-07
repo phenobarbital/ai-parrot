@@ -39,29 +39,21 @@ def _seed_default_renderers() -> None:
     Imports of ``HTML5Renderer``, ``AdaptiveCardRenderer``, ``XFormsRenderer``,
     and ``PdfRenderer`` are deferred to avoid pulling Jinja2 / lxml /
     reportlab during ``import parrot_formdesigner.api``.
+
+    All four renderers depend on hard deps (``jinja2``, ``lxml``,
+    ``reportlab``) declared in ``pyproject.toml [project.dependencies]`` —
+    if any of these imports fails, ``parrot-formdesigner`` is mis-installed
+    and the loud ``ImportError`` is the right outcome.
     """
     from ..renderers.adaptive_card import AdaptiveCardRenderer
     from ..renderers.html5 import HTML5Renderer
+    from ..renderers.pdf import PdfRenderer
+    from ..renderers.xforms import XFormsRenderer
 
     _RENDERERS.setdefault("html", HTML5Renderer())
     _RENDERERS.setdefault("adaptive", AdaptiveCardRenderer())
-
-    # Wave 2 renderers — imported lazily and registered if importable.
-    if "xml" not in _RENDERERS:
-        try:
-            from ..renderers.xforms import XFormsRenderer
-
-            _RENDERERS["xml"] = XFormsRenderer()
-        except ImportError as exc:  # pragma: no cover — lxml is hard dep
-            logger.debug("XFormsRenderer not available: %s", exc)
-
-    if "pdf" not in _RENDERERS:
-        try:
-            from ..renderers.pdf import PdfRenderer
-
-            _RENDERERS["pdf"] = PdfRenderer()
-        except ImportError as exc:  # pragma: no cover — reportlab is hard dep
-            logger.debug("PdfRenderer not available: %s", exc)
+    _RENDERERS.setdefault("xml", XFormsRenderer())
+    _RENDERERS.setdefault("pdf", PdfRenderer())
 
 
 def register_renderer(format_key: str, renderer: AbstractFormRenderer) -> None:
