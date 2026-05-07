@@ -200,9 +200,12 @@ class EphemeralUserAgentHandler(BaseView):
                 },
                 status=201,
             )
+        except ValueError as exc:
+            # FIX-11: client config errors return 400, not 500
+            return self.error(f"Invalid agent configuration: {exc}", status=400)
         except Exception as exc:  # noqa: BLE001
             self.logger.error("POST ephemeral: unexpected error: %s", exc, exc_info=True)
-            return self.error(f"Failed to create ephemeral agent: {exc}", status=500)
+            return self.error("Internal server error.", status=500)
 
     # ------------------------------------------------------------------
     # GET — warm-up status polling

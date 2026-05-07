@@ -15,13 +15,26 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import os
-from datetime import datetime, timedelta
-from typing import Dict, List, Literal, Optional
+from datetime import datetime, timezone, timedelta
+from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+if TYPE_CHECKING:
+    from parrot.bots.abstract import AbstractBot
+    from aiohttp import web as _web
+
 logger = logging.getLogger("Parrot.Ephemeral")
+
+# ---------------------------------------------------------------------------
+# Lazy sentinel for validate_mcp_http (FIX-6)
+# ---------------------------------------------------------------------------
+
+_validate_mcp_http: Optional[Callable] = None
+try:
+    from parrot.mcp.integration import validate_mcp_http as _validate_mcp_http  # noqa: PLC0415
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
 # Phase type
@@ -29,13 +42,22 @@ logger = logging.getLogger("Parrot.Ephemeral")
 
 EphemeralPhase = Literal["creating", "warming", "ready", "error"]
 
-# Default TTL: 24 h, overridable via env.
+# Default TTL: 24 h, overridable via env / navconfig.
 _DEFAULT_TTL_SECONDS: int = 86400
 
 
 def _default_ttl() -> int:
-    """Read ephemeral TTL from env, fall back to 24 h."""
-    raw = os.environ.get("EPHEMERAL_BOT_TTL")
+    """Read ephemeral TTL from navconfig, fall back to 24 h.
+
+    Returns:
+        TTL in seconds (positive integer).
+    """
+    # FIX-16: use navconfig.config.get instead of os.environ.get
+    try:
+        from navconfig import config  # noqa: PLC0415
+        raw = config.get("EPHEMERAL_BOT_TTL")
+    except Exception:  # noqa: BLE001
+        raw = None
     if raw is None:
         return _DEFAULT_TTL_SECONDS
     try:
@@ -90,19 +112,34 @@ class EphemeralRegistry:
 
     The registry is intentionally not persistent — entries live only in
     process memory and vanish on restart.
+
+    The lock is created lazily (FIX-5) so it is always initialised inside
+    a running event loop, avoiding deprecation warnings on Python 3.10+.
     """
 
     def __init__(self) -> None:
         self._store: Dict[str, EphemeralAgentStatus] = {}
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._lock: Optional[asyncio.Lock] = None  # lazily initialised (FIX-5)
 
-    def register(self, status: EphemeralAgentStatus) -> None:
+    @property
+    def _get_lock(self) -> asyncio.Lock:
+        """Return the asyncio lock, creating it lazily inside the running loop.
+
+        Returns:
+            The ``asyncio.Lock`` instance.
+        """
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def register(self, status: EphemeralAgentStatus) -> None:
         """Insert or replace a status entry (keyed by chatbot_id).
 
         Args:
             status: The ``EphemeralAgentStatus`` to register.
         """
-        self._store[status.chatbot_id] = status
+        async with self._get_lock:  # FIX-1: acquire lock
+            self._store[status.chatbot_id] = status
         logger.debug(
             "EphemeralRegistry: registered %s for user %s (phase=%s)",
             status.chatbot_id,
@@ -146,7 +183,7 @@ class EphemeralRegistry:
         """
         return [s for s in self._store.values() if s.user_id == user_id]
 
-    def remove(self, chatbot_id: str) -> bool:
+    async def remove(self, chatbot_id: str) -> bool:
         """Delete the registry entry for *chatbot_id*.
 
         Args:
@@ -155,21 +192,23 @@ class EphemeralRegistry:
         Returns:
             ``True`` if an entry was deleted, ``False`` if it was not present.
         """
-        if chatbot_id in self._store:
-            del self._store[chatbot_id]
-            logger.debug("EphemeralRegistry: removed %s", chatbot_id)
-            return True
-        return False
+        async with self._get_lock:  # FIX-1: acquire lock
+            if chatbot_id in self._store:
+                del self._store[chatbot_id]
+                logger.debug("EphemeralRegistry: removed %s", chatbot_id)
+                return True
+            return False
 
     def get_expired(self) -> List[str]:
         """Return chatbot_ids whose ``expires_at`` is in the past.
 
-        Uses ``datetime.utcnow()`` for comparison (all timestamps are UTC).
+        Uses ``datetime.now(timezone.utc)`` for comparison (FIX-13).
 
         Returns:
             List of chatbot_id strings ready to be swept.
         """
-        now = datetime.utcnow()
+        # FIX-13: replace datetime.utcnow() with timezone-aware equivalent
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         return [
             cid
             for cid, status in self._store.items()
@@ -191,9 +230,10 @@ class EphemeralRegistry:
 
 
 async def _warm_up(
-    bot,  # AbstractBot — avoid circular import by not type-annotating here
+    bot: "AbstractBot",
     status: EphemeralAgentStatus,
-    app,  # aiohttp Application
+    app: "_web.Application",
+    remove_bot_callback: Optional[Callable[[str], None]] = None,  # FIX-12
 ) -> None:
     """Background warm-up coroutine for an ephemeral bot.
 
@@ -209,6 +249,9 @@ async def _warm_up(
         bot: The ``AbstractBot`` instance to warm up.
         status: The ``EphemeralAgentStatus`` whose phase/progress to update.
         app: The aiohttp ``Application`` passed to ``configure()``.
+        remove_bot_callback: Optional callable ``(chatbot_id: str) -> None``
+            invoked when warm-up fails to remove the broken bot from the
+            manager's active bots dict (FIX-12).
     """
     try:
         status.phase = "warming"
@@ -221,27 +264,22 @@ async def _warm_up(
         status.progress["tools"] = "ready"
 
         # -----------------------------------------------------------------
-        # 2. MCP HTTP handshake validation
+        # 2. MCP HTTP handshake validation (FIX-6: single lazy sentinel)
         # -----------------------------------------------------------------
         mcp_servers = _extract_mcp_servers(bot)
         if mcp_servers:
-            status.progress["mcp"] = "validating"
-            try:
-                from parrot.mcp.integration import validate_mcp_http  # noqa: PLC0415
-            except ImportError:
+            if _validate_mcp_http is None:
                 logger.warning("validate_mcp_http not available; skipping MCP validation")
                 status.progress["mcp"] = "skipped"
-                mcp_servers = []
-
-            for server_config in mcp_servers:
-                try:
-                    from parrot.mcp.integration import validate_mcp_http  # noqa: PLC0415
-                    await validate_mcp_http(server_config)
-                except Exception as exc:  # noqa: BLE001
-                    raise RuntimeError(
-                        f"MCP handshake failed for server: {exc}"
-                    ) from exc
-            if mcp_servers:
+            else:
+                status.progress["mcp"] = "validating"
+                for server_config in mcp_servers:
+                    try:
+                        await _validate_mcp_http(server_config)
+                    except Exception as exc:  # noqa: BLE001
+                        raise RuntimeError(
+                            f"MCP handshake failed for server: {exc}"
+                        ) from exc
                 status.progress["mcp"] = "ready"
         else:
             status.progress["mcp"] = "skipped"
@@ -261,7 +299,8 @@ async def _warm_up(
         elif rag_mode == "pageindex":
             status.progress["rag"] = "building"
             await _build_page_index(bot, documents, app)
-            status.progress["rag"] = "ready"
+            # FIX-14: PageIndex build is deferred (stub) — mark as pending, not ready
+            status.progress["rag"] = "pending"
         else:
             status.progress["rag"] = "skipped"
 
@@ -282,6 +321,10 @@ async def _warm_up(
             exc,
             exc_info=True,
         )
+        # FIX-12: remove the broken bot from the manager's active bots dict
+        if remove_bot_callback is not None:
+            with contextlib.suppress(Exception):
+                remove_bot_callback(status.chatbot_id)
 
 
 # ---------------------------------------------------------------------------
@@ -295,31 +338,38 @@ def _extract_mcp_servers(bot) -> list:
     Tries ``bot.mcp_config`` (list) or ``bot.get_mcp_config()`` (dict list).
     Returns an empty list if neither is available.
 
+    FIX-7: Handles encrypted blobs by falling back to ``get_mcp_config()``.
+
     Args:
         bot: The ``AbstractBot`` instance.
 
     Returns:
         List of MCP server config objects (``MCPServerConfig``).
     """
-    # Try the attribute directly first (list of MCPServerConfig)
     mcp_config = None
     with contextlib.suppress(Exception):
         mcp_config = getattr(bot, "mcp_config", None)
-    if not mcp_config:
+
+    # FIX-7: If attribute is not a list (e.g. encrypted bytes/string), try the accessor
+    if not mcp_config or not isinstance(mcp_config, list):
+        get_fn = getattr(bot, "get_mcp_config", None)
+        if callable(get_fn):
+            with contextlib.suppress(Exception):
+                mcp_config = get_fn()
+
+    if not mcp_config or not isinstance(mcp_config, list):
         return []
 
     # If it's a list of dicts (serialised form), convert to MCPServerConfig
-    if isinstance(mcp_config, list):
-        result = []
-        for item in mcp_config:
-            if isinstance(item, dict):
-                with contextlib.suppress(Exception):
-                    from parrot.mcp.client import MCPClientConfig as MCPServerConfig  # noqa: PLC0415
-                    result.append(MCPServerConfig(**item))
-            else:
-                result.append(item)
-        return result
-    return []
+    result = []
+    for item in mcp_config:
+        if isinstance(item, dict):
+            with contextlib.suppress(Exception):
+                from parrot.mcp.client import MCPClientConfig as MCPServerConfig  # noqa: PLC0415
+                result.append(MCPServerConfig(**item))
+        else:
+            result.append(item)
+    return result
 
 
 async def _build_faiss_index(bot, documents: list, app) -> None:
@@ -332,14 +382,24 @@ async def _build_faiss_index(bot, documents: list, app) -> None:
     """
     with contextlib.suppress(ImportError):
         from parrot.stores.faiss_store import FAISSStore  # noqa: PLC0415
+        from parrot.stores.models import Document  # noqa: PLC0415
+
         store = FAISSStore(collection_name=str(getattr(bot, "chatbot_id", "ephemeral")))
-        # Convert document dicts to text chunks the store understands
-        texts = [doc.get("name", "") for doc in documents if doc.get("name")]
-        if texts:
-            await store.add_documents(texts)
+        # FIX-4: Convert document dicts to Document objects (not plain strings)
+        docs = []
+        for doc_dict in documents:
+            content = doc_dict.get("path") or doc_dict.get("name", "")
+            if content:
+                docs.append(Document(page_content=content))
+        if docs:
+            await store.add_documents(docs)
         # Attach to bot for later use and potential S3 dump on promote
         bot._ephemeral_faiss_store = store
-        logger.info("_build_faiss_index: built FAISS index for %s (%d docs)", getattr(bot, "chatbot_id", "?"), len(texts))
+        logger.info(
+            "_build_faiss_index: built FAISS index for %s (%d docs)",
+            getattr(bot, "chatbot_id", "?"),
+            len(docs),
+        )
 
 
 async def _build_page_index(bot, documents: list, app) -> None:
@@ -362,5 +422,5 @@ async def _build_page_index(bot, documents: list, app) -> None:
     )
     # Full PageIndex pipeline requires a PageIndexLLMAdapter instance (LLM
     # client), which depends on the specific LLM configured for the bot.
-    # The pipeline is deferred to a follow-up integration; for now we mark
-    # it as completed so the agent reaches "ready" and remains usable.
+    # The pipeline is deferred to a follow-up integration; for now we log
+    # and return — callers mark status.progress["rag"] = "pending" (FIX-14).
