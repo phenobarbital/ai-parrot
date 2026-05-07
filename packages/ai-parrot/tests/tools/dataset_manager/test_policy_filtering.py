@@ -12,12 +12,12 @@ from __future__ import annotations
 
 import pytest
 import pandas as pd
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.auth.dataset_guard import DatasetPolicyGuard
 from parrot.auth.exceptions import AuthorizationRequired
-from parrot.tools.dataset_manager.tool import DatasetManager, DatasetEntry, DatasetInfo
+from parrot.tools.dataset_manager.tool import DatasetManager, _pctx_var
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -149,7 +149,7 @@ class TestDatasetLevelFiltering:
         mock_guard.filter_datasets.side_effect = (
             lambda pctx, names: {"public_data"} if "public_data" in names else set()
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         results = await dm.list_datasets()
         names = [r["name"] for r in results]
@@ -167,7 +167,7 @@ class TestDatasetLevelFiltering:
         mock_guard.filter_datasets.side_effect = (
             lambda pctx, names: set()  # deny all
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         via_list_datasets = await dm.list_datasets()
         via_list_available = await dm.list_available()
@@ -186,7 +186,7 @@ class TestDatasetLevelFiltering:
         mock_guard.filter_datasets.side_effect = (
             lambda pctx, names: {"public_data"} if "public_data" in names else set()
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         active = await dm.get_active()
 
@@ -227,10 +227,10 @@ class TestDatasetLevelFiltering:
     async def test_list_datasets_no_pctx_allows_all(
         self, mock_guard, sample_df
     ):
-        """When _current_pctx is None (no context), no filtering is applied."""
+        """When _pctx_var is None (no context), no filtering is applied."""
         dm = DatasetManager(policy_guard=mock_guard)
         dm.add_dataframe("financial_data", sample_df)
-        dm._current_pctx = None  # explicitly no context
+        _pctx_var.set(None)  # explicitly no context
 
         results = await dm.list_datasets()
         names = [r["name"] for r in results]
@@ -260,7 +260,7 @@ class TestColumnFilteringGetMetadata:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         meta = await dm.get_metadata("financial_data")
 
@@ -280,7 +280,7 @@ class TestColumnFilteringGetMetadata:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         meta = await dm.get_metadata("financial_data")
 
@@ -306,7 +306,7 @@ class TestColumnFilteringGetMetadata:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         meta = await dm.get_metadata(
             "financial_data", include_samples=True
@@ -330,7 +330,7 @@ class TestColumnFilteringGetMetadata:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         meta = await dm.get_metadata("financial_data")
 
@@ -350,7 +350,7 @@ class TestColumnFilteringGetMetadata:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c != "profit_margin"]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         meta = await dm.get_metadata("financial_data")
 
@@ -362,10 +362,10 @@ class TestColumnFilteringGetMetadata:
     async def test_no_pctx_returns_all_columns(
         self, mock_guard, sample_df
     ):
-        """When _current_pctx is None, no column filtering is applied."""
+        """When _pctx_var is None, no column filtering is applied."""
         dm = DatasetManager(policy_guard=mock_guard)
         dm.add_dataframe("financial_data", sample_df)
-        dm._current_pctx = None
+        _pctx_var.set(None)
 
         meta = await dm.get_metadata("financial_data")
 
@@ -395,7 +395,7 @@ class TestColumnFilteringFetchDataset:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         result = await dm.fetch_dataset("financial_data")
 
@@ -416,7 +416,7 @@ class TestColumnFilteringFetchDataset:
         mock_guard.filter_columns.side_effect = (
             lambda pctx, dataset, cols: [c for c in cols if c in allowed]
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         result = await dm.fetch_dataset("financial_data")
 
@@ -447,10 +447,10 @@ class TestColumnFilteringFetchDataset:
     async def test_fetch_dataset_no_pctx_returns_all(
         self, mock_guard, sample_df
     ):
-        """When _current_pctx is None, no column filtering on fetch_dataset."""
+        """When _pctx_var is None, no column filtering on fetch_dataset."""
         dm = DatasetManager(policy_guard=mock_guard)
         dm.add_dataframe("financial_data", sample_df)
-        dm._current_pctx = None
+        _pctx_var.set(None)
 
         result = await dm.fetch_dataset("financial_data")
 
@@ -468,15 +468,16 @@ class TestPreExecute:
 
     @pytest.mark.asyncio
     async def test_pre_execute_stores_pctx(self, mock_guard, pctx_jleon):
-        """_pre_execute stores the permission context on self._current_pctx."""
+        """_pre_execute stores the permission context in the _pctx_var ContextVar."""
         dm = DatasetManager(policy_guard=mock_guard)
-        assert dm._current_pctx is None
+        # ContextVar default is None before _pre_execute runs.
+        assert _pctx_var.get() is None
 
         await dm._pre_execute(
             "dataset_list_datasets",
             _permission_context=pctx_jleon,
         )
-        assert dm._current_pctx is pctx_jleon
+        assert _pctx_var.get() is pctx_jleon
 
     @pytest.mark.asyncio
     async def test_pre_execute_allows_when_permitted(
@@ -553,5 +554,5 @@ class TestPreExecute:
             name="financial_data",
         )
         mock_guard.can_read_dataset.assert_not_called()
-        # _current_pctx should be None
-        assert dm._current_pctx is None
+        # _pctx_var is set to None when no _permission_context kwarg is provided.
+        assert _pctx_var.get() is None

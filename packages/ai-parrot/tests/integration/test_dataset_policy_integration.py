@@ -18,12 +18,11 @@ from __future__ import annotations
 
 import pytest
 import pandas as pd
-from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.auth.dataset_guard import DatasetPolicyGuard
-from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.dataset_manager.tool import DatasetManager, _pctx_var
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +55,10 @@ def _make_evaluator(
 
         ``ctx`` is a navigator-auth EvalContext built by ``to_eval_context()``.
         User identity lives at ``ctx.user``; roles at ``ctx.userinfo["roles"]``.
+
+        Resource name format (matches DatasetPolicyGuard after Fix 1):
+          - dataset:read      → "dataset:<dataset_name>"
+          - column:read       → "dataset:<dataset_name>:<column_name>"
         """
         # EvalContext stores identity via __getattr__ → self.store lookups.
         user_id: str = getattr(ctx, "user", None) or ""
@@ -65,26 +68,31 @@ def _make_evaluator(
         result = MagicMock()
 
         if action == "dataset:read":
-            # Dataset-level filtering
+            # Dataset-level filtering.
+            # resource_names are "dataset:<name>" — strip prefix to get bare name.
             if allowed_datasets is None:
                 result.allowed = list(resource_names)
             else:
-                # Per-user allowed + wildcard ("*") fallback — default empty when
-                # neither key is present (fully restrictive for unknown users).
+                # Per-user allowed + wildcard ("*") fallback.
                 permitted = (
                     set(allowed_datasets.get(user_id, []))
                     | set(allowed_datasets.get("*", []))
                 )
-                result.allowed = [n for n in resource_names if n in permitted]
+                result.allowed = [
+                    r for r in resource_names
+                    if r.removeprefix("dataset:") in permitted
+                ]
 
         elif action == "dataset:column:read":
-            # Column-level filtering — resource_names are "dataset:col" composites
+            # Column-level filtering.
+            # resource_names are "dataset:<dataset_name>:<column_name>" — strip
+            # the "dataset:" prefix first, then split on the first ":" to get
+            # dataset_name and column_name.
             if allowed_columns is None:
                 result.allowed = list(resource_names)
             else:
-                # Determine allowed cols per user
-                user_allowed = allowed_columns.get(user_id) or {}
-                # Also check role-based rules
+                # Determine allowed cols per user + role
+                user_allowed = dict(allowed_columns.get(user_id) or {})
                 for role in role_names:
                     role_allowed = allowed_columns.get(f"role:{role}") or {}
                     for ds, cols in role_allowed.items():
@@ -92,8 +100,9 @@ def _make_evaluator(
 
                 filtered = []
                 for composite in resource_names:
-                    # composite format: "dataset_name:column_name"
-                    parts = composite.split(":", 1)
+                    # Strip "dataset:" prefix, then split "<ds>:<col>"
+                    bare = composite.removeprefix("dataset:")
+                    parts = bare.split(":", 1)
                     if len(parts) != 2:
                         filtered.append(composite)
                         continue
@@ -224,7 +233,7 @@ class TestEndToEndDatasetPolicy:
             ("financial_data", financial_df),
             ("public_sales", sales_df),
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         results = await dm.list_datasets()
         names = [r["name"] for r in results]
@@ -248,7 +257,7 @@ class TestEndToEndDatasetPolicy:
             ("financial_data", financial_df),
             ("public_sales", sales_df),
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         active = await dm.get_active()
 
@@ -266,7 +275,7 @@ class TestEndToEndDatasetPolicy:
         )
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("financial_data", financial_df))
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         # list_datasets returns nothing — simulates the dataset is hidden
         results = await dm.list_datasets()
@@ -306,7 +315,7 @@ class TestEndToEndDatasetPolicy:
             ("financial_data", financial_df),
             ("public_sales", sales_df),
         )
-        dm._current_pctx = pctx_jleon
+        _pctx_var.set(pctx_jleon)
 
         results = await dm.list_datasets()
 
@@ -339,7 +348,7 @@ class TestEndToEndColumnPolicy:
         )
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("sales", sales_df))
-        dm._current_pctx = pctx_tier1_rep
+        _pctx_var.set(pctx_tier1_rep)
 
         meta = await dm.get_metadata("sales")
 
@@ -371,7 +380,7 @@ class TestEndToEndColumnPolicy:
         )
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("sales", sales_df))
-        dm._current_pctx = pctx_tier1_rep
+        _pctx_var.set(pctx_tier1_rep)
 
         result = await dm.fetch_dataset("sales")
 
@@ -395,7 +404,7 @@ class TestEndToEndColumnPolicy:
         )
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("sales", sales_df))
-        dm._current_pctx = pctx_tier1_rep
+        _pctx_var.set(pctx_tier1_rep)
 
         meta = await dm.get_metadata("sales")
 
@@ -422,7 +431,7 @@ class TestEndToEndColumnPolicy:
         )
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("sales", sales_df))
-        dm._current_pctx = pctx_tier1_rep
+        _pctx_var.set(pctx_tier1_rep)
 
         meta = await dm.get_metadata("sales")
 
@@ -456,7 +465,7 @@ class TestAdminFullVisibility:
             ("financial_data", financial_df),
             ("sales", sales_df),
         )
-        dm._current_pctx = pctx_admin
+        _pctx_var.set(pctx_admin)
 
         results = await dm.list_datasets()
         names = [r["name"] for r in results]
@@ -471,7 +480,7 @@ class TestAdminFullVisibility:
         evaluator = _make_evaluator(allowed_columns=None)
         guard = _make_guard(evaluator)
         dm = _make_dm(guard, ("sales", sales_df))
-        dm._current_pctx = pctx_admin
+        _pctx_var.set(pctx_admin)
 
         meta = await dm.get_metadata("sales")
 
@@ -545,14 +554,14 @@ class TestOptInCompatibility:
             ("financial_data", financial_df),
             ("sales", sales_df),
         )
-        dm._current_pctx = PermissionContext(
+        _pctx_var.set(PermissionContext(
             session=UserSession(
                 user_id="any@example.com",
                 tenant_id="test",
                 roles=frozenset(),
                 metadata={},
             )
-        )
+        ))
 
         results = await dm.list_datasets()
         names = [r["name"] for r in results]

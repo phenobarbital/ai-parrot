@@ -29,6 +29,17 @@ Usage example (wired at app startup after ``setup_pbac``)::
     if evaluator is not None:
         dataset_guard = DatasetPolicyGuard(evaluator=evaluator)
         dataset_manager = DatasetManager(policy_guard=dataset_guard)
+
+Resource naming convention
+--------------------------
+``DatasetPolicyGuard`` passes resource names to ``PolicyEvaluator`` using the
+``"dataset:<name>"`` prefix for dataset-level checks and
+``"dataset:<dataset>:<column>"`` for column-level checks.  This matches the
+resource key format declared in YAML policy files::
+
+    resources:
+      - "dataset:financial_data"        # dataset:read
+      - "dataset:sales:profit_margin"   # dataset:column:read
 """
 
 from __future__ import annotations
@@ -164,14 +175,20 @@ class DatasetPolicyGuard:
         env = Environment()
 
         try:
+            # Prefix names to match YAML resource key format: "dataset:<name>"
+            prefixed = [f"dataset:{name}" for name in dataset_names]
             filtered = self._evaluator.filter_resources(
                 ctx=eval_ctx,
                 resource_type=ResourceType.DATASET,
-                resource_names=list(dataset_names),
+                resource_names=prefixed,
                 action="dataset:read",
                 env=env,
             )
-            return set(filtered.allowed)
+            # Strip the "dataset:" prefix from the allowed list to recover bare names.
+            return {
+                name[len("dataset:"):] for name in filtered.allowed
+                if name.startswith("dataset:")
+            }
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
                 "PBAC dataset deny (error): user=%s resource=<batch> reason=%s",
@@ -229,8 +246,9 @@ class DatasetPolicyGuard:
         eval_ctx = to_eval_context(context)
         env = Environment()
 
-        # Composite resource names: "<dataset>:<column>"
-        resource_names = [f"{dataset_name}:{col}" for col in columns]
+        # Composite resource names: "dataset:<dataset>:<column>"
+        # Matches the YAML resource key format: "dataset:sales:profit_margin"
+        resource_names = [f"dataset:{dataset_name}:{col}" for col in columns]
 
         try:
             filtered = self._evaluator.filter_resources(
@@ -240,9 +258,8 @@ class DatasetPolicyGuard:
                 action="dataset:column:read",
                 env=env,
             )
-            # Reconstruct the allowed set using the original column names
-            # (strip the dataset prefix from the allowed composite names).
-            prefix = f"{dataset_name}:"
+            # Strip "dataset:<dataset>:" prefix to recover bare column names.
+            prefix = f"dataset:{dataset_name}:"
             allowed_set = {
                 name[len(prefix):] for name in filtered.allowed
                 if name.startswith(prefix)
@@ -306,10 +323,11 @@ class DatasetPolicyGuard:
         env = Environment()
 
         try:
+            # Prefix to match YAML resource key format: "dataset:<name>"
             result = self._evaluator.check_access(
                 ctx=eval_ctx,
                 resource_type=ResourceType.DATASET,
-                resource_name=dataset_name,
+                resource_name=f"dataset:{dataset_name}",
                 action="dataset:read",
                 env=env,
             )

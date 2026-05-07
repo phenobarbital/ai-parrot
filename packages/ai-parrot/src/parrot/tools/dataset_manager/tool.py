@@ -9,10 +9,11 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 from __future__ import annotations
+import contextvars
 import io
 import re
 import warnings
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Literal, Optional, Any, Set, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
@@ -31,6 +32,15 @@ if TYPE_CHECKING:
     from ...auth.permission import PermissionContext
     from ...auth.resolver import AbstractPermissionResolver
 
+# Module-level ContextVar that isolates the per-call PermissionContext for each
+# asyncio task running on a shared DatasetManager instance.  Set by
+# DatasetManager._pre_execute and read by _get_current_pctx.  Using a
+# ContextVar (rather than an instance attribute) ensures that two concurrent
+# requests processed by the same DatasetManager cannot bleed each other's
+# PermissionContext across an await boundary.
+_pctx_var: contextvars.ContextVar = contextvars.ContextVar(
+    "dataset_manager_pctx", default=None
+)
 
 try:
     logger = logging.getLogger(__name__)
@@ -528,8 +538,10 @@ class DatasetManager(AbstractToolkit):
         # PBAC dataset-level policy enforcement (FEAT-151).
         # None → no enforcement (opt-in backwards compat).
         self._policy_guard: Optional["DatasetPolicyGuard"] = policy_guard
-        # Per-call permission context stored by _pre_execute for use in wrapped methods.
-        self._current_pctx: Optional["PermissionContext"] = None
+        # Per-call permission context is stored in the module-level _pctx_var
+        # ContextVar (set by _pre_execute, read by _get_current_pctx).
+        # Using a ContextVar instead of an instance attribute isolates concurrent
+        # requests on a shared DatasetManager from cross-contaminating contexts.
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -2442,18 +2454,20 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
 
     def _get_current_pctx(self) -> Optional["PermissionContext"]:
-        """Return the per-call PermissionContext stored by ``_pre_execute``.
+        """Return the per-call PermissionContext for the current asyncio task.
 
-        The context is injected by ``ToolkitTool._execute`` → ``_pre_execute``
-        one level above and stored on ``self`` for use inside the bound methods
-        (``list_datasets``, ``get_metadata``, ``fetch_dataset``, etc.) which do
-        not receive ``_permission_context`` as a direct argument.
+        Reads from the module-level ``_pctx_var`` ContextVar, which is set by
+        ``_pre_execute`` when the toolkit dispatch mechanism invokes a tool.
+        Each asyncio task has its own copy of the ContextVar, so concurrent
+        requests on a shared ``DatasetManager`` instance cannot cross-contaminate
+        each other's permission contexts.
 
         Returns:
             ``PermissionContext`` for the current tool call, or ``None`` when
-            no permission context is available (e.g., direct method invocation).
+            no permission context is available (e.g., direct method invocation
+            outside the toolkit dispatch path).
         """
-        return getattr(self, "_current_pctx", None)
+        return _pctx_var.get()
 
     async def _filter_dataset_info_columns(
         self,
@@ -2560,9 +2574,10 @@ class DatasetManager(AbstractToolkit):
             **kwargs: Tool arguments, including ``_permission_context`` injected
                 by ``ToolkitTool._execute``.
         """
-        # Store for use in the bound method body (list_datasets, get_metadata, etc.)
+        # Store in the module-level ContextVar so concurrent tasks on this shared
+        # instance each see their own context (not another request's context).
         pctx = kwargs.get("_permission_context")
-        self._current_pctx = pctx
+        _pctx_var.set(pctx)
 
         if not self._policy_guard or not pctx:
             return
@@ -3000,6 +3015,24 @@ class DatasetManager(AbstractToolkit):
         alias = alias_map.get(resolved_name, "")
         df = entry.df
 
+        # PBAC: drop forbidden columns — drop-silent, same semantics as fetch_dataset.
+        pctx_gdf = self._get_current_pctx()
+        if self._policy_guard and pctx_gdf:
+            _all_cols_gdf = df.columns.tolist()
+            _allowed_cols_gdf: list = await self._policy_guard.filter_columns(
+                pctx_gdf, resolved_name, _all_cols_gdf
+            )
+            if set(_allowed_cols_gdf) != set(_all_cols_gdf):
+                df = df[_allowed_cols_gdf]
+
+        # Filter column_types to only the visible columns (drop-silent).
+        _visible_cols = set(df.columns)
+        filtered_col_types = (
+            {col: ct for col, ct in entry.column_types.items() if col in _visible_cols}
+            if entry.column_types
+            else None
+        )
+
         return {
             "name": resolved_name,
             "alias": alias,
@@ -3012,9 +3045,10 @@ class DatasetManager(AbstractToolkit):
             "shape": {"rows": df.shape[0], "columns": df.shape[1]},
             "columns": df.columns.tolist(),
             "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "column_types": entry.column_types,
+            "column_types": filtered_col_types,
             "is_active": entry.is_active,
-            "null_count": entry.null_count,
+            # Recompute from the visible-column df so the count is consistent.
+            "null_count": int(df.isnull().sum().sum()),
             "sample_rows": df.head(3).to_dict(orient='records'),
         }
 
@@ -3382,7 +3416,22 @@ class DatasetManager(AbstractToolkit):
                 _denied_cols = [c for c in _all_cols if c not in set(_allowed_cols)]
                 df = df.drop(columns=_denied_cols)
 
-        nan_warnings = self.check_dataframes_for_nans([resolved])
+        # Compute NaN warnings from the already-column-filtered df when a guard
+        # is active, so denied column names never appear in warning messages.
+        # Fall back to the standard helper for the no-guard path.
+        if self._policy_guard:
+            nan_warnings = []
+            if not df.empty:
+                _null_counts = df.isnull().sum()
+                _total_rows = len(df)
+                for _col, _cnt in _null_counts[_null_counts > 0].items():
+                    _pct = (_cnt / _total_rows) * 100
+                    nan_warnings.append(
+                        f"- DataFrame '{resolved}' (column '{_col}'): "
+                        f"Contains {_cnt} NaNs ({_pct:.1f}% of {_total_rows} rows)"
+                    )
+        else:
+            nan_warnings = self.check_dataframes_for_nans([resolved])
 
         # Sync PythonPandasTool BEFORE reading alias map so aliases are
         # up-to-date with the just-materialized dataset.
@@ -3511,6 +3560,16 @@ class DatasetManager(AbstractToolkit):
                 f"Call fetch_dataset('{resolved}') first to load the data."
             )
 
+        # PBAC: drop forbidden columns from schema — drop-silent.
+        pctx_gss = self._get_current_pctx()
+        if self._policy_guard and pctx_gss and schema:
+            _all_schema_cols = list(schema.keys())
+            _allowed_schema_cols: list = await self._policy_guard.filter_columns(
+                pctx_gss, resolved, _all_schema_cols
+            )
+            if set(_allowed_schema_cols) != set(_all_schema_cols):
+                schema = {col: schema[col] for col in _allowed_schema_cols}
+
         lines = [f"Schema for '{resolved}' ({entry.source.describe()}):"]
         for col, dtype in schema.items():
             lines.append(f"  - {col}: {dtype}")
@@ -3544,9 +3603,7 @@ class DatasetManager(AbstractToolkit):
         Returns:
             Data quality report with NaN warnings and completeness metrics
         """
-        nan_warnings = self.check_dataframes_for_nans(names)
-
-        # Determine which datasets to report on
+        # Determine which datasets to report on.
         if names:
             check_names = [self._resolve_name(n) for n in names]
         else:
@@ -3555,18 +3612,43 @@ class DatasetManager(AbstractToolkit):
                 if entry.is_active and entry.loaded
             ]
 
-        dataset_quality = {}
-        for name in check_names:
-            entry = self._datasets.get(name)
+        pctx_dq = self._get_current_pctx()
+        nan_warnings: list = []
+        dataset_quality: dict = {}
+
+        for ds_name in check_names:
+            entry = self._datasets.get(ds_name)
             if not entry or not entry.loaded:
                 continue
 
             df = entry.df
+
+            # PBAC: apply column-level filtering before computing metrics so
+            # denied column names never appear in nan_warnings or counts.
+            if self._policy_guard and pctx_dq:
+                _all_cols_dq = df.columns.tolist()
+                _allowed_cols_dq: list = await self._policy_guard.filter_columns(
+                    pctx_dq, ds_name, _all_cols_dq
+                )
+                if set(_allowed_cols_dq) != set(_all_cols_dq):
+                    df = df[_allowed_cols_dq]
+
+            # Compute NaN warnings from the (already filtered) df.
+            if not df.empty:
+                null_counts = df.isnull().sum()
+                total_rows = len(df)
+                for col_name, count in null_counts[null_counts > 0].items():
+                    pct = (count / total_rows) * 100
+                    nan_warnings.append(
+                        f"- DataFrame '{ds_name}' (column '{col_name}'): "
+                        f"Contains {count} NaNs ({pct:.1f}% of {total_rows} rows)"
+                    )
+
             total_cells = df.size
             null_cells = int(df.isnull().sum().sum())
             duplicate_rows = int(df.duplicated().sum())
 
-            dataset_quality[name] = {
+            dataset_quality[ds_name] = {
                 "rows": len(df),
                 "columns": len(df.columns),
                 "total_cells": total_cells,
