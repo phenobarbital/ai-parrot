@@ -684,3 +684,99 @@ class TestRevokeAndIsConnected:
         )
         fake_redis.store["jira:oauth:tg:u1"] = token.model_dump_json()
         assert await manager.is_connected("tg", "u1") is True
+
+
+class TestValidateToken:
+    """Live ``/myself`` probe + auto-revoke on Atlassian rejection."""
+
+    def _seed_token(
+        self, fake_redis: _FakeRedis, *, key: str = "jira:oauth:tg:u1"
+    ) -> JiraTokenSet:
+        token = JiraTokenSet(
+            access_token="at",
+            refresh_token="rt",
+            expires_at=time.time() + 3600,
+            cloud_id="c-1",
+            site_url="https://x.atlassian.net",
+            account_id="a",
+            display_name="Test",
+        )
+        fake_redis.store[key] = token.model_dump_json()
+        return token
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_token(
+        self, manager: JiraOAuthManager
+    ) -> None:
+        assert await manager.validate_token("tg", "u1") is None
+
+    @pytest.mark.asyncio
+    async def test_returns_token_when_probe_ok(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        self._seed_token(fake_redis)
+        manager._http = _mock_session(_mock_response(200, json_data={"accountId": "a"}))
+
+        result = await manager.validate_token("tg", "u1")
+
+        assert result is not None
+        assert result.access_token == "at"
+        # Token still present — a successful probe must NOT revoke.
+        assert "jira:oauth:tg:u1" in fake_redis.store
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [401, 403])
+    async def test_revokes_when_atlassian_rejects(
+        self,
+        manager: JiraOAuthManager,
+        fake_redis: _FakeRedis,
+        status: int,
+    ) -> None:
+        self._seed_token(fake_redis)
+        manager._http = _mock_session(_mock_response(status, text_data="rejected"))
+
+        result = await manager.validate_token("tg", "u1")
+
+        assert result is None
+        # Token deleted from Redis so the next /jira_status reports
+        # "not connected" and /connect_jira can issue a fresh URL.
+        assert "jira:oauth:tg:u1" not in fake_redis.store
+        assert "jira:oauth:tg:u1" in fake_redis.deleted
+
+    @pytest.mark.asyncio
+    async def test_transport_failure_keeps_token(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        # A network outage must not auto-disconnect users — we cannot
+        # tell a transient blip from a real revocation, so the cached
+        # token is returned unchanged and Redis is left untouched.
+        import aiohttp
+
+        seeded = self._seed_token(fake_redis)
+        session = MagicMock()
+        session.closed = False
+        session.get.side_effect = aiohttp.ClientError("boom")
+        manager._http = session
+
+        result = await manager.validate_token("tg", "u1")
+
+        assert result is not None
+        assert result.access_token == seeded.access_token
+        assert "jira:oauth:tg:u1" in fake_redis.store
+        assert "jira:oauth:tg:u1" not in fake_redis.deleted
+
+    @pytest.mark.asyncio
+    async def test_refresh_failure_returns_none_without_double_revoke(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        # _refresh_tokens raises PermissionError after revoking on a 401
+        # refresh response; validate_token must absorb that and return
+        # None instead of bubbling the exception up to handlers.
+        async def _raise(*args, **kwargs):
+            raise PermissionError("refresh rejected")
+
+        manager.get_valid_token = _raise  # type: ignore[assignment]
+
+        result = await manager.validate_token("tg", "u1")
+
+        assert result is None
