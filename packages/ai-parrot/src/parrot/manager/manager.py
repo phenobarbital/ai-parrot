@@ -814,6 +814,320 @@ class BotManager:
         """Remove a Bot by name."""
         del self._bots[str(agent.chatbot_id)]
 
+    # ------------------------------------------------------------------
+    # Ephemeral user-bot lifecycle (FEAT-149)
+    # ------------------------------------------------------------------
+
+    @property
+    def _ephemeral_registry(self):
+        """Lazy-initialised EphemeralRegistry singleton on this manager instance."""
+        try:
+            return self.__ephemeral_registry  # type: ignore[attr-defined]
+        except AttributeError:
+            from ..manager.ephemeral import EphemeralRegistry  # noqa: PLC0415
+            self.__ephemeral_registry = EphemeralRegistry()
+            return self.__ephemeral_registry
+
+    async def create_ephemeral_user_bot(
+        self,
+        user_id: int,
+        config: Dict[str, Any],
+        uploaded_paths: List[dict],
+        *,
+        ttl_seconds: int = 86400,
+    ):
+        """Create an ephemeral (in-memory-only) user bot and schedule warm-up.
+
+        No row is written to ``navigator.users_bots``. The bot lives only in
+        ``self._bots`` until it is either promoted (``promote_user_bot``) or
+        discarded (``discard_ephemeral_user_bot`` / TTL expiry).
+
+        Args:
+            user_id: Owning user ID.
+            config: Dict matching the UserBotModel field names (plain values;
+                ``mcp_config_plain`` / ``tools_config_plain`` are the raw lists).
+            uploaded_paths: List of document dicts from ``_ingest_uploads``
+                (``[{name, path, url, size, ...}]``).
+            ttl_seconds: Seconds until this ephemeral bot expires.  Defaults to
+                86400 (24 h).
+
+        Returns:
+            EphemeralAgentStatus with ``phase="creating"`` and the new
+            ``chatbot_id``.
+
+        Raises:
+            ValueError: On invalid config or instantiation failure.
+        """
+        import uuid as _uuid  # noqa: PLC0415
+        from datetime import datetime, timedelta  # noqa: PLC0415
+        from ..manager.ephemeral import EphemeralAgentStatus, _warm_up  # noqa: PLC0415
+
+        # Build UserBotModel in memory — no DB write.
+        chatbot_id = _uuid.uuid4()
+        try:
+            plain = {k: v for k, v in config.items()
+                     if k not in ("mcp_config", "tools_config",
+                                  "mcp_config_plain", "tools_config_plain")}
+            model = UserBotModel(
+                chatbot_id=chatbot_id,
+                user_id=user_id,
+                documents=list(uploaded_paths),
+                **plain,
+            )
+            mcp_cfg = config.get("mcp_config_plain") or config.get("mcp_config")
+            tools_cfg = config.get("tools_config_plain") or config.get("tools_config")
+            if mcp_cfg is not None:
+                model.set_mcp_config(mcp_cfg)
+            if tools_cfg is not None:
+                model.set_tools_config(tools_cfg)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "create_ephemeral_user_bot: failed to build UserBotModel "
+                "for user %s: %s",
+                user_id, exc, exc_info=True,
+            )
+            raise ValueError(f"Invalid ephemeral bot configuration: {exc}") from exc
+
+        # Instantiate bot (without configure — warm-up handles that).
+        try:
+            kwargs = model.to_bot_kwargs()
+            bot = BasicBot(**kwargs)
+            bot.model_id = model.chatbot_id
+            prompt_config_dict = model.prompt_config or {}
+            with contextlib.suppress(Exception):
+                self._apply_prompt_config(bot, prompt_config_dict)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "create_ephemeral_user_bot: failed to instantiate bot for "
+                "user %s: %s",
+                user_id, exc, exc_info=True,
+            )
+            raise ValueError(f"Could not instantiate ephemeral bot: {exc}") from exc
+
+        # Register in BotManager._bots (keyed by chatbot_id string).
+        self.add_agent(bot)
+
+        # Create EphemeralAgentStatus with rag_mode derived from vector_config.
+        now = datetime.utcnow()
+        rag_mode = None
+        vector_config = config.get("vector_config") or {}
+        if isinstance(vector_config, dict):
+            rag_mode = vector_config.get("rag_mode")
+
+        status = EphemeralAgentStatus(
+            chatbot_id=str(chatbot_id),
+            user_id=user_id,
+            phase="creating",
+            created_at=now,
+            expires_at=now + timedelta(seconds=ttl_seconds),
+            rag_mode=rag_mode,
+        )
+        self._ephemeral_registry.register(status)
+
+        # Fire-and-forget warm-up (completes async in background).
+        if self.app is not None:
+            asyncio.create_task(_warm_up(bot, status, self.app))
+        else:
+            # No app context yet (test / standalone scenario) — mark ready immediately.
+            status.phase = "ready"
+
+        self.logger.info(
+            "create_ephemeral_user_bot: created ephemeral bot %s for user %s",
+            chatbot_id,
+            user_id,
+        )
+        return status
+
+    async def save_user_bot(
+        self,
+        model: "UserBotModel",
+    ) -> "UserBotModel":
+        """INSERT a ``UserBotModel`` row into ``navigator.users_bots``.
+
+        This is the user-bot analogue of :meth:`save_agent`, which writes
+        ``navigator.ai_bots`` via ``BotModel``.  Do NOT use ``save_agent``
+        for user bots — the tables are different.
+
+        Used by :meth:`promote_user_bot` and reusable for any flow that needs
+        to persist a ``UserBotModel`` from within BotManager.
+
+        Args:
+            model: A fully-populated ``UserBotModel`` instance (encrypted blobs
+                already set via ``set_mcp_config`` / ``set_tools_config``).
+
+        Returns:
+            The same ``model`` after it has been persisted to DB.
+
+        Raises:
+            RuntimeError: If ``self.app`` is not set (no DB available).
+        """
+        if self.app is None:
+            raise RuntimeError(
+                "save_user_bot: BotManager has no app context (DB unavailable)."
+            )
+        db = self.app["database"]
+        async with await db.acquire() as conn:
+            UserBotModel.Meta.connection = conn
+            await model.insert()
+        self.logger.info(
+            "save_user_bot: inserted UserBotModel chatbot_id=%s for user %s",
+            model.chatbot_id,
+            model.user_id,
+        )
+        return model
+
+    async def promote_user_bot(
+        self,
+        chatbot_id: str,
+        user_id: int,
+    ) -> "UserBotModel":
+        """Promote an ephemeral bot to a persisted ``navigator.users_bots`` row.
+
+        Verifies the bot is in ``phase="ready"``, writes the DB row via
+        :meth:`save_user_bot`, removes the ephemeral registry entry, and
+        optionally dumps the FAISS index to S3 if ``rag_mode == "vector"``.
+
+        Args:
+            chatbot_id: Canonical UUID string of the bot to promote.
+            user_id: Owning user ID (ownership check).
+
+        Returns:
+            The persisted ``UserBotModel``.
+
+        Raises:
+            ValueError: If the bot is not found, not owned by ``user_id``,
+                already promoted, or not in ``phase="ready"``.
+        """
+        import uuid as _uuid  # noqa: PLC0415
+
+        status = self._ephemeral_registry.get(chatbot_id, user_id)
+        if status is None:
+            raise ValueError(
+                f"promote_user_bot: no ephemeral bot {chatbot_id!r} for user {user_id} "
+                "(already promoted or never created)."
+            )
+        if status.phase != "ready":
+            raise ValueError(
+                f"promote_user_bot: bot {chatbot_id!r} is in phase={status.phase!r}, "
+                "must be 'ready' to promote (409)."
+            )
+
+        # Fetch the in-memory bot instance.
+        bot = self._bots.get(chatbot_id)
+        if bot is None:
+            raise ValueError(
+                f"promote_user_bot: bot {chatbot_id!r} not found in active bots."
+            )
+
+        # Build the UserBotModel from the bot's state for DB persistence.
+        _BOT_FIELDS = (
+            "name", "description", "avatar", "enabled", "timezone",
+            "role", "goal", "backstory", "rationale", "capabilities",
+            "prompt_config", "system_prompt_template", "human_prompt_template",
+            "pre_instructions", "llm", "model_config", "use_vector",
+            "vector_config", "documents", "context_search_limit",
+            "context_score_threshold", "tools_enabled", "auto_tool_detection",
+            "tool_threshold", "operation_mode", "memory_type", "memory_config",
+            "max_context_turns", "use_conversation_history", "permissions",
+            "language", "disclaimer",
+        )
+        try:
+            field_values = {
+                k: getattr(bot, k)
+                for k in _BOT_FIELDS
+                if getattr(bot, k, None) is not None
+            }
+            model = UserBotModel(
+                chatbot_id=_uuid.UUID(chatbot_id),
+                user_id=user_id,
+                **field_values,
+            )
+            # Preserve encrypted blobs from the bot instance.
+            if getattr(bot, "mcp_config", None) is not None:
+                model.mcp_config = bot.mcp_config  # already encrypted
+            if getattr(bot, "tools_config", None) is not None:
+                model.tools_config = bot.tools_config  # already encrypted
+
+            # If vector mode: dump FAISS to S3 and store path.
+            faiss_store = getattr(bot, "_ephemeral_faiss_store", None)
+            if faiss_store is not None and status.rag_mode == "vector":
+                try:
+                    from ...tools.filemanager import FileManagerToolkit  # noqa: PLC0415
+                    import os as _os  # noqa: PLC0415
+                    bucket = _os.environ.get("S3_BUCKET") or _os.environ.get("AWS_S3_BUCKET")
+                    if bucket:
+                        fm = FileManagerToolkit(manager_type="s3", bucket=bucket)
+                    else:
+                        fm = FileManagerToolkit(manager_type="fs")
+                    s3_path = await faiss_store.dump_to_s3(chatbot_id, fm)
+                    vc = dict(model.vector_config or {})
+                    vc["faiss_persist_path"] = s3_path
+                    model.vector_config = vc
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning(
+                        "promote_user_bot: FAISS dump failed for %s: %s",
+                        chatbot_id, exc,
+                    )
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError(
+                f"promote_user_bot: failed to build UserBotModel for {chatbot_id!r}: {exc}"
+            ) from exc
+
+        # Persist to DB via save_user_bot.
+        await self.save_user_bot(model)
+
+        # Remove from ephemeral registry (bot remains accessible in _bots via normal path).
+        self._ephemeral_registry.remove(chatbot_id)
+
+        self.logger.info(
+            "promote_user_bot: promoted ephemeral bot %s for user %s",
+            chatbot_id,
+            user_id,
+        )
+        return model
+
+    def get_ephemeral_status(
+        self,
+        chatbot_id: str,
+        user_id: int,
+    ):
+        """Return the ``EphemeralAgentStatus`` for *chatbot_id* owned by *user_id*.
+
+        Args:
+            chatbot_id: Canonical UUID string.
+            user_id: Owning user ID (enforces ownership check).
+
+        Returns:
+            The ``EphemeralAgentStatus`` or ``None`` if not found / wrong owner.
+        """
+        return self._ephemeral_registry.get(chatbot_id, user_id)
+
+    async def discard_ephemeral_user_bot(
+        self,
+        chatbot_id: str,
+        user_id: int,
+    ) -> bool:
+        """Remove an ephemeral bot from memory and clean up its resources.
+
+        Args:
+            chatbot_id: Canonical UUID string.
+            user_id: Must match the owning user (ownership check).
+
+        Returns:
+            ``True`` if the bot was found and removed, ``False`` otherwise.
+        """
+        status = self._ephemeral_registry.get(chatbot_id, user_id)
+        if status is None:
+            return False
+        self._ephemeral_registry.remove(chatbot_id)
+        self._bots.pop(chatbot_id, None)
+        self.logger.info(
+            "discard_ephemeral_user_bot: discarded %s for user %s",
+            chatbot_id,
+            user_id,
+        )
+        return True
+
     async def save_agent(self, name: str, **kwargs) -> None:
         """Save a Agent to the DB."""
         self.logger.info(f"Saving Agent {name} into DB ...")
@@ -1227,6 +1541,25 @@ Available documentation UIs:
                         f"Active bots: {len(self._bots)}, "
                         f"Tracked expirations: {len(self._bot_expiration)}"
                     )
+
+                # Sweep expired ephemeral bots (FEAT-149).
+                try:
+                    expired_ephemerals = self._ephemeral_registry.get_expired()
+                    for cid in expired_ephemerals:
+                        try:
+                            self._ephemeral_registry.remove(cid)
+                            self._bots.pop(cid, None)
+                            self.logger.info(
+                                "Swept expired ephemeral bot: %s", cid
+                            )
+                        except Exception as sweep_exc:  # noqa: BLE001
+                            self.logger.error(
+                                "Error sweeping ephemeral bot %s: %s",
+                                cid, sweep_exc,
+                            )
+                except Exception:  # noqa: BLE001
+                    pass  # _ephemeral_registry may not exist yet if no ephemeral bots created
+
             except asyncio.CancelledError:
                 self.logger.info("Cleanup task cancelled")
                 raise
