@@ -226,4 +226,18 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (claude-sonnet-4-6) on 2026-05-07.
+
+Created `test_user_bots_pbac_exempt.py` with one regression test:
+`test_user_bot_path_unaffected_by_agent_policies`. The test:
+  1. Builds a BotManager with a deny-all PBAC evaluator.
+  2. Mocks `_fetch_user_bot_model` and `_build_user_bot_instance` for hermeticity.
+  3. Provides a request mock with `.session` pre-set (avoids need for navigator_session).
+  4. Calls `get_user_bot(req, cid)` and asserts the bot is returned.
+  5. Asserts `evaluator.check_access` was never called.
+
+Also installed a minimal `navigator_session` stub so the lazy import inside
+`get_user_bot` succeeds; the stub's `get_session` is never called because
+`request.session` is truthy.
+
+No production code was modified. Test passes. ruff reports no errors.
