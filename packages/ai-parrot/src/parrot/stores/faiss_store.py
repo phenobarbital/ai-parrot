@@ -1157,3 +1157,101 @@ class FAISSStore(AbstractStore):
                 to_delete_ids.append(doc_id)
 
         await self.delete_documents(to_delete_ids, collection=collection, **kwargs)
+
+    # ------------------------------------------------------------------
+    # S3 persistence helpers (FEAT-149)
+    # ------------------------------------------------------------------
+
+    async def dump_to_s3(self, key: str, file_manager) -> str:
+        """Serialize the FAISS index to a temp file and upload to S3.
+
+        The store is saved using the existing :meth:`save` method (pickle +
+        per-collection ``.index`` files), then bundled into a tarball and
+        uploaded via ``file_manager.upload_file``.
+
+        Args:
+            key: S3 object key prefix (e.g. a ``chatbot_id`` string).
+                The actual filename will be ``{key}.faiss``.
+            file_manager: A ``FileManagerToolkit`` instance exposing
+                ``upload_file(source_path, destination, destination_name)``.
+
+        Returns:
+            The S3 path string returned by ``upload_file`` (``result["path"]``).
+        """
+        import tempfile  # noqa: PLC0415
+        import tarfile as _tarfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = _Path(tmpdir)
+            # Save the store (creates {key}.faiss and {key}_{coll}.index files)
+            pickle_path = base / f"{key}.faiss"
+            self.save(pickle_path)
+
+            # Bundle everything in tmpdir into a single tarball for upload.
+            tar_name = f"{key}.faiss.tar.gz"
+            tar_path = base / tar_name
+            with _tarfile.open(str(tar_path), "w:gz") as tar:
+                for f in base.iterdir():
+                    if f.name != tar_name:  # don't include the tar itself
+                        tar.add(str(f), arcname=f.name)
+
+            result = await file_manager.upload_file(
+                source_path=str(tar_path),
+                destination=f"faiss/{key}",
+                destination_name=tar_name,
+            )
+            s3_path = result.get("path", f"faiss/{key}/{tar_name}")
+            self.logger.info("dump_to_s3: uploaded FAISS store to %s", s3_path)
+            return s3_path
+
+    @classmethod
+    async def load_from_s3(
+        cls,
+        key: str,
+        file_manager,
+        **kwargs,
+    ) -> "FAISSStore":
+        """Download a FAISS store tarball from S3 and hydrate a new instance.
+
+        Args:
+            key: S3 object path returned by :meth:`dump_to_s3`.
+            file_manager: A ``FileManagerToolkit`` instance exposing
+                ``download_file(path, destination)``.
+            **kwargs: Keyword arguments forwarded to :class:`FAISSStore.__init__`.
+
+        Returns:
+            A hydrated :class:`FAISSStore` instance.
+        """
+        import tempfile  # noqa: PLC0415
+        import tarfile as _tarfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+        import logging as _logging  # noqa: PLC0415
+
+        _log = _logging.getLogger("Parrot.FAISSStore.load_from_s3")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = _Path(tmpdir)
+            tar_path = str(base / "store.faiss.tar.gz")
+
+            await file_manager.download_file(path=key, destination=tar_path)
+
+            # Extract tar into tmpdir
+            with _tarfile.open(tar_path, "r:gz") as tar:
+                tar.extractall(str(base))
+
+            # Find the main pickle file (the one without a .index extension)
+            pickle_candidates = [
+                f for f in base.iterdir()
+                if f.suffix == ".faiss" and f.name.endswith(".faiss")
+            ]
+            if not pickle_candidates:
+                raise FileNotFoundError(
+                    f"load_from_s3: no .faiss pickle file found in downloaded archive for key {key!r}"
+                )
+            pickle_path = pickle_candidates[0]
+
+            store = cls(**kwargs)
+            store.load(str(pickle_path))
+            _log.info("load_from_s3: loaded FAISS store from %s", key)
+            return store
