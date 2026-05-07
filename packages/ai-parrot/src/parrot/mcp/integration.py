@@ -1,3 +1,4 @@
+import contextlib
 import os
 import base64
 import uuid
@@ -1724,3 +1725,51 @@ class MCPEnabledMixin:
 
         if hasattr(super(), 'shutdown'):
             await super().shutdown(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# MCP HTTP handshake validator (FEAT-149)
+# ---------------------------------------------------------------------------
+
+
+class MCPValidationError(Exception):
+    """Raised when an MCP HTTP server fails the handshake validation check.
+
+    Attributes:
+        message: Human-readable description of the failure.
+    """
+
+
+async def validate_mcp_http(config: "MCPServerConfig") -> None:
+    """Validate that an MCP HTTP server is reachable and lists its tools.
+
+    Connects to the MCP server described by *config*, retrieves the tool
+    listing once, then disconnects.  On any failure the client is always
+    disconnected before the exception propagates.
+
+    Args:
+        config: An :class:`MCPServerConfig` (``MCPClientConfig``) instance
+            describing the target MCP HTTP server (URL, auth, etc.).
+
+    Raises:
+        MCPValidationError: When the server is unreachable, times out, or
+            returns an unexpected tool-listing response.
+    """
+    client = MCPClient(config)
+    try:
+        await client.connect()
+        tools = await client.get_available_tools()
+        if not isinstance(tools, list):
+            raise MCPValidationError(
+                f"MCP handshake failed for {getattr(config, 'url', config)!r}: "
+                "unexpected tool listing response (expected list)"
+            )
+    except MCPValidationError:
+        raise
+    except Exception as exc:
+        raise MCPValidationError(
+            f"MCP handshake failed for {getattr(config, 'url', config)!r}: {exc}"
+        ) from exc
+    finally:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
