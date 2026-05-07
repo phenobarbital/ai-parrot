@@ -47,7 +47,7 @@ from parrot.conf import (
     JIRA_CLIENT_SECRET,
     JIRA_REDIRECT_URI,
 )
-# from parrot_formdesigner.handlers import setup_form_routes
+from parrot_formdesigner.handlers import setup_form_routes
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 
 

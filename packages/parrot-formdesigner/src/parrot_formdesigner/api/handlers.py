@@ -1,11 +1,10 @@
 """JSON REST API handlers for parrot-formdesigner.
 
-Serves the form builder REST API: create, list, get schema, get HTML, validate, load from DB.
+Serves the form builder REST API: create, list, get schema, validate, load
+from DB. HTML rendering moved to the render dispatcher in ``api/render.py``.
 
-All endpoints are protected by navigator-auth session authentication when the
-``navigator-auth`` package is installed. Authentication is applied at route
-registration time in ``routes.py``. When running standalone (without navigator-auth)
-the API is open — useful for local development.
+All endpoints are protected by navigator-auth session authentication via
+``api/routes.py`` (hard import — see FEAT-152).
 """
 
 from __future__ import annotations
@@ -18,100 +17,24 @@ from aiohttp import web
 from pydantic import ValidationError
 
 from ..core.schema import FormSchema, RenderedForm
-from ..renderers.html5 import HTML5Renderer
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
+from ._utils import _bump_version, _deep_merge, _loc_to_str
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+
     from ..services.forwarder import SubmissionForwarder
     from ..services.submissions import FormSubmissionStorage
-
-
-# ---------------------------------------------------------------------------
-# Module-level utility functions
-# ---------------------------------------------------------------------------
-
-def _deep_merge(base: dict, patch: dict) -> dict:
-    """RFC 7396 JSON merge-patch: recursively merge patch onto base.
-
-    Rules:
-    - ``dict`` values are merged recursively.
-    - ``None`` (null) values remove the corresponding key from the base.
-    - All other values (including lists) replace the base value entirely.
-
-    Args:
-        base: The original dict to merge into.
-        patch: The partial update to apply.
-
-    Returns:
-        A new dict with the patch applied to the base.
-    """
-    result = base.copy()
-    for key, value in patch.items():
-        if value is None:
-            result.pop(key, None)
-        elif isinstance(value, dict) and isinstance(result.get(key), dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
-
-
-def _loc_to_str(value: object) -> str | None:
-    """Flatten a LocalizedString (str | dict[str, str]) to a plain str.
-
-    Mirrors the title-extraction pattern used in
-    ``PostgresFormStorage.list_forms`` so the API and storage layers
-    agree on rendering.
-
-    Args:
-        value: Raw value — string, ``{lang: text}`` dict, or ``None``.
-
-    Returns:
-        Plain string if a non-empty value was provided; ``None`` if the
-        input is ``None``, an empty string/dict, or any falsy scalar
-        value (e.g., ``0``, ``False``).
-    """
-    if value is None:
-        return None
-    if isinstance(value, dict):
-        value = next(iter(value.values()), None)
-    if not value:
-        return None
-    return str(value)
-
-
-def _bump_version(version: str) -> str:
-    """Increment the minor component of a version string.
-
-    Examples:
-        ``"1.0"`` → ``"1.1"``
-        ``"1.5"`` → ``"1.6"``
-        ``"1"`` → ``"1.1"``
-        ``"1.2.3"`` → ``"1.2.4"``
-
-    Args:
-        version: Current version string.
-
-    Returns:
-        Version string with the last numeric component incremented by 1.
-    """
-    parts = version.split(".")
-    if len(parts) >= 2:
-        parts[-1] = str(int(parts[-1]) + 1)
-    else:
-        parts.append("1")
-    return ".".join(parts)
 
 
 class FormAPIHandler:
     """Serves JSON REST API endpoints for form management.
 
-    All 8 API routes are protected by navigator-auth session authentication
-    when the ``navigator-auth`` package is installed. The decorators are applied
-    at route-registration time in ``routes.py`` to avoid a hard import dependency.
+    All API routes are protected by navigator-auth session authentication.
+    The decorators are applied at route-registration time in
+    ``api/routes.py``.
 
     User identity context (``org_id``, ``programs``) is extracted from the
     authenticated session via the :meth:`_get_org_id` and :meth:`_get_programs`
@@ -120,6 +43,8 @@ class FormAPIHandler:
     Args:
         registry: FormRegistry instance for storing and retrieving forms.
         client: Optional LLM client for natural language form creation.
+        submission_storage: Optional storage backend for form submissions.
+        forwarder: Optional submission forwarder for endpoint-bound submits.
     """
 
     def __init__(
@@ -133,7 +58,6 @@ class FormAPIHandler:
         self._client = client
         self._submission_storage = submission_storage
         self._forwarder = forwarder
-        self.html_renderer = HTML5Renderer()
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
         self.logger = logging.getLogger(__name__)
@@ -282,14 +206,7 @@ class FormAPIHandler:
         return web.json_response({"forms": forms})
 
     async def get_form(self, request: web.Request) -> web.Response:
-        """GET /api/forms/{form_id} — Get full FormSchema as JSON.
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            JSON response with the full FormSchema dict, or 404.
-        """
+        """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -297,14 +214,7 @@ class FormAPIHandler:
         return web.json_response(form.model_dump())
 
     async def get_schema(self, request: web.Request) -> web.Response:
-        """GET /api/forms/{form_id}/schema — Get JSON Schema (structural).
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            JSON Schema dict for the form, or 404.
-        """
+        """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -313,14 +223,7 @@ class FormAPIHandler:
         return web.json_response(rendered.content)
 
     async def get_style(self, request: web.Request) -> web.Response:
-        """GET /api/forms/{form_id}/style — Get style schema.
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            JSON response with style schema dict, or 404.
-        """
+        """GET /api/v1/forms/{form_id}/style — Get style schema."""
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -328,31 +231,8 @@ class FormAPIHandler:
         style = form.meta.get("style") if form.meta else None
         return web.json_response(style or {})
 
-    async def get_html(self, request: web.Request) -> web.Response:
-        """GET /api/forms/{form_id}/html — Render HTML5 form.
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            HTML string response with rendered form, or 404.
-        """
-        form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
-        if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
-        rendered = await self.html_renderer.render(form)
-        return web.Response(text=rendered.content, content_type="text/html")
-
     async def validate(self, request: web.Request) -> web.Response:
-        """POST /api/forms/{form_id}/validate — Validate form submission.
-
-        Args:
-            request: Incoming HTTP request with JSON submission data.
-
-        Returns:
-            JSON response with ``is_valid`` flag and ``errors`` dict.
-        """
+        """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -370,14 +250,7 @@ class FormAPIHandler:
         )
 
     async def create_form(self, request: web.Request) -> web.Response:
-        """POST /api/forms — Create a form from a natural language prompt.
-
-        Args:
-            request: Incoming HTTP request with JSON body ``{"prompt": "..."}``.
-
-        Returns:
-            JSON response with ``form_id``, ``title``, and ``url`` on success.
-        """
+        """POST /api/v1/forms — Create a form from a natural language prompt."""
         # _create_tool was initialised with the client available at construction
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
@@ -425,12 +298,6 @@ class FormAPIHandler:
         must match the ``form_id`` in the body. Runs structural validation via
         ``FormValidator.check_schema()`` before persisting. Automatically bumps
         the form version.
-
-        Args:
-            request: Incoming HTTP request with a complete ``FormSchema`` body.
-
-        Returns:
-            JSON response with the updated ``FormSchema``, or an error status.
         """
         form_id = request.match_info["form_id"]
         existing = await self.registry.get(form_id)
@@ -472,12 +339,6 @@ class FormAPIHandler:
         Arrays (sections, fields) are replaced entirely — not merged
         element-by-element. ``form_id`` cannot be changed via PATCH.
         Runs structural validation after merging. Automatically bumps version.
-
-        Args:
-            request: Incoming HTTP request with a partial ``FormSchema`` body.
-
-        Returns:
-            JSON response with the updated ``FormSchema``, or an error status.
         """
         form_id = request.match_info["form_id"]
         existing = await self.registry.get(form_id)
@@ -527,13 +388,6 @@ class FormAPIHandler:
         5. Forward to endpoint if form has an ``endpoint`` submit action and
            ``forwarder`` is configured.
         6. Return composite result — always 200, even when forwarding fails.
-
-        Args:
-            request: Incoming HTTP request with submission data.
-
-        Returns:
-            JSON response with ``submission_id``, ``is_valid``, ``forwarded``,
-            ``forward_status``, and ``forward_error``.
         """
         import uuid
         from datetime import datetime, timezone
@@ -608,19 +462,12 @@ class FormAPIHandler:
         })
 
     async def load_from_db(self, request: web.Request) -> web.Response:
-        """POST /api/forms/from-db — Load a form from database definition.
+        """POST /api/v1/forms/from-db — Load a form from database definition.
 
         The ``orgid`` in the request body is optional. When omitted, the
         ``org_id`` is extracted from the authenticated user's session via
         :meth:`_get_org_id`. If neither the body nor the session provides an
         ``org_id``, the request is rejected with a 400 error.
-
-        Args:
-            request: Incoming HTTP request with JSON body ``{"formid": int}``
-                or ``{"formid": int, "orgid": int}``.
-
-        Returns:
-            JSON response with ``form_id``, ``title``, and ``url`` on success.
         """
         try:
             body = await request.json()

@@ -1,0 +1,190 @@
+{
+  "feature": "formdesigner-refactor",
+  "feature_id": "FEAT-152",
+  "spec": "sdd/specs/formdesigner-refactor.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-07T00:00:00Z",
+  "completed_at": "2026-05-07T13:46:02+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1040",
+      "slug": "formdesigner-promote-hard-deps",
+      "title": "Promote navigator-auth, lxml, reportlab to hard deps + bump to 0.2.0",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Wave 1 step 1. Mechanical pyproject + version bump. Must run before any other Wave 1 task because Wave 1 code presumes hard imports of these deps.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T11:24:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1040-formdesigner-promote-hard-deps.md"
+    },
+    {
+      "id": "TASK-1041",
+      "slug": "formdesigner-controls-package",
+      "title": "Build parrot_formdesigner.controls package (registry + builtin seed)",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1040"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wave 1. Sequential before TASK-1042 because the api/ package imports controls.builtin at __init__ time.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T11:29:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1041-formdesigner-controls-package.md"
+    },
+    {
+      "id": "TASK-1042",
+      "slug": "formdesigner-api-package",
+      "title": "Build parrot_formdesigner.api package — REST surface with hard navigator-auth",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1041"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wave 1. Single largest task. Migrates handlers/api.py + handlers/routes.py REST half, introduces render dispatcher, wires controls registry + 501 stub for /operations. Sequential — every later Wave 1 + Wave 2 task imports from api/.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:25:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1042-formdesigner-api-package.md"
+    },
+    {
+      "id": "TASK-1043",
+      "slug": "formdesigner-ui-package",
+      "title": "Build parrot_formdesigner.ui package — HTML pages + Telegram WebApp",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1042"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wave 1. UI package migration (templates, FormPageHandler, TelegramWebAppHandler, setup_form_ui). File-disjoint from TASK-1042 but both share the handlers/ source folder, and we keep Wave 1 strictly sequential to avoid worktree merge conflicts.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:27:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1043-formdesigner-ui-package.md"
+    },
+    {
+      "id": "TASK-1044",
+      "slug": "formdesigner-empty-init-and-delete-handlers",
+      "title": "Empty parrot_formdesigner/__init__.py and delete handlers/",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1042",
+        "TASK-1043"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wave 1 final task. Deletes the dead handlers/ folder, rewrites __init__.py to metadata-only, adds the sys.modules snapshot test that future tasks must keep green. MUST run last in Wave 1.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:32:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1044-formdesigner-empty-init-and-delete-handlers.md"
+    },
+    {
+      "id": "TASK-1045",
+      "slug": "formdesigner-xforms-renderer",
+      "title": "XForms 1.1 renderer with xf:bind constraint expressions",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1044"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Wave 2a. Touches renderers/xforms.py (new) and api/render.py (lazy-seed dict mutation). The api/render.py edit overlaps with TASK-1046's wiring; coordinate via lazy _seed_renderers() pattern documented in both task files. Per Q5: includes xf:bind constraint expressions (overrides spec Module 6 'structural only' wording).",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1045-formdesigner-xforms-renderer.md"
+    },
+    {
+      "id": "TASK-1046",
+      "slug": "formdesigner-pdf-renderer",
+      "title": "PDF AcroForm fillable renderer (reportlab)",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1044"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Wave 2b. Touches renderers/pdf.py (new), api/render.py (lazy-seed dict mutation), pyproject.toml test extras (pypdf). Overlaps with TASK-1045 on api/render.py only — minor merge, both follow the lazy-seed pattern.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:38:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1046-formdesigner-pdf-renderer.md"
+    },
+    {
+      "id": "TASK-1047",
+      "slug": "formdesigner-controls-rest-contract",
+      "title": "Form-controls REST contract tests + extension hooks",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1044"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Wave 2c. Adds contract tests + JSON Schema fixture + a docstring update on controls/registry.py. Touches no api/render.py wiring; fully disjoint from TASK-1045/1046/1048 in source files.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:40:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1047-formdesigner-controls-rest-contract.md"
+    },
+    {
+      "id": "TASK-1048",
+      "slug": "formdesigner-edit-operations",
+      "title": "PATCH /api/v1/forms/{id}/operations — atomic batched edit API",
+      "feature_id": "FEAT-152",
+      "feature": "formdesigner-refactor",
+      "spec": "sdd/specs/formdesigner-refactor.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1044"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Wave 2d. Replaces the 501 stub at api/operations.py created by TASK-1042. File-disjoint from TASK-1045/1046/1047. Includes Q1 If-Match concurrency support.",
+      "assigned_to": null,
+      "started_at": "2026-05-07T11:18:48+00:00",
+      "completed_at": "2026-05-07T13:46:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1048-formdesigner-edit-operations.md"
+    }
+  ]
+}
