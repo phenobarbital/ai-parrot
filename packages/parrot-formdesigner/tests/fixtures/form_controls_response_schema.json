@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parrot-formdesigner.example.com/schemas/form-controls-response.json",
+  "title": "FormControlsResponse",
+  "description": "Response payload for `GET /api/v1/form-controls`. Returned by parrot-formdesigner's API for the toolbar palette.",
+  "type": "object",
+  "required": ["controls"],
+  "additionalProperties": false,
+  "properties": {
+    "controls": {
+      "type": "array",
+      "description": "Registered form-control entries, in registration order.",
+      "items": {
+        "$ref": "#/$defs/FieldControlMetadata"
+      }
+    }
+  },
+  "$defs": {
+    "FieldControlMetadata": {
+      "type": "object",
+      "description": "Single form-control toolbar entry.",
+      "required": [
+        "type",
+        "label",
+        "description",
+        "category",
+        "icon",
+        "snippet",
+        "render_hint",
+        "supports_constraints",
+        "is_container"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Canonical id (FieldType.value or extension type id)."
+        },
+        "label": {
+          "type": "string",
+          "description": "Short human-readable name."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description shown in the toolbar tooltip / help."
+        },
+        "category": {
+          "type": "string",
+          "description": "Grouping bucket (basic, selection, media, layout, advanced, ...).",
+          "enum": ["basic", "selection", "media", "layout", "advanced"]
+        },
+        "icon": {
+          "type": "string",
+          "description": "Consumer-defined glyph name."
+        },
+        "snippet": {
+          "type": "object",
+          "description": "JSON Schema snippet seed."
+        },
+        "render_hint": {
+          "type": "string",
+          "description": "UI hint such as input | select | container."
+        },
+        "supports_constraints": {
+          "type": "boolean",
+          "description": "Whether the control supports validation constraints."
+        },
+        "is_container": {
+          "type": "boolean",
+          "description": "Whether the control nests other fields (groups, arrays)."
+        }
+      }
+    }
+  }
+}

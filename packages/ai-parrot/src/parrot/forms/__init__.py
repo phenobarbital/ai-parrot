@@ -4,16 +4,68 @@ This module is a backward-compatible re-export shim. All form functionality
 has been moved to the `parrot-formdesigner` package (parrot_formdesigner.*).
 
 Existing imports from parrot.forms continue to work unchanged.
+
+Updated for FEAT-152: ``parrot_formdesigner`` no longer re-exports symbols
+at the top level. We now import from the explicit submodules.
 """
 
-# Re-export everything from parrot_formdesigner for backward compatibility.
+# Re-export from parrot_formdesigner submodules for backward compatibility.
 # No deprecation warnings per spec decision (non-production feature).
 try:
-    from parrot_formdesigner import *  # noqa: F401, F403
-    from parrot_formdesigner import __all__  # noqa: F401
-    # Also expose ValidationResult and FormStorage which are used by consumers
-    from parrot_formdesigner.services.validators import ValidationResult  # noqa: F401
-    from parrot_formdesigner.services.registry import FormStorage  # noqa: F401
+    from parrot_formdesigner.core import (  # noqa: F401
+        ApiKeyAuth,
+        AuthConfig,
+        BearerAuth,
+        ConditionOperator,
+        DependencyRule,
+        FieldCondition,
+        FieldConstraints,
+        FieldOption,
+        FieldSizeHint,
+        FieldStyleHint,
+        FieldType,
+        FormField,
+        FormSchema,
+        FormSection,
+        FormStyle,
+        LayoutType,
+        LocalizedString,
+        NoAuth,
+        OptionsSource,
+        RenderedForm,
+        StyleSchema,
+        SubmitAction,
+    )
+    from parrot_formdesigner.extractors import (  # noqa: F401
+        JSONSchemaExtractor,
+        PydanticExtractor,
+        ToolExtractor,
+        YAMLExtractor,
+    )
+    from parrot_formdesigner.renderers import (  # noqa: F401
+        AdaptiveCardRenderer,
+        HTML5Renderer,
+        JsonSchemaRenderer,
+    )
+    from parrot_formdesigner.services import (  # noqa: F401
+        FormCache,
+        ForwardResult,
+        FormRegistry,
+        FormStorage,
+        FormSubmission,
+        FormSubmissionStorage,
+        FormValidator,
+        PostgresFormStorage,
+        SubmissionForwarder,
+        ValidationResult,
+    )
+    from parrot_formdesigner.tools import (  # noqa: F401
+        CreateFormTool,
+        DatabaseFormTool,
+        RequestFormTool,
+        get_form_field_schema_snippets,
+        list_supported_form_field_types,
+    )
 except ImportError:
     # parrot-formdesigner not installed — fall back to local definitions
     from .constraints import (  # noqa: F401
@@ -34,4 +86,3 @@ except ImportError:
     from .tools.request_form import RequestFormTool  # noqa: F401
     from .tools.create_form import CreateFormTool  # noqa: F401
     from .tools.database_form import DatabaseFormTool  # noqa: F401
-
