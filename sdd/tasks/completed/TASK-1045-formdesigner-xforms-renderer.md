@@ -375,3 +375,14 @@ async def test_constraint_min_max(simple_form):
 **Completed by**:
 **Date**:
 **Notes**:
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-05-07
+**Notes**:
+- Created `parrot_formdesigner/renderers/xforms.py` with `XFormsRenderer(AbstractFormRenderer)`. Output is `RenderedForm(content=<bytes>, content_type="application/xml")`, pretty-printed with `xmlns:xf` and `xmlns:xs` namespaces.
+- Field-type → XForms mapping per spec (TEXT → `<xf:input>`, SELECT → `<xf:select1>`, MULTI_SELECT → `<xf:select>`, FILE/IMAGE → `<xf:upload>`, GROUP → `<xf:group>`, ARRAY → `<xf:repeat>`, etc.).
+- **Q5 RESOLVED**: emits `<xf:bind>` constraint expressions derived from `FieldConstraints` (min/max length → `string-length(.) >= N`, min/max value → `. >= N`, pattern → `regex(., '...')`, multiple constraints joined by ` and `).
+- `<xf:bind>` also emits `required="true()"`, `readonly="true()"`, `type="xs:<type>"`, and `relevant="<xpath>"` for simple `field_id == value` dependencies (more complex AND/OR trees are skipped with a `logger.debug`).
+- Wired into `api/render.py:_seed_default_renderers` under the `"xml"` key (lazy import to avoid circular dependency).
+- All 13 unit tests pass; 1 integration test passes (`tests/integration/test_render_xml.py`).
+- Metadata-only init contract (TASK-1044) verified still green.

@@ -113,7 +113,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Wave 2a. Touches renderers/xforms.py (new) and api/render.py (lazy-seed dict mutation). The api/render.py edit overlaps with TASK-1046's wiring; coordinate via lazy _seed_renderers() pattern documented in both task files. Per Q5: includes xf:bind constraint expressions (overrides spec Module 6 'structural only' wording).",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1045-formdesigner-xforms-renderer.md"
+      "completed_at": "2026-05-07T13:35:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1045-formdesigner-xforms-renderer.md"
     },
     {
       "id": "TASK-1046",
