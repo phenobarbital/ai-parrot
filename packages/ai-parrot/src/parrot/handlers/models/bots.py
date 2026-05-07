@@ -272,7 +272,19 @@ class BotModel(Model):
     permissions: dict = Field(
         required=False,
         default_factory=dict,
-        ui_help="The bot’s user and group permissions."
+        ui_help=(
+            "User/group permissions for this bot (JSONB column navigator.ai_bots.permissions). "
+            "Empty dict or null means public — any authenticated user can resolve this bot. "
+            "Non-empty value is deny-by-default: use shape "
+            "permissions=[rule, ...] where each rule is a "
+            "parrot.auth.models.PolicyRuleConfig dict "
+            "(fields: action, effect, groups, roles, priority, description, conditions). "
+            "A bare list of rule dicts is also accepted as a forgiving fallback. "
+            "Example: permissions=[dict(action=’agent:resolve’, effect=’allow’, "
+            "groups=[‘engineering’])]. "
+            "Validated at load time by parrot.auth.agent_guard.parse_bot_permissions; "
+            "malformed values are logged as WARNING and that bot is skipped on startup."
+        ),
     )
 
     # Metadata

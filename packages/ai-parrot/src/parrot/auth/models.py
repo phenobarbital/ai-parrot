@@ -120,6 +120,13 @@ class PolicyRuleConfig(BaseModel):
             ``actions``, ``subjects``, ``priority``, and optionally
             ``conditions`` and ``description``.
 
+        Note:
+            When both ``groups`` and ``roles`` are ``None``, the produced
+            ``subjects`` dict is empty (``{}``).  navigator-auth's
+            ``PolicyEvaluator`` interprets an empty ``subjects`` dict as
+            matching **any** subject — i.e. the rule applies to all
+            authenticated users regardless of group or role membership.
+
         Example::
 
             rule = PolicyRuleConfig(action="agent:chat", groups=["finance"])
