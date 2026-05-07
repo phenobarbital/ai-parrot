@@ -24,12 +24,14 @@ except ImportError:
 from navconfig.logging import logging
 from navconfig import BASE_DIR
 from pydantic import BaseModel, Field
+from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
 from ..stores.models import StoreConfig
 from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
+from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 
 
 class AgentFactory(Protocol):
@@ -312,6 +314,20 @@ class AgentRegistry:
     # PBAC Integration — setup() and policy collection
     # ------------------------------------------------------------------
 
+    @property
+    def evaluator(self) -> Any:
+        """Return the PBAC evaluator, or None if not configured.
+
+        Use this property instead of accessing ``_evaluator`` directly so
+        that callers (e.g. ``BotManager``) are insulated from any future
+        rename of the private attribute.
+
+        Returns:
+            The shared ``PolicyEvaluator`` instance, or ``None`` when PBAC
+            has not been initialised via :meth:`setup`.
+        """
+        return self._evaluator
+
     def setup(self, app: Any) -> None:
         """Store aiohttp Application reference for PDP policy registration.
 
@@ -324,6 +340,8 @@ class AgentRegistry:
         """
         self._app = app
         pdp = app.get('abac') if app is not None else None
+        # NOTE: accesses _evaluator (private) on the navigator-auth PDP object.
+        # If navigator-auth renames this attribute, PBAC wiring silently fails open.
         self._evaluator = getattr(pdp, '_evaluator', None) if pdp is not None else None
         if self._evaluator is not None:
             self.logger.info(
@@ -412,6 +430,60 @@ class AgentRegistry:
                 "AgentRegistry: failed to register policies for %s: %s",
                 name, exc,
             )
+
+    def register_db_bot_policies(
+        self,
+        name: str,
+        permissions: "dict | list | None",
+    ) -> int:
+        """Register policies for a DB-loaded bot into the shared ``PolicyEvaluator``.
+
+        Mirrors :meth:`_collect_and_register_policies` for the DB path.
+        Takes the raw value of ``navigator.ai_bots.permissions``, parses it via
+        :func:`parrot.auth.agent_guard.parse_bot_permissions`, converts each rule
+        to a policy dict via :meth:`parrot.auth.models.PolicyRuleConfig.to_resource_policy`,
+        and loads the result into ``self._evaluator`` via ``load_policies()``.
+
+        Args:
+            name: The bot name (used as resource identifier — matches the same
+                convention as the YAML/code path, producing ``agent:<name>``).
+            permissions: Raw value of ``BotModel.permissions``.  Accepted shapes
+                are documented in :func:`parrot.auth.agent_guard.parse_bot_permissions`.
+
+        Returns:
+            Number of policy dicts loaded into the evaluator.  ``0`` means the bot
+            is public (no rules) or PBAC is disabled.
+
+        Raises:
+            ValueError: When ``permissions`` has a malformed shape.  The caller
+                (``BotManager._load_database_bots``) is responsible for catching
+                this, logging a WARNING, and skipping that bot.
+        """
+        if self._evaluator is None:
+            return 0
+
+        from parrot.auth.agent_guard import parse_bot_permissions  # noqa: PLC0415
+
+        rules = parse_bot_permissions(permissions)  # may raise ValueError
+        if not rules:
+            return 0
+
+        policy_dicts = [rule.to_resource_policy(name) for rule in rules]
+
+        try:
+            self._evaluator.load_policies(policy_dicts)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "AgentRegistry: failed to register DB policies for %s: %s",
+                name, exc,
+            )
+            return 0
+
+        self.logger.info(
+            "AgentRegistry: registered %d DB policy rule(s) for agent '%s'",
+            len(policy_dicts), name,
+        )
+        return len(policy_dicts)
 
     def get_bot_instance(self, name: str) -> Optional[AbstractBot]:
         """Get a cached bot instance by name (sync, returns None if not yet instantiated)."""
@@ -525,18 +597,30 @@ class AgentRegistry:
     def has(self, name: str) -> bool:
         return name in self._registered_agents
 
-    async def get_instance(self, name: str, **kwargs) -> Optional[AbstractBot]:
-        """
-        Get an instance of a registered bot.
+    async def get_instance(
+        self,
+        name: str,
+        request: Optional[web.Request] = None,
+        **kwargs,
+    ) -> Optional[AbstractBot]:
+        """Get an instance of a registered bot.
 
-        This method handles lazy instantiation - bots are only created when needed.
+        This method handles lazy instantiation — bots are only created when
+        needed.  When *request* is provided the PBAC evaluator is consulted
+        to decide whether the caller is allowed to resolve the bot.
 
         Args:
-            name: Name of the bot to instantiate
-            **kwargs: Additional arguments to pass to the bot constructor
+            name: Name of the bot to instantiate.
+            request: Optional aiohttp request.  When ``None`` (programmatic
+                invocation) the PBAC check is skipped unconditionally.
+            **kwargs: Additional arguments to pass to the bot constructor.
 
         Returns:
-            Bot instance or None if not found
+            Bot instance or ``None`` if not found / failed to instantiate.
+
+        Raises:
+            AgentAccessDenied: When *request* is provided and the caller's
+                subject does not match the bot's PBAC policies.
         """
         if name not in self._registered_agents:
             self.logger.warning(f"Bot {name} not found in registry")
@@ -546,10 +630,15 @@ class AgentRegistry:
         try:
             instance = await metadata.get_instance(**kwargs)
             self.logger.debug(f"Retrieved instance for bot: {name}")
-            return instance
         except Exception as e:
             self.logger.error(f"Failed to instantiate bot {name}: {str(e)}")
             return None
+
+        # PBAC enforcement runs OUTSIDE the try/except above so that
+        # AgentAccessDenied propagates to the caller rather than being
+        # swallowed as "Failed to instantiate".
+        await enforce_agent_access(self._evaluator, name, request)
+        return instance
 
     def load_config(self) -> List[BotConfig]:
         """Load bot configuration from YAML file."""
@@ -835,7 +924,7 @@ class AgentRegistry:
 
         count = 0
         for yaml_file in definitions_dir.rglob("*.yaml"):
-            print(f"DEBUG: Found YAML file: {yaml_file}")
+            self.logger.debug("Found YAML file: %s", yaml_file)
             try:
                 # Load YAML
                 content = yaml.safe_load(yaml_file.read_text())

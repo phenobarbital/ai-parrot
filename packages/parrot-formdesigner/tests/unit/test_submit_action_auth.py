@@ -93,8 +93,12 @@ class TestSubmitActionAuth:
         assert restored.auth.header_name == "X-Custom"  # type: ignore[union-attr]
 
     def test_export_from_package(self) -> None:
-        """Auth types are exportable from parrot_formdesigner package."""
-        from parrot_formdesigner import (  # noqa: F401
+        """Auth types are exportable from parrot_formdesigner.core.
+
+        Updated for FEAT-152: top-level no longer re-exports symbols;
+        consumers import from explicit submodules.
+        """
+        from parrot_formdesigner.core import (  # noqa: F401
             ApiKeyAuth,
             AuthConfig,
             BearerAuth,
