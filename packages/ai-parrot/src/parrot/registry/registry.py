@@ -24,12 +24,14 @@ except ImportError:
 from navconfig.logging import logging
 from navconfig import BASE_DIR
 from pydantic import BaseModel, Field
+from aiohttp import web
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
 from ..stores.models import StoreConfig
 from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
 from ..auth.models import PolicyRuleConfig
+from ..auth.agent_guard import enforce_agent_access, AgentAccessDenied  # noqa: F401
 
 
 class AgentFactory(Protocol):
@@ -579,18 +581,30 @@ class AgentRegistry:
     def has(self, name: str) -> bool:
         return name in self._registered_agents
 
-    async def get_instance(self, name: str, **kwargs) -> Optional[AbstractBot]:
-        """
-        Get an instance of a registered bot.
+    async def get_instance(
+        self,
+        name: str,
+        request: Optional[web.Request] = None,
+        **kwargs,
+    ) -> Optional[AbstractBot]:
+        """Get an instance of a registered bot.
 
-        This method handles lazy instantiation - bots are only created when needed.
+        This method handles lazy instantiation — bots are only created when
+        needed.  When *request* is provided the PBAC evaluator is consulted
+        to decide whether the caller is allowed to resolve the bot.
 
         Args:
-            name: Name of the bot to instantiate
-            **kwargs: Additional arguments to pass to the bot constructor
+            name: Name of the bot to instantiate.
+            request: Optional aiohttp request.  When ``None`` (programmatic
+                invocation) the PBAC check is skipped unconditionally.
+            **kwargs: Additional arguments to pass to the bot constructor.
 
         Returns:
-            Bot instance or None if not found
+            Bot instance or ``None`` if not found / failed to instantiate.
+
+        Raises:
+            AgentAccessDenied: When *request* is provided and the caller's
+                subject does not match the bot's PBAC policies.
         """
         if name not in self._registered_agents:
             self.logger.warning(f"Bot {name} not found in registry")
@@ -600,10 +614,15 @@ class AgentRegistry:
         try:
             instance = await metadata.get_instance(**kwargs)
             self.logger.debug(f"Retrieved instance for bot: {name}")
-            return instance
         except Exception as e:
             self.logger.error(f"Failed to instantiate bot {name}: {str(e)}")
             return None
+
+        # PBAC enforcement runs OUTSIDE the try/except above so that
+        # AgentAccessDenied propagates to the caller rather than being
+        # swallowed as "Failed to instantiate".
+        await enforce_agent_access(self._evaluator, name, request)
+        return instance
 
     def load_config(self) -> List[BotConfig]:
         """Load bot configuration from YAML file."""
