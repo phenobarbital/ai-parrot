@@ -52,7 +52,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Wave 1. Single largest task. Migrates handlers/api.py + handlers/routes.py REST half, introduces render dispatcher, wires controls registry + 501 stub for /operations. Sequential — every later Wave 1 + Wave 2 task imports from api/.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1042-formdesigner-api-package.md"
+      "completed_at": "2026-05-07T13:25:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1042-formdesigner-api-package.md"
     },
     {
       "id": "TASK-1043",
