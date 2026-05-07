@@ -105,10 +105,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: `parrot/handlers/agents/sharing.py` created with `AgentSharingHandler` stub (post/get/delete all raise `NotImplementedError`). Module docstring describes the deferred sharing design and intended API surface. Imports cleanly. No routes registered (deferred to future FEAT).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
