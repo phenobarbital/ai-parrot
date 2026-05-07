@@ -627,6 +627,12 @@ class BotManager:
         """
         # Handle new instance creation
         if new:
+            # FEAT-153: Enforce PBAC on the base name BEFORE constructing the new
+            # instance.  Checking after construction causes a resource leak: the bot
+            # ends up registered in self._bots for up to 1 hour even though the
+            # caller was denied access.  AgentAccessDenied propagates to the caller.
+            await enforce_agent_access(self.registry.evaluator, name, request)
+
             # Get the class definition for this bot
             cls = self._botdef.get(name, BasicAgent)
 
@@ -695,9 +701,6 @@ class BotManager:
                 f"(expires in 1 hour)"
             )
 
-            # FEAT-153: Enforce PBAC on the base name (not new_name) before returning.
-            # AgentAccessDenied propagates to the caller.
-            await enforce_agent_access(self.registry._evaluator, name, request)
             return bot
 
         # Existing behavior for getting/creating bots
@@ -711,7 +714,7 @@ class BotManager:
                 self.logger.warning(f"Bot '{name}' found in _bots and is not configured.")
                 await _bot.configure(self.app)
             # FEAT-153: Enforce PBAC before returning. AgentAccessDenied propagates.
-            await enforce_agent_access(self.registry._evaluator, name, request)
+            await enforce_agent_access(self.registry.evaluator, name, request)
             return self._bots[name]
         if self.registry.has(name):
             bot_instance = None
@@ -731,7 +734,7 @@ class BotManager:
             if bot_instance:
                 # FEAT-153: Enforce PBAC OUTSIDE the try/except above so that
                 # AgentAccessDenied is NOT swallowed as "Failed to get bot instance".
-                await enforce_agent_access(self.registry._evaluator, name, request)
+                await enforce_agent_access(self.registry.evaluator, name, request)
                 return bot_instance
         return None
 

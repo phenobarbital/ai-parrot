@@ -189,7 +189,10 @@ async def _build_eval_context_from_request(request: web.Request) -> object:
         try:
             from navigator_session import get_session  # noqa: PLC0415
             session = await get_session(request)
-        except Exception:  # pylint: disable=broad-except
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.debug(
+                "agent_guard: could not retrieve session (fail-open): %s", exc
+            )
             return None
 
     userinfo = session.get(_AUTH_SESSION, {}) if session else {}

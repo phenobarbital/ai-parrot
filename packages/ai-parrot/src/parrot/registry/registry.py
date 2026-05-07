@@ -314,6 +314,20 @@ class AgentRegistry:
     # PBAC Integration — setup() and policy collection
     # ------------------------------------------------------------------
 
+    @property
+    def evaluator(self) -> Any:
+        """Return the PBAC evaluator, or None if not configured.
+
+        Use this property instead of accessing ``_evaluator`` directly so
+        that callers (e.g. ``BotManager``) are insulated from any future
+        rename of the private attribute.
+
+        Returns:
+            The shared ``PolicyEvaluator`` instance, or ``None`` when PBAC
+            has not been initialised via :meth:`setup`.
+        """
+        return self._evaluator
+
     def setup(self, app: Any) -> None:
         """Store aiohttp Application reference for PDP policy registration.
 
@@ -326,6 +340,8 @@ class AgentRegistry:
         """
         self._app = app
         pdp = app.get('abac') if app is not None else None
+        # NOTE: accesses _evaluator (private) on the navigator-auth PDP object.
+        # If navigator-auth renames this attribute, PBAC wiring silently fails open.
         self._evaluator = getattr(pdp, '_evaluator', None) if pdp is not None else None
         if self._evaluator is not None:
             self.logger.info(
@@ -908,7 +924,7 @@ class AgentRegistry:
 
         count = 0
         for yaml_file in definitions_dir.rglob("*.yaml"):
-            print(f"DEBUG: Found YAML file: {yaml_file}")
+            self.logger.debug("Found YAML file: %s", yaml_file)
             try:
                 # Load YAML
                 content = yaml.safe_load(yaml_file.read_text())

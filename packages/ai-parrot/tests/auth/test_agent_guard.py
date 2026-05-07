@@ -128,42 +128,29 @@ class TestEnforceAgentAccess:
     @pytest.mark.asyncio
     async def test_allow_decision(self):
         """Evaluator returns allowed=True → no exception."""
+        try:
+            from navigator_auth.abac.policies.resources import ResourceType  # noqa: F401
+            from navigator_auth.abac.policies.environment import Environment  # noqa: F401
+            has_nav_auth = True
+        except ImportError:
+            has_nav_auth = False
+
         evaluator = MagicMock()
         evaluator.check_access.return_value = MagicMock(allowed=True)
-
         req = MagicMock()
 
-        with (
-            patch(
-                "parrot.auth.agent_guard._build_eval_context_from_request",
-                new=AsyncMock(return_value=MagicMock()),
-            ),
-            patch(
-                "parrot.auth.agent_guard.enforce_agent_access.__code__",
-                wraps=None,
-            ) if False else patch(
-                "parrot.auth.agent_guard._build_eval_context_from_request",
-                new=AsyncMock(return_value=MagicMock()),
-            ),
+        with patch(
+            "parrot.auth.agent_guard._build_eval_context_from_request",
+            new=AsyncMock(return_value=MagicMock()),
         ):
-            # Use a dedicated mock for the context-builder to avoid navigator-auth dependency
-            with patch(
-                "parrot.auth.agent_guard._build_eval_context_from_request",
-                new=AsyncMock(return_value=MagicMock()),
-            ):
-                try:
-                    from navigator_auth.abac.policies.resources import ResourceType
-                    from navigator_auth.abac.policies.environment import Environment
-                    has_nav_auth = True
-                except ImportError:
-                    has_nav_auth = False
+            # Must not raise regardless of whether navigator-auth is installed.
+            await enforce_agent_access(evaluator, "bot_x", request=req)
 
-                if has_nav_auth:
-                    await enforce_agent_access(evaluator, "bot_x", request=req)
-                    evaluator.check_access.assert_called_once()
-                else:
-                    # navigator-auth absent → fail open, evaluator not called
-                    await enforce_agent_access(evaluator, "bot_x", request=req)
+        if has_nav_auth:
+            evaluator.check_access.assert_called_once()
+        else:
+            # navigator-auth absent → fail open, evaluator not called
+            evaluator.check_access.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_deny_decision_raises_and_logs_warning(self, caplog):
