@@ -160,10 +160,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-07
+**Notes**: `parrot/handlers/tools_catalog.py` created with `ToolCatalogHandler(BaseView)`. GET returns TOOL_REGISTRY sorted by slug. Docstring and category extracted via best-effort import. Catalog cached at module level after first request. Auth via `@is_authenticated()` / `@user_session()` decorators. 12 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
