@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-07T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-07T13:31:20+00:00",
   "tasks": [
     {
       "id": "TASK-1044",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-151",
       "feature": "pbac-datasetmanager-policy",
       "spec": "sdd/specs/pbac-datasetmanager-policy.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on all three prior tasks. Wires guard + extended setup_pbac + DatasetManager together for end-to-end verification.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:07:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1047-sample-policies-integration-tests.md"
+      "completed_at": "2026-05-07T13:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1047-sample-policies-integration-tests.md"
     }
   ]
 }
