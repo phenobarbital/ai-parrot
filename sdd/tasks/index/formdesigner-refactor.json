@@ -14,7 +14,7 @@
       "feature_id": "FEAT-152",
       "feature": "formdesigner-refactor",
       "spec": "sdd/specs/formdesigner-refactor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Wave 1 step 1. Mechanical pyproject + version bump. Must run before any other Wave 1 task because Wave 1 code presumes hard imports of these deps.",
       "assigned_to": null,
       "started_at": "2026-05-07T11:18:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1040-formdesigner-promote-hard-deps.md"
+      "completed_at": "2026-05-07T11:24:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1040-formdesigner-promote-hard-deps.md"
     },
     {
       "id": "TASK-1041",
