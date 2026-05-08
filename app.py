@@ -47,7 +47,10 @@ from parrot.conf import (
     JIRA_CLIENT_SECRET,
     JIRA_REDIRECT_URI,
 )
-from parrot_formdesigner.handlers import setup_form_routes
+from parrot.clients.factory import LLMFactory
+from parrot_formdesigner.api import setup_form_api
+from parrot_formdesigner.ui import setup_form_ui
+from parrot_formdesigner.services.registry import FormRegistry
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 
 
@@ -224,6 +227,26 @@ class Main(AppHandler):
         )
         # Planogram Compliance:
         PlanogramComplianceHandler.setup(self.app)
+
+        # parrot-formdesigner: shared FormRegistry + REST API + HTML/Telegram UI.
+        # protect_pages=False — page auth is handled client-side via JWT in
+        # localStorage (see examples/forms/form_server.py).
+        form_registry = FormRegistry()
+        self.app['form_registry'] = form_registry
+        form_llm_client = LLMFactory.create("google")
+        setup_form_api(
+            self.app,
+            form_registry,
+            client=form_llm_client,
+            base_path="/api/v1",
+        )
+        setup_form_ui(
+            self.app,
+            form_registry,
+            base_path="",
+            protect_pages=False,
+        )
+
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()

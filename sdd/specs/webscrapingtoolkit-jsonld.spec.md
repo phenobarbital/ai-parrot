@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-154
 **Date**: 2026-05-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -682,17 +682,17 @@ No new third-party dependencies are introduced.
       `"NewsArticle"`, `"BlogPosting"` → article_extractor) or only the
       "canonical" type name? Default proposed: accept any key present in
       `EXTRACTOR_REGISTRY` (so all aliases work) — implementor to confirm
-      and document. — *Owner: implementer (resolve at task time)*
-- [ ] Should the toolkit also expose a convenience helper on the
+      and document. — *Owner: implementer (resolve at task time)*: accept loader-style aliases as well.
+- [x] Should the toolkit also expose a convenience helper on the
       `WebScrapingTool` class (e.g. `tool.extract_jsonld(html, types=...)`)
       mirroring the BrowserAction, or is the action enough? Default
       proposed: action-only for now; add a direct method only if a caller
-      asks. — *Owner: Jesus Lara (next iteration)*
-- [ ] Is keeping the legacy `_extract_faqpage_jsonld` / `_iter_faqpage_pairs`
+      asks. — *Owner: Jesus Lara (next iteration)*: yes, expose
+- [x] Is keeping the legacy `_extract_faqpage_jsonld` / `_iter_faqpage_pairs`
       methods on `WebScrapingLoader` (kept for reference per FEAT-142)
       still desirable, or should they be removed once both consumers use
       the registry? Out of scope for this spec — document as follow-up.
-      — *Owner: Jesus Lara (follow-up cleanup)*
+      — *Owner: Jesus Lara (follow-up cleanup)*: out of scope.
 
 ---
 
