@@ -233,7 +233,9 @@ class Main(AppHandler):
         # localStorage (see examples/forms/form_server.py).
         form_registry = FormRegistry()
         self.app['form_registry'] = form_registry
-        form_llm_client = LLMFactory.create("google")
+        form_llm_client = LLMFactory.create(
+            "google"
+        )
         setup_form_api(
             self.app,
             form_registry,
