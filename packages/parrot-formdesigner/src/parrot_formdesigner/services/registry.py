@@ -40,12 +40,17 @@ class FormStorage(ABC):
         self,
         form: FormSchema,
         style: StyleSchema | None = None,
+        *,
+        tenant: str | None = None,
     ) -> str:
         """Persist a form schema.
 
         Args:
             form: FormSchema to persist.
             style: Optional associated StyleSchema.
+            tenant: Optional tenant slug used by Postgres-backed storages
+                to resolve the target schema. Implementations that don't
+                segregate by tenant may ignore it.
 
         Returns:
             The form_id of the saved form.
@@ -57,12 +62,16 @@ class FormStorage(ABC):
         self,
         form_id: str,
         version: str | None = None,
+        *,
+        tenant: str | None = None,
     ) -> FormSchema | None:
         """Load a form schema by ID.
 
         Args:
             form_id: Identifier of the form to load.
             version: Optional version string. If None, loads the latest.
+            tenant: Optional tenant slug used by Postgres-backed storages
+                to resolve the target schema.
 
         Returns:
             FormSchema if found, None otherwise.
@@ -70,11 +79,13 @@ class FormStorage(ABC):
         ...
 
     @abstractmethod
-    async def delete(self, form_id: str) -> bool:
+    async def delete(self, form_id: str, *, tenant: str | None = None) -> bool:
         """Delete a persisted form.
 
         Args:
             form_id: Identifier of the form to delete.
+            tenant: Optional tenant slug used by Postgres-backed storages
+                to resolve the target schema.
 
         Returns:
             True if deleted, False if not found.
@@ -82,7 +93,7 @@ class FormStorage(ABC):
         ...
 
     @abstractmethod
-    async def list_forms(self) -> list[dict[str, Any]]:
+    async def list_forms(self, *, tenant: str | None = None) -> list[dict[str, Any]]:
         """List all persisted forms.
 
         Each dict in the returned list MUST include ``form_id`` and
@@ -158,7 +169,7 @@ class FormRegistry:
         if persist:
             if self._storage is not None:
                 try:
-                    await self._storage.save(form)
+                    await self._storage.save(form, tenant=form.tenant)
                 except Exception as exc:
                     self.logger.warning(
                         "Failed to persist form %s: %s", form.form_id, exc
@@ -298,10 +309,13 @@ class FormRegistry:
         self.logger.info("Loaded %d forms from %s", count, dir_path)
         return count
 
-    async def load_from_storage(self) -> int:
+    async def load_from_storage(self, *, tenant: str | None = None) -> int:
         """Load all persisted forms from storage into memory.
 
-        Args: None
+        Args:
+            tenant: Optional tenant slug forwarded to the storage backend
+                so per-tenant schemas (``epson.form_schemas``) hydrate
+                correctly. ``None`` uses the storage's default schema.
 
         Returns:
             Number of forms loaded from storage.
@@ -311,7 +325,7 @@ class FormRegistry:
             return 0
 
         try:
-            form_list = await self._storage.list_forms()
+            form_list = await self._storage.list_forms(tenant=tenant)
         except Exception as exc:
             self.logger.error("Failed to list forms from storage: %s", exc)
             return 0
@@ -322,7 +336,7 @@ class FormRegistry:
             if not form_id:
                 continue
             try:
-                form = await self._storage.load(form_id)
+                form = await self._storage.load(form_id, tenant=tenant)
                 if form is not None:
                     await self.register(form, overwrite=True)
                     count += 1

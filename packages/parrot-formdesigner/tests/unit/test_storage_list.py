@@ -130,6 +130,7 @@ async def test_list_forms_localized_title_flattens(storage_factory) -> None:
             "title": {"en": "Hello", "es": "Hola"},
             "description": "Daily report",
         }),
+        tenant=None,
         created_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
         updated_at=datetime(2026, 4, 12, 10, 31, tzinfo=timezone.utc),
     )]
@@ -139,6 +140,7 @@ async def test_list_forms_localized_title_flattens(storage_factory) -> None:
         "version": "1.0",
         "title": "Hello",
         "description": "Daily report",
+        "tenant": None,
         "created_at": "2026-04-12T10:31:00+00:00",
     }]
 
@@ -151,6 +153,7 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
             form_id="a",
             version="1.0",
             schema_json=json.dumps({"title": "A"}),
+            tenant=None,
             created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         ),
@@ -158,6 +161,7 @@ async def test_list_forms_description_missing_or_none(storage_factory) -> None:
             form_id="b",
             version="1.0",
             schema_json=json.dumps({"title": "B", "description": None}),
+            tenant=None,
             created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
             updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
         ),
@@ -174,6 +178,7 @@ async def test_list_forms_created_at_none_defensive(storage_factory) -> None:
         form_id="x",
         version="1.0",
         schema_json=json.dumps({"title": "X"}),
+        tenant=None,
         created_at=None,
         updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )]
@@ -188,6 +193,7 @@ async def test_list_forms_malformed_schema_json(storage_factory) -> None:
         form_id="bad",
         version="1.0",
         schema_json="not-json",
+        tenant=None,
         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )]
@@ -206,6 +212,7 @@ async def test_list_forms_multiple_rows_preserve_order(storage_factory) -> None:
             form_id="a",
             version="1.0",
             schema_json=json.dumps({"title": "A"}),
+            tenant=None,
             created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
             updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
         ),
@@ -213,6 +220,7 @@ async def test_list_forms_multiple_rows_preserve_order(storage_factory) -> None:
             form_id="b",
             version="1.0",
             schema_json=json.dumps({"title": "B"}),
+            tenant=None,
             created_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
             updated_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
         ),
