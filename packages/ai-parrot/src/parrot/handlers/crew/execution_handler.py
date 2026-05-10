@@ -4,7 +4,7 @@ from navigator.views import BaseView
 from navigator.types import WebApp
 from navigator.applications.base import BaseApplication
 from navconfig.logging import logging
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 from parrot.handlers.crew.models import (
     JobStatus,
     ExecutionMode,

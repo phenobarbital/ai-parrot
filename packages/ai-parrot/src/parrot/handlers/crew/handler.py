@@ -15,7 +15,7 @@ from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
 from navconfig.logging import logging
 from .models import CrewDefinition, ExecutionMode
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 
 
 class CrewHandler(BaseView):
