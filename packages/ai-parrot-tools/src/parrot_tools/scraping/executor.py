@@ -11,9 +11,11 @@ no Selenium-specific imports live in this module.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re as _re
 import time
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -27,6 +29,7 @@ from .models import (
 )
 from .plan import ScrapingPlan
 from .toolkit_models import DriverConfig
+from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +265,8 @@ async def _dispatch_step(
         return await _action_back(driver, action)
     elif action_type == "extract":
         return await _action_extract(driver, action, step, step_extracted)
+    elif action_type == "extract_jsonld":
+        return await _action_extract_jsonld(driver, action, step, step_extracted)
     elif action_type == "get_text":
         return await _action_get_text(driver, action)
     elif action_type == "get_html":
@@ -611,6 +616,103 @@ async def _action_extract(
         logger.info(
             "Extract %r: captured %s %s",
             key, count, "rows" if fields else "values",
+        )
+    return True
+
+
+async def _action_extract_jsonld(
+    driver: AbstractDriver,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+) -> bool:
+    """Run an ``extract_jsonld`` step against the current DOM.
+
+    Parses every ``<script type="application/ld+json">`` block in the current
+    page, walks the JSON graph via ``_walk_jsonld_for_extract``, and writes
+    a flat list of JSON-serializable dicts (one per ``JsonLdItem``) into
+    ``step_extracted[key]``.
+
+    Args:
+        driver: Browser driver instance.
+        action: An ``ExtractJsonLd`` action model.
+        step: The parent ``ScrapingStep``.
+        step_extracted: Shared dict collecting results across steps.
+
+    Returns:
+        ``True`` always (malformed blocks are silently skipped; empty pages
+        produce an empty list rather than an error).
+    """
+    html = await driver.get_page_source()
+    soup = BeautifulSoup(html, "html.parser")
+
+    key = (
+        getattr(action, "extract_name", "")
+        or getattr(action, "name", "")
+        or step.description
+        or "jsonld"
+    )
+    # Guard: if key resolved to the action's class-name sentinel rather than a
+    # user-specified value, normalise to the canonical default key.
+    if key == "extract_jsonld":
+        key = "jsonld"
+
+    types_filter = getattr(action, "types", None)
+    allowed: Optional[set] = (
+        set(types_filter) if types_filter is not None else None
+    )
+    # Empty list → filter to nothing (parity with loader's _jsonld_types == []).
+    if allowed is not None and not allowed:
+        step_extracted.setdefault(key, [])
+        return True
+
+    items: List[JsonLdItem] = []
+    seen: set[tuple[str, str]] = set()
+    scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
+    for s in scripts:
+        raw = (s.string or s.text or "").strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            logger.debug("Skipping malformed JSON-LD block: %s", exc)
+            continue
+        walk_jsonld(data, items, allowed)
+
+    # De-duplicate by (content_kind, page_content) — parity with loader.
+    unique: List[Dict[str, Any]] = []
+    for item in items:
+        sig = (item.content_kind, item.page_content)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        unique.append(asdict(item))
+
+    # Key-collision merge semantics — parity with _action_extract lines 597-609.
+    # O(1) cross-pass de-duplication via a signature set (avoids O(n²) list
+    # membership checks when merging large result sets across multiple steps).
+    existing = step_extracted.get(key)
+    if isinstance(existing, list):
+        merged = list(existing)
+        merged_sigs: set[tuple[str, str]] = {
+            (r["content_kind"], r["page_content"]) for r in existing
+        }
+        for record in unique:
+            sig = (record["content_kind"], record["page_content"])
+            if sig not in merged_sigs:
+                merged.append(record)
+                merged_sigs.add(sig)
+        step_extracted[key] = merged
+        appended = len(merged) - len(existing)
+        logger.info(
+            "extract_jsonld %r: appended %d new item(s) (total %d)",
+            key, appended, len(merged),
+        )
+    else:
+        step_extracted[key] = unique
+        logger.info(
+            "extract_jsonld %r: captured %d item(s)", key, len(unique),
         )
     return True
 
