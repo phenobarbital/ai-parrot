@@ -115,12 +115,17 @@ class TestExistingResolverUnchanged:
         "BAAI/bge-m3",
         "sentence-transformers/multi-qa-mpnet-base-dot-v1",
         "sentence-transformers/multi-qa-mpnet-base-cos-v1",
-        "nomic-ai/nomic-embed-text-v1.5",
         "Snowflake/snowflake-arctic-embed-l",
     ])
     def test_no_prefix_models_unchanged(self, model: str):
         """Non-prefix-requiring models still return (None, None)."""
         assert _resolve_prefixes(model) == (None, None)
+
+    def test_nomic_embed_text_v15_prefixes(self):
+        """Nomic Embed Text v1.5 returns search_query/search_document prefixes."""
+        q, p = _resolve_prefixes("nomic-ai/nomic-embed-text-v1.5")
+        assert q == "search_query: "
+        assert p == "search_document: "
 
     def test_empty_model_name(self):
         """Empty string returns (None, None) without error."""

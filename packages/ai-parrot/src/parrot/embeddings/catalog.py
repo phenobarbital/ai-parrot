@@ -775,17 +775,22 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "dimension": 768,
         "multilingual": False,
         "language": "en",
-        "use_case": ["retrieval", "clustering", "similarity", "long-context"],
+        "use_case": ["retrieval", "clustering", "similarity", "long-context", "asymmetric"],
         "matryoshka_dimensions": [64, 128, 256, 512, 768],
         "description": (
-            "768-dim model with Matryoshka support (64 to 768 dims). "
-            "Long 8192-token context. Truncate embeddings to lower "
+            "768-dim model with Matryoshka support (64 to 768 dims) and "
+            "8192-token context. Requires task-specific instruction prefixes: "
+            "'search_query: ' for queries and 'search_document: ' for passages "
+            "in RAG/retrieval pipelines. Also supports 'clustering: ' for "
+            "clustering tasks and 'classification: ' for classification "
+            "(these alternate prefixes must be applied manually). "
+            "Uses trust_remote_code=True. Truncate embeddings to lower "
             "dimensions with minimal quality loss for flexible storage."
         ),
         "metric_recommended": "cosine",
-        "requires_prefix": False,
-        "prefix_query": None,
-        "prefix_passage": None,
+        "requires_prefix": True,
+        "prefix_query": "search_query: ",
+        "prefix_passage": "search_document: ",
         "normalized_output": True,
         "max_seq_length": 8192,
         "hnsw_compatible": True,
