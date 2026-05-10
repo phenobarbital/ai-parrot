@@ -39,6 +39,7 @@ dependencies = [
     # Core data / utilities
     "tabulate==0.9.0",
     "markdown2==2.5.4",
+    "beautifulsoup4>=4.12",
     "nh3>=0.2.14",
     "python-datamodel>=0.10.17",
     "backoff==2.2.1",
