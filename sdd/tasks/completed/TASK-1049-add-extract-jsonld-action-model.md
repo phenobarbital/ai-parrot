@@ -338,8 +338,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: Claude Sonnet 4.6 (sdd-worker)
-**Date**: 2026-05-10
-**Notes**: All 4 tests pass. `ExtractJsonLd` class added between `Extract` and `Submit` with the exact field set: `name`, `action`, `description`, `extract_name`, `types`. Registered in `ACTION_MAP` and included in `ActionList` discriminated union. `ScrapingStep.from_dict` round-trip verified.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: None.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**:

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-08T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-10T22:46:35+00:00",
   "tasks": [
     {
       "id": "TASK-1048",
@@ -22,7 +22,7 @@
       "parallelism_notes": "Must run first — both subsequent tasks import from the new core path that this task creates.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": "2026-05-10T21:27:55+00:00",
+      "completed_at": "2026-05-10T22:46:35+00:00",
       "file": "sdd/tasks/completed/TASK-1048-promote-jsonld-extractors-to-core.md"
     },
     {
@@ -42,7 +42,7 @@
       "parallelism_notes": "Touches the same models.py file the executor handler (TASK-1050) tests rely on for ExtractJsonLd; sequential within the per-spec worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": "2026-05-10T21:30:00+00:00",
+      "completed_at": "2026-05-10T22:46:35+00:00",
       "file": "sdd/tasks/completed/TASK-1049-add-extract-jsonld-action-model.md"
     },
     {
@@ -63,8 +63,8 @@
       "parallelism_notes": "Imports EXTRACTOR_REGISTRY (from TASK-1048) and ExtractJsonLd (from TASK-1049); integration tests exercise the full dispatch path. Sequential within the per-spec worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": "2026-05-10T21:32:33+00:00",
-      "file": "sdd/tasks/completed/TASK-1050-add-extract-jsonld-executor-handler.md"
+      "completed_at": "2026-05-10T22:46:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1050-add-action-extract-jsonld-executor-handler.md"
     }
   ]
 }

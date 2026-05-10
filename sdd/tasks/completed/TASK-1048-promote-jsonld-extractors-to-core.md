@@ -335,8 +335,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: Claude Sonnet 4.6 (sdd-worker)
-**Date**: 2026-05-10
-**Notes**: All acceptance criteria met. The file was copied verbatim (100% identical diff) to `parrot/utils/jsonld_extractors.py`. The shim re-exports all public symbols. The webscraping.py import was updated. Both import paths resolve to the same registry object (verified with `is`). All 62 existing extractor tests pass. New promotion tests (2) pass.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: None. The spec recommended `git mv` for history preservation, but since the file is created new in the worktree branch (git tracks it as a copy/rename), the content is byte-for-byte identical and git detects 100% similarity.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**:

@@ -635,8 +635,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: Claude Sonnet 4.6 (sdd-worker)
-**Date**: 2026-05-10
-**Notes**: All 8 integration tests pass. `_walk_jsonld_for_extract` helper and `_action_extract_jsonld` handler implemented. Dispatch wiring added between `"extract"` and `"get_text"` branches. Imports `EXTRACTOR_REGISTRY` and `JsonLdItem` from `parrot.utils.jsonld_extractors` (core path from TASK-1048). All 30 existing executor tests still pass.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: None. The spec included 7 tests but the dispatch wiring test makes 8 total — all implemented as specified.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**:
