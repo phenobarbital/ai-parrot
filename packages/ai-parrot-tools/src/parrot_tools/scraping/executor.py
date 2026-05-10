@@ -29,7 +29,7 @@ from .models import (
 )
 from .plan import ScrapingPlan
 from .toolkit_models import DriverConfig
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem
+from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
 
 logger = logging.getLogger(__name__)
 
@@ -620,44 +620,6 @@ async def _action_extract(
     return True
 
 
-def _walk_jsonld_for_extract(
-    data: Any,
-    allowed_types: Optional[set],
-    out: List[JsonLdItem],
-) -> None:
-    """Reproduce WebScrapingLoader._walk_jsonld_node for the executor.
-
-    Recursively walks a JSON-LD structure dispatching typed nodes through the
-    shared EXTRACTOR_REGISTRY. Descends into ``@graph`` and arrays. Breaks
-    after the first matching extractor for a node (insertion-order priority).
-
-    Args:
-        data: Parsed JSON-LD structure (dict, list, or scalar).
-        allowed_types: Set of allowed schema.org @type strings, or None for all.
-        out: Accumulator list; extracted JsonLdItems are appended here.
-    """
-    if isinstance(data, list):
-        for item in data:
-            _walk_jsonld_for_extract(item, allowed_types, out)
-        return
-    if not isinstance(data, dict):
-        return
-    if "@graph" in data:
-        _walk_jsonld_for_extract(data["@graph"], allowed_types, out)
-        return
-    node_type = data.get("@type")
-    type_set = (
-        {node_type} if isinstance(node_type, str) else set(node_type or [])
-    )
-    for t in EXTRACTOR_REGISTRY:
-        if t not in type_set:
-            continue
-        if allowed_types is not None and t not in allowed_types:
-            continue
-        out.extend(EXTRACTOR_REGISTRY[t](data))
-        break  # first matching extractor wins per node
-
-
 async def _action_extract_jsonld(
     driver: AbstractDriver,
     action: Any,
@@ -690,6 +652,10 @@ async def _action_extract_jsonld(
         or step.description
         or "jsonld"
     )
+    # Guard: if key resolved to the action's class-name sentinel rather than a
+    # user-specified value, normalise to the canonical default key.
+    if key == "extract_jsonld":
+        key = "jsonld"
 
     types_filter = getattr(action, "types", None)
     allowed: Optional[set] = (
@@ -701,7 +667,7 @@ async def _action_extract_jsonld(
         return True
 
     items: List[JsonLdItem] = []
-    seen: set = set()
+    seen: set[tuple[str, str]] = set()
     scripts = soup.find_all("script", attrs={"type": "application/ld+json"})
     for s in scripts:
         raw = (s.string or s.text or "").strip()
@@ -712,7 +678,7 @@ async def _action_extract_jsonld(
         except json.JSONDecodeError as exc:
             logger.debug("Skipping malformed JSON-LD block: %s", exc)
             continue
-        _walk_jsonld_for_extract(data, allowed, items)
+        walk_jsonld(data, items, allowed)
 
     # De-duplicate by (content_kind, page_content) — parity with loader.
     unique: List[Dict[str, Any]] = []
@@ -724,16 +690,24 @@ async def _action_extract_jsonld(
         unique.append(asdict(item))
 
     # Key-collision merge semantics — parity with _action_extract lines 597-609.
+    # O(1) cross-pass de-duplication via a signature set (avoids O(n²) list
+    # membership checks when merging large result sets across multiple steps).
     existing = step_extracted.get(key)
     if isinstance(existing, list):
         merged = list(existing)
+        merged_sigs: set[tuple[str, str]] = {
+            (r["content_kind"], r["page_content"]) for r in existing
+        }
         for record in unique:
-            if record not in merged:
+            sig = (record["content_kind"], record["page_content"])
+            if sig not in merged_sigs:
                 merged.append(record)
+                merged_sigs.add(sig)
         step_extracted[key] = merged
+        appended = len(merged) - len(existing)
         logger.info(
             "extract_jsonld %r: appended %d new item(s) (total %d)",
-            key, len(unique), len(merged),
+            key, appended, len(merged),
         )
     else:
         step_extracted[key] = unique

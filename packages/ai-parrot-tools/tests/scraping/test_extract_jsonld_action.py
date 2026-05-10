@@ -11,6 +11,8 @@ from parrot.tools.scraping.executor import (
 )
 from parrot.tools.scraping.models import ExtractJsonLd, ScrapingStep
 
+pytestmark = pytest.mark.asyncio
+
 
 # ── Fixtures ───────────────────────────────────────────────────────────
 
@@ -154,3 +156,41 @@ class TestActionExtractJsonLd:
         )
         assert ok is True
         assert step_extracted["jsonld"][0]["content_kind"] == "jsonld-product"
+
+    async def test_action_extract_jsonld_key_collision_merge(self) -> None:
+        """A second extract_jsonld step on the same key appends new rows without duplicates.
+
+        Covers the O(1) merge path (merged_sigs set) and verifies that:
+        1. Pre-existing rows in step_extracted[key] are preserved.
+        2. New rows from the current page are appended.
+        3. Running the same step again does NOT introduce duplicates.
+        """
+        action = ExtractJsonLd()
+        step = ScrapingStep(action=action)
+
+        # Pre-populate with a distinct item (different page_content from PRODUCT_HTML).
+        pre_existing = {
+            "content_kind": "jsonld-product",
+            "source_type": "product-jsonld",
+            "page_content": "Pre-existing product that won't appear in PRODUCT_HTML",
+            "row_data": {},
+            "selector_name": None,
+        }
+        step_extracted: dict = {"jsonld": [pre_existing]}
+
+        # First run: PRODUCT_HTML yields a new product row; merges with pre-existing.
+        await _action_extract_jsonld(
+            _driver_returning(PRODUCT_HTML), action, step, step_extracted,
+        )
+        rows = step_extracted["jsonld"]
+        assert len(rows) == 2, "Pre-existing row + new product row expected"
+        content_kinds = {r["content_kind"] for r in rows}
+        assert content_kinds == {"jsonld-product"}
+
+        # Second run with the same HTML must NOT duplicate the product row.
+        await _action_extract_jsonld(
+            _driver_returning(PRODUCT_HTML), action, step, step_extracted,
+        )
+        assert len(step_extracted["jsonld"]) == 2, (
+            "Duplicate merge detected — O(1) merged_sigs guard failed"
+        )

@@ -21,7 +21,31 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError as _bs4_err:
+    raise ImportError(
+        "parrot.utils.jsonld_extractors requires beautifulsoup4. "
+        "Install it with: pip install beautifulsoup4>=4.12"
+    ) from _bs4_err
+
+__all__ = [
+    "EXTRACTOR_REGISTRY",
+    "JsonLdItem",
+    "strip_html_text",
+    "walk_jsonld",
+    "faq_extractor",
+    "product_extractor",
+    "event_extractor",
+    "person_extractor",
+    "place_extractor",
+    "recipe_extractor",
+    "article_extractor",
+    "organization_extractor",
+    "howto_extractor",
+    "breadcrumb_extractor",
+    "question_extractor",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -798,3 +822,62 @@ EXTRACTOR_REGISTRY: Dict[str, Callable[[Dict[str, Any]], List[JsonLdItem]]] = {
     "HowTo": howto_extractor,
     "BreadcrumbList": breadcrumb_extractor,
 }
+
+
+# ---------------------------------------------------------------------------
+# Standalone walker (canonical, shared by WebScrapingLoader and executor)
+# ---------------------------------------------------------------------------
+
+
+def walk_jsonld(
+    data: Any,
+    items: List[JsonLdItem],
+    allowed_types: Optional[set] = None,
+) -> None:
+    """Recursively walk a JSON-LD structure dispatching typed nodes to extractors.
+
+    This is the single authoritative implementation of the JSON-LD graph
+    traversal algorithm, shared by ``WebScrapingLoader._walk_jsonld_node``
+    and the executor's ``_action_extract_jsonld``.  Both callers delegate
+    here so that any future fix or extension only needs to be applied once.
+
+    Handles:
+    - Top-level arrays of nodes.
+    - ``@graph`` containers (Google's recommended form).
+    - Single typed objects dispatched via :data:`EXTRACTOR_REGISTRY`.
+    - Nodes with ``@type`` as a list (valid per JSON-LD spec).
+
+    Declaration order of ``EXTRACTOR_REGISTRY`` determines priority: when a
+    node carries multiple ``@type`` values the first matching key wins.
+
+    Args:
+        data: Parsed JSON-LD value (dict, list, or scalar).  Scalars are
+            silently ignored.
+        items: Accumulator list; extracted :class:`JsonLdItem` instances are
+            appended in-place.
+        allowed_types: Optional whitelist of ``@type`` strings.  ``None``
+            (default) means all registered types are extracted.  An empty
+            ``set()`` disables extraction for the subtree.
+    """
+    if isinstance(data, list):
+        for item in data:
+            walk_jsonld(item, items, allowed_types)
+        return
+    if not isinstance(data, dict):
+        return
+    if "@graph" in data:
+        walk_jsonld(data["@graph"], items, allowed_types)
+        return
+    node_type = data.get("@type")
+    type_set: set = (
+        {node_type} if isinstance(node_type, str) else set(node_type or [])
+    )
+    # Iterate in registry insertion order so multi-@type nodes resolve
+    # deterministically (highest-priority extractor wins per node).
+    for t in EXTRACTOR_REGISTRY:
+        if t not in type_set:
+            continue
+        if allowed_types is not None and t not in allowed_types:
+            continue
+        items.extend(EXTRACTOR_REGISTRY[t](data))
+        break  # one match per node

@@ -3,6 +3,7 @@ from parrot.utils.jsonld_extractors import (  # noqa: F401
     EXTRACTOR_REGISTRY,
     JsonLdItem,
     strip_html_text,
+    walk_jsonld,
     faq_extractor,
     product_extractor,
     event_extractor,
@@ -17,7 +18,7 @@ from parrot.utils.jsonld_extractors import (  # noqa: F401
 )
 
 __all__ = (
-    "EXTRACTOR_REGISTRY", "JsonLdItem", "strip_html_text",
+    "EXTRACTOR_REGISTRY", "JsonLdItem", "strip_html_text", "walk_jsonld",
     "faq_extractor", "product_extractor", "event_extractor",
     "person_extractor", "place_extractor", "recipe_extractor",
     "article_extractor", "organization_extractor", "howto_extractor",
