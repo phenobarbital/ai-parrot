@@ -32,7 +32,7 @@
       "feature_id": "FEAT-154",
       "feature": "webscrapingtoolkit-jsonld",
       "spec": "sdd/specs/webscrapingtoolkit-jsonld.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches the same models.py file the executor handler (TASK-1050) tests rely on for ExtractJsonLd; sequential within the per-spec worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1049-add-extract-jsonld-action-model.md"
+      "completed_at": "2026-05-10T21:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1049-add-extract-jsonld-action-model.md"
     },
     {
       "id": "TASK-1050",
