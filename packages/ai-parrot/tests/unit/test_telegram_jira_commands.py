@@ -28,7 +28,7 @@ class TestConnectJiraHandler:
     @pytest.mark.asyncio
     async def test_sends_auth_url_when_not_connected(self) -> None:
         manager = MagicMock()
-        manager.is_connected = AsyncMock(return_value=False)
+        manager.validate_token = AsyncMock(return_value=None)
         manager.create_authorization_url = AsyncMock(
             return_value=("https://auth.atlassian.com/authorize?state=x", "x"),
         )
@@ -51,7 +51,9 @@ class TestConnectJiraHandler:
     @pytest.mark.asyncio
     async def test_already_connected_message(self) -> None:
         manager = MagicMock()
-        manager.is_connected = AsyncMock(return_value=True)
+        manager.validate_token = AsyncMock(return_value=SimpleNamespace(
+            display_name="x", site_url="y",
+        ))
         message = _make_message()
 
         await connect_jira_handler(message, manager)
@@ -59,6 +61,24 @@ class TestConnectJiraHandler:
         message.reply.assert_awaited_once()
         text = message.reply.await_args.args[0]
         assert "already connected" in text.lower()
+
+    @pytest.mark.asyncio
+    async def test_stale_token_triggers_fresh_auth_url(self) -> None:
+        # validate_token returns None when Atlassian rejects the stored
+        # token; the handler should send a fresh authorization URL
+        # instead of replying "already connected".
+        manager = MagicMock()
+        manager.validate_token = AsyncMock(return_value=None)
+        manager.create_authorization_url = AsyncMock(
+            return_value=("https://auth.atlassian.com/authorize?state=y", "y"),
+        )
+        message = _make_message()
+
+        await connect_jira_handler(message, manager)
+
+        manager.create_authorization_url.assert_awaited_once()
+        markup = message.reply.await_args.kwargs["reply_markup"]
+        assert isinstance(markup, InlineKeyboardMarkup)
 
     @pytest.mark.asyncio
     async def test_missing_from_user(self) -> None:
@@ -89,7 +109,7 @@ class TestJiraStatusHandler:
     @pytest.mark.asyncio
     async def test_connected_shows_details(self) -> None:
         manager = MagicMock()
-        manager.get_valid_token = AsyncMock(return_value=SimpleNamespace(
+        manager.validate_token = AsyncMock(return_value=SimpleNamespace(
             display_name="Jesus Garcia",
             site_url="https://acme.atlassian.net",
         ))
@@ -104,13 +124,27 @@ class TestJiraStatusHandler:
     @pytest.mark.asyncio
     async def test_not_connected_suggests_connect(self) -> None:
         manager = MagicMock()
-        manager.get_valid_token = AsyncMock(return_value=None)
+        manager.validate_token = AsyncMock(return_value=None)
         message = _make_message()
 
         await jira_status_handler(message, manager)
 
         text = message.reply.await_args.args[0]
         assert "/connect_jira" in text
+
+    @pytest.mark.asyncio
+    async def test_stale_token_reports_disconnected(self) -> None:
+        # validate_token returned None because Atlassian rejected the
+        # stored token (and the manager already revoked it). The status
+        # handler must mirror that — not silently keep saying "connected".
+        manager = MagicMock()
+        manager.validate_token = AsyncMock(return_value=None)
+        message = _make_message()
+
+        await jira_status_handler(message, manager)
+
+        text = message.reply.await_args.args[0]
+        assert "Not connected" in text
 
 
 class TestRegisterJiraCommands:

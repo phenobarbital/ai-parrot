@@ -394,8 +394,82 @@ class JiraOAuthManager:
         return await self._refresh_tokens(channel, user_id, token)
 
     async def is_connected(self, channel: str, user_id: str) -> bool:
-        """Return True when a valid token is available for the user."""
+        """Return True when a valid token is available for the user.
+
+        Cheap Redis-only check — does not contact Atlassian. Use
+        :meth:`validate_token` when the caller needs to know that
+        Atlassian still accepts the stored token.
+        """
         return (await self.get_valid_token(channel, user_id)) is not None
+
+    async def validate_token(
+        self, channel: str, user_id: str
+    ) -> Optional[JiraTokenSet]:
+        """Return the stored token only if Atlassian still accepts it.
+
+        Combines :meth:`get_valid_token` with a live ``/myself`` probe so
+        callers can detect tokens that Atlassian invalidated server-side
+        (admin revocation, scope change, refresh-token rotation lost
+        across an outage, etc.) while the local ``expires_at`` is still
+        in the future.
+
+        On HTTP 401/403 the local token is revoked from Redis so the next
+        ``/jira_status`` reports "not connected" and ``/connect_jira``
+        issues a fresh authorization URL instead of replying "already
+        connected". Transport failures leave the token in place — we
+        cannot distinguish a transient outage from a real revocation.
+
+        Returns:
+            The :class:`JiraTokenSet` if the probe succeeds, ``None``
+            when no token exists, the refresh failed, or Atlassian
+            rejected the token.
+        """
+        try:
+            token = await self.get_valid_token(channel, user_id)
+        except PermissionError as exc:
+            # _refresh_tokens already revoked locally on a 401 refresh.
+            self.logger.info(
+                "Jira token unrefreshable for %s:%s — treating as "
+                "disconnected: %s",
+                channel, user_id, exc,
+            )
+            return None
+        if token is None:
+            return None
+        status = await self._probe_token(token)
+        if status in (401, 403):
+            self.logger.info(
+                "Jira token for %s:%s rejected by Atlassian (HTTP %s) "
+                "— revoking",
+                channel, user_id, status,
+            )
+            await self.revoke(channel, user_id)
+            return None
+        return token
+
+    async def _probe_token(self, token: JiraTokenSet) -> int:
+        """Probe ``/myself`` with the token; return the HTTP status.
+
+        Returns 0 on transport failure so callers can distinguish a
+        network outage (don't revoke) from an Atlassian rejection
+        (revoke).
+        """
+        url = f"{token.api_base_url}/rest/api/3/myself"
+        session = await self._get_session()
+        try:
+            async with session.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token.access_token}",
+                    "Accept": "application/json",
+                },
+            ) as response:
+                return response.status
+        except aiohttp.ClientError as exc:
+            self.logger.warning(
+                "Jira /myself probe transport error: %s", exc,
+            )
+            return 0
 
     async def revoke(self, channel: str, user_id: str) -> None:
         """Delete the user's token from Redis."""

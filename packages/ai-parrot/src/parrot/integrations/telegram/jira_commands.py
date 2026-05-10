@@ -65,7 +65,11 @@ async def connect_jira_handler(
         return
 
     user_id = str(message.from_user.id)
-    if await oauth_manager.is_connected(_TELEGRAM_CHANNEL, user_id):
+    # validate_token (not is_connected) so a stored-but-invalid token
+    # gets auto-revoked here — otherwise the user would be stuck on
+    # "already connected" without a way to refresh consent short of
+    # running /disconnect_jira manually.
+    if await oauth_manager.validate_token(_TELEGRAM_CHANNEL, user_id) is not None:
         await message.reply(
             "You're already connected to Jira. Use /jira_status to see details.",
             parse_mode=None,
@@ -124,11 +128,18 @@ async def disconnect_jira_handler(
 async def jira_status_handler(
     message: Message, oauth_manager: "JiraOAuthManager"
 ) -> None:
-    """Handle ``/jira_status`` — report the user's Jira connection state."""
+    """Handle ``/jira_status`` — report the user's Jira connection state.
+
+    Uses :meth:`validate_token` rather than :meth:`get_valid_token` so a
+    token that Atlassian no longer accepts (admin revocation, expired
+    refresh chain that we couldn't recover, scope change, …) is revoked
+    locally and the user is told to reconnect — instead of being told
+    "connected" while every Jira tool returns 401.
+    """
     if message.from_user is None:
         return
     user_id = str(message.from_user.id)
-    token = await oauth_manager.get_valid_token(_TELEGRAM_CHANNEL, user_id)
+    token = await oauth_manager.validate_token(_TELEGRAM_CHANNEL, user_id)
     if token is not None:
         await message.reply(
             f"Connected to Jira as {token.display_name}\n"

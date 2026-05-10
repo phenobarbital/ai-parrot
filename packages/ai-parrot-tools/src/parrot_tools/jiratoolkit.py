@@ -1831,7 +1831,7 @@ class JiraToolkit(AbstractToolkit):
     _SERAPH_FAIL_VALUES = {"AUTHENTICATED_FAILED", "AUTHENTICATION_DENIED"}
 
     def _probe_auth_sync(self) -> Dict[str, Any]:
-        """Raw HTTP probe against ``/rest/api/2/myself``.
+        """Raw HTTP probe against ``/myself``.
 
         pycontribs' ``JIRA.myself()`` does not surface response headers, and
         Jira Cloud returns a 200 + ``X-Seraph-Loginreason: AUTHENTICATED_FAILED``
@@ -1839,7 +1839,20 @@ class JiraToolkit(AbstractToolkit):
         through the underlying session lets us read those headers directly.
         """
 
-        url = f"{self.server_url.rstrip('/')}/rest/api/2/myself"
+        # OAuth 2.0 (3LO) tokens are only accepted by the Atlassian API
+        # gateway (``api.atlassian.com/ex/jira/<cloud_id>``). ``self.server_url``
+        # is the site URL fallback (``*.atlassian.net``) which rejects 3LO
+        # bearer tokens with HTTP 401, so we read the active client's
+        # ``_options['server']`` (set per-user in
+        # :meth:`_init_jira_client_from_token`).
+        client_options = getattr(self.jira, "_options", {}) or {}
+        base = client_options.get("server") or self.server_url
+        api_path = (
+            "/rest/api/3/myself"
+            if self.auth_type == "oauth2_3lo"
+            else "/rest/api/2/myself"
+        )
+        url = f"{base.rstrip('/')}{api_path}"
         session = getattr(self.jira, "_session", None)
         try:
             response = session.get(url) if session is not None else None

@@ -124,6 +124,10 @@ class FormSchema(BaseModel):
         created_at: Optional creation timestamp (UTC). Populated by storage
             backends when forms are loaded from persistence; ``None`` for
             ad-hoc forms registered in memory.
+        tenant: Optional tenant slug. When set, persistence backends use it
+            to resolve the Postgres schema where the form is stored
+            (e.g. ``"epson"`` → ``epson.form_schemas``). ``None`` falls
+            back to the storage's default schema.
     """
 
     form_id: str
@@ -135,6 +139,7 @@ class FormSchema(BaseModel):
     cancel_allowed: bool = True
     meta: dict[str, Any] | None = None
     created_at: datetime | None = None
+    tenant: str | None = None
 
 
 class RenderedForm(BaseModel):
