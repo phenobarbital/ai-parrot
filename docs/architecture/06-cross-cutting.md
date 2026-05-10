@@ -1,7 +1,7 @@
 # 6. Cross-cutting concerns and reference deployment
 
 > Part of the [Exposure, Interoperability & Hardening](README.md) set.
-> Previous: [Hardening](05-hardening.md) · Up: [Index](README.md)
+> Previous: [Hardening](05-hardening.md) · Next: [AgentCrew](07-agentcrew.md)
 
 ## 6.1 End-to-end request path
 
