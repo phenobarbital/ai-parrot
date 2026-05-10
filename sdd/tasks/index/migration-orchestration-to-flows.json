@@ -14,7 +14,7 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only 2 handler files — no overlap with test or example tasks",
       "assigned_to": null,
       "started_at": "2026-05-10T23:25:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1056-handler-import-migration.md"
+      "completed_at": "2026-05-10T23:34:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1056-handler-import-migration.md"
     },
     {
       "id": "TASK-1057",
