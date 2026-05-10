@@ -49,7 +49,7 @@ from markdownify import MarkdownConverter
 
 from parrot.loaders.abstract import AbstractLoader
 from parrot.stores.models import Document
-from parrot_loaders.jsonld_extractors import (
+from parrot.utils.jsonld_extractors import (
     EXTRACTOR_REGISTRY,
     JsonLdItem,
 )
