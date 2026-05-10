@@ -189,6 +189,44 @@ class Extract(BrowserAction):
         ),
     )
 
+class ExtractJsonLd(BrowserAction):
+    """Extract structured data from JSON-LD blocks on the current page.
+
+    Iterates every ``<script type="application/ld+json">`` block, walks
+    the JSON graph (descending into ``@graph`` and arrays), and dispatches
+    typed nodes through the shared ``EXTRACTOR_REGISTRY`` from
+    ``parrot.utils.jsonld_extractors``. Result is a flat list of dicts,
+    one per extracted ``JsonLdItem``, written to
+    ``step_extracted[extract_name]``.
+
+    Two filtering modes:
+    - ``types=None`` (default): extract every registered ``@type``.
+    - ``types=["Product", "Recipe"]``: only those types.
+    """
+
+    name: str = "extract_jsonld"
+    action: Literal["extract_jsonld"] = "extract_jsonld"
+    description: str = Field(
+        default="Extract JSON-LD structured data",
+        description="Extract structured data from <script type='application/ld+json'> blocks",
+    )
+    extract_name: str = Field(
+        default="jsonld",
+        description=(
+            "Key under which the result list is stored in extracted_data. "
+            "Falls back to the step's `name` field, then 'jsonld'."
+        ),
+    )
+    types: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Optional whitelist of schema.org @type values to extract "
+            "(e.g. ['Product', 'Recipe']). None = every type registered "
+            "in EXTRACTOR_REGISTRY."
+        ),
+    )
+
+
 class Submit(BrowserAction):
     """Click on a submit button or submit a form"""
     name: str = 'submit'
@@ -673,7 +711,7 @@ ActionList = Annotated[
         Navigate, Click, Hover, Fill, Type, Select, Evaluate, PressKey, Refresh, Back, Scroll,
         GetCookies, SetCookies, Wait, Authenticate,
         AwaitHuman, AwaitKeyPress, AwaitBrowserEvent,
-        GetText, GetHTML, Extract, Submit, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
+        GetText, GetHTML, Extract, ExtractJsonLd, Submit, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
     ],
     Field(discriminator='action')
 ]
@@ -708,6 +746,7 @@ ACTION_MAP = {
     "get_text": GetText,
     "get_html": GetHTML,
     "extract": Extract,
+    "extract_jsonld": ExtractJsonLd,
     "submit": Submit,
     "wait_for_download": WaitForDownload,
     "upload_file": UploadFile,
