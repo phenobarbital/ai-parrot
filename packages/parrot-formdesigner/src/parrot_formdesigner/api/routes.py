@@ -113,6 +113,11 @@ def setup_form_api(
     app.router.add_put(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.update_form))
     app.router.add_patch(f"{bp}/forms/{{form_id}}", _wrap_auth(handler.patch_form))
 
+    # Natural language editing
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/edit", _wrap_auth(handler.edit_form)
+    )
+
     # Contract endpoints (schema, style)
     app.router.add_get(
         f"{bp}/forms/{{form_id}}/schema", _wrap_auth(handler.get_schema)

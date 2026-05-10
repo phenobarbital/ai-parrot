@@ -102,8 +102,13 @@ Current form JSON:
 
 User request: {prompt}
 
-Apply the requested modifications to the form and respond with the COMPLETE updated FormSchema JSON.
-IMPORTANT: Respond with ONLY valid JSON. No markdown, no explanations.
+CRITICAL RULES:
+1. You MUST preserve the exact same JSON structure (FormSchema format) as the current form.
+2. Keep all existing fields, sections, and metadata UNLESS the user explicitly asks to remove them.
+3. Preserve form_id, version, and any fields not mentioned in the request.
+4. Only modify, add, or remove elements that the user specifically requests.
+5. The output must be a COMPLETE, valid FormSchema JSON — not a partial diff.
+6. Respond with ONLY valid JSON. No markdown, no explanations.
 """
 
 _RETRY_PROMPT = """Your previous response was not a valid FormSchema. Error: {error}
@@ -267,7 +272,7 @@ class CreateFormTool(AbstractTool):
             or success=False with error details on failure.
         """
         try:
-            # Build the initial prompt
+            existing: FormSchema | None = None
             if refine_form_id and self._registry is not None:
                 existing = await self._registry.get(refine_form_id)
                 if existing is None:
@@ -281,8 +286,8 @@ class CreateFormTool(AbstractTool):
             else:
                 messages = self._build_creation_messages(prompt)
 
-            # LLM generation loop with retry
-            form = await self._generate_with_retry(messages, form_id)
+            effective_form_id = form_id or refine_form_id
+            form = await self._generate_with_retry(messages, effective_form_id)
 
             if form is None:
                 return ToolResult(
@@ -300,10 +305,16 @@ class CreateFormTool(AbstractTool):
                     circular_errors,
                 )
 
-            # Optionally persist
+            if refine_form_id and existing is not None:
+                from ..api._utils import _bump_version
+                form.version = _bump_version(existing.version)
+
             if persist and self._registry is not None:
                 try:
-                    await self._registry.register(form, persist=True)
+                    overwrite = refine_form_id is not None
+                    await self._registry.register(
+                        form, persist=True, overwrite=overwrite,
+                    )
                 except Exception as exc:
                     self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
 

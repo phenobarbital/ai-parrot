@@ -291,6 +291,62 @@ class FormAPIHandler:
             "url": f"{prefix}/forms/{form_id}",
         })
 
+    async def edit_form(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/edit — Edit a form using natural language.
+
+        Loads the existing form from the registry, passes its JSON schema to the
+        LLM along with the user's edit prompt, and returns the updated form.
+        The LLM is instructed to strictly preserve the FormSchema JSON structure.
+        """
+        if self._create_tool.client is None:
+            return web.json_response(
+                {"error": "No LLM client configured for form editing"},
+                status=503,
+            )
+
+        form_id = request.match_info["form_id"]
+        existing = await self.registry.get(form_id)
+        if existing is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        prompt = body.get("prompt")
+        if not prompt:
+            return web.json_response({"error": "prompt is required"}, status=400)
+
+        result = await self._create_tool.execute(
+            prompt=prompt,
+            refine_form_id=form_id,
+            persist=True,
+        )
+
+        if not result.success:
+            return web.json_response(
+                {"error": result.metadata.get("error", "Form editing failed")},
+                status=500,
+            )
+
+        form_data = result.metadata.get("form", {})
+        updated_form_id = form_data.get("form_id")
+        if not updated_form_id:
+            return web.json_response(
+                {"error": "Form editing succeeded but form_id missing"},
+                status=500,
+            )
+        title = (result.result or {}).get("title", "")
+        prefix = request.app.get("_form_prefix", "")
+        return web.json_response({
+            "form_id": updated_form_id,
+            "title": title,
+            "url": f"{prefix}/forms/{updated_form_id}",
+        })
+
     async def update_form(self, request: web.Request) -> web.Response:
         """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
 
