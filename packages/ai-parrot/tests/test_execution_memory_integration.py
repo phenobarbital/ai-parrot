@@ -12,8 +12,8 @@ import pytest
 from typing import Any
 
 from parrot.bots.flow.fsm import AgentsFlow
-from parrot.bots.orchestration.storage import ExecutionMemory
-from parrot.bots.orchestration.tools import ResultRetrievalTool
+from parrot.bots.flows.core.storage import ExecutionMemory
+from parrot.bots.flows import ResultRetrievalTool
 
 
 class MockAgent:

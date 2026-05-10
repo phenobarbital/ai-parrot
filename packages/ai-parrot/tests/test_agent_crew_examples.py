@@ -32,7 +32,7 @@ mock_nav_conf = MagicMock()
 mock_nav_conf.AUTH_SESSION_OBJECT = "session"
 sys.modules["navigator_auth.conf"] = mock_nav_conf
 
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 from parrot.bots.flow.fsm import AgentsFlow, TransitionCondition
 
 
