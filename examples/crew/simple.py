@@ -6,9 +6,10 @@ Quick start guide for using the enhanced agent crew system.
 from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
-from parrot.bots.orchestration.crew import AgentCrew, FlowContext
+from parrot.bots.flows.crew import AgentCrew
+from parrot.bots.flows.core import FlowContext
 from parrot.bots.flow.fsm import AgentsFlow
-from parrot.bots.orchestration.agent import OrchestratorAgent
+from parrot.bots.flows.agents import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
 async def quick_parallel_example():

@@ -1,6 +1,6 @@
 import asyncio
 from parrot.models.crew import CrewResult
-from parrot.bots.orchestration import AgentCrew
+from parrot.bots.flows import AgentCrew
 from parrot.bots import Agent
 from parrot.tools.google import GoogleSearchTool, GoogleSiteSearchTool
 from parrot.tools.ibisworld import IBISWorldTool

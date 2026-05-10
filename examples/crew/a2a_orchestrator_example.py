@@ -18,7 +18,7 @@ import asyncio
 from typing import Optional
 
 from parrot.bots.agent import BasicAgent
-from parrot.bots.orchestration import A2AOrchestratorAgent
+from parrot.bots.flows import A2AOrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
 
