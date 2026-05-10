@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-155
 **Date**: 2026-05-11
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Proposal**: `sdd/proposals/migration-orchestration-to-flows.proposal.md`
 **Prior specs**: FEAT-134 (flow-primitives), FEAT-137 (agentcrew-primitives) — both completed
