@@ -52,7 +52,7 @@
       "feature_id": "FEAT-154",
       "feature": "webscrapingtoolkit-jsonld",
       "spec": "sdd/specs/webscrapingtoolkit-jsonld.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Imports EXTRACTOR_REGISTRY (from TASK-1048) and ExtractJsonLd (from TASK-1049); integration tests exercise the full dispatch path. Sequential within the per-spec worktree.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1050-add-extract-jsonld-executor-handler.md"
+      "completed_at": "2026-05-10T21:32:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1050-add-extract-jsonld-executor-handler.md"
     }
   ]
 }
