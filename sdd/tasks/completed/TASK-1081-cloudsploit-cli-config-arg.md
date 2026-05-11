@@ -183,10 +183,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Added `config_path: Optional[str] = None` kwarg to `_build_cli_args`. When set (non-empty), prepends `--config=<path>` as the first element. Empty string treated the same as None. Updated docstring. 4 new tests pass.
 
 **Deviations from spec**: none
