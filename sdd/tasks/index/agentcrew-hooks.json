@@ -14,14 +14,14 @@
       "feature_id": "FEAT-157",
       "feature": "agentcrew-hooks",
       "spec": "sdd/specs/agentcrew-hooks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Module 2 depends on this type alias",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1063-crew-hook-type.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-157",
       "feature": "agentcrew-hooks",
       "spec": "sdd/specs/agentcrew-hooks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1063"],
+      "depends_on": [
+        "TASK-1063"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1063 for CrewHookCallback type; tests (TASK-1065) depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1064-crew-hook-registration-dispatch.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-157",
       "feature": "agentcrew-hooks",
       "spec": "sdd/specs/agentcrew-hooks.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1064"],
+      "depends_on": [
+        "TASK-1064"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run after implementation is complete",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1065-crew-hook-tests.md"
     }
