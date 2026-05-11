@@ -45,6 +45,7 @@ class CloudSploitToolkit(AbstractToolkit):
         plugins: Optional[list[str]] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
     ) -> ScanResult:
         """Run a CloudSploit security scan against cloud infrastructure.
 
@@ -52,13 +53,32 @@ class CloudSploitToolkit(AbstractToolkit):
             plugins: Specific plugins to run. If None, runs all plugins.
             ignore_ok: If True, exclude passing (OK) results.
             suppress: Regex patterns to suppress specific results.
+            config: Path to a CloudSploit JS credentials file. When set, takes
+                precedence over ``CloudSploitConfig.config_file`` and over
+                env-var credentials. The file must exist on disk.
 
         Returns:
             ScanResult with typed findings and summary.
         """
+        effective_config = (
+            config if config is not None else self.config.config_file
+        )
+        if (
+            config is not None
+            and self.config.config_file is not None
+            and config != self.config.config_file
+        ):
+            self.logger.debug(
+                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
+                config,
+                self.config.config_file,
+            )
         results_json, collection_json, _stdout, stderr, code = (
             await self.executor.run_scan(
-                plugins=plugins, ignore_ok=ignore_ok, suppress=suppress,
+                plugins=plugins,
+                ignore_ok=ignore_ok,
+                suppress=suppress,
+                config=effective_config,
             )
         )
         if code != 0:
@@ -86,12 +106,16 @@ class CloudSploitToolkit(AbstractToolkit):
         self,
         framework: str,
         ignore_ok: bool = True,
+        config: Optional[str] = None,
     ) -> ScanResult:
         """Run a compliance-filtered CloudSploit scan.
 
         Args:
             framework: Compliance framework - one of: hipaa, cis1, cis2, pci.
             ignore_ok: If True, exclude passing results (default True for compliance).
+            config: Path to a CloudSploit JS credentials file. When set, takes
+                precedence over ``CloudSploitConfig.config_file`` and over
+                env-var credentials. The file must exist on disk.
 
         Returns:
             ScanResult filtered to the specified compliance framework.
@@ -105,9 +129,22 @@ class CloudSploitToolkit(AbstractToolkit):
                 f"Valid options: {valid}"
             )
 
+        effective_config = (
+            config if config is not None else self.config.config_file
+        )
+        if (
+            config is not None
+            and self.config.config_file is not None
+            and config != self.config.config_file
+        ):
+            self.logger.debug(
+                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
+                config,
+                self.config.config_file,
+            )
         results_json, _collection_json, _stdout, stderr, code = (
             await self.executor.run_compliance_scan(
-                framework=fw, ignore_ok=ignore_ok,
+                framework=fw, ignore_ok=ignore_ok, config=effective_config,
             )
         )
         if code != 0:
