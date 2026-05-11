@@ -264,10 +264,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-11
+**Notes**: Implemented in `parrot/bots/flows/crew/crew.py` (NOT
+`orchestration/crew.py` — AgentCrew was moved to `flows/crew/` in FEAT-143).
+Added `CrewHookCallback` import, `_on_complete_hooks`/`_on_error_hooks` lists
+in `__init__`, `on_complete()`/`on_error()` registration methods, and
+`_fire_hooks()` dispatch. Inserted `await self._fire_hooks(result)` before the
+persist block in `run_sequential`, `run_loop`, `run_parallel`, and `run_flow`.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Task spec listed `orchestration/crew.py` as the
+target — actual target is `flows/crew/crew.py` (corrected at user's direction).
+Result type is `FlowResult` (not `CrewResult`) — `FlowStatus` is `str, Enum`
+so string comparisons in `_fire_hooks` work correctly.

@@ -32,7 +32,7 @@
       "feature_id": "FEAT-157",
       "feature": "agentcrew-hooks",
       "spec": "sdd/specs/agentcrew-hooks.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1063 for CrewHookCallback type; tests (TASK-1065) depend on this",
       "assigned_to": null,
       "started_at": "2026-05-11T01:25:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1064-crew-hook-registration-dispatch.md"
+      "completed_at": "2026-05-11T01:42:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1064-crew-hook-registration-dispatch.md"
     },
     {
       "id": "TASK-1065",
