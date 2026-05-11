@@ -50,7 +50,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on TASK-1085 for FrameworkOverrideError. Must run after exceptions are defined.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1086-merger-merge-with-overlay.md"
+      "completed_at": "2026-05-11T23:59:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1086-merger-merge-with-overlay.md"
     },
     {
       "id": "TASK-1087",
