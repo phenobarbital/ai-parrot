@@ -14,7 +14,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -28,7 +28,7 @@
     {
       "id": "TASK-1085",
       "slug": "concept-embedding-pipeline",
-      "title": "ConceptEmbeddingPipeline — idempotent hash-based concept embedding sync",
+      "title": "ConceptEmbeddingPipeline \u2014 idempotent hash-based concept embedding sync",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -48,7 +48,7 @@
     {
       "id": "TASK-1086",
       "slug": "tenant-manager-pipeline-integration",
-      "title": "TenantOntologyManager — pipeline hook + authority/ directory loader",
+      "title": "TenantOntologyManager \u2014 pipeline hook + authority/ directory loader",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -69,7 +69,7 @@
     {
       "id": "TASK-1087",
       "slug": "pgvector-metadata-filters-extension",
-      "title": "PgVectorStore — list/IN support for similarity_search + metadata_filters on add_documents",
+      "title": "PgVectorStore \u2014 list/IN support for similarity_search + metadata_filters on add_documents",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -87,7 +87,7 @@
     {
       "id": "TASK-1088",
       "slug": "hybrid-concept-match-resolver",
-      "title": "hybrid_concept_match resolver strategy — synonym → vector → LLM cascade",
+      "title": "hybrid_concept_match resolver strategy \u2014 synonym \u2192 vector \u2192 LLM cascade",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -108,7 +108,7 @@
     {
       "id": "TASK-1089",
       "slug": "pageindex-scoped-search",
-      "title": "PageIndexToolkit.search_documents_scoped — multi-tree scoped search",
+      "title": "PageIndexToolkit.search_documents_scoped \u2014 multi-tree scoped search",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -126,7 +126,7 @@
     {
       "id": "TASK-1090",
       "slug": "ontology-degradation-chain",
-      "title": "ontology_process 4-level degradation chain (primary → secondary → filtered → plain)",
+      "title": "ontology_process 4-level degradation chain (primary \u2192 secondary \u2192 filtered \u2192 plain)",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -147,7 +147,7 @@
     {
       "id": "TASK-1091",
       "slug": "intent-router-branch-logic",
-      "title": "IntentRouterMixin — branch on ContextEnvelope state for unscoped fallback",
+      "title": "IntentRouterMixin \u2014 branch on ContextEnvelope state for unscoped fallback",
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
@@ -185,7 +185,7 @@
         "TASK-1091"
       ],
       "parallel": false,
-      "parallelism_notes": "Integration tests — depends on all prior tasks.",
+      "parallelism_notes": "Integration tests \u2014 depends on all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
