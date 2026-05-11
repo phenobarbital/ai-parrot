@@ -1,0 +1,53 @@
+team_work_in_progress:
+  description: In-progress Jira issues owned by direct reports of a named employee.
+  trigger_intents:
+    - en qué está trabajando el equipo de
+    - qué hace el equipo de
+    - issues in progress for the team of
+
+  entity_extraction:
+    target_employee:
+      type: Employee
+      resolver: fuzzy_name_match
+      scope: same_tenant
+      ambiguity_strategy: ask_user
+      required: true
+
+  authorization:
+    rules:
+      - rule: target_is_self
+      - rule: target_in_management_chain
+      - rule: has_role
+        role: hr_manager
+
+  query_template: |
+    LET target = DOCUMENT(@target_employee_id)
+    FOR teammate IN 1..1 INBOUND target._id @@reports_to
+      RETURN {
+        employee_id:     teammate.employee_id,
+        name:            teammate.name,
+        jira_account_id: teammate.jira_account_id,
+        manager_name:    target.name
+      }
+
+  post_action: tool_call
+
+  tool_call:
+    toolkit: JiraToolkit
+    method: jira_search_issues
+    credential_mode: requesting_user
+    parameters:
+      jql: |
+        project = TROC
+        AND status = "In Progress"
+        AND assignee in ({{ graph.team | jira_accounts }})
+      fields:
+        - summary
+        - status
+        - assignee
+        - components
+        - updated
+        - priority
+      max_results: 50
+    result_binding: in_progress_issues
+    empty_team_behavior: short_circuit

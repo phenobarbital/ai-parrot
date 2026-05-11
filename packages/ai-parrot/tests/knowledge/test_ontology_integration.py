@@ -199,16 +199,17 @@ class TestIntentToContext:
             mixin._ont_vector_store = None
             mixin._ont_cache = mock_cache
             mixin._ont_llm_client = None
+            mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
                 "what is my portal?", user_context, "epson",
             )
 
-            assert result.source == "ontology"
-            assert result.intent.action == "graph_query"
-            assert result.intent.pattern == "find_portal"
-            assert result.intent.source == "fast_path"
-            assert result.graph_context is not None
+            assert result.context.source == "ontology"
+            assert result.context.intent.action == "graph_query"
+            assert result.context.intent.pattern == "find_portal"
+            assert result.context.intent.source == "fast_path"
+            assert result.context.graph_context is not None
             mock_graph_store.execute_traversal.assert_called_once()
 
     @pytest.mark.asyncio
@@ -323,11 +324,13 @@ class TestDisabledMode:
             mixin._ont_cache = AsyncMock()
             mixin._ont_llm_client = None
             mixin._ont_vector_store = None
+            mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
                 "my department", user_context, "epson",
             )
-            assert result.source == "disabled"
+            assert result.state == "disabled"
+            assert result.context is None
             mixin._ont_tenant_manager.resolve.assert_not_called()
 
 
@@ -361,12 +364,13 @@ class TestGracefulDegradation:
             mixin._ont_vector_store = None
             mixin._ont_cache = mock_cache
             mixin._ont_llm_client = None
+            mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
                 "my department", user_context, "epson",
             )
             # Should NOT raise — graceful degradation
-            assert result.source == "vector_only"
+            assert result.context.source == "vector_only"
 
     @pytest.mark.asyncio
     async def test_no_yaml_for_tenant(self, mock_cache, user_context):
@@ -381,11 +385,12 @@ class TestGracefulDegradation:
             mixin._ont_vector_store = None
             mixin._ont_cache = mock_cache
             mixin._ont_llm_client = None
+            mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
                 "my department", user_context, "unknown_tenant",
             )
-            assert result.source == "vector_only"
+            assert result.context.source == "vector_only"
 
 
 # ── Test: Full test suite runs together ──

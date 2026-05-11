@@ -31,6 +31,8 @@ class OntologyCache:
     """Redis cache for ontology pipeline results.
 
     Cache key format: ``{prefix}:{tenant}:{user}:{pattern}``
+    Extended format (FEAT-158): ``{prefix}:{tenant}:{user}:{pattern}:e={k1}={v1},...``
+    when ``resolved_entities`` is provided and non-empty.
 
     Args:
         redis_client: An async Redis client (aioredis or redis.asyncio).
@@ -40,19 +42,43 @@ class OntologyCache:
         self._redis = redis_client
 
     @staticmethod
-    def build_key(tenant_id: str, user_id: str, pattern: str) -> str:
+    def build_key(
+        tenant_id: str,
+        user_id: str,
+        pattern: str,
+        resolved_entities: dict[str, str] | None = None,
+    ) -> str:
         """Build a cache key for a pipeline result.
+
+        When ``resolved_entities`` is provided and non-empty, appends a
+        deterministic suffix ``':e={k1}={v1},{k2}={v2},...'`` (sorted by key)
+        to prevent cross-target cache poisoning (FEAT-158).
+
+        Backwards compatible: omitting ``resolved_entities`` (or passing
+        ``None`` or ``{}``) returns the identical key as the pre-FEAT-158
+        format ``'{prefix}:{tenant_id}:{user_id}:{pattern}'``.
 
         Args:
             tenant_id: Tenant identifier.
             user_id: User identifier.
             pattern: Traversal pattern name.
+            resolved_entities: Optional mapping of rule_name → graph _id from
+                entity extraction (FEAT-158). Sorted by key for determinism.
 
         Returns:
             Formatted cache key string.
         """
         prefix = _get_conf_value("ONTOLOGY_CACHE_PREFIX", _DEFAULT_PREFIX)
-        return f"{prefix}:{tenant_id}:{user_id}:{pattern}"
+        base = f"{prefix}:{tenant_id}:{user_id}:{pattern}"
+        if not resolved_entities:
+            return base
+        # Sanitize ArangoDB _id values (e.g. "Employee/E001") — replace "/" with "_"
+        # to avoid confusing Redis admin tools and wildcard SCAN patterns.
+        safe_entities = {k: v.replace("/", "_") for k, v in resolved_entities.items()}
+        items = ",".join(
+            f"{k}={v}" for k, v in sorted(safe_entities.items())
+        )
+        return f"{base}:e={items}"
 
     async def get(self, key: str) -> EnrichedContext | None:
         """Retrieve a cached EnrichedContext.
