@@ -92,7 +92,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Final wiring task — depends on all implementation tasks being complete before re-exporting and documenting.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1083-iam-policy-package-wiring-example.md"
+      "completed_at": "2026-05-11T22:33:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1083-iam-policy-package-wiring-example.md"
     }
   ]
 }

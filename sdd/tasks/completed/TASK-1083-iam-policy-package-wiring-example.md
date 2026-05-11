@@ -213,8 +213,12 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-12
+**Notes**: Created `policies/` directory and `inspector_toolkit_policy.json` IAM sidecar with exact
+actions from spec §7. Updated `__init__.py` with InspectorToolkit import and `__all__` entry (also
+alphabetized the imports). Created `examples/aws_inspector_toolkit.py` demonstrating key operations.
+Note: needed `git add -f` for the example because `.gitignore` has `examples/**/*.py` rule.
+All 48 tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
