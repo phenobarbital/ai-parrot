@@ -433,6 +433,36 @@ class FormAPIHandler:
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
         return web.json_response(form.model_dump())
 
+    async def delete_form(self, request: web.Request) -> web.Response:
+        """DELETE /api/v1/forms/{form_id} — Remove a registered form.
+
+        Unregisters the form from the in-memory registry and, when a
+        ``FormStorage`` backend is configured, deletes the persisted row as
+        well (scoped by the form's tenant so per-tenant Postgres schemas
+        resolve correctly). Returns ``204 No Content`` on success, ``404``
+        when no form with the given id exists.
+        """
+        form_id = request.match_info["form_id"]
+        existing = await self.registry.get(form_id)
+        if existing is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        await self.registry.unregister(form_id)
+
+        storage = self.registry._storage
+        if storage is not None:
+            try:
+                await storage.delete(form_id, tenant=existing.tenant)
+            except Exception as exc:
+                self.logger.warning(
+                    "FormStorage.delete failed for %s: %s", form_id, exc
+                )
+
+        self.logger.info("DELETE form '%s'", form_id)
+        return web.Response(status=204)
+
     async def submit_data(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/data — Receive and process a form submission.
 
