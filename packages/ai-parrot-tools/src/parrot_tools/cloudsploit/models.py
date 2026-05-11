@@ -146,6 +146,14 @@ class CloudSploitConfig(BaseModel):
         default=None,
         description="Path to GCP service account JSON file"
     )
+    config_file: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to a CloudSploit JS credentials file (passed as "
+            "`--config=<path>` to the CLI). When set, takes precedence over "
+            "env-var credentials."
+        ),
+    )
     timeout_seconds: int = Field(
         default=600, description="Maximum scan duration in seconds"
     )
