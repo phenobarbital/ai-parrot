@@ -32,7 +32,7 @@
       "feature_id": "FEAT-156",
       "feature": "agentcrew-from-definition",
       "spec": "sdd/proposals/agentcrew-from-definition.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1060 for relocated model imports",
       "assigned_to": null,
       "started_at": "2026-05-11T00:48:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1061-agentcrew-from-definition.md"
+      "completed_at": "2026-05-11T00:59:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1061-agentcrew-from-definition.md"
     },
     {
       "id": "TASK-1062",
