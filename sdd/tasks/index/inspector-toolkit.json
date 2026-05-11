@@ -72,7 +72,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Only depends on TASK-1079 skeleton. Touches different methods than TASK-1080/1081 — could run in parallel with TASK-1080 if in separate worktrees, but spec recommends sequential in a single worktree since all methods live in one file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1082-async-export-operations.md"
+      "completed_at": "2026-05-11T22:31:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1082-async-export-operations.md"
     },
     {
       "id": "TASK-1083",
