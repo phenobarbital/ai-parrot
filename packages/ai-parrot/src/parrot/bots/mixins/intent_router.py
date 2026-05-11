@@ -632,12 +632,21 @@ class IntentRouterMixin:
         # Try OntologyRAGMixin integration
         ontology_process = getattr(self, "ontology_process", None)
         if ontology_process:
+            perm_ctx = (
+                self._get_permission_context()
+                if hasattr(self, "_get_permission_context")
+                else {}
+            )
+            tenant_id = getattr(self, "_tenant_id", "default")
             try:
-                result = await ontology_process(prompt)
+                result = await ontology_process(
+                    prompt, user_context=perm_ctx, tenant_id=tenant_id,
+                )
                 if result:
                     return str(result)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _logger = getattr(self, "logger", logging.getLogger(__name__))
+                _logger.warning("ontology_process failed: %s", exc)
 
         # Try direct graph store query
         for attr in ("_ont_graph_store", "graph_store"):

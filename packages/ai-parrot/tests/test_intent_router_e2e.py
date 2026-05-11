@@ -613,7 +613,12 @@ class TestOntologyAsSubStrategy:
         bot.configure_router(config, registry)
 
         # Simulate ontology_process attribute (OntologyRAGMixin integration)
-        async def mock_ontology_process(prompt: str) -> str:
+        # Must accept user_context and tenant_id kwargs (FEAT-158 TASK-1077)
+        async def mock_ontology_process(
+            prompt: str,
+            user_context: dict | None = None,
+            tenant_id: str = "default",
+        ) -> str:
             return f"Graph: found relationships for '{prompt}'"
 
         bot.ontology_process = mock_ontology_process
