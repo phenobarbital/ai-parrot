@@ -520,10 +520,61 @@ class TestRunScan:
         assert cmd[0] == "docker"
         assert "-v" in cmd
         v_idx = cmd.index("-v")
-        host_dir, container_dir = cmd[v_idx + 1].split(":")
+        host_dir, container_dir = cmd[v_idx + 1].split(":", 1)
         assert container_dir == "/cloudsploit/output"
         # Host dir is a real tempdir created and removed by the executor
         # (no longer exists after the context manager exits).
         joined = " ".join(cmd)
         assert "--json=/cloudsploit/output/results.json" in joined
         assert "--collection=/cloudsploit/output/collection.json" in joined
+
+    @pytest.mark.asyncio
+    async def test_run_scan_missing_config_file_raises(self, tmp_path):
+        """run_scan with a non-existent config file raises FileNotFoundError."""
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=False,
+                                                   cli_path="/usr/bin/cloudsploit"))
+        with pytest.raises(FileNotFoundError, match="cloudsploit-missing.js"):
+            await e.run_scan(config=str(tmp_path / "cloudsploit-missing.js"))
+
+    @pytest.mark.asyncio
+    async def test_run_scan_direct_cli_config_passthrough(self, tmp_path):
+        """Under direct-CLI mode, the host config path is used verbatim."""
+        cfg_file = tmp_path / "config.js"
+        cfg_file.write_text("module.exports = {};\n")
+        e = CloudSploitExecutor(CloudSploitConfig(
+            use_docker=False,
+            cli_path="/usr/local/bin/cloudsploit",
+        ))
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            await e.run_scan(config=str(cfg_file))
+        call_str = " ".join(captured[0])
+        assert f"--config={cfg_file}" in call_str
+
+    @pytest.mark.asyncio
+    async def test_run_scan_docker_config_path_rewrite(self, tmp_path):
+        """Under Docker mode, config path is rewritten to container path and
+        the config dir is bind-mounted read-only."""
+        cfg_file = tmp_path / "config.js"
+        cfg_file.write_text("module.exports = {};\n")
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=True))
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            await e.run_scan(config=str(cfg_file))
+        cmd = captured[0]
+        call_str = " ".join(cmd)
+        # The in-container config path
+        assert "--config=/cloudsploit/config/config.js" in call_str
+        # The read-only bind-mount for the config dir
+        assert "/cloudsploit/config:ro" in call_str
+
+    @pytest.mark.asyncio
+    async def test_run_compliance_scan_config_raises_when_missing(self, tmp_path):
+        """run_compliance_scan also raises FileNotFoundError for missing config."""
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=False,
+                                                   cli_path="/usr/bin/cloudsploit"))
+        with pytest.raises(FileNotFoundError):
+            await e.run_compliance_scan(
+                ComplianceFramework.HIPAA,
+                config=str(tmp_path / "missing.js"),
+            )

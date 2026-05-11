@@ -14,6 +14,11 @@ from .models import CloudProvider, CloudSploitConfig, ComplianceFramework
 # real files (fs.createWriteStream), so /dev/stdout is unreliable.
 _DOCKER_OUTPUT_MOUNT = "/cloudsploit/output"
 
+# Container path used as the mount target for the config file when running
+# CloudSploit inside Docker. The parent directory of the host config file
+# is bind-mounted here read-only so CloudSploit can read it via --config=.
+_DOCKER_CONFIG_MOUNT = "/cloudsploit/config"
+
 
 class CloudSploitExecutor:
     """Executes CloudSploit scans via Docker or direct CLI.
@@ -250,6 +255,7 @@ class CloudSploitExecutor:
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
         capture_collection: bool = True,
+        config: Optional[str] = None,
     ) -> tuple[str, str, str, str, int]:
         """Run CloudSploit writing JSON + collection to temp files.
 
@@ -266,11 +272,20 @@ class CloudSploitExecutor:
             suppress: Regex patterns to suppress specific results.
             capture_collection: When True, also request the raw cloud
                 provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk. Under Docker mode the
+                parent directory is bind-mounted read-only at
+                ``_DOCKER_CONFIG_MOUNT`` and the rewritten in-container path
+                is passed to ``--config=``. Under direct-CLI mode the host
+                path is used verbatim. When ``None``, behaviour is unchanged.
 
         Returns:
             Tuple of ``(results_json, collection_json, stdout, stderr,
             exit_code)``. ``collection_json`` is an empty string when
             ``capture_collection`` is False or the file is missing.
+
+        Raises:
+            FileNotFoundError: If ``config`` is set but does not exist on disk.
         """
         with tempfile.TemporaryDirectory(prefix="cloudsploit_") as host_tmp:
             host_dir = Path(host_tmp)
@@ -293,6 +308,24 @@ class CloudSploitExecutor:
                 )
                 volume_mounts = []
 
+            config_container_path: Optional[str] = None
+            if config is not None:
+                config_path = Path(config)
+                if not config_path.is_file():
+                    raise FileNotFoundError(
+                        f"CloudSploit config file not found: {config}"
+                    )
+                if self.config.use_docker:
+                    host_cfg_dir = str(config_path.resolve().parent)
+                    volume_mounts.append(
+                        (host_cfg_dir, _DOCKER_CONFIG_MOUNT, "ro")
+                    )
+                    config_container_path = (
+                        f"{_DOCKER_CONFIG_MOUNT}/{config_path.name}"
+                    )
+                else:
+                    config_container_path = str(config_path)
+
             args = self._build_cli_args(
                 json_path=container_results,
                 collection_path=container_collection,
@@ -300,6 +333,7 @@ class CloudSploitExecutor:
                 compliance=compliance,
                 ignore_ok=ignore_ok,
                 suppress=suppress,
+                config_path=config_container_path,
             )
             stdout, stderr, exit_code = await self.execute(
                 args, volume_mounts=volume_mounts if volume_mounts else None,
@@ -328,6 +362,7 @@ class CloudSploitExecutor:
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
         capture_collection: bool = True,
+        config: Optional[str] = None,
     ) -> tuple[str, str, str, str, int]:
         """Run a full or targeted CloudSploit scan.
 
@@ -337,6 +372,11 @@ class CloudSploitExecutor:
             suppress: Regex patterns to suppress specific results.
             capture_collection: When True, also request the raw cloud
                 provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk (``FileNotFoundError``
+                is raised otherwise). Under Docker, the file's parent directory
+                is bind-mounted read-only and the path is rewritten; under
+                direct-CLI mode the host path is used verbatim.
 
         Returns:
             Tuple of ``(results_json, collection_json, stdout, stderr,
@@ -347,6 +387,7 @@ class CloudSploitExecutor:
             ignore_ok=ignore_ok,
             suppress=suppress,
             capture_collection=capture_collection,
+            config=config,
         )
 
     async def run_compliance_scan(
@@ -354,6 +395,7 @@ class CloudSploitExecutor:
         framework: ComplianceFramework,
         ignore_ok: bool = True,
         capture_collection: bool = True,
+        config: Optional[str] = None,
     ) -> tuple[str, str, str, str, int]:
         """Run a compliance-filtered CloudSploit scan.
 
@@ -362,6 +404,11 @@ class CloudSploitExecutor:
             ignore_ok: If True, exclude OK results (default True for compliance).
             capture_collection: When True, also request the raw cloud
                 provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk (``FileNotFoundError``
+                is raised otherwise). Under Docker, the file's parent directory
+                is bind-mounted read-only and the path is rewritten; under
+                direct-CLI mode the host path is used verbatim.
 
         Returns:
             Tuple of ``(results_json, collection_json, stdout, stderr,
@@ -371,4 +418,5 @@ class CloudSploitExecutor:
             compliance=framework,
             ignore_ok=ignore_ok,
             capture_collection=capture_collection,
+            config=config,
         )
