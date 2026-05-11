@@ -52,7 +52,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "New file entity_resolver.py; could run parallel with 1072/1074/1075 (no shared files) but per-spec worktree keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1073-entity-resolver.md"
+      "completed_at": "2026-05-11T16:31:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1073-entity-resolver.md"
     },
     {
       "id": "TASK-1074",
