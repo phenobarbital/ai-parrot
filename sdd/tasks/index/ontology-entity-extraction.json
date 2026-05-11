@@ -156,7 +156,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -167,8 +167,8 @@
       "parallelism_notes": "Final integration test; depends on all production code being in place.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1078-e2e-team-work-in-progress.md"
+      "completed_at": "2026-05-11T16:46:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1078-e2e-team-work-in-progress.md"
     }
   ]
 }

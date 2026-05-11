@@ -202,9 +202,14 @@ See "Pattern to Follow — happy path test" above. The 4 remaining scenarios mir
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session>
-**Date**: YYYY-MM-DD
-**Notes**: ...
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-11
+**Notes**: Created YAML fixture at `packages/ai-parrot/tests/knowledge/fixtures/team_work_in_progress.yaml`
+with entity_extraction + authorization + tool_call sections. Created 6 E2E tests in
+`test_entity_extraction_e2e.py` covering: fixture loading, happy path with permission_context
+verification, ambiguity clarification, cross-department denial, auth_required deep link, and
+cache isolation. Spy strategy: lightweight `_ToolCallSpy` registered in a fake ToolManager
+(avoids JiraToolkit import complexity). All 272 knowledge tests pass.
+**Deviations from spec**: Used a `_ToolCallSpy` class instead of importing `JiraToolkit` —
+this avoids credentials/env-var deps while still validating the full pipeline including
+`_permission_context` forwarding. Documented in test inline comment.
