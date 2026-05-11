@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-12T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-11T22:48:08+00:00",
   "tasks": [
     {
       "id": "TASK-1079",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation task; all other tasks depend on the class skeleton and schemas.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:18:50+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-11T22:48:08+00:00",
       "file": "sdd/tasks/active/TASK-1079-inspector-skeleton-and-schemas.md"
     },
     {
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallelism_notes": "Depends on TASK-1079 skeleton. TASK-1080 and TASK-1082 could theoretically run in parallel since they touch different methods, but they share the same file and both build on the skeleton — sequential is safer.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:18:50+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-11T22:48:08+00:00",
       "file": "sdd/tasks/active/TASK-1080-direct-read-operations.md"
     },
     {
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,7 +62,7 @@
       "parallelism_notes": "Depends on TASK-1080 direct reads being implemented — composite methods orchestrate the same API calls and need the normalization helpers.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:18:50+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-11T22:48:08+00:00",
       "file": "sdd/tasks/active/TASK-1081-composite-read-operations.md"
     },
     {
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,7 +82,7 @@
       "parallelism_notes": "Only depends on TASK-1079 skeleton. Touches different methods than TASK-1080/1081 — could run in parallel with TASK-1080 if in separate worktrees, but spec recommends sequential in a single worktree since all methods live in one file.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:18:50+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-11T22:48:08+00:00",
       "file": "sdd/tasks/active/TASK-1082-async-export-operations.md"
     },
     {
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -104,7 +104,7 @@
       "parallelism_notes": "Final wiring task — depends on all implementation tasks being complete before re-exporting and documenting.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:18:50+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-11T22:48:08+00:00",
       "file": "sdd/tasks/active/TASK-1083-iam-policy-package-wiring-example.md"
     }
   ]
