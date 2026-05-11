@@ -68,7 +68,7 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Must run AFTER all import migrations — deletes the source modules",
       "assigned_to": null,
       "started_at": "2026-05-10T23:25:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1059-delete-orchestration-directory.md"
+      "completed_at": "2026-05-11T01:12:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1059-delete-orchestration-directory.md"
     }
   ]
 }
