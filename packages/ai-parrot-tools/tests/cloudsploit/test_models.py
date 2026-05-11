@@ -202,6 +202,16 @@ class TestCloudSploitConfig:
         config = CloudSploitConfig(timeout_seconds=1200)
         assert config.timeout_seconds == 1200
 
+    def test_config_file_defaults_to_none(self):
+        """CloudSploitConfig.config_file defaults to None."""
+        cfg = CloudSploitConfig()
+        assert cfg.config_file is None
+
+    def test_config_file_accepts_path(self):
+        """CloudSploitConfig.config_file holds an arbitrary path string."""
+        cfg = CloudSploitConfig(config_file="/etc/cloudsploit/config.js")
+        assert cfg.config_file == "/etc/cloudsploit/config.js"
+
 
 class TestScanResult:
     def test_basic_result(self):

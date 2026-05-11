@@ -4,7 +4,6 @@ Orchestrates CloudSploit executor, parser, report generator, and
 comparator into a single AbstractToolkit subclass.  Every public
 async method is automatically exposed as an agent tool.
 """
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ..toolkit import AbstractToolkit
@@ -15,7 +14,6 @@ from .models import (
     ComparisonReport,
     ComplianceFramework,
     ScanResult,
-    ScanSummary,
     SeverityLevel,
 )
 from .parser import ScanResultParser
@@ -38,6 +36,36 @@ class CloudSploitToolkit(AbstractToolkit):
         self.comparator = ScanComparator()
         self._last_result: Optional[ScanResult] = None
 
+    # -- Private helpers ---------------------------------------------------
+
+    def _resolve_config(self, per_call: Optional[str]) -> Optional[str]:
+        """Resolve effective config path with per-call arg > field precedence.
+
+        Emits a DEBUG log when the per-call argument overrides the model-level
+        ``config_file`` field, and a second DEBUG log with the resolved path
+        whenever a config is active (regardless of source).
+
+        Args:
+            per_call: Per-call config path supplied by the caller, or None.
+
+        Returns:
+            Effective config path, or None if no config is configured.
+        """
+        effective = per_call if per_call is not None else self.config.config_file
+        if (
+            per_call is not None
+            and self.config.config_file is not None
+            and per_call != self.config.config_file
+        ):
+            self.logger.debug(
+                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
+                per_call,
+                self.config.config_file,
+            )
+        if effective:
+            self.logger.debug("Effective CloudSploit config: %s", effective)
+        return effective
+
     # -- Public async methods (each becomes an agent tool) -----------------
 
     async def run_scan(
@@ -45,6 +73,7 @@ class CloudSploitToolkit(AbstractToolkit):
         plugins: Optional[list[str]] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
     ) -> ScanResult:
         """Run a CloudSploit security scan against cloud infrastructure.
 
@@ -52,13 +81,20 @@ class CloudSploitToolkit(AbstractToolkit):
             plugins: Specific plugins to run. If None, runs all plugins.
             ignore_ok: If True, exclude passing (OK) results.
             suppress: Regex patterns to suppress specific results.
+            config: Path to a CloudSploit JS credentials file. When set, takes
+                precedence over ``CloudSploitConfig.config_file`` and over
+                env-var credentials. The file must exist on disk.
 
         Returns:
             ScanResult with typed findings and summary.
         """
+        effective_config = self._resolve_config(config)
         results_json, collection_json, _stdout, stderr, code = (
             await self.executor.run_scan(
-                plugins=plugins, ignore_ok=ignore_ok, suppress=suppress,
+                plugins=plugins,
+                ignore_ok=ignore_ok,
+                suppress=suppress,
+                config=effective_config,
             )
         )
         if code != 0:
@@ -86,12 +122,16 @@ class CloudSploitToolkit(AbstractToolkit):
         self,
         framework: str,
         ignore_ok: bool = True,
+        config: Optional[str] = None,
     ) -> ScanResult:
         """Run a compliance-filtered CloudSploit scan.
 
         Args:
             framework: Compliance framework - one of: hipaa, cis1, cis2, pci.
             ignore_ok: If True, exclude passing results (default True for compliance).
+            config: Path to a CloudSploit JS credentials file. When set, takes
+                precedence over ``CloudSploitConfig.config_file`` and over
+                env-var credentials. The file must exist on disk.
 
         Returns:
             ScanResult filtered to the specified compliance framework.
@@ -105,9 +145,10 @@ class CloudSploitToolkit(AbstractToolkit):
                 f"Valid options: {valid}"
             )
 
+        effective_config = self._resolve_config(config)
         results_json, _collection_json, _stdout, stderr, code = (
             await self.executor.run_compliance_scan(
-                framework=fw, ignore_ok=ignore_ok,
+                framework=fw, ignore_ok=ignore_ok, config=effective_config,
             )
         )
         if code != 0:

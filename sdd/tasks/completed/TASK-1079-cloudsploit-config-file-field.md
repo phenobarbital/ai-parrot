@@ -155,10 +155,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Added `config_file: Optional[str] = Field(default=None, ...)` to `CloudSploitConfig` immediately after `gcp_credentials_path`. Two new tests pass: `test_config_file_defaults_to_none` and `test_config_file_accepts_path`. One pre-existing failure (`test_default_values`) unrelated to this task (env-specific AWS region).
 
 **Deviations from spec**: none

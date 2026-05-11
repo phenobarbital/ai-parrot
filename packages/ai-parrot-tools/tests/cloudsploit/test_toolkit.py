@@ -1,5 +1,6 @@
 """Integration tests for CloudSploitToolkit."""
 import json
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -146,7 +147,7 @@ class TestRunScan:
     async def test_scan_saves_to_results_dir(self, toolkit, tmp_path):
         toolkit.config.results_dir = str(tmp_path)
         with _mock_executor(toolkit):
-            result = await toolkit.run_scan()
+            await toolkit.run_scan()
             saved_files = list(tmp_path.glob("scan_*.json"))
             assert len(saved_files) == 1
 
@@ -330,3 +331,136 @@ class TestCompareScan:
 
         with pytest.raises(ValueError, match="No current scan available"):
             await toolkit.compare_scans(baseline_path=baseline_path)
+
+
+# ── run_scan config argument ─────────────────────────────────────────────
+
+
+class TestRunScanConfig:
+    @pytest.mark.asyncio
+    async def test_call_arg_forwarded(self):
+        """Per-call config is forwarded to executor.run_scan."""
+        toolkit = CloudSploitToolkit(CloudSploitConfig())
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            await toolkit.run_scan(config="/p/cfg.js")
+            assert mock.await_args.kwargs["config"] == "/p/cfg.js"
+
+    @pytest.mark.asyncio
+    async def test_model_default_applies(self):
+        """When no per-call config, CloudSploitConfig.config_file is used."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/d/cfg.js")
+        )
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            await toolkit.run_scan()
+            assert mock.await_args.kwargs["config"] == "/d/cfg.js"
+
+    @pytest.mark.asyncio
+    async def test_call_arg_overrides_model_default_and_logs(self, caplog):
+        """Per-call config overrides model default and emits a DEBUG log."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/orig.js")
+        )
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_scan(config="/override.js")
+            assert mock.await_args.kwargs["config"] == "/override.js"
+            assert any("overrides" in r.message.lower()
+                       for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_no_config_no_log(self, caplog):
+        """With no config set at all, no DEBUG log is emitted."""
+        toolkit = CloudSploitToolkit(CloudSploitConfig())
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_scan()
+            assert mock.await_args.kwargs["config"] is None
+            assert not any("overrides" in r.message.lower()
+                           for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_effective_config_logged_when_active(self, caplog):
+        """Effective config path is always logged at DEBUG when non-None."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/d/cfg.js")
+        )
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_scan()
+            assert any(
+                "effective" in r.message.lower() and "/d/cfg.js" in r.message
+                for r in caplog.records
+            )
+
+
+# ── run_compliance_scan config argument ──────────────────────────────────
+
+
+class TestRunComplianceScanConfig:
+    @pytest.mark.asyncio
+    async def test_call_arg_forwarded(self):
+        """Per-call config is forwarded to executor.run_compliance_scan."""
+        toolkit = CloudSploitToolkit(CloudSploitConfig())
+        with patch.object(toolkit.executor, "run_compliance_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            await toolkit.run_compliance_scan(framework="hipaa",
+                                              config="/p/cfg.js")
+            assert mock.await_args.kwargs["config"] == "/p/cfg.js"
+
+    @pytest.mark.asyncio
+    async def test_model_default_applies(self):
+        """When no per-call config, CloudSploitConfig.config_file is used."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/d/cfg.js")
+        )
+        with patch.object(toolkit.executor, "run_compliance_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            await toolkit.run_compliance_scan(framework="hipaa")
+            assert mock.await_args.kwargs["config"] == "/d/cfg.js"
+
+    @pytest.mark.asyncio
+    async def test_call_arg_overrides_model_default_and_logs(self, caplog):
+        """Per-call config overrides model default and emits a DEBUG log."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/orig.js")
+        )
+        with patch.object(toolkit.executor, "run_compliance_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_compliance_scan(framework="hipaa",
+                                                  config="/override.js")
+            assert mock.await_args.kwargs["config"] == "/override.js"
+            assert any("overrides" in r.message.lower()
+                       for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_no_config_no_log(self, caplog):
+        """With no config set at all, no DEBUG log is emitted."""
+        toolkit = CloudSploitToolkit(CloudSploitConfig())
+        with patch.object(toolkit.executor, "run_compliance_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_compliance_scan(framework="pci")
+            assert mock.await_args.kwargs["config"] is None
+            assert not any("overrides" in r.message.lower()
+                           for r in caplog.records)

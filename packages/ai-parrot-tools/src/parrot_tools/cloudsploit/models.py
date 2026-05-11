@@ -146,6 +146,22 @@ class CloudSploitConfig(BaseModel):
         default=None,
         description="Path to GCP service account JSON file"
     )
+
+    # Cross-provider config override — takes precedence over all env-var
+    # credentials when set.  Accepts a string path; existence is validated
+    # at scan time (not at model construction), so the file may be absent
+    # until the Docker volume is mounted or the CLI is invoked.
+    config_file: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to a CloudSploit JS credentials file (string, passed as "
+            "`--config=<path>` to the CLI). File existence is validated at "
+            "scan time, not at config construction — the file may be mounted "
+            "via Docker at scan invocation. Takes precedence over env-var "
+            "credentials when set."
+        ),
+    )
+
     timeout_seconds: int = Field(
         default=600, description="Maximum scan duration in seconds"
     )
