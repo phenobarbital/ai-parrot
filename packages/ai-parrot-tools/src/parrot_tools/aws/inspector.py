@@ -177,6 +177,13 @@ def _extract_aggregation_key(val: Dict[str, Any]) -> str:
     return "unknown"
 
 
+_IAM_POLICY_HINT = (
+    " Check the IAM policy sidecar at "
+    "packages/ai-parrot-tools/src/parrot_tools/aws/policies/"
+    "inspector_toolkit_policy.json for required permissions."
+)
+
+
 # ------------------------------------------------------------------
 # Toolkit
 # ------------------------------------------------------------------
@@ -302,6 +309,25 @@ class InspectorToolkit(AbstractToolkit):
             ]
 
         return criteria
+
+    def _raise_client_error(self, e: ClientError) -> None:
+        """Translate a botocore ClientError into a RuntimeError.
+
+        AccessDeniedException gets an extra IAM policy hint pointing to the
+        bundled sidecar JSON so operators can quickly identify missing permissions.
+
+        Args:
+            e: The original ClientError.
+
+        Raises:
+            RuntimeError: Always raised; never returns normally.
+        """
+        error_code = e.response["Error"].get("Code", "Unknown")
+        if error_code == "AccessDeniedException":
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}{_IAM_POLICY_HINT}"
+            ) from e
+        raise RuntimeError(f"AWS Inspector error ({error_code}): {e}") from e
 
     def _normalize_finding(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize a single raw Inspector finding dict.
@@ -459,10 +485,7 @@ class InspectorToolkit(AbstractToolkit):
                 "next_token": response.get("nextToken"),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     @tool_schema(AggregateFindingsInput)
     async def aws_inspector_aggregate_findings(
@@ -490,13 +513,6 @@ class InspectorToolkit(AbstractToolkit):
                 severity=severity,
                 resource_type=resource_type,
             )
-            agg_request: Dict[str, Any] = {
-                "aggregationType": aggregation_type.upper(),
-                "aggregationRequest": {},
-            }
-            if filter_criteria:
-                agg_request["filterCriteria"] = filter_criteria
-
             kwargs: Dict[str, Any] = {
                 "aggregationType": aggregation_type.upper(),
                 "aggregationRequest": {},
@@ -534,10 +550,7 @@ class InspectorToolkit(AbstractToolkit):
                 "aggregation_type": aggregation_type.upper(),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     @tool_schema(GetEcrImageFindingsInput)
     async def aws_inspector_get_ecr_image_findings(
@@ -617,10 +630,7 @@ class InspectorToolkit(AbstractToolkit):
                 "next_token": response.get("nextToken"),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     @tool_schema(ListCoverageInput)
     async def aws_inspector_list_coverage(
@@ -696,10 +706,7 @@ class InspectorToolkit(AbstractToolkit):
                 "next_token": response.get("nextToken"),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     async def aws_inspector_get_coverage_statistics(self) -> Dict[str, Any]:
         """Get Amazon Inspector v2 coverage statistics summary.
@@ -716,13 +723,12 @@ class InspectorToolkit(AbstractToolkit):
                     groupBy="RESOURCE_TYPE"
                 )
 
+            # boto3 list_coverage_statistics returns a flat list:
+            # {"countsByGroup": [{"groupKey": "AWS_ECR_CONTAINER_IMAGE", "count": N}, ...]}
             counts_by_type: Dict[str, int] = {}
             for group in response.get("countsByGroup") or []:
-                for count_item in group.get("counts") or []:
-                    key = count_item.get("groupKey", "UNKNOWN")
-                    counts_by_type[key] = counts_by_type.get(key, 0) + count_item.get(
-                        "count", 0
-                    )
+                key = group.get("groupKey", "UNKNOWN")
+                counts_by_type[key] = counts_by_type.get(key, 0) + group.get("count", 0)
 
             total = sum(counts_by_type.values())
             return {
@@ -730,10 +736,7 @@ class InspectorToolkit(AbstractToolkit):
                 "total_resources": total,
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     async def aws_inspector_batch_get_account_status(self) -> Dict[str, Any]:
         """Get Inspector v2 scan type enablement status for the current account.
@@ -778,10 +781,7 @@ class InspectorToolkit(AbstractToolkit):
                 "failed_accounts": failed,
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     # ------------------------------------------------------------------
     # Composite read operations
@@ -819,7 +819,12 @@ class InspectorToolkit(AbstractToolkit):
                     groupBy="RESOURCE_TYPE"
                 )
 
-                # 3. Get scan type enablement
+                # 3. Get coverage statistics by scan status reason (for expired count)
+                scan_reason_resp = await ins.list_coverage_statistics(
+                    groupBy="SCAN_STATUS_REASON"
+                )
+
+                # 4. Get scan type enablement
                 acct_resp = await ins.batch_get_account_status(accountIds=[])
 
             # Parse severity counts from account aggregation
@@ -850,21 +855,26 @@ class InspectorToolkit(AbstractToolkit):
             security_score = max(0, min(100, 100 - penalty))
             total_active = sum(severity_counts.values())
 
-            # Parse coverage counts by resource type
+            # Parse coverage counts by resource type.
+            # boto3 returns a flat list: [{"groupKey": "AWS_ECR_CONTAINER_IMAGE", "count": N}]
             ecr_count = 0
             ec2_count = 0
             lambda_count = 0
-            expired_count = 0
             for group in cov_resp.get("countsByGroup") or []:
-                for count_item in group.get("counts") or []:
-                    key = count_item.get("groupKey", "")
-                    cnt = count_item.get("count", 0)
-                    if key == "AWS_ECR_CONTAINER_IMAGE":
-                        ecr_count += cnt
-                    elif key == "AWS_EC2_INSTANCE":
-                        ec2_count += cnt
-                    elif key == "AWS_LAMBDA_FUNCTION":
-                        lambda_count += cnt
+                key = group.get("groupKey", "")
+                cnt = group.get("count", 0)
+                if key == "AWS_ECR_CONTAINER_IMAGE":
+                    ecr_count += cnt
+                elif key == "AWS_EC2_INSTANCE":
+                    ec2_count += cnt
+                elif key == "AWS_LAMBDA_FUNCTION":
+                    lambda_count += cnt
+
+            # Parse expired eligibility count from scan status reason response.
+            expired_count = 0
+            for group in scan_reason_resp.get("countsByGroup") or []:
+                if group.get("groupKey") == "SCAN_ELIGIBILITY_EXPIRED":
+                    expired_count += group.get("count", 0)
 
             coverage = {
                 "ecr_images_scanned": ecr_count,
@@ -910,10 +920,7 @@ class InspectorToolkit(AbstractToolkit):
                 "weights_used": effective_weights,
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     @tool_schema(ListTopVulnerableResourcesInput)
     async def aws_inspector_list_top_vulnerable_resources(
@@ -996,10 +1003,7 @@ class InspectorToolkit(AbstractToolkit):
                 "weights_used": effective_weights,
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     # ------------------------------------------------------------------
     # Async export operations
@@ -1056,10 +1060,7 @@ class InspectorToolkit(AbstractToolkit):
                 "status": "IN_PROGRESS",
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     async def aws_inspector_get_findings_report_status(
         self, report_id: str
@@ -1088,12 +1089,9 @@ class InspectorToolkit(AbstractToolkit):
                 "destination": response.get("destination"),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            if error_code == "ResourceNotFoundException":
+            if e.response["Error"].get("Code") == "ResourceNotFoundException":
                 return {"report_id": report_id, "status": "NOT_FOUND"}
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     @tool_schema(CreateSbomExportInput)
     async def aws_inspector_create_sbom_export(
@@ -1151,10 +1149,7 @@ class InspectorToolkit(AbstractToolkit):
                 "status": "IN_PROGRESS",
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)
 
     async def aws_inspector_get_sbom_export(self, report_id: str) -> Dict[str, Any]:
         """Poll the status of an Inspector SBOM export.
@@ -1181,9 +1176,6 @@ class InspectorToolkit(AbstractToolkit):
                 "error_message": response.get("errorMessage"),
             }
         except ClientError as e:
-            error_code = e.response["Error"].get("Code", "Unknown")
-            if error_code == "ResourceNotFoundException":
+            if e.response["Error"].get("Code") == "ResourceNotFoundException":
                 return {"report_id": report_id, "status": "NOT_FOUND"}
-            raise RuntimeError(
-                f"AWS Inspector error ({error_code}): {e}"
-            ) from e
+            self._raise_client_error(e)

@@ -531,8 +531,11 @@ class TestListFindings:
             with pytest.raises(RuntimeError) as exc_info:
                 await toolkit.aws_inspector_list_findings()
 
-        assert "AWS Inspector error" in str(exc_info.value)
-        assert "AccessDeniedException" in str(exc_info.value)
+        error_msg = str(exc_info.value)
+        assert "AWS Inspector error" in error_msg
+        assert "AccessDeniedException" in error_msg
+        # AccessDeniedException should include the IAM policy sidecar hint
+        assert "inspector_toolkit_policy.json" in error_msg
 
 
 class TestGetEcrImageFindings:
@@ -633,14 +636,21 @@ class TestGetSecurityPosture:
         }
 
     def _make_coverage_stats_response(self) -> dict:
+        # boto3 list_coverage_statistics returns a flat list — NOT nested.
+        # Correct shape: {"countsByGroup": [{"groupKey": "...", "count": N}]}
         return {
             "countsByGroup": [
-                {
-                    "counts": [{"count": 5, "groupKey": "AWS_ECR_CONTAINER_IMAGE"}],
-                    "groupKey": "RESOURCE_TYPE",
-                }
+                {"groupKey": "AWS_ECR_CONTAINER_IMAGE", "count": 5},
+                {"groupKey": "AWS_EC2_INSTANCE", "count": 3},
             ]
         }
+
+    def _make_scan_reason_response(self, expired: int = 0) -> dict:
+        """Coverage stats grouped by SCAN_STATUS_REASON (for expired eligibility)."""
+        groups = []
+        if expired > 0:
+            groups.append({"groupKey": "SCAN_ELIGIBILITY_EXPIRED", "count": expired})
+        return {"countsByGroup": groups}
 
     def _make_account_status_response(self) -> dict:
         return {
@@ -667,15 +677,17 @@ class TestGetSecurityPosture:
             critical=2, high=3, medium=5, low=10
         )
         cov_resp = self._make_coverage_stats_response()
+        scan_reason_resp = self._make_scan_reason_response()
         acc_resp = self._make_account_status_response()
-
-        call_count = 0
 
         @asynccontextmanager
         async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
             mock_client = MagicMock()
             mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
-            mock_client.list_coverage_statistics = AsyncMock(return_value=cov_resp)
+            # Called twice: first groupBy=RESOURCE_TYPE, then groupBy=SCAN_STATUS_REASON
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
             mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
             yield mock_client
 
@@ -691,13 +703,16 @@ class TestGetSecurityPosture:
         """Score cannot go below 0."""
         agg_resp = self._make_aggregation_response(critical=20)  # penalty = 200
         cov_resp = self._make_coverage_stats_response()
+        scan_reason_resp = self._make_scan_reason_response()
         acc_resp = self._make_account_status_response()
 
         @asynccontextmanager
         async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
             mock_client = MagicMock()
             mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
-            mock_client.list_coverage_statistics = AsyncMock(return_value=cov_resp)
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
             mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
             yield mock_client
 
@@ -712,13 +727,16 @@ class TestGetSecurityPosture:
         # 1 CRITICAL with weights={CRITICAL: 50} → penalty=50 → score=50
         agg_resp = self._make_aggregation_response(critical=1)
         cov_resp = self._make_coverage_stats_response()
+        scan_reason_resp = self._make_scan_reason_response()
         acc_resp = self._make_account_status_response()
 
         @asynccontextmanager
         async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
             mock_client = MagicMock()
             mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
-            mock_client.list_coverage_statistics = AsyncMock(return_value=cov_resp)
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
             mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
             yield mock_client
 
@@ -734,13 +752,16 @@ class TestGetSecurityPosture:
         """Output always includes weights_used dict."""
         agg_resp = self._make_aggregation_response()
         cov_resp = self._make_coverage_stats_response()
+        scan_reason_resp = self._make_scan_reason_response()
         acc_resp = self._make_account_status_response()
 
         @asynccontextmanager
         async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
             mock_client = MagicMock()
             mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
-            mock_client.list_coverage_statistics = AsyncMock(return_value=cov_resp)
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
             mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
             yield mock_client
 
@@ -750,28 +771,57 @@ class TestGetSecurityPosture:
         assert "weights_used" in result
         assert isinstance(result["weights_used"], dict)
 
+    @pytest.mark.asyncio
+    async def test_expired_eligibility_count(self, toolkit: InspectorToolkit) -> None:
+        """resources_with_expired_eligibility is populated from SCAN_STATUS_REASON groupBy."""
+        agg_resp = self._make_aggregation_response()
+        cov_resp = self._make_coverage_stats_response()
+        scan_reason_resp = self._make_scan_reason_response(expired=7)
+        acc_resp = self._make_account_status_response()
+
+        @asynccontextmanager
+        async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
+            mock_client = MagicMock()
+            mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
+            mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
+            yield mock_client
+
+        with patch.object(toolkit.aws, "client", mock_ctx):
+            result = await toolkit.aws_inspector_get_security_posture()
+
+        assert result["coverage"]["resources_with_expired_eligibility"] == 7
+
+    @pytest.mark.asyncio
+    async def test_coverage_counts_from_resource_type(self, toolkit: InspectorToolkit) -> None:
+        """coverage dict reflects ECR/EC2/Lambda counts from RESOURCE_TYPE groupBy."""
+        agg_resp = self._make_aggregation_response()
+        cov_resp = self._make_coverage_stats_response()  # ECR=5, EC2=3
+        scan_reason_resp = self._make_scan_reason_response()
+        acc_resp = self._make_account_status_response()
+
+        @asynccontextmanager
+        async def mock_ctx(service: str, **kwargs: Any) -> AsyncIterator[Any]:
+            mock_client = MagicMock()
+            mock_client.list_finding_aggregations = AsyncMock(return_value=agg_resp)
+            mock_client.list_coverage_statistics = AsyncMock(
+                side_effect=[cov_resp, scan_reason_resp]
+            )
+            mock_client.batch_get_account_status = AsyncMock(return_value=acc_resp)
+            yield mock_client
+
+        with patch.object(toolkit.aws, "client", mock_ctx):
+            result = await toolkit.aws_inspector_get_security_posture()
+
+        assert result["coverage"]["ecr_images_scanned"] == 5
+        assert result["coverage"]["ec2_instances_scanned"] == 3
+        assert result["coverage"]["lambda_functions_scanned"] == 0
+
 
 class TestListTopVulnerableResources:
     """Tests for aws_inspector_list_top_vulnerable_resources."""
-
-    def _make_resource_aggregation_response(
-        self, resources: list[dict]
-    ) -> dict:
-        """Create a resource aggregation mock response."""
-        return {
-            "responses": [
-                {
-                    "aggregationType": "AWS_EC2_INSTANCE",
-                    "responses": [
-                        {
-                            "amiAggregation": None,
-                            "accountAggregation": None,
-                        }
-                    ],
-                }
-            ],
-            "resourceAggregations": resources,
-        }
 
     @pytest.mark.asyncio
     async def test_sorted_by_weighted_severity(self, toolkit: InspectorToolkit) -> None:
