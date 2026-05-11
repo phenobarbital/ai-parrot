@@ -281,10 +281,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-11
+**Notes**: Added 5 new Pydantic v2 models (EntityExtractionRule, AuthorizationRule,
+AuthorizationSpec, ToolCallSpec, ContextEnvelope). Extended TraversalPattern with 3
+optional fields (entity_extraction, authorization, tool_call). Extended ResolvedIntent
+with 3 optional fields (resolved_entities, tool_call, denial_reason). All models use
+ConfigDict(extra="forbid"). 29 unit tests pass; 14 existing mixin tests pass (no regression).
+model_validator on AuthorizationRule enforces role field for has_role.
 
-**Completed by**: <session>
-**Date**: YYYY-MM-DD
-**Notes**: ...
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

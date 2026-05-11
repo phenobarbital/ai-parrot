@@ -14,7 +14,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task; blocks all others. Per-spec single worktree per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1071-ontology-schema-extensions.md"
+      "completed_at": "2026-05-11T16:27:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1071-ontology-schema-extensions.md"
     },
     {
       "id": "TASK-1072",
