@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-161
 **Date**: 2026-05-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: v1
 
 ---
