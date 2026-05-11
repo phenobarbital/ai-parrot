@@ -192,7 +192,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -200,8 +200,8 @@
       "parallelism_notes": "Creates new package with no imports from other FEAT-159 tasks. Parallel with TASK-1084, TASK-1085, TASK-1087.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1093-schema-overlay-models.md"
+      "completed_at": "2026-05-11T23:41:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1093-schema-overlay-models.md"
     },
     {
       "id": "TASK-1094",
