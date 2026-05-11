@@ -32,7 +32,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1079 skeleton. TASK-1080 and TASK-1082 could theoretically run in parallel since they touch different methods, but they share the same file and both build on the skeleton — sequential is safer.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1080-direct-read-operations.md"
+      "completed_at": "2026-05-11T22:28:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1080-direct-read-operations.md"
     },
     {
       "id": "TASK-1081",
