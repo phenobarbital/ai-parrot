@@ -14,7 +14,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only models.py and test_models.py — no overlap with other tasks in this feature.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1079-cloudsploit-config-file-field.md"
+      "completed_at": "2026-05-11T22:23:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1079-cloudsploit-config-file-field.md"
     },
     {
       "id": "TASK-1080",
