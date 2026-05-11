@@ -32,7 +32,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "No shared files with TASK-1084. Modifies exceptions.py only — independent of migration.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1085-ontology-exception-types.md"
+      "completed_at": "2026-05-11T23:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1085-ontology-exception-types.md"
     },
     {
       "id": "TASK-1086",
