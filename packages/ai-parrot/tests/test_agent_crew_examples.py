@@ -55,13 +55,27 @@ class DummyToolManager:
 
 @dataclass
 class DummyResponse:
-    """Simple response object exposing a ``content`` attribute."""
+    """Simple response object exposing ``content`` and ``output`` attributes.
+
+    ``output`` is an alias for ``content`` so FlowResult.node_results
+    (which checks ``hasattr(resp, "output")``) extracts strings correctly.
+    """
 
     content: str
+
+    @property
+    def output(self) -> str:
+        """Alias for content — required by FlowResult.node_results extraction."""
+        return self.content
 
 
 class DummyAgent:
     """Deterministic agent used to exercise orchestration logic."""
+
+    EVENT_STATUS_CHANGED: str = "status_changed"
+    EVENT_TASK_STARTED: str = "task_started"
+    EVENT_TASK_COMPLETED: str = "task_completed"
+    EVENT_TASK_FAILED: str = "task_failed"
 
     def __init__(
         self,
@@ -88,6 +102,13 @@ class DummyAgent:
         self.ask_calls += 1
         self.received_prompts.append(question)
         return DummyResponse(self._response_builder(question))
+
+    def add_event_listener(self, event: str, handler: Any) -> None:
+        """No-op for tests — flows.crew.AgentCrew registers event listeners."""
+
+    def as_tool(self, **kwargs: Any) -> None:
+        """No-op stub for AgentTool registration."""
+        return None
 
 
 class DummyLoopLLM:
@@ -173,6 +194,7 @@ def test_agentcrew_parallel_execution_returns_all_results() -> None:
     assert result.status == "completed"
     assert result.metadata["mode"] == "parallel"
     assert result.agent_results == {
+        "InfoAgent": "Specs located",
         "PriceAgent": "Prices gathered",
         "ReviewAgent": "Reviews summarised",
     }
@@ -211,7 +233,6 @@ def test_agentcrew_parallel_execution_all_results() -> None:
     assert result.output == [
         "Specs located",
         "Prices gathered",
-        "Reviews summarised",
         "Reviews summarised",
     ]
     assert set(a.agent_id for a in result.agents) == {"InfoAgent", "PriceAgent", "ReviewAgent"}
@@ -290,14 +311,16 @@ def test_agentcrew_loop_execution_stops_when_condition_met() -> None:
         name="TestLoopCrew",
         agents=[researcher, reviewer],
         shared_tool_manager=DummyToolManager(),
-        llm=loop_llm,
     )
+    # Inject deterministic stub LLM after construction (bypasses isinstance check)
+    crew._llm = loop_llm
 
     result = asyncio.run(
         crew.run_loop(
             initial_task="Create a market analysis",
             condition="Stop when the reviewer marks the report as FINAL",
             max_iterations=4,
+            generate_summary=False,  # Avoid extra synthesis LLM call
         )
     )
 

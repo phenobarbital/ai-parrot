@@ -752,7 +752,7 @@ async def research_and_analyze(transport: MatrixCrewTransport) -> None:
 `MatrixCrewTransport` operates at the chat-protocol level. For complex multi-step workflows, combine it with `AgentCrew`:
 
 ```python
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 from parrot.integrations.matrix.crew import MatrixCrewTransport, MatrixCrewAgentWrapper
 
 class EnhancedAgentWrapper(MatrixCrewAgentWrapper):
