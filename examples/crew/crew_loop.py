@@ -1,7 +1,7 @@
 from typing import Any
 import asyncio
 from parrot.bots.agent import Agent
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 from parrot.tools.google import GoogleSearchTool
 
 async def quick_loop_example():

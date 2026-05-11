@@ -138,10 +138,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker)
+**Date**: 2026-05-11
+**Notes**: Updated 2 handler files — exact import lines changed as specified.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

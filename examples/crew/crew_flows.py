@@ -9,7 +9,7 @@ Comprehensive examples demonstrating the three execution modes:
 
 import asyncio
 from typing import Dict, Any
-from parrot.bots.orchestration import AgentCrew, FlowContext
+from parrot.bots.flows import AgentCrew, FlowContext
 from parrot.bots import BasicAgent
 from parrot.tools.google import GoogleSearchTool
 

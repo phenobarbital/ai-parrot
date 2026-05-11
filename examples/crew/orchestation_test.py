@@ -5,7 +5,7 @@ import asyncio
 import json
 from parrot.bots.agent import BasicAgent
 from parrot.tools.agent import AgentTool
-from parrot.bots.orchestration.agent import OrchestratorAgent
+from parrot.bots.flows.agents import OrchestratorAgent
 
 
 async def diagnose_orchestrator():

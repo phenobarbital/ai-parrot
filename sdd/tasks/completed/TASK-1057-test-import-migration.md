@@ -208,10 +208,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker)
+**Date**: 2026-05-11
+**Notes**: Updated all 11 test files. Also updated test_bot_cleanup_lifecycle.py (not in spec
+list but had sys.modules stubs for orchestration — removed to satisfy grep acceptance check).
+test_orchestrator_agent.py: updated import + all @patch paths to flows.agents.orchestrator.
+test_crew_final_regression.py: rewrote TestBackwardCompatImports/TestDeadCodeRemoved/TestModuleExports
+to use flows paths; removed test_flows_agentcrew_is_same_class_as_orchestration.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: test_bot_cleanup_lifecycle.py added (had sys.modules stubs for
+orchestration that would fail the grep acceptance check)

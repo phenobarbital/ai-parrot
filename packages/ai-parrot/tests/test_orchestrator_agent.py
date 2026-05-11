@@ -20,7 +20,7 @@ for _key in list(sys.modules.keys()):
     ):
         sys.modules.pop(_key, None)
 
-from parrot.bots.orchestration.agent import OrchestratorAgent  # noqa: E402
+from parrot.bots.flows.agents import OrchestratorAgent  # noqa: E402
 from parrot.models.responses import AIMessage  # noqa: E402
 from parrot.models.basic import CompletionUsage  # noqa: E402
 from parrot.models.crew import AgentResult  # noqa: E402
@@ -55,7 +55,7 @@ def _make_mock_agent(name: str):
 class TestRegistryIntegration:
 
     @pytest.mark.asyncio
-    @patch("parrot.bots.orchestration.agent.agent_registry")
+    @patch("parrot.bots.flows.agents.orchestrator.agent_registry")
     async def test_add_agent_by_name_resolves_from_registry(self, mock_registry):
         mock_agent = _make_mock_agent("finance_pokemon")
         mock_registry.get_instance = AsyncMock(return_value=mock_agent)
@@ -73,7 +73,7 @@ class TestRegistryIntegration:
         assert "finance_pokemon" in orchestrator.specialist_agents
 
     @pytest.mark.asyncio
-    @patch("parrot.bots.orchestration.agent.agent_registry")
+    @patch("parrot.bots.flows.agents.orchestrator.agent_registry")
     async def test_add_agent_by_name_raises_on_not_found(self, mock_registry):
         mock_registry.get_instance = AsyncMock(return_value=None)
 
@@ -86,7 +86,7 @@ class TestRegistryIntegration:
             await orchestrator.add_agent_by_name("nonexistent_agent")
 
     @pytest.mark.asyncio
-    @patch("parrot.bots.orchestration.agent.agent_registry")
+    @patch("parrot.bots.flows.agents.orchestrator.agent_registry")
     async def test_add_agent_by_name_with_custom_tool_name(self, mock_registry):
         mock_agent = _make_mock_agent("finance_epson")
         mock_registry.get_instance = AsyncMock(return_value=mock_agent)
@@ -108,7 +108,7 @@ class TestRegistryIntegration:
         assert orchestrator.agent_tools["epson_data"].description == "Epson financial data"
 
     def test_agent_names_stored_as_pending(self):
-        with patch("parrot.bots.orchestration.agent.BasicAgent.__init__", return_value=None):
+        with patch("parrot.bots.flows.agents.orchestrator.BasicAgent.__init__", return_value=None):
             orchestrator = OrchestratorAgent(
                 name="TestOrch",
                 agent_names=["agent_a", "agent_b"],
@@ -118,7 +118,7 @@ class TestRegistryIntegration:
             assert orchestrator._pending_agent_names == ["agent_a", "agent_b"]
 
     def test_agent_names_defaults_to_empty(self):
-        with patch("parrot.bots.orchestration.agent.BasicAgent.__init__", return_value=None):
+        with patch("parrot.bots.flows.agents.orchestrator.BasicAgent.__init__", return_value=None):
             orchestrator = OrchestratorAgent(name="TestOrch")
             orchestrator.agent_tools = {}
             orchestrator.specialist_agents = {}

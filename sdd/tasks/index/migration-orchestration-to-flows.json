@@ -14,16 +14,16 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only 2 handler files — no overlap with test or example tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1056-handler-import-migration.md"
+      "started_at": "2026-05-10T23:25:17+00:00",
+      "completed_at": "2026-05-10T23:34:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1056-handler-import-migration.md"
     },
     {
       "id": "TASK-1057",
@@ -32,16 +32,16 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only test files — no overlap with handler or example tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1057-test-import-migration.md"
+      "started_at": "2026-05-10T23:25:17+00:00",
+      "completed_at": "2026-05-10T23:38:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1057-test-import-migration.md"
     },
     {
       "id": "TASK-1058",
@@ -50,16 +50,16 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches only example files — no overlap with handler or test tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1058-example-import-migration.md"
+      "started_at": "2026-05-10T23:25:17+00:00",
+      "completed_at": "2026-05-10T23:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1058-example-import-migration.md"
     },
     {
       "id": "TASK-1059",
@@ -68,16 +68,20 @@
       "feature_id": "FEAT-155",
       "feature": "migration-orchestration-to-flows",
       "spec": "sdd/specs/migration-orchestration-to-flows.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1056", "TASK-1057", "TASK-1058"],
+      "depends_on": [
+        "TASK-1056",
+        "TASK-1057",
+        "TASK-1058"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run AFTER all import migrations — deletes the source modules",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1059-delete-orchestration-directory.md"
+      "started_at": "2026-05-10T23:25:17+00:00",
+      "completed_at": "2026-05-11T01:12:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1059-delete-orchestration-directory.md"
     }
   ]
 }

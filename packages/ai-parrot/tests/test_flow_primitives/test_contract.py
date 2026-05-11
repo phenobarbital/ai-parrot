@@ -428,7 +428,7 @@ class TestImportCompatibility:
         from parrot.bots.flow.storage import ExecutionMemory as OldEM, PersistenceMixin
         assert OldEM is not None
 
-    def test_agent_task_removed_from_crew(self):
-        """AgentTask dataclass removed in TASK-920 must not be importable."""
-        import parrot.bots.orchestration.crew as crew
+    def test_agent_task_not_in_flows_crew(self):
+        """AgentTask dataclass removed in TASK-920 must not be in flows.crew."""
+        import parrot.bots.flows.crew as crew
         assert not hasattr(crew, "AgentTask")

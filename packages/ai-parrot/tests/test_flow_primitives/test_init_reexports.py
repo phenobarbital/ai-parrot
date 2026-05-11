@@ -99,20 +99,6 @@ class TestExistingImportsNotBroken:
         from parrot.bots.flow.storage import ExecutionMemory, PersistenceMixin
         assert ExecutionMemory is not None
 
-    def test_agent_crew_still_importable(self):
-        from parrot.bots.orchestration.crew import AgentCrew
+    def test_agent_crew_importable_from_flows(self):
+        from parrot.bots.flows.crew import AgentCrew
         assert AgentCrew is not None
-
-
-class TestDeadCodeRemoved:
-    def test_agent_task_not_in_crew(self):
-        import parrot.bots.orchestration.crew as crew_mod
-        assert not hasattr(crew_mod, "AgentTask")
-
-    def test_agent_task_class_gone(self):
-        """AgentTask dataclass from crew.py must not be importable."""
-        try:
-            from parrot.bots.orchestration.crew import AgentTask
-            raise AssertionError("AgentTask should have been removed from crew.py")
-        except ImportError:
-            pass  # expected
