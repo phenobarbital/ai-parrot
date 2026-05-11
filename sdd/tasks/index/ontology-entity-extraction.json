@@ -112,7 +112,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Composes prior modules; intrinsically sequential.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1076-ontology-mixin-refactor.md"
+      "completed_at": "2026-05-11T16:41:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1076-ontology-mixin-refactor.md"
     },
     {
       "id": "TASK-1077",
