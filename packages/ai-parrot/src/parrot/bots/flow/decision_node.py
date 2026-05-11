@@ -523,7 +523,12 @@ class DecisionFlowNode(Node):
         )
 
         if should_escalate:
-            return await self._escalate_to_hitl(question, ctx, None, votes=votes)
+            return await self._escalate_to_hitl(
+                question, ctx, None,
+                votes=votes,
+                vote_distribution=vote_dist,
+                consensus_level=consensus,
+            )
 
         return DecisionResult(
             mode=DecisionMode.BALLOT,
@@ -1011,6 +1016,8 @@ Provide your final synthesized decision.
         ctx: Dict[str, Any],
         decision_obj: Optional[BaseModel],
         votes: Optional[Dict[str, Any]] = None,
+        vote_distribution: Optional[Dict[str, int]] = None,
+        consensus_level: Optional[str] = None,
     ) -> DecisionResult:
         """Escalate decision to Human-in-the-Loop.
 
@@ -1039,6 +1046,8 @@ Provide your final synthesized decision.
                 escalation_reason="No HITL manager available",
                 votes=votes or {},
                 agent_responses={},
+                vote_distribution=vote_distribution or {},
+                consensus_level=consensus_level,
             )
 
         try:
@@ -1080,6 +1089,8 @@ Provide your final synthesized decision.
                     escalated=True,
                     escalation_reason="HITL timeout",
                     votes=votes or {},
+                    vote_distribution=vote_distribution or {},
+                    consensus_level=consensus_level,
                 )
 
             return DecisionResult(
@@ -1090,6 +1101,8 @@ Provide your final synthesized decision.
                 escalation_reason="Policy-triggered escalation",
                 votes=votes or {},
                 agent_responses={},
+                vote_distribution=vote_distribution or {},
+                consensus_level=consensus_level,
                 metadata={"hitl_response": human_decision},
             )
 
@@ -1102,6 +1115,8 @@ Provide your final synthesized decision.
                 escalated=True,
                 escalation_reason="HITL not available",
                 votes=votes or {},
+                vote_distribution=vote_distribution or {},
+                consensus_level=consensus_level,
             )
 
     def _map_decision_type_to_interaction(self):

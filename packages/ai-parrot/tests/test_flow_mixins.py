@@ -13,7 +13,7 @@ from parrot.bots.flow.fsm import (
     TransitionCondition,
 )
 from parrot.bots.flow.nodes import StartNode, EndNode
-from parrot.bots.flow.storage.persistence import PersistenceMixin
+from parrot.bots.flows.core.storage import PersistenceMixin
 from parrot.bots.flow.storage.synthesis import SynthesisMixin
 
 
