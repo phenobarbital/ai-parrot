@@ -56,6 +56,7 @@ from ..core.storage.synthesis import SYNTHESIS_PROMPT
 from ..core.context import FlowContext  # noqa: F401 — re-export for backward compat
 from ..core.types import (
     AgentRef,  # noqa: F401 — re-export for backward compat
+    CrewHookCallback,
     DependencyResults,  # noqa: F401 — re-export for backward compat
     PromptBuilder,  # noqa: F401 — re-export for backward compat
 )
@@ -216,6 +217,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
         self._persist_tasks: set[asyncio.Task] = set()
 
+        # Lifecycle hooks (FEAT-157)
+        self._on_complete_hooks: List[CrewHookCallback] = []
+        self._on_error_hooks: List[CrewHookCallback] = []
+
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -236,6 +241,70 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         Get the status of a specific agent.
         """
         return self._agent_statuses.get(agent_id)
+
+    # ── Lifecycle hooks (FEAT-157) ────────────────────────────────────────
+
+    def on_complete(self, callback: CrewHookCallback) -> None:
+        """Register a callback to fire when crew execution completes.
+
+        Fires for status ``'completed'`` and ``'partial'``. Callbacks receive
+        ``(crew_name, result)`` and may be sync or async.
+
+        Hooks fire in registration order. If a hook raises, the exception is
+        caught and logged — it does **not** prevent the result from returning.
+
+        Args:
+            callback: Callable with signature
+                ``(crew_name: str, result: FlowResult) -> None``.
+        """
+        self._on_complete_hooks.append(callback)
+
+    def on_error(self, callback: CrewHookCallback) -> None:
+        """Register a callback to fire when crew execution has errors.
+
+        Fires for status ``'failed'`` and ``'partial'``. Callbacks receive
+        ``(crew_name, result)`` and may be sync or async.
+
+        Hooks fire in registration order. If a hook raises, the exception is
+        caught and logged — it does **not** prevent the result from returning.
+
+        Args:
+            callback: Callable with signature
+                ``(crew_name: str, result: FlowResult) -> None``.
+        """
+        self._on_error_hooks.append(callback)
+
+    async def _fire_hooks(self, result: Any) -> None:
+        """Dispatch lifecycle hooks based on result status.
+
+        Called by all ``run_*()`` methods after ``FlowResult`` is built,
+        before the persist block and ``return`` statement.
+
+        - ``'completed'``: on_complete hooks only
+        - ``'partial'``: both on_complete AND on_error hooks
+        - ``'failed'``: on_error hooks only
+
+        Exceptions in individual hooks are caught and logged — they never
+        block the result from being returned to the caller.
+
+        Args:
+            result: The ``FlowResult`` produced by the run.
+        """
+        hooks_to_fire: List[CrewHookCallback] = []
+        if result.status in ('completed', 'partial'):
+            hooks_to_fire.extend(self._on_complete_hooks)
+        if result.status in ('failed', 'partial'):
+            hooks_to_fire.extend(self._on_error_hooks)
+
+        for hook in hooks_to_fire:
+            try:
+                ret = hook(self.name, result)
+                if asyncio.iscoroutine(ret):
+                    await ret
+            except Exception as exc:
+                self.logger.error(
+                    "Error in crew lifecycle hook %r: %s", hook, exc
+                )
 
     def _register_agents_as_tools(self):
         """
@@ -1300,6 +1369,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -1763,6 +1835,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -2083,6 +2158,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -2316,6 +2394,9 @@ Current task: {current_input}"""
                         'synthesis_prompt': synthesis_prompt,
                     }
                 )
+
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
 
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
