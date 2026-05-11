@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CloudSploit Scan Report</title>
+<style>
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; margin: 24px; font-size: 11pt; }
+  h1 { color: #1f3a93; margin-bottom: 4px; }
+  h2 { color: #1f3a93; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 24px; }
+  .meta { color: #666; font-size: 10pt; margin-bottom: 16px; }
+  .cards { width: 100%; margin: 12px 0 20px 0; }
+  .cards table { width: 100%; border-collapse: collapse; }
+  .card { border: 1px solid #ddd; padding: 10px; text-align: center; background: #fafafa; }
+  .card .label { font-size: 9pt; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 18pt; font-weight: bold; margin-top: 4px; }
+  .card.ok    .value { color: #2e7d32; }
+  .card.warn  .value { color: #ed6c02; }
+  .card.fail  .value { color: #c62828; }
+  .card.unk   .value { color: #616161; }
+  .bar-chart { width: 100%; height: 24px; border: 1px solid #ccc; margin: 8px 0 16px 0; }
+  .bar-chart table { width: 100%; height: 100%; border-collapse: collapse; }
+  .bar-segment { height: 24px; color: #fff; font-size: 9pt; text-align: center; vertical-align: middle; }
+  .bar-segment.ok   { background: #2e7d32; }
+  .bar-segment.warn { background: #ed6c02; }
+  .bar-segment.fail { background: #c62828; }
+  .bar-segment.unk  { background: #616161; }
+  table.data { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 9.5pt; }
+  table.data th, table.data td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.data th { background: #f0f3f8; color: #1f3a93; }
+  .badge { display: inline-block; padding: 2px 8px; font-size: 9pt; font-weight: bold; border-radius: 3px; color: #fff; }
+  .badge-ok   { background: #2e7d32; }
+  .badge-warn { background: #ed6c02; }
+  .badge-fail { background: #c62828; }
+  .badge-unknown { background: #616161; }
+  .muted { color: #888; }
+  .truncation { margin-top: 8px; font-style: italic; color: #666; }
+  .empty { padding: 16px; text-align: center; color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>CloudSploit Security Scan Report</h1>
+<div class="meta">
+  Scan date: {{ summary.scan_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+  {% if summary.compliance_framework %}
+    &nbsp;|&nbsp; Compliance: {{ summary.compliance_framework }}
+  {% endif %}
+  {% if summary.duration_seconds is not none %}
+    &nbsp;|&nbsp; Duration: {{ "%.1f"|format(summary.duration_seconds) }}s
+  {% endif %}
+</div>
+
+<h2>Executive Summary</h2>
+<div class="cards">
+  <table>
+    <tr>
+      <td class="card total">
+        <div class="label">Total Findings</div>
+        <div class="value">{{ summary.total_findings }}</div>
+      </td>
+      <td class="card ok">
+        <div class="label">Passing (OK)</div>
+        <div class="value">{{ summary.ok_count }}</div>
+      </td>
+      <td class="card warn">
+        <div class="label">Warnings</div>
+        <div class="value">{{ summary.warn_count }}</div>
+      </td>
+      <td class="card fail">
+        <div class="label">Failures</div>
+        <div class="value">{{ summary.fail_count }}</div>
+      </td>
+      <td class="card unk">
+        <div class="label">Unknown</div>
+        <div class="value">{{ summary.unknown_count }}</div>
+      </td>
+      <td class="card">
+        <div class="label">Pass Rate</div>
+        <div class="value">{{ pass_rate }}%</div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2>Severity Breakdown</h2>
+{% if summary.total_findings > 0 %}
+<div class="bar-chart">
+  <table>
+    <tr>
+      {% if summary.ok_count > 0 %}
+      <td class="bar-segment ok" style="width: {{ (summary.ok_count / summary.total_findings * 100)|round(2) }}%;">
+        OK {{ summary.ok_count }}
+      </td>
+      {% endif %}
+      {% if summary.warn_count > 0 %}
+      <td class="bar-segment warn" style="width: {{ (summary.warn_count / summary.total_findings * 100)|round(2) }}%;">
+        WARN {{ summary.warn_count }}
+      </td>
+      {% endif %}
+      {% if summary.fail_count > 0 %}
+      <td class="bar-segment fail" style="width: {{ (summary.fail_count / summary.total_findings * 100)|round(2) }}%;">
+        FAIL {{ summary.fail_count }}
+      </td>
+      {% endif %}
+      {% if summary.unknown_count > 0 %}
+      <td class="bar-segment unk" style="width: {{ (summary.unknown_count / summary.total_findings * 100)|round(2) }}%;">
+        UNKNOWN {{ summary.unknown_count }}
+      </td>
+      {% endif %}
+    </tr>
+  </table>
+</div>
+{% else %}
+<div class="bar-chart">
+  <table><tr><td class="bar-segment unk">No data</td></tr></table>
+</div>
+{% endif %}
+
+<h2>Categories</h2>
+{% if categories_sorted %}
+<table class="data">
+  <thead>
+    <tr><th>Category</th><th>Findings</th></tr>
+  </thead>
+  <tbody>
+    {% for name, count in categories_sorted %}
+    <tr>
+      <td>{{ name }}</td>
+      <td>{{ count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No category data available.</div>
+{% endif %}
+
+<h2>Findings</h2>
+{% if findings %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Plugin</th>
+      <th>Category</th>
+      <th>Region</th>
+      <th>Resource</th>
+      <th>Title</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in findings %}
+    <tr>
+      <td><span class="badge badge-{{ f.status.value|lower }}">{{ f.status.value }}</span></td>
+      <td>{{ f.plugin }}</td>
+      <td>{{ f.category }}</td>
+      <td>{{ f.region }}</td>
+      <td>{% if f.resource %}{{ f.resource }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{{ f.title }}</td>
+      <td>{{ f.message }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if has_more_findings %}
+<div class="truncation">Showing {{ findings|length }} of {{ summary.total_findings }} findings (truncated).</div>
+{% endif %}
+{% else %}
+<div class="empty">No findings to display.</div>
+{% endif %}
+
+</body>
+</html>

@@ -260,6 +260,7 @@ class TestTrivyExecutorHelpers:
     @pytest.mark.asyncio
     async def test_scan_image_calls_execute(self, executor):
         """scan_image calls execute with correct args."""
+        executor.config.preflight_image_check = False
         with patch.object(executor, "execute", new_callable=AsyncMock) as mock:
             mock.return_value = ('{"Results": []}', "", 0)
 
@@ -273,6 +274,7 @@ class TestTrivyExecutorHelpers:
     @pytest.mark.asyncio
     async def test_scan_image_with_options(self, executor):
         """scan_image passes through options."""
+        executor.config.preflight_image_check = False
         with patch.object(executor, "execute", new_callable=AsyncMock) as mock:
             mock.return_value = ('{"Results": []}', "", 0)
 
@@ -384,6 +386,88 @@ class TestTrivyExecutorDockerMode:
         executor = TrivyExecutor(config)
         assert executor.config.use_docker is False
         assert executor.config.cli_path == "/usr/local/bin/trivy"
+
+
+class TestTrivyExecutorPreflight:
+    """Test the pre-flight `docker image inspect` check on scan_image."""
+
+    @pytest.fixture
+    def executor(self):
+        return TrivyExecutor(TrivyConfig())
+
+    def test_preflight_enabled_by_default(self):
+        """preflight_image_check defaults to True."""
+        assert TrivyConfig().preflight_image_check is True
+
+    @pytest.mark.asyncio
+    async def test_scan_image_proceeds_when_image_exists(self, executor):
+        """When docker image inspect exits 0, scan_image calls execute."""
+        from parrot.tools.security.trivy.executor import ImageNotFoundError
+
+        with patch.object(
+            executor, "_ensure_image_exists", new_callable=AsyncMock
+        ) as preflight, patch.object(
+            executor, "execute", new_callable=AsyncMock
+        ) as exec_mock:
+            exec_mock.return_value = ('{"Results": []}', "", 0)
+
+            await executor.scan_image("nginx:latest")
+
+            preflight.assert_awaited_once_with("nginx:latest")
+            exec_mock.assert_awaited_once()
+            # The contract is also that ImageNotFoundError is the public type
+            assert issubclass(ImageNotFoundError, RuntimeError)
+
+    @pytest.mark.asyncio
+    async def test_scan_image_raises_when_image_missing(self, executor):
+        """When docker image inspect exits non-zero, scan_image raises."""
+        from parrot.tools.security.trivy.executor import ImageNotFoundError
+
+        fake_proc = AsyncMock()
+        fake_proc.returncode = 1
+        fake_proc.communicate = AsyncMock(
+            return_value=(b"", b"Error: No such image: foo:bar")
+        )
+
+        with patch(
+            "parrot_tools.security.trivy.executor.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=fake_proc),
+        ), patch.object(executor, "execute", new_callable=AsyncMock) as exec_mock:
+            with pytest.raises(ImageNotFoundError, match="foo:bar"):
+                await executor.scan_image("foo:bar")
+            # Trivy must not be invoked when the pre-flight fails
+            exec_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_scan_image_skips_preflight_when_disabled(self):
+        """preflight_image_check=False bypasses the inspect call entirely."""
+        executor = TrivyExecutor(TrivyConfig(preflight_image_check=False))
+
+        with patch(
+            "parrot_tools.security.trivy.executor.asyncio.create_subprocess_exec",
+            new=AsyncMock(),
+        ) as subproc, patch.object(
+            executor, "execute", new_callable=AsyncMock
+        ) as exec_mock:
+            exec_mock.return_value = ('{"Results": []}', "", 0)
+
+            await executor.scan_image("anything:latest")
+
+            subproc.assert_not_called()
+            exec_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_scan_image_skips_preflight_when_docker_missing(self, executor):
+        """If `docker` binary is missing, pre-flight is a silent no-op."""
+        with patch(
+            "parrot_tools.security.trivy.executor.asyncio.create_subprocess_exec",
+            new=AsyncMock(side_effect=FileNotFoundError),
+        ), patch.object(executor, "execute", new_callable=AsyncMock) as exec_mock:
+            exec_mock.return_value = ('{"Results": []}', "", 0)
+
+            await executor.scan_image("nginx:latest")
+
+            exec_mock.assert_awaited_once()
 
 
 class TestImports:

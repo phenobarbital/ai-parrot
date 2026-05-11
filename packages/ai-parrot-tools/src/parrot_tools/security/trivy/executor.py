@@ -4,10 +4,20 @@ Extends BaseExecutor to provide Trivy-specific CLI argument building
 and helper methods for common scan types.
 """
 
+import asyncio
 from typing import Optional
 
 from ..base_executor import BaseExecutor
 from .config import TrivyConfig
+
+
+class ImageNotFoundError(RuntimeError):
+    """Raised when a `trivy image` target is not present on the local Docker daemon.
+
+    Surfaced by the pre-flight check in `TrivyExecutor.scan_image` so the
+    caller gets a clear, actionable error before Trivy spends ~10 seconds
+    downloading the vulnerability DB only to fail on image resolution.
+    """
 
 
 class TrivyExecutor(BaseExecutor):
@@ -41,6 +51,28 @@ class TrivyExecutor(BaseExecutor):
     def _default_cli_name(self) -> str:
         """Return the default Trivy CLI binary name."""
         return "trivy"
+
+    def _extra_docker_args(self, args: list[str]) -> list[str]:
+        """Inject the host Docker socket mount for `trivy image` scans.
+
+        Trivy runs inside `aquasec/trivy:*`, so to scan a local image tag
+        it has to reach the host Docker daemon. Without this mount, Trivy
+        falls back to `index.docker.io` and fails with `UNAUTHORIZED`.
+
+        Only injected for `image` scans — other scan types (fs, repo,
+        config, k8s) don't need it.
+        """
+        extra: list[str] = []
+        is_image_scan = bool(args) and args[0] == "image"
+        if (
+            is_image_scan
+            and getattr(self.config, "mount_docker_socket", False)
+        ):
+            socket_path = getattr(
+                self.config, "docker_socket_path", "/var/run/docker.sock"
+            )
+            extra.extend(["-v", f"{socket_path}:/var/run/docker.sock"])
+        return extra
 
     def _build_cli_args(self, **kwargs) -> list[str]:
         """Build Trivy CLI arguments for a scan.
@@ -90,6 +122,7 @@ class TrivyExecutor(BaseExecutor):
     def _build_common_args(self, **kwargs) -> list[str]:
         """Build common CLI arguments used across scan types."""
         args = []
+        scan_type = kwargs.get("scan_type")
 
         # Output format
         sbom_format = kwargs.get("sbom_format")
@@ -110,16 +143,20 @@ class TrivyExecutor(BaseExecutor):
         if severity:
             args.extend(["--severity", ",".join(severity)])
 
-        # Scanners (not for SBOM generation)
-        if kwargs.get("scan_type") != "sbom":
+        # `trivy config` does not accept --scanners or --ignore-unfixed
+        # (the command is intrinsically a misconfig scan with no fix data).
+        # SBOM generation likewise does not use --scanners.
+        if scan_type not in ("sbom", "config"):
             scanners = kwargs.get("scanners", self.config.scanners)
             if scanners:
                 args.extend(["--scanners", ",".join(scanners)])
 
-        # Ignore unfixed
-        ignore_unfixed = kwargs.get("ignore_unfixed", self.config.ignore_unfixed)
-        if ignore_unfixed:
-            args.append("--ignore-unfixed")
+        if scan_type != "config":
+            ignore_unfixed = kwargs.get(
+                "ignore_unfixed", self.config.ignore_unfixed
+            )
+            if ignore_unfixed:
+                args.append("--ignore-unfixed")
 
         # Cache options
         cache_dir = kwargs.get("cache_dir", self.config.cache_dir)
@@ -188,10 +225,10 @@ class TrivyExecutor(BaseExecutor):
         """Build image scan-specific CLI arguments."""
         args = []
 
-        # Vulnerability types
+        # Package types to scan (renamed from --vuln-type in Trivy ≥0.50).
         vuln_type = kwargs.get("vuln_type", self.config.vuln_type)
         if vuln_type:
-            args.extend(["--vuln-type", ",".join(vuln_type)])
+            args.extend(["--pkg-types", ",".join(vuln_type)])
 
         # Image config scanners
         img_scanners = kwargs.get(
@@ -203,6 +240,46 @@ class TrivyExecutor(BaseExecutor):
         return args
 
     # Helper methods for common scan types
+
+    async def _ensure_image_exists(self, image: str) -> None:
+        """Verify that an image exists on the local Docker daemon.
+
+        Runs `docker image inspect <image>` and raises ImageNotFoundError
+        on a non-zero exit code. Skipped silently when the `docker` binary
+        is not on PATH (allows the executor to work in podman-only
+        environments — Trivy itself will fall back to its own resolver).
+
+        Args:
+            image: Image reference to verify (e.g. "nginx:latest").
+
+        Raises:
+            ImageNotFoundError: If the local Docker daemon reports no such image.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "image", "inspect", image,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            self.logger.debug(
+                "Skipping image pre-flight check: `docker` binary not found"
+            )
+            return
+
+        _, stderr_bytes = await proc.communicate()
+        if proc.returncode == 0:
+            return
+
+        stderr_text = stderr_bytes.decode(errors="replace").strip()
+        raise ImageNotFoundError(
+            f"Image '{image}' was not found on the local Docker daemon "
+            f"(`docker image inspect` exit {proc.returncode}: {stderr_text}). "
+            f"Build or pull it first (e.g. `docker pull {image}` or "
+            f"`docker build -t {image} .`). To skip this check and let "
+            f"Trivy attempt a remote pull, set "
+            f"TrivyConfig(preflight_image_check=False)."
+        )
 
     async def scan_image(
         self,
@@ -222,12 +299,19 @@ class TrivyExecutor(BaseExecutor):
         Returns:
             Tuple of (stdout, stderr, exit_code).
 
+        Raises:
+            ImageNotFoundError: If `preflight_image_check` is enabled and the
+                image is not present on the local Docker daemon.
+
         Example:
             stdout, stderr, code = await executor.scan_image(
                 "nginx:latest",
                 severity=["CRITICAL"],
             )
         """
+        if self.config.preflight_image_check:
+            await self._ensure_image_exists(image)
+
         kwargs = {"scan_type": "image", "target": image}
         if severity is not None:
             kwargs["severity_filter"] = severity
@@ -325,7 +409,6 @@ class TrivyExecutor(BaseExecutor):
         kwargs = {
             "scan_type": "config",
             "target": path,
-            "scanners": ["misconfig"],  # Config scans use misconfig scanner
         }
         if compliance is not None:
             kwargs["compliance"] = compliance
@@ -398,7 +481,10 @@ class TrivyExecutor(BaseExecutor):
             "target": target,
             "sbom_format": sbom_format,
             "scanners": [],  # SBOM generation doesn't use scanners
+            "output_file": output_file,
         }
+        return await self.execute(**kwargs)
+
     async def list_scanners(self) -> tuple[str, str, int]:
         """List available scanner types.
 

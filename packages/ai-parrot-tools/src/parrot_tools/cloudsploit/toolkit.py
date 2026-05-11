@@ -56,22 +56,29 @@ class CloudSploitToolkit(AbstractToolkit):
         Returns:
             ScanResult with typed findings and summary.
         """
-        stdout, stderr, code = await self.executor.run_scan(
-            plugins=plugins, ignore_ok=ignore_ok, suppress=suppress,
+        results_json, collection_json, _stdout, stderr, code = (
+            await self.executor.run_scan(
+                plugins=plugins, ignore_ok=ignore_ok, suppress=suppress,
+            )
         )
         if code != 0:
             self.logger.warning(
                 "CloudSploit exited with code %d: %s", code, stderr[:500],
             )
 
-        result = self.parser.parse(stdout)
+        result = self.parser.parse(results_json)
         self._last_result = result
 
         if self.config.results_dir:
+            results_dir = Path(self.config.results_dir)
             ts = result.summary.scan_timestamp.strftime("%Y%m%d_%H%M%S")
-            path = str(Path(self.config.results_dir) / f"scan_{ts}.json")
+            path = str(results_dir / f"scan_{ts}.json")
             self.parser.save_result(result, path)
             self.logger.info("Scan result saved to %s", path)
+            if collection_json:
+                coll_path = results_dir / f"collection_{ts}.json"
+                coll_path.write_text(collection_json)
+                self.logger.info("Raw collection saved to %s", coll_path)
 
         return result
 
@@ -98,8 +105,10 @@ class CloudSploitToolkit(AbstractToolkit):
                 f"Valid options: {valid}"
             )
 
-        stdout, stderr, code = await self.executor.run_compliance_scan(
-            framework=fw, ignore_ok=ignore_ok,
+        results_json, _collection_json, _stdout, stderr, code = (
+            await self.executor.run_compliance_scan(
+                framework=fw, ignore_ok=ignore_ok,
+            )
         )
         if code != 0:
             self.logger.warning(
@@ -107,7 +116,7 @@ class CloudSploitToolkit(AbstractToolkit):
                 code, stderr[:500],
             )
 
-        result = self.parser.parse(stdout)
+        result = self.parser.parse(results_json)
         result.summary.compliance_framework = fw.value
         self._last_result = result
         return result

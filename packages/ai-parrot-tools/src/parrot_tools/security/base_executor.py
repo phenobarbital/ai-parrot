@@ -180,6 +180,20 @@ class BaseExecutor(ABC):
 
         return env
 
+    def _extra_docker_args(self, args: list[str]) -> list[str]:
+        """Hook for subclasses to inject extra `docker run` arguments.
+
+        Returns args inserted between credentials/volumes and the image name
+        (e.g. additional `-v` mounts, `--network`, `-u`). Default is empty.
+
+        Args:
+            args: The scanner CLI arguments that will be passed to the container.
+
+        Returns:
+            Extra docker run arguments. Empty list by default.
+        """
+        return []
+
     def _build_docker_command(self, args: list[str]) -> list[str]:
         """Build docker run command with env vars and CLI args.
 
@@ -187,6 +201,7 @@ class BaseExecutor(ABC):
         - Removes the container after execution (--rm)
         - Passes cloud credentials via environment variables
         - Mounts results directory if configured
+        - Allows subclasses to inject extra args via `_extra_docker_args`
 
         Args:
             args: Scanner CLI arguments to pass to the container.
@@ -203,6 +218,9 @@ class BaseExecutor(ABC):
         # Mount results directory if specified
         if self.config.results_dir:
             cmd.extend(["-v", f"{self.config.results_dir}:/results"])
+
+        # Scanner-specific docker args (extra mounts, network, etc.)
+        cmd.extend(self._extra_docker_args(args))
 
         # Add the docker image
         cmd.append(self.config.docker_image)

@@ -772,3 +772,16 @@ class TestImports:
         )
 
         assert ComplianceReportToolkit is not None
+
+
+class TestToolSchemas:
+    """Test agent-facing tool schema generation."""
+
+    def test_full_scan_schema_excludes_runtime_callback(self, toolkit):
+        """Runtime callbacks are not exposed as LLM tool parameters."""
+        tool = toolkit.get_tool("compliance_full_scan")
+
+        schema = tool.get_schema()
+
+        assert "progress_callback" not in schema["parameters"]["properties"]
+        assert "provider" in schema["parameters"]["properties"]

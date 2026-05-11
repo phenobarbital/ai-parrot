@@ -247,6 +247,8 @@ templates/
 !packages/parrot-formdesigner/src/parrot/formdesigner/renderers/templates/**
 !packages/ai-parrot/src/parrot/auth/templates/
 !packages/ai-parrot/src/parrot/auth/templates/**
+!packages/ai-parrot-tools/src/parrot_tools/cloudsploit/templates/
+!packages/ai-parrot-tools/src/parrot_tools/cloudsploit/templates/**
 resources/
 logs/
 etc/

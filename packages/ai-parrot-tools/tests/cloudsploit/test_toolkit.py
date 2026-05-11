@@ -50,14 +50,48 @@ def toolkit(config):
     return CloudSploitToolkit(config=config)
 
 
-def _mock_executor(toolkit, output=MOCK_CLOUDSPLOIT_OUTPUT, code=0, stderr=""):
-    """Patch executor.execute to return canned output."""
-    return patch.object(
-        toolkit.executor,
-        "execute",
-        new_callable=AsyncMock,
-        return_value=(output, stderr, code),
-    )
+def _mock_executor(
+    toolkit,
+    output=MOCK_CLOUDSPLOIT_OUTPUT,
+    collection="{}",
+    code=0,
+    stderr="",
+):
+    """Patch executor.run_scan / run_compliance_scan with canned output.
+
+    The toolkit now consumes ``(results_json, collection_json, stdout,
+    stderr, exit_code)`` from the executor's high-level methods (which
+    internally materialise temp files). Patch those directly so tests
+    don't need to worry about the file lifecycle.
+    """
+    return_value = (output, collection, "", stderr, code)
+    patches = [
+        patch.object(
+            toolkit.executor,
+            "run_scan",
+            new_callable=AsyncMock,
+            return_value=return_value,
+        ),
+        patch.object(
+            toolkit.executor,
+            "run_compliance_scan",
+            new_callable=AsyncMock,
+            return_value=return_value,
+        ),
+    ]
+
+    class _Combined:
+        def __enter__(self):
+            self.mocks = [p.__enter__() for p in patches]
+            # Return the run_scan mock so existing tests using
+            # ``with _mock_executor(...) as mock_exec`` keep working.
+            return self.mocks[0]
+
+        def __exit__(self, *exc):
+            for p in reversed(patches):
+                p.__exit__(*exc)
+
+    return _Combined()
 
 
 # ── Tool registration ───────────────────────────────────────────────────

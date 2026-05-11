@@ -2,9 +2,17 @@
 import asyncio
 import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Optional
 from navconfig.logging import logging
 from .models import CloudProvider, CloudSploitConfig, ComplianceFramework
+
+
+# Container path used as the mount target for output files when running
+# CloudSploit inside Docker. CloudSploit writes --json / --collection to
+# real files (fs.createWriteStream), so /dev/stdout is unreliable.
+_DOCKER_OUTPUT_MOUNT = "/cloudsploit/output"
 
 
 class CloudSploitExecutor:
@@ -48,16 +56,26 @@ class CloudSploitExecutor:
 
         return env
 
-    def _build_docker_command(self, args: list[str]) -> list[str]:
+    def _build_docker_command(
+        self,
+        args: list[str],
+        volume_mount: Optional[tuple[str, str]] = None,
+    ) -> list[str]:
         """Build docker run command with env vars and CLI args.
 
         Args:
             args: CloudSploit CLI arguments to pass to the container.
+            volume_mount: Optional ``(host_dir, container_dir)`` pair to
+                mount so CloudSploit can write output files back to the
+                host filesystem.
 
         Returns:
             Full docker run command as list of strings.
         """
         cmd = ["docker", "run", "--rm"]
+        if volume_mount:
+            host_dir, container_dir = volume_mount
+            cmd.extend(["-v", f"{host_dir}:{container_dir}"])
         for key, val in self._build_env_vars().items():
             cmd.extend(["-e", f"{key}={val}"])
         cmd.append(self.config.docker_image)
@@ -90,6 +108,8 @@ class CloudSploitExecutor:
 
     def _build_cli_args(
         self,
+        json_path: str,
+        collection_path: Optional[str] = None,
         plugins: Optional[list[str]] = None,
         compliance: Optional[ComplianceFramework] = None,
         ignore_ok: bool = False,
@@ -98,6 +118,9 @@ class CloudSploitExecutor:
         """Build CloudSploit CLI arguments.
 
         Args:
+            json_path: File path CloudSploit will write JSON results to.
+            collection_path: Optional file path for the raw cloud-provider
+                response data (``--collection``).
             plugins: Specific plugins to run. If None, runs all.
             compliance: Compliance framework to filter by.
             ignore_ok: If True, exclude OK (passing) results.
@@ -107,10 +130,12 @@ class CloudSploitExecutor:
             List of CLI argument strings.
         """
         args = [
-            "--json=/dev/stdout",
+            f"--json={json_path}",
             "--console=none",
             f"--cloud={self.config.cloud_provider.value}",
         ]
+        if collection_path:
+            args.append(f"--collection={collection_path}")
         if compliance:
             args.append(f"--compliance={compliance.value}")
         if plugins:
@@ -158,11 +183,17 @@ class CloudSploitExecutor:
             masked_parts.append(masked)
         return " ".join(masked_parts)
 
-    async def execute(self, args: list[str]) -> tuple[str, str, int]:
+    async def execute(
+        self,
+        args: list[str],
+        volume_mount: Optional[tuple[str, str]] = None,
+    ) -> tuple[str, str, int]:
         """Run CloudSploit and return output.
 
         Args:
             args: CloudSploit CLI arguments.
+            volume_mount: ``(host_dir, container_dir)`` for Docker output.
+                Ignored when ``use_docker`` is False.
 
         Returns:
             Tuple of (stdout, stderr, exit_code).
@@ -171,7 +202,7 @@ class CloudSploitExecutor:
             asyncio.TimeoutError: If execution exceeds configured timeout.
         """
         if self.config.use_docker:
-            cmd = self._build_docker_command(args)
+            cmd = self._build_docker_command(args, volume_mount=volume_mount)
             env = None
         else:
             cmd = self._build_direct_command(args)
@@ -199,45 +230,131 @@ class CloudSploitExecutor:
 
         return stdout.decode(), stderr.decode(), exit_code
 
+    async def _run_with_outputs(
+        self,
+        *,
+        plugins: Optional[list[str]] = None,
+        compliance: Optional[ComplianceFramework] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        capture_collection: bool = True,
+    ) -> tuple[str, str, str, str, int]:
+        """Run CloudSploit writing JSON + collection to temp files.
+
+        CloudSploit's ``--json`` and ``--collection`` flags require real
+        file paths (``fs.createWriteStream``); writing to ``/dev/stdout``
+        is unreliable. We materialise a temp directory, point CloudSploit
+        at files inside it, mount it into the container when running via
+        Docker, then read the results back.
+
+        Args:
+            plugins: Specific plugins to run. If None, runs all plugins.
+            compliance: Compliance framework to filter by.
+            ignore_ok: If True, exclude OK results.
+            suppress: Regex patterns to suppress specific results.
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
+
+        Returns:
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``. ``collection_json`` is an empty string when
+            ``capture_collection`` is False or the file is missing.
+        """
+        with tempfile.TemporaryDirectory(prefix="cloudsploit_") as host_tmp:
+            host_dir = Path(host_tmp)
+            host_results = host_dir / "results.json"
+            host_collection = host_dir / "collection.json"
+
+            if self.config.use_docker:
+                container_results = f"{_DOCKER_OUTPUT_MOUNT}/results.json"
+                container_collection = (
+                    f"{_DOCKER_OUTPUT_MOUNT}/collection.json"
+                    if capture_collection else None
+                )
+                volume_mount = (str(host_dir), _DOCKER_OUTPUT_MOUNT)
+            else:
+                container_results = str(host_results)
+                container_collection = (
+                    str(host_collection) if capture_collection else None
+                )
+                volume_mount = None
+
+            args = self._build_cli_args(
+                json_path=container_results,
+                collection_path=container_collection,
+                plugins=plugins,
+                compliance=compliance,
+                ignore_ok=ignore_ok,
+                suppress=suppress,
+            )
+            stdout, stderr, exit_code = await self.execute(
+                args, volume_mount=volume_mount,
+            )
+
+            results_json = (
+                host_results.read_text() if host_results.exists() else ""
+            )
+            collection_json = (
+                host_collection.read_text()
+                if capture_collection and host_collection.exists()
+                else ""
+            )
+
+            if not results_json:
+                self.logger.warning(
+                    "CloudSploit produced no JSON results file at %s",
+                    host_results,
+                )
+
+            return results_json, collection_json, stdout, stderr, exit_code
+
     async def run_scan(
         self,
         plugins: Optional[list[str]] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
-    ) -> tuple[str, str, int]:
+        capture_collection: bool = True,
+    ) -> tuple[str, str, str, str, int]:
         """Run a full or targeted CloudSploit scan.
 
         Args:
             plugins: Specific plugins to run. If None, runs all plugins.
             ignore_ok: If True, exclude OK (passing) results.
             suppress: Regex patterns to suppress specific results.
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
 
         Returns:
-            Tuple of (stdout, stderr, exit_code).
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``.
         """
-        args = self._build_cli_args(
+        return await self._run_with_outputs(
             plugins=plugins,
             ignore_ok=ignore_ok,
             suppress=suppress,
+            capture_collection=capture_collection,
         )
-        return await self.execute(args)
 
     async def run_compliance_scan(
         self,
         framework: ComplianceFramework,
         ignore_ok: bool = True,
-    ) -> tuple[str, str, int]:
+        capture_collection: bool = True,
+    ) -> tuple[str, str, str, str, int]:
         """Run a compliance-filtered CloudSploit scan.
 
         Args:
             framework: Compliance framework to filter by.
             ignore_ok: If True, exclude OK results (default True for compliance).
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
 
         Returns:
-            Tuple of (stdout, stderr, exit_code).
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``.
         """
-        args = self._build_cli_args(
+        return await self._run_with_outputs(
             compliance=framework,
             ignore_ok=ignore_ok,
+            capture_collection=capture_collection,
         )
-        return await self.execute(args)

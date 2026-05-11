@@ -41,14 +41,39 @@ def toolkit(config):
     return CloudSploitToolkit(config=config)
 
 
-def _mock_exec(toolkit, output, stderr="", code=0):
-    """Patch executor.execute to return canned output."""
-    return patch.object(
+def _mock_exec(toolkit, output, collection="{}", stderr="", code=0):
+    """Patch executor.run_scan / run_compliance_scan with canned output.
+
+    The toolkit now consumes ``(results_json, collection_json, stdout,
+    stderr, exit_code)`` from the executor's high-level methods, which
+    internally materialise temp files. Patch those directly so tests
+    don't need to set up the file lifecycle.
+    """
+    return_value = (output, collection, "", stderr, code)
+    scan_patch = patch.object(
         toolkit.executor,
-        "execute",
+        "run_scan",
         new_callable=AsyncMock,
-        return_value=(output, stderr, code),
+        return_value=return_value,
     )
+    compliance_patch = patch.object(
+        toolkit.executor,
+        "run_compliance_scan",
+        new_callable=AsyncMock,
+        return_value=return_value,
+    )
+
+    class _Combined:
+        def __enter__(self):
+            scan_patch.__enter__()
+            compliance_patch.__enter__()
+            return None
+
+        def __exit__(self, *exc):
+            compliance_patch.__exit__(*exc)
+            scan_patch.__exit__(*exc)
+
+    return _Combined()
 
 
 # ── Full scan → parse → report pipeline ─────────────────────────────────
@@ -363,7 +388,7 @@ class TestErrorHandlingPipeline:
         """Executor timeout raises asyncio.TimeoutError through toolkit."""
         with patch.object(
             toolkit.executor,
-            "execute",
+            "run_scan",
             new_callable=AsyncMock,
             side_effect=asyncio.TimeoutError("Scan timed out"),
         ):
