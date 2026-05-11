@@ -24,6 +24,7 @@ from .core import (
     DependencyResults,
     PromptBuilder,
     ActionCallback,
+    CrewHookCallback,
     FlowStatus,
     # FSM
     AgentTaskMachine,
@@ -74,6 +75,7 @@ __all__ = [
     "DependencyResults",
     "PromptBuilder",
     "ActionCallback",
+    "CrewHookCallback",
     "FlowStatus",
     # FSM
     "AgentTaskMachine",
