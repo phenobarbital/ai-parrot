@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
 
 from parrot.interfaces.aws import AWSInterface
@@ -145,6 +146,35 @@ _DEFAULT_WEIGHTS: Dict[str, int] = {
     "MEDIUM": 2,
     "LOW": 1,
 }
+
+
+def _extract_aggregation_key(val: Dict[str, Any]) -> str:
+    """Extract a human-readable key from an aggregation response item.
+
+    Inspector uses different field names depending on the aggregation type.
+    This helper tries common key fields in order of preference.
+
+    Args:
+        val: The aggregation response sub-dict (e.g. accountAggregation value).
+
+    Returns:
+        String key value, or 'unknown' if none found.
+    """
+    for field in (
+        "accountId",
+        "repositoryName",
+        "resourceId",
+        "packageName",
+        "title",
+        "imageId",
+        "functionName",
+        "layerArn",
+        "findingType",
+        "ami",
+    ):
+        if val.get(field):
+            return str(val[field])
+    return "unknown"
 
 
 # ------------------------------------------------------------------
@@ -368,7 +398,7 @@ class InspectorToolkit(AbstractToolkit):
         return normalized
 
     # ------------------------------------------------------------------
-    # Direct read operations (stubs — implemented in TASK-1080)
+    # Direct read operations
     # ------------------------------------------------------------------
 
     @tool_schema(ListFindingsInput)
@@ -387,8 +417,52 @@ class InspectorToolkit(AbstractToolkit):
 
         Returns one page of normalized findings plus a next_token for pagination.
         The agent is responsible for deciding whether to continue paginating.
+
+        Args:
+            limit: Max findings to return (capped at 100 by Inspector).
+            severity: Severity filter (CRITICAL|HIGH|MEDIUM|LOW|INFORMATIONAL|UNTRIAGED|ALL).
+            resource_type: Resource type filter (AWS_ECR_CONTAINER_IMAGE, etc.).
+            status: Finding status filter (ACTIVE|SUPPRESSED|CLOSED|ALL).
+            fix_available: Fix availability filter (YES|NO|PARTIAL).
+            repository_name: ECR repository name filter (supports '*' glob suffix).
+            search_term: Substring match on finding title.
+            next_token: Pagination cursor from a prior call.
+
+        Returns:
+            Dict with keys: findings (list), count (int), next_token (str|None).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            filter_criteria = self._build_filter_criteria(
+                severity=severity,
+                resource_type=resource_type,
+                status=status,
+                fix_available=fix_available,
+                repository_name=repository_name,
+                search_term=search_term,
+            )
+            max_results = min(limit, 100)
+            kwargs: Dict[str, Any] = {
+                "filterCriteria": filter_criteria,
+                "maxResults": max_results,
+            }
+            if next_token:
+                kwargs["nextToken"] = next_token
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_findings(**kwargs)
+
+            raw_findings: List[Dict[str, Any]] = response.get("findings") or []
+            normalized = [self._normalize_finding(f) for f in raw_findings]
+            return {
+                "findings": normalized,
+                "count": len(normalized),
+                "next_token": response.get("nextToken"),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     @tool_schema(AggregateFindingsInput)
     async def aws_inspector_aggregate_findings(
@@ -401,8 +475,69 @@ class InspectorToolkit(AbstractToolkit):
         """Aggregate Inspector v2 findings by a chosen dimension.
 
         Returns aggregation rows with severity_counts per group.
+
+        Args:
+            aggregation_type: Dimension to aggregate by (ACCOUNT|REPOSITORY|PACKAGE|etc.).
+            limit: Max aggregation rows to return.
+            severity: Optional pre-filter by severity before aggregating.
+            resource_type: Optional pre-filter by resource type.
+
+        Returns:
+            Dict with keys: aggregations (list of rows with severity_counts), count (int).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            filter_criteria = self._build_filter_criteria(
+                severity=severity,
+                resource_type=resource_type,
+            )
+            agg_request: Dict[str, Any] = {
+                "aggregationType": aggregation_type.upper(),
+                "aggregationRequest": {},
+            }
+            if filter_criteria:
+                agg_request["filterCriteria"] = filter_criteria
+
+            kwargs: Dict[str, Any] = {
+                "aggregationType": aggregation_type.upper(),
+                "aggregationRequest": {},
+                "maxResults": min(limit, 1000),
+            }
+            if filter_criteria:
+                kwargs["filterCriteria"] = filter_criteria
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_finding_aggregations(**kwargs)
+
+            rows: List[Dict[str, Any]] = []
+            for resp_item in response.get("responses") or []:
+                # Each response item has a type-specific key
+                for key, val in resp_item.items():
+                    if val is None or key == "aggregationType":
+                        continue
+                    if isinstance(val, dict):
+                        severity_raw = val.get("severityCounts") or {}
+                        row: Dict[str, Any] = {
+                            "key": _extract_aggregation_key(val),
+                            "severity_counts": {
+                                "CRITICAL": severity_raw.get("critical", 0),
+                                "HIGH": severity_raw.get("high", 0),
+                                "MEDIUM": severity_raw.get("medium", 0),
+                                "LOW": severity_raw.get("low", 0),
+                                "ALL": severity_raw.get("all", 0),
+                            },
+                        }
+                        rows.append(row)
+
+            return {
+                "aggregations": rows[:limit],
+                "count": len(rows[:limit]),
+                "aggregation_type": aggregation_type.upper(),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     @tool_schema(GetEcrImageFindingsInput)
     async def aws_inspector_get_ecr_image_findings(
@@ -416,8 +551,76 @@ class InspectorToolkit(AbstractToolkit):
         """Get Inspector v2 findings for a specific ECR container image.
 
         Adds a top-level severity summary over the returned findings.
+
+        Args:
+            repository_name: ECR repository name (required).
+            image_digest: sha256:... image digest (preferred over tag).
+            image_tag: Image tag (used if digest not supplied).
+            severity: Severity filter (default ALL).
+            limit: Max findings to return (capped at 100).
+
+        Returns:
+            Dict with keys: image (dict), summary (dict of severity counts),
+            findings (list), count (int), next_token (str|None).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            filter_criteria = self._build_filter_criteria(
+                resource_type="AWS_ECR_CONTAINER_IMAGE",
+                repository_name=repository_name,
+                severity=severity,
+                image_digest=image_digest,
+                image_tag=image_tag if not image_digest else None,
+            )
+            kwargs: Dict[str, Any] = {
+                "filterCriteria": filter_criteria,
+                "maxResults": min(limit, 100),
+            }
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_findings(**kwargs)
+
+            raw_findings: List[Dict[str, Any]] = response.get("findings") or []
+            normalized = [self._normalize_finding(f) for f in raw_findings]
+
+            # Build severity summary
+            summary: Dict[str, int] = {
+                "CRITICAL": 0,
+                "HIGH": 0,
+                "MEDIUM": 0,
+                "LOW": 0,
+                "INFORMATIONAL": 0,
+            }
+            for f in normalized:
+                sev = f.get("severity", "")
+                if sev in summary:
+                    summary[sev] += 1
+
+            # Extract image metadata from first finding (if available)
+            image_info: Dict[str, Any] = {
+                "repository_name": repository_name,
+                "image_digest": image_digest,
+                "image_tags": [image_tag] if image_tag else [],
+            }
+            if normalized:
+                ecr = (normalized[0].get("resource") or {}).get("ecr_image") or {}
+                if ecr:
+                    image_info = {
+                        "repository_name": ecr.get("repository_name", repository_name),
+                        "image_digest": ecr.get("image_digest", image_digest),
+                        "image_tags": ecr.get("image_tags", []),
+                    }
+
+            return {
+                "image": image_info,
+                "summary": summary,
+                "findings": normalized,
+                "count": len(normalized),
+                "next_token": response.get("nextToken"),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     @tool_schema(ListCoverageInput)
     async def aws_inspector_list_coverage(
@@ -432,22 +635,153 @@ class InspectorToolkit(AbstractToolkit):
         """List resources covered by Amazon Inspector v2 scanning.
 
         Returns one page of coverage entries plus a next_token.
+
+        Args:
+            resource_type: Filter by resource type.
+            scan_status: Filter by scan status (ACTIVE|INACTIVE).
+            scan_status_reason: Filter by scan status reason.
+            repository_name: Filter by ECR repository name.
+            limit: Max entries to return (capped at 1000 by Inspector).
+            next_token: Pagination cursor from a prior call.
+
+        Returns:
+            Dict with keys: covered_resources (list), count (int), next_token (str|None).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            filter_criteria: Dict[str, Any] = {}
+            if resource_type:
+                filter_criteria["resourceType"] = [
+                    {"comparison": "EQUALS", "value": resource_type.upper()}
+                ]
+            if scan_status:
+                filter_criteria["scanStatusCode"] = [
+                    {"comparison": "EQUALS", "value": scan_status.upper()}
+                ]
+            if scan_status_reason:
+                filter_criteria["scanStatusReason"] = [
+                    {"comparison": "EQUALS", "value": scan_status_reason.upper()}
+                ]
+            if repository_name:
+                filter_criteria["ecrRepositoryName"] = [
+                    {"comparison": "EQUALS", "value": repository_name}
+                ]
+
+            kwargs: Dict[str, Any] = {"maxResults": min(limit, 1000)}
+            if filter_criteria:
+                kwargs["filterCriteria"] = filter_criteria
+            if next_token:
+                kwargs["nextToken"] = next_token
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_coverage(**kwargs)
+
+            resources: List[Dict[str, Any]] = []
+            for r in response.get("coveredResources") or []:
+                scan_status_raw = r.get("scanStatus") or {}
+                resources.append(
+                    {
+                        "resource_id": r.get("resourceId", ""),
+                        "resource_type": r.get("resourceType", ""),
+                        "account_id": r.get("accountId", ""),
+                        "region": r.get("resourceMetadata", {}).get("region", ""),
+                        "scan_type": r.get("scanType", ""),
+                        "scan_status": scan_status_raw.get("statusCode", ""),
+                        "scan_status_reason": scan_status_raw.get("reason", ""),
+                    }
+                )
+
+            return {
+                "covered_resources": resources,
+                "count": len(resources),
+                "next_token": response.get("nextToken"),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     async def aws_inspector_get_coverage_statistics(self) -> Dict[str, Any]:
         """Get Amazon Inspector v2 coverage statistics summary.
 
         Returns counts of scanned resources grouped by resource type and scan status.
+
+        Returns:
+            Dict with keys: by_resource_type (dict), by_scan_status (dict),
+            total_resources (int).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_coverage_statistics(
+                    groupBy="RESOURCE_TYPE"
+                )
+
+            counts_by_type: Dict[str, int] = {}
+            for group in response.get("countsByGroup") or []:
+                for count_item in group.get("counts") or []:
+                    key = count_item.get("groupKey", "UNKNOWN")
+                    counts_by_type[key] = counts_by_type.get(key, 0) + count_item.get(
+                        "count", 0
+                    )
+
+            total = sum(counts_by_type.values())
+            return {
+                "by_resource_type": counts_by_type,
+                "total_resources": total,
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     async def aws_inspector_batch_get_account_status(self) -> Dict[str, Any]:
         """Get Inspector v2 scan type enablement status for the current account.
 
         Returns the enablement status for EC2, ECR, Lambda, Lambda Code, and Code Repository.
+
+        Returns:
+            Dict with keys: accounts (list of account status dicts), failed_accounts (list).
         """
-        raise NotImplementedError("Implemented in TASK-1080")
+        try:
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.batch_get_account_status(accountIds=[])
+
+            accounts: List[Dict[str, Any]] = []
+            for acct in response.get("accounts") or []:
+                resource_state = acct.get("resourceState") or {}
+                accounts.append(
+                    {
+                        "account_id": acct.get("accountId", ""),
+                        "state": acct.get("state", {}).get("status", ""),
+                        "ec2": resource_state.get("ec2", {}).get("status", ""),
+                        "ecr": resource_state.get("ecr", {}).get("status", ""),
+                        "lambda": resource_state.get("lambda", {}).get("status", ""),
+                        "lambda_code": resource_state.get("lambdaCode", {}).get(
+                            "status", ""
+                        ),
+                    }
+                )
+
+            failed: List[Dict[str, Any]] = []
+            for f in response.get("failedAccounts") or []:
+                failed.append(
+                    {
+                        "account_id": f.get("accountId", ""),
+                        "error_code": f.get("errorCode", ""),
+                        "error_message": f.get("errorMessage", ""),
+                    }
+                )
+
+            return {
+                "accounts": accounts,
+                "failed_accounts": failed,
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     # ------------------------------------------------------------------
     # Composite read operations (stubs — implemented in TASK-1081)
