@@ -92,7 +92,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "New file tool_dispatcher.py; same parallelism note as 1073.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1075-tool-call-dispatcher.md"
+      "completed_at": "2026-05-11T16:34:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1075-tool-call-dispatcher.md"
     },
     {
       "id": "TASK-1076",
