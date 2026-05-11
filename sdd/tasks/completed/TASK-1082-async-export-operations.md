@@ -224,10 +224,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-12
+**Notes**: Implemented all 4 async export operations:
+- `create_findings_report` + `get_findings_report_status` (with ResourceNotFoundException → NOT_FOUND)
+- `create_sbom_export` + `get_sbom_export` (same NOT_FOUND handling)
+All 6 export tests pass. No auto-polling. ResourceNotFoundException correctly handled.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

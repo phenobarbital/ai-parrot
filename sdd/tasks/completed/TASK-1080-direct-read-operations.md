@@ -256,10 +256,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-12
+**Notes**: Implemented all 6 direct read operations. Added `_extract_aggregation_key` module-level
+helper for polymorphic aggregation response handling. All 34 non-stub tests pass. Linting clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Added `_extract_aggregation_key` as a module-level private function.
