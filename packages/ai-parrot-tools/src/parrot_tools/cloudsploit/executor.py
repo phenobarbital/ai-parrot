@@ -59,23 +59,27 @@ class CloudSploitExecutor:
     def _build_docker_command(
         self,
         args: list[str],
-        volume_mount: Optional[tuple[str, str]] = None,
+        volume_mounts: Optional[list[tuple[str, str, Optional[str]]]] = None,
     ) -> list[str]:
         """Build docker run command with env vars and CLI args.
 
         Args:
             args: CloudSploit CLI arguments to pass to the container.
-            volume_mount: Optional ``(host_dir, container_dir)`` pair to
-                mount so CloudSploit can write output files back to the
-                host filesystem.
+            volume_mounts: Optional list of ``(host_dir, container_dir, mode)``
+                tuples to mount into the container. ``mode`` may be ``None``,
+                ``"ro"`` (read-only), or ``"rw"`` (read-write). Mounts are
+                emitted in list order.
 
         Returns:
             Full docker run command as list of strings.
         """
         cmd = ["docker", "run", "--rm"]
-        if volume_mount:
-            host_dir, container_dir = volume_mount
-            cmd.extend(["-v", f"{host_dir}:{container_dir}"])
+        for mount in volume_mounts or []:
+            host_dir, container_dir, mode = mount
+            spec = f"{host_dir}:{container_dir}"
+            if mode:
+                spec = f"{spec}:{mode}"
+            cmd.extend(["-v", spec])
         for key, val in self._build_env_vars().items():
             cmd.extend(["-e", f"{key}={val}"])
         cmd.append(self.config.docker_image)
@@ -186,14 +190,15 @@ class CloudSploitExecutor:
     async def execute(
         self,
         args: list[str],
-        volume_mount: Optional[tuple[str, str]] = None,
+        volume_mounts: Optional[list[tuple[str, str, Optional[str]]]] = None,
     ) -> tuple[str, str, int]:
         """Run CloudSploit and return output.
 
         Args:
             args: CloudSploit CLI arguments.
-            volume_mount: ``(host_dir, container_dir)`` for Docker output.
-                Ignored when ``use_docker`` is False.
+            volume_mounts: List of ``(host_dir, container_dir, mode)`` tuples
+                for Docker bind-mounts. ``mode`` may be ``None``, ``"ro"``, or
+                ``"rw"``. Ignored when ``use_docker`` is False.
 
         Returns:
             Tuple of (stdout, stderr, exit_code).
@@ -202,7 +207,7 @@ class CloudSploitExecutor:
             asyncio.TimeoutError: If execution exceeds configured timeout.
         """
         if self.config.use_docker:
-            cmd = self._build_docker_command(args, volume_mount=volume_mount)
+            cmd = self._build_docker_command(args, volume_mounts=volume_mounts)
             env = None
         else:
             cmd = self._build_direct_command(args)
@@ -271,13 +276,15 @@ class CloudSploitExecutor:
                     f"{_DOCKER_OUTPUT_MOUNT}/collection.json"
                     if capture_collection else None
                 )
-                volume_mount = (str(host_dir), _DOCKER_OUTPUT_MOUNT)
+                volume_mounts: list[tuple[str, str, Optional[str]]] = [
+                    (str(host_dir), _DOCKER_OUTPUT_MOUNT, None)
+                ]
             else:
                 container_results = str(host_results)
                 container_collection = (
                     str(host_collection) if capture_collection else None
                 )
-                volume_mount = None
+                volume_mounts = []
 
             args = self._build_cli_args(
                 json_path=container_results,
@@ -288,7 +295,7 @@ class CloudSploitExecutor:
                 suppress=suppress,
             )
             stdout, stderr, exit_code = await self.execute(
-                args, volume_mount=volume_mount,
+                args, volume_mounts=volume_mounts if volume_mounts else None,
             )
 
             results_json = (

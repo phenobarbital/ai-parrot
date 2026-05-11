@@ -116,6 +116,38 @@ class TestBuildDockerCommand:
         assert "my-registry/cloudsploit:v2" in cmd
 
 
+class TestBuildDockerCommandMultiMount:
+    def test_docker_command_no_mount(self):
+        cfg = CloudSploitConfig()
+        e = CloudSploitExecutor(cfg)
+        cmd = e._build_docker_command(["--cloud=aws"], volume_mounts=None)
+        assert "-v" not in cmd
+
+    def test_docker_command_single_mount(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(["--cloud=aws"],
+                                      volume_mounts=[("/h", "/c", None)])
+        assert cmd.count("-v") == 1
+        assert "/h:/c" in cmd
+
+    def test_docker_command_read_only_mount(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(["--cloud=aws"],
+                                      volume_mounts=[("/h", "/c", "ro")])
+        assert "/h:/c:ro" in cmd
+
+    def test_docker_command_multi_mount_order(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(
+            ["--cloud=aws"],
+            volume_mounts=[("/o", "/cloudsploit/output", None),
+                           ("/cfgdir", "/cloudsploit/config", "ro")],
+        )
+        o_idx = cmd.index("/o:/cloudsploit/output")
+        c_idx = cmd.index("/cfgdir:/cloudsploit/config:ro")
+        assert o_idx < c_idx
+
+
 class TestBuildCliArgs:
     JSON_PATH = "/tmp/results.json"
     COLLECTION_PATH = "/tmp/collection.json"
