@@ -273,10 +273,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-11
+**Notes**: Created `tests/test_crew_hooks.py` with 18 tests across 6 classes:
+TestHookRegistration (5), TestFireHooksDispatch (4), TestHookArguments (1),
+TestHookCallbackTypes (3), TestHookErrorIsolation (3), TestHookOrdering (2).
+All 18 pass. Uses `FlowResult`/`FlowStatus` instead of `CrewResult`/string
+literals (FEAT-143 migration). `asyncio_mode = auto` in pytest.ini means no
+`@pytest.mark.asyncio` decorator is needed but all async methods in classes
+work correctly.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Imports changed from `parrot.bots.orchestration.crew`
+/ `parrot.models.crew.CrewResult` to `parrot.bots.flows.crew.AgentCrew` /
+`parrot.bots.flows.core.result.FlowResult` (corrected for FEAT-143 migration).
+Status values use `FlowStatus` enum instead of raw strings.

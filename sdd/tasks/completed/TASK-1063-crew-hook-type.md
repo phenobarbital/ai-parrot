@@ -132,10 +132,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-05-11
+**Notes**: Added `CrewHookCallback = Callable[[str, Any], Union[None, Awaitable[None]]]`
+to `types.py` after `ActionCallback`, with full docstring explaining the
+`(crew_name, result)` signature, the `Any` usage for cycle-safety, ordering
+guarantees, and exception behaviour. Re-exported from both `flows/core/__init__.py`
+and `flows/__init__.py` alongside `ActionCallback`.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
