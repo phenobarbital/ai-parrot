@@ -96,8 +96,10 @@ class TestExistingImportsNotBroken:
         assert AgentsFlow is not None
 
     def test_flow_storage_still_importable(self):
-        from parrot.bots.flow.storage import ExecutionMemory, PersistenceMixin
+        from parrot.bots.flow.storage import ExecutionMemory
+        from parrot.bots.flows.core.storage import PersistenceMixin
         assert ExecutionMemory is not None
+        assert PersistenceMixin is not None
 
     def test_agent_crew_importable_from_flows(self):
         from parrot.bots.flows.crew import AgentCrew

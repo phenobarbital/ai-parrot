@@ -425,8 +425,10 @@ class TestImportCompatibility:
         assert AgentsFlow is not None
 
     def test_old_storage_still_importable(self):
-        from parrot.bots.flow.storage import ExecutionMemory as OldEM, PersistenceMixin
+        from parrot.bots.flow.storage import ExecutionMemory as OldEM
+        from parrot.bots.flows.core.storage import PersistenceMixin
         assert OldEM is not None
+        assert PersistenceMixin is not None
 
     def test_agent_task_not_in_flows_crew(self):
         """AgentTask dataclass removed in TASK-920 must not be in flows.crew."""
