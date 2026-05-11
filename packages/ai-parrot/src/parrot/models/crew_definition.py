@@ -11,11 +11,11 @@ including ``parrot/bots/`` — without creating circular dependencies.
 from __future__ import annotations
 
 from typing import Dict, List, Any, Optional, Union
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExecutionMode(str, Enum):
@@ -71,9 +71,12 @@ class FlowRelation(BaseModel):
     """Defines a dependency relationship between agents in flow mode.
 
     Attributes:
-        source: The agent ID (or list of agent IDs) that must complete first.
-        target: The agent ID (or list of agent IDs) that depend on ``source``
-            completion before they can execute.
+        source: The display name (or list of names) of the agent(s) that must
+            complete first.  Must match ``AgentDefinition.name`` when set, or
+            ``AgentDefinition.agent_id`` when ``name`` is ``None``.
+        target: The display name (or list of names) of the agent(s) that depend
+            on ``source`` completion before they can execute.  Same naming
+            convention as ``source``.
     """
 
     source: Union[str, List[str]] = Field(
@@ -140,20 +143,17 @@ class CrewDefinition(BaseModel):
         description="Additional metadata"
     )
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Creation timestamp"
     )
     updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Last update timestamp"
     )
 
-    class Config:
-        """Pydantic configuration."""
-
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
+    model_config = ConfigDict(
+        json_encoders={datetime: lambda v: v.isoformat()},
+    )
 
 
 __all__ = [

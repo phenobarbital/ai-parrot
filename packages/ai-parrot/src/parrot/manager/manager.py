@@ -57,8 +57,8 @@ from ..handlers.tools_catalog import ToolCatalogHandler
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
-from ..bots.orchestration.crew import AgentCrew
-from ..models.crew_definition import CrewDefinition, ExecutionMode
+from ..bots.flows.crew import AgentCrew
+from ..models.crew_definition import CrewDefinition
 from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
 from ..handlers.crew.redis_persistence import CrewRedis

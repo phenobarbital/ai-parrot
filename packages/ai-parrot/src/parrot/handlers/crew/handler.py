@@ -14,8 +14,8 @@ from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
 from navconfig.logging import logging
-from .models import CrewDefinition, ExecutionMode
-from parrot.bots.orchestration.crew import AgentCrew
+from .models import CrewDefinition
+from parrot.bots.flows.crew import AgentCrew
 
 
 class CrewHandler(BaseView):
@@ -80,8 +80,13 @@ class CrewHandler(BaseView):
         """Create an AgentCrew from a CrewDefinition.
 
         Delegates to ``AgentCrew.from_definition()``, passing
-        ``bot_manager.get_bot_class`` as ``class_resolver`` and
-        ``bot_manager.get_tool`` as ``tool_resolver``.
+        ``bot_manager.get_bot_class`` as ``class_resolver``.
+
+        Note:
+            Shared tool resolution is not yet wired here because ``BotManager``
+            does not expose a ``get_tool()`` method.  To enable it, add
+            ``get_tool(name: str) -> Optional[AbstractTool]`` to ``BotManager``
+            and pass it as ``tool_resolver`` below.
 
         Args:
             crew_def: Crew definition containing agent definitions with their
@@ -98,16 +103,18 @@ class CrewHandler(BaseView):
         for agent_def in crew_def.agents:
             if agent_def.agent_class == "WebSearchAgent":
                 self.logger.debug(
-                    f"Creating WebSearchAgent '{agent_def.name or agent_def.agent_id}' "
-                    f"with config: contrastive_search={agent_def.config.get('contrastive_search', False)}, "
-                    f"synthesize={agent_def.config.get('synthesize', False)}, "
-                    f"temperature={agent_def.config.get('temperature', 'default')}"
+                    "Creating WebSearchAgent '%s' with config: "
+                    "contrastive_search=%s, synthesize=%s, temperature=%s",
+                    agent_def.name or agent_def.agent_id,
+                    agent_def.config.get('contrastive_search', False),
+                    agent_def.config.get('synthesize', False),
+                    agent_def.config.get('temperature', 'default'),
                 )
 
         return AgentCrew.from_definition(
             crew_def,
             class_resolver=self.bot_manager.get_bot_class,
-            tool_resolver=self.bot_manager.get_tool,
+            # TODO: pass tool_resolver once BotManager exposes get_tool().
         )
 
     async def upload(self):

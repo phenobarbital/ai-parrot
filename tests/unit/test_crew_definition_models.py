@@ -6,7 +6,6 @@ Verifies that:
 - Backward-compat imports from parrot.handlers.crew.models still work.
 - Model semantics (defaults, round-trip, etc.) are correct.
 """
-import pytest
 from parrot.models.crew_definition import (
     ExecutionMode,
     AgentDefinition,
