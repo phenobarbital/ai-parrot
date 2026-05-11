@@ -118,6 +118,7 @@ class CloudSploitExecutor:
         compliance: Optional[ComplianceFramework] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
+        config_path: Optional[str] = None,
     ) -> list[str]:
         """Build CloudSploit CLI arguments.
 
@@ -129,15 +130,21 @@ class CloudSploitExecutor:
             compliance: Compliance framework to filter by.
             ignore_ok: If True, exclude OK (passing) results.
             suppress: Regex patterns to suppress results.
+            config_path: Optional path to a CloudSploit JS credentials file.
+                When set, ``--config=<config_path>`` is emitted as the first
+                CLI argument. An empty string is treated as None (no flag).
 
         Returns:
             List of CLI argument strings.
         """
-        args = [
+        args: list[str] = []
+        if config_path:
+            args.append(f"--config={config_path}")
+        args.extend([
             f"--json={json_path}",
             "--console=none",
             f"--cloud={self.config.cloud_provider.value}",
-        ]
+        ])
         if collection_path:
             args.append(f"--collection={collection_path}")
         if compliance:

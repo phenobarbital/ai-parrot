@@ -264,6 +264,28 @@ class TestBuildCliArgs:
         assert "--suppress" in args
 
 
+class TestBuildCliArgsConfig:
+    def test_cli_args_no_config_when_none(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json")
+        assert not any(a.startswith("--config=") for a in args)
+
+    def test_cli_args_config_first(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json",
+                                        config_path="/cs/config.js")
+        assert args[0] == "--config=/cs/config.js"
+
+    def test_cli_args_empty_config_omitted(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json", config_path="")
+        assert not any(a.startswith("--config=") for a in args)
+
+    def test_cli_args_config_before_json(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json",
+                                        config_path="/cs/config.js")
+        config_idx = next(i for i, a in enumerate(args) if a.startswith("--config="))
+        json_idx = next(i for i, a in enumerate(args) if a.startswith("--json="))
+        assert config_idx < json_idx
+
+
 class TestBuildDirectCommand:
     def test_default_cli_path(self):
         config = CloudSploitConfig(use_docker=False)
