@@ -1,0 +1,59 @@
+{
+  "feature_id": "FEAT-157",
+  "feature": "agentcrew-hooks",
+  "phase": "proposal_drafted",
+  "started_at": "2026-05-11T00:00:00Z",
+  "updated_at": "2026-05-11T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 5,
+    "git_calls": 0,
+    "depth_reached": 1
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Add on_complete and on_error hooks to AgentCrew for post-execution callbacks"
+  },
+  "phases": {
+    "plan": {
+      "approved_by_user": true
+    },
+    "research": {
+      "completed_at": "2026-05-11T00:00:00Z",
+      "files_read": 12,
+      "findings_count": 5
+    },
+    "synthesis": {
+      "completed_at": "2026-05-11T00:00:00Z",
+      "overall_confidence": "high",
+      "claims_count": 7,
+      "unknowns_count": 0
+    },
+    "review_gate": {
+      "status": "pending"
+    },
+    "qa": {
+      "status": "skipped",
+      "reason": "no unknowns"
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/agentcrew-hooks.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "Commit proposal and state files"
+  }
+}

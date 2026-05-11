@@ -1,0 +1,103 @@
+{
+  "feature_id": "FEAT-157",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "symbol": "AgentCrew.__init__",
+      "lines": "187-287",
+      "role": "Constructor — add hook registration lists here",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "symbol": "AgentCrew.run_sequential",
+      "lines": "1332-1378",
+      "role": "Return path — invoke on_complete/on_error hooks before return",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "symbol": "AgentCrew.run_loop",
+      "lines": "1782-1835",
+      "role": "Return path — invoke on_complete/on_error hooks before return",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "symbol": "AgentCrew.run_parallel",
+      "lines": "2100-2148",
+      "role": "Return path — invoke on_complete/on_error hooks before return",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "symbol": "AgentCrew.run_flow",
+      "lines": "2339-2383",
+      "role": "Return path — invoke on_complete/on_error hooks before return",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/flows/core/types.py",
+      "symbol": "ActionCallback",
+      "lines": "27",
+      "role": "Existing type alias to reuse for hook callbacks",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/crew.py",
+      "symbol": "CrewResult",
+      "lines": "60-97",
+      "role": "Hook argument — the result object hooks receive",
+      "evidence": ["F004"]
+    }
+  ],
+  "hypothesis": {
+    "statement": "Add crew-level lifecycle hooks (on_complete, on_error) as registered callback lists on AgentCrew, invoked after CrewResult is built in every execution mode.",
+    "confidence": "high",
+    "supporting": ["F001", "F002", "F003", "F004"],
+    "reasoning": "All four execution modes share an identical tail pattern: build CrewResult → synthesize → persist → return. A single private method _fire_hooks() inserted before the return statement handles all modes uniformly. The existing ActionCallback type and async-aware invocation pattern (from Node pre/post actions) provides the exact plumbing needed."
+  },
+  "scope": {
+    "files_modified": [
+      "packages/ai-parrot/src/parrot/bots/orchestration/crew.py",
+      "packages/ai-parrot/src/parrot/bots/flows/core/types.py"
+    ],
+    "files_created": [
+      "tests/test_crew_hooks.py"
+    ],
+    "files_deleted": []
+  },
+  "constraints": [
+    {
+      "claim": "Hooks must support both sync and async callables",
+      "confidence": "high",
+      "evidence": ["F003"],
+      "reasoning": "The existing pattern in Node.run_post_actions uses asyncio.iscoroutine() to handle both. Same pattern should be followed."
+    },
+    {
+      "claim": "on_error hooks fire when status is 'failed', on_complete fires for 'completed' or 'partial'",
+      "confidence": "high",
+      "evidence": ["F004"],
+      "reasoning": "CrewResult.status has three values. 'partial' still produces usable results, so on_complete should fire. on_error fires when all agents failed."
+    },
+    {
+      "claim": "Hook errors must not prevent result return",
+      "confidence": "high",
+      "evidence": ["F003"],
+      "reasoning": "AbstractBot._trigger_event wraps callbacks in try/except. Same defensive pattern needed for hooks."
+    },
+    {
+      "claim": "Hooks should receive the crew name and CrewResult as arguments",
+      "confidence": "high",
+      "evidence": ["F002", "F004"],
+      "reasoning": "CrewResult already contains all execution metadata. Crew name provides identity context."
+    }
+  ],
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "High-confidence localization with clear scope. The feature modifies one primary file with a well-understood pattern. Ready for spec and task decomposition."
+  }
+}
