@@ -32,7 +32,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches cache.py only; could run parallel with 1073/1074/1075 if isolation changed to per-task, but spec mandates per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1072-ontology-cache-key-resolved-entities.md"
+      "completed_at": "2026-05-11T16:28:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1072-ontology-cache-key-resolved-entities.md"
     },
     {
       "id": "TASK-1073",
