@@ -14,14 +14,14 @@
       "feature_id": "FEAT-156",
       "feature": "agentcrew-from-definition",
       "spec": "sdd/proposals/agentcrew-from-definition.proposal.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — TASK-1061 and TASK-1062 depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T00:48:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1060-relocate-crew-definition-models.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-156",
       "feature": "agentcrew-from-definition",
       "spec": "sdd/proposals/agentcrew-from-definition.proposal.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1060"],
+      "depends_on": [
+        "TASK-1060"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1060 for relocated model imports",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T00:48:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1061-agentcrew-from-definition.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-156",
       "feature": "agentcrew-from-definition",
       "spec": "sdd/proposals/agentcrew-from-definition.proposal.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1061"],
+      "depends_on": [
+        "TASK-1061"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1061 — needs from_definition to exist before callers can delegate to it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-11T00:48:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1062-refactor-callers-to-from-definition.md"
     }
