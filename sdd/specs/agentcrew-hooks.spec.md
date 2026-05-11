@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-157
 **Date**: 2026-05-11
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/agentcrew-hooks.proposal.md`
 
