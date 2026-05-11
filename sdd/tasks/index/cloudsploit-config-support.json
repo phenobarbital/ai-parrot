@@ -32,7 +32,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches executor.py, which is shared with TASK-1081 and TASK-1082; must run sequentially within the worktree.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1080-cloudsploit-multi-volume-mount.md"
+      "completed_at": "2026-05-11T22:24:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1080-cloudsploit-multi-volume-mount.md"
     },
     {
       "id": "TASK-1081",
