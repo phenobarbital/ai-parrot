@@ -573,20 +573,15 @@ class TestAggregateFindingsSeverityCounts:
         aws_response = {
             "responses": [
                 {
-                    "aggregationType": "ACCOUNT",
-                    "responses": [
-                        {
-                            "accountAggregation": {
-                                "accountId": "123456789012",
-                                "severityCounts": {
-                                    "all": 10,
-                                    "critical": 2,
-                                    "high": 3,
-                                    "medium": 5,
-                                },
-                            }
-                        }
-                    ],
+                    "accountAggregation": {
+                        "accountId": "123456789012",
+                        "severityCounts": {
+                            "all": 10,
+                            "critical": 2,
+                            "high": 3,
+                            "medium": 5,
+                        },
+                    }
                 }
             ]
         }
@@ -615,25 +610,24 @@ class TestGetSecurityPosture:
     def _make_aggregation_response(
         self, critical: int = 0, high: int = 0, medium: int = 0, low: int = 0
     ) -> dict:
-        """Create a mock account aggregation response."""
+        """Create a mock account aggregation response.
+
+        Matches the actual boto3 list_finding_aggregations response shape:
+        {"responses": [{"accountAggregation": {...}}]}
+        """
         return {
             "responses": [
                 {
-                    "aggregationType": "ACCOUNT",
-                    "responses": [
-                        {
-                            "accountAggregation": {
-                                "accountId": "123456789012",
-                                "severityCounts": {
-                                    "all": critical + high + medium + low,
-                                    "critical": critical,
-                                    "high": high,
-                                    "medium": medium,
-                                    "low": low,
-                                },
-                            }
-                        }
-                    ],
+                    "accountAggregation": {
+                        "accountId": "123456789012",
+                        "severityCounts": {
+                            "all": critical + high + medium + low,
+                            "critical": critical,
+                            "high": high,
+                            "medium": medium,
+                            "low": low,
+                        },
+                    }
                 }
             ]
         }
@@ -795,17 +789,12 @@ class TestListTopVulnerableResources:
         aws_response = {
             "responses": [
                 {
-                    "aggregationType": "AWS_ECR_CONTAINER",
-                    "responses": [
-                        {
-                            "ecrContainerImageAggregation": {
-                                "resourceId": r["resourceId"],
-                                "severityCounts": r["severityCounts"],
-                            }
-                        }
-                        for r in resource_data
-                    ],
+                    "ecrContainerImageAggregation": {
+                        "resourceId": r["resourceId"],
+                        "severityCounts": r["severityCounts"],
+                    }
                 }
+                for r in resource_data
             ]
         }
 

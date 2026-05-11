@@ -784,7 +784,7 @@ class InspectorToolkit(AbstractToolkit):
             ) from e
 
     # ------------------------------------------------------------------
-    # Composite read operations (stubs — implemented in TASK-1081)
+    # Composite read operations
     # ------------------------------------------------------------------
 
     @tool_schema(GetSecurityPostureInput)
@@ -796,8 +796,124 @@ class InspectorToolkit(AbstractToolkit):
 
         Orchestrates multiple API calls and computes a weighted security score (0-100).
         Score formula: 100 - (CRITICAL*10 + HIGH*5 + MEDIUM*2 + LOW*1), clamped to [0, 100].
+
+        Args:
+            weights: Override default severity weights dict
+                {CRITICAL: 10, HIGH: 5, MEDIUM: 2, LOW: 1}.
+
+        Returns:
+            Dict with keys: security_score (0-100), severity_counts, total_active_findings,
+            coverage, enabled_scan_types, weights_used.
         """
-        raise NotImplementedError("Implemented in TASK-1081")
+        effective_weights = {**_DEFAULT_WEIGHTS, **(weights or {})}
+        try:
+            async with self.aws.client("inspector2") as ins:
+                # 1. Get severity counts via ACCOUNT aggregation
+                agg_resp = await ins.list_finding_aggregations(
+                    aggregationType="ACCOUNT",
+                    aggregationRequest={},
+                )
+
+                # 2. Get coverage statistics by resource type
+                cov_resp = await ins.list_coverage_statistics(
+                    groupBy="RESOURCE_TYPE"
+                )
+
+                # 3. Get scan type enablement
+                acct_resp = await ins.batch_get_account_status(accountIds=[])
+
+            # Parse severity counts from account aggregation
+            severity_counts: Dict[str, int] = {
+                "CRITICAL": 0,
+                "HIGH": 0,
+                "MEDIUM": 0,
+                "LOW": 0,
+                "INFORMATIONAL": 0,
+                "UNTRIAGED": 0,
+            }
+            for resp_item in agg_resp.get("responses") or []:
+                acct_agg = resp_item.get("accountAggregation")
+                if acct_agg and isinstance(acct_agg, dict):
+                    sev_raw = acct_agg.get("severityCounts") or {}
+                    severity_counts["CRITICAL"] += sev_raw.get("critical", 0)
+                    severity_counts["HIGH"] += sev_raw.get("high", 0)
+                    severity_counts["MEDIUM"] += sev_raw.get("medium", 0)
+                    severity_counts["LOW"] += sev_raw.get("low", 0)
+
+            # Compute weighted score
+            penalty = (
+                severity_counts["CRITICAL"] * effective_weights.get("CRITICAL", 10)
+                + severity_counts["HIGH"] * effective_weights.get("HIGH", 5)
+                + severity_counts["MEDIUM"] * effective_weights.get("MEDIUM", 2)
+                + severity_counts["LOW"] * effective_weights.get("LOW", 1)
+            )
+            security_score = max(0, min(100, 100 - penalty))
+            total_active = sum(severity_counts.values())
+
+            # Parse coverage counts by resource type
+            ecr_count = 0
+            ec2_count = 0
+            lambda_count = 0
+            expired_count = 0
+            for group in cov_resp.get("countsByGroup") or []:
+                for count_item in group.get("counts") or []:
+                    key = count_item.get("groupKey", "")
+                    cnt = count_item.get("count", 0)
+                    if key == "AWS_ECR_CONTAINER_IMAGE":
+                        ecr_count += cnt
+                    elif key == "AWS_EC2_INSTANCE":
+                        ec2_count += cnt
+                    elif key == "AWS_LAMBDA_FUNCTION":
+                        lambda_count += cnt
+
+            coverage = {
+                "ecr_images_scanned": ecr_count,
+                "ec2_instances_scanned": ec2_count,
+                "lambda_functions_scanned": lambda_count,
+                "resources_with_expired_eligibility": expired_count,
+            }
+
+            # Parse scan type enablement from account status
+            enabled_scan_types: Dict[str, str] = {
+                "EC2": "UNKNOWN",
+                "ECR": "UNKNOWN",
+                "LAMBDA": "UNKNOWN",
+                "LAMBDA_CODE": "UNKNOWN",
+                "CODE_REPOSITORY": "UNKNOWN",
+            }
+            for acct in acct_resp.get("accounts") or []:
+                resource_state = acct.get("resourceState") or {}
+                enabled_scan_types["EC2"] = (
+                    resource_state.get("ec2", {}).get("status", "UNKNOWN")
+                )
+                enabled_scan_types["ECR"] = (
+                    resource_state.get("ecr", {}).get("status", "UNKNOWN")
+                )
+                enabled_scan_types["LAMBDA"] = (
+                    resource_state.get("lambda", {}).get("status", "UNKNOWN")
+                )
+                enabled_scan_types["LAMBDA_CODE"] = (
+                    resource_state.get("lambdaCode", {}).get("status", "UNKNOWN")
+                )
+                # codeRepository may not be present in all regions
+                enabled_scan_types["CODE_REPOSITORY"] = (
+                    resource_state.get("codeRepository", {}).get("status", "UNKNOWN")
+                )
+                break  # single-account mode; take first
+
+            return {
+                "security_score": security_score,
+                "severity_counts": severity_counts,
+                "total_active_findings": total_active,
+                "coverage": coverage,
+                "enabled_scan_types": enabled_scan_types,
+                "weights_used": effective_weights,
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     @tool_schema(ListTopVulnerableResourcesInput)
     async def aws_inspector_list_top_vulnerable_resources(
@@ -810,8 +926,80 @@ class InspectorToolkit(AbstractToolkit):
 
         Aggregates findings by resource ARN, sorts by weighted severity descending,
         and returns the top N resources.
+
+        Args:
+            resource_type: Optional filter by resource type.
+            limit: Number of top resources to return (default 10).
+            weights: Override default severity weights dict.
+
+        Returns:
+            Dict with keys: resources (list sorted by weighted_score desc),
+            count (int), weights_used (dict).
         """
-        raise NotImplementedError("Implemented in TASK-1081")
+        effective_weights = {**_DEFAULT_WEIGHTS, **(weights or {})}
+        try:
+            # Use ECR_CONTAINER aggregation as the primary resource aggregation
+            # If resource_type specified, try to map it to the right aggregation type
+            agg_type = "AWS_ECR_CONTAINER"
+            if resource_type:
+                type_map = {
+                    "AWS_EC2_INSTANCE": "AWS_EC2_INSTANCE",
+                    "AWS_ECR_CONTAINER_IMAGE": "AWS_ECR_CONTAINER",
+                    "AWS_LAMBDA_FUNCTION": "LAMBDA_FUNCTION",
+                }
+                agg_type = type_map.get(resource_type.upper(), "AWS_ECR_CONTAINER")
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.list_finding_aggregations(
+                    aggregationType=agg_type,
+                    aggregationRequest={},
+                    maxResults=min(1000, limit * 10),  # fetch more to sort
+                )
+
+            resources: List[Dict[str, Any]] = []
+            for resp_item in response.get("responses") or []:
+                for key, val in resp_item.items():
+                    if val is None or key == "aggregationType":
+                        continue
+                    if isinstance(val, dict):
+                        sev_raw = val.get("severityCounts") or {}
+                        critical = sev_raw.get("critical", 0)
+                        high = sev_raw.get("high", 0)
+                        medium = sev_raw.get("medium", 0)
+                        low = sev_raw.get("low", 0)
+                        weighted_score = (
+                            critical * effective_weights.get("CRITICAL", 10)
+                            + high * effective_weights.get("HIGH", 5)
+                            + medium * effective_weights.get("MEDIUM", 2)
+                            + low * effective_weights.get("LOW", 1)
+                        )
+                        resources.append(
+                            {
+                                "resource_id": _extract_aggregation_key(val),
+                                "severity_counts": {
+                                    "CRITICAL": critical,
+                                    "HIGH": high,
+                                    "MEDIUM": medium,
+                                    "LOW": low,
+                                },
+                                "weighted_score": weighted_score,
+                            }
+                        )
+
+            # Sort by weighted score descending
+            resources.sort(key=lambda r: r["weighted_score"], reverse=True)
+            top_n = resources[:limit]
+
+            return {
+                "resources": top_n,
+                "count": len(top_n),
+                "weights_used": effective_weights,
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     # ------------------------------------------------------------------
     # Async export operations (stubs — implemented in TASK-1082)
