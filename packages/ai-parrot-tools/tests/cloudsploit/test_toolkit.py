@@ -147,7 +147,7 @@ class TestRunScan:
     async def test_scan_saves_to_results_dir(self, toolkit, tmp_path):
         toolkit.config.results_dir = str(tmp_path)
         with _mock_executor(toolkit):
-            result = await toolkit.run_scan()
+            await toolkit.run_scan()
             saved_files = list(tmp_path.glob("scan_*.json"))
             assert len(saved_files) == 1
 
@@ -388,6 +388,23 @@ class TestRunScanConfig:
             assert mock.await_args.kwargs["config"] is None
             assert not any("overrides" in r.message.lower()
                            for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_effective_config_logged_when_active(self, caplog):
+        """Effective config path is always logged at DEBUG when non-None."""
+        toolkit = CloudSploitToolkit(
+            CloudSploitConfig(config_file="/d/cfg.js")
+        )
+        with patch.object(toolkit.executor, "run_scan",
+                          new_callable=AsyncMock) as mock:
+            mock.return_value = (MOCK_CLOUDSPLOIT_OUTPUT, "", "", "", 0)
+            with caplog.at_level(logging.DEBUG,
+                                 logger=toolkit.logger.name):
+                await toolkit.run_scan()
+            assert any(
+                "effective" in r.message.lower() and "/d/cfg.js" in r.message
+                for r in caplog.records
+            )
 
 
 # ── run_compliance_scan config argument ──────────────────────────────────

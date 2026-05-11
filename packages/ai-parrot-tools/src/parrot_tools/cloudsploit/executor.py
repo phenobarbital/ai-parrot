@@ -169,6 +169,10 @@ class CloudSploitExecutor:
     def _mask_command(self, cmd: list[str]) -> str:
         """Mask sensitive credentials in a command for safe logging.
 
+        AWS credential values are redacted; ``--config=<path>`` is logged
+        verbatim because the path itself is not sensitive (it is a host or
+        container filesystem path, not a secret value).
+
         Args:
             cmd: Command as list of strings.
 
@@ -310,21 +314,28 @@ class CloudSploitExecutor:
 
             config_container_path: Optional[str] = None
             if config is not None:
-                config_path = Path(config)
-                if not config_path.is_file():
+                cfg_path = Path(config)
+                cfg_exists = await asyncio.to_thread(cfg_path.is_file)
+                if not cfg_exists:
                     raise FileNotFoundError(
                         f"CloudSploit config file not found: {config}"
                     )
                 if self.config.use_docker:
-                    host_cfg_dir = str(config_path.resolve().parent)
+                    resolved_cfg_parent = cfg_path.resolve().parent
+                    if resolved_cfg_parent == host_dir.resolve():
+                        raise ValueError(
+                            "CloudSploit config file must not reside inside "
+                            "the executor temp directory. Move the config file "
+                            "to a permanent location before scanning."
+                        )
                     volume_mounts.append(
-                        (host_cfg_dir, _DOCKER_CONFIG_MOUNT, "ro")
+                        (str(resolved_cfg_parent), _DOCKER_CONFIG_MOUNT, "ro")
                     )
                     config_container_path = (
-                        f"{_DOCKER_CONFIG_MOUNT}/{config_path.name}"
+                        f"{_DOCKER_CONFIG_MOUNT}/{cfg_path.name}"
                     )
                 else:
-                    config_container_path = str(config_path)
+                    config_container_path = str(cfg_path)
 
             args = self._build_cli_args(
                 json_path=container_results,
@@ -336,7 +347,7 @@ class CloudSploitExecutor:
                 config_path=config_container_path,
             )
             stdout, stderr, exit_code = await self.execute(
-                args, volume_mounts=volume_mounts if volume_mounts else None,
+                args, volume_mounts=volume_mounts or None,
             )
 
             results_json = (

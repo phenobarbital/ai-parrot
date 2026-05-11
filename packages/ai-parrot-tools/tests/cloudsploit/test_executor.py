@@ -1,6 +1,6 @@
 """Unit tests for CloudSploit Docker/CLI executor."""
 import asyncio
-import os
+from typing import Any
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -419,10 +419,19 @@ class TestRunScan:
     """
 
     @staticmethod
-    def _make_proc(results_payload: bytes = b'{"pluginA": {"results": []}}',
-                   collection_payload: bytes = b'{"aws": {}}',
-                   stderr: bytes = b'') -> tuple[MagicMock, list[list[str]]]:
-        """Build a mock subprocess that writes the expected output files."""
+    def _make_proc(
+        results_payload: bytes = b'{"pluginA": {"results": []}}',
+        collection_payload: bytes = b'{"aws": {}}',
+        stderr: bytes = b'',
+    ) -> tuple[MagicMock, list[list[str]], Any]:
+        """Build a mock subprocess that writes the expected output files.
+
+        Returns:
+            Tuple of (mock_proc, captured_calls, side_effect_fn).
+            ``captured_calls`` accumulates the raw arg lists from every
+            invocation of the side-effect so tests can assert on the exact
+            command that was built.
+        """
         captured_calls: list[list[str]] = []
         mock_proc = MagicMock()
         mock_proc.returncode = 0
@@ -434,19 +443,22 @@ class TestRunScan:
 
         def _materialise(*args, **kwargs):
             captured_calls.append(list(args))
-            # When running through Docker the json/collection paths are
-            # CONTAINER paths; translate them to the HOST tempdir using
-            # the -v mount so the test can satisfy the file reads.
-            host_dir = None
-            container_dir = None
+            # Build a full container_dir -> host_dir mapping from ALL -v
+            # tokens so that tests work correctly when more than one volume
+            # mount is present (e.g. output mount + config mount).
+            mounts: dict[str, str] = {}
             for i, token in enumerate(args):
                 if token == "-v" and i + 1 < len(args) and ":" in args[i + 1]:
-                    host_dir, container_dir = args[i + 1].split(":", 1)
-                    break
+                    parts = args[i + 1].split(":")
+                    if len(parts) >= 2:
+                        # parts[0] = host path, parts[1] = container path
+                        mounts[parts[1]] = parts[0]
 
             def _to_host(path: str) -> str:
-                if host_dir and container_dir and path.startswith(container_dir):
-                    return host_dir + path[len(container_dir):]
+                """Translate a container-side path to its host equivalent."""
+                for container, host in mounts.items():
+                    if path.startswith(container):
+                        return host + path[len(container):]
                 return path
 
             for token in args:
@@ -554,19 +566,31 @@ class TestRunScan:
     @pytest.mark.asyncio
     async def test_run_scan_docker_config_path_rewrite(self, tmp_path):
         """Under Docker mode, config path is rewritten to container path and
-        the config dir is bind-mounted read-only."""
+        the config dir is bind-mounted read-only.
+
+        Also verifies the full round-trip: the mock writes results.json to the
+        correct host-side path even when two -v mounts are present (output +
+        config dir), confirming that _materialise resolves all mounts.
+        """
         cfg_file = tmp_path / "config.js"
         cfg_file.write_text("module.exports = {};\n")
         e = CloudSploitExecutor(CloudSploitConfig(use_docker=True))
-        _, captured, side_effect = self._make_proc()
+        _, captured, side_effect = self._make_proc(
+            results_payload=b'{"pluginX": {"results": []}}',
+        )
         with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
-            await e.run_scan(config=str(cfg_file))
+            results_json, _coll, _out, _err, code = await e.run_scan(
+                config=str(cfg_file)
+            )
         cmd = captured[0]
         call_str = " ".join(cmd)
         # The in-container config path
         assert "--config=/cloudsploit/config/config.js" in call_str
         # The read-only bind-mount for the config dir
         assert "/cloudsploit/config:ro" in call_str
+        # Full round-trip: results.json was correctly written and read back
+        assert code == 0
+        assert "pluginX" in results_json
 
     @pytest.mark.asyncio
     async def test_run_compliance_scan_config_raises_when_missing(self, tmp_path):
@@ -578,3 +602,39 @@ class TestRunScan:
                 ComplianceFramework.HIPAA,
                 config=str(tmp_path / "missing.js"),
             )
+
+    @pytest.mark.asyncio
+    async def test_run_scan_docker_config_in_tempdir_raises(self, tmp_path):
+        """Config file inside the executor temp directory raises ValueError.
+
+        The executor creates its own tempdir for output files; if the config
+        file's parent resolves to the same path, the mounts would overlap.
+        This test exercises the collision guard.
+
+        Because the executor creates a NEW tempdir internally (not tmp_path),
+        we cannot easily pass a config file that lives inside it without
+        monkey-patching tempfile.  Instead we verify the guard fires by
+        patching tempfile.TemporaryDirectory to return a known path and
+        creating the config file inside that same path.
+        """
+        import tempfile
+        from unittest.mock import patch as mock_patch
+
+        # Stand up a real temp dir we control.
+        with tempfile.TemporaryDirectory() as controlled_dir:
+            cfg_file = (
+                __import__("pathlib").Path(controlled_dir) / "config.js"
+            )
+            cfg_file.write_text("module.exports = {};\n")
+
+            class _FakeTmpDir:
+                def __enter__(self):
+                    return controlled_dir
+                def __exit__(self, *a):
+                    pass
+
+            e = CloudSploitExecutor(CloudSploitConfig(use_docker=True))
+            with mock_patch("tempfile.TemporaryDirectory",
+                            return_value=_FakeTmpDir()):
+                with pytest.raises(ValueError, match="temp directory"):
+                    await e.run_scan(config=str(cfg_file))

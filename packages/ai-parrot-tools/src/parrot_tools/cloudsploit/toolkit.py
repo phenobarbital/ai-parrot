@@ -4,7 +4,6 @@ Orchestrates CloudSploit executor, parser, report generator, and
 comparator into a single AbstractToolkit subclass.  Every public
 async method is automatically exposed as an agent tool.
 """
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ..toolkit import AbstractToolkit
@@ -15,7 +14,6 @@ from .models import (
     ComparisonReport,
     ComplianceFramework,
     ScanResult,
-    ScanSummary,
     SeverityLevel,
 )
 from .parser import ScanResultParser
@@ -37,6 +35,36 @@ class CloudSploitToolkit(AbstractToolkit):
         self.report_generator = ReportGenerator()
         self.comparator = ScanComparator()
         self._last_result: Optional[ScanResult] = None
+
+    # -- Private helpers ---------------------------------------------------
+
+    def _resolve_config(self, per_call: Optional[str]) -> Optional[str]:
+        """Resolve effective config path with per-call arg > field precedence.
+
+        Emits a DEBUG log when the per-call argument overrides the model-level
+        ``config_file`` field, and a second DEBUG log with the resolved path
+        whenever a config is active (regardless of source).
+
+        Args:
+            per_call: Per-call config path supplied by the caller, or None.
+
+        Returns:
+            Effective config path, or None if no config is configured.
+        """
+        effective = per_call if per_call is not None else self.config.config_file
+        if (
+            per_call is not None
+            and self.config.config_file is not None
+            and per_call != self.config.config_file
+        ):
+            self.logger.debug(
+                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
+                per_call,
+                self.config.config_file,
+            )
+        if effective:
+            self.logger.debug("Effective CloudSploit config: %s", effective)
+        return effective
 
     # -- Public async methods (each becomes an agent tool) -----------------
 
@@ -60,19 +88,7 @@ class CloudSploitToolkit(AbstractToolkit):
         Returns:
             ScanResult with typed findings and summary.
         """
-        effective_config = (
-            config if config is not None else self.config.config_file
-        )
-        if (
-            config is not None
-            and self.config.config_file is not None
-            and config != self.config.config_file
-        ):
-            self.logger.debug(
-                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
-                config,
-                self.config.config_file,
-            )
+        effective_config = self._resolve_config(config)
         results_json, collection_json, _stdout, stderr, code = (
             await self.executor.run_scan(
                 plugins=plugins,
@@ -129,19 +145,7 @@ class CloudSploitToolkit(AbstractToolkit):
                 f"Valid options: {valid}"
             )
 
-        effective_config = (
-            config if config is not None else self.config.config_file
-        )
-        if (
-            config is not None
-            and self.config.config_file is not None
-            and config != self.config.config_file
-        ):
-            self.logger.debug(
-                "Per-call config=%s overrides CloudSploitConfig.config_file=%s",
-                config,
-                self.config.config_file,
-            )
+        effective_config = self._resolve_config(config)
         results_json, _collection_json, _stdout, stderr, code = (
             await self.executor.run_compliance_scan(
                 framework=fw, ignore_ok=ignore_ok, config=effective_config,
