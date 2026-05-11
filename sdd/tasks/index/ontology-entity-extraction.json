@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-11T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-11T22:21:57+00:00",
   "tasks": [
     {
       "id": "TASK-1071",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task; blocks all others. Per-spec single worktree per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1071-ontology-schema-extensions.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1071-ontology-schema-extensions.md"
     },
     {
       "id": "TASK-1072",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches cache.py only; could run parallel with 1073/1074/1075 if isolation changed to per-task, but spec mandates per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1072-ontology-cache-key-resolved-entities.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1072-ontology-cache-key-resolved-entities.md"
     },
     {
       "id": "TASK-1073",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "New file entity_resolver.py; could run parallel with 1072/1074/1075 (no shared files) but per-spec worktree keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1073-entity-resolver.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1073-entity-resolver.md"
     },
     {
       "id": "TASK-1074",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "New file authorization.py; same parallelism note as 1073.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1074-authorization-checker.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1074-authorization-checker.md"
     },
     {
       "id": "TASK-1075",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "New file tool_dispatcher.py; same parallelism note as 1073.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1075-tool-call-dispatcher.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1075-tool-call-dispatcher.md"
     },
     {
       "id": "TASK-1076",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Composes prior modules; intrinsically sequential.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1076-ontology-mixin-refactor.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1076-ontology-mixin-refactor.md"
     },
     {
       "id": "TASK-1077",
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -146,8 +146,8 @@
       "parallelism_notes": "Downstream of mixin refactor; sequential.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1077-intent-router-forward-context.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1077-intent-router-forward-context.md"
     },
     {
       "id": "TASK-1078",
@@ -156,7 +156,7 @@
       "feature_id": "FEAT-158",
       "feature": "ontology-entity-extraction",
       "spec": "sdd/specs/ontology-entity-extraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -167,8 +167,8 @@
       "parallelism_notes": "Final integration test; depends on all production code being in place.",
       "assigned_to": null,
       "started_at": "2026-05-11T16:24:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1078-e2e-team-work-in-progress.md"
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1078-e2e-team-work-in-progress.md"
     }
   ]
 }

@@ -677,3 +677,81 @@ class TestRegistryMixinPipeline:
         assert result is not None
         # Verify the strategy was called and returned "Graph context..."
         # by checking the routing decision is GRAPH_PAGEINDEX
+
+
+# ── FEAT-158: _run_graph_pageindex forwarding tests (TASK-1077) ───────────────
+
+
+class TestRunGraphPageIndexForwarding:
+    """Verify _run_graph_pageindex forwards user_context and tenant_id (FEAT-158)."""
+
+    @pytest.mark.asyncio
+    async def test_forwards_user_context_and_tenant(self, bot: RouterTestBot) -> None:
+        """ontology_process is called with prompt, user_context, and tenant_id."""
+        from unittest.mock import AsyncMock
+
+        spy = AsyncMock(return_value="enriched context")
+        bot.ontology_process = spy
+        bot._get_permission_context = lambda: {"user_id": "alice", "channel": "telegram"}
+        bot._tenant_id = "tenant-A"
+
+        out = await bot._run_graph_pageindex("hello world", candidates=[])
+
+        spy.assert_awaited_once_with(
+            "hello world",
+            user_context={"user_id": "alice", "channel": "telegram"},
+            tenant_id="tenant-A",
+        )
+        assert out == "enriched context"
+
+    @pytest.mark.asyncio
+    async def test_logs_warning_on_exception(self, bot: RouterTestBot) -> None:
+        """Exception from ontology_process is logged at WARNING and router falls through."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        bot.ontology_process = AsyncMock(side_effect=RuntimeError("ArangoDB down"))
+        bot._get_permission_context = lambda: {}
+        bot._tenant_id = "t1"
+        # Use a real MagicMock for logger so we can inspect .warning() calls
+        bot.logger = MagicMock()
+
+        out = await bot._run_graph_pageindex("hello world", candidates=[])
+
+        # Falls through to None (no graph_store or pageindex retriever configured)
+        assert out is None
+        # Exception message was logged at WARNING level
+        bot.logger.warning.assert_called()
+        warning_calls = [str(c) for c in bot.logger.warning.call_args_list]
+        assert any("ArangoDB down" in call for call in warning_calls)
+
+    @pytest.mark.asyncio
+    async def test_uses_default_tenant_when_not_set(self, bot: RouterTestBot) -> None:
+        """Uses 'default' tenant when _tenant_id attr is absent."""
+        from unittest.mock import AsyncMock
+
+        spy = AsyncMock(return_value=None)
+        bot.ontology_process = spy
+        # Do NOT set bot._tenant_id
+
+        await bot._run_graph_pageindex("query", candidates=[])
+
+        _, call_kwargs = spy.call_args
+        assert call_kwargs["tenant_id"] == "default"
+
+    @pytest.mark.asyncio
+    async def test_uses_empty_dict_when_no_get_permission_context(
+        self, bot: RouterTestBot
+    ) -> None:
+        """Falls back to {} for user_context when _get_permission_context is absent."""
+        from unittest.mock import AsyncMock
+
+        spy = AsyncMock(return_value=None)
+        bot.ontology_process = spy
+        # Ensure _get_permission_context is NOT present on the bot
+        if hasattr(bot, "_get_permission_context"):
+            delattr(bot, "_get_permission_context")
+
+        await bot._run_graph_pageindex("query", candidates=[])
+
+        _, call_kwargs = spy.call_args
+        assert call_kwargs["user_context"] == {}

@@ -314,9 +314,12 @@ class TestOntologyProcessStates:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session>
-**Date**: YYYY-MM-DD
-**Notes**: ...
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-11
+**Notes**: Refactored `ontology_process` to return `ContextEnvelope` wrapping `EnrichedContext`.
+Added `_get_permission_context()` hook returning `{}` by default. `EntityResolver`,
+`AuthorizationChecker`, and `ToolCallDispatcher` are imported at module level and constructed
+lazily inside the pipeline. `tool_manager` added as optional constructor arg. All 14 existing
+integration tests and 9 new state-machine tests pass (266 total in knowledge suite).
+Test files updated: `test_ontology_mixin.py` (23 tests), `test_ontology_integration.py` (4 fixed).
+**Deviations from spec**: None — all acceptance criteria met.
