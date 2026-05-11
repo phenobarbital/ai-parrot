@@ -72,8 +72,11 @@ class OntologyCache:
         base = f"{prefix}:{tenant_id}:{user_id}:{pattern}"
         if not resolved_entities:
             return base
+        # Sanitize ArangoDB _id values (e.g. "Employee/E001") — replace "/" with "_"
+        # to avoid confusing Redis admin tools and wildcard SCAN patterns.
+        safe_entities = {k: v.replace("/", "_") for k, v in resolved_entities.items()}
         items = ",".join(
-            f"{k}={v}" for k, v in sorted(resolved_entities.items())
+            f"{k}={v}" for k, v in sorted(safe_entities.items())
         )
         return f"{base}:e={items}"
 

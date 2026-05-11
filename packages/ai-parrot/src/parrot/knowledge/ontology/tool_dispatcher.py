@@ -44,8 +44,6 @@ from parrot.tools.manager import ToolManager
 
 from .schema import ToolCallSpec
 
-logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Domain exceptions
@@ -196,7 +194,13 @@ def _build_permission_context(user_context: dict[str, Any]) -> PermissionContext
     Returns:
         A ``PermissionContext`` with ``user_id`` and ``channel`` populated.
     """
-    user_id = user_context.get("user_id", "anonymous")
+    user_id = user_context.get("user_id") or ""
+    if not user_id:
+        logging.getLogger(__name__).warning(
+            "ToolCallDispatcher: no user_id in user_context — "
+            "permission context will be anonymous; toolkit OAuth will likely fail"
+        )
+        user_id = "anonymous"
     tenant_id = user_context.get("tenant_id", "")
     channel = user_context.get("channel")
     roles_raw = user_context.get("roles", [])

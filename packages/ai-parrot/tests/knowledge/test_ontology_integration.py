@@ -329,7 +329,8 @@ class TestDisabledMode:
             result = await mixin.ontology_process(
                 "my department", user_context, "epson",
             )
-            assert result.context.source == "disabled"
+            assert result.state == "disabled"
+            assert result.context is None
             mixin._ont_tenant_manager.resolve.assert_not_called()
 
 

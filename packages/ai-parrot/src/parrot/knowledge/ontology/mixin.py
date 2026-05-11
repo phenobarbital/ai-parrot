@@ -163,21 +163,19 @@ class OntologyRAGMixin:
         """
         # Merge permission context (subclass hook) into user_context
         pctx = self._get_permission_context()
+        # NOTE: user_context wins on conflict intentionally — callers supply
+        # request-scoped overrides (e.g. impersonation) that must take precedence
+        # over the session hook's defaults. Security-sensitive fields (roles, tenant_id)
+        # are validated downstream by AuthorizationChecker, not here.
         merged_ctx: dict[str, Any] = {**pctx, **user_context}
 
         # Check global enable flag
         if not self._is_ontology_enabled():
-            return ContextEnvelope(
-                state="ok",
-                context=EnrichedContext(source="disabled"),
-            )
+            return ContextEnvelope(state="disabled")
 
         if not self._ont_tenant_manager:
             logger.warning("OntologyRAGMixin: no tenant_manager configured")
-            return ContextEnvelope(
-                state="ok",
-                context=EnrichedContext(source="not_configured"),
-            )
+            return ContextEnvelope(state="not_configured")
 
         # 1. Resolve tenant
         try:
@@ -314,7 +312,10 @@ class OntologyRAGMixin:
                 graph_result, intent, tenant_ctx.pgvector_schema,
             )
         elif intent.post_action == "tool_call" and graph_result:
-            tool_hint = self._build_tool_hint(graph_result)
+            # Only build a lightweight hint if there is no full ToolCallSpec to dispatch.
+            # When pattern.tool_call is set, the dispatcher below produces the richer tool_result.
+            if pattern is None or pattern.tool_call is None:
+                tool_hint = self._build_tool_hint(graph_result)
 
         # 8. Build enriched context
         enriched = EnrichedContext(
@@ -363,6 +364,11 @@ class OntologyRAGMixin:
                         exc.field, tenant_id, exc.message,
                     )
                     return ContextEnvelope(state="render_error", error=str(exc))
+                except Exception as exc:
+                    logger.warning(
+                        "Ontology: tool_failed tenant=%s: %s", tenant_id, exc
+                    )
+                    return ContextEnvelope(state="tool_failed", error=str(exc))
 
         # 10. Cache the enriched context
         await self._ont_cache.set(cache_key, enriched)

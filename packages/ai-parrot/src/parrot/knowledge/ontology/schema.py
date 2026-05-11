@@ -5,10 +5,11 @@ base → domain → client layers, merged into a single MergedOntology at runtim
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 # ── YAML Definition Models ──
@@ -60,6 +61,15 @@ class EntityDef(BaseModel):
     extend: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("key_field")
+    @classmethod
+    def _validate_key_field(cls, v: str | None) -> str | None:
+        if v is not None and not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", v):
+            raise ValueError(
+                f"key_field must be a valid identifier (letters, digits, underscore only), got {v!r}"
+            )
+        return v
 
     def get_property_names(self) -> set[str]:
         """Return the set of all property names defined on this entity."""
@@ -532,6 +542,8 @@ class ContextEnvelope(BaseModel):
 
     state: Literal[
         "ok",
+        "disabled",
+        "not_configured",
         "ambiguous",
         "entity_not_found",
         "denied",

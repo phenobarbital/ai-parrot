@@ -55,21 +55,23 @@ class TestBuildKey:
         assert k1 != k2
 
     def test_entity_suffix_format(self) -> None:
-        """Entity suffix is appended as ':e={k}={v},...' after base key."""
+        """Entity suffix sanitizes '/' to '_' to keep Redis keys clean."""
         k = OntologyCache.build_key(
             "t1", "u1", "team",
             resolved_entities={"target": "Emp/42"},
         )
-        assert ":e=target=Emp/42" in k
+        # Forward slashes in ArangoDB _id values are replaced with underscores.
+        assert ":e=target=Emp_42" in k
+        assert "/" not in k
 
     def test_multiple_entities_sorted_suffix(self) -> None:
-        """Multiple entities are joined sorted by key."""
+        """Multiple entities are joined sorted by key; slashes sanitized."""
         k = OntologyCache.build_key(
             "t1", "u1", "team",
             resolved_entities={"z_rule": "Emp/99", "a_rule": "Emp/1"},
         )
-        # Sorted: a_rule comes before z_rule
-        assert "a_rule=Emp/1,z_rule=Emp/99" in k
+        # Sorted: a_rule comes before z_rule; slashes replaced with underscores
+        assert "a_rule=Emp_1,z_rule=Emp_99" in k
 
     def test_different_users_distinct_keys(self) -> None:
         """Different user_ids produce distinct cache keys (existing behavior)."""

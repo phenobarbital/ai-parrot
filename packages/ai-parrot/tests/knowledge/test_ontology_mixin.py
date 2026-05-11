@@ -196,7 +196,8 @@ class TestDisabledFlow:
                 "my department", user_context, "test",
             )
             assert isinstance(result, ContextEnvelope)
-            assert result.context.source == "disabled"
+            assert result.state == "disabled"
+            assert result.context is None
             mock_tenant_mgr.resolve.assert_not_called()
 
 

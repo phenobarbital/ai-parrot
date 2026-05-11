@@ -24,8 +24,6 @@ from typing import Any
 from .graph_store import OntologyGraphStore
 from .schema import EntityExtractionRule, MergedOntology, TraversalPattern
 
-logger = logging.getLogger(__name__)
-
 
 # ---------------------------------------------------------------------------
 # Typed exceptions
