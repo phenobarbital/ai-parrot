@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-158
 **Date**: 2026-05-11
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
@@ -717,7 +717,7 @@ git worktree add -b feat-158-ontology-entity-extraction \
 
 Genuinely unresolved (do not block spec, may be resolved during implementation):
 
-- [ ] `PermissionContext` class location — *Owner: Module 4 implementer*: identify the existing `PermissionContext` type used in production (read by `JiraToolkit._pre_execute` at `jiratoolkit.py:891`). The dispatcher must either accept that type directly or wrap a dict in a compatible adapter. Resolve before Module 4 PR.
+- [x] `PermissionContext` class location — *Owner: Module 4 implementer*: identify the existing `PermissionContext` type used in production (read by `JiraToolkit._pre_execute` at `jiratoolkit.py:891`). The dispatcher must either accept that type directly or wrap a dict in a compatible adapter. Resolve before Module 4 PR.: I think is on parrot.auth.permission
 - [ ] Per-rule LLM threshold for `ai_assisted` resolution — *Owner: Module 2 implementer*: confidence threshold for heuristic→LLM fallback. Should this live in `EntityExtractionRule` (per-rule) or in a global `ResolverConfig`? Recommendation: start with a single module-level constant; promote to per-rule only if a real pattern demands it.
 - [ ] Ambiguity UX across channels — *Owner: integrations team, follow-up issue*: Telegram has `sendPrompt`-style callbacks; AgenTalk WebSocket and MS Teams do not. v1 ships Telegram-only ambiguity UX; AgenTalk/Teams receive raw `ContextEnvelope(state="ambiguous")` and the agent's prompt layer handles fallback rendering. Document as known limitation; create a follow-up ticket post-merge.
 - [ ] Empty-team semantics — *Owner: YAML pattern authors*: "team" can mean direct reports or full department. Two patterns with distinct triggers (`team_work_in_progress_directs` vs. `team_work_in_progress_department`) is the recommended convention; not a code change.

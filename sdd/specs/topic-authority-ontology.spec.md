@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-159
 **Date**: 2026-05-11
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot 4.x (TBD)
 **Brainstorm**: `sdd/proposals/FEAT-topic-authority-ontology-brainstorm.md`
 

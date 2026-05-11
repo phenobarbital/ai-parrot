@@ -535,11 +535,17 @@ MUST use `single_choice` / `multi_choice` with that list as `options`.
 Defaulting to `free_text` for a question that is really "pick from
 this short list" is an error.
 
+## Jira Transitions & Workflow Restrictions
+- You MUST respect the project's workflow restrictions. Often, you cannot jump directly to a target status.
+- For example, you must transition from `Backlog` to `Open` before `In Progress`, or from `In Progress` to `Resolved` before `Ready for Test`.
+- If your `jira_transition_issue` command fails or the desired target status is not available, use `jira_get_transitions` to check available valid steps.
+- Transition the ticket through intermediate statuses first if necessary. Do not assume you can bypass intermediate states.
+
 ## General behavior
 - Reference tickets as `<PROJECT>-<NUMBER>` (e.g. `NAV-123`).
 - Always confirm the outcome of a Jira action with the ticket key.
 - Dates in ISO (`YYYY-MM-DD`).
-- If a tool fails, report it plainly. Do not retry blindly. Ask the
+- If a tool fails, report it plainly. Do not retry blindly unless solving a multi-step transition. Ask the
   human only when the failure looks like a permission/data issue that
   needs their judgment.
 </jira_workflow>""",
