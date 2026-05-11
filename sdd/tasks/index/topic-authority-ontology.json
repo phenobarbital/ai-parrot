@@ -14,7 +14,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No shared files or imports with TASK-1085. Both are foundation tasks that can run simultaneously.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1084-postgres-migration-ontology-curation.md"
+      "completed_at": "2026-05-11T22:58:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1084-postgres-migration-ontology-curation.md"
     },
     {
       "id": "TASK-1085",
@@ -53,7 +53,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1085"],
+      "depends_on": [
+        "TASK-1085"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1085 for FrameworkOverrideError. Must run after exceptions are defined.",
       "assigned_to": null,
@@ -89,7 +91,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "XL",
-      "depends_on": ["TASK-1084", "TASK-1085", "TASK-1087"],
+      "depends_on": [
+        "TASK-1084",
+        "TASK-1085",
+        "TASK-1087"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on migration (tables), exceptions, and models. Core service — many tasks depend on it.",
       "assigned_to": null,
@@ -107,7 +113,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1087", "TASK-1088"],
+      "depends_on": [
+        "TASK-1087",
+        "TASK-1088"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1088 lands, this can run in parallel with TASK-1090, TASK-1091, TASK-1092 (different files, no shared imports beyond the service).",
       "assigned_to": null,
@@ -125,7 +134,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1088"],
+      "depends_on": [
+        "TASK-1088"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1088 lands, parallel with TASK-1089, TASK-1091, TASK-1092 — creates seed.py, no shared files.",
       "assigned_to": null,
@@ -143,7 +154,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1088", "TASK-1089"],
+      "depends_on": [
+        "TASK-1088",
+        "TASK-1089"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1089 lands, parallel with TASK-1090, TASK-1092 — creates reconcile.py, no shared files.",
       "assigned_to": null,
@@ -161,7 +175,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1088"],
+      "depends_on": [
+        "TASK-1088"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1088 lands, parallel with TASK-1089, TASK-1090, TASK-1091 — creates http.py, no shared files.",
       "assigned_to": null,
@@ -197,7 +213,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1085", "TASK-1086", "TASK-1093"],
+      "depends_on": [
+        "TASK-1085",
+        "TASK-1086",
+        "TASK-1093"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on exceptions, merger extension, and schema models. Must run after all three.",
       "assigned_to": null,
@@ -215,7 +235,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1084", "TASK-1085", "TASK-1093", "TASK-1094"],
+      "depends_on": [
+        "TASK-1084",
+        "TASK-1085",
+        "TASK-1093",
+        "TASK-1094"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on migration, exceptions, models, and validator. Once done, TASK-1096 and TASK-1097 can run in parallel.",
       "assigned_to": null,
@@ -233,7 +258,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1093", "TASK-1095"],
+      "depends_on": [
+        "TASK-1093",
+        "TASK-1095"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1095 lands, parallel with TASK-1097 — creates worker.py, no shared files.",
       "assigned_to": null,
@@ -251,7 +279,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1095"],
+      "depends_on": [
+        "TASK-1095"
+      ],
       "parallel": true,
       "parallelism_notes": "After TASK-1095 lands, parallel with TASK-1096 — creates http.py, no shared files.",
       "assigned_to": null,
@@ -269,7 +299,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1086", "TASK-1088", "TASK-1095"],
+      "depends_on": [
+        "TASK-1086",
+        "TASK-1088",
+        "TASK-1095"
+      ],
       "parallel": false,
       "parallelism_notes": "Integration task — needs merger extension, concept service, and schema service all complete.",
       "assigned_to": null,
@@ -287,7 +321,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1098"],
+      "depends_on": [
+        "TASK-1098"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on tenant manager extension for the invalidate() call target.",
       "assigned_to": null,
@@ -305,7 +341,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1092"],
+      "depends_on": [
+        "TASK-1092"
+      ],
       "parallel": true,
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1101 — different route files.",
       "assigned_to": null,
@@ -323,7 +361,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1092"],
+      "depends_on": [
+        "TASK-1092"
+      ],
       "parallel": true,
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1100 — different route files.",
       "assigned_to": null,
@@ -341,7 +381,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1097"],
+      "depends_on": [
+        "TASK-1097"
+      ],
       "parallel": true,
       "parallelism_notes": "After schema HTTP API lands. Independent of concept-side nav-admin tasks.",
       "assigned_to": null,
@@ -359,7 +401,9 @@
       "status": "pending",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-1084"],
+      "depends_on": [
+        "TASK-1084"
+      ],
       "parallel": true,
       "parallelism_notes": "Trivial config change. After migration lands, can run any time in parallel with everything else.",
       "assigned_to": null,
