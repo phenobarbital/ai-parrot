@@ -2051,120 +2051,24 @@ Available documentation UIs:
         self,
         crew_def: CrewDefinition
     ) -> AgentCrew:
-        """
-        Create an AgentCrew instance from a CrewDefinition.
+        """Create an AgentCrew from a CrewDefinition.
 
-        This method reconstructs a crew from its JSON definition,
-        creating all agents and setting up flow relations.
+        Delegates to ``AgentCrew.from_definition()``, passing
+        ``self.get_bot_class`` as ``class_resolver``. Shared tool
+        resolution is not available in this context (no tool registry on
+        BotManager); ``from_definition`` handles the ``tool_resolver=None``
+        default by skipping shared tool resolution.
 
         Args:
-            crew_def: Crew definition
+            crew_def: Crew definition.
 
         Returns:
-            AgentCrew instance
+            AgentCrew instance.
         """
-
-        # Create agents
-        agents = []
-        for agent_def in crew_def.agents:
-            # Get agent class
-            agent_class = self.get_bot_class(agent_def.agent_class)
-            if not agent_class:
-                self.logger.warning(
-                    f"Agent class '{agent_def.agent_class}' not found, "
-                    f"using BasicAgent as fallback"
-                )
-                agent_class = BasicAgent
-
-            # Collect tools
-            tools = []
-            if agent_def.tools:
-                tools.extend(iter(agent_def.tools))
-
-            # Create agent instance
-            agent = agent_class(
-                name=agent_def.name or agent_def.agent_id,
-                tools=tools,
-                **agent_def.config
-            )
-
-            # Set system prompt if provided
-            if agent_def.system_prompt:
-                agent.system_prompt = agent_def.system_prompt
-
-            agents.append(agent)
-
-        # Create crew
-        crew = AgentCrew(
-            name=crew_def.name,
-            agents=agents,
-            max_parallel_tasks=crew_def.max_parallel_tasks
+        return AgentCrew.from_definition(
+            crew_def,
+            class_resolver=self.get_bot_class,
         )
-
-        # Add shared tools
-        for tool_name in crew_def.shared_tools:
-            # Try to get tool from registry or bot manager
-            # This is a placeholder - implement tool retrieval as needed
-            try:
-                # You may need to implement get_tool method
-                # For now, we'll skip tools that aren't available
-                self.logger.debug(
-                    f"Shared tool '{tool_name}' for crew '{crew_def.name}' "
-                    f"(implement tool retrieval as needed)"
-                )
-            except Exception as e:
-                self.logger.warning(
-                    f"Could not add shared tool '{tool_name}': {e}"
-                )
-
-        # Setup flow relations if in flow mode
-        if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
-            for relation in crew_def.flow_relations:
-                try:
-                    # Convert agent IDs to agent objects
-                    source_agents = self._get_agents_by_ids(
-                        crew,
-                        relation.source if isinstance(relation.source, list) else [relation.source]
-                    )
-                    target_agents = self._get_agents_by_ids(
-                        crew,
-                        relation.target if isinstance(relation.target, list) else [relation.target]
-                    )
-
-                    # Setup flow
-                    crew.task_flow(
-                        source_agents if len(source_agents) > 1 else source_agents[0],
-                        target_agents if len(target_agents) > 1 else target_agents[0]
-                    )
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to setup flow relation for crew '{crew_def.name}': {e}"
-                    )
-
-        return crew
-
-    def _get_agents_by_ids(
-        self,
-        crew: AgentCrew,
-        agent_ids: List[str]
-    ) -> List[Any]:
-        """
-        Get agent objects from crew by their IDs.
-
-        Args:
-            crew: AgentCrew instance
-            agent_ids: List of agent IDs
-
-        Returns:
-            List of agent objects
-        """
-        agents = []
-        for agent_id in agent_ids:
-            if agent := crew.agents.get(agent_id):
-                agents.append(agent)
-            else:
-                self.logger.warning(f"Agent '{agent_id}' not found in crew")
-        return agents
 
     def get_crew_stats(self) -> Dict[str, Any]:
         """
