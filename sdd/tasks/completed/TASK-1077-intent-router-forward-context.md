@@ -187,9 +187,10 @@ class TestRunGraphPageIndexForwarding:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session>
-**Date**: YYYY-MM-DD
-**Notes**: ...
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-11
+**Notes**: Updated `_run_graph_pageindex` to call `ontology_process(prompt, user_context=perm_ctx, tenant_id=tenant_id)`
+using `_get_permission_context()` hook and `_tenant_id` attr. Silent `pass` replaced with
+`logger.warning(...)`. Added 4 unit tests (TestRunGraphPageIndexForwarding). Updated
+`test_intent_router_e2e.py` mock signature to accept new kwargs. 65 total intent router tests pass.
+**Deviations from spec**: None.
