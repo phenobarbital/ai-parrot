@@ -1002,7 +1002,7 @@ class InspectorToolkit(AbstractToolkit):
             ) from e
 
     # ------------------------------------------------------------------
-    # Async export operations (stubs — implemented in TASK-1082)
+    # Async export operations
     # ------------------------------------------------------------------
 
     @tool_schema(CreateFindingsReportInput)
@@ -1018,17 +1018,82 @@ class InspectorToolkit(AbstractToolkit):
         """Start an async Amazon Inspector findings report export to S3.
 
         Returns a report_id that can be polled with aws_inspector_get_findings_report_status.
+        The agent is responsible for deciding when and how often to poll.
+
+        Args:
+            s3_bucket: Target S3 bucket name.
+            s3_key_prefix: Key prefix for the report in S3 (default 'inspector-reports/').
+            kms_key_arn: KMS key ARN for server-side encryption (required by Inspector).
+            report_format: Output format — CSV or JSON (default JSON).
+            severity: Optional severity filter for the report.
+            resource_type: Optional resource type filter for the report.
+
+        Returns:
+            Dict with keys: report_id (str), status (str — always 'IN_PROGRESS' on creation).
         """
-        raise NotImplementedError("Implemented in TASK-1082")
+        try:
+            s3_destination = {
+                "bucketName": s3_bucket,
+                "keyPrefix": s3_key_prefix,
+                "kmsKeyArn": kms_key_arn,
+            }
+            kwargs: Dict[str, Any] = {
+                "reportFormat": report_format.upper(),
+                "s3Destination": s3_destination,
+            }
+            filter_criteria = self._build_filter_criteria(
+                severity=severity,
+                resource_type=resource_type,
+            )
+            if filter_criteria:
+                kwargs["filterCriteria"] = filter_criteria
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.create_findings_report(**kwargs)
+
+            return {
+                "report_id": response.get("reportId", ""),
+                "status": "IN_PROGRESS",
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     async def aws_inspector_get_findings_report_status(
         self, report_id: str
     ) -> Dict[str, Any]:
         """Poll the status of an Inspector findings report export.
 
-        Returns {status: "NOT_FOUND"} if the report ID is unknown (expected during polling).
+        Returns {status: "NOT_FOUND"} if the report ID is unknown — this is expected
+        behaviour during early polling before the export is registered.
+
+        Args:
+            report_id: Report ID returned by aws_inspector_create_findings_report.
+
+        Returns:
+            Dict with keys: report_id (str), status (str), and optionally
+            error_code, error_message, destination (dict).
         """
-        raise NotImplementedError("Implemented in TASK-1082")
+        try:
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.get_findings_report_status(reportId=report_id)
+
+            return {
+                "report_id": response.get("reportId", report_id),
+                "status": response.get("status", ""),
+                "error_code": response.get("errorCode"),
+                "error_message": response.get("errorMessage"),
+                "destination": response.get("destination"),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            if error_code == "ResourceNotFoundException":
+                return {"report_id": report_id, "status": "NOT_FOUND"}
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     @tool_schema(CreateSbomExportInput)
     async def aws_inspector_create_sbom_export(
@@ -1043,12 +1108,82 @@ class InspectorToolkit(AbstractToolkit):
         """Start an async Amazon Inspector SBOM export to S3.
 
         Returns a report_id that can be polled with aws_inspector_get_sbom_export.
+        The agent is responsible for deciding when and how often to poll.
+
+        Args:
+            s3_bucket: Target S3 bucket name.
+            s3_key_prefix: Key prefix for the SBOM in S3 (default 'inspector-sboms/').
+            kms_key_arn: KMS key ARN for server-side encryption (required).
+            report_format: SBOM format — CYCLONEDX_1_4 or SPDX_2_3 (default CYCLONEDX_1_4).
+            resource_type: Optional resource type filter for the SBOM.
+            repository_name: Optional ECR repository name filter.
+
+        Returns:
+            Dict with keys: report_id (str), status (str — always 'IN_PROGRESS' on creation).
         """
-        raise NotImplementedError("Implemented in TASK-1082")
+        try:
+            s3_destination = {
+                "bucketName": s3_bucket,
+                "keyPrefix": s3_key_prefix,
+                "kmsKeyArn": kms_key_arn,
+            }
+            kwargs: Dict[str, Any] = {
+                "reportFormat": report_format.upper(),
+                "s3Destination": s3_destination,
+            }
+            resource_filter: Dict[str, Any] = {}
+            if resource_type:
+                resource_filter["resourceType"] = [
+                    {"comparison": "EQUALS", "value": resource_type.upper()}
+                ]
+            if repository_name:
+                resource_filter["ecrRepositoryName"] = [
+                    {"comparison": "EQUALS", "value": repository_name}
+                ]
+            if resource_filter:
+                kwargs["resourceFilterCriteria"] = resource_filter
+
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.create_sbom_export(**kwargs)
+
+            return {
+                "report_id": response.get("reportId", ""),
+                "status": "IN_PROGRESS",
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
 
     async def aws_inspector_get_sbom_export(self, report_id: str) -> Dict[str, Any]:
         """Poll the status of an Inspector SBOM export.
 
-        Returns {status: "NOT_FOUND"} if the report ID is unknown (expected during polling).
+        Returns {status: "NOT_FOUND"} if the report ID is unknown — expected during polling.
+
+        Args:
+            report_id: Report ID returned by aws_inspector_create_sbom_export.
+
+        Returns:
+            Dict with keys: report_id (str), status (str), and optionally
+            report_format, s3_destination (dict), error_code, error_message.
         """
-        raise NotImplementedError("Implemented in TASK-1082")
+        try:
+            async with self.aws.client("inspector2") as ins:
+                response = await ins.get_sbom_export(reportId=report_id)
+
+            return {
+                "report_id": response.get("reportId", report_id),
+                "status": response.get("status", ""),
+                "report_format": response.get("format"),
+                "s3_destination": response.get("s3Destination"),
+                "error_code": response.get("errorCode"),
+                "error_message": response.get("errorMessage"),
+            }
+        except ClientError as e:
+            error_code = e.response["Error"].get("Code", "Unknown")
+            if error_code == "ResourceNotFoundException":
+                return {"report_id": report_id, "status": "NOT_FOUND"}
+            raise RuntimeError(
+                f"AWS Inspector error ({error_code}): {e}"
+            ) from e
