@@ -5,10 +5,8 @@ from navigator.types import WebApp
 from navigator.applications.base import BaseApplication
 from navconfig.logging import logging
 from parrot.bots.orchestration.crew import AgentCrew
-from parrot.handlers.crew.models import (
-    JobStatus,
-    ExecutionMode,
-)
+from parrot.handlers.crew.models import JobStatus
+from parrot.models.crew_definition import ExecutionMode
 from ..jobs import JobManager
 
 

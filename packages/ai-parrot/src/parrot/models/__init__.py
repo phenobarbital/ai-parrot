@@ -89,6 +89,12 @@ from .vllm import (
     pydantic_to_guided_json,
 )
 from .nvidia import NvidiaModel
+from .crew_definition import (
+    ExecutionMode,
+    AgentDefinition,
+    FlowRelation,
+    CrewDefinition,
+)
 
 __all__ = (
     "OutputFormat",
@@ -169,4 +175,9 @@ __all__ = (
     "infographic_registry",
     # Nvidia models
     "NvidiaModel",
+    # Crew definition models
+    "ExecutionMode",
+    "AgentDefinition",
+    "FlowRelation",
+    "CrewDefinition",
 )

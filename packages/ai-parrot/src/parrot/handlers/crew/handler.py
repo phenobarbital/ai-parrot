@@ -14,8 +14,8 @@ from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
 from navconfig.logging import logging
-from .models import CrewDefinition, ExecutionMode
-from parrot.bots.orchestration.crew import AgentCrew
+from .models import CrewDefinition
+from parrot.bots.flows.crew import AgentCrew
 
 
 class CrewHandler(BaseView):
@@ -77,104 +77,45 @@ class CrewHandler(BaseView):
         self,
         crew_def: CrewDefinition
     ) -> AgentCrew:
-        """
-        Create an AgentCrew instance from a CrewDefinition.
+        """Create an AgentCrew from a CrewDefinition.
+
+        Delegates to ``AgentCrew.from_definition()``, passing
+        ``bot_manager.get_bot_class`` as ``class_resolver``.
+
+        Note:
+            Shared tool resolution is not yet wired here because ``BotManager``
+            does not expose a ``get_tool()`` method.  To enable it, add
+            ``get_tool(name: str) -> Optional[AbstractTool]`` to ``BotManager``
+            and pass it as ``tool_resolver`` below.
 
         Args:
-            crew_def: Crew definition containing agent definitions with their configs.
-                      For WebSearchAgent, config may include:
-                      - contrastive_search (bool): Enable two-step contrastive analysis
-                      - contrastive_prompt (str): Custom prompt for contrastive step
-                      - synthesize (bool): Enable LLM synthesis of results
-                      - synthesize_prompt (str): Custom prompt for synthesis step
+            crew_def: Crew definition containing agent definitions with their
+                configs. For WebSearchAgent, config may include:
+                - contrastive_search (bool): Enable two-step contrastive analysis
+                - contrastive_prompt (str): Custom prompt for contrastive step
+                - synthesize (bool): Enable LLM synthesis of results
+                - synthesize_prompt (str): Custom prompt for synthesis step
 
         Returns:
-            AgentCrew instance with all agents configured
+            AgentCrew instance with all agents configured.
         """
-        # Create agents
-        agents = []
+        # Preserve WebSearchAgent debug logging before delegating.
         for agent_def in crew_def.agents:
-            # Get agent class from BotManager registry
-            agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
-
-            tools = []
-            if agent_def.tools:
-                tools.extend(iter(agent_def.tools))
-
-            # Debug logging for WebSearchAgent to trace config passthrough
             if agent_def.agent_class == "WebSearchAgent":
                 self.logger.debug(
-                    f"Creating WebSearchAgent '{agent_def.name or agent_def.agent_id}' "
-                    f"with config: contrastive_search={agent_def.config.get('contrastive_search', False)}, "
-                    f"synthesize={agent_def.config.get('synthesize', False)}, "
-                    f"temperature={agent_def.config.get('temperature', 'default')}"
+                    "Creating WebSearchAgent '%s' with config: "
+                    "contrastive_search=%s, synthesize=%s, temperature=%s",
+                    agent_def.name or agent_def.agent_id,
+                    agent_def.config.get('contrastive_search', False),
+                    agent_def.config.get('synthesize', False),
+                    agent_def.config.get('temperature', 'default'),
                 )
 
-            # Create agent instance — config dict is unpacked as kwargs
-            # This allows WebSearchAgent to receive contrastive_search, synthesize, etc.
-            agent = agent_class(
-                name=agent_def.name or agent_def.agent_id,
-                tools=tools,
-                **agent_def.config
-            )
-
-            # Set system prompt if provided
-            if agent_def.system_prompt:
-                agent.system_prompt = agent_def.system_prompt
-
-            agents.append(agent)
-
-        # Create crew
-        crew = AgentCrew(
-            name=crew_def.name,
-            agents=agents,
-            max_parallel_tasks=crew_def.max_parallel_tasks
+        return AgentCrew.from_definition(
+            crew_def,
+            class_resolver=self.bot_manager.get_bot_class,
+            # TODO: pass tool_resolver once BotManager exposes get_tool().
         )
-
-        # Add shared tools
-        for tool_name in crew_def.shared_tools:
-            if tool := self.bot_manager.get_tool(tool_name):
-                crew.add_shared_tool(tool, tool_name)
-
-        # Setup flow relations if in flow mode
-        if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
-            for relation in crew_def.flow_relations:
-                # Convert agent IDs to agent objects
-                source_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.source if isinstance(relation.source, list) else [relation.source]
-                )
-                target_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.target if isinstance(relation.target, list) else [relation.target]
-                )
-
-                # Setup flow
-                crew.task_flow(
-                    source_agents if len(source_agents) > 1 else source_agents[0],
-                    target_agents if len(target_agents) > 1 else target_agents[0]
-                )
-
-        return crew
-
-    def _get_agents_by_ids(self, crew: AgentCrew, agent_ids: list) -> list:
-        """Helper to get agent instances by their IDs/names."""
-        # This helper might also be missing, implementing a simple version based on context
-        # Assumes agent name matches what was set during creation (name or agent_id)
-        # But wait, User snippet used self._get_agents_by_ids so I should check if that exists or add it.
-        # Since I am adding it here, I should implement it.
-        found = []
-        for aid in agent_ids:
-            # Logic to find agent in crew.agents list
-            # The agent.name was set to agent_def.name or agent_def.agent_id
-            # This might be tricky if names are not unique or if we don't know the exact mapping.
-            # Ideally AgentCrew has a method to get agent by valid identifier?
-            # For now, let's iterate.
-            for agent in crew.agents:
-                if agent.name == aid: # weak match?
-                    found.append(agent)
-                    break
-        return found
 
     async def upload(self):
         """
