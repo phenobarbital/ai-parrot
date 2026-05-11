@@ -68,7 +68,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on the field (1079), the multi-mount API (1080), and the argv emission (1081). Touches executor.py.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1082-cloudsploit-executor-config-plumbing.md"
+      "completed_at": "2026-05-11T22:28:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1082-cloudsploit-executor-config-plumbing.md"
     },
     {
       "id": "TASK-1083",
