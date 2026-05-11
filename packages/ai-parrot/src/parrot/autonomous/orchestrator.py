@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from ..registry import AgentRegistry
     from ..bots.orchestration import AgentCrew
     from ..bots.abstract import AbstractBot
-    from ..handlers.crew.models import CrewDefinition
+    from ..models.crew_definition import CrewDefinition
 
 
 class ExecutionTarget(Enum):
