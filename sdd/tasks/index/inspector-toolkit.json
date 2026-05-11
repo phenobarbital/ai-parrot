@@ -52,7 +52,7 @@
       "feature_id": "FEAT-161",
       "feature": "inspector-toolkit",
       "spec": "sdd/specs/inspector-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on TASK-1080 direct reads being implemented — composite methods orchestrate the same API calls and need the normalization helpers.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1081-composite-read-operations.md"
+      "completed_at": "2026-05-11T22:30:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1081-composite-read-operations.md"
     },
     {
       "id": "TASK-1082",

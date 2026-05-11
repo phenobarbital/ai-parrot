@@ -203,10 +203,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-12
+**Notes**: Implemented both composite operations:
+- `aws_inspector_get_security_posture`: orchestrates 3 API calls, computes weighted score clamped [0, 100], returns full output shape per spec §2.
+- `aws_inspector_list_top_vulnerable_resources`: aggregates by resource ARN, sorts by weighted severity descending, honors limit.
+All 4 composite tests pass. Score math, clamping, weights override all verified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
