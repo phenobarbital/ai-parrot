@@ -72,7 +72,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Independent of TASK-1062 (different files). Sequenced for one-worktree consistency.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1063-synthesize-results-util.md"
+      "completed_at": "2026-05-12T01:44:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1063-synthesize-results-util.md"
     },
     {
       "id": "TASK-1064",
