@@ -18,9 +18,13 @@ from .models import (
 )
 from .parser import ScanResultParser
 from .reports import ReportGenerator
+from parrot_tools.security.persistence import (
+    ReportPersistenceMixin,
+    pop_persistence_kwargs,
+)
 
 
-class CloudSploitToolkit(AbstractToolkit):
+class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
     """Cloud Security Posture Management toolkit powered by CloudSploit.
 
     Runs security scans against AWS infrastructure, parses results,
@@ -28,6 +32,8 @@ class CloudSploitToolkit(AbstractToolkit):
     """
 
     def __init__(self, config: Optional[CloudSploitConfig] = None, **kwargs):
+        # Pop persistence kwargs BEFORE super().__init__ to avoid unknown-kwarg errors
+        self.file_manager, self.report_store = pop_persistence_kwargs(kwargs)
         super().__init__(**kwargs)
         self.config = config or CloudSploitConfig()
         self.executor = CloudSploitExecutor(self.config)
@@ -37,6 +43,32 @@ class CloudSploitToolkit(AbstractToolkit):
         self._last_result: Optional[ScanResult] = None
 
     # -- Private helpers ---------------------------------------------------
+
+    async def _persist_after_scan(
+        self, result: ScanResult, *, framework: Optional[str],
+    ) -> None:
+        """Persist a scan result to the catalog (no-op when deps are absent).
+
+        Args:
+            result: Completed scan result from the executor.
+            framework: Compliance framework name or None for unrestricted scans.
+        """
+        if self.config.results_dir:
+            ts = result.summary.scan_timestamp.strftime("%Y%m%d_%H%M%S")
+            content = Path(self.config.results_dir) / f"scan_{ts}.json"
+        else:
+            content = result.model_dump_json().encode("utf-8")
+
+        await self._persist_report(
+            scanner="cloudsploit",
+            framework=framework,
+            provider=getattr(self.config.cloud_provider, "value", "aws"),
+            scope={
+                "account_id": getattr(self.config, "aws_account_id", None),
+                "region": getattr(self.config, "aws_region", None),
+            },
+            content=content,
+        )
 
     def _resolve_config(self, per_call: Optional[str]) -> Optional[str]:
         """Resolve effective config path with per-call arg > field precedence.
@@ -116,6 +148,8 @@ class CloudSploitToolkit(AbstractToolkit):
                 coll_path.write_text(collection_json)
                 self.logger.info("Raw collection saved to %s", coll_path)
 
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_after_scan(result, framework=None)
         return result
 
     async def run_compliance_scan(
@@ -160,6 +194,9 @@ class CloudSploitToolkit(AbstractToolkit):
         result = self.parser.parse(results_json)
         result.summary.compliance_framework = fw.value
         self._last_result = result
+
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_after_scan(result, framework=fw.value)
         return result
 
     async def get_summary(self) -> dict:
