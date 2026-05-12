@@ -741,7 +741,15 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 if node.fsm and str(node.fsm.current_state.id) == "ready":
                     node.fsm.start()
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute_in_context(context, timeout=self.agent_execution_timeout))
+                # FEAT-163: execute_in_context removed; use execute(ctx, deps, **kwargs).
+                # deps is the accumulated results dict from context.
+                tasks.append(
+                    node.execute(
+                        context,
+                        context.results,
+                        timeout=self.agent_execution_timeout,
+                    )
+                )
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel

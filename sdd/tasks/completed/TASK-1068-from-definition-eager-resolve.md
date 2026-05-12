@@ -323,9 +323,7 @@ class TestFromDefinitionEagerResolve:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: from_definition() implemented with eager resolution via AgentRegistry.get_bot_instance (sync, mirrors TASK-1061 pattern). _resolved_agents keyed by node_id. _materialize_nodes updated to lookup by node_id. FlowDefinition uses .flow field for name. 13/13 new tests pass; 126/126 total.
+**Deviations from spec**: AgentRegistry has no get_agent method — used get_bot_instance (sync). No global singleton fallback — requires explicit registry. Test spec used wrong field names — corrected to actual FlowDefinition field names (id/flow vs node_id/name).

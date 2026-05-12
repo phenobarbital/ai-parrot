@@ -72,6 +72,10 @@ class DummyAgent:
     def name(self) -> str:  # noqa: D401
         return self._name
 
+    async def invoke(self, prompt: str, **kwargs: Any) -> Any:
+        """AgentLike protocol method — delegates to ask()."""
+        return await self.ask(question=prompt, **kwargs)
+
     async def ask(
         self, prompt: str = "", *, question: str = "", **kwargs: Any
     ) -> types.SimpleNamespace:

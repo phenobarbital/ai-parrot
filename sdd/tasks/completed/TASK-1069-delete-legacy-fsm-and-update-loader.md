@@ -178,10 +178,8 @@ pytest packages/ai-parrot/tests/bots/flows/ -v  # new tests
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
-**Known-broken paths documented in PR**: list here
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: fsm.py deleted (1815 LOC), loader.py retargeted to new parrot.bots.flows.flow.AgentsFlow and parrot.bots.flows.core.fsm.TransitionCondition. __init__.py retargeted to new locations; FlowNode removed from re-exports (no equivalent). FlowLoader.to_agents_flow marked TODO (broken with new API). 135/135 tests pass.
+**Deviations from spec**: No legacy test files found in tests/bots/flow/ (test_fsm.py etc were already absent — only test_definition_cycle.py existed). 
+**Known-broken paths documented in PR**: parrot/flows/dev_loop/flow.py (imports legacy AgentsFlow transitively), parrot/bots/flow/loader.py:FlowLoader.to_agents_flow (uses legacy add_agent/task_flow API), examples/crew (out of scope).

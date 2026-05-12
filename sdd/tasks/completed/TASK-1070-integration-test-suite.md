@@ -315,9 +315,7 @@ The test cases ARE the spec — see Pattern above. The 7 tests are mandatory for
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: All 14 integration tests pass across 7 scenarios. Fixed circular import between parrot.bots.flows.flow and parrot.bots.flow.__init__/loader (lazy imports via __getattr__ and inline import). Fixed retry FSM state: on retry, replace node with model_copy(update={"fsm": new_fsm}) so retried nodes get a fresh idle FSM. conftest.py created with StubRegistry and flow_context fixtures. test_agents_flow.py implements 14 tests across 7 scenario classes. Total: 149 tests passing (140 in tests/bots/flows/ + 9 in tests/bots/flow/).
+**Deviations from spec**: Expanded from 7 tests to 14 for better coverage. RetryableAgentNode subclass created (AgentNode has no max_retries field natively). CEL predicate uses result.output field (AgentNode returns dict with "output" key). DecisionNode test uses mock patch on DecisionFlowNode constructor.

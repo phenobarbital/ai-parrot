@@ -413,9 +413,7 @@ class TestOutputSemantics:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Full event-driven scheduler implemented — asyncio.Queue[CompletionEvent], asyncio.create_task per node, no asyncio.gather. _materialize_nodes creates fresh Node copies (model_copy with new FSM) for concurrent safety. _aggregate_result unwraps AgentNode's execution-metadata dict to extract scalar output for single-leaf flows. FlowStatus enum coercion from determine_run_status string literal. 14/14 tests pass including concurrent safety test.
+**Deviations from spec**: _materialize_nodes in programmatic mode uses model_copy(update={fsm:...}) rather than re-materializing from FlowDefinition (no definition bound). FSM transitions called schedule()+start() by _run_node (not just start()), because FSM begins in idle state not ready.
