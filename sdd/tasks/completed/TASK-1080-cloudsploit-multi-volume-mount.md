@@ -219,10 +219,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Renamed parameter from `volume_mount` to `volume_mounts` on both `_build_docker_command` and `execute`. Updated `_run_with_outputs` to pass a list with one element. Added 4 new tests covering no-mount, single-mount, read-only suffix, and multi-mount order. All new tests pass; only pre-existing env-specific failures remain.
 
 **Deviations from spec**: none

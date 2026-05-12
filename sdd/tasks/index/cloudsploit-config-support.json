@@ -14,7 +14,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only models.py and test_models.py — no overlap with other tasks in this feature.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1079-cloudsploit-config-file-field.md"
+      "completed_at": "2026-05-11T22:23:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1079-cloudsploit-config-file-field.md"
     },
     {
       "id": "TASK-1080",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches executor.py, which is shared with TASK-1081 and TASK-1082; must run sequentially within the worktree.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1080-cloudsploit-multi-volume-mount.md"
+      "completed_at": "2026-05-11T22:24:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1080-cloudsploit-multi-volume-mount.md"
     },
     {
       "id": "TASK-1081",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Touches executor.py — sequential with TASK-1080 and TASK-1082.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1081-cloudsploit-cli-config-arg.md"
+      "completed_at": "2026-05-11T22:26:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1081-cloudsploit-cli-config-arg.md"
     },
     {
       "id": "TASK-1082",
@@ -68,7 +68,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on the field (1079), the multi-mount API (1080), and the argv emission (1081). Touches executor.py.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1082-cloudsploit-executor-config-plumbing.md"
+      "completed_at": "2026-05-11T22:28:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1082-cloudsploit-executor-config-plumbing.md"
     },
     {
       "id": "TASK-1083",
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-160",
       "feature": "cloudsploit-config-support",
       "spec": "sdd/proposals/cloudsploit-config-support.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Depends on the executor signature (1082) and the model field (1079). Touches toolkit.py only — could run in parallel with executor-only tasks if those were already done.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:20:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1083-cloudsploit-toolkit-config-surface.md"
+      "completed_at": "2026-05-11T22:29:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1083-cloudsploit-toolkit-config-surface.md"
     }
   ]
 }

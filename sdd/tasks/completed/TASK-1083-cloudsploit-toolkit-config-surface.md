@@ -289,10 +289,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Added `config: Optional[str] = None` to both `run_scan` and `run_compliance_scan`. Implemented precedence rule (`config if config is not None else self.config.config_file`) and DEBUG log on override. 8 new tests pass (4 for run_scan, 4 for run_compliance_scan). All 35 toolkit tests pass.
 
 **Deviations from spec**: none

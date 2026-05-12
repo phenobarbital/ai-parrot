@@ -258,10 +258,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Added `_DOCKER_CONFIG_MOUNT` constant. Added `config: Optional[str] = None` to `_run_with_outputs`, `run_scan`, and `run_compliance_scan`. Implemented: fail-fast FileNotFoundError, Docker path rewrite + `:ro` mount, direct-CLI passthrough. 4 new tests cover all branches. All new tests pass; only pre-existing env-specific failures remain.
 
 **Deviations from spec**: none
