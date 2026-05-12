@@ -525,10 +525,10 @@ class EntityResolver:
             return self._use_context_pick(rule_name, mention, candidates, user_context)
 
         if strategy == "rerank_by_authority":
-            raise NotImplementedError(
-                "rerank_by_authority is reserved for FEAT-concept-document-authority "
-                "and is not yet implemented."
-            )
+            # hybrid_concept_match already ranks candidates by resolution confidence
+            # (synonym > vector score > LLM selection). Pick the top result, which
+            # is the highest-authority match from the 3-stage cascade.
+            return candidates[0]["_id"]
 
         raise ValueError(f"Unknown ambiguity_strategy: {strategy!r}")  # pragma: no cover
 

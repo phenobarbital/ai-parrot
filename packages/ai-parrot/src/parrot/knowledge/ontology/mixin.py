@@ -235,6 +235,13 @@ class OntologyRAGMixin:
                 graph_store=self._ont_graph_store,
                 ontology=tenant_ctx.ontology,
                 llm_client=self._ont_llm_client,
+                vector_store=self._ont_vector_store,        # required for hybrid stage 2
+                concept_instances=list(                     # required for hybrid stage 1
+                    getattr(
+                        tenant_ctx.ontology.entities.get("Concept"),
+                        "instances", None,
+                    ) or []
+                ),
             )
             try:
                 resolved_entities = await entity_resolver.extract_and_resolve(

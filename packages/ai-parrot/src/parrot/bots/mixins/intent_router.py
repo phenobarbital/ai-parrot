@@ -679,8 +679,12 @@ class IntentRouterMixin:
                         ctx = envelope.context
                         has_graph = bool(ctx is not None and ctx.graph_context)
                         has_vector = bool(ctx is not None and ctx.vector_context)
+                        # tool_result is populated when a tool_call post-action
+                        # succeeded; even if graph/vector context is empty the
+                        # tool result is meaningful and must not be discarded.
+                        has_tool = bool(envelope.tool_result)
 
-                        if has_graph or has_vector:
+                        if has_graph or has_vector or has_tool:
                             # Format with provenance label
                             return self._format_envelope_context(envelope)
 

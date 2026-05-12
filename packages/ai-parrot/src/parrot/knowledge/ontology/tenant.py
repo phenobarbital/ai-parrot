@@ -252,11 +252,15 @@ class TenantOntologyManager:
                 )
 
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            # asyncio.get_running_loop() raises RuntimeError when no loop is
+            # active (synchronous call path); that's the correct branch signal.
+            try:
+                asyncio.get_running_loop()
+                # Inside a running event loop — schedule fire-and-forget.
                 asyncio.ensure_future(_run())
-            else:
-                loop.run_until_complete(_run())
+            except RuntimeError:
+                # No running loop (rare sync context) — run synchronously.
+                asyncio.run(_run())
         except Exception as exc:
             logger.warning(
                 "Could not schedule concept embedding pipeline for tenant '%s': %s",
