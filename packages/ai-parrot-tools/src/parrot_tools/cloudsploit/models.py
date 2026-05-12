@@ -3,7 +3,6 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
-
 from pydantic import BaseModel, Field
 
 from parrot.conf import (
@@ -152,7 +151,7 @@ class CloudSploitConfig(BaseModel):
     # credentials when set.  Accepts a string path; existence is validated
     # at scan time (not at model construction), so the file may be absent
     # until the Docker volume is mounted or the CLI is invoked.
-    config_file: Optional[str] = Field(
+    config_file: Optional[Union[str, Path]] = Field(
         default=None,
         description=(
             "Path to a CloudSploit JS credentials file (string, passed as "
@@ -177,7 +176,7 @@ class CloudSploitConfig(BaseModel):
     )
 
     # ECR collection plan — path validated at scan time, not at construction
-    ecr_plan_file: Optional[str] = Field(
+    ecr_plan_file: Optional[Union[str, Path]] = Field(
         default=None,
         description=(
             "Path to a YAML ECR collection plan file. Passed to "

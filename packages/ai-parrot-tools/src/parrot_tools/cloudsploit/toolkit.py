@@ -6,15 +6,12 @@ async method is automatically exposed as an agent tool.
 """
 from pathlib import Path
 from typing import Optional
-
 from pydantic import BaseModel, Field
-
 from parrot.interfaces.aws import AWSInterface
 from parrot_tools.security.persistence import (
     ReportPersistenceMixin,
     pop_persistence_kwargs,
 )
-
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 from .comparator import ScanComparator
