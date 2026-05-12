@@ -32,7 +32,7 @@
       "feature_id": "FEAT-165",
       "feature": "cloudsploit-ecr",
       "spec": "sdd/specs/cloudsploit-ecr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only aws/ecr.py and its test file — technically independent of TASK-1118. Kept sequential per spec's per-spec isolation policy; could run in parallel worktree if scope expands.",
       "assigned_to": null,
       "started_at": "2026-05-12T17:57:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1119-ecr-wrapper-include-attributes.md"
+      "completed_at": "2026-05-12T18:04:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1119-ecr-wrapper-include-attributes.md"
     },
     {
       "id": "TASK-1120",
