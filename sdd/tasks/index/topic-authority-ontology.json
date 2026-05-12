@@ -338,7 +338,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -348,8 +348,8 @@
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1101 — different route files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1100-navadmin-concept-catalog-queue.md"
+      "completed_at": "2026-05-12T01:29:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1100-navadmin-concept-catalog-queue.md"
     },
     {
       "id": "TASK-1101",
@@ -358,7 +358,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -368,8 +368,8 @@
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1100 — different route files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1101-navadmin-concept-browser.md"
+      "completed_at": "2026-05-12T01:29:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1101-navadmin-concept-browser.md"
     },
     {
       "id": "TASK-1102",
@@ -378,7 +378,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -388,8 +388,8 @@
       "parallelism_notes": "After schema HTTP API lands. Independent of concept-side nav-admin tasks.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1102-navadmin-schema-overlay-panel.md"
+      "completed_at": "2026-05-12T01:29:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1102-navadmin-schema-overlay-panel.md"
     },
     {
       "id": "TASK-1103",
@@ -398,7 +398,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done-with-issues",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -408,8 +408,8 @@
       "parallelism_notes": "Trivial config change. After migration lands, can run any time in parallel with everything else.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1103-navigator-auth-role-addition.md"
+      "completed_at": "2026-05-12T01:29:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1103-navigator-auth-role-addition.md"
     }
   ]
 }
