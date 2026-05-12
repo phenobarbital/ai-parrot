@@ -157,3 +157,49 @@ class TestCloudSploitPersistence:
 
         result = await toolkit.run_scan()
         assert isinstance(result, ScanResult)
+
+    async def test_ecr_persistence_call_when_deps_present(self, tmp_path) -> None:
+        """collect_ecr_findings with wired deps calls _persist_report with ecr-image-scan."""
+        from unittest.mock import patch, AsyncMock
+        from parrot_tools.cloudsploit.models import (
+            EcrCollectionResult,
+            EcrRepoFindings,
+            EcrSeverity,
+        )
+        fm = MagicMock()
+        store = AsyncMock()
+        toolkit = CloudSploitToolkit(
+            config=CloudSploitConfig(
+                aws_access_key_id="K",
+                aws_secret_access_key="S",
+            ),
+            file_manager=fm,
+            report_store=store,
+        )
+
+        plan_path = tmp_path / "plan.yaml"
+        plan_path.write_text(
+            "region: us-east-2\nrepos:\n  - {name: alpha, tags: [staging]}\n"
+        )
+        fake_result = EcrCollectionResult(
+            generated_at=datetime(2026, 5, 12, 6, 0, tzinfo=timezone.utc),
+            region="us-east-2",
+            repos=[
+                EcrRepoFindings(
+                    repo="alpha",
+                    tag="staging",
+                    counts={EcrSeverity.CRITICAL: 2},
+                    findings=[],
+                )
+            ],
+        )
+
+        with patch.object(
+            toolkit.ecr_collector, "collect", new=AsyncMock(return_value=fake_result),
+        ), patch.object(toolkit, "_persist_report", new=AsyncMock()) as p:
+            await toolkit.collect_ecr_findings(plan=str(plan_path))
+            p.assert_awaited_once()
+            call_kwargs = p.call_args.kwargs
+            assert call_kwargs["scanner"] == "ecr-image-scan"
+            assert call_kwargs["provider"] == "aws"
+            assert call_kwargs["scope"]["region"] == "us-east-2"
