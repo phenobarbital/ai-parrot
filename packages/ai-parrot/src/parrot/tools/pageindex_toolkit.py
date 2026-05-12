@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from parrot.models.google import GoogleModel
 from parrot.pageindex.llm_adapter import PageIndexLLMAdapter
@@ -13,6 +13,8 @@ from parrot.pageindex.retriever import PageIndexRetriever
 from parrot.pageindex.utils import write_node_id
 from parrot.tools.decorators import tool_schema
 from parrot.tools.toolkit import AbstractToolkit
+
+_MAX_TREES_HARD_CAP = 10
 
 
 class IndexDocumentsInput(BaseModel):
@@ -34,6 +36,39 @@ class SearchDocumentsInput(BaseModel):
         default=False,
         description="Include formatted tree context in the response.",
     )
+
+
+class SearchScopedInput(BaseModel):
+    """Input schema for scoped multi-tree PageIndex search.
+
+    Args:
+        tree_ids: PageIndex tree IDs to scope the search to.
+        query: Free-form natural-language query.
+        include_tree_context: If True, include the per-tree tree_context blob
+            in each scoped_results entry.
+        max_trees: Hard cap on the number of trees searched. Defaults to 10.
+    """
+
+    tree_ids: list[str] = Field(
+        ...,
+        description="PageIndex tree IDs to scope the search to.",
+    )
+    query: str = Field(..., description="Free-form natural-language query.")
+    include_tree_context: bool = Field(
+        default=False,
+        description="If true, include the per-tree tree_context blob in results.",
+    )
+    max_trees: int = Field(
+        default=_MAX_TREES_HARD_CAP,
+        ge=1,
+        le=_MAX_TREES_HARD_CAP,
+        description=(
+            f"Hard cap on trees searched (default {_MAX_TREES_HARD_CAP}). "
+            "Not exposed to YAML tool_call parameters."
+        ),
+    )
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -140,3 +175,98 @@ class PageIndexToolkit(AbstractToolkit):
         if include_tree_context:
             response["tree_context"] = retriever.get_tree_context(include_summaries=True)
         return response
+
+    @tool_schema(SearchScopedInput)
+    async def search_documents_scoped(
+        self,
+        tree_ids: list[str],
+        query: str,
+        include_tree_context: bool = False,
+        max_trees: int = _MAX_TREES_HARD_CAP,
+    ) -> dict[str, Any]:
+        """Search a SUBSET of indexed trees rather than the full collection.
+
+        Iterates over the provided ``tree_ids`` and calls the existing
+        ``PageIndexRetriever.search()`` + ``retrieve()`` for each.  Returns
+        merged ``scoped_results`` with per-tree ``node_list``, ``thinking``,
+        and ``context``.
+
+        Missing tree IDs (not present in ``self._indices``) are silently
+        skipped with a WARNING log.  Returns ``{"status": "empty"}`` when
+        ``tree_ids`` is empty or when all provided IDs are missing.
+
+        A hard cap of ``max_trees`` (default 10) limits the number of
+        PageIndex LLM calls per invocation.  tree_ids beyond the cap are
+        dropped and a DEBUG log is emitted.
+
+        Args:
+            tree_ids: PageIndex tree IDs to scope the search to.
+            query: Free-form natural-language query.
+            include_tree_context: If True, include the per-tree tree_context
+                blob in each result entry.
+            max_trees: Hard cap on trees searched (default and max 10).
+
+        Returns:
+            ``{"status": "ok", "scoped_results": [...]}`` or
+            ``{"status": "empty", "scoped_results": []}``.
+
+            Each entry in ``scoped_results`` has the shape::
+
+                {
+                    "tree_id":   str,
+                    "doc_name":  str | None,
+                    "node_list": list[str],
+                    "thinking":  str,
+                    "context":   str,
+                    # only when include_tree_context=True:
+                    "tree_context": str,
+                }
+        """
+        if not tree_ids:
+            return {"status": "empty", "scoped_results": []}
+
+        # Apply hard cap
+        effective_ids = tree_ids[:max_trees]
+        if len(tree_ids) > max_trees:
+            self.logger.debug(
+                "search_documents_scoped: capping tree_ids from %d to %d",
+                len(tree_ids),
+                max_trees,
+            )
+
+        scoped_results: list[dict[str, Any]] = []
+
+        for tree_id in effective_ids:
+            record = self._indices.get(tree_id)
+            if not record:
+                self.logger.warning(
+                    "search_documents_scoped: tree_id %r not found in _indices — skipping",
+                    tree_id,
+                )
+                continue
+
+            retriever: PageIndexRetriever = record["retriever"]
+            tree_data: dict[str, Any] = record.get("tree", {})
+            doc_name: str | None = tree_data.get("doc_name")
+
+            search_result = await retriever.search(query)
+            context = await retriever.retrieve(query)
+
+            entry: dict[str, Any] = {
+                "tree_id": tree_id,
+                "doc_name": doc_name,
+                "node_list": search_result.node_list,
+                "thinking": search_result.thinking,
+                "context": context,
+            }
+            if include_tree_context:
+                entry["tree_context"] = retriever.get_tree_context(
+                    include_summaries=True
+                )
+
+            scoped_results.append(entry)
+
+        if not scoped_results:
+            return {"status": "empty", "scoped_results": []}
+
+        return {"status": "ok", "scoped_results": scoped_results}
