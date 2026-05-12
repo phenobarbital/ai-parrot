@@ -210,7 +210,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,8 +222,8 @@
       "parallelism_notes": "Depends on exceptions, merger extension, and schema models. Must run after all three.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1094-schema-overlay-validator.md"
+      "completed_at": "2026-05-12T01:05:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1094-schema-overlay-validator.md"
     },
     {
       "id": "TASK-1095",
