@@ -1,0 +1,26 @@
+# Per-tenant authority manifest for Acme Corp.
+# This file carries only covers_topic and is_a edge instances.
+# It is a curator-readable manifest applied by a seed script to ArangoDB.
+# Document and Concept definitions live in the tenant ontology files.
+name: authority-acme
+extends: knowledge
+version: "1.0"
+
+# NOTE: The edges key below documents the authority edges as a curator manifest.
+# Loading these edges into ArangoDB is an ETL/seed responsibility (see Open Question §8).
+# edges:
+#   - { collection: doc_covers_concept, from: documents/sales-commissions-policy,
+#       to: concepts/commissions,
+#       properties: { authority: "primary", confidence: 1.0, asserted_by: "curator:jesus" } }
+#   - { collection: doc_covers_concept, from: documents/commissions-faq,
+#       to: concepts/commissions,
+#       properties: { authority: "mentions", confidence: 0.9, asserted_by: "curator:jesus" } }
+#   - { collection: doc_covers_concept, from: documents/commissions-memo,
+#       to: concepts/commissions,
+#       properties: { authority: "mentions", confidence: 0.7, asserted_by: "auto:ner_v1" } }
+#   - { collection: doc_covers_concept, from: documents/bonus-policy,
+#       to: concepts/bonuses,
+#       properties: { authority: "primary", confidence: 1.0, asserted_by: "curator:jesus" } }
+#   - { collection: concept_is_a, from: concepts/sales-commissions,
+#       to: concepts/commissions,
+#       properties: {} }

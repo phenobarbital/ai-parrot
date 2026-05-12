@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-12T00:00:00Z",
-  "completed_at": "2026-05-12T01:53:53+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1084",
@@ -22,7 +22,7 @@
       "parallelism_notes": "Pure YAML + tests. Shares no files with TASK-1087 or TASK-1089.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
+      "completed_at": null,
       "file": "sdd/tasks/active/TASK-1084-yaml-knowledge-layer.md"
     },
     {
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1087 (PgVectorStore metadata_filters for add_documents upsert).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1085-concept-embedding-pipeline.md"
+      "completed_at": null,
+      "file": "sdd/tasks/completed/TASK-1085-concept-embedding-pipeline.md"
     },
     {
       "id": "TASK-1086",
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on TASK-1084 (YAML layer) and TASK-1085 (pipeline).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1086-tenant-manager-pipeline-integration.md"
+      "completed_at": null,
+      "file": "sdd/tasks/completed/TASK-1086-tenant-manager-pipeline-integration.md"
     },
     {
       "id": "TASK-1087",
@@ -81,7 +81,7 @@
       "parallelism_notes": "Pure extension to PgVectorStore. Shares no files with TASK-1084 or TASK-1089.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
+      "completed_at": null,
       "file": "sdd/tasks/active/TASK-1087-pgvector-metadata-filters-extension.md"
     },
     {
@@ -102,8 +102,8 @@
       "parallelism_notes": "Depends on TASK-1085 (concept embeddings populated) and TASK-1087 (metadata_filters for tenant-scoped vector search). Also requires FEAT-158 (EntityResolver).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1088-hybrid-concept-match-resolver.md"
+      "completed_at": null,
+      "file": "sdd/tasks/completed/TASK-1088-hybrid-concept-match-resolver.md"
     },
     {
       "id": "TASK-1089",
@@ -120,7 +120,7 @@
       "parallelism_notes": "Pure addition to PageIndexToolkit. Shares no files with TASK-1084 or TASK-1087.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
+      "completed_at": null,
       "file": "sdd/tasks/active/TASK-1089-pageindex-scoped-search.md"
     },
     {
@@ -141,8 +141,8 @@
       "parallelism_notes": "Depends on TASK-1087 (metadata_filters list support for filtered vector) and TASK-1089 (search_documents_scoped for tool_call dispatch). Also requires FEAT-158.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1090-ontology-degradation-chain.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1090-ontology-degradation-chain.md"
     },
     {
       "id": "TASK-1091",
@@ -161,8 +161,8 @@
       "parallelism_notes": "Depends on TASK-1090 (degradation chain produces the envelope this task branches on).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1091-intent-router-branch-logic.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1091-intent-router-branch-logic.md"
     },
     {
       "id": "TASK-1092",
@@ -188,8 +188,8 @@
       "parallelism_notes": "Integration tests — depends on all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": "2026-05-12T01:53:53+00:00",
-      "file": "sdd/tasks/active/TASK-1092-e2e-tests-golden-fixtures.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1092-e2e-tests-golden-fixtures.md"
     }
   ]
 }

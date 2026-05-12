@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Optional, Union, Callable
 import uuid
-import asyncio
 from contextlib import asynccontextmanager
 import numpy as np
 import sqlalchemy
@@ -14,31 +13,23 @@ from sqlalchemy import (
     asc,
     func,
     event,
-    JSON,
-    Index,
     or_,
     and_,
 )
 from sqlalchemy.sql import literal_column
-from sqlalchemy import bindparam
-from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
     AsyncEngine,
     async_sessionmaker
 )
-from sqlalchemy.sql.expression import cast
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import (
-    declarative_base,
     DeclarativeBase,
-    Mapped,
     mapped_column
 )
 # PgVector
 from pgvector.sqlalchemy import Vector
-from pgvector.asyncpg import register_vector
 from sklearn.metrics.pairwise import cosine_similarity, euclidean_distances
 # Datamodel
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
@@ -593,10 +584,17 @@ class PgVectorStore(AbstractStore):
         embedding_column: str = 'embedding',
         content_column: str = 'document',
         metadata_column: str = 'cmetadata',
+        metadata_filters: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> None:
         """
         Embeds and adds documents to the specified table.
+
+        When ``metadata_filters`` is provided, existing rows matching ALL filter
+        conditions are deleted before the new rows are inserted (upsert via
+        delete-and-insert).  Filter semantics are identical to
+        ``similarity_search``: scalar → equality, list → IN.
+        All filter values are parameter-bound to prevent SQL injection.
 
         Args:
             documents: A list of Document objects to add.
@@ -605,6 +603,9 @@ class PgVectorStore(AbstractStore):
             embedding_column: The name of the column to store embeddings.
             content_column: The name of the column to store the main text content.
             metadata_column: The name of the JSONB column for metadata.
+            metadata_filters: Optional dict of JSONB metadata filters used to
+                scope the upsert delete-and-insert.  When provided, matching
+                rows are deleted before the new documents are inserted.
         """
         if not self._connected:
             await self.connection()
@@ -651,7 +652,7 @@ class PgVectorStore(AbstractStore):
                 text_column=self._text_column,
             )
 
-        # Step 2: Prepare values for bulk insert
+        # Step 2: Prepare values for bulk insert.
         # Strip null bytes (0x00) — PostgreSQL rejects them in UTF-8 strings.
         # PDFs and other binary-origin documents can contain embedded nulls.
         values = [
@@ -670,9 +671,33 @@ class PgVectorStore(AbstractStore):
         # Step 3: Build insert statement using SQLAlchemy's insert()
         insert_stmt = insert(self.embedding_store)
 
-        # Step 4: Execute using async executemany
+        # Step 4: Execute delete (if metadata_filters provided) and insert in a
+        # single transaction so no partial-write data loss occurs on crash.
+        # All filter values are parameter-bound — no f-string interpolation.
         try:
             async with self.session() as session:
+                if metadata_filters:
+                    metadata_col = getattr(self.embedding_store, metadata_column)
+                    from sqlalchemy import delete as sa_delete
+                    del_stmt = sa_delete(self.embedding_store)
+                    for key, val in metadata_filters.items():
+                        if isinstance(val, bool):
+                            del_stmt = del_stmt.where(
+                                metadata_col[key].astext.cast(sqlalchemy.Boolean) == val
+                            )
+                        elif isinstance(val, list):
+                            del_stmt = del_stmt.where(
+                                metadata_col[key].astext.in_([str(item) for item in val])
+                            )
+                        else:
+                            del_stmt = del_stmt.where(
+                                metadata_col[key].astext == str(val)
+                            )
+                    del_result = await session.execute(del_stmt)
+                    self.logger.info(
+                        "Deleted %d existing rows from '%s.%s' matching metadata_filters",
+                        del_result.rowcount, schema, table,
+                    )
                 await session.execute(insert_stmt, values)
             self.logger.info(
                 f"✅ Successfully added {len(documents)} documents to '{schema}.{table}'"
@@ -864,12 +889,21 @@ class PgVectorStore(AbstractStore):
             stmt = stmt.limit(limit)
 
         # 6) Apply any JSONB metadata filters
+        # Scalar value  → equality (parameter-bound via SQLAlchemy ORM)
+        # Boolean value → cast to Boolean before comparison
+        # List value    → IN semantics (each item parameter-bound)
         if metadata_filters:
             for key, val in metadata_filters.items():
                 if isinstance(val, bool):
                     # Handle boolean values properly in JSONB
                     stmt = stmt.where(
                         metadata_col[key].astext.cast(sqlalchemy.Boolean) == val
+                    )
+                elif isinstance(val, list):
+                    # IN semantics: metadata->>'key' IN (:v0, :v1, ...)
+                    # .in_() builds parameter-bound placeholders — no f-string interpolation.
+                    stmt = stmt.where(
+                        metadata_col[key].astext.in_([str(item) for item in val])
                     )
                 else:
                     stmt = stmt.where(
@@ -2996,7 +3030,7 @@ class PgVectorStore(AbstractStore):
             await self.connection()
 
         async with self.session() as session:
-            query = text(f"""
+            query = text("""
                 SELECT EXISTS (
                     SELECT 1 FROM information_schema.tables
                     WHERE table_schema = :schema AND table_name = :table
