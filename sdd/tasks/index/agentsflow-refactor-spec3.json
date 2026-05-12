@@ -218,7 +218,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -230,8 +230,8 @@
       "parallelism_notes": "Final task; validates the full pipeline end-to-end against the 7 scenarios in Spec §4.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1070-integration-test-suite.md"
+      "completed_at": "2026-05-12T02:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1070-integration-test-suite.md"
     }
   ]
 }
