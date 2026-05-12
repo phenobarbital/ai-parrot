@@ -108,9 +108,23 @@ class EcrScanCollector:
         for tag in repo.tags:
             async with sem:
                 self.logger.debug("Probing %s:%s", repo.name, tag)
-                payload = await ecr.aws_ecr_get_image_scan_findings(
-                    repo.name, tag, include_attributes=True,
-                )
+                try:
+                    payload = await ecr.aws_ecr_get_image_scan_findings(
+                        repo.name, tag, include_attributes=True,
+                    )
+                except RuntimeError as exc:
+                    msg = str(exc)
+                    if "RepositoryNotFoundException" in msg:
+                        self.logger.warning(
+                            "%s — repository does not exist in registry "
+                            "(skipped)", repo.name,
+                        )
+                        return "repository not found in registry"
+                    self.logger.warning(
+                        "%s:%s — ECR error, trying next tag: %s",
+                        repo.name, tag, msg,
+                    )
+                    continue
 
             if payload.get("scan_status") == "NOT_FOUND":
                 self.logger.debug(

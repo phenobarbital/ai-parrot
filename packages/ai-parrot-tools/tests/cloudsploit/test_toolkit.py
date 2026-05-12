@@ -171,7 +171,9 @@ class TestComplianceScan:
         with _mock_executor(toolkit):
             result = await toolkit.run_compliance_scan(framework="pci")
             assert result is not None
-            assert result.summary.compliance_framework == "pci"
+            # CloudSploit's "pci" is normalized to the catalog's canonical
+            # "pci_dss" so downstream queries match across scanners.
+            assert result.summary.compliance_framework == "pci_dss"
 
     @pytest.mark.asyncio
     async def test_invalid_framework(self, toolkit):

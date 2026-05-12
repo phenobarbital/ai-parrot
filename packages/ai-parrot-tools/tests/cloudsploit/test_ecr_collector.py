@@ -204,6 +204,64 @@ async def test_generated_at_is_utc_aware(sample_payload):
 
 
 @pytest.mark.asyncio
+async def test_repository_not_found_skips_repo(sample_payload, caplog):
+    """A RepositoryNotFoundException for one repo skips it and lets the
+    rest of the gather complete."""
+    async def fake_call(repo, tag, include_attributes=False):
+        if repo == "ghost":
+            raise RuntimeError(
+                "AWS ECR error (RepositoryNotFoundException): "
+                "The repository with name 'ghost' does not exist"
+            )
+        return sample_payload
+
+    collector = EcrScanCollector(aws=MagicMock())
+    with patch(
+        "parrot_tools.cloudsploit.ecr_collector.ECRToolkit.aws_ecr_get_image_scan_findings",
+        side_effect=fake_call,
+    ), caplog.at_level(logging.WARNING, logger="EcrScanCollector"):
+        plan = EcrCollectionPlan(
+            region="us-east-2",
+            repos=[
+                EcrRepoPlan(name="ghost", tags=["staging", "prod"]),
+                EcrRepoPlan(name="alpha", tags=["staging"]),
+            ],
+        )
+        result = await collector.collect(plan)
+
+    assert [r.repo for r in result.repos] == ["alpha"]
+    assert len(result.skipped) == 1
+    assert result.skipped[0]["repo"] == "ghost"
+    assert "not found" in result.skipped[0]["reason"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ecr_error_on_tag_falls_through_to_next_tag(
+    sample_payload, not_found, caplog,
+):
+    """A non-fatal RuntimeError on one tag logs a warning and tries the
+    next tag in priority order."""
+    async def fake_call(repo, tag, include_attributes=False):
+        if tag == "dev":
+            raise RuntimeError("AWS ECR error (ImageNotFoundException): no image")
+        return sample_payload
+
+    collector = EcrScanCollector(aws=MagicMock())
+    with patch(
+        "parrot_tools.cloudsploit.ecr_collector.ECRToolkit.aws_ecr_get_image_scan_findings",
+        side_effect=fake_call,
+    ), caplog.at_level(logging.WARNING, logger="EcrScanCollector"):
+        plan = EcrCollectionPlan(
+            region="us-east-2",
+            repos=[EcrRepoPlan(name="alpha", tags=["dev", "staging"])],
+        )
+        result = await collector.collect(plan)
+
+    assert result.repos[0].tag == "staging"
+    assert any("ImageNotFoundException" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_fixture_file_loads_and_parses(sample_payload):
     """The anonymised fixture JSON can be parsed by the collector."""
     fixture_path = _FIXTURES / "ecr_describe_findings_sample.json"

@@ -178,7 +178,7 @@ class TestComplianceScanPipeline:
         with _mock_exec(toolkit, compliance_pci_json):
             result = await toolkit.run_compliance_scan(framework="pci")
 
-            assert result.summary.compliance_framework == "pci"
+            assert result.summary.compliance_framework == "pci_dss"
             assert result.summary.total_findings == 5
             assert result.summary.fail_count == 4
 
@@ -195,11 +195,13 @@ class TestComplianceScanPipeline:
 
     @pytest.mark.asyncio
     async def test_all_compliance_frameworks(self, toolkit, compliance_pci_json):
-        """Verify all framework strings are accepted."""
-        for fw in ("hipaa", "cis1", "cis2", "pci"):
+        """Verify all framework strings are accepted and normalized to the
+        canonical catalog vocabulary."""
+        expected = {"hipaa": "hipaa", "cis1": "cis", "cis2": "cis", "pci": "pci_dss"}
+        for fw, canonical in expected.items():
             with _mock_exec(toolkit, compliance_pci_json):
                 result = await toolkit.run_compliance_scan(framework=fw)
-                assert result.summary.compliance_framework == fw
+                assert result.summary.compliance_framework == canonical
 
 
 # ── Scan comparison pipeline ─────────────────────────────────────────────

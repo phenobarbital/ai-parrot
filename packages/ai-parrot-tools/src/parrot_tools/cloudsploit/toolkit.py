@@ -31,6 +31,20 @@ from .parser import ScanResultParser
 from .reports import ReportGenerator
 
 
+# CloudSploit CLI uses its own short framework codes (the values of
+# ``ComplianceFramework`` — ``hipaa``, ``cis1``, ``cis2``, ``pci``). The
+# shared security catalog uses the canonical vocabulary from
+# ``parrot_tools.security.ComplianceFramework`` (``hipaa``, ``cis``,
+# ``pci_dss``, …). Translate at the catalog boundary so weekly summaries and
+# other consumers querying the canonical names see CloudSploit's scans.
+_CATALOG_FRAMEWORK_MAP: dict[ComplianceFramework, str] = {
+    ComplianceFramework.HIPAA: "hipaa",
+    ComplianceFramework.CIS1: "cis",
+    ComplianceFramework.CIS2: "cis",
+    ComplianceFramework.PCI: "pci_dss",
+}
+
+
 # ---------------------------------------------------------------------------
 # Input schemas for the new ECR agent tools (private — not exported)
 # ---------------------------------------------------------------------------
@@ -296,11 +310,19 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
             )
 
         result = self.parser.parse(results_json)
-        result.summary.compliance_framework = fw.value
+        catalog_framework = _CATALOG_FRAMEWORK_MAP.get(fw, fw.value)
+        result.summary.compliance_framework = catalog_framework
         self._last_result = result
 
+        if self.config.results_dir:
+            results_dir = Path(self.config.results_dir)
+            ts = result.summary.scan_timestamp.strftime("%Y%m%d_%H%M%S")
+            path = str(results_dir / f"scan_{ts}.json")
+            self.parser.save_result(result, path)
+            self.logger.info("Compliance scan result saved to %s", path)
+
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
-        await self._persist_after_scan(result, framework=fw.value)
+        await self._persist_after_scan(result, framework=catalog_framework)
         return result
 
     async def get_summary(self) -> dict:
