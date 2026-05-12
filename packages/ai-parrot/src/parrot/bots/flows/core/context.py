@@ -13,13 +13,38 @@ Primary names:
 Backward-compat aliases (forwarded to the primary methods):
     ``agent_metadata`` — property alias for ``node_metadata``.
     ``get_input_for_agent()`` — alias for ``get_input_for_node()``.
+
+FEAT-163 additions:
+    ``agent_registry`` — optional ``AgentRegistry`` bound to the context.
+    ``resolve_agent(agent_ref)`` — resolve an agent reference to a live agent
+        via the bound registry; raises ``AgentNotFoundError`` on miss.
+    ``AgentNotFoundError`` — raised when ``resolve_agent`` cannot find the
+        requested agent in the registry.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from .result import NodeExecutionInfo
+from .types import AgentLike, AgentRef
+
+if TYPE_CHECKING:
+    from parrot.registry.registry import AgentRegistry
+
+
+# ---------------------------------------------------------------------------
+# Exception
+# ---------------------------------------------------------------------------
+
+
+class AgentNotFoundError(LookupError):
+    """Raised when ``FlowContext.resolve_agent`` cannot find the requested agent.
+
+    Inherits from ``LookupError`` so callers can catch it with either
+    ``except AgentNotFoundError:`` (specific) or ``except LookupError:``
+    (generic lookup failure).
+    """
 
 
 @dataclass
@@ -63,6 +88,54 @@ class FlowContext:
 
     shared_data: Dict[str, Any] = field(default_factory=dict)
     """Arbitrary key-value data shared across all nodes (replaces AgentContext.shared_data)."""
+
+    agent_registry: Optional["AgentRegistry"] = field(default=None)
+    """Optional AgentRegistry bound to this context for agent resolution.
+
+    Set by ``AgentsFlow.from_definition()`` (FEAT-163) and available to
+    any code that needs to resolve an ``agent_ref`` string at runtime.
+    """
+
+    # ── Agent resolution ──────────────────────────────────────────────────
+
+    def resolve_agent(self, agent_ref: AgentRef) -> AgentLike:
+        """Resolve an agent reference to a live agent instance.
+
+        If *agent_ref* is already an ``AgentLike`` (not a string), return it
+        unchanged.  If it is a string, look it up in the bound
+        ``agent_registry`` and return the result.
+
+        Args:
+            agent_ref: Either an ``AgentLike`` instance (returned as-is) or a
+                string agent name looked up via the registry.
+
+        Returns:
+            The resolved ``AgentLike`` agent.
+
+        Raises:
+            AgentNotFoundError: If *agent_ref* is a string and cannot be found
+                in the registry, or if no registry is bound to this context.
+        """
+        if not isinstance(agent_ref, str):
+            # Already an AgentLike instance — pass it through unchanged.
+            return agent_ref  # type: ignore[return-value]
+
+        if self.agent_registry is None:
+            raise AgentNotFoundError(
+                f"Cannot resolve agent_ref={agent_ref!r}: "
+                "no agent_registry is bound to this FlowContext. "
+                "Pass agent_registry= when constructing FlowContext or "
+                "use AgentsFlow.from_definition(agent_registry=...)."
+            )
+
+        # AgentRegistry.get_bot_instance returns None on miss (sync lookup).
+        agent = self.agent_registry.get_bot_instance(agent_ref)
+        if agent is None:
+            raise AgentNotFoundError(
+                f"Agent not registered: {agent_ref!r}. "
+                "Ensure the agent is registered before constructing the flow."
+            )
+        return agent  # type: ignore[return-value]
 
     # ── Dependency checking ───────────────────────────────────────────────
 
