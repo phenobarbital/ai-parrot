@@ -32,7 +32,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Forward-refs core.node.AgentNode. In principle independent of TASK-1060's class changes, but ordered together for testability.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1061-flowcontext-resolve-agent.md"
+      "completed_at": "2026-05-12T01:36:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1061-flowcontext-resolve-agent.md"
     },
     {
       "id": "TASK-1062",
