@@ -130,7 +130,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Extends flow.py with the three wrapper classes. SynthesisNode needs synthesize_results util from TASK-1063.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1066-new-node-subclasses.md"
+      "completed_at": "2026-05-12T01:52:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1066-new-node-subclasses.md"
     },
     {
       "id": "TASK-1067",
