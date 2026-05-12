@@ -296,6 +296,16 @@ class CloudSploitExecutor:
             host_results = host_dir / "results.json"
             host_collection = host_dir / "collection.json"
 
+            # CloudSploit's official Docker image runs as the non-root
+            # ``cloudsploit`` user (uid=100). ``tempfile.TemporaryDirectory``
+            # creates the host dir with mode 0700 owned by the host user, so
+            # the container user cannot write ``results.json`` into the
+            # bind-mount. Open up the dir to world-write so any in-container
+            # UID can land its outputs. Only applies under Docker mode; in
+            # direct-CLI mode the host user owns both ends.
+            if self.config.use_docker:
+                os.chmod(host_dir, 0o777)
+
             if self.config.use_docker:
                 container_results = f"{_DOCKER_OUTPUT_MOUNT}/results.json"
                 container_collection = (
