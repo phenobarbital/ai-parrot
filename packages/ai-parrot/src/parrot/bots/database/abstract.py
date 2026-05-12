@@ -42,8 +42,6 @@ from .models import (
 )
 from .prompts import DB_AGENT_PROMPT
 from .retries import QueryRetryConfig, SQLRetryHandler
-from parrot.tools.database.pg import PgSchemaSearchTool
-from parrot.tools.database.bq import BQSchemaSearchTool
 from ...memory import ConversationTurn
 
 
@@ -154,21 +152,19 @@ class AbstractDBAgent(AbstractBot, ABC):
             await self.analyze_schema()
 
     def _register_database_tools(self):
-        """Register database-specific tools."""
-        if self.database_type == "bigquery":
-            tool_cls = BQSchemaSearchTool
-        else:
-            tool_cls = PgSchemaSearchTool
+        """Register database-specific tools.
 
-        self.schema_tool = tool_cls(
-            engine=self.engine,
-            metadata_cache=self.metadata_cache,
-            allowed_schemas=self.allowed_schemas.copy(),
-            session_maker=self.session_maker
-        )
-        self.tool_manager.add_tool(self.schema_tool)
-        self.logger.debug(
-            f"Registered SchemaSearchTool with {len(self.allowed_schemas)} schemas"
+        The legacy ``PgSchemaSearchTool`` / ``BQSchemaSearchTool`` were
+        replaced by the toolkit-centric architecture in
+        ``parrot.bots.database.toolkits`` (``PostgresToolkit``,
+        ``BigQueryToolkit``). This deprecated path is kept only so the
+        module imports cleanly; new code should use ``DatabaseAgent``
+        with the appropriate toolkit instead.
+        """
+        raise NotImplementedError(
+            "AbstractDBAgent._register_database_tools is no longer wired up. "
+            "Use parrot.bots.database.DatabaseAgent with PostgresToolkit / "
+            "BigQueryToolkit instead."
         )
 
     async def _share_tools_with_llm(self):
