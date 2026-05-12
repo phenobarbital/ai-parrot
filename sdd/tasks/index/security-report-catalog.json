@@ -91,7 +91,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Depends only on TASK-1105 (data models). Could run in parallel with TASK-1106 and TASK-1107 if isolation were per-task — but per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1108-scanner-parsers.md"
+      "completed_at": "2026-05-12T01:34:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1108-scanner-parsers.md"
     },
     {
       "id": "TASK-1109",
