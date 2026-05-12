@@ -31,34 +31,6 @@ from .cache import (
     SchemaMetadataCache,  # backward-compat alias
 )
 
-# Backward compatibility aliases (deprecated — use DatabaseAgent instead)
-import warnings as _warnings
-
-
-class AbstractDBAgent(DatabaseAgent):
-    """Deprecated: use ``DatabaseAgent`` instead."""
-
-    def __init__(self, *args, **kwargs):
-        _warnings.warn(
-            "AbstractDBAgent is deprecated, use DatabaseAgent instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-
-
-class SQLAgent(DatabaseAgent):
-    """Deprecated: use ``DatabaseAgent`` with ``PostgresToolkit`` instead."""
-
-    def __init__(self, *args, **kwargs):
-        _warnings.warn(
-            "SQLAgent is deprecated, use DatabaseAgent with PostgresToolkit instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-
-
 __all__ = [
     # New public API
     "DatabaseAgent",
@@ -73,8 +45,5 @@ __all__ = [
     "CacheManager",
     "CachePartition",
     "CachePartitionConfig",
-    # Backward compat (deprecated)
     "SchemaMetadataCache",
-    "AbstractDBAgent",
-    "SQLAgent",
 ]

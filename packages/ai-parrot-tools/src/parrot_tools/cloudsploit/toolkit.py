@@ -33,7 +33,9 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
 
     def __init__(self, config: Optional[CloudSploitConfig] = None, **kwargs):
         # Pop persistence kwargs BEFORE super().__init__ to avoid unknown-kwarg errors
-        self.file_manager, self.report_store = pop_persistence_kwargs(kwargs)
+        self.file_manager, self.report_store = pop_persistence_kwargs(
+            kwargs
+        )
         super().__init__(**kwargs)
         self.config = config or CloudSploitConfig()
         self.executor = CloudSploitExecutor(self.config)

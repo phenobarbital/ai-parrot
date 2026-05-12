@@ -20,13 +20,9 @@ Example::
             self.config = config
 """
 from __future__ import annotations
-
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
-
 from parrot.interfaces.file import FileManagerInterface
 from parrot.storage.security_reports import (
     EmbeddedFinding,
