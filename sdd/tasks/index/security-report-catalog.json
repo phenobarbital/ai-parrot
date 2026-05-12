@@ -32,7 +32,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Foundation data layer. Every other task imports from here. Could theoretically run in parallel with TASK-1104 (different files), but per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1105-storage-data-models.md"
+      "completed_at": "2026-05-12T01:24:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1105-storage-data-models.md"
     },
     {
       "id": "TASK-1106",
