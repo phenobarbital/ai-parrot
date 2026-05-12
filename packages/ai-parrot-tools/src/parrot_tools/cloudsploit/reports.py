@@ -10,7 +10,12 @@ from typing import Optional
 from navconfig.logging import logging
 from jinja2 import Environment, FileSystemLoader
 
-from .models import ScanResult, ComparisonReport
+from .models import (
+    ComparisonReport,
+    EcrCollectionResult,
+    EcrSeverity,
+    ScanResult,
+)
 
 # Default maximum findings to include in HTML table
 DEFAULT_MAX_FINDINGS = 1000
@@ -187,3 +192,205 @@ class ReportGenerator:
 
         self.logger.info("Comparison PDF saved to %s", output_path)
         return output_path
+
+    # -- ECR image-scan report (FEAT-165) ----------------------------------
+
+    # Severity ordering for sorting (lower number = higher priority)
+    _SEV_ORDER: dict[EcrSeverity, int] = {
+        EcrSeverity.CRITICAL: 1,
+        EcrSeverity.HIGH: 2,
+        EcrSeverity.MEDIUM: 3,
+        EcrSeverity.LOW: 4,
+        EcrSeverity.INFORMATIONAL: 5,
+        EcrSeverity.UNTRIAGED: 6,
+    }
+
+    # Severity colour palette (background, foreground) for inline badges
+    _SEV_COLOR: dict[EcrSeverity, tuple[str, str]] = {
+        EcrSeverity.CRITICAL: ("#dc3545", "white"),
+        EcrSeverity.HIGH: ("#fd7e14", "white"),
+        EcrSeverity.MEDIUM: ("#ffc107", "#000"),
+        EcrSeverity.LOW: ("#6c757d", "white"),
+        EcrSeverity.INFORMATIONAL: ("#adb5bd", "white"),
+        EcrSeverity.UNTRIAGED: ("#adb5bd", "white"),
+    }
+
+    @staticmethod
+    def _repo_priority(name: str) -> int:
+        """Return a sort key that pins ``navigator-api-tf`` first.
+
+        Args:
+            name: Repository name.
+
+        Returns:
+            0 for ``navigator-api-tf``, 1 for other ``navigator-*``, 2 for rest.
+        """
+        if name == "navigator-api-tf":
+            return 0
+        if name.startswith("navigator-"):
+            return 1
+        return 2
+
+    async def generate_ecr_html(
+        self,
+        result: EcrCollectionResult,
+        output_path: Optional[str] = None,
+    ) -> str:
+        """Render an interactive HTML vulnerability report from ECR scan data.
+
+        Builds a view-model from ``result`` — sorting repos, grouping CVEs by
+        package, truncating descriptions, resolving severity colours — then
+        renders ``ecr_scan_report.html`` via the existing Jinja2 env.
+
+        Args:
+            result: Collected ECR scan findings.
+            output_path: File path to write the HTML to.  Parent directories
+                are created automatically.  When ``None``, the rendered HTML
+                string is returned instead.
+
+        Returns:
+            Rendered HTML string when ``output_path`` is ``None``, otherwise
+            the absolute path of the written file (as a ``str``).
+        """
+        template = self.env.get_template("ecr_scan_report.html")
+
+        # Global severity totals across all repos
+        total_counts: dict[str, int] = {}
+        for repo in result.repos:
+            for sev, n in repo.counts.items():
+                total_counts[sev.value] = total_counts.get(sev.value, 0) + n
+
+        # Sort repos: navigator-api-tf first, other navigator-* by severity,
+        # then the rest alphabetically
+        def _repo_sort_key(repo):  # type: ignore[return]
+            return (
+                self._repo_priority(repo.repo),
+                -repo.counts.get(EcrSeverity.CRITICAL, 0),
+                -repo.counts.get(EcrSeverity.HIGH, 0),
+                -repo.counts.get(EcrSeverity.MEDIUM, 0),
+                -repo.counts.get(EcrSeverity.LOW, 0),
+                repo.repo,
+            )
+
+        repos_sorted = [
+            self._build_repo_view(r)
+            for r in sorted(result.repos, key=_repo_sort_key)
+        ]
+
+        html = template.render(
+            generated_at=result.generated_at.isoformat(),
+            region=result.region,
+            total_counts=total_counts,
+            repo_count=len(result.repos),
+            repos_sorted=repos_sorted,
+        )
+
+        if output_path:
+            p = Path(output_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(html, encoding="utf-8")
+            self.logger.info("ECR HTML report saved to %s", output_path)
+            return output_path
+        return html
+
+    def _build_repo_view(self, repo) -> dict:  # type: ignore[return]
+        """Build the per-repo view-model consumed by ``ecr_scan_report.html``.
+
+        Groups findings by ``(package_name, package_version)``, sorts packages
+        by worst severity, pre-truncates descriptions to 180 chars, and
+        resolves severity colours for inline CSS badges.
+
+        Args:
+            repo: ``EcrRepoFindings`` instance.
+
+        Returns:
+            Dict with keys matching the template context vars.
+        """
+        from collections import defaultdict
+
+        sev_order = self._SEV_ORDER
+        sev_color = self._SEV_COLOR
+
+        # --- 1. Group findings by (package_name, package_version) ----------
+        groups: dict[tuple[str, str], list] = defaultdict(list)
+        for f in repo.findings:
+            key = (f.package_name or "?", f.package_version or "")
+            groups[key].append(f)
+
+        # --- 2. Build sorted package blocks ---------------------------------
+        pkg_groups = []
+        for (pkg, ver), findings in groups.items():
+            # Sort CVEs within the package by severity (worst first)
+            findings.sort(key=lambda f: sev_order.get(f.severity, 99))
+
+            worst_sev = findings[0].severity if findings else EcrSeverity.UNTRIAGED
+            worst_order = sev_order.get(worst_sev, 99)
+
+            cves = []
+            for f in findings:
+                bg, fg = sev_color.get(f.severity, ("#adb5bd", "white"))
+                desc = f.description or ""
+                if len(desc) > 180:
+                    desc = desc[:180] + "…"  # ellipsis
+                cves.append({
+                    "name": f.name,
+                    "severity": f.severity.value,
+                    "description_short": desc,
+                    "uri": f.uri or "",
+                    "fixed_in_versions": f.fixed_in_versions,
+                    "cvss": f.cvss,
+                    "sev_bg": bg,
+                    "sev_fg": fg,
+                })
+
+            pkg_groups.append({
+                "pkg": pkg,
+                "ver": ver,
+                "worst_severity": worst_sev.value,
+                "_worst_order": worst_order,
+                "pkg_open": worst_sev in (EcrSeverity.CRITICAL, EcrSeverity.HIGH),
+                "cves": cves,
+            })
+
+        # Sort packages by worst severity
+        pkg_groups.sort(key=lambda g: g["_worst_order"])
+
+        # --- 3. Compute boolean flags for the template ----------------------
+        counts_str: dict[str, int] = {k.value: v for k, v in repo.counts.items()}
+        has_critical = EcrSeverity.CRITICAL in repo.counts and repo.counts[EcrSeverity.CRITICAL] > 0
+        has_high = EcrSeverity.HIGH in repo.counts and repo.counts[EcrSeverity.HIGH] > 0
+        has_medium = EcrSeverity.MEDIUM in repo.counts and repo.counts[EcrSeverity.MEDIUM] > 0
+        has_low = EcrSeverity.LOW in repo.counts and repo.counts[EcrSeverity.LOW] > 0
+
+        # Worst severity for border colour
+        for sev in (EcrSeverity.CRITICAL, EcrSeverity.HIGH, EcrSeverity.MEDIUM,
+                    EcrSeverity.LOW, EcrSeverity.INFORMATIONAL):
+            if sev in repo.counts and repo.counts[sev] > 0:
+                worst = sev
+                break
+        else:
+            worst = EcrSeverity.UNTRIAGED
+
+        # Scan time formatting
+        if repo.scan_time:
+            try:
+                scan_time_formatted = repo.scan_time.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                scan_time_formatted = "N/A"
+        else:
+            scan_time_formatted = "N/A"
+
+        return {
+            "repo": repo.repo,
+            "tag": repo.tag,
+            "counts": counts_str,
+            "has_critical": has_critical,
+            "has_high": has_high,
+            "has_medium": has_medium,
+            "has_low": has_low,
+            "worst_severity": worst.value,
+            "repo_open": has_critical or has_high,
+            "scan_time_formatted": scan_time_formatted,
+            "pkg_groups": pkg_groups,
+            "total_findings": len(repo.findings),
+        }
