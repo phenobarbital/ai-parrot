@@ -171,7 +171,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -188,8 +188,8 @@
       "parallelism_notes": "Integration tests — depends on all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1092-e2e-tests-golden-fixtures.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1092-e2e-tests-golden-fixtures.md"
     }
   ]
 }
