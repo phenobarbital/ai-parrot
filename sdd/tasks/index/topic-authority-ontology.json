@@ -110,7 +110,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "After TASK-1088 lands, this can run in parallel with TASK-1090, TASK-1091, TASK-1092 (different files, no shared imports beyond the service).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1089-concept-catalog-sync-worker.md"
+      "completed_at": "2026-05-12T00:34:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1089-concept-catalog-sync-worker.md"
     },
     {
       "id": "TASK-1090",
