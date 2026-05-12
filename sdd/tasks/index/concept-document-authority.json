@@ -52,7 +52,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,7 +64,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1086-tenant-manager-pipeline-integration.md"
+      "file": "sdd/tasks/completed/TASK-1086-tenant-manager-pipeline-integration.md"
     },
     {
       "id": "TASK-1087",
