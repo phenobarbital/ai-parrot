@@ -152,7 +152,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "The largest task — the heart of the executor. Strictly sequential after its dependencies.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1067-event-driven-scheduler.md"
+      "completed_at": "2026-05-12T02:03:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1067-event-driven-scheduler.md"
     },
     {
       "id": "TASK-1068",
