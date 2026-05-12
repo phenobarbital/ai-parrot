@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from parrot.stores.models import Document
+
 logger = logging.getLogger(__name__)
 
 
@@ -324,15 +326,6 @@ class ConceptEmbeddingPipeline:
             tenant_id: Tenant identifier.
             concepts: Non-empty list of concept objects or dicts to embed.
         """
-        try:
-            from parrot.stores.models import Document
-        except ImportError:
-            # Fallback: create a minimal Document-like object
-            class Document:  # type: ignore[no-redef]
-                def __init__(self, page_content: str, metadata: dict) -> None:
-                    self.page_content = page_content
-                    self.metadata = metadata
-
         documents = []
         for concept in concepts:
             cid = str(self._get_attr(concept, "concept_id", "") or "")

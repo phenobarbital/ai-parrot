@@ -79,6 +79,13 @@ logger = logging.getLogger("Parrot.Ontology.Mixin")
 class OntologyRAGMixin:
     """Mixin that adds Ontological Graph RAG capabilities to any agent.
 
+    Class-level constants
+    ---------------------
+    ``FILTERED_VECTOR_DOC_TYPES``: doc_type values used in Level-3 degradation
+    (filtered vector RAG).  Coupled to the ontology's authority document
+    taxonomy — change here when the knowledge.ontology.yaml adds new
+    authority ``doc_type`` values.
+
     The mixin orchestrates the full ontology pipeline:
 
         1. Resolve tenant → merged ontology.
@@ -101,6 +108,11 @@ class OntologyRAGMixin:
         llm_client: LLM client for intent resolver's LLM path.
         tool_manager: ToolManager instance for ToolCallDispatcher resolution.
     """
+
+    # Level-3 degradation: doc_type values that qualify as authoritative docs.
+    # Coupled to the ontology knowledge.ontology.yaml authority taxonomy.
+    # Override in a subclass or update here when new authority doc_types are added.
+    FILTERED_VECTOR_DOC_TYPES: tuple[str, ...] = ("policy", "manual")
 
     def __init__(
         self,
@@ -397,7 +409,7 @@ class OntologyRAGMixin:
             try:
                 filtered_results = await self._ont_vector_store.similarity_search(
                     query=query,
-                    metadata_filters={"doc_type": ["policy", "manual"]},
+                    metadata_filters={"doc_type": list(self.FILTERED_VECTOR_DOC_TYPES)},
                 )
                 if filtered_results:
                     logger.debug(

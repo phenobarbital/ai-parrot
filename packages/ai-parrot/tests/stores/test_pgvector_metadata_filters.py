@@ -386,24 +386,40 @@ class TestSimilaritySearchSignature:
 
 
 class TestFilterInjectionSafety:
-    """Verify that filter values are always coerced to string, not interpolated."""
+    """Verify Python-level string coercion of filter values before SQLAlchemy.
+
+    These tests verify the *Python* layer only: that ``metadata_filters``
+    values are coerced to ``str`` before being passed to the SQLAlchemy ORM
+    expression methods (``__eq__`` / ``in_``).  They do NOT prove that no
+    SQL injection is possible — that guarantee is provided by SQLAlchemy's
+    own bind-parameter generation, which requires a live DB connection to
+    verify.  A passing test here means the Python interface is correct; the
+    ORM layer handles the rest.
+    """
 
     def test_injection_payload_coerced_to_literal_string(self):
-        """An injection payload must be treated as a literal string argument."""
+        """Filter value coerced to str before being passed to the ORM equality op.
+
+        This test confirms that the Python string coercion step happens.
+        The actual SQL-injection safety comes from SQLAlchemy binding the
+        resulting Python string as a parameterised query value — not verified
+        here (needs a live connection).
+        """
         astext_mock = MagicMock()
         injection = "a' OR 1=1 --"
 
         # The code always does str(val) before passing to SQLAlchemy
         _ = astext_mock.__eq__(str(injection))
         astext_mock.__eq__.assert_called_once_with("a' OR 1=1 --")
-        # The raw string is passed as a Python value to SQLAlchemy, which
-        # binds it as a parameter — no SQL grammar interpretation possible.
 
     def test_list_injection_payload_coerced_to_string(self):
-        """Injection payloads inside list values must be coerced to string."""
+        """Injection payloads inside list values are coerced to str before .in_().
+
+        As above: Python-level coercion is verified here; SQLAlchemy's
+        bind-parameter generation provides the actual injection safety.
+        """
         astext_mock = MagicMock()
         val = ["policy", "a' OR 1=1 --"]
 
         _ = astext_mock.in_([str(item) for item in val])
         astext_mock.in_.assert_called_once_with(["policy", "a' OR 1=1 --"])
-        # SQLAlchemy's .in_() binds each element as a parameter — safe.
