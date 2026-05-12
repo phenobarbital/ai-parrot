@@ -14,7 +14,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Operational precondition on a gitignored file. Must run first so subsequent modules can be developed against a clean-importing SecurityAgent. Per-spec worktree means sequential anyway.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1104-remove-broken-consolidator-stub.md"
+      "completed_at": "2026-05-12T01:19:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1104-remove-broken-consolidator-stub.md"
     },
     {
       "id": "TASK-1105",
