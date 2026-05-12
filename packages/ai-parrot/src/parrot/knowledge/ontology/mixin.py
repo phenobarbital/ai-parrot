@@ -40,6 +40,22 @@ When entity extraction resolves a rule named ``target_employee``, the
 resolved ``_id`` is injected into ``intent.params`` under the key
 ``target_employee_id`` (rule name + ``"_id"`` suffix).  Pattern authors must
 declare their AQL ``@target_employee_id`` bind parameter accordingly.
+
+4-Level Degradation Chain (FEAT-159)
+-------------------------------------
+For the ``authoritative_doc_for_topic`` pattern the traversal section runs a
+4-level degradation chain.  For all other patterns only levels 3-4 (vector
+fallback) are added on top of the existing single-traversal logic.
+
+``context.source`` values produced by the chain:
+
+- ``"graph:primary"``   — primary-authority graph traversal succeeded.
+- ``"graph:secondary"`` — secondary-authority graph traversal succeeded.
+- ``"vector:filtered"`` — similarity_search with doc_type filter succeeded.
+- ``"vector:plain"``    — unfiltered similarity_search succeeded.
+- ``"ontology"``        — normal (non-authority) graph traversal succeeded.
+- ``"vector_only"``     — all graph paths were empty/unavailable; falls back
+                          to vector store without graph context.
 """
 from __future__ import annotations
 
@@ -279,31 +295,195 @@ class OntologyRAGMixin:
             logger.debug("Cache hit for %s", cache_key)
             return ContextEnvelope(state="ok", context=cached)
 
-        # 6. Execute graph traversal
+        # 6. Execute graph traversal — 4-level degradation chain (FEAT-159)
+        #
+        # For the ``authoritative_doc_for_topic`` pattern we run a 2-step
+        # authority traversal (primary → secondary) before falling back to
+        # vector RAG.  All other patterns keep the existing single-traversal
+        # behaviour and then fall through to the vector fallback levels.
         if not self._ont_graph_store:
             logger.warning("OntologyRAGMixin: no graph_store configured")
-            return ContextEnvelope(
-                state="ok",
-                context=EnrichedContext(source="vector_only", intent=intent),
+            # Skip straight to vector levels (3 & 4)
+            graph_result = None
+            graph_source = None
+        else:
+            is_authority_pattern = (intent.pattern == "authoritative_doc_for_topic")
+            graph_result = None
+            graph_source = None
+
+            if is_authority_pattern:
+                # Level 1 — primary authority traversal
+                primary_params = {**intent.params, "authority_level": "primary"}
+                try:
+                    primary_result = await self._ont_graph_store.execute_traversal(
+                        ctx=tenant_ctx,
+                        aql=intent.aql,
+                        bind_vars=primary_params,
+                        collection_binds=intent.collection_binds,
+                    )
+                    if primary_result:
+                        graph_result = primary_result
+                        graph_source = "graph:primary"
+                        logger.debug(
+                            "Degradation Level 1 hit (primary): tenant=%s pattern=%s rows=%d",
+                            tenant_id, intent.pattern, len(graph_result),
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Level 1 (primary) traversal failed, trying secondary: %s", exc,
+                    )
+
+                if not graph_result:
+                    # Level 2 — secondary authority traversal
+                    secondary_params = {**intent.params, "authority_level": "secondary"}
+                    try:
+                        secondary_result = await self._ont_graph_store.execute_traversal(
+                            ctx=tenant_ctx,
+                            aql=intent.aql,
+                            bind_vars=secondary_params,
+                            collection_binds=intent.collection_binds,
+                        )
+                        if secondary_result:
+                            graph_result = secondary_result
+                            graph_source = "graph:secondary"
+                            logger.debug(
+                                "Degradation Level 2 hit (secondary): tenant=%s pattern=%s rows=%d",
+                                tenant_id, intent.pattern, len(graph_result),
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "Level 2 (secondary) traversal failed, degrading to vector: %s", exc,
+                        )
+            else:
+                # Standard single traversal for non-authority patterns
+                try:
+                    single_result = await self._ont_graph_store.execute_traversal(
+                        ctx=tenant_ctx,
+                        aql=intent.aql,
+                        bind_vars=intent.params,
+                        collection_binds=intent.collection_binds,
+                    )
+                    if single_result:
+                        graph_result = single_result
+                        graph_source = "ontology"
+                except Exception as exc:
+                    logger.warning(
+                        "Graph traversal failed (degrading to vector_only): %s", exc,
+                    )
+
+        # If we have graph results, proceed to post-action and tool dispatch
+        if graph_result and graph_source:
+            return await self._build_and_dispatch(
+                query=query,
+                intent=intent,
+                pattern=pattern,
+                tenant_id=tenant_id,
+                tenant_ctx=tenant_ctx,
+                merged_ctx=merged_ctx,
+                graph_result=graph_result,
+                graph_source=graph_source,
+                cache_key=cache_key,
             )
 
-        try:
-            graph_result = await self._ont_graph_store.execute_traversal(
-                ctx=tenant_ctx,
-                aql=intent.aql,
-                bind_vars=intent.params,
-                collection_binds=intent.collection_binds,
-            )
-        except Exception as e:
-            logger.warning(
-                "Graph traversal failed (degrading to vector_only): %s", e,
-            )
-            return ContextEnvelope(
-                state="ok",
-                context=EnrichedContext(source="vector_only", intent=intent),
-            )
+        # Level 3 — filtered vector RAG (policy/manual doc_type filter)
+        if self._ont_vector_store is not None:
+            try:
+                filtered_results = await self._ont_vector_store.similarity_search(
+                    query=query,
+                    metadata_filters={"doc_type": ["policy", "manual"]},
+                )
+                if filtered_results:
+                    logger.debug(
+                        "Degradation Level 3 hit (vector:filtered): tenant=%s pattern=%s rows=%d",
+                        tenant_id, intent.pattern, len(filtered_results),
+                    )
+                    enriched = EnrichedContext(
+                        source="vector:filtered",
+                        vector_context=filtered_results,
+                        intent=intent,
+                        metadata={
+                            "pattern": intent.pattern,
+                            "source": intent.source,
+                            "tenant": tenant_id,
+                        },
+                    )
+                    await self._ont_cache.set(cache_key, enriched)
+                    return ContextEnvelope(state="ok", context=enriched)
+            except Exception as exc:
+                logger.warning("Level 3 (vector:filtered) search failed: %s", exc)
 
-        # 7. Post-action routing
+            # Level 4 — plain vector RAG (no filter)
+            try:
+                plain_results = await self._ont_vector_store.similarity_search(query=query)
+                if plain_results:
+                    logger.debug(
+                        "Degradation Level 4 hit (vector:plain): tenant=%s pattern=%s rows=%d",
+                        tenant_id, intent.pattern, len(plain_results),
+                    )
+                    enriched = EnrichedContext(
+                        source="vector:plain",
+                        vector_context=plain_results,
+                        intent=intent,
+                        metadata={
+                            "pattern": intent.pattern,
+                            "source": intent.source,
+                            "tenant": tenant_id,
+                        },
+                    )
+                    await self._ont_cache.set(cache_key, enriched)
+                    return ContextEnvelope(state="ok", context=enriched)
+            except Exception as exc:
+                logger.warning("Level 4 (vector:plain) search failed: %s", exc)
+
+        # All levels exhausted — return vector_only shell
+        logger.info(
+            "All degradation levels exhausted: tenant='%s', pattern='%s'",
+            tenant_id, intent.pattern,
+        )
+        return ContextEnvelope(
+            state="ok",
+            context=EnrichedContext(source="vector_only", intent=intent),
+        )
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    async def _build_and_dispatch(
+        self,
+        *,
+        query: str,
+        intent: Any,
+        pattern: Any,
+        tenant_id: str,
+        tenant_ctx: Any,
+        merged_ctx: dict[str, Any],
+        graph_result: list[dict[str, Any]],
+        graph_source: str,
+        cache_key: str,
+    ) -> ContextEnvelope:
+        """Build EnrichedContext and dispatch tool call (if configured).
+
+        Extracted from the main pipeline to be shared between normal-traversal
+        and degradation-chain code paths.
+
+        Args:
+            query: Original user query (used for vector fallback context).
+            intent: Resolved intent from the pipeline.
+            pattern: Matched TraversalPattern (may be None).
+            tenant_id: Tenant identifier for logging.
+            tenant_ctx: Full TenantContext including pgvector schema.
+            merged_ctx: Merged user/permission context dict.
+            graph_result: Non-empty list of rows from graph traversal.
+            graph_source: Provenance label (``"graph:primary"``,
+                ``"graph:secondary"``, or ``"ontology"``).
+            cache_key: Redis key for caching the result.
+
+        Returns:
+            ContextEnvelope with state="ok" on success, or an error envelope
+            (auth_required, render_error, tool_failed) if tool dispatch fails.
+        """
+        # Post-action routing
         vector_result = None
         tool_hint = None
 
@@ -312,14 +492,15 @@ class OntologyRAGMixin:
                 graph_result, intent, tenant_ctx.pgvector_schema,
             )
         elif intent.post_action == "tool_call" and graph_result:
-            # Only build a lightweight hint if there is no full ToolCallSpec to dispatch.
-            # When pattern.tool_call is set, the dispatcher below produces the richer tool_result.
+            # Only build a lightweight hint if there is no full ToolCallSpec.
+            # When pattern.tool_call is set, the dispatcher below produces the
+            # richer tool_result.
             if pattern is None or pattern.tool_call is None:
                 tool_hint = self._build_tool_hint(graph_result)
 
-        # 8. Build enriched context
+        # Build enriched context
         enriched = EnrichedContext(
-            source="ontology",
+            source=graph_source,
             graph_context=graph_result,
             vector_context=vector_result,
             tool_hint=tool_hint,
@@ -331,7 +512,7 @@ class OntologyRAGMixin:
             },
         )
 
-        # 9. Tool dispatch (if pattern carries an explicit ToolCallSpec)
+        # Tool dispatch (if pattern carries an explicit ToolCallSpec)
         tool_result: dict[str, Any] | None = None
         if intent.post_action == "tool_call" and pattern is not None and pattern.tool_call is not None:
             if self._ont_tool_manager is None:
@@ -370,7 +551,7 @@ class OntologyRAGMixin:
                     )
                     return ContextEnvelope(state="tool_failed", error=str(exc))
 
-        # 10. Cache the enriched context
+        # Cache the enriched context
         await self._ont_cache.set(cache_key, enriched)
 
         logger.info(
@@ -378,14 +559,10 @@ class OntologyRAGMixin:
             "graph_results=%d, source='%s', tool_result=%s",
             tenant_id, intent.pattern,
             len(graph_result) if graph_result else 0,
-            intent.source,
+            graph_source,
             bool(tool_result),
         )
         return ContextEnvelope(state="ok", context=enriched, tool_result=tool_result)
-
-    # ------------------------------------------------------------------
-    # Private helpers (unchanged from original)
-    # ------------------------------------------------------------------
 
     async def _do_vector_search(
         self,
