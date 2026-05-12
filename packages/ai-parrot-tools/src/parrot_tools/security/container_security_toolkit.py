@@ -485,8 +485,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
         if self._last_result is None:
             raise ValueError("No scan results available. Run a scan first.")
 
+        fmt = format.lower()
         # For now, save as JSON (HTML generation would require templates)
-        if format.lower() == "json":
+        if fmt == "json":
             self.parser.save_result(self._last_result, output_path)
         else:
             # Placeholder for HTML generation
@@ -494,6 +495,14 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
             self.logger.info(
                 "Report format '%s' not fully implemented, saved as JSON", format
             )
+
+        await self._mirror_rendered_report(
+            local_path=output_path,
+            scanner="trivy",
+            framework=None,
+            timestamp=self._last_result.summary.scan_timestamp,
+            extension=fmt if fmt in ("html", "json") else "json",
+        )
 
         return output_path
 

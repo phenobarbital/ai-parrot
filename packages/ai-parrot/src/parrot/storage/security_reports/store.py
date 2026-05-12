@@ -14,6 +14,7 @@ Key design invariants:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import importlib.resources
@@ -166,6 +167,8 @@ class PostgresS3SecurityReportStore:
                 "asyncdb is not installed. Install it to use PostgresS3SecurityReportStore."
             )
         self._db = AsyncDB("pg", dsn=dsn)
+        self._schema_bootstrapped = False
+        self._bootstrap_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -188,6 +191,24 @@ class PostgresS3SecurityReportStore:
         """Return an asyncdb connection context manager."""
         return await self._db.connection()
 
+    async def _ensure_schema(self) -> None:
+        """Lazily bootstrap the schema once per store instance.
+
+        First write-side call (``save_report`` / ``index``) triggers
+        ``bootstrap_schema``. Subsequent calls fast-path on the
+        ``_schema_bootstrapped`` flag. The asyncio.Lock + double-check
+        prevents two concurrent first-calls from racing on the same DDL.
+        Schema is idempotent (``IF NOT EXISTS``) so this is also safe
+        across multiple processes.
+        """
+        if self._schema_bootstrapped:
+            return
+        async with self._bootstrap_lock:
+            if self._schema_bootstrapped:
+                return
+            await self.bootstrap_schema()
+            self._schema_bootstrapped = True
+
     # ------------------------------------------------------------------
     # Protocol implementation
     # ------------------------------------------------------------------
@@ -199,6 +220,7 @@ class PostgresS3SecurityReportStore:
         insert fails, the S3 object is orphaned — acceptable for v1.
         Returns the ref with ``uri`` populated.
         """
+        await self._ensure_schema()
         key = self._build_key(ref)
         await self._upload_content(key, content)
         self.logger.debug("Uploaded report content to %s", key)
@@ -233,6 +255,7 @@ class PostgresS3SecurityReportStore:
 
     async def index(self, ref: ReportRef) -> None:
         """Insert metadata only (content was already uploaded externally)."""
+        await self._ensure_schema()
         async with await self._get_connection() as conn:
             await conn.execute(
                 _INSERT_SQL,

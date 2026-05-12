@@ -20,6 +20,7 @@ Example::
             self.config = config
 """
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -143,3 +144,54 @@ class ReportPersistenceMixin:
             parser_version=self.parser_version,
         )
         return await self.report_store.save_report(ref, content)
+
+    async def _mirror_rendered_report(
+        self,
+        *,
+        local_path: str | Path,
+        scanner: str,
+        framework: str | None,
+        timestamp: datetime,
+        extension: str,
+    ) -> str | None:
+        """Best-effort S3 mirror for a rendered (HTML/PDF) report.
+
+        Renders are derived presentations of the canonical scan JSON; this
+        helper drops them in the same S3 prefix used by the catalog so an
+        operator browsing the bucket sees JSON + HTML/PDF side-by-side for
+        each scan. The render itself is NOT inserted into the Postgres
+        catalog — it has no parseable severity summary on its own.
+
+        Args:
+            local_path: Path to the rendered file on the host.
+            scanner: Scanner identifier (``"cloudsploit"``, ``"compliance"``,
+                ``"trivy"``).
+            framework: Compliance framework, or ``None`` for unrestricted.
+            timestamp: Timestamp to derive the S3 prefix and filename from
+                (use ``scan_timestamp`` or ``generated_at`` from the result).
+            extension: File extension without leading dot (``"html"``, ``"pdf"``).
+
+        Returns:
+            The S3 key when the upload succeeded, or ``None`` when no
+            ``file_manager`` is wired or the upload failed. Never raises —
+            this path is best-effort and must not block scan completion.
+        """
+        if self.file_manager is None:
+            return None
+        fw = framework or "none"
+        date_prefix = timestamp.strftime("%Y/%m/%d")
+        ts = timestamp.strftime("%Y%m%d_%H%M%S")
+        s3_key = (
+            f"security-reports/{scanner}/{fw}/{date_prefix}/"
+            f"report_{ts}.{extension}"
+        )
+        log = getattr(self, "logger", None) or logging.getLogger(__name__)
+        try:
+            await self.file_manager.upload_file(Path(local_path), s3_key)
+            log.info("Uploaded %s report to s3://.../%s", extension, s3_key)
+            return s3_key
+        except Exception as exc:  # pragma: no cover — best-effort mirror
+            log.warning(
+                "Failed to upload %s report to S3: %s", extension, exc,
+            )
+            return None

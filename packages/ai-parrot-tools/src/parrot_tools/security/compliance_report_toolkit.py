@@ -375,6 +375,38 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         return consolidated
 
+    async def _render_compliance_report(
+        self,
+        framework: ComplianceFramework,
+        provider: str,
+        output_path: Optional[str],
+        include_evidence: bool,
+    ) -> str:
+        """Render a compliance HTML report and mirror to S3 best-effort.
+
+        Triggers a full scan when no consolidated result is cached, hands
+        off to ``report_generator.generate_compliance_report``, then mirrors
+        the rendered HTML to the S3 catalog prefix when ``file_manager``
+        is configured (see ``ReportPersistenceMixin._mirror_rendered_report``).
+        """
+        if not self._last_consolidated:
+            await self.compliance_full_scan(provider=provider)
+
+        local_path = await self.report_generator.generate_compliance_report(
+            self._last_consolidated,
+            framework,
+            output_path=output_path,
+            include_evidence=include_evidence,
+        )
+        await self._mirror_rendered_report(
+            local_path=local_path,
+            scanner="compliance",
+            framework=framework.value,
+            timestamp=self._last_consolidated.generated_at,
+            extension="html",
+        )
+        return local_path
+
     async def compliance_soc2_report(
         self,
         provider: str = "aws",
@@ -397,14 +429,11 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
         Example:
             path = await toolkit.compliance_soc2_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.SOC2,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_hipaa_report(
@@ -429,14 +458,11 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
         Example:
             path = await toolkit.compliance_hipaa_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.HIPAA,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_pci_report(
@@ -461,14 +487,11 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
         Example:
             path = await toolkit.compliance_pci_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.PCI_DSS,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_custom_report(
@@ -495,9 +518,6 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
         Example:
             path = await toolkit.compliance_custom_report(framework="cis_aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
         # Parse framework string to enum
         try:
             compliance_framework = ComplianceFramework(framework.lower())
@@ -507,11 +527,11 @@ class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
             )
             compliance_framework = ComplianceFramework.SOC2
 
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             compliance_framework,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_executive_summary(

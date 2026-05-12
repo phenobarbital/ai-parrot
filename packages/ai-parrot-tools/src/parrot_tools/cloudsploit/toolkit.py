@@ -233,18 +233,29 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
         if fmt not in ("html", "pdf"):
             return f"Error: Unsupported format '{format}'. Use 'html' or 'pdf'."
 
+        ts = self._last_result.summary.scan_timestamp.strftime("%Y%m%d_%H%M%S")
         if not output_path:
-            ts = self._last_result.summary.scan_timestamp.strftime("%Y%m%d_%H%M%S")
             base_dir = self.config.results_dir or "/tmp"
             output_path = str(Path(base_dir) / f"report_{ts}.{fmt}")
 
         if fmt == "html":
-            return await self.report_generator.generate_html(
+            result_path = await self.report_generator.generate_html(
                 self._last_result, output_path=output_path,
             )
-        return await self.report_generator.generate_pdf(
-            self._last_result, output_path=output_path,
+        else:
+            result_path = await self.report_generator.generate_pdf(
+                self._last_result, output_path=output_path,
+            )
+
+        await self._mirror_rendered_report(
+            local_path=result_path,
+            scanner="cloudsploit",
+            framework=self._last_result.summary.compliance_framework,
+            timestamp=self._last_result.summary.scan_timestamp,
+            extension=fmt,
         )
+
+        return result_path
 
     async def compare_scans(
         self,
