@@ -71,11 +71,17 @@ class SchedulerJobsHandler(BaseView):
         schedule_id = self.request.match_info.get("schedule_id")
         try:
             if schedule_id:
-                schedule = await self.manager.get_schedule(schedule_id)
-                return self.json_response({"status": "success", "schedule": self.manager._serialize_job(schedule)})  # pylint: disable=protected-access
+                job = self.manager.scheduler.get_job(schedule_id)
+                if job is None:
+                    return self._error_response("Schedule not found", status=404)
+                try:
+                    schedule = await self.manager.get_schedule(schedule_id)
+                    entry = self.manager._serialize_job(schedule)  # pylint: disable=protected-access
+                except Exception:  # pylint: disable=broad-except
+                    entry = self.manager._serialize_auto_job(job)  # pylint: disable=protected-access
+                return self.json_response({"status": "success", "schedule": entry})
 
-            schedules = await self.manager.list_schedules()
-            payload = [self.manager._serialize_job(schedule) for schedule in schedules]  # pylint: disable=protected-access
+            payload = await self.manager.list_jobs()
             return self.json_response({"status": "success", "count": len(payload), "schedules": payload})
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("Scheduler GET failed: %s", exc, exc_info=True)

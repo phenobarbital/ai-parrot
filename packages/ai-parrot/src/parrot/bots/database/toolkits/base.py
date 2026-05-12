@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, AsyncIterator, Dict, List, Optional
 from pydantic import BaseModel, Field
 from ....tools.toolkit import AbstractToolkit
 from ..cache import CachePartition
@@ -22,9 +22,6 @@ from ..retries import QueryRetryConfig
 
 #: Regex for safe SQL identifiers (letters, digits, underscores).
 _SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
-
-if TYPE_CHECKING:
-    pass  # reserved for future type-only imports
 
 
 # ---------------------------------------------------------------------------

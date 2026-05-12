@@ -1314,8 +1314,9 @@ class AgentSchedulerManager:
         return self._pool
 
     def _serialize_job(self, schedule: AgentSchedule) -> Dict[str, Any]:
-        payload = dict(schedule)
+        payload = schedule.to_dict()
         job = self.scheduler.get_job(str(schedule.schedule_id))
+        payload['source'] = 'db'
         payload['jobstore'] = schedule.scheduler_type
         payload['callbacks'] = list(schedule.callbacks or [])
         payload['job'] = {
@@ -1326,6 +1327,67 @@ class AgentSchedulerManager:
             'pending': job is not None,
             'jobstore': getattr(job, '_jobstore_alias', None) if job else schedule.scheduler_type,
         }
+        return payload
+
+    def _serialize_auto_job(self, job: Any) -> Dict[str, Any]:
+        """Serialize an APScheduler job that has no AgentSchedule row.
+
+        Auto-schedules come from ``@schedule``-decorated bot methods registered
+        via :meth:`register_bot_schedules`. They live in APScheduler only, so
+        the payload mirrors :meth:`_serialize_job` minus the DB-derived fields.
+        """
+        bot_name, _, method_name = (job.name or job.id or '').partition('.')
+        jobstore = getattr(job, '_jobstore_alias', 'default')
+        next_run = job.next_run_time.isoformat() if job.next_run_time else None
+        return {
+            'source': 'auto',
+            'schedule_id': job.id,
+            'agent_name': bot_name or job.id,
+            'method_name': method_name or None,
+            'enabled': job.next_run_time is not None,
+            'metadata': {},
+            'callbacks': [],
+            'scheduler_type': jobstore,
+            'jobstore': jobstore,
+            'job': {
+                'id': job.id,
+                'name': job.name,
+                'next_run': next_run,
+                'paused': job.next_run_time is None,
+                'pending': True,
+                'jobstore': jobstore,
+            },
+        }
+
+    async def list_jobs(self) -> List[Dict[str, Any]]:
+        """Return every job in the APScheduler JobStore, normalized for the API.
+
+        DB-backed schedules are enriched with their ``AgentSchedule`` row and
+        tagged ``source='db'``; jobs without a matching row (auto-schedules
+        from ``@schedule``-decorated bot methods) are tagged ``source='auto'``.
+        DB rows whose job is missing from APScheduler are still surfaced so
+        operators can spot drift.
+        """
+        try:
+            db_schedules = await self.list_schedules()
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "list_jobs: could not load DB schedules (%s); returning JobStore-only view",
+                exc,
+            )
+            db_schedules = []
+        db_by_id: Dict[str, AgentSchedule] = {
+            str(s.schedule_id): s for s in db_schedules
+        }
+        payload: List[Dict[str, Any]] = []
+        for job in self.scheduler.get_jobs():
+            schedule = db_by_id.pop(job.id, None)
+            if schedule is not None:
+                payload.append(self._serialize_job(schedule))
+            else:
+                payload.append(self._serialize_auto_job(job))
+        for schedule in db_by_id.values():
+            payload.append(self._serialize_job(schedule))
         return payload
 
     async def get_schedule(self, schedule_id: str) -> AgentSchedule:

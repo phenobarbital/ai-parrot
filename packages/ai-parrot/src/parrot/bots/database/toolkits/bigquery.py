@@ -11,10 +11,8 @@ tuple) since BigQuery's asyncdb driver does not support positional ``$N``
 parameters via ``conn.fetch()``.
 """
 from __future__ import annotations
-
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Dict, List, Optional
-
+from typing import Any, AsyncIterator, List, Optional
 from .sql import SQLToolkit
 
 

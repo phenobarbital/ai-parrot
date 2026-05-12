@@ -52,7 +52,6 @@ class AWSInterface:
         explicit_profile = credentials is None and aws_id != 'default'
         if credentials is None:
             credentials = AWS_CREDENTIALS.get(aws_id, {})
-            print('CREDENTIALS > ', credentials)
             if not credentials or credentials == 'default':
                 credentials = AWS_CREDENTIALS.get('default', {
                     'aws_key': AWS_ACCESS_KEY,

@@ -9,12 +9,14 @@ from collections.abc import Callable
 import logging
 import uuid
 import asyncio
+import time
 import warnings
+import re
 from pydantic import BaseModel
 from ..memory import (
     ConversationTurn
 )
-from ..models import AIMessage, StructuredOutputConfig
+from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..utils.helpers import RequestContext
 from ..security import PromptInjectionException
@@ -61,6 +63,69 @@ class BaseBot(AbstractBot):
         if isinstance(cfg, dict) and cfg.get('metric_type'):
             return cfg['metric_type']
         return getattr(self, '_metric_type', None) or 'COSINE'
+
+    def _is_tool_inventory_request(self, question: str) -> bool:
+        """Return True for short meta requests asking what tools are available."""
+        normalized = re.sub(r"[^a-z0-9\s]", " ", (question or "").lower())
+        words = normalized.split()
+        if not words or len(words) > 8 or "tool" not in normalized:
+            return False
+
+        operational_verbs = {
+            "run",
+            "scan",
+            "check",
+            "analyze",
+            "analyse",
+            "execute",
+            "use",
+            "call",
+            "find",
+            "get",
+            "create",
+            "generate",
+        }
+        if any(word in operational_verbs for word in words):
+            return False
+
+        list_words = {"list", "show", "available", "what", "which"}
+        return bool(list_words.intersection(words))
+
+    def _build_tool_inventory_message(
+        self,
+        question: str,
+        user_id: str,
+        session_id: str,
+        turn_id: str,
+    ) -> AIMessage:
+        """Build a deterministic tool inventory response without invoking an LLM."""
+        summary = (
+            self.tool_manager.get_tools_summary()
+            if getattr(self, "tool_manager", None) is not None
+            else {"count": 0, "tools": []}
+        )
+        tools = summary.get("tools", [])
+        count = summary.get("count", len(tools))
+        lines = [f"Available tools ({count}):"]
+        for tool in tools:
+            name = tool.get("name", "unknown")
+            description = tool.get("description") or "No description"
+            lines.append(f"- `{name}`: {description}")
+        output = "\n".join(lines)
+        llm = getattr(self, "_llm", None)
+        return AIMessage(
+            input=question,
+            output=output,
+            response=output,
+            data=summary,
+            model=getattr(llm, "model", None) or getattr(llm, "default_model", None) or "",
+            provider=getattr(llm, "client_type", None) or getattr(llm, "client_name", None) or "local",
+            usage=CompletionUsage(),
+            finish_reason="tool_inventory_fast_path",
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
 
     def _debug_prompt_dump(
         self,
@@ -702,6 +767,18 @@ class BaseBot(AbstractBot):
         turn_id = str(uuid.uuid4())
         _trusted_source = kwargs.pop("_trusted_source", False)
 
+        if use_tools and self._is_tool_inventory_request(question):
+            self.logger.info(
+                "[%s] ask() using local tool inventory fast path",
+                self.name,
+            )
+            return self._build_tool_inventory_message(
+                question=question,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+
         # Security: sanitize the user's question. The wrap is for the LLM
         # call ONLY — keep ``question`` clean so events, conversation memory,
         # vector retrieval and downstream agents see the canonical input.
@@ -760,6 +837,7 @@ class BaseBot(AbstractBot):
             "[%s] ask() resolved metric_type=%s, score_threshold=%s, limit=%s",
             self.name, metric_type, score_threshold, limit,
         )
+        ask_started = time.perf_counter()
 
         try:
             # Get conversation history
@@ -767,6 +845,7 @@ class BaseBot(AbstractBot):
             conversation_context = ""
             memory = memory or self.conversation_memory
 
+            phase_started = time.perf_counter()
             if use_conversation_history and memory:
                 conversation_history = await memory.get_history(
                     user_id, session_id
@@ -774,11 +853,17 @@ class BaseBot(AbstractBot):
                     user_id, session_id
                 )  # noqa
                 conversation_context = self.build_conversation_context(conversation_history)
+            self.logger.debug(
+                "[%s] ask timing: conversation_history_ms=%.1f",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+            )
 
             # Build context from different sources
             vector_metadata = {'activated_kbs': []}
 
             # Get vector context (method handles use_vectors check internally)
+            phase_started = time.perf_counter()
             vector_context, vector_meta = await self._build_vector_context(
                 question,
                 use_vectors=use_vector_context,
@@ -792,14 +877,28 @@ class BaseBot(AbstractBot):
             )
             if vector_meta:
                 vector_metadata['vector'] = vector_meta
+            self.logger.debug(
+                "[%s] ask timing: vector_context_ms=%.1f context_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(vector_context or ""),
+            )
 
             # Get user-specific context
+            phase_started = time.perf_counter()
             user_context = await self._build_user_context(
                 user_id=user_id,
                 session_id=session_id,
             )
+            self.logger.debug(
+                "[%s] ask timing: user_context_ms=%.1f context_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(user_context or ""),
+            )
 
             # Get knowledge base context
+            phase_started = time.perf_counter()
             kb_context, kb_meta = await self._build_kb_context(
                 question,
                 user_id=user_id,
@@ -808,9 +907,16 @@ class BaseBot(AbstractBot):
             )
             if kb_meta.get('activated_kbs'):
                 vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
+            self.logger.debug(
+                "[%s] ask timing: kb_context_ms=%.1f context_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(kb_context or ""),
+            )
 
             # Pre-LLM: retrieve long-term memory context if mixin is active
             memory_context = ""
+            phase_started = time.perf_counter()
             if (
                 hasattr(self, 'get_memory_context')
                 and hasattr(self, '_memory_manager')
@@ -825,9 +931,16 @@ class BaseBot(AbstractBot):
                         "Failed to get long-term memory context: %s", _mem_exc
                     )
                     memory_context = ""
+            self.logger.debug(
+                "[%s] ask timing: long_term_memory_ms=%.1f context_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(memory_context or ""),
+            )
 
             # Pre-LLM: episodic / mixin-provided context
             episodic_context = ""
+            phase_started = time.perf_counter()
             try:
                 episodic_context = await self._on_pre_ask(
                     question,
@@ -844,6 +957,12 @@ class BaseBot(AbstractBot):
                     f"{memory_context}\n\n{episodic_context}"
                     if memory_context else episodic_context
                 )
+            self.logger.debug(
+                "[%s] ask timing: pre_ask_hook_ms=%.1f episodic_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(episodic_context or ""),
+            )
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
@@ -863,6 +982,7 @@ class BaseBot(AbstractBot):
                     )
             # Create system prompt
             system_prompt_addition = system_prompt
+            phase_started = time.perf_counter()
             system_prompt = await self.create_system_prompt(
                 kb_context=kb_context,
                 vector_context=vector_context,
@@ -874,6 +994,12 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 **kwargs
             ) + (system_prompt_addition or '')
+            self.logger.debug(
+                "[%s] ask timing: create_system_prompt_ms=%.1f system_prompt_chars=%d",
+                self.name,
+                (time.perf_counter() - phase_started) * 1000,
+                len(system_prompt or ""),
+            )
 
             self._debug_prompt_dump(
                 method="ask",
@@ -898,6 +1024,12 @@ class BaseBot(AbstractBot):
 
             # Make the LLM call — retries and fallback are handled at the client level
             async with llm as client:
+                self.logger.debug(
+                    "[%s] ask timing: pre_llm_total_ms=%.1f prompt_chars=%d",
+                    self.name,
+                    (time.perf_counter() - ask_started) * 1000,
+                    len(prompt_for_llm or ""),
+                )
                 # Forward caller identity to the tool manager so per-user
                 # credential resolvers (e.g. Jira OAuth2 3LO) can look up
                 # the right token. Attached as an instance attribute so it
@@ -928,9 +1060,18 @@ class BaseBot(AbstractBot):
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
 
+                phase_started = time.perf_counter()
                 response = await client.ask(**llm_kwargs)
+                self.logger.info(
+                    "[%s] ask timing: client.ask_ms=%.1f model=%s use_tools=%s",
+                    self.name,
+                    (time.perf_counter() - phase_started) * 1000,
+                    getattr(response, "model", None),
+                    use_tools,
+                )
 
                 # Save conversation turn
+                phase_started = time.perf_counter()
                 if use_conversation_history and memory:
                     turn = ConversationTurn(
                         turn_id=response.turn_id or str(uuid.uuid4()),
@@ -947,6 +1088,11 @@ class BaseBot(AbstractBot):
                         }
                     )
                     await memory.add_turn(user_id, session_id, turn)
+                self.logger.debug(
+                    "[%s] ask timing: memory_add_turn_ms=%.1f",
+                    self.name,
+                    (time.perf_counter() - phase_started) * 1000,
+                )
 
                 # Enhance response with metadata
                 vector_info = vector_metadata.get('vector', {})
@@ -1054,6 +1200,11 @@ class BaseBot(AbstractBot):
 
                 asyncio.create_task(_fire_post_ask())
 
+                self.logger.debug(
+                    "[%s] ask timing: total_ms=%.1f",
+                    self.name,
+                    (time.perf_counter() - ask_started) * 1000,
+                )
                 return response
 
         except asyncio.CancelledError:
