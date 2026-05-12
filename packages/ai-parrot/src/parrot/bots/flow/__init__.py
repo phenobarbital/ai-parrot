@@ -1,12 +1,11 @@
 from .node import Node
 from .nodes import StartNode, EndNode
-from .fsm import (
-    AgentsFlow,
-    AgentTaskMachine,
-    FlowNode,
-    FlowTransition,
-    TransitionCondition,
-)
+# Retargeted to new package locations (FEAT-163 TASK-1069 — legacy fsm.py deleted).
+from parrot.bots.flows.flow import AgentsFlow
+from parrot.bots.flows.core.fsm import AgentTaskMachine, TransitionCondition
+from parrot.bots.flows.core.transition import FlowTransition
+# NOTE: FlowNode is not available after fsm.py deletion. Use parrot.bots.flows.core.node.AgentNode.
+# FlowNode = (not re-exported — removed in FEAT-163)
 from .decision_node import (
     DecisionFlowNode,
     DecisionMode,

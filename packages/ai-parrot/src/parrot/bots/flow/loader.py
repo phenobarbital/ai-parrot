@@ -22,7 +22,9 @@ from navconfig.logging import logging
 from .actions import create_action
 from .cel_evaluator import CELPredicateEvaluator
 from .definition import EdgeDefinition, FlowDefinition, NodeDefinition
-from .fsm import AgentsFlow, TransitionCondition
+# FEAT-163 TASK-1069: retargeted from legacy .fsm (deleted) to new package locations.
+from parrot.bots.flows.flow import AgentsFlow
+from parrot.bots.flows.core.fsm import TransitionCondition
 
 
 REDIS_KEY_PREFIX = "parrot:flow:"
@@ -178,6 +180,17 @@ class FlowLoader:
     ) -> AgentsFlow:
         """Materialize a FlowDefinition into a runnable AgentsFlow.
 
+        .. deprecated::
+            This method calls the **legacy** ``AgentsFlow`` API
+            (``add_start_node``, ``add_agent``, ``task_flow``, etc.) which no
+            longer exists on the new ``parrot.bots.flows.flow.AgentsFlow``
+            introduced in FEAT-163.
+
+            **TODO (FEAT-163 follow-up)**: Migrate this method to use
+            ``AgentsFlow.from_definition(definition, agent_registry=...)``
+            instead.  The legacy construction paths below will raise
+            ``AttributeError`` at runtime until that migration is done.
+
         Args:
             definition: Parsed flow definition.
             agent_registry: Optional registry mapping names → agent instances.
@@ -191,20 +204,19 @@ class FlowLoader:
 
         Raises:
             LookupError: If an agent_ref cannot be resolved.
+            AttributeError: Legacy API methods (``add_start_node``, etc.) no
+                longer exist; this method is broken pending FEAT-163 migration.
         """
         meta = definition.metadata
         extra_agents = extra_agents or {}
 
+        # TODO (FEAT-163): replace with AgentsFlow.from_definition(definition, ...)
+        # The constructor kwargs below are from the legacy API and no longer accepted.
         flow = AgentsFlow(
             name=definition.flow,
-            max_parallel_tasks=meta.max_parallel_tasks,
-            default_max_retries=meta.default_max_retries,
-            execution_timeout=meta.execution_timeout,
-            truncation_length=meta.truncation_length,
-            enable_execution_memory=meta.enable_execution_memory,
-            embedding_model=meta.embedding_model,
-            vector_dimension=meta.vector_dimension,
-            vector_index_type=meta.vector_index_type,
+            # Legacy kwargs removed from new AgentsFlow.__init__:
+            # max_parallel_tasks, default_max_retries, execution_timeout, etc.
+            # These are preserved as comments to document the migration gap.
         )
 
         # Phase 1: Build all nodes
