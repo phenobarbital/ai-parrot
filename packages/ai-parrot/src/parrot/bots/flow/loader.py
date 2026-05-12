@@ -23,7 +23,9 @@ from .actions import create_action
 from .cel_evaluator import CELPredicateEvaluator
 from .definition import EdgeDefinition, FlowDefinition, NodeDefinition
 # FEAT-163 TASK-1069: retargeted from legacy .fsm (deleted) to new package locations.
-from parrot.bots.flows.flow import AgentsFlow
+# NOTE: AgentsFlow is imported lazily inside to_agents_flow() to avoid circular import:
+#   parrot.bots.flows.flow → parrot.bots.flow.definition → parrot.bots.flow (init)
+#   → parrot.bots.flow.loader → parrot.bots.flows.flow  (circular)
 from parrot.bots.flows.core.fsm import TransitionCondition
 
 
@@ -207,6 +209,7 @@ class FlowLoader:
             AttributeError: Legacy API methods (``add_start_node``, etc.) no
                 longer exist; this method is broken pending FEAT-163 migration.
         """
+        from parrot.bots.flows.flow import AgentsFlow  # noqa: PLC0415  # lazy to break circular import
         meta = definition.metadata
         extra_agents = extra_agents or {}
 

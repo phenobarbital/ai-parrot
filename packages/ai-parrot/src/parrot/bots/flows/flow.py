@@ -621,6 +621,15 @@ class AgentsFlow(PersistenceMixin):
                         "Retrying node %r (attempt %d/%d)",
                         nid, attempts[nid], max_r,
                     )
+                    # Replace the node with a fresh copy (new FSM in idle state)
+                    # so that _run_node can call fsm.schedule() without hitting
+                    # "Can't schedule when in failed" on the previous FSM instance.
+                    old_node = nodes[nid]
+                    new_fsm = AgentTaskMachine(agent_name=nid)
+                    try:
+                        nodes[nid] = old_node.model_copy(update={"fsm": new_fsm})
+                    except Exception:
+                        pass  # fallback: keep old node (FSM error will surface)
                     _spawn(nid)
                     continue
                 errors[nid] = event.error
