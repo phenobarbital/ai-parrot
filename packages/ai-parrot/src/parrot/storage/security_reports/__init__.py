@@ -10,6 +10,10 @@ from parrot.storage.security_reports.models import (
     ReportRef,
     SeverityBreakdown,
 )
+from parrot.storage.security_reports.store import (
+    PostgresS3SecurityReportStore,
+    SecurityReportStore,
+)
 
 __all__ = [
     "EmbeddedFinding",
@@ -17,4 +21,6 @@ __all__ = [
     "ReportKind",
     "ReportRef",
     "SeverityBreakdown",
+    "SecurityReportStore",
+    "PostgresS3SecurityReportStore",
 ]
