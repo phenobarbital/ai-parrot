@@ -1,6 +1,7 @@
 """Pydantic data models for CloudSploit security scanning toolkit."""
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Optional, Union
 
 from pydantic import BaseModel, Field
@@ -175,6 +176,18 @@ class CloudSploitConfig(BaseModel):
         description="Directory for storing scan results on filesystem"
     )
 
+    # ECR collection plan — path validated at scan time, not at construction
+    ecr_plan_file: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to a YAML ECR collection plan file. Passed to "
+            "`collect_ecr_findings(plan=...)` as the fallback when no "
+            "per-call plan is given. File existence is validated at scan "
+            "time, not at config construction — the file may be supplied "
+            "by ops at invocation time."
+        ),
+    )
+
 
 class ComparisonReport(BaseModel):
     """Result of comparing two CloudSploit scans."""
@@ -199,4 +212,151 @@ class ComparisonReport(BaseModel):
     )
     current_timestamp: Optional[datetime] = Field(
         default=None, description="Timestamp of current scan"
+    )
+
+
+# ---------------------------------------------------------------------------
+# ECR Image-Scan domain models (FEAT-165)
+# These are independent of the CSPM SeverityLevel/ScanFinding types above.
+# ---------------------------------------------------------------------------
+
+
+class EcrSeverity(str, Enum):
+    """ECR / vulnerability scan severities (distinct from SeverityLevel).
+
+    Maps to the severity strings returned by ECR Basic Scanning via
+    ``describe_image_scan_findings``.  NOT compatible with
+    ``SeverityLevel(OK/WARN/FAIL/UNKNOWN)`` — that enum is for CSPM.
+    """
+
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INFORMATIONAL = "INFORMATIONAL"
+    UNTRIAGED = "UNTRIAGED"
+
+
+class EcrRepoPlan(BaseModel):
+    """One ECR repository plus its tag priority order."""
+
+    name: str = Field(..., description="ECR repository name")
+    tags: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Tags to try in priority order; first match wins",
+    )
+
+
+class EcrCollectionPlan(BaseModel):
+    """Plan for ``collect_ecr_findings``.  Loaded from a YAML file at runtime."""
+
+    region: str = Field(..., description="AWS region to query")
+    aws_id: str = Field(
+        default="default",
+        description="Credential identifier resolved by AWSInterface",
+    )
+    concurrency: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Max concurrent describe-image-scan-findings calls",
+    )
+    repos: list[EcrRepoPlan] = Field(
+        ..., min_length=1, description="Repositories to scan in plan order"
+    )
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, "Path"]) -> "EcrCollectionPlan":
+        """Load and validate a plan from a YAML file.
+
+        Args:
+            path: Path to the YAML file on disk.
+
+        Returns:
+            Validated ``EcrCollectionPlan`` instance.
+
+        Raises:
+            FileNotFoundError: If ``path`` does not point to an existing file.
+            pydantic.ValidationError: If the parsed YAML does not match the
+                expected schema.
+        """
+        import yaml  # deferred to avoid hard-failing if yaml is absent
+
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(f"ECR collection plan not found: {p}")
+        data = yaml.safe_load(p.read_text())
+        return cls.model_validate(data)
+
+
+class EcrScanFinding(BaseModel):
+    """One vulnerability finding from ECR Basic Scanning."""
+
+    name: str = Field(..., description="CVE identifier or finding name")
+    severity: EcrSeverity = Field(..., description="ECR vulnerability severity")
+    description: str = Field(default="", description="Finding description text")
+    uri: str = Field(default="", description="URL to the CVE or advisory")
+    package_name: Optional[str] = Field(
+        default=None, description="Affected package name (from ECR attributes)"
+    )
+    package_version: Optional[str] = Field(
+        default=None, description="Affected package version (from ECR attributes)"
+    )
+    fixed_in_versions: Optional[str] = Field(
+        default=None, description="Version(s) with the fix (from ECR attributes)"
+    )
+    cvss: Optional[str] = Field(
+        default=None,
+        description=(
+            "CVSS score string. Prefers CVSS4_SCORE when available, "
+            "falls back to CVSS3_SCORE."
+        ),
+    )
+
+
+class EcrRepoFindings(BaseModel):
+    """Aggregated findings for a single (repo, tag) pair."""
+
+    repo: str = Field(..., description="ECR repository name")
+    tag: str = Field(..., description="Image tag that returned scan findings")
+    scan_time: Optional[datetime] = Field(
+        default=None, description="Timestamp of the ECR scan"
+    )
+    counts: dict[EcrSeverity, int] = Field(
+        default_factory=dict,
+        description="Finding count per ECR severity level",
+    )
+    findings: list[EcrScanFinding] = Field(
+        default_factory=list, description="Individual vulnerability findings"
+    )
+
+
+class EcrCollectionResult(BaseModel):
+    """Top-level container — mirrors the JSON output of collect_ecr_findings.js.
+
+    Shape::
+
+        {
+            "generated_at": "<ISO-8601 UTC>",
+            "region": "<AWS region>",
+            "repos": [ <EcrRepoFindings>, ... ],
+            "skipped": [ {"repo": ..., "reason": ...}, ... ],
+        }
+    """
+
+    generated_at: datetime = Field(
+        ..., description="UTC timestamp when the collection was produced"
+    )
+    region: str = Field(..., description="AWS region queried")
+    repos: list[EcrRepoFindings] = Field(
+        default_factory=list,
+        description="Repos for which at least one tag returned scan findings",
+    )
+    skipped: list[dict] = Field(
+        default_factory=list,
+        description=(
+            "Per-repo skip records when no tag returned a scan "
+            "(e.g. ScanNotFoundException on every tag)"
+        ),
     )
