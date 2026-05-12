@@ -52,7 +52,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Restores AgentCrew importability after TASK-1060's signature change. Must follow TASK-1060 closely to minimize broken-tree window.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1062-migrate-agentcrew-to-new-agentnode.md"
+      "completed_at": "2026-05-12T01:41:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1062-migrate-agentcrew-to-new-agentnode.md"
     },
     {
       "id": "TASK-1063",
