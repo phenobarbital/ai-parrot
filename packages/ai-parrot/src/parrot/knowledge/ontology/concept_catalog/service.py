@@ -30,7 +30,14 @@ from parrot.knowledge.ontology.exceptions import (
     SynonymConflictError,
 )
 
-logger = logging.getLogger("Parrot.Ontology.ConceptCatalog")
+# N1 fix: module-level logger removed — class uses self.logger set in __init__.
+
+# S1 fix: explicit whitelist for target_kind → table name mapping.
+# Using a dict prevents any caller-controlled value from reaching the SQL f-string.
+_TARGET_KIND_TABLE: dict[str, str] = {
+    "concept": "ontology_concept",
+    "isa_edge": "ontology_concept_isa",
+}
 
 # S8 fix: field sets for filtering SELECT * results before Pydantic construction.
 # ConceptRow and IsaEdgeRow use extra="forbid"; DB tables may have additional
@@ -486,6 +493,33 @@ class ConceptCatalogService:
                 for r in rows
             ]
 
+    async def get_concept_by_id(
+        self, tenant_id: str, concept_id: UUID
+    ) -> ConceptRow | None:
+        """Fetch a single concept by its primary key.
+
+        S4 fix: replaces the anti-pattern of fetching all concepts and filtering
+        by ID in the HTTP layer.
+
+        Args:
+            tenant_id: Tenant owning the concept (used for access-scoping).
+            concept_id: UUID primary key of the concept.
+
+        Returns:
+            ConceptRow if found, else None.
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM ontology_concept WHERE id = $1 AND tenant_id = $2",
+                concept_id,
+                tenant_id,
+            )
+            if row is None:
+                return None
+            return ConceptRow(
+                **{k: v for k, v in dict(row).items() if k in _CONCEPT_ROW_FIELDS}
+            )
+
     async def get_isa_subgraph(
         self, tenant_id: str, concept_id: UUID
     ) -> dict[str, Any]:
@@ -566,9 +600,13 @@ class ConceptCatalogService:
             actor: Who is performing the action.
             reason: Optional rationale.
         """
-        table = (
-            "ontology_concept" if target_kind == "concept" else "ontology_concept_isa"
-        )
+        # S1 fix: validate target_kind against explicit whitelist before use in SQL.
+        table = _TARGET_KIND_TABLE.get(target_kind)
+        if table is None:
+            raise ValueError(
+                f"Invalid target_kind: {target_kind!r}. "
+                f"Must be one of {sorted(_TARGET_KIND_TABLE)}."
+            )
         now = datetime.now(timezone.utc)
 
         async with self._pool.acquire() as conn:

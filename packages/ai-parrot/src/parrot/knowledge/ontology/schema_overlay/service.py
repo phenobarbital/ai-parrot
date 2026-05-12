@@ -336,6 +336,34 @@ class SchemaOverlayService:
             )
             return [SchemaOverlayRow(**{k: v for k, v in dict(r).items() if k in _OVERLAY_ROW_FIELDS}) for r in rows]
 
+    async def get_overlay_by_id(
+        self, tenant_id: str, overlay_id: UUID
+    ) -> SchemaOverlayRow | None:
+        """Fetch a single schema overlay by primary key, scoped to tenant.
+
+        S4 fix: efficient single-row lookup used by HTTP handlers instead of
+        fetching all overlays and filtering in Python.
+
+        Args:
+            tenant_id: Owning tenant (used for access scoping).
+            overlay_id: UUID primary key.
+
+        Returns:
+            ``SchemaOverlayRow`` if found, else None.
+        """
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM ontology_schema_overlay "
+                "WHERE id = $1 AND tenant_id = $2",
+                overlay_id,
+                tenant_id,
+            )
+            if row is None:
+                return None
+            return SchemaOverlayRow(
+                **{k: v for k, v in dict(row).items() if k in _OVERLAY_ROW_FIELDS}
+            )
+
     async def get_approved(self, tenant_id: str) -> list[SchemaOverlayRow]:
         """Return overlay rows in ``approved`` state for ontology composition.
 

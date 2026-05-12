@@ -74,10 +74,10 @@ class TestReconciliationClean:
         pg_id = str(uuid4())
         conn = AsyncMock()
         conn.fetch.side_effect = [
-            # concepts
-            [_pg_concept_row(pg_id)],
-            # isa edges
-            [],
+            [_pg_concept_row(pg_id)],   # forward scan concepts (with cutoff)
+            [{"id": pg_id}],             # H2 all approved concepts (no cutoff)
+            [],                           # forward scan isa edges
+            [],                           # H2 all approved isa edges
         ]
         pool = _make_pool(conn)
         gs = _make_graph_store(
@@ -93,7 +93,7 @@ class TestReconciliationClean:
 
     async def test_empty_both_sides_is_clean(self):
         conn = AsyncMock()
-        conn.fetch.side_effect = [[], []]
+        conn.fetch.side_effect = [[], [], [], []]  # 4 queries: 2 forward + 2 H2 reverse
         pool = _make_pool(conn)
         gs = _make_graph_store()
         reconciler = ConceptCatalogReconciler(pool, gs)
@@ -105,7 +105,12 @@ class TestForwardScan:
     async def test_detects_missing_arango_doc(self):
         pg_id = str(uuid4())
         conn = AsyncMock()
-        conn.fetch.side_effect = [[_pg_concept_row(pg_id)], []]
+        conn.fetch.side_effect = [
+            [_pg_concept_row(pg_id)],  # forward concepts
+            [{"id": pg_id}],            # H2 all approved concepts
+            [],                          # forward isa edges
+            [],                          # H2 all approved isa edges
+        ]
         pool = _make_pool(conn)
         gs = _make_graph_store(concept_docs=[], isa_docs=[])
         reconciler = ConceptCatalogReconciler(pool, gs)
@@ -117,7 +122,12 @@ class TestForwardScan:
     async def test_detects_missing_isa_edge(self):
         isa_id = str(uuid4())
         conn = AsyncMock()
-        conn.fetch.side_effect = [[], [_pg_isa_row(isa_id)]]
+        conn.fetch.side_effect = [
+            [],                          # forward concepts
+            [],                          # H2 all approved concepts
+            [_pg_isa_row(isa_id)],      # forward isa edges
+            [{"id": isa_id}],            # H2 all approved isa edges
+        ]
         pool = _make_pool(conn)
         gs = _make_graph_store(concept_docs=[], isa_docs=[])
         reconciler = ConceptCatalogReconciler(pool, gs)
@@ -131,8 +141,8 @@ class TestReverseScan:
     async def test_detects_orphan_arango_doc(self):
         orphan_id = str(uuid4())
         conn = AsyncMock()
-        # PG returns NO rows (empty), ArangoDB has one doc
-        conn.fetch.side_effect = [[], []]
+        # PG returns NO rows, ArangoDB has one doc — H2: no approved rows → orphan detected
+        conn.fetch.side_effect = [[], [], [], []]  # 4 queries
         pool = _make_pool(conn)
         gs = _make_graph_store(
             concept_docs=[_arango_concept_doc(orphan_id)],
@@ -147,7 +157,7 @@ class TestReverseScan:
     async def test_detects_orphan_isa_edge(self):
         orphan_id = str(uuid4())
         conn = AsyncMock()
-        conn.fetch.side_effect = [[], []]
+        conn.fetch.side_effect = [[], [], [], []]  # 4 queries
         pool = _make_pool(conn)
         gs = _make_graph_store(
             concept_docs=[],
@@ -164,7 +174,12 @@ class TestNoAutoRepair:
         pg_id = str(uuid4())
         conn = AsyncMock()
         # PG has an approved concept, ArangoDB is empty
-        conn.fetch.side_effect = [[_pg_concept_row(pg_id)], []]
+        conn.fetch.side_effect = [
+            [_pg_concept_row(pg_id)],  # forward concepts
+            [{"id": pg_id}],            # H2 all approved concepts
+            [],                          # forward isa edges
+            [],                          # H2 all approved isa edges
+        ]
         pool = _make_pool(conn)
 
         # Track any write calls
@@ -195,7 +210,7 @@ class TestInFlightFilter:
         conn = AsyncMock()
         # The query filters by cutoff, so conn.fetch returns empty if DB respects it.
         # In our mock, we simulate the DB already applying the filter.
-        conn.fetch.side_effect = [[], []]  # no rows returned
+        conn.fetch.side_effect = [[], [], [], []]  # 4 queries: 2 forward + 2 H2 reverse
         pool = _make_pool(conn)
         gs = _make_graph_store(concept_docs=[], isa_docs=[])
         reconciler = ConceptCatalogReconciler(pool, gs, outbox_drain_interval=30)

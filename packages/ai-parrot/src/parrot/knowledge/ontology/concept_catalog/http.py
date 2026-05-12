@@ -44,7 +44,7 @@ _REVIEWER_PLUS = {_REVIEWER, _ADMIN}
 _ADMIN_ONLY = {_ADMIN}
 
 
-def _check_role(request: web.Request, allowed_roles: set[str]) -> str | None:
+def _check_role(request: web.Request, allowed_roles: set[str]) -> str:  # N2 fix: always returns str (raises on failure)
     """Extract tenant_id from session and verify role.
 
     Returns:
@@ -118,7 +118,7 @@ async def list_concepts(request: web.Request) -> web.Response:
         offset = int(request.rel_url.query.get("offset", 0))
         page = data[offset: offset + limit]
         return web.json_response({"items": page, "total": len(data)})
-    except (web.HTTPException, web.HTTPForbidden, web.HTTPUnauthorized) as exc:
+    except (web.HTTPException, web.HTTPForbidden, web.HTTPUnauthorized):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -130,12 +130,12 @@ async def get_concept(request: web.Request) -> web.Response:
         tenant_id = _check_role(request, _CURATOR_PLUS)
         concept_id = _parse_uuid(request.match_info["id"])
         svc: ConceptCatalogService = request.app["concept_catalog_service"]
-        concepts = await svc.get_live_concepts(tenant_id)
-        match = next((c for c in concepts if c.id == concept_id), None)
+        # S4 fix: use efficient single-row lookup instead of fetching all concepts
+        match = await svc.get_concept_by_id(tenant_id, concept_id)
         if match is None:
             return web.json_response({"error": "NotFound"}, status=404)
         return web.json_response(match.model_dump(mode="json"))
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -150,7 +150,7 @@ async def get_concept_history(request: web.Request) -> web.Response:
         # C1 fix: service requires (target_id, target_kind)
         history = await svc.get_history(concept_id, "concept")
         return web.json_response({"items": history})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -165,7 +165,7 @@ async def get_concept_isa(request: web.Request) -> web.Response:
         svc: ConceptCatalogService = request.app["concept_catalog_service"]
         subgraph = await svc.get_isa_subgraph(tenant_id, concept_id)
         return web.json_response({"items": subgraph})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -189,7 +189,7 @@ async def propose_concept(request: web.Request) -> web.Response:
             domain=body.get("domain"),
         )
         return web.json_response({"id": str(concept_id)}, status=201)
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -205,7 +205,7 @@ async def submit_concept(request: web.Request) -> web.Response:
         actor = session.get("email", "unknown")
         await svc.submit_for_review(concept_id, "concept", actor)
         return web.json_response({"status": "submitted"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -226,7 +226,7 @@ async def approve_concept(request: web.Request) -> web.Response:
             pass
         await svc.approve(concept_id, "concept", actor, reason=body.get("reason"))
         return web.json_response({"status": "approved"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -240,14 +240,14 @@ async def reject_concept(request: web.Request) -> web.Response:
         svc: ConceptCatalogService = request.app["concept_catalog_service"]
         session = request.get("session", {}) or {}
         actor = session.get("email", "unknown")
-        body = {}
+        body: dict = {}
         try:
             body = await request.json()
         except Exception:
             pass
-        await svc.reject(concept_id, "concept", actor)
+        await svc.reject(concept_id, "concept", actor, reason=body.get("reason"))
         return web.json_response({"status": "rejected"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -263,7 +263,7 @@ async def deprecate_concept(request: web.Request) -> web.Response:
         actor = session.get("email", "unknown")
         await svc.deprecate(concept_id, "concept", actor)
         return web.json_response({"status": "deprecated"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -279,7 +279,7 @@ async def restore_concept(request: web.Request) -> web.Response:
         actor = session.get("email", "unknown")
         await svc.restore(concept_id, "concept", actor)
         return web.json_response({"status": "restored"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -303,7 +303,7 @@ async def modify_concept(request: web.Request) -> web.Response:
             domain=body.get("domain"),
         )
         return web.json_response({"status": "updated"})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -325,7 +325,7 @@ async def propose_isa_edge(request: web.Request) -> web.Response:
             asserted_by=actor,
         )
         return web.json_response({"id": str(edge_id)}, status=201)
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)
@@ -362,7 +362,7 @@ async def isa_edge_transition(request: web.Request) -> web.Response:
             return web.json_response({"error": f"Unknown action: {action!r}"}, status=400)
 
         return web.json_response({"status": action})
-    except (web.HTTPException,) as exc:
+    except (web.HTTPException,):
         raise
     except Exception as exc:
         return _error_response(exc)

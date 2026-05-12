@@ -107,8 +107,8 @@ async def get_overlay(request: web.Request) -> web.Response:
         tenant_id = _check_role(request, {_SCHEMA_ADMIN})
         overlay_id = _parse_uuid(request.match_info["id"])
         svc: SchemaOverlayService = request.app["schema_overlay_service"]
-        pending = await svc.get_pending(tenant_id)
-        match = next((o for o in pending if o.id == overlay_id), None)
+        # S4 fix: use efficient single-row lookup
+        match = await svc.get_overlay_by_id(tenant_id, overlay_id)
         if match is None:
             return web.json_response({"error": "NotFound"}, status=404)
         return web.json_response(match.model_dump(mode="json"))
@@ -125,9 +125,8 @@ async def dry_run_overlay_endpoint(request: web.Request) -> web.Response:
         overlay_id = _parse_uuid(request.match_info["id"])
         svc: SchemaOverlayService = request.app["schema_overlay_service"]
 
-        # Fetch the overlay row
-        pending = await svc.get_pending(tenant_id)
-        overlay = next((o for o in pending if o.id == overlay_id), None)
+        # S4 fix: use efficient single-row lookup
+        overlay = await svc.get_overlay_by_id(tenant_id, overlay_id)
         if overlay is None:
             return web.json_response({"error": "NotFound"}, status=404)
 

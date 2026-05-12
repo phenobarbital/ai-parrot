@@ -7,23 +7,11 @@ publishes cache-invalidation messages to Redis pub/sub.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
+from parrot.knowledge.ontology.concept_catalog import _EMPTY_ONTOLOGY
 from parrot.knowledge.ontology.graph_store import OntologyGraphStore
-from parrot.knowledge.ontology.schema import MergedOntology, TenantContext
-
-# Minimal shared MergedOntology used when the worker builds a lightweight
-# TenantContext for graph store calls (no ontology data needed for sync ops).
-_EMPTY_ONTOLOGY = MergedOntology(
-    name="_worker",
-    version="0",
-    entities={},
-    relations={},
-    traversal_patterns={},
-    layers=[],
-    merge_timestamp=datetime(2000, 1, 1, tzinfo=timezone.utc),
-)
+from parrot.knowledge.ontology.schema import TenantContext
 
 
 class ConceptCatalogSyncWorker:
@@ -150,7 +138,8 @@ class ConceptCatalogSyncWorker:
             row: Outbox row dict with ``payload`` and ``tenant_id``.
         """
         payload: dict[str, Any] = dict(row["payload"]) if row["payload"] else {}
-        tenant_id: str = row["tenant_id"]
+        # S2 fix: ontology_concept_outbox has no tenant_id column; read from payload JSON
+        tenant_id: str = payload.get("tenant_id") or ""
 
         ctx = TenantContext(
             tenant_id=tenant_id,
@@ -216,7 +205,8 @@ class ConceptCatalogSyncWorker:
             row: Outbox row with ``payload`` and ``tenant_id``.
         """
         payload: dict[str, Any] = dict(row["payload"]) if row["payload"] else {}
-        tenant_id: str = row["tenant_id"]
+        # S2 fix: ontology_concept_outbox has no tenant_id column; read from payload JSON
+        tenant_id: str = payload.get("tenant_id") or ""
 
         ctx = TenantContext(
             tenant_id=tenant_id,
@@ -256,9 +246,10 @@ class ConceptCatalogSyncWorker:
             conn: Active asyncpg connection (unused).
             row: Outbox row with ``tenant_id``.
         """
-        tenant_id: str = row["tenant_id"]
-        channel = f"{self.INVALIDATION_CHANNEL_PREFIX}{tenant_id}"
         payload: dict[str, Any] = dict(row["payload"]) if row["payload"] else {}
+        # S2 fix: ontology_concept_outbox has no tenant_id column; read from payload JSON
+        tenant_id: str = payload.get("tenant_id") or ""
+        channel = f"{self.INVALIDATION_CHANNEL_PREFIX}{tenant_id}"
         message = payload.get("concept_id") or payload.get("isa_edge_id") or "invalidate"
         await self._redis.publish(channel, str(message))
         self.logger.debug(

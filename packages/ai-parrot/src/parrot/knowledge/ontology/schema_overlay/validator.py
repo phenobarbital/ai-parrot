@@ -28,7 +28,6 @@ from pathlib import Path
 
 from parrot.knowledge.ontology.exceptions import (
     AQLValidationError,
-    DryRunFailedError,
     FrameworkOverrideError,
 )
 from parrot.knowledge.ontology.merger import OntologyMerger
@@ -38,7 +37,7 @@ from parrot.knowledge.ontology.schema import (
     RelationDef,
     TraversalPattern,
 )
-from parrot.knowledge.ontology.schema_overlay.models import DryRunReport, SchemaOverlayRow
+from parrot.knowledge.ontology.schema_overlay.models import DryRunCheck, DryRunReport, SchemaOverlayRow
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot.knowledge.ontology.validators import validate_aql
 
@@ -79,11 +78,11 @@ async def dry_run_overlay(
     except asyncio.TimeoutError:
         return DryRunReport(
             ok=False,
-            checks=[{
-                "check_name": "timeout",
-                "passed": False,
-                "details": f"Dry-run exceeded {ONTOLOGY_DRY_RUN_TIMEOUT_S}s timeout.",
-            }],
+            checks=[DryRunCheck(
+                check_name="timeout",
+                passed=False,
+                details=f"Dry-run exceeded {ONTOLOGY_DRY_RUN_TIMEOUT_S}s timeout.",
+            )],
             error="Dry-run timed out.",
             duration_ms=ONTOLOGY_DRY_RUN_TIMEOUT_S * 1000,
         )
@@ -98,16 +97,16 @@ async def _run_checks(
 ) -> DryRunReport:
     """Inner validation pipeline (wrapped in a timeout by caller)."""
     start = time.monotonic()
-    checks: list[dict] = []
+    checks: list[DryRunCheck] = []
     overall_ok = True
     error_msg: str | None = None
 
     # ── Step 1: Build OntologyDefinition from overlay definition ─────────────
     parse_check, candidate_def = _parse_definition(overlay)
     checks.append(parse_check)
-    if not parse_check["passed"]:
+    if not parse_check.passed:
         overall_ok = False
-        error_msg = parse_check["details"]
+        error_msg = parse_check.details
         return _make_report(overall_ok, checks, error_msg, start)
 
     # ── Step 2: Discover YAML paths for tenant (sandbox — no cache mutate) ───
@@ -116,20 +115,20 @@ async def _run_checks(
     # ── Step 3: Sandboxed merge ──────────────────────────────────────────────
     merge_check = _check_merge(yaml_paths, [candidate_def], merger)
     checks.append(merge_check)
-    if not merge_check["passed"]:
+    if not merge_check.passed:
         overall_ok = False
         if error_msg is None:
-            error_msg = merge_check["details"]
+            error_msg = merge_check.details
 
     # ── Step 4: AQL validation for traversal patterns ────────────────────────
     if overlay.overlay_kind == "traversal_pattern":
         query_template = overlay.definition.get("query_template", "")
         aql_check = await _check_aql(query_template)
         checks.append(aql_check)
-        if not aql_check["passed"]:
+        if not aql_check.passed:
             overall_ok = False
             if error_msg is None:
-                error_msg = aql_check["details"]
+                error_msg = aql_check.details
 
     logger.info(
         "Dry-run for overlay '%s' (tenant '%s'): %s — %d checks in %.0fms.",
@@ -147,14 +146,13 @@ async def _run_checks(
 
 def _parse_definition(
     overlay: SchemaOverlayRow,
-) -> tuple[dict, OntologyDefinition]:
+) -> tuple[DryRunCheck, OntologyDefinition]:
     """Parse the overlay ``definition`` dict into an ``OntologyDefinition``.
 
     Returns a ``(check_result, candidate_def)`` tuple.  On failure, the
     ``candidate_def`` is a minimal empty definition (unused by the caller
     when the check fails).
     """
-    check: dict = {"check_name": "definition_parse", "passed": True, "details": "OK"}
     try:
         defn = overlay.definition
 
@@ -179,12 +177,17 @@ def _parse_definition(
         else:
             raise ValueError(f"Unknown overlay_kind: {overlay.overlay_kind!r}")
 
-        return check, candidate
+        return DryRunCheck(check_name="definition_parse", passed=True, details="OK"), candidate
 
     except Exception as exc:
-        check["passed"] = False
-        check["details"] = f"Failed to parse overlay definition: {exc}"
-        return check, OntologyDefinition(name="__empty__")
+        return (
+            DryRunCheck(
+                check_name="definition_parse",
+                passed=False,
+                details=f"Failed to parse overlay definition: {exc}",
+            ),
+            OntologyDefinition(name="__empty__"),
+        )
 
 
 def _resolve_yaml_paths(
@@ -200,8 +203,9 @@ def _resolve_yaml_paths(
 
     ontology_dir = tenant_manager._ontology_dir
     base_file = tenant_manager._base_file
-    domains_dir = tenant_manager._domains_dir
     clients_dir = tenant_manager._clients_dir
+    # Note: domains_dir is not used in the path discovery since tenant-specific
+    # paths are identified by the client file naming convention.
 
     base_path = ontology_dir / base_file
     if base_path.exists():
@@ -223,48 +227,60 @@ def _check_merge(
     yaml_paths: list[Path],
     overlay_defs: list[OntologyDefinition],
     merger: OntologyMerger,
-) -> dict:
+) -> DryRunCheck:
     """Run ``merge_with_overlay`` and catch any merge / framework error."""
-    check: dict = {"check_name": "merge_validation", "passed": True, "details": "OK"}
     try:
         if yaml_paths:
             merger.merge_with_overlay(yaml_paths, overlay_defs)
         else:
             # No YAML paths — just merge the definitions to check inter-def rules.
             merger.merge_definitions(overlay_defs)
+        return DryRunCheck(check_name="merge_validation", passed=True, details="OK")
     except FrameworkOverrideError as exc:
-        check["passed"] = False
-        check["details"] = (
-            f"FrameworkOverrideError: overlay attempts to redefine "
-            f"'{exc.entity_name}' which is a framework-protected item."
+        return DryRunCheck(
+            check_name="merge_validation",
+            passed=False,
+            details=(
+                f"FrameworkOverrideError: overlay attempts to redefine "
+                f"'{exc.entity_name}' which is a framework-protected item."
+            ),
         )
     except Exception as exc:
-        check["passed"] = False
-        check["details"] = f"Merge validation failed: {exc}"
-    return check
+        return DryRunCheck(
+            check_name="merge_validation",
+            passed=False,
+            details=f"Merge validation failed: {exc}",
+        )
 
 
-async def _check_aql(query_template: str) -> dict:
+async def _check_aql(query_template: str) -> DryRunCheck:
     """Validate AQL query template for safety."""
-    check: dict = {"check_name": "aql_validation", "passed": True, "details": "OK"}
     if not query_template:
-        check["passed"] = False
-        check["details"] = "traversal_pattern has no query_template."
-        return check
+        return DryRunCheck(
+            check_name="aql_validation",
+            passed=False,
+            details="traversal_pattern has no query_template.",
+        )
     try:
         await validate_aql(query_template)
+        return DryRunCheck(check_name="aql_validation", passed=True, details="OK")
     except AQLValidationError as exc:
-        check["passed"] = False
-        check["details"] = f"AQL validation failed: {exc}"
+        return DryRunCheck(
+            check_name="aql_validation",
+            passed=False,
+            details=f"AQL validation failed: {exc}",
+        )
     except Exception as exc:
-        check["passed"] = False
-        check["details"] = f"Unexpected AQL check error: {exc}"
-    return check
+        return DryRunCheck(
+            check_name="aql_validation",
+            passed=False,
+            details=f"Unexpected AQL check error: {exc}",
+        )
 
 
 def _make_report(
     ok: bool,
-    checks: list[dict],
+    checks: list[DryRunCheck],
     error: str | None,
     start: float,
 ) -> DryRunReport:

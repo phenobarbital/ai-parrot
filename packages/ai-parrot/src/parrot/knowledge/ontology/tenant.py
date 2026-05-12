@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .merger import OntologyMerger
-from .schema import EntityDef, MergedOntology, OntologyDefinition, TenantContext, TraversalPattern
+from .schema import EntityDef, OntologyDefinition, TenantContext, TraversalPattern
 
 if TYPE_CHECKING:
     from parrot.knowledge.ontology.concept_catalog.models import ConceptRow
     from parrot.knowledge.ontology.concept_catalog.service import ConceptCatalogService
-    from parrot.knowledge.ontology.schema import RelationDef
     from parrot.knowledge.ontology.schema_overlay.models import SchemaOverlayRow
     from parrot.knowledge.ontology.schema_overlay.service import SchemaOverlayService
 

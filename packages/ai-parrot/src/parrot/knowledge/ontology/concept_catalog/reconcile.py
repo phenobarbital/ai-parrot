@@ -21,25 +21,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from parrot.knowledge.ontology.concept_catalog import _EMPTY_ONTOLOGY
 from parrot.knowledge.ontology.graph_store import OntologyGraphStore
-from parrot.knowledge.ontology.schema import MergedOntology, TenantContext
+from parrot.knowledge.ontology.schema import TenantContext
 
 logger = logging.getLogger("Parrot.Ontology.ConceptCatalog.Reconciler")
 
 # Default drain interval used when none is configured.
 _DEFAULT_DRAIN_INTERVAL_SECONDS = 30
-
-# Minimal ontology used for TenantContext construction (reconciler does not
-# need ontology content; graph_store only uses arango_db and tenant_id).
-_EMPTY_ONTOLOGY = MergedOntology(
-    name="_reconciler",
-    version="0",
-    entities={},
-    relations={},
-    traversal_patterns={},
-    layers=[],
-    merge_timestamp=datetime(2000, 1, 1, tzinfo=timezone.utc),
-)
 
 
 @dataclass
@@ -159,7 +148,7 @@ class ConceptCatalogReconciler:
         cutoff: datetime,
         report: ReconciliationReport,
     ) -> None:
-        # ── Forward scan ─────────────────────────────────────────────────────
+        # ── Forward scan (with cutoff — excludes in-flight rows) ─────────────
         pg_rows = await conn.fetch(
             "SELECT id, slug, updated_at "
             "FROM ontology_concept "
@@ -186,12 +175,21 @@ class ConceptCatalogReconciler:
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
 
-        # ── Reverse scan ─────────────────────────────────────────────────────
-        pg_approved_ids: set[str] = {str(r["id"]) for r in pg_rows}
+        # ── Reverse scan (H2 fix: use ALL approved IDs, not just cutoff set) ─
+        # The cutoff-filtered set would mark recently-approved PG rows as orphans
+        # in ArangoDB before the outbox worker has had a chance to materialise them.
+        # The reverse scan must use the full approved-IDs set so that in-flight rows
+        # are not false-positively reported as orphans.
+        all_approved = await conn.fetch(
+            "SELECT id FROM ontology_concept "
+            "WHERE tenant_id = $1 AND state = 'approved'",
+            ctx.tenant_id,
+        )
+        pg_all_approved_ids: set[str] = {str(r["id"]) for r in all_approved}
 
         for doc in arango_docs:
             pg_id = str(doc.get("pg_concept_id", ""))
-            if pg_id and pg_id not in pg_approved_ids:
+            if pg_id and pg_id not in pg_all_approved_ids:
                 msg = (
                     f"[ORPHAN_IN_ARANGO] ArangoDB concept pg_concept_id={pg_id} "
                     f"has no approved PG row."
@@ -238,11 +236,17 @@ class ConceptCatalogReconciler:
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
 
-        # Reverse scan
-        pg_edge_ids: set[str] = {str(r["id"]) for r in pg_edges}
+        # Reverse scan (H2 fix: use ALL approved edge IDs, not just cutoff set)
+        all_approved_edges = await conn.fetch(
+            "SELECT id FROM ontology_concept_isa "
+            "WHERE tenant_id = $1 AND state = 'approved'",
+            ctx.tenant_id,
+        )
+        pg_all_edge_ids: set[str] = {str(r["id"]) for r in all_approved_edges}
+
         for edge in arango_edges:
             pg_id = str(edge.get("pg_isa_edge_id", ""))
-            if pg_id and pg_id not in pg_edge_ids:
+            if pg_id and pg_id not in pg_all_edge_ids:
                 msg = (
                     f"[ORPHAN_ISA_IN_ARANGO] ArangoDB isa edge pg_isa_edge_id={pg_id} "
                     f"has no approved PG row."

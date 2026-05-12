@@ -46,6 +46,25 @@ class SchemaOverlayRow(BaseModel):
     dry_run_report: dict[str, Any] | None = None
 
 
+class DryRunCheck(BaseModel):
+    """Result of a single validation step within a dry-run.
+
+    N3 fix: replaces the untyped ``dict[str, Any]`` used in ``DryRunReport.checks``
+    with a structured Pydantic model, enabling proper serialisation and validation.
+
+    Attributes:
+        check_name: Human-readable name of the validation step.
+        passed: True if this step succeeded.
+        details: Optional explanation (error message or pass note).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    check_name: str
+    passed: bool
+    details: str | None = None
+
+
 class DryRunReport(BaseModel):
     """Result of a schema overlay dry-run validation.
 
@@ -63,6 +82,6 @@ class DryRunReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ok: bool
-    checks: list[dict[str, Any]] = Field(default_factory=list)
+    checks: list[DryRunCheck] = Field(default_factory=list)
     error: str | None = None
     duration_ms: int

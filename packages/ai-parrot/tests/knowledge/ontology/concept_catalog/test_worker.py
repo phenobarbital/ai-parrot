@@ -61,12 +61,20 @@ def _outbox_row(
     tenant_id: str = "tenant-a",
     payload: dict | None = None,
 ) -> dict:
-    """Build a minimal outbox row dict."""
+    """Build a minimal outbox row dict.
+
+    S2 fix: ontology_concept_outbox has NO tenant_id column. The worker reads
+    tenant_id from payload.get("tenant_id"). We therefore put it in payload here
+    so test rows match real DB rows.
+    """
+    # Merge tenant_id into payload so the worker's S2 fix reads it correctly.
+    base_payload: dict = {"tenant_id": tenant_id}
+    if payload:
+        base_payload.update(payload)
     return {
         "id": 1,
-        "tenant_id": tenant_id,
         "operation": operation,
-        "payload": payload or {},
+        "payload": base_payload,
         "attempts": attempts,
         "enqueued_at": None,
         "processed_at": None,

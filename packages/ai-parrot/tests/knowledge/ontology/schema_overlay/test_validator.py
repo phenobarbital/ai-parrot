@@ -103,7 +103,7 @@ class TestValidEntityOverlay:
             {"collection": "contracts"},
         )
         report = await dry_run_overlay("tenant-a", overlay, tenant_manager, merger)
-        assert all(c["passed"] for c in report.checks)
+        assert all(c.passed for c in report.checks)  # N3 fix: checks are DryRunCheck objects
 
 
 class TestFrameworkOverrideBlocked:
@@ -114,7 +114,7 @@ class TestFrameworkOverrideBlocked:
         )
         report = await dry_run_overlay("tenant-a", overlay, tenant_manager, merger)
         assert not report.ok
-        assert any("FrameworkOverrideError" in c["details"] for c in report.checks)
+        assert any("FrameworkOverrideError" in (c.details or "") for c in report.checks)
 
     async def test_framework_relation_blocked(self, tenant_manager, merger):
         overlay = _overlay(
@@ -147,9 +147,9 @@ class TestAQLValidation:
         )
         report = await dry_run_overlay("tenant-a", overlay, tenant_manager, merger)
         assert report.ok
-        aql_check = next((c for c in report.checks if c["check_name"] == "aql_validation"), None)
+        aql_check = next((c for c in report.checks if c.check_name == "aql_validation"), None)
         assert aql_check is not None
-        assert aql_check["passed"]
+        assert aql_check.passed
 
     async def test_mutation_aql_fails(self, tenant_manager, merger):
         overlay = _overlay(
@@ -161,9 +161,9 @@ class TestAQLValidation:
         )
         report = await dry_run_overlay("tenant-a", overlay, tenant_manager, merger)
         assert not report.ok
-        aql_check = next((c for c in report.checks if c["check_name"] == "aql_validation"), None)
+        aql_check = next((c for c in report.checks if c.check_name == "aql_validation"), None)
         assert aql_check is not None
-        assert not aql_check["passed"]
+        assert not aql_check.passed
 
     async def test_empty_aql_fails(self, tenant_manager, merger):
         overlay = _overlay(
