@@ -242,10 +242,7 @@ class SecurityReportToolkit(AbstractToolkit):
             Sorted, deduplicated list of framework strings (e.g.,
             ``["HIPAA", "PCI", "SOC2"]``).  Empty list if no reports exist.
         """
-        # v1: query with a large limit and deduplicate in Python.
-        # A future version may push this to SQL (SELECT DISTINCT framework ...).
-        refs = await self._store.query(ReportFilter(limit=500))
-        frameworks = sorted(
-            {ref.framework for ref in refs if ref.framework is not None}
-        )
-        return frameworks
+        # Push DISTINCT computation to the database to avoid unbounded Python
+        # aggregation over potentially thousands of rows.
+        rows = await self._store.query_distinct_frameworks()
+        return sorted(rows)

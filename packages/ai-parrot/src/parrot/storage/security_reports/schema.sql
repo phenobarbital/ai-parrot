@@ -38,3 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_security_reports_kind_produced
 -- JSONB containment for scope_match filter (account_id, region, target, etc.)
 CREATE INDEX IF NOT EXISTS idx_security_reports_scope_gin
     ON security_reports USING GIN (scope);
+
+-- Provider + recency for provider-scoped queries
+CREATE INDEX IF NOT EXISTS idx_security_reports_provider_produced
+    ON security_reports (provider, produced_at DESC);

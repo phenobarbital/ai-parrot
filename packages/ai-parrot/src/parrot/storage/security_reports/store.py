@@ -71,6 +71,10 @@ class SecurityReportStore(Protocol):
         """Hard-delete a report (GDPR-only). Not used by retention logic."""
         ...
 
+    async def query_distinct_frameworks(self) -> list[str]:
+        """Return distinct non-null framework values from the catalog."""
+        ...
+
     async def bootstrap_schema(self) -> None:
         """Idempotently apply schema.sql to the Postgres database."""
         ...
@@ -315,11 +319,27 @@ class PostgresS3SecurityReportStore:
         return buf.getvalue()
 
     async def delete(self, report_id: UUID) -> None:
-        """Hard-delete (GDPR-only). NOT called by any retention logic."""
+        """Hard-delete a report (GDPR-only). Removes both Postgres row and S3 content."""
+        ref = await self.get(report_id)
+        if ref is None:
+            self.logger.warning("delete() called on non-existent report_id=%s", report_id)
+            return
+        # Delete S3 content first, then metadata row
+        await self._fm.delete_file(ref.uri)
         async with await self._get_connection() as conn:
             await conn.execute(
                 "DELETE FROM security_reports WHERE report_id = $1", report_id
             )
+
+    async def query_distinct_frameworks(self) -> list[str]:
+        """Return distinct non-null framework values via SQL DISTINCT query."""
+        sql = (
+            "SELECT DISTINCT framework FROM security_reports "
+            "WHERE framework IS NOT NULL ORDER BY framework"
+        )
+        async with await self._get_connection() as conn:
+            rows = await conn.fetch(sql)
+        return [row["framework"] for row in (rows or [])]
 
     async def bootstrap_schema(self) -> None:
         """Idempotently apply schema.sql to the connected database.
@@ -338,5 +358,8 @@ class PostgresS3SecurityReportStore:
             schema_sql = schema_path.read_text()
 
         async with await self._get_connection() as conn:
-            await conn.execute(schema_sql)
+            for stmt in schema_sql.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    await conn.execute(stmt)
         self.logger.info("Security reports schema bootstrapped.")

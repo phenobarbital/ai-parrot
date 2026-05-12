@@ -132,6 +132,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy image scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
@@ -173,6 +176,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy fs scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
@@ -213,6 +219,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy repo scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
@@ -257,6 +266,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy k8s scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
@@ -299,6 +311,9 @@ class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy IaC scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)

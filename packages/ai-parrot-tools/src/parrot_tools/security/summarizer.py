@@ -140,7 +140,7 @@ class WeeklySecuritySummarizer:
 
     def __init__(self, llm_client: Any) -> None:
         self._llm = llm_client
-        self._logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
     async def build(
         self,
@@ -266,7 +266,7 @@ class WeeklySecuritySummarizer:
             f"{_fmt_findings(persistent, 'Persistent findings')}\n\n"
             f"Return only the executive paragraph."
         )
-        self._logger.debug(
+        self.logger.debug(
             "Calling LLM for executive paragraph (framework=%s, provider=%s)", framework, provider
         )
         response = await self._llm.ask(prompt, structured_output=_Executive, stateless=True)
@@ -292,7 +292,7 @@ class MonthlySecuritySummarizer:
 
     def __init__(self, llm_client: Any) -> None:
         self._llm = llm_client
-        self._logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
     async def build(
         self,
@@ -408,7 +408,7 @@ class MonthlySecuritySummarizer:
             f"Persistent findings (present all month): {_fmt(persistent)}\n\n"
             f"Return only the monthly executive paragraph."
         )
-        self._logger.debug(
+        self.logger.debug(
             "Calling LLM for monthly executive paragraph (framework=%s, provider=%s)",
             framework,
             provider,

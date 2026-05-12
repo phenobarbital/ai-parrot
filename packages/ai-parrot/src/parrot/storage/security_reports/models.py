@@ -123,5 +123,5 @@ class ReportFilter(BaseModel):
     """Upper bound on produced_at (inclusive). None = no upper bound."""
     scope_match: dict | None = None
     """Partial dict match via JSONB containment (account_id, region, etc.)."""
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=500, description="Maximum reports to return")
     order_by: Literal["produced_at_desc", "produced_at_asc"] = "produced_at_desc"
