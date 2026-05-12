@@ -252,7 +252,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -269,8 +269,8 @@
       "parallelism_notes": "Final integration. Depends on every prior module. agents/security.py is gitignored so commit diff is empty; integration tests carry verification.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1116-security-agent-wiring.md"
+      "completed_at": "2026-05-12T01:58:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1116-security-agent-wiring.md"
     },
     {
       "id": "TASK-1117",
