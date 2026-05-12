@@ -92,7 +92,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -100,8 +100,8 @@
       "parallelism_notes": "Fully independent of all other tasks (touches only definition.py). Could run in parallel, but per-spec worktree strategy keeps it sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1064-flowdefinition-cycle-detection.md"
+      "completed_at": "2026-05-12T01:46:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1064-flowdefinition-cycle-detection.md"
     },
     {
       "id": "TASK-1065",
