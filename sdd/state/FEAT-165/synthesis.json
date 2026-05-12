@@ -1,0 +1,225 @@
+{
+  "feat_id": "FEAT-165",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "headline": "Yes — the two JS scripts can be folded in, but the natural home is a new ECR-scan submodule that sits alongside CloudSploitToolkit and reuses ECRToolkit's existing aioboto3 call, NOT the CloudSploit CLI executor.",
+  "localization": [
+    {
+      "id": "L1",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/toolkit.py",
+      "symbol": "CloudSploitToolkit",
+      "lines": "27-315",
+      "role": "Add agent-facing public method(s): collect_ecr_findings(...) and generate_ecr_report(...). Holds the new EcrScanCollector + EcrReportGenerator collaborators.",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "id": "L2",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/models.py",
+      "symbol": "<new: EcrSeverity, EcrScanFinding, EcrRepoFindings, EcrCollectionResult, EcrCollectionPlan>",
+      "lines": "after 203",
+      "role": "Independent Pydantic models for ECR Basic Scanning shape — distinct from SeverityLevel(OK/WARN/FAIL/UNKNOWN).",
+      "confidence": "high",
+      "evidence": ["F002"]
+    },
+    {
+      "id": "L3",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/ecr_collector.py",
+      "symbol": "<new: EcrScanCollector>",
+      "lines": "new file",
+      "role": "Implements the multi-repo / tag-priority loop with bounded concurrency. Composes AWSInterface (aioboto3) to call describe_image_scan_findings — does NOT shell out to CloudSploit.",
+      "confidence": "high",
+      "evidence": ["F003", "F007"]
+    },
+    {
+      "id": "L4",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/reports.py",
+      "symbol": "ReportGenerator.generate_ecr_html",
+      "lines": "after 157",
+      "role": "New method that renders the interactive HTML report from EcrCollectionResult. Browser-targeted (not PDF).",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "id": "L5",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/templates/ecr_scan_report.html",
+      "symbol": "<new template>",
+      "lines": "new file",
+      "role": "Jinja2 port of the JS generator's self-contained HTML/CSS/JS report.",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "id": "L6",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/aws/ecr.py",
+      "symbol": "aws_ecr_get_image_scan_findings",
+      "lines": "188-240",
+      "role": "Existing per-image wrapper. Likely needs an opt-in flag (e.g. include_attributes=True) so attributes[] (package_name, package_version, fixed_in_versions, CVSS) survives normalization for downstream report rendering.",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "id": "L7",
+      "path": "packages/ai-parrot-tools/src/parrot_tools/security/persistence.py",
+      "symbol": "ReportPersistenceMixin._persist_report",
+      "lines": "77-150",
+      "role": "Reusable persistence path; ECR collection calls it with scanner='ecr-image-scan' (or similar) — no schema changes required for v1.",
+      "confidence": "medium",
+      "evidence": ["F005"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C1",
+      "statement": "Auth must flow through AWSInterface (aioboto3, navconfig AWS_CREDENTIALS), not by reading ~/.cloudsploit/aws/credentials.json directly.",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "id": "C2",
+      "statement": "ECR Basic Scanning severities (CRITICAL/HIGH/MEDIUM/LOW/INFORMATIONAL) are incompatible with the toolkit's existing SeverityLevel enum (OK/WARN/FAIL/UNKNOWN). A new enum is required.",
+      "confidence": "high",
+      "evidence": ["F002"]
+    },
+    {
+      "id": "C3",
+      "statement": "All public toolkit methods must be async — the file is wired around AbstractToolkit which auto-exposes async methods as agent tools.",
+      "confidence": "high",
+      "evidence": ["F001"]
+    },
+    {
+      "id": "C4",
+      "statement": "The HTML report is browser-targeted (interactive filters, gradients, grid layout) and is not safe to feed into xhtml2pdf without a separate print-CSS template. Either skip PDF for ECR v1, or produce a parallel print template.",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "id": "C5",
+      "statement": "Multi-repo iteration should use bounded concurrency (e.g. asyncio.Semaphore(5)) — the JS script is strictly sequential and the Python port can do better; raw fan-out would hit ECR rate limits.",
+      "confidence": "medium",
+      "evidence": ["F007"]
+    },
+    {
+      "id": "C6",
+      "statement": "The repo+tag list must NOT be hard-coded — it's currently 23 entries with custom tag priorities and will drift. Use a Pydantic-validated plan (YAML or JSON) loaded at scan time.",
+      "confidence": "high",
+      "evidence": ["F007"]
+    }
+  ],
+  "recent_history": [
+    {
+      "id": "H1",
+      "summary": "FEAT-160 added --config plumbing to CloudSploitToolkit (commits f34c33d6...bfb825e7); the _resolve_config pattern (toolkit.py:75-101) is the template to follow for per-call overrides on the new ECR methods.",
+      "confidence": "high",
+      "evidence": ["F006"]
+    },
+    {
+      "id": "H2",
+      "summary": "InspectorToolkit (commits 5d88b83c...0a46bcd6) covers ECR via Inspector v2 / Enhanced Scanning with richer normalization (vulnerable_packages with fixed_in_version, package_manager, file_path). ECR Basic Scanning is the legacy path the JS script targets; we should keep both supported.",
+      "confidence": "high",
+      "evidence": ["F003", "F006"]
+    },
+    {
+      "id": "H3",
+      "summary": "security-report-catalog (TASK-1110) wired CloudSploitToolkit through ReportPersistenceMixin — ECR collection should opt into the same mixin (no schema change needed).",
+      "confidence": "high",
+      "evidence": ["F005", "F006"]
+    },
+    {
+      "id": "H4",
+      "summary": "Branch tip has 'wip: aws agent' (8b7eb250) — coordinate with that work so the new ECR scan tools are reachable from the AWS agent.",
+      "confidence": "medium",
+      "evidence": ["F006"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H-1",
+      "statement": "Add an EcrScanCollector + EcrCollectionPlan + EcrReportGenerator triple inside cloudsploit/, wire two new async public methods on CloudSploitToolkit (collect_ecr_findings, generate_ecr_report), reusing ECRToolkit's existing aioboto3 call (after extending it to keep attributes).",
+      "confidence": "high",
+      "rationale": "Maps every script behavior to an existing pattern in the repo: aioboto3 via AWSInterface (F003), Jinja2 reports (F004), persistence mixin (F005). The only net-new code is the per-repo/per-tag loop and an HTML template.",
+      "evidence": ["F001", "F003", "F004", "F005", "F007"],
+      "scope": "Single feature branch; net-new files: ecr_collector.py, ecr_scan_report.html. Modified: models.py (+5 classes), toolkit.py (+2 methods, +1 collaborator instance), reports.py (+2 methods), aws/ecr.py (extend wrapper). One new test module mirroring tests/cloudsploit/test_*.py."
+    },
+    {
+      "id": "H-2",
+      "statement": "Alternative: graft the ECR scan loop onto ECRToolkit (aws/ecr.py) instead of CloudSploitToolkit. The user framed it as part of 'our CloudSploit toolkit', so this is not the recommended placement but is mentioned as an option.",
+      "confidence": "low",
+      "rationale": "ECRToolkit is the natural home from a domain-modeling standpoint (it talks to the ECR API). But the user explicitly mentions the CloudSploit toolkit and wants the report aesthetic alongside CSPM reports. Splitting collection + reporting across two toolkits adds coupling.",
+      "evidence": ["F003"],
+      "scope": "Reduced surface in cloudsploit/, expanded surface in aws/ — tradeoff is worse for the user's stated framing."
+    },
+    {
+      "id": "H-3",
+      "statement": "Stretch: also wire the InspectorToolkit-based Enhanced Scanning path as a second source so repos with Enhanced Scanning enabled produce richer per-package data. The collector picks per-repo whichever data source is available.",
+      "confidence": "medium",
+      "rationale": "Inspector v2 normalization already extracts package data the JS script struggles to get from Basic Scanning's attributes[] array. Adding it gives a clean upgrade path. But it expands scope; reasonable to defer to a follow-up.",
+      "evidence": ["F003", "F006"],
+      "scope": "Additional collector strategy file. Worth a separate FEAT if user is interested."
+    }
+  ],
+  "confidence_map": [
+    {"claim": "aws_ecr_get_image_scan_findings already exists and is the right call to wrap", "level": "high", "evidence": ["F003"]},
+    {"claim": "CloudSploitToolkit is auto-exposed via AbstractToolkit, so new async methods become agent tools for free", "level": "high", "evidence": ["F001"]},
+    {"claim": "Severity model needs a new enum independent from SeverityLevel(OK/WARN/FAIL/UNKNOWN)", "level": "high", "evidence": ["F002"]},
+    {"claim": "Jinja2 + xhtml2pdf is the canonical reporting pattern", "level": "high", "evidence": ["F004"]},
+    {"claim": "ReportPersistenceMixin will accept ECR scans with no schema change in v1", "level": "medium", "evidence": ["F005"]},
+    {"claim": "Existing ECR wrapper drops the attributes[] payload — needs extension to keep package/CVSS/fixed-in", "level": "high", "evidence": ["F003"]},
+    {"claim": "Bounded concurrency (semaphore) is correct over both raw fan-out and strict sequential", "level": "medium", "evidence": ["F007"]},
+    {"claim": "Repo+tag list should be config-driven (YAML/JSON), not hard-coded", "level": "high", "evidence": ["F007"]},
+    {"claim": "Browser-targeted HTML report cannot reuse xhtml2pdf for PDF — needs a separate print template if PDF is desired", "level": "high", "evidence": ["F004"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Where should the repo+tag list live?",
+      "blocks_claims": ["L3"],
+      "user_answer": "YAML cargado en runtime (Pydantic-validated, path passed to collect_ecr_findings(plan=...)).",
+      "plausible_answers": [
+        "YAML file path passed to collect_ecr_findings(plan=...) — best for ops",
+        "Hard-coded in a config module under parrot_tools/cloudsploit/ — easy but drifts",
+        "Argument from the agent at runtime — flexible but loses the curated default"
+      ]
+    },
+    {
+      "id": "U2",
+      "question": "Support Basic + Enhanced in v1 or Basic-only?",
+      "blocks_claims": ["H-3"],
+      "user_answer": "Basic only in v1. Enhanced/Inspector v2 deferred to a follow-up FEAT.",
+      "plausible_answers": [
+        "Basic only in v1, Enhanced as FEAT-XXX follow-up — faster to ship",
+        "Both in v1 with a per-repo strategy selector — richer data day-one",
+        "Enhanced only via InspectorToolkit — drop Basic Scanning support"
+      ]
+    },
+    {
+      "id": "U3",
+      "question": "PDF variant of the ECR HTML report?",
+      "blocks_claims": ["L4", "C4"],
+      "user_answer": "HTML only — the interactive features are the point. No PDF in v1.",
+      "plausible_answers": [
+        "HTML only — the interactive features are the point",
+        "HTML + simplified print template for PDF — keeps parity with the rest of the toolkit",
+        "Both shipped together, with the print template being the user's responsibility to style"
+      ]
+    },
+    {
+      "id": "U4",
+      "question": "Toolkit home for the new public methods?",
+      "blocks_claims": ["L1", "H-1", "H-2"],
+      "user_answer": "CloudSploitToolkit — keeps security-posture and vuln scans grouped together (user's framing).",
+      "plausible_answers": [
+        "CloudSploitToolkit — keeps 'security posture' tools grouped",
+        "ECRToolkit — keeps 'AWS service' tools cohesive",
+        "Both — thin facade on each that delegates to a shared collector"
+      ]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Confidence is high on localization and feasibility (every JS behavior maps cleanly to existing patterns). Four open questions are scope decisions, not feasibility risks — they can be answered in the spec discussion. There is no need to explore architectural alternatives via brainstorm.",
+    "alternatives": [
+      {"command": "sdd-brainstorm", "when": "if you want to explicitly score H-1 vs H-2 vs H-3 with library/code references before specing"}
+    ]
+  }
+}
