@@ -92,10 +92,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-05-12
+**Notes**: nav-admin (SvelteKit) is NOT present in this repository. No `.svelte`
+files found. This task requires the nav-admin frontend repo. Backend API (TASK-1097)
+is fully implemented with dry-run endpoint, propose/approve/reject/deprecate transitions.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Cannot implement — nav-admin is a separate repo.
+Marked done-with-issues.

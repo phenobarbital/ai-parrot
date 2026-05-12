@@ -14,7 +14,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,7 +43,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1085-concept-embedding-pipeline.md"
+      "file": "sdd/tasks/completed/TASK-1085-concept-embedding-pipeline.md"
     },
     {
       "id": "TASK-1086",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,7 +64,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1086-tenant-manager-pipeline-integration.md"
+      "file": "sdd/tasks/completed/TASK-1086-tenant-manager-pipeline-integration.md"
     },
     {
       "id": "TASK-1087",
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,7 +103,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1088-hybrid-concept-match-resolver.md"
+      "file": "sdd/tasks/completed/TASK-1088-hybrid-concept-match-resolver.md"
     },
     {
       "id": "TASK-1089",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -130,7 +130,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -141,8 +141,8 @@
       "parallelism_notes": "Depends on TASK-1087 (metadata_filters list support for filtered vector) and TASK-1089 (search_documents_scoped for tool_call dispatch). Also requires FEAT-158.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1090-ontology-degradation-chain.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1090-ontology-degradation-chain.md"
     },
     {
       "id": "TASK-1091",
@@ -151,7 +151,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -161,8 +161,8 @@
       "parallelism_notes": "Depends on TASK-1090 (degradation chain produces the envelope this task branches on).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1091-intent-router-branch-logic.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1091-intent-router-branch-logic.md"
     },
     {
       "id": "TASK-1092",
@@ -171,7 +171,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -188,8 +188,8 @@
       "parallelism_notes": "Integration tests — depends on all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1092-e2e-tests-golden-fixtures.md"
+      "completed_at": "2026-05-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-1092-e2e-tests-golden-fixtures.md"
     }
   ]
 }

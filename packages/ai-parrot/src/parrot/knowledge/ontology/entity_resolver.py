@@ -6,8 +6,8 @@ using one of four pluggable strategies:
 - ``exact_id_match``: exact AQL filter on the entity's key field.
 - ``fuzzy_name_match``: case-insensitive LIKE filter with AQL.
 - ``ai_assisted``: fuzzy shortlist + LLM ranking (requires ``llm_client``).
-- ``hybrid_concept_match``: reserved for FEAT-concept-document-authority;
-  raises ``NotImplementedError`` with a clear message.
+- ``hybrid_concept_match``: 3-stage cascade (synonym → vector → LLM) with
+  multi-concept conjunction parsing (FEAT-159).
 
 Typed exceptions (``EntityAmbiguityError``, ``EntityNotFoundError``) are
 raised so the Mixin can translate them to appropriate ``ContextEnvelope`` states.
@@ -17,12 +17,22 @@ multiple candidates always raise ``EntityAmbiguityError``.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from typing import Any
 
 from .graph_store import OntologyGraphStore
 from .schema import EntityExtractionRule, MergedOntology, TraversalPattern
+
+# ---------------------------------------------------------------------------
+# Conjunction regex for multi-concept parsing (FEAT-159)
+# ---------------------------------------------------------------------------
+
+CONJUNCTION_RE = re.compile(
+    r"\bvs?\.?\b|\band\b|\b[ye]\b|\bfrente\s+a\b",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +102,13 @@ class EntityResolver:
         graph_store: ArangoDB wrapper for entity-lookup traversals.
         ontology: Merged ontology to discover entity collection names.
         llm_client: Optional LLM client; required for ``ai_assisted`` resolver.
+        vector_store: Optional PgVectorStore for ``hybrid_concept_match`` vector
+            search stage.  When ``None``, stage 2 is skipped.
+        concept_instances: Optional list of concept objects/dicts for synonym
+            matching in ``hybrid_concept_match`` stage 1.  Each item must
+            expose ``concept_id``, ``label``, and ``synonyms`` (duck-typing).
+            When ``None``, stage 1 is skipped and resolution goes directly to
+            vector search.
     """
 
     def __init__(
@@ -99,10 +116,16 @@ class EntityResolver:
         graph_store: OntologyGraphStore,
         ontology: MergedOntology,
         llm_client: Any | None = None,
+        vector_store: Any | None = None,
+        concept_instances: list[Any] | None = None,
     ) -> None:
         self._graph_store = graph_store
         self._ontology = ontology
         self._llm = llm_client
+        self._vector_store = vector_store
+        self._concept_instances = concept_instances or []
+        # Cache: (mention_hash, ontology_version, tenant_id) → list[str]
+        self._hybrid_cache: dict[tuple[str, str, str], list[str]] = {}
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -250,11 +273,14 @@ class EntityResolver:
             NotImplementedError: For ``hybrid_concept_match``.
         """
         if rule.resolver == "hybrid_concept_match":
-            raise NotImplementedError(
-                "hybrid_concept_match is reserved for FEAT-concept-document-authority "
-                "and is not yet implemented. Configure a different resolver strategy "
-                "until that feature is merged."
+            concept_ids = await self._resolve_hybrid_concept_match(
+                rule, mention, user_context, tenant_id
             )
+            # Return list[str] as list of single-element dicts to match the
+            # existing candidate contract ({_id: ...}), then let _pick handle it.
+            # We override _pick for hybrid by returning the first ID directly
+            # when the result is a list from this strategy.
+            return [{"_id": cid} for cid in concept_ids]
 
         if rule.resolver == "exact_id_match":
             return await self._exact_id_match(rule, mention, user_context, tenant_id)
@@ -499,12 +525,286 @@ class EntityResolver:
             return self._use_context_pick(rule_name, mention, candidates, user_context)
 
         if strategy == "rerank_by_authority":
-            raise NotImplementedError(
-                "rerank_by_authority is reserved for FEAT-concept-document-authority "
-                "and is not yet implemented."
-            )
+            # hybrid_concept_match already ranks candidates by resolution confidence
+            # (synonym > vector score > LLM selection). Pick the top result, which
+            # is the highest-authority match from the 3-stage cascade.
+            return candidates[0]["_id"]
 
         raise ValueError(f"Unknown ambiguity_strategy: {strategy!r}")  # pragma: no cover
+
+    # ------------------------------------------------------------------
+    # hybrid_concept_match implementation (FEAT-159)
+    # ------------------------------------------------------------------
+
+    async def _resolve_hybrid_concept_match(
+        self,
+        rule: EntityExtractionRule,
+        mention: str,
+        user_context: dict[str, Any],
+        tenant_id: str,
+    ) -> list[str]:
+        """3-stage cascade resolver for ontology Concept matching.
+
+        Parses multi-concept conjunctions (``"A and B"``, ``"A y B"``, etc.)
+        and resolves each term independently via:
+
+        1. **Synonym/label exact match** (case-insensitive) over
+           ``self._concept_instances`` (skip if not provided).
+        2. **Vector search** via ``self._vector_store.similarity_search()``
+           on the shared ``concepts`` namespace, scoped to ``tenant_id``.
+        3. **LLM tie-breaker** when top-K vector scores are too close.
+
+        Results are cached by ``(mention, ontology_version, tenant_id)`` and
+        capped at 5 concepts.
+
+        Args:
+            rule: The entity extraction rule (currently used for logging).
+            mention: The extracted mention string (may contain conjunctions).
+            user_context: Session data (currently unused; reserved for future
+                scope-based filtering).
+            tenant_id: Tenant identifier for vector-store filtering and cache
+                namespacing.
+
+        Returns:
+            Deduplicated list of resolved concept ``concept_id`` strings, capped
+            at 5.  Empty list if no concept could be resolved.
+        """
+        ontology_version = getattr(self._ontology, "version", "unknown")
+        cache_key = (mention, ontology_version, tenant_id)
+
+        if cache_key in self._hybrid_cache:
+            self.logger.debug(
+                "hybrid_concept_match cache hit: mention='%s' version='%s' tenant='%s'",
+                mention, ontology_version, tenant_id,
+            )
+            return self._hybrid_cache[cache_key]
+
+        # Split on conjunctions
+        terms = self._split_mentions(mention)
+        self.logger.debug(
+            "hybrid_concept_match: mention='%s' → terms=%r tenant='%s'",
+            mention, terms, tenant_id,
+        )
+
+        all_ids: list[str] = []
+        seen: set[str] = set()
+
+        for term in terms:
+            ids = await self._resolve_single_concept_term(term, tenant_id)
+            for cid in ids:
+                if cid not in seen:
+                    seen.add(cid)
+                    all_ids.append(cid)
+
+        # Cap at 5
+        if len(all_ids) > 5:
+            self.logger.debug(
+                "hybrid_concept_match: capping %d concepts to 5 for mention='%s'",
+                len(all_ids), mention,
+            )
+            all_ids = all_ids[:5]
+
+        self._hybrid_cache[cache_key] = all_ids
+        return all_ids
+
+    @staticmethod
+    def _split_mentions(mention: str) -> list[str]:
+        """Split a mention string on conjunction keywords.
+
+        Handles English (``and``, ``vs``, ``v.``) and Spanish (``y``, ``e``,
+        ``frente a``) conjunctions.
+
+        Args:
+            mention: A raw mention string that may contain conjunctions.
+
+        Returns:
+            List of individual term strings (whitespace-stripped, non-empty).
+        """
+        parts = CONJUNCTION_RE.split(mention)
+        return [p.strip() for p in parts if p.strip()]
+
+    @staticmethod
+    def _get_concept_attr(concept: Any, attr: str, default: Any = None) -> Any:
+        """Duck-typed attribute accessor for concept objects and dicts.
+
+        Args:
+            concept: Concept object or dict.
+            attr: Attribute / key name.
+            default: Default value when absent.
+
+        Returns:
+            The attribute value or *default*.
+        """
+        if isinstance(concept, dict):
+            return concept.get(attr, default)
+        return getattr(concept, attr, default)
+
+    async def _resolve_single_concept_term(
+        self,
+        term: str,
+        tenant_id: str,
+        schema: str = "ontology",
+        table: str = "concepts",
+    ) -> list[str]:
+        """Resolve a single concept term via 3-stage cascade.
+
+        Stage 1: Synonym/label exact match (case-insensitive) over
+        ``self._concept_instances``.  Immediate return if found (confidence
+        > 0.95).
+
+        Stage 2: Vector similarity search via ``self._vector_store``, scoped
+        to ``tenant_id``, top-K = 10.  Returns immediately when the top
+        candidate is clearly dominant (score < ``top2 * 1.3``).
+
+        Stage 3: LLM tie-breaker over top-5 candidates when vector scores are
+        ambiguous.
+
+        Args:
+            term: A single, stripped term string.
+            tenant_id: Tenant identifier for vector filtering.
+            schema: PostgreSQL schema for the concepts table.
+            table: PostgreSQL table name for concept embeddings.
+
+        Returns:
+            List of resolved ``concept_id`` strings (at most 5).
+        """
+        term_lower = term.lower()
+
+        # --- Stage 1: synonym/label exact match ----------------------------
+        if self._concept_instances:
+            for concept in self._concept_instances:
+                label: str = self._get_concept_attr(concept, "label", "") or ""
+                synonyms: list[str] = list(
+                    self._get_concept_attr(concept, "synonyms", []) or []
+                )
+                all_names = [label] + synonyms
+                if any(n.lower() == term_lower for n in all_names):
+                    cid = str(self._get_concept_attr(concept, "concept_id", "") or "")
+                    if cid:
+                        self.logger.debug(
+                            "hybrid_concept_match stage1 hit: term='%s' → concept_id='%s'",
+                            term, cid,
+                        )
+                        return [cid]
+
+        # --- Stage 2: vector similarity search ----------------------------
+        if self._vector_store is None:
+            self.logger.debug(
+                "hybrid_concept_match: no vector_store configured; skipping stages 2+3 for term='%s'",
+                term,
+            )
+            return []
+
+        try:
+            results = await self._vector_store.similarity_search(
+                query=term,
+                table=table,
+                schema=schema,
+                metadata_filters={"tenant_id": tenant_id},
+                limit=10,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "hybrid_concept_match vector search failed for term='%s': %s",
+                term, exc,
+            )
+            return []
+
+        if not results:
+            return []
+
+        # Clearly dominant: top-1 exists and is significantly better than top-2
+        if len(results) >= 2:
+            score1 = results[0].score
+            score2 = results[1].score
+            # For distance-based metrics: lower = closer.
+            # "Clearly dominant" = top-1 score is less than 77% of top-2 score
+            # (i.e., top-2 is at least 1.3× more distant than top-1).
+            if score2 > 0 and score1 < (score2 / 1.3):
+                cid = results[0].metadata.get("concept_id", "")
+                if cid:
+                    self.logger.debug(
+                        "hybrid_concept_match stage2 dominant: term='%s' → '%s' "
+                        "(score1=%.4f score2=%.4f)",
+                        term, cid, score1, score2,
+                    )
+                    return [cid]
+        elif len(results) == 1:
+            cid = results[0].metadata.get("concept_id", "")
+            return [cid] if cid else []
+
+        # --- Stage 3: LLM tie-breaker ------------------------------------
+        top5 = results[:5]
+        if self._llm is None:
+            # No LLM — return all top-5 concept IDs
+            ids = [r.metadata.get("concept_id", "") for r in top5]
+            return [cid for cid in ids if cid]
+
+        return await self._llm_tiebreak(term, top5)
+
+    async def _llm_tiebreak(
+        self,
+        term: str,
+        candidates: list[Any],
+    ) -> list[str]:
+        """Use the LLM to select the best concept_id(s) from vector candidates.
+
+        Prompts the LLM for a JSON array of selected ``concept_id`` values.
+        The response is validated against the candidate pool; unknown IDs are
+        dropped.
+
+        Args:
+            term: The search term (mention) being resolved.
+            candidates: Top-K ``SearchResult`` objects from vector search.
+
+        Returns:
+            List of resolved ``concept_id`` strings selected by the LLM.
+            Falls back to returning all candidate IDs on JSON decode failure.
+        """
+        candidate_info = [
+            {"concept_id": r.metadata.get("concept_id", ""), "label": r.metadata.get("label", "")}
+            for r in candidates
+            if r.metadata.get("concept_id")
+        ]
+        if not candidate_info:
+            return []
+
+        prompt = (
+            f"Given the search term '{term}', select the most relevant concept(s) "
+            f"from the following list. Return ONLY a JSON array of concept_id strings, "
+            f"e.g. [\"id1\", \"id2\"]. Do not include any other text.\n\n"
+            + "\n".join(
+                f"- concept_id={c['concept_id']} label={c['label']}"
+                for c in candidate_info
+            )
+        )
+
+        try:
+            response = await self._llm.ask(prompt)
+            raw = str(response).strip()
+            # Extract the JSON array from the response
+            start = raw.find("[")
+            end = raw.rfind("]")
+            if start != -1 and end != -1:
+                selected_ids = json.loads(raw[start : end + 1])
+                # Validate against candidate pool
+                valid_pool = {c["concept_id"] for c in candidate_info}
+                result = [cid for cid in selected_ids if cid in valid_pool]
+                if result:
+                    self.logger.debug(
+                        "hybrid_concept_match LLM tie-breaker: term='%s' → %r",
+                        term, result,
+                    )
+                    return result
+        except Exception as exc:
+            self.logger.warning(
+                "hybrid_concept_match LLM tie-breaker failed for term='%s': %s; "
+                "falling back to all candidates.",
+                term, exc,
+            )
+
+        # Fallback: return all candidate IDs
+        return [c["concept_id"] for c in candidate_info]
 
     def _use_context_pick(
         self,

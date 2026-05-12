@@ -85,10 +85,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (autonomous)
+**Date**: 2026-05-12
+**Notes**: navigator-auth is NOT present in this repository. Searched for role
+catalog files (`grep -r "topic_curator" packages/`) — the only occurrences are
+in the HTTP route handlers (`http.py`) where the role strings are used as string
+literals. There is no role catalog config file or seed script in-tree.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+The `ontology_schema_admin` role IS already enforced in the HTTP routes:
+- `schema_overlay/http.py` uses `_SCHEMA_ADMIN = "ontology_schema_admin"` (TASK-1097)
+- `concept_catalog/http.py` uses `_CURATOR = "topic_curator"`, `_REVIEWER = "topic_reviewer"`, `_ADMIN = "topic_admin"` (TASK-1092)
 
-**Deviations from spec**: none | describe if any
+The navigator-auth role catalog registration must be done in the separate
+navigator-auth service when available.
+
+**Deviations from spec**: Cannot register role — navigator-auth is a separate
+service not present in this repo. Role string already enforced in HTTP handlers.
+Marked done-with-issues.

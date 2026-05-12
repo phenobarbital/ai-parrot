@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-12T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-12T01:59:59+00:00",
   "tasks": [
     {
       "id": "TASK-1084",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "No shared files or imports with TASK-1085. Both are foundation tasks that can run simultaneously.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1084-postgres-migration-ontology-curation.md"
     },
     {
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,7 +40,7 @@
       "parallelism_notes": "No shared files with TASK-1084. Modifies exceptions.py only — independent of migration.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1085-ontology-exception-types.md"
     },
     {
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,7 +60,7 @@
       "parallelism_notes": "Depends on TASK-1085 for FrameworkOverrideError. Must run after exceptions are defined.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1086-merger-merge-with-overlay.md"
     },
     {
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -78,7 +78,7 @@
       "parallelism_notes": "Creates new package with no imports from other FEAT-159 tasks. Parallel with TASK-1084, TASK-1085, TASK-1093.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1087-concept-catalog-models.md"
     },
     {
@@ -88,7 +88,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -100,7 +100,7 @@
       "parallelism_notes": "Depends on migration (tables), exceptions, and models. Core service — many tasks depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1088-concept-catalog-service.md"
     },
     {
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -121,7 +121,7 @@
       "parallelism_notes": "After TASK-1088 lands, this can run in parallel with TASK-1090, TASK-1091, TASK-1092 (different files, no shared imports beyond the service).",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1089-concept-catalog-sync-worker.md"
     },
     {
@@ -131,7 +131,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -141,7 +141,7 @@
       "parallelism_notes": "After TASK-1088 lands, parallel with TASK-1089, TASK-1091, TASK-1092 — creates seed.py, no shared files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1090-concept-catalog-yaml-seed.md"
     },
     {
@@ -151,7 +151,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,7 +162,7 @@
       "parallelism_notes": "After TASK-1089 lands, parallel with TASK-1090, TASK-1092 — creates reconcile.py, no shared files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1091-concept-catalog-reconciliation.md"
     },
     {
@@ -172,7 +172,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -182,7 +182,7 @@
       "parallelism_notes": "After TASK-1088 lands, parallel with TASK-1089, TASK-1090, TASK-1091 — creates http.py, no shared files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1092-concept-catalog-http-routes.md"
     },
     {
@@ -192,7 +192,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -200,7 +200,7 @@
       "parallelism_notes": "Creates new package with no imports from other FEAT-159 tasks. Parallel with TASK-1084, TASK-1085, TASK-1087.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1093-schema-overlay-models.md"
     },
     {
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -222,7 +222,7 @@
       "parallelism_notes": "Depends on exceptions, merger extension, and schema models. Must run after all three.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1094-schema-overlay-validator.md"
     },
     {
@@ -232,7 +232,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -245,7 +245,7 @@
       "parallelism_notes": "Depends on migration, exceptions, models, and validator. Once done, TASK-1096 and TASK-1097 can run in parallel.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1095-schema-overlay-service.md"
     },
     {
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,7 +266,7 @@
       "parallelism_notes": "After TASK-1095 lands, parallel with TASK-1097 — creates worker.py, no shared files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1096-schema-overlay-sync-worker.md"
     },
     {
@@ -276,7 +276,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -286,7 +286,7 @@
       "parallelism_notes": "After TASK-1095 lands, parallel with TASK-1096 — creates http.py, no shared files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1097-schema-overlay-http-routes.md"
     },
     {
@@ -296,7 +296,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -308,7 +308,7 @@
       "parallelism_notes": "Integration task — needs merger extension, concept service, and schema service all complete.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1098-tenant-ontology-manager-extension.md"
     },
     {
@@ -318,7 +318,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -328,7 +328,7 @@
       "parallelism_notes": "Depends on tenant manager extension for the invalidate() call target.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1099-ontology-cache-pubsub-subscriber.md"
     },
     {
@@ -338,7 +338,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -348,7 +348,7 @@
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1101 — different route files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1100-navadmin-concept-catalog-queue.md"
     },
     {
@@ -358,7 +358,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -368,7 +368,7 @@
       "parallelism_notes": "After HTTP API lands, parallel with TASK-1100 — different route files.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1101-navadmin-concept-browser.md"
     },
     {
@@ -378,7 +378,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -388,7 +388,7 @@
       "parallelism_notes": "After schema HTTP API lands. Independent of concept-side nav-admin tasks.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1102-navadmin-schema-overlay-panel.md"
     },
     {
@@ -398,7 +398,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -408,7 +408,7 @@
       "parallelism_notes": "Trivial config change. After migration lands, can run any time in parallel with everything else.",
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:29+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-12T01:59:59+00:00",
       "file": "sdd/tasks/active/TASK-1103-navigator-auth-role-addition.md"
     }
   ]
