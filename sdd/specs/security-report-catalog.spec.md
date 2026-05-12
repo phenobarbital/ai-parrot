@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-162
 **Date**: 2026-05-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: v1
 
 ---
@@ -1033,17 +1033,17 @@ No new third-party dependencies are introduced by this FEAT.
 
 ### Unresolved (carried from brainstorm — non-blocking for spec)
 
-- [ ] **Multi-provider scope: does v1 need a `provider` axis in
+- [x] **Multi-provider scope: does v1 need a `provider` axis in
   summarizers / consolidators, or is single-AWS sufficient?** — *Owner: tbd*.
   The `scope` JSONB already supports multi-account, but the consolidators
   currently iterate frameworks only. *Plausible answers*: a) AWS-only v1,
   defer; b) accept multi-account same-provider; c) full multi-provider
-  from day 1. Decidable at implementation time without re-spec.
+  from day 1. Decidable at implementation time without re-spec.: c) full multi-provider from day 1.
 
-- [ ] **Time-zone rendering in nav-admin / front-end** — *Owner: tbd*.
+- [x] **Time-zone rendering in nav-admin / front-end** — *Owner: tbd*.
   All `produced_at` is UTC in the store; whether the front-end renders
   in user-local tz is a downstream UI question, not a catalog concern.
-  Likely follow-up FEAT alongside the catalog UI.
+  Likely follow-up FEAT alongside the catalog UI.: UTC.
 
 ### Implementation-time clarifications (may surface during /sdd-task)
 
