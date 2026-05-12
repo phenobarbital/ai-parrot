@@ -70,6 +70,18 @@ ECR's `CRITICAL/HIGH/MEDIUM/LOW/INFORMATIONAL`. Recommendation:
 proceed to `/sdd-spec` directly — all four open questions are scope decisions
 already resolved with the user.
 
+> **Scanner-engine clarification (Inspector v2 is OUT of scope).**
+> Inspector v2 / Enhanced Scanning is disabled in the target AWS account.
+> This FEAT depends exclusively on the generic `ecr.describe_image_scan_findings`
+> endpoint, which works against **Basic Scanning** without requiring Inspector
+> (the JS source script's own docstring confirms this: *"Works with both Basic
+> Scanning and Enhanced Scanning (Inspector)"*). The CloudSploit ECR
+> configuration plugins (`ecrRepositoryPolicy`, `ecrRepositoryHasImageScans`,
+> `ecrRepositoryEncrypted`, etc.) are **orthogonal CSPM checks**, not
+> vulnerability scans, and remain available via the existing
+> `CloudSploitToolkit.run_scan(plugins=[...])` path — they are not modified
+> by this FEAT.
+
 ---
 
 ## 2. Codebase Findings
@@ -174,7 +186,16 @@ the new ECR scan tools are reachable from that agent. *Evidence*: F006.
 ### What's Untouched (Non-Goals)
 
 - **Inspector v2 / Enhanced Scanning path** — confirmed deferred to a follow-up
-  FEAT (user answer to U2).
+  FEAT (user answer to U2). Inspector v2 is disabled in the target AWS account;
+  the collector ONLY consumes the Basic-Scanning side of
+  `ecr.describe_image_scan_findings`. The Inspector v2 API
+  (`inspector2.list_findings`, already wrapped by `InspectorToolkit`) is not
+  called from this FEAT.
+- **CloudSploit ECR configuration plugins** (CSPM checks like
+  `ecrRepositoryPolicy`, `ecrRepositoryHasImageScans`,
+  `ecrRepositoryEncrypted`) — these are **orthogonal** to vuln scanning and
+  remain available via the existing `CloudSploitToolkit.run_scan(plugins=[...])`
+  path. No changes here.
 - **PDF rendering of the ECR report** — confirmed HTML-only (user answer to U3).
 - **Moving the new methods onto `ECRToolkit`** — confirmed staying on
   `CloudSploitToolkit` per user framing (user answer to U4).
@@ -236,9 +257,11 @@ the new ECR scan tools are reachable from that agent. *Evidence*: F006.
 | C8 | Bounded concurrency (`asyncio.Semaphore(5)` default) is correct over raw fan-out | F007 | medium | reasoning from ECR rate-limit behavior; not benchmarked |
 | C9 | Interactive HTML report cannot be reused for PDF | F004 + user answer | high | F004 + explicit user confirmation (U3) |
 | C10 | Recommended placement is `CloudSploitToolkit`, not `ECRToolkit` | user answer | high | explicit user confirmation (U4) |
-| C11 | Basic Scanning only in v1; Enhanced Scanning is a follow-up FEAT | F003, F006 + user answer | high | explicit user confirmation (U2) |
+| C11 | Basic Scanning only in v1; Enhanced Scanning is a follow-up FEAT | F003, F006 + user answer | high | explicit user confirmation (U2); Inspector v2 is disabled in the target AWS account |
+| C12 | `ecr.describe_image_scan_findings` works WITHOUT Inspector enabled — it is a generic ECR endpoint that returns whichever scan engine the repo has configured (Basic in this case) | F003 + JS source docstring | high | AWS API contract; confirmed by the JS script's own comment "Works with both Basic Scanning and Enhanced Scanning" |
+| C13 | CloudSploit ECR configuration plugins (`ecrRepository*`) are CSPM checks, orthogonal to vulnerability scanning and untouched by this FEAT | F001 | high | direct read of the toolkit's existing `run_scan(plugins=[...])` surface |
 
-Distribution: **9** high, **2** medium, **0** low.
+Distribution: **11** high, **2** medium, **0** low.
 
 ---
 
