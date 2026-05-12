@@ -50,7 +50,7 @@
       "feature_id": "FEAT-165",
       "feature": "cloudsploit-ecr",
       "spec": "sdd/specs/cloudsploit-ecr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Imports models (TASK-1118) and calls the wrapper extension (TASK-1119). Must be sequential after both.",
       "assigned_to": null,
       "started_at": "2026-05-12T17:57:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1120-ecr-scan-collector.md"
+      "completed_at": "2026-05-12T18:06:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1120-ecr-scan-collector.md"
     },
     {
       "id": "TASK-1121",
