@@ -1,6 +1,6 @@
 # TASK-1066: New Node subclasses — `DecisionNode`, `InteractiveDecisionNode`, `SynthesisNode`
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: high

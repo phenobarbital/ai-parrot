@@ -1,6 +1,6 @@
 # TASK-1060: Reshape `core.node` — Node ABC + AgentNode + StartNode + EndNode to frozen Pydantic
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: high

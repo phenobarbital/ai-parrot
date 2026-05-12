@@ -5,7 +5,7 @@ base_branch: dev
 
 # Feature Specification: AgentsFlow Refactor — DAG Engine on flows.core
 
-**Feature ID**: FEAT-156
+**Feature ID**: FEAT-163
 **Date**: 2026-05-11
 **Author**: Jesus
 **Status**: approved

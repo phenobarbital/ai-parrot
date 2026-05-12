@@ -1,6 +1,6 @@
 # TASK-1064: Add cycle detection `model_validator` to `FlowDefinition`
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: medium

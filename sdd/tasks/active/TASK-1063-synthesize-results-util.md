@@ -1,6 +1,6 @@
 # TASK-1063: Add `synthesize_results` util in `core/storage/synthesis.py`
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: medium

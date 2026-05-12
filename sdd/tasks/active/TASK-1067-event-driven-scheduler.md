@@ -1,6 +1,6 @@
 # TASK-1067: Implement event-driven scheduler — `run_flow`, `_materialize_nodes`, completion queue, `on_complete` hooks, `FlowResult` aggregation
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: high

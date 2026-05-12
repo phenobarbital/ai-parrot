@@ -1,6 +1,6 @@
 # TASK-1065: Scaffold `parrot/bots/flows/flow.py` with `NODE_REGISTRY` + `@register_node` + `AgentsFlow` class skeleton
 
-**Feature**: FEAT-156 — AgentsFlow Refactor — DAG Engine on flows.core
+**Feature**: FEAT-163 — AgentsFlow Refactor — DAG Engine on flows.core
 **Spec**: `sdd/specs/agentsflow-refactor-spec3.spec.md`
 **Status**: pending
 **Priority**: high
@@ -130,7 +130,7 @@ class AgentRegistry:                              # parrot/registry/registry.py:
 ### Pattern to Follow
 
 ```python
-"""AgentsFlow — DAG execution engine (FEAT-156).
+"""AgentsFlow — DAG execution engine (FEAT-163).
 
 The new executor replaces parrot/bots/flow/fsm.py:AgentsFlow with an
 event-driven scheduler consuming parrot.bots.flows.core primitives.
