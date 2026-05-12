@@ -18,19 +18,34 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional, Tuple, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Type
 
+from pydantic import Field as PydanticField
 from navconfig.logging import logging
 
 # ─── flows.core primitives (import, do not redefine) ────────────────────────
 
 from .core.node import AgentNode, EndNode, Node, StartNode
 from .core.context import FlowContext
+from .core.fsm import AgentTaskMachine
 from .core.result import FlowResult
 from .core.storage import PersistenceMixin
+from .core.storage.synthesis import synthesize_results
+from .core.types import DependencyResults
 
 # Declarative layer (read-only; type annotation only in __init__)
 from parrot.bots.flow.definition import FlowDefinition  # type: ignore[import-untyped]
+
+# Decision-node legacy wrappers
+from parrot.bots.flow.decision_node import (  # type: ignore[import-untyped]
+    DecisionFlowNode,
+    DecisionMode,
+    DecisionNodeConfig,
+    DecisionResult,
+)
+from parrot.bots.flow.interactive_node import (  # type: ignore[import-untyped]
+    InteractiveDecisionNode as LegacyInteractiveDecisionNode,
+)
 
 # AgentRegistry (type annotation only)
 from parrot.registry.registry import AgentRegistry  # type: ignore[import-untyped]
@@ -205,6 +220,231 @@ class AgentsFlow(PersistenceMixin):
         raise NotImplementedError("Implemented in TASK-1067")
 
 
+# ─── New Node subclasses (TASK-1066) ─────────────────────────────────────────
+
+
+@register_node("decision")
+class DecisionNode(Node):
+    """Wraps the legacy DecisionFlowNode as a frozen Pydantic Node.
+
+    Holds a ``DecisionNodeConfig`` and a dict of participating agents;
+    constructs a fresh ``DecisionFlowNode`` on each ``execute()`` call so
+    per-run state is isolated (B-lite contract).
+
+    Args:
+        node_id: Unique identifier within the graph.
+        decision_config: Configuration for the decision node (mode, etc.).
+        agents: Mapping of agent_name → agent instance participating in the
+            decision. These are forwarded to the legacy DecisionFlowNode.
+        dependencies: Set of node_ids that must complete first.
+        successors: Set of node_ids that depend on this one.
+        fsm: Auto-created if None.
+    """
+
+    node_id: str
+    decision_config: DecisionNodeConfig
+    agents: Dict[str, Any] = PydanticField(default_factory=dict)
+    """Participating agents forwarded to DecisionFlowNode.  Typed as Dict[str, Any]
+    because arbitrary agent types (BasicAgent, AbstractBot, etc.) are allowed."""
+    dependencies: Set[str] = PydanticField(default_factory=set)
+    successors: Set[str] = PydanticField(default_factory=set)
+    fsm: Optional[AgentTaskMachine] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Auto-create FSM and call parent hook."""
+        if self.fsm is None:
+            object.__setattr__(
+                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
+            )
+
+    @property
+    def name(self) -> str:
+        """Node identifier."""
+        return self.node_id
+
+    async def execute(
+        self,
+        ctx: FlowContext,
+        deps: DependencyResults,
+        **kwargs: Any,
+    ) -> DecisionResult:
+        """Execute the decision node.
+
+        Constructs a fresh legacy DecisionFlowNode from the stored config and
+        agents, calls its .ask() method with a prompt derived from the context,
+        and returns the DecisionResult.
+
+        Args:
+            ctx: The current flow execution context.
+            deps: Results from completed dependencies.
+            **kwargs: Extra execution context (session_id, user_id, timeout, …).
+
+        Returns:
+            DecisionResult with final_decision and voting details.
+        """
+        await self.run_pre_actions(prompt="", **kwargs)
+
+        # Build a fresh legacy node per execute() — no shared per-run state.
+        legacy = DecisionFlowNode(
+            name=self.node_id,
+            agents=self.agents,
+            config=self.decision_config,
+        )
+
+        # Build a simple prompt from the flow's initial task.
+        prompt = getattr(ctx, "initial_task", "") or ""
+
+        result: DecisionResult = await legacy.ask(question=prompt, **kwargs)
+        await self.run_post_actions(result=result, **kwargs)
+        return result
+
+
+@register_node("interactive_decision")
+class InteractiveDecisionNode(Node):
+    """Wraps the legacy CLI-blocking InteractiveDecisionNode as a Pydantic Node.
+
+    Presents a multiple-choice question in the terminal at decision time.
+    The underlying implementation uses ``questionary`` and is intentionally
+    blocking — HITL improvements are a future spec.
+
+    Args:
+        node_id: Unique identifier within the graph.
+        question: The prompt text shown to the user.
+        options: A list of string options to choose from.
+        dependencies: Set of node_ids that must complete first.
+        successors: Set of node_ids that depend on this one.
+        fsm: Auto-created if None.
+    """
+
+    node_id: str
+    question: str
+    options: List[str] = PydanticField(default_factory=list)
+    dependencies: Set[str] = PydanticField(default_factory=set)
+    successors: Set[str] = PydanticField(default_factory=set)
+    fsm: Optional[AgentTaskMachine] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Auto-create FSM and call parent hook."""
+        if self.fsm is None:
+            object.__setattr__(
+                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
+            )
+
+    @property
+    def name(self) -> str:
+        """Node identifier."""
+        return self.node_id
+
+    async def execute(
+        self,
+        ctx: FlowContext,
+        deps: DependencyResults,
+        **kwargs: Any,
+    ) -> DecisionResult:
+        """Present a CLI menu and return the user's selection as a DecisionResult.
+
+        Constructs a fresh legacy LegacyInteractiveDecisionNode per call so
+        per-run state is isolated (B-lite contract).
+
+        Args:
+            ctx: The current flow execution context.
+            deps: Results from completed dependencies.
+            **kwargs: Extra execution context forwarded to the legacy node.
+
+        Returns:
+            DecisionResult with the user's selection in final_decision.
+        """
+        await self.run_pre_actions(prompt=self.question, **kwargs)
+
+        legacy = LegacyInteractiveDecisionNode(
+            name=self.node_id,
+            question=self.question,
+            options=self.options,
+        )
+
+        result: DecisionResult = await legacy.ask(question=self.question, **kwargs)
+        await self.run_post_actions(result=result, **kwargs)
+        return result
+
+
+@register_node("synthesis")
+class SynthesisNode(Node):
+    """In-graph result synthesis using the ``synthesize_results`` util.
+
+    Acts as a leaf or near-leaf node that aggregates upstream agent results
+    and passes them to the shared ``synthesize_results`` function (TASK-1063).
+    The result is a string summary.
+
+    The ``ctx.synthesis_client`` attribute must be set before the scheduler
+    runs this node (or a RuntimeError is raised).
+
+    TODO (TASK-1067 integration): Once the scheduler exposes a partial
+    ``FlowResult`` on the context, pass it directly to ``synthesize_results``
+    instead of constructing a minimal view from ``deps``.
+
+    Args:
+        node_id: Unique identifier within the graph.
+        dependencies: Set of node_ids that must complete first.
+        successors: Set of node_ids that depend on this one.
+        fsm: Auto-created if None.
+    """
+
+    node_id: str
+    dependencies: Set[str] = PydanticField(default_factory=set)
+    successors: Set[str] = PydanticField(default_factory=set)
+    fsm: Optional[AgentTaskMachine] = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Auto-create FSM and call parent hook."""
+        if self.fsm is None:
+            object.__setattr__(
+                self, "fsm", AgentTaskMachine(agent_name=self.node_id)
+            )
+
+    @property
+    def name(self) -> str:
+        """Node identifier."""
+        return self.node_id
+
+    async def execute(
+        self,
+        ctx: FlowContext,
+        deps: DependencyResults,
+        **kwargs: Any,
+    ) -> str:
+        """Run LLM synthesis over the accumulated dependency results.
+
+        Builds a minimal ``FlowResult``-like view from ``deps`` and delegates
+        to ``synthesize_results(ctx, partial_result)``.
+
+        Args:
+            ctx: The current flow execution context. Must have ``synthesis_client``
+                set (see ``FlowContext.synthesis_client``).
+            deps: Mapping of completed dependency node_id → result string.
+            **kwargs: Forwarded to ``synthesize_results`` (max_tokens, temperature,
+                user_id, session_id).
+
+        Returns:
+            Synthesis summary string.
+        """
+        await self.run_pre_actions(prompt="synthesis", **kwargs)
+
+        # Build a minimal FlowResult-like object from the dependency results.
+        # Once TASK-1067 ships, the scheduler may expose ctx.partial_result instead.
+        class _PartialResult:
+            """Minimal FlowResult duck-type for synthesize_results."""
+
+            def __init__(self, responses: Dict[str, Any]) -> None:
+                self.responses = responses
+                self.summary = ""
+
+        partial = _PartialResult(responses=dict(deps))
+
+        summary = await synthesize_results(ctx, partial)  # type: ignore[arg-type]
+        await self.run_post_actions(result=summary, **kwargs)
+        return summary
+
+
 # ─── Register built-in core Node types ───────────────────────────────────────
 # Must come AFTER the class definitions so the Node subclasses are in scope.
 
@@ -220,4 +460,8 @@ __all__ = [
     "CompletionEvent",
     "NODE_REGISTRY",
     "register_node",
+    # Node subclasses (TASK-1066)
+    "DecisionNode",
+    "InteractiveDecisionNode",
+    "SynthesisNode",
 ]
