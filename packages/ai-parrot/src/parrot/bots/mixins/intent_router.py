@@ -38,6 +38,17 @@ from parrot.registry.capabilities.models import (
 )
 from parrot.registry.capabilities.registry import CapabilityRegistry
 
+# Lazy import guard — ContextEnvelope and EnrichedContext are only available when
+# the knowledge.ontology package is installed.  We do a try/except at module level
+# so that the router still works in environments without ontology dependencies.
+try:
+    from parrot.knowledge.ontology.schema import ContextEnvelope, EnrichedContext
+    _CONTEXT_ENVELOPE_AVAILABLE = True
+except ImportError:
+    ContextEnvelope = None  # type: ignore[assignment,misc]
+    EnrichedContext = None  # type: ignore[assignment,misc]
+    _CONTEXT_ENVELOPE_AVAILABLE = False
+
 # Fast-path keyword map: if any keyword appears in the query (case-insensitive),
 # the corresponding strategy is returned immediately without an LLM call.
 _KEYWORD_STRATEGY_MAP: dict[str, RoutingType] = {
@@ -622,6 +633,21 @@ class IntentRouterMixin:
         Uses OntologyRAGMixin.ontology_process() when available, or queries
         graph_store / _ont_graph_store directly.
 
+        When ``ontology_process`` returns a ``ContextEnvelope`` the response
+        is branched on ``envelope.state``:
+
+        - ``"ok"`` with populated ``context.graph_context`` or
+          ``context.vector_context`` → format with provenance and return.
+        - ``"ok"`` with empty/None context → fall back to unscoped PageIndex
+          retriever (if available).
+        - ``"ambiguous"``, ``"denied"``, ``"entity_not_found"``,
+          ``"auth_required"``, ``"render_error"``, ``"tool_failed"`` →
+          format the state information and return (do NOT call PageIndex).
+        - ``"disabled"`` / ``"not_configured"`` → continue to direct graph /
+          PageIndex fallback paths below.
+        - Anything that is not a ``ContextEnvelope`` (legacy behaviour) →
+          ``str(result)`` fallback.
+
         Args:
             prompt: The user query.
             candidates: Registry candidates (unused — graph uses query directly).
@@ -629,6 +655,8 @@ class IntentRouterMixin:
         Returns:
             Context string from graph traversal, or None.
         """
+        _logger = getattr(self, "logger", logging.getLogger(__name__))
+
         # Try OntologyRAGMixin integration
         ontology_process = getattr(self, "ontology_process", None)
         if ontology_process:
@@ -642,10 +670,39 @@ class IntentRouterMixin:
                 result = await ontology_process(
                     prompt, user_context=perm_ctx, tenant_id=tenant_id,
                 )
-                if result:
+
+                # --- ContextEnvelope branch logic (FEAT-159) ---
+                if _CONTEXT_ENVELOPE_AVAILABLE and isinstance(result, ContextEnvelope):
+                    envelope: ContextEnvelope = result
+
+                    if envelope.state == "ok":
+                        ctx = envelope.context
+                        has_graph = bool(ctx is not None and ctx.graph_context)
+                        has_vector = bool(ctx is not None and ctx.vector_context)
+
+                        if has_graph or has_vector:
+                            # Format with provenance label
+                            return self._format_envelope_context(envelope)
+
+                        # Context is empty / None → fall through to unscoped PageIndex
+                        _logger.debug(
+                            "ontology_process ok but empty context; falling back to PageIndex"
+                        )
+
+                    elif envelope.state in ("disabled", "not_configured"):
+                        # Silently fall through to the non-ontology paths below
+                        pass
+
+                    else:
+                        # Non-ok, non-disabled state (ambiguous, denied, auth_required, …)
+                        # → format and return without calling PageIndex
+                        return self._format_non_ok_envelope(envelope)
+
+                elif result:
+                    # Legacy: ontology_process returned something non-envelope
                     return str(result)
+
             except Exception as exc:  # noqa: BLE001
-                _logger = getattr(self, "logger", logging.getLogger(__name__))
                 _logger.warning("ontology_process failed: %s", exc)
 
         # Try direct graph store query
@@ -674,6 +731,91 @@ class IntentRouterMixin:
                 pass
 
         return None
+
+    def _format_envelope_context(self, envelope: "ContextEnvelope") -> str:
+        """Format the enriched context from a ``state="ok"`` ContextEnvelope.
+
+        Includes a provenance prefix derived from ``context.source`` so that
+        downstream LLM prompts can reason about *where* the context came from.
+
+        Args:
+            envelope: A ContextEnvelope in ``state="ok"`` with non-empty context.
+
+        Returns:
+            Formatted context string including the provenance label.
+        """
+        ctx = envelope.context
+        if ctx is None:
+            return ""
+
+        parts: list[str] = []
+        source_label = ctx.source or "ontology"
+        parts.append(f"[Source: {source_label}]")
+
+        if ctx.graph_context:
+            parts.append("Graph context:")
+            for item in ctx.graph_context[:10]:  # cap at 10 items
+                parts.append(f"  {item}")
+
+        if ctx.vector_context:
+            parts.append("Vector context:")
+            for item in ctx.vector_context[:10]:
+                parts.append(f"  {item}")
+
+        if ctx.tool_hint:
+            parts.append(f"Tool hint: {ctx.tool_hint}")
+
+        if envelope.tool_result:
+            parts.append(f"Tool result: {envelope.tool_result}")
+
+        return "\n".join(parts)
+
+    @staticmethod
+    def _format_non_ok_envelope(envelope: "ContextEnvelope") -> str:
+        """Format a non-ok ContextEnvelope into a human-readable string.
+
+        Used so that the chat layer can surface actionable messages for
+        ambiguous, denied, or auth-required states.
+
+        Args:
+            envelope: A ContextEnvelope in a non-ok state.
+
+        Returns:
+            Formatted string describing the pipeline state.
+        """
+        state = envelope.state
+
+        if state == "ambiguous":
+            cl = envelope.clarification or {}
+            mention = cl.get("mention", "")
+            candidates = cl.get("candidates", [])
+            cand_names = [c.get("name", str(c)) for c in candidates[:5]]
+            return (
+                f"Ambiguous reference '{mention}'. "
+                f"Did you mean: {', '.join(cand_names)}?"
+            )
+
+        if state == "denied":
+            reason = envelope.denial_reason or "Access denied."
+            return f"Access denied: {reason}"
+
+        if state == "entity_not_found":
+            return envelope.error or "Entity not found."
+
+        if state == "auth_required":
+            ap = envelope.auth_prompt or {}
+            provider = ap.get("provider", "unknown provider")
+            auth_url = ap.get("auth_url", "")
+            return (
+                f"Authorization required for {provider}. "
+                f"Please authenticate at: {auth_url}"
+            )
+
+        if state in ("render_error", "tool_failed"):
+            return envelope.error or f"Pipeline error: {state}"
+
+        # Catch-all for any unexpected non-ok states
+        return f"Pipeline returned state: {state}"
 
     async def _run_dataset_query(
         self,
