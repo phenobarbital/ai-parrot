@@ -68,6 +68,9 @@ from .agents import (
 # Flow tools
 from .tools import ResultRetrievalTool
 
+# New AgentsFlow executor (FEAT-163)
+from .flow import AgentsFlow, NODE_REGISTRY, register_node, CompletionEvent
+
 __all__ = [
     # Types & protocols
     "AgentLike",
@@ -113,4 +116,9 @@ __all__ = [
     "EmployeeDataAgent",
     # Tools
     "ResultRetrievalTool",
+    # AgentsFlow executor (FEAT-163)
+    "AgentsFlow",
+    "NODE_REGISTRY",
+    "register_node",
+    "CompletionEvent",
 ]
