@@ -187,10 +187,13 @@ class TestCompliancePersistence:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Module name confirmed: `compliance_report_toolkit.py`.
+Public scan method instrumented: `compliance_full_scan` (the only method that
+produces a `ConsolidatedReport`; the `compliance_soc2_report` / `compliance_hipaa_report`
+etc. are report generators that return file paths, not scan artifacts).
+Used `scanner="aggregator"`, `provider=provider` from method arg.
+6 unit tests, all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Module name confirmed: <path>. Public scan methods touched: <list>.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
