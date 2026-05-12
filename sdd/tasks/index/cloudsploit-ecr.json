@@ -89,7 +89,7 @@
       "feature_id": "FEAT-165",
       "feature": "cloudsploit-ecr",
       "spec": "sdd/specs/cloudsploit-ecr.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Renders the template (TASK-1121) against the models (TASK-1118). Must come after both.",
       "assigned_to": null,
       "started_at": "2026-05-12T17:57:45+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1122-ecr-report-generator.md"
+      "completed_at": "2026-05-12T18:09:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1122-ecr-report-generator.md"
     },
     {
       "id": "TASK-1123",
