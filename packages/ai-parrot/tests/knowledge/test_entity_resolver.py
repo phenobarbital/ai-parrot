@@ -262,15 +262,21 @@ class TestEntityResolver:
     # ------------------------------------------------------------------
 
     @pytest.mark.asyncio
-    async def test_hybrid_raises_not_implemented(self, resolver):
-        """hybrid_concept_match raises NotImplementedError referencing parent feature."""
+    async def test_hybrid_returns_empty_when_no_vector_store(self, resolver):
+        """hybrid_concept_match with no vector_store + no synonym match → EntityNotFoundError."""
+        # hybrid_concept_match is now implemented (FEAT-159).
+        # When no vector_store and no concept_instances, and the rule is required,
+        # an EntityNotFoundError is raised (no candidates found).
+        from parrot.knowledge.ontology.entity_resolver import EntityNotFoundError
+
         pattern = _pattern_with_rule(
             EntityExtractionRule(
                 type="Employee",
                 resolver="hybrid_concept_match",
+                required=True,
             )
         )
-        with pytest.raises(NotImplementedError, match="FEAT-concept-document-authority"):
+        with pytest.raises(EntityNotFoundError):
             await resolver.extract_and_resolve(
                 pattern,
                 "X",
