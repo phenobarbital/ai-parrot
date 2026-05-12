@@ -117,7 +117,9 @@ class Main(AppHandler):
         ## End of Jira OAuth setup.
 
         # Scheduler Manager (after bot manager):
-        self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
+        self._scheduler = AgentSchedulerManager(
+            bot_manager=self.bot_manager
+        )
         self._scheduler.setup(app=self.app)
 
         # Configure Job Manager (with Redis persistence)

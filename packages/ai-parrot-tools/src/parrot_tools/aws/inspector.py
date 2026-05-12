@@ -227,7 +227,11 @@ class InspectorToolkit(AbstractToolkit):
             **kwargs: Additional kwargs forwarded to AbstractToolkit and AWSInterface.
         """
         super().__init__(**kwargs)
-        self.aws = AWSInterface(aws_id=aws_id, region_name=region_name, **kwargs)
+        self.aws = AWSInterface(
+            aws_id=aws_id,
+            region_name=region_name,
+            **kwargs
+        )
 
     # ------------------------------------------------------------------
     # Private helpers
