@@ -193,7 +193,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +204,8 @@
       "parallelism_notes": "Independent of producer-toolkit changes (1110-1112) — could parallelize in separate worktrees. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1113-security-report-toolkit.md"
+      "completed_at": "2026-05-12T01:48:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1113-security-report-toolkit.md"
     },
     {
       "id": "TASK-1114",
