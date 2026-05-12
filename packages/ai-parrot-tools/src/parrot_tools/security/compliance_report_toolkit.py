@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..toolkit import AbstractToolkit
+from .persistence import ReportPersistenceMixin, pop_persistence_kwargs
 from .checkov.config import CheckovConfig
 from .checkov.executor import CheckovExecutor
 from .checkov.parser import CheckovParser
@@ -51,7 +52,7 @@ SEVERITY_PRIORITY = {
 }
 
 
-class ComplianceReportToolkit(AbstractToolkit):
+class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
     """Multi-scanner compliance reporting toolkit.
 
     Orchestrates Prowler, Trivy, and Checkov to produce unified compliance
@@ -93,6 +94,8 @@ class ComplianceReportToolkit(AbstractToolkit):
             report_output_dir: Directory for generated reports.
             **kwargs: Additional arguments passed to AbstractToolkit.
         """
+        # Pop persistence kwargs BEFORE super().__init__ to avoid unknown-kwarg errors
+        self.file_manager, self.report_store = pop_persistence_kwargs(kwargs)
         super().__init__(**kwargs)
         self.logger = logging.getLogger(__name__)
 
@@ -326,6 +329,15 @@ class ComplianceReportToolkit(AbstractToolkit):
         consolidated = self._consolidate_results(scan_results)
         self._last_consolidated = consolidated
         self._report_history.append(consolidated)
+
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_report(
+            scanner="aggregator",
+            framework=framework,
+            provider=provider,
+            scope={"provider": provider, "regions": regions or []},
+            content=consolidated.model_dump_json().encode("utf-8"),
+        )
 
         return consolidated
 
