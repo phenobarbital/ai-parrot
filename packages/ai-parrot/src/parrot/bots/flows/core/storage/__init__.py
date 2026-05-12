@@ -8,15 +8,17 @@ Re-exports:
     VectorStoreMixin — FAISS vector store mixin.
     PersistenceMixin — DocumentDB persistence mixin.
     SynthesisMixin — LLM-based result synthesis mixin.
+    synthesize_results — top-level async util for LLM result synthesis (FEAT-163).
 """
 from .memory import ExecutionMemory
 from .mixin import VectorStoreMixin
 from .persistence import PersistenceMixin
-from .synthesis import SynthesisMixin
+from .synthesis import SynthesisMixin, synthesize_results
 
 __all__ = [
     "ExecutionMemory",
     "VectorStoreMixin",
     "PersistenceMixin",
     "SynthesisMixin",
+    "synthesize_results",
 ]

@@ -96,6 +96,14 @@ class FlowContext:
     any code that needs to resolve an ``agent_ref`` string at runtime.
     """
 
+    synthesis_client: Optional[Any] = field(default=None)
+    """Optional LLM client used by ``synthesize_results`` (FEAT-163 TASK-1063).
+
+    Any ``AbstractClient``-compatible instance that exposes ``ask(prompt=...)``.
+    If ``None``, calling ``synthesize_results(ctx, result)`` raises a
+    ``RuntimeError``.
+    """
+
     # ── Agent resolution ──────────────────────────────────────────────────
 
     def resolve_agent(self, agent_ref: AgentRef) -> AgentLike:
