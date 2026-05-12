@@ -10,18 +10,18 @@
     {
       "id": "TASK-1060",
       "slug": "reshape-core-node-frozen-pydantic",
-      "title": "Reshape core.node \u2014 Node ABC + AgentNode + StartNode + EndNode to frozen Pydantic",
+      "title": "Reshape core.node — Node ABC + AgentNode + StartNode + EndNode to frozen Pydantic",
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; every other module depends on the new shape. Sequential per spec's per-spec worktree strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1060-reshape-core-node-frozen-pydantic.md"
     },
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Forward-refs core.node.AgentNode. In principle independent of TASK-1060's class changes, but ordered together for testability.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1061-flowcontext-resolve-agent.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": false,
       "parallelism_notes": "Restores AgentCrew importability after TASK-1060's signature change. Must follow TASK-1060 closely to minimize broken-tree window.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1062-migrate-agentcrew-to-new-agentnode.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": false,
       "parallelism_notes": "Independent of TASK-1062 (different files). Sequenced for one-worktree consistency.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1063-synthesize-results-util.md"
     },
@@ -92,14 +92,14 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Fully independent of all other tasks (touches only definition.py). Could run in parallel, but per-spec worktree strategy keeps it sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1064-flowdefinition-cycle-detection.md"
     },
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -119,18 +119,18 @@
       "parallel": false,
       "parallelism_notes": "Creates the new module. Subsequent tasks (1066, 1067, 1068) extend it sequentially.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1065-scaffold-flow-py-node-registry.md"
     },
     {
       "id": "TASK-1066",
       "slug": "new-node-subclasses",
-      "title": "New Node subclasses \u2014 DecisionNode, InteractiveDecisionNode, SynthesisNode",
+      "title": "New Node subclasses — DecisionNode, InteractiveDecisionNode, SynthesisNode",
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -141,18 +141,18 @@
       "parallel": false,
       "parallelism_notes": "Extends flow.py with the three wrapper classes. SynthesisNode needs synthesize_results util from TASK-1063.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1066-new-node-subclasses.md"
     },
     {
       "id": "TASK-1067",
       "slug": "event-driven-scheduler",
-      "title": "Implement event-driven scheduler \u2014 run_flow, _materialize_nodes, completion queue, on_complete hooks, FlowResult aggregation",
+      "title": "Implement event-driven scheduler — run_flow, _materialize_nodes, completion queue, on_complete hooks, FlowResult aggregation",
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -162,9 +162,9 @@
         "TASK-1066"
       ],
       "parallel": false,
-      "parallelism_notes": "The largest task \u2014 the heart of the executor. Strictly sequential after its dependencies.",
+      "parallelism_notes": "The largest task — the heart of the executor. Strictly sequential after its dependencies.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1067-event-driven-scheduler.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,7 +186,7 @@
       "parallel": false,
       "parallelism_notes": "Coordinates with TASK-1067's _materialize_nodes for _resolved_agents consumption.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1068-from-definition-eager-resolve.md"
     },
@@ -197,7 +197,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -207,7 +207,7 @@
       "parallel": false,
       "parallelism_notes": "Must come after the new executor is functional; otherwise loader.py and tests would break with no replacement available.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1069-delete-legacy-fsm-and-update-loader.md"
     },
@@ -218,7 +218,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -227,9 +227,9 @@
         "TASK-1069"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task; validates the full pipeline end-to-end against the 7 scenarios in Spec \u00a74.",
+      "parallelism_notes": "Final task; validates the full pipeline end-to-end against the 7 scenarios in Spec §4.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-12T01:19:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1070-integration-test-suite.md"
     }
