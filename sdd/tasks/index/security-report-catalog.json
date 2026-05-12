@@ -50,7 +50,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Column names match TASK-1105 Pydantic field names; must follow the model task. Could run in parallel with TASK-1108 (parsers) if isolation were per-task.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1106-postgres-schema-sql.md"
+      "completed_at": "2026-05-12T01:25:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1106-postgres-schema-sql.md"
     },
     {
       "id": "TASK-1107",
