@@ -255,7 +255,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,8 +266,8 @@
       "parallelism_notes": "After TASK-1095 lands, parallel with TASK-1097 — creates worker.py, no shared files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1096-schema-overlay-sync-worker.md"
+      "completed_at": "2026-05-12T01:15:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1096-schema-overlay-sync-worker.md"
     },
     {
       "id": "TASK-1097",
