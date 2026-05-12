@@ -1,0 +1,10 @@
+# Small 3-repo ECR collection plan fixture for tests.
+region: us-east-2
+concurrency: 3
+repos:
+  - name: alpha
+    tags: [staging, production]
+  - name: beta
+    tags: [latest]
+  - name: gamma
+    tags: [staging, dev, latest]

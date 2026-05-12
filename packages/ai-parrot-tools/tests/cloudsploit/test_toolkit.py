@@ -108,10 +108,13 @@ class TestToolRegistration:
         assert "generate_report" in names
         assert "compare_scans" in names
         assert "list_findings" in names
+        # ECR tools added by FEAT-165
+        assert "collect_ecr_findings" in names
+        assert "generate_ecr_report" in names
 
     def test_tool_count(self, toolkit):
         tools = toolkit.get_tools()
-        assert len(tools) == 6
+        assert len(tools) == 8  # 6 original + 2 ECR tools (FEAT-165)
 
     def test_tool_descriptions(self, toolkit):
         tools = toolkit.get_tools()
@@ -464,3 +467,111 @@ class TestRunComplianceScanConfig:
             assert mock.await_args.kwargs["config"] is None
             assert not any("overrides" in r.message.lower()
                            for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# ECR agent-tool tests (TASK-1123)
+# ---------------------------------------------------------------------------
+from datetime import datetime, timezone  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
+
+from parrot_tools.cloudsploit.models import (  # noqa: E402
+    EcrCollectionResult,
+    EcrRepoFindings,
+    EcrSeverity,
+)
+
+
+@pytest.fixture
+def fake_ecr_result():
+    """Minimal EcrCollectionResult for toolkit ECR tests."""
+    return EcrCollectionResult(
+        generated_at=datetime.now(tz=timezone.utc),
+        region="us-east-2",
+        repos=[
+            EcrRepoFindings(
+                repo="alpha",
+                tag="staging",
+                counts={EcrSeverity.CRITICAL: 1},
+                findings=[],
+            ),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_collect_ecr_findings_no_plan_raises():
+    """ValueError raised when neither plan arg nor ecr_plan_file is set."""
+    tk = CloudSploitToolkit()
+    with pytest.raises(ValueError, match="No ECR collection plan"):
+        await tk.collect_ecr_findings()
+
+
+@pytest.mark.asyncio
+async def test_collect_ecr_findings_uses_plan_arg(tmp_path, fake_ecr_result):
+    """collect_ecr_findings delegates to ecr_collector.collect with loaded plan."""
+    plan_path = tmp_path / "plan.yaml"
+    plan_path.write_text(
+        "region: us-east-2\n"
+        "repos:\n  - {name: alpha, tags: [staging]}\n"
+    )
+    tk = CloudSploitToolkit()
+    with patch.object(
+        tk.ecr_collector, "collect", new=AsyncMock(return_value=fake_ecr_result),
+    ) as collect_mock:
+        out = await tk.collect_ecr_findings(plan=str(plan_path))
+    collect_mock.assert_awaited_once()
+    assert out is fake_ecr_result
+    assert tk._last_ecr_result is fake_ecr_result
+
+
+@pytest.mark.asyncio
+async def test_per_call_plan_overrides_config_field(tmp_path, fake_ecr_result, caplog):
+    """Per-call plan arg overrides ecr_plan_file and a DEBUG log is emitted."""
+    plan_a = tmp_path / "a.yaml"
+    plan_a.write_text("region: x\nrepos:\n  - {name: a, tags: [t]}\n")
+    plan_b = tmp_path / "b.yaml"
+    plan_b.write_text("region: y\nrepos:\n  - {name: b, tags: [t]}\n")
+
+    cfg = CloudSploitConfig(ecr_plan_file=str(plan_a))
+    tk = CloudSploitToolkit(config=cfg)
+    with patch.object(
+        tk.ecr_collector, "collect", new=AsyncMock(return_value=fake_ecr_result),
+    ), caplog.at_level(logging.DEBUG, logger="CloudSploitToolkit"):
+        await tk.collect_ecr_findings(plan=str(plan_b))
+    assert "overrides" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_generate_ecr_report_uses_last_result(fake_ecr_result, tmp_path):
+    """generate_ecr_report uses _last_ecr_result when no result arg given."""
+    tk = CloudSploitToolkit(config=CloudSploitConfig(results_dir=str(tmp_path)))
+    tk._last_ecr_result = fake_ecr_result
+    with patch.object(
+        tk.report_generator, "generate_ecr_html",
+        new=AsyncMock(return_value=str(tmp_path / "out.html")),
+    ) as render_mock:
+        out = await tk.generate_ecr_report()
+    render_mock.assert_awaited_once()
+    assert out.endswith(".html")
+
+
+@pytest.mark.asyncio
+async def test_generate_ecr_report_no_result_raises():
+    """ValueError raised when neither result arg nor _last_ecr_result is set."""
+    tk = CloudSploitToolkit()
+    with pytest.raises(ValueError, match="No ECR collection"):
+        await tk.generate_ecr_report()
+
+
+@pytest.mark.asyncio
+async def test_no_op_when_persistence_deps_absent(tmp_path, fake_ecr_result):
+    """collect_ecr_findings runs without error when no persistence kwargs."""
+    plan_path = tmp_path / "plan.yaml"
+    plan_path.write_text("region: r\nrepos:\n  - {name: a, tags: [t]}\n")
+    tk = CloudSploitToolkit()
+    with patch.object(
+        tk.ecr_collector, "collect", new=AsyncMock(return_value=fake_ecr_result),
+    ):
+        out = await tk.collect_ecr_findings(plan=str(plan_path))
+    assert out is fake_ecr_result

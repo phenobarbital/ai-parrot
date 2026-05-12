@@ -513,9 +513,7 @@ async def test_no_op_when_deps_absent(tmp_path, fake_result):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-12
+**Notes**: Added `collect_ecr_findings` and `generate_ecr_report` public async methods to `CloudSploitToolkit`. Added `_CollectEcrInput` and `_GenerateEcrReportInput` Pydantic models. Updated `test_tool_count` from 6 to 8 (2 new ECR tools). All 7 new ECR tests pass. Pre-existing 5 executor/model failures (aws_region env default) are unrelated to this task.
+**Deviations from spec**: none

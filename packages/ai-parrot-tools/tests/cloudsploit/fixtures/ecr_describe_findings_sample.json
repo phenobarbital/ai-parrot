@@ -1,0 +1,41 @@
+{
+  "repository_name": "navigator-api-tf",
+  "image_tag": "staging",
+  "scan_status": "COMPLETE",
+  "severity_counts": {
+    "CRITICAL": 2,
+    "HIGH": 5,
+    "MEDIUM": 12,
+    "LOW": 3,
+    "INFORMATIONAL": 1
+  },
+  "findings": [
+    {
+      "name": "CVE-2024-0001",
+      "severity": "CRITICAL",
+      "description": "A critical vulnerability in openssl allows remote code execution.",
+      "uri": "https://nvd.nist.gov/vuln/detail/CVE-2024-0001",
+      "attributes": [
+        {"key": "package_name", "value": "openssl"},
+        {"key": "package_version", "value": "1.1.1t"},
+        {"key": "fixed_in_versions", "value": "1.1.1w"},
+        {"key": "CVSS3_SCORE", "value": "9.8"},
+        {"key": "CVSS4_SCORE", "value": "9.9"}
+      ]
+    },
+    {
+      "name": "CVE-2024-0002",
+      "severity": "HIGH",
+      "description": "A high severity vulnerability in libssl.",
+      "uri": "https://nvd.nist.gov/vuln/detail/CVE-2024-0002",
+      "attributes": [
+        {"key": "package_name", "value": "libssl1.1"},
+        {"key": "package_version", "value": "1.1.1t"},
+        {"key": "fixed_in_versions", "value": "1.1.1w"},
+        {"key": "CVSS3_SCORE", "value": "7.5"}
+      ]
+    }
+  ],
+  "findings_count": 2,
+  "total_vulnerabilities": 23
+}

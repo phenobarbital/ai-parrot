@@ -6,22 +6,65 @@ async method is automatically exposed as an agent tool.
 """
 from pathlib import Path
 from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from parrot.interfaces.aws import AWSInterface
+from parrot_tools.security.persistence import (
+    ReportPersistenceMixin,
+    pop_persistence_kwargs,
+)
+
+from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 from .comparator import ScanComparator
+from .ecr_collector import EcrScanCollector
 from .executor import CloudSploitExecutor
 from .models import (
     CloudSploitConfig,
     ComparisonReport,
     ComplianceFramework,
+    EcrCollectionPlan,
+    EcrCollectionResult,
+    EcrSeverity,
     ScanResult,
     SeverityLevel,
 )
 from .parser import ScanResultParser
 from .reports import ReportGenerator
-from parrot_tools.security.persistence import (
-    ReportPersistenceMixin,
-    pop_persistence_kwargs,
-)
+
+
+# ---------------------------------------------------------------------------
+# Input schemas for the new ECR agent tools (private — not exported)
+# ---------------------------------------------------------------------------
+
+
+class _CollectEcrInput(BaseModel):
+    """Input schema for ``collect_ecr_findings``."""
+
+    plan: Optional[str] = Field(
+        None,
+        description=(
+            "Path to a YAML ECR collection plan. When None, falls back to "
+            "``CloudSploitConfig.ecr_plan_file``."
+        ),
+    )
+
+
+class _GenerateEcrReportInput(BaseModel):
+    """Input schema for ``generate_ecr_report``."""
+
+    output_path: Optional[str] = Field(
+        None,
+        description="File path to write the HTML report. Auto-generated when None.",
+    )
+    result: Optional[EcrCollectionResult] = Field(
+        None,
+        description=(
+            "Override the last collected result. Defaults to "
+            "``self._last_ecr_result``."
+        ),
+    )
 
 
 class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
@@ -43,6 +86,11 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
         self.report_generator = ReportGenerator()
         self.comparator = ScanComparator()
         self._last_result: Optional[ScanResult] = None
+
+        # ECR image-scan additions (FEAT-165)
+        self._ecr_aws = AWSInterface(region_name=self.config.aws_region)
+        self.ecr_collector = EcrScanCollector(aws=self._ecr_aws)
+        self._last_ecr_result: Optional[EcrCollectionResult] = None
 
     # -- Private helpers ---------------------------------------------------
 
@@ -99,6 +147,63 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
         if effective:
             self.logger.debug("Effective CloudSploit config: %s", effective)
         return effective
+
+    def _resolve_ecr_plan(self, per_call: Optional[str]) -> Optional[str]:
+        """Resolve effective ECR plan path with per-call > field precedence.
+
+        Mirrors ``_resolve_config`` (toolkit.py:75-101) but reads
+        ``self.config.ecr_plan_file`` instead of ``config_file``.
+
+        Args:
+            per_call: Per-call plan path supplied by the caller, or None.
+
+        Returns:
+            Effective plan path, or None if no plan is configured.
+        """
+        effective = per_call if per_call is not None else self.config.ecr_plan_file
+        if (
+            per_call is not None
+            and self.config.ecr_plan_file is not None
+            and per_call != self.config.ecr_plan_file
+        ):
+            self.logger.debug(
+                "Per-call ecr_plan=%s overrides CloudSploitConfig.ecr_plan_file=%s",
+                per_call,
+                self.config.ecr_plan_file,
+            )
+        if effective:
+            self.logger.debug("Effective ECR plan: %s", effective)
+        return effective
+
+    async def _persist_after_ecr_scan(
+        self, result: EcrCollectionResult,
+    ) -> None:
+        """Side-effect: persist the ECR result to the catalog (no-op otherwise).
+
+        Computes a severity summary dict from the per-repo counts and passes
+        it to ``_persist_report`` with ``scanner="ecr-image-scan"`` to skip
+        the parser-registry lookup (per spec §2 Overview).
+
+        Args:
+            result: The ``EcrCollectionResult`` that was just collected.
+        """
+        severity_summary = {sev.value: 0 for sev in EcrSeverity}
+        for repo in result.repos:
+            for sev, n in repo.counts.items():
+                severity_summary[sev.value] = severity_summary.get(sev.value, 0) + n
+
+        await self._persist_report(
+            scanner="ecr-image-scan",
+            framework=None,
+            provider="aws",
+            scope={
+                "account_id": getattr(self.config, "aws_account_id", None),
+                "region": result.region,
+            },
+            content=result.model_dump_json().encode("utf-8"),
+            severity_summary=severity_summary,  # type: ignore[arg-type]
+            top_findings=[],
+        )
 
     # -- Public async methods (each becomes an agent tool) -----------------
 
@@ -323,3 +428,79 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
             findings = [f for f in findings if f.region == region]
 
         return [f.model_dump() for f in findings]
+
+    # -- ECR agent tools (FEAT-165) ----------------------------------------
+
+    @tool_schema(_CollectEcrInput)
+    async def collect_ecr_findings(
+        self, plan: Optional[str] = None,
+    ) -> EcrCollectionResult:
+        """Aggregate ECR vulnerability scan findings across many repos.
+
+        Loads the collection plan from YAML, calls the ECR collector for each
+        repository in the plan (with bounded concurrency), stores the result
+        as ``self._last_ecr_result``, and persists it to the security-report
+        catalog when the persistence dependencies are wired.
+
+        Args:
+            plan: Path to a YAML ECR collection plan.  When ``None``, falls
+                back to ``CloudSploitConfig.ecr_plan_file``.
+
+        Returns:
+            ``EcrCollectionResult`` with per-repo findings and severity counts.
+
+        Raises:
+            ValueError: When neither ``plan`` nor
+                ``CloudSploitConfig.ecr_plan_file`` is set.
+        """
+        effective = self._resolve_ecr_plan(plan)
+        if not effective:
+            raise ValueError(
+                "No ECR collection plan configured.  Pass plan=<path.yaml> or "
+                "set CloudSploitConfig.ecr_plan_file."
+            )
+        plan_model = EcrCollectionPlan.from_yaml(effective)
+        result = await self.ecr_collector.collect(plan_model)
+        self._last_ecr_result = result
+        await self._persist_after_ecr_scan(result)
+        return result
+
+    @tool_schema(_GenerateEcrReportInput)
+    async def generate_ecr_report(
+        self,
+        output_path: Optional[str] = None,
+        result: Optional[EcrCollectionResult] = None,
+    ) -> str:
+        """Render the interactive HTML ECR vulnerability report.
+
+        Uses the provided ``result`` or falls back to the most recent
+        collection stored in ``self._last_ecr_result``.  The output path is
+        auto-generated from ``CloudSploitConfig.results_dir`` when not given.
+
+        Args:
+            output_path: File path to write the HTML report.  Parent
+                directories are created automatically.  Auto-generated when
+                ``None``.
+            result: Override the last collected result.  Defaults to
+                ``self._last_ecr_result``.
+
+        Returns:
+            File path of the written report (always a ``str``).
+
+        Raises:
+            ValueError: When neither ``result`` nor ``self._last_ecr_result``
+                is available.
+        """
+        target = result or self._last_ecr_result
+        if target is None:
+            raise ValueError(
+                "No ECR collection available.  Call collect_ecr_findings() "
+                "first or pass result=<EcrCollectionResult>."
+            )
+        if not output_path:
+            ts = target.generated_at.strftime("%Y%m%d_%H%M%S")
+            base_dir = self.config.results_dir or "/tmp"
+            output_path = str(Path(base_dir) / f"ecr_report_{ts}.html")
+        return await self.report_generator.generate_ecr_html(
+            target, output_path=output_path,
+        )
