@@ -700,27 +700,27 @@ the disposition the spec phase will lock down. Per user direction:
 
 ## Open Questions
 
-- [ ] Where should the new database-specific `PromptLayer` constants live
+- [x] Where should the new database-specific `PromptLayer` constants live
   — in `parrot/bots/prompts/domain_layers.py` (alongside the existing
   domain layers, consistent placement) or in a new module
   `parrot/bots/database/prompt_layers.py` (DB-scoped, keeps generic
-  layers file cleaner)? — *Owner: Jesus Lara*
-- [ ] Should `QueryResponse.data` reuse `PandasTable` directly, or wrap
+  layers file cleaner)? — *Owner: Jesus Lara*: or in existing `parrot/bots/database/prompts.py`
+- [x] Should `QueryResponse.data` reuse `PandasTable` directly, or wrap
   it in a thin `QueryDataset` model that also carries `row_count`,
   `execution_time_ms`, and `columns`? Wrapper adds DB-specific metadata
-  at the cost of one indirection. — *Owner: Jesus Lara*
-- [ ] Does the new example script demonstrate single-toolkit Postgres
+  at the cost of one indirection. — *Owner: Jesus Lara*: wrap a thin `QueryDataset` model
+- [x] Does the new example script demonstrate single-toolkit Postgres
   only (matching the existing `examples/db/pg.py` shape), or should it
   also include a BigQuery toolkit to demonstrate multi-toolkit routing?
   User answered **single-toolkit + navconfig** in Round 2 — closing
   with that, but spec can revisit if a second example is wanted. —
   *Owner: Jesus Lara*: single-toolkit Postgres only; multi-toolkit
-  example deferred to a follow-up.
-- [ ] How aggressively should the LLM call `DatabaseAgentToolkit.*`
+  example deferred to a follow-up: Multi-toolkit routing support.
+- [x] How aggressively should the LLM call `DatabaseAgentToolkit.*`
   tools? The methods are useful but expensive (extra LLM round-trips).
   Default: register them but gate via the existing role/intent system
   (only enable `generate_optimization_tips` when
-  `OutputComponent.OPTIMIZATION_TIPS` is in the route). — *Owner: Jesus Lara*
-- [ ] After deletion of `AbstractDBAgent`, do we need a compatibility
+  `OutputComponent.OPTIMIZATION_TIPS` is in the route). — *Owner: Jesus Lara*: Agree with defaults.
+- [x] After deletion of `AbstractDBAgent`, do we need a compatibility
   release note for downstream Navigator consumers, or is dev-branch
-  documentation enough? — *Owner: Jesus Lara*
+  documentation enough? — *Owner: Jesus Lara*: release note.
