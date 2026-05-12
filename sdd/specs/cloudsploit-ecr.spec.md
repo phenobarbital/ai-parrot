@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-165
 **Date**: 2026-05-12
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 > **Origin**: Research-grounded proposal at
