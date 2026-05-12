@@ -197,7 +197,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -208,8 +208,8 @@
       "parallelism_notes": "Must come after the new executor is functional; otherwise loader.py and tests would break with no replacement available.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1069-delete-legacy-fsm-and-update-loader.md"
+      "completed_at": "2026-05-12T02:11:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1069-delete-legacy-fsm-and-update-loader.md"
     },
     {
       "id": "TASK-1070",
