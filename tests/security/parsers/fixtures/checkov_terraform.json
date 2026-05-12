@@ -1,0 +1,50 @@
+{
+  "check_type": "terraform",
+  "results": {
+    "passed_checks": [
+      {
+        "check_id": "CKV_AWS_58",
+        "check_name": "Ensure EKS Cluster has Secrets Encryption enabled",
+        "repo_file_path": "/terraform/eks.tf",
+        "resource": "aws_eks_cluster.main",
+        "check_result": {"result": "passed"}
+      }
+    ],
+    "failed_checks": [
+      {
+        "check_id": "CKV_AWS_18",
+        "check_name": "Ensure the S3 bucket has access logging enabled",
+        "repo_file_path": "/terraform/s3.tf",
+        "resource": "aws_s3_bucket.app_data",
+        "severity": "HIGH",
+        "description": "S3 server access logging should be enabled to capture all requests"
+      },
+      {
+        "check_id": "CKV_AWS_21",
+        "check_name": "Ensure all data stored in the S3 bucket have versioning enabled",
+        "repo_file_path": "/terraform/s3.tf",
+        "resource": "aws_s3_bucket.logs",
+        "severity": "MEDIUM",
+        "description": "S3 bucket versioning should be enabled for data recovery"
+      },
+      {
+        "check_id": "CKV_AWS_145",
+        "check_name": "Ensure that S3 Buckets are encrypted with CMK",
+        "repo_file_path": "/terraform/s3.tf",
+        "resource": "aws_s3_bucket.critical_data",
+        "severity": "CRITICAL",
+        "description": "Critical data bucket must use CMK encryption"
+      }
+    ],
+    "skipped_checks": [],
+    "parsing_errors": []
+  },
+  "summary": {
+    "passed": 1,
+    "failed": 3,
+    "skipped": 0,
+    "parsing_error": 0,
+    "resource_count": 4,
+    "checkov_version": "3.2.0"
+  }
+}
