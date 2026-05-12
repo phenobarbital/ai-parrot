@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-162 — Cross-Session Security Report Catalog
 **Spec**: `sdd/specs/security-report-catalog.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1107, TASK-1108
@@ -360,10 +360,20 @@ class TestSearchFindings:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Implemented SecurityReportToolkit in `parrot_tools/security/report_toolkit.py` with
+all 4 public async tool methods: `find_security_report`, `read_security_report`,
+`search_findings`, `list_available_frameworks`. All 13 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
+Also fixed `EmbeddedFinding` field names in all 5 parsers during this task (trivy, cloudsploit,
+prowler, checkov, aggregator): `resource=...` changed to `resource_id=...`, removed non-existent
+`description=` parameter. Also fixed `search_findings` to use `finding.title` and `finding.rule_id`
+instead of `finding.description`.
 
-**Deviations from spec**: none | describe if any
+The `read_security_report` implementation guards against invalid UUIDs (returns `{"error": ...}`),
+missing reports (returns `{"error": ...}`), and delegates section extraction to `get_report_parser`.
+
+**Deviations from spec**: None. The test spec used `toolkit._store` references while implementation
+stores as `self._store`; test fixtures were written directly to `store` AsyncMock and cross-linked
+via fixture injection — both patterns work identically.

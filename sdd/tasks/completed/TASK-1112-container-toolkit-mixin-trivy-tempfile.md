@@ -279,10 +279,12 @@ class TestContainerPersistence:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Module path: `container_security_toolkit.py`. Public methods instrumented:
+`trivy_scan_image`, `trivy_scan_filesystem`, `trivy_scan_repo`, `trivy_scan_k8s`,
+`trivy_scan_iac`. Added `_persist_trivy` helper with try/finally temp-file lifecycle.
+Short-circuit when deps missing (no temp file created). 10 unit tests, all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Module path confirmed: <path>. Public methods touched: <list>.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. Note: stdout from TrivyExecutor is `str` — encoded
+to bytes via `.encode("utf-8")` before writing to temp file.

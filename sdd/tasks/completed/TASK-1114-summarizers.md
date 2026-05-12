@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-162 — Cross-Session Security Report Catalog
 **Spec**: `sdd/specs/security-report-catalog.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1107
@@ -361,10 +361,17 @@ class TestWeekly:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: LLM API method confirmed: `ask(prompt, structured_output=_Executive, stateless=True)`.
+The GoogleGenAIClient's `ask()` accepts `structured_output` as a type and returns an `AIMessage`
+with `structured_output` attribute containing the parsed Pydantic model.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: LLM API method confirmed: <name>. Multi-provider iteration handled in the agent (TASK-1116).
+Implemented `WeeklySecuritySummarizer` and `MonthlySecuritySummarizer` in
+`parrot_tools/security/summarizer.py` with `WeeklySummary`, `MonthlySummary`, and `_Executive`
+Pydantic models. All 14 unit tests pass (14 passed in 0.26s).
 
-**Deviations from spec**: none | describe if any
+Multi-provider iteration handled in the agent consolidator (TASK-1116) as designed.
+
+**Deviations from spec**: None. The task sketch used `generate_structured`; actual API is `ask()`.
+This was confirmed by reading `parrot/clients/google/client.py` as instructed in Agent Instructions.

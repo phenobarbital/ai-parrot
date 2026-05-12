@@ -190,10 +190,9 @@ class TestSchemaSql:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Created schema.sql with all 16 required columns, 3 indexes (IF NOT EXISTS).
+All column names match ReportRef field names verbatim. 7 static-check tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

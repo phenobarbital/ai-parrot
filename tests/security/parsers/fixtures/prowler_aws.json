@@ -1,0 +1,47 @@
+[
+  {
+    "message": "Root account has MFA enabled",
+    "status": "PASS",
+    "severity": "critical",
+    "check_id": "iam_root_mfa_enabled",
+    "check_title": "Ensure MFA is enabled for the root account",
+    "finding_info": {
+      "uid": "prowler-aws-iam_root_mfa_enabled-123456789012",
+      "title": "Ensure MFA is enabled for the root account"
+    },
+    "resources": [
+      {"uid": "arn:aws:iam::123456789012:root", "region": "global"}
+    ],
+    "status_detail": "Root MFA is enabled"
+  },
+  {
+    "message": "S3 bucket does not have server-side encryption enabled",
+    "status": "FAIL",
+    "severity": "high",
+    "check_id": "s3_bucket_default_encryption",
+    "check_title": "Ensure all S3 buckets employ encryption-at-rest",
+    "finding_info": {
+      "uid": "prowler-aws-s3_bucket_default_encryption-my-bucket",
+      "title": "Ensure all S3 buckets employ encryption-at-rest"
+    },
+    "resources": [
+      {"uid": "arn:aws:s3:::my-bucket", "region": "us-east-1"}
+    ],
+    "status_detail": "Bucket my-bucket has no default encryption configured"
+  },
+  {
+    "message": "CloudTrail trail is not logging",
+    "status": "FAIL",
+    "severity": "medium",
+    "check_id": "cloudtrail_multi_region_enabled",
+    "check_title": "Ensure CloudTrail is enabled in all regions",
+    "finding_info": {
+      "uid": "prowler-aws-cloudtrail_multi_region_enabled-trail1",
+      "title": "Ensure CloudTrail is enabled in all regions"
+    },
+    "resources": [
+      {"uid": "arn:aws:cloudtrail:us-east-1:trail1", "region": "us-east-1"}
+    ],
+    "status_detail": "CloudTrail trail1 is not multi-region"
+  }
+]

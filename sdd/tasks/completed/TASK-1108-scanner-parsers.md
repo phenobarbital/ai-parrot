@@ -264,10 +264,16 @@ def test_extract_section_summary_matches_parse(): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Created all 7 parser files + package __init__ in
+`packages/ai-parrot-tools/src/parrot_tools/security/parsers/`.
+Created 5 JSON fixture files in `tests/security/parsers/fixtures/`.
+21 unit tests, all pass. Every parser has `parser_version = "1.0.0"`,
+is deterministic (same input → same output), and caps `top_findings` at 10.
+`extract_section` supports all 7 sections; raises `ValueError` for unknown sections.
+AggregatorParser returns the `executive_paragraph` field for "executive" section.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `tests/security/parsers/test_*.py` was specified as
+multiple files; consolidated into one `test_determinism.py` with parametrized
+tests covering all scanners. All acceptance criteria met.

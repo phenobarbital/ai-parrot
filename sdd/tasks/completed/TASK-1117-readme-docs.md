@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-162 — Cross-Session Security Report Catalog
 **Spec**: `sdd/specs/security-report-catalog.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1107, TASK-1113
@@ -179,10 +179,17 @@ def test_backstory_block_quoted():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: README created at `packages/ai-parrot/src/parrot/storage/security_reports/README.md`.
+Length: ~148 lines / ~6 300 bytes (well within 12 000-byte cap). All 7 required sections
+present. BACKSTORY freshness-policy block quoted verbatim from Spec §7. Component diagram
+adapted from Spec §2 (ASCII-only version, no Unicode box-drawing chars).
+Test file `tests/storage/security_reports/test_readme.py`: 4 tests, all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: README length: <N> lines / <bytes> bytes.
+Test required resolving the path using `Path(__file__).parent...` since pytest rootdir is
+the worktree root and the relative path in the spec's test scaffold wouldn't work.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Section headings changed from Title Case ("Three Layers",
+"Freshness Policy") to sentence case ("Three layers", "Freshness policy") to match the
+exact strings in the test specification.

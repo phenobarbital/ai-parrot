@@ -1,0 +1,61 @@
+{
+  "findings": [
+    {
+      "plugin": "s3Encryption",
+      "category": "S3",
+      "title": "S3 Bucket Not Encrypted",
+      "region": "us-east-1",
+      "resource": "arn:aws:s3:::my-bucket",
+      "status": "FAIL",
+      "severity": "CRITICAL",
+      "message": "S3 bucket lacks server-side encryption"
+    },
+    {
+      "plugin": "rootMfaEnabled",
+      "category": "IAM",
+      "title": "Root MFA Not Enabled",
+      "region": "global",
+      "resource": "arn:aws:iam::123456789012:root",
+      "status": "FAIL",
+      "severity": "CRITICAL",
+      "message": "Root account does not have MFA enabled"
+    },
+    {
+      "plugin": "accessKeys",
+      "category": "IAM",
+      "title": "Access Key Age",
+      "region": "global",
+      "resource": "arn:aws:iam::123456789012:user/svc1",
+      "status": "FAIL",
+      "severity": "HIGH",
+      "message": "Access key older than 90 days"
+    },
+    {
+      "plugin": "cloudtrailEnabled",
+      "category": "CloudTrail",
+      "title": "CloudTrail Not Enabled",
+      "region": "us-east-1",
+      "resource": "arn:aws:cloudtrail::trail1",
+      "status": "FAIL",
+      "severity": "HIGH",
+      "message": "CloudTrail is not enabled in this region"
+    },
+    {
+      "plugin": "vpcFlowLogs",
+      "category": "VPC",
+      "title": "VPC Flow Logs Disabled",
+      "region": "us-east-1",
+      "resource": "arn:aws:ec2::vpc-12345",
+      "status": "WARN",
+      "severity": "MEDIUM",
+      "message": "VPC flow logs are not enabled"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "ok": 0,
+    "warn": 1,
+    "fail": 4,
+    "unknown": 0
+  }
+}

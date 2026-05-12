@@ -1,0 +1,51 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "/app",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "/app/requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-0001",
+          "PkgName": "requests",
+          "InstalledVersion": "2.26.0",
+          "Severity": "CRITICAL",
+          "Title": "Remote code execution in requests",
+          "Description": "Critical vulnerability in requests library"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-0002",
+          "PkgName": "pillow",
+          "InstalledVersion": "9.0.0",
+          "Severity": "HIGH",
+          "Title": "Image processing vulnerability",
+          "Description": "High severity image processing issue"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-0003",
+          "PkgName": "urllib3",
+          "InstalledVersion": "1.26.0",
+          "Severity": "MEDIUM",
+          "Title": "HTTP redirect vulnerability",
+          "Description": "Medium severity redirect handling issue"
+        }
+      ]
+    },
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Type": "dockerfile",
+      "Misconfigurations": [
+        {
+          "ID": "DS002",
+          "Title": "Image user should not be root",
+          "Severity": "HIGH",
+          "Message": "Running as root can allow privilege escalation"
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-162 — Cross-Session Security Report Catalog
 **Spec**: `sdd/specs/security-report-catalog.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -206,10 +206,19 @@ elsewhere.)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Added `AWS_CREDENTIALS['security']` slot at lines ~460-474 in `parrot/conf.py`,
+immediately after the existing `AWS_CREDENTIALS` dict literal (after the `"backend"` entry).
+Surrounding style matched (4-space indent, single-quoted keys).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: Exact line range modified: <range>. Surrounding style matched: yes/no.
+Deviated from the task spec's `config.get('aws_security', 'aws_key', fallback=None)` call —
+the actual navconfig signature is `get(key, section=None, fallback=None)`, so the positional
+form would have reversed section and key. Used keyword form instead:
+`config.get('aws_key', section='aws_security', fallback=None)`.
 
-**Deviations from spec**: none | describe if any
+`logging` was already imported at the top of `conf.py` via `from navconfig.logging import logging`.
+No new import needed. Both unit tests pass (2 passed in 0.05s).
+
+**Deviations from spec**: navconfig call uses keyword `section=` instead of positional arg order
+to correctly read from the [aws_security] INI section.

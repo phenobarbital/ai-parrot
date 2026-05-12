@@ -1,0 +1,36 @@
+{
+  "severity_summary": {
+    "critical": 3,
+    "high": 8,
+    "medium": 15,
+    "low": 22,
+    "informational": 5
+  },
+  "top_findings": [
+    {
+      "finding_id": "CVE-2023-0001/requests",
+      "severity": "CRITICAL",
+      "title": "Remote code execution in requests",
+      "resource": "/app/requirements.txt:2.26.0",
+      "description": "Critical vulnerability in requests library"
+    },
+    {
+      "finding_id": "s3Encryption/us-east-1/arn:aws:s3:::my-bucket",
+      "severity": "CRITICAL",
+      "title": "S3 Bucket Not Encrypted",
+      "resource": "arn:aws:s3:::my-bucket",
+      "description": "S3 bucket lacks server-side encryption"
+    },
+    {
+      "finding_id": "iam_root_mfa/global/root",
+      "severity": "CRITICAL",
+      "title": "Root MFA Not Enabled",
+      "resource": "arn:aws:iam::123456789012:root",
+      "description": "Root account does not have MFA enabled"
+    }
+  ],
+  "executive_paragraph": "This week showed 3 critical findings that require immediate attention. The most urgent issues are unencrypted S3 buckets and missing root MFA. Overall security posture remains at medium risk.",
+  "period_start": "2026-05-05T00:00:00Z",
+  "period_end": "2026-05-11T23:59:59Z",
+  "report_kind": "WEEKLY_SUMMARY"
+}

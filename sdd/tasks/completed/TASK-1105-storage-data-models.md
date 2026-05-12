@@ -283,10 +283,13 @@ class TestReportFilter:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Implemented all 5 Pydantic v2 models (ReportKind, SeverityBreakdown,
+EmbeddedFinding, ReportRef, ReportFilter) per spec §2 Data Models verbatim.
+Added __init__.py re-exporting all public names. Added 20 unit tests — all pass.
+Also updated the worktree conftest.py to add missing
+parrot.interfaces.file.{abstract,s3,local,gcs} sub-module stubs (pre-existing
+worktree infrastructure issue, not spec-related).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
