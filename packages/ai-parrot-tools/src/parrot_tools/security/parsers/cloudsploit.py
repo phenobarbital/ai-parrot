@@ -64,8 +64,7 @@ class CloudSploitParser:
                     finding_id=finding_id,
                     severity=sev,
                     title=item.get("title", plugin),
-                    resource=resource,
-                    description=item.get("message") or item.get("description", ""),
+                    resource_id=resource or None,
                 )
             )
         return findings

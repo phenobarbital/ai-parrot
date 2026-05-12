@@ -63,8 +63,7 @@ class ProwlerParser:
                     finding_id=finding_id,
                     severity=sev,
                     title=title,
-                    resource=resource_uid,
-                    description=item.get("message") or item.get("status_detail", ""),
+                    resource_id=resource_uid or None,
                 )
             )
         return findings

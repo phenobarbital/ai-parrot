@@ -54,8 +54,7 @@ class TrivyParser:
                         finding_id=finding_id or f"trivy/{target}",
                         severity=sev,
                         title=vuln.get("Title", vuln_id),
-                        resource=f"{target}:{vuln.get('InstalledVersion', '')}",
-                        description=vuln.get("Description", ""),
+                        resource_id=f"{target}:{vuln.get('InstalledVersion', '')}",
                     )
                 )
             for misc in result.get("Misconfigurations") or []:
@@ -67,8 +66,7 @@ class TrivyParser:
                         finding_id=check_id or f"trivy-misc/{target}",
                         severity=sev,
                         title=misc.get("Title", check_id),
-                        resource=target,
-                        description=misc.get("Message", ""),
+                        resource_id=target,
                     )
                 )
         return findings

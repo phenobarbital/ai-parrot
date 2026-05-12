@@ -65,8 +65,7 @@ class AggregatorParser:
                 finding_id=f.get("finding_id", f"agg/{i}"),
                 severity=f.get("severity", "INFORMATIONAL"),
                 title=f.get("title", ""),
-                resource=f.get("resource", ""),
-                description=f.get("description", ""),
+                resource_id=f.get("resource_id") or f.get("resource") or None,
             )
             for i, f in enumerate(raw_findings)
         ]

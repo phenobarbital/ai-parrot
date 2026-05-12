@@ -65,8 +65,7 @@ class CheckovParser:
                         finding_id=finding_id or f"checkov/{check_type}",
                         severity=sev,
                         title=check.get("check_name", check_id),
-                        resource=resource or file_path,
-                        description=check.get("description", ""),
+                        resource_id=resource or file_path or None,
                     )
                 )
         return findings
