@@ -296,7 +296,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -308,8 +308,8 @@
       "parallelism_notes": "Integration task — needs merger extension, concept service, and schema service all complete.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1098-tenant-ontology-manager-extension.md"
+      "completed_at": "2026-05-12T01:25:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1098-tenant-ontology-manager-extension.md"
     },
     {
       "id": "TASK-1099",
