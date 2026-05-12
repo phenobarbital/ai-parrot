@@ -32,6 +32,12 @@ from parrot.knowledge.ontology.exceptions import (
 
 logger = logging.getLogger("Parrot.Ontology.ConceptCatalog")
 
+# S8 fix: field sets for filtering SELECT * results before Pydantic construction.
+# ConceptRow and IsaEdgeRow use extra="forbid"; DB tables may have additional
+# columns (created_at, updated_at, reviewed_at) that would cause ValidationError.
+_CONCEPT_ROW_FIELDS: frozenset[str] = frozenset(ConceptRow.model_fields.keys())
+_ISA_EDGE_ROW_FIELDS: frozenset[str] = frozenset(IsaEdgeRow.model_fields.keys())
+
 # Valid transitions for the five-state machine.
 _VALID_TRANSITIONS: dict[str, dict[str, list[str]]] = {
     "concept": {
@@ -405,17 +411,29 @@ class ConceptCatalogService:
                 if not updates:
                     return
 
-                set_clauses = [
-                    f"{col} = ${i + 2}"
-                    for i, col in enumerate(updates)
-                ]
-                set_clauses.append(f"updated_at = ${len(updates) + 2}")
+                # C4/H5 fix: whitelist column names (prevents SQL injection from
+                # future callers) and use fixed parameter ordering to avoid the
+                # off-by-one bug in the original $-index calculation.
+                _MUTABLE_COLUMNS = frozenset({"synonyms", "description", "domain"})
+                for col in updates:
+                    if col not in _MUTABLE_COLUMNS:
+                        raise ValueError(
+                            f"Column '{col}' is not mutable via modify_metadata"
+                        )
 
-                values = list(updates.values()) + [datetime.now(timezone.utc), concept_id]
+                # $1 = concept_id; dynamic cols start at $2; updated_at is last.
+                param_values: list[Any] = [concept_id]
+                set_parts: list[str] = []
+                for col, val in updates.items():
+                    set_parts.append(f"{col} = ${len(param_values) + 1}")
+                    param_values.append(val)
+                set_parts.append(f"updated_at = ${len(param_values) + 1}")
+                param_values.append(datetime.now(timezone.utc))
+
                 await conn.execute(
-                    f"UPDATE ontology_concept SET {', '.join(set_clauses)} "
-                    f"WHERE id = ${len(values)}",
-                    *values,
+                    f"UPDATE ontology_concept SET {', '.join(set_parts)} "
+                    f"WHERE id = $1",
+                    *param_values,
                 )
 
                 await self._insert_concept_audit(
@@ -463,7 +481,10 @@ class ConceptCatalogService:
                     tenant_id,
                 )
 
-            return [ConceptRow(**dict(r)) for r in rows]
+            return [
+                ConceptRow(**{k: v for k, v in dict(r).items() if k in _CONCEPT_ROW_FIELDS})
+                for r in rows
+            ]
 
     async def get_isa_subgraph(
         self, tenant_id: str, concept_id: UUID

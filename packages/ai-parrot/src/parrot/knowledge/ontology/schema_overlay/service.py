@@ -198,40 +198,53 @@ class SchemaOverlayService:
             DryRunFailedError: If the dry-run validation fails.
             InvalidTransitionError: If the current state does not allow approve.
         """
+        # C5 fix: Three-phase approve to avoid TOCTOU and long-lock during dry-run.
+        # Phase 1: Read (no lock — just check existence and initial state).
         async with self._pool.acquire() as conn:
-            # Lock the row
             row = await conn.fetchrow(
-                "SELECT * FROM ontology_schema_overlay WHERE id = $1 FOR UPDATE",
+                "SELECT * FROM ontology_schema_overlay WHERE id = $1",
                 overlay_id,
             )
-            if row is None:
-                raise KeyError(f"SchemaOverlay {overlay_id} not found.")
+        if row is None:
+            raise KeyError(f"SchemaOverlay {overlay_id} not found.")
 
-            overlay = SchemaOverlayRow(**{k: v for k, v in dict(row).items() if k in _OVERLAY_ROW_FIELDS})
-            _validate_transition("approve", overlay.state)
+        overlay = SchemaOverlayRow(**{k: v for k, v in dict(row).items() if k in _OVERLAY_ROW_FIELDS})
+        _validate_transition("approve", overlay.state)
 
-            # Mandatory dry-run — outside transaction to avoid long lock
-            report: DryRunReport = await dry_run_overlay(
-                overlay.tenant_id, overlay, self._tenant_manager, self._merger
-            )
+        # Phase 2: Mandatory dry-run — outside any DB connection (read-only, YAML-based).
+        report: DryRunReport = await dry_run_overlay(
+            overlay.tenant_id, overlay, self._tenant_manager, self._merger
+        )
 
-            if not report.ok:
-                # Store report on the row and raise
-                async with conn.transaction():
-                    await conn.execute(
+        if not report.ok:
+            # Store report and raise without committing state change.
+            async with self._pool.acquire() as conn2:
+                async with conn2.transaction():
+                    await conn2.execute(
                         "UPDATE ontology_schema_overlay "
                         "SET dry_run_report = $1::jsonb WHERE id = $2",
                         report.model_dump_json(),
                         overlay_id,
                     )
-                raise DryRunFailedError(
-                    "Dry-run validation failed — overlay not approved.",
-                    report=report.model_dump(),
-                )
+            raise DryRunFailedError(
+                "Dry-run validation failed — overlay not approved.",
+                report=report.model_dump(),
+            )
 
-            # Transition to approved
-            async with conn.transaction():
-                await conn.execute(
+        # Phase 3: Re-validate under lock and commit state change atomically.
+        async with self._pool.acquire() as conn3:
+            async with conn3.transaction():
+                locked = await conn3.fetchrow(
+                    "SELECT state FROM ontology_schema_overlay "
+                    "WHERE id = $1 FOR UPDATE",
+                    overlay_id,
+                )
+                if locked is None:
+                    raise KeyError(f"SchemaOverlay {overlay_id} disappeared before approval.")
+                # Re-check: another worker may have changed state since Phase 1.
+                _validate_transition("approve", locked["state"])
+
+                await conn3.execute(
                     """
                     UPDATE ontology_schema_overlay
                     SET state = 'approved',
@@ -247,10 +260,11 @@ class SchemaOverlayService:
                     overlay_id,
                 )
                 await self._insert_audit(
-                    conn, overlay_id, "approve", overlay.state, "approved", actor
+                    conn3, overlay_id, "approve", overlay.state, "approved", actor
                 )
+                # S7 fix: emit outbox row so the pub/sub subscriber is notified.
                 await self._insert_outbox(
-                    conn, overlay_id, overlay.tenant_id, "invalidate_cache"
+                    conn3, overlay_id, overlay.tenant_id, "invalidate_cache"
                 )
                 self.logger.info(
                     "Approved schema overlay %s for tenant '%s' by '%s'.",
@@ -317,6 +331,28 @@ class SchemaOverlayService:
             rows = await conn.fetch(
                 "SELECT * FROM ontology_schema_overlay "
                 "WHERE tenant_id = $1 AND state IN ('proposed', 'pending_review') "
+                "ORDER BY created_at",
+                tenant_id,
+            )
+            return [SchemaOverlayRow(**{k: v for k, v in dict(r).items() if k in _OVERLAY_ROW_FIELDS}) for r in rows]
+
+    async def get_approved(self, tenant_id: str) -> list[SchemaOverlayRow]:
+        """Return overlay rows in ``approved`` state for ontology composition.
+
+        C6 fix: ``get_pending`` intentionally excludes approved rows. This method
+        is for callers (such as ``TenantOntologyManager.resolve_with_overlay``)
+        that need the approved overlays to compose into the merged ontology.
+
+        Args:
+            tenant_id: Tenant to filter by.
+
+        Returns:
+            List of approved ``SchemaOverlayRow`` instances.
+        """
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM ontology_schema_overlay "
+                "WHERE tenant_id = $1 AND state = 'approved' "
                 "ORDER BY created_at",
                 tenant_id,
             )

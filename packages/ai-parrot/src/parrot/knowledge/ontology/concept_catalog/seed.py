@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,12 @@ async def seed_concepts_from_yaml(
 
     seeded_count = 0
     concept_id_map: dict[str, Any] = {}  # slug → UUID for is_a edge creation
+
+    # H3 fix: Pre-populate concept_id_map with ALL pre-existing approved concepts
+    # so that Pass 2 (is_a edges) can resolve parent slugs even when the parent
+    # was seeded in a previous run (not part of this seed invocation).
+    for existing in live_concepts:
+        concept_id_map[existing.slug] = existing.id
 
     # ── Pass 1: concepts ─────────────────────────────────────────────────────
     for entity_name, entity_def in entities.items():
@@ -182,10 +189,16 @@ async def seed_concepts_from_yaml(
 def _slugify(name: str) -> str:
     """Convert an entity name to a lowercase underscore slug.
 
+    Handles CamelCase (``"SalesCompensation"`` → ``"sales_compensation"``),
+    spaces, and hyphens so YAML entity names map to readable slug values.
+
     Args:
-        name: Raw entity name (e.g. ``"SalesCompensation"``).
+        name: Raw entity name (e.g. ``"SalesCompensation"`` or
+            ``"Sales Compensation"``).
 
     Returns:
-        Slug string (e.g. ``"salescompensation"``).
+        Slug string (e.g. ``"sales_compensation"``).
     """
+    # S5 fix: insert underscore between lowercase→uppercase transitions (CamelCase).
+    name = re.sub(r"([a-z])([A-Z])", r"\1_\2", name)
     return name.strip().lower().replace(" ", "_").replace("-", "_")

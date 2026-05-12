@@ -107,9 +107,11 @@ class TestSeedConceptsBasic:
 class TestSeedIdempotency:
     async def test_skips_existing_concepts(self, sample_yaml: Path):
         """Running twice on the same tenant: second run skips all."""
+        # S5 fix: _slugify now converts CamelCase → snake_case, so
+        # "SalesDepartment" → "sales_department", "SalesRep" → "sales_rep".
         existing = [
-            _concept_row("salesdepartment"),
-            _concept_row("salesrep"),
+            _concept_row("sales_department"),
+            _concept_row("sales_rep"),
         ]
         svc = _make_service(live_concepts=existing)
         count = await seed_concepts_from_yaml("tenant-a", sample_yaml, svc)
@@ -124,10 +126,10 @@ class TestSeedIdempotency:
         count1 = await seed_concepts_from_yaml("tenant-a", sample_yaml, svc)
         assert count1 == 2
 
-        # Second run — all concepts "now" exist
+        # Second run — all concepts "now" exist (slugs use snake_case per S5 fix)
         existing = [
-            _concept_row("salesdepartment"),
-            _concept_row("salesrep"),
+            _concept_row("sales_department"),
+            _concept_row("sales_rep"),
         ]
         svc2 = _make_service(live_concepts=existing)
         count2 = await seed_concepts_from_yaml("tenant-a", sample_yaml, svc2)

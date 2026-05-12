@@ -30,6 +30,14 @@ def _make_conn(fetch_return=None) -> AsyncMock:
     conn = AsyncMock()
     conn.fetch.return_value = fetch_return or []
     conn.execute.return_value = None
+
+    # H1 fix: run_once now wraps the outbox drain in async with conn.transaction().
+    # Set up transaction() as an asynccontextmanager so the mock works correctly.
+    @asynccontextmanager
+    async def _transaction():
+        yield None
+
+    conn.transaction = _transaction
     return conn
 
 

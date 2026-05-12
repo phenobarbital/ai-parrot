@@ -249,8 +249,9 @@ class TenantOntologyManager:
             overlay_defs.append(self._build_concept_overlay(concept_rows, tenant_id))
 
         if self._schema_service:
-            schema_rows = await self._schema_service.get_pending(tenant_id)
-            approved_schemas = [r for r in schema_rows if r.state == "approved"]
+            # C6 fix: use get_approved() — get_pending() only returns proposed/
+            # pending_review rows and would always produce an empty approved list.
+            approved_schemas = await self._schema_service.get_approved(tenant_id)
             overlay_defs.append(self._build_schema_overlay(approved_schemas, tenant_id))
 
         if yaml_paths:

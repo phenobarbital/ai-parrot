@@ -179,10 +179,15 @@ class OntologyMerger:
                 framework_entity_keys = set(base_layer.entities.keys())
                 framework_relation_keys = set(base_layer.relations.keys())
                 framework_pattern_keys = set(base_layer.traversal_patterns.keys())
-            except Exception:
-                # If base cannot be loaded, we cannot enforce framework protection.
-                # The standard merge() will surface the real error.
-                pass
+            except Exception as exc:
+                # S6 fix: log the failure so operators know the guard is disabled.
+                # The standard merge() call below will surface the real parse error.
+                logger.warning(
+                    "Could not load base layer '%s' for FrameworkOverrideError guard — "
+                    "protection disabled for this merge: %s",
+                    yaml_paths[0],
+                    exc,
+                )
 
         # Step 2: Merge all YAML layers normally.
         result_entities: dict[str, EntityDef] = {}

@@ -83,9 +83,14 @@ def _make_concept_service(rows: list[ConceptRow]) -> MagicMock:
     return svc
 
 
-def _make_schema_service(rows: list[SchemaOverlayRow]) -> MagicMock:
+def _make_schema_service(
+    approved_rows: list[SchemaOverlayRow],
+    pending_rows: list[SchemaOverlayRow] | None = None,
+) -> MagicMock:
     svc = MagicMock()
-    svc.get_pending = AsyncMock(return_value=rows)
+    # C6 fix: tenant.py now calls get_approved() for overlay composition.
+    svc.get_approved = AsyncMock(return_value=approved_rows)
+    svc.get_pending = AsyncMock(return_value=pending_rows or [])
     return svc
 
 
@@ -160,7 +165,7 @@ class TestResolveWithSchemaOverlay:
         self, ontology_dir
     ):
         schema_rows = [_schema_row("Project"), _schema_row("Contract")]
-        schema_svc = _make_schema_service(schema_rows)
+        schema_svc = _make_schema_service(approved_rows=schema_rows)
 
         mgr = TenantOntologyManager(
             ontology_dir=ontology_dir,
@@ -171,11 +176,10 @@ class TestResolveWithSchemaOverlay:
         assert "Contract" in ctx.ontology.entities
 
     async def test_non_approved_schema_rows_excluded(self, ontology_dir):
-        # get_pending returns proposed + pending_review; manager filters approved
-        schema_rows = [
-            _schema_row("ProposedOnly"),  # state is "approved" by default in our helper
-        ]
-        schema_rows[0] = SchemaOverlayRow(
+        # C6 fix: tenant.py calls get_approved() which only returns approved rows.
+        # Simulate a real service: get_approved() returns empty (no approved overlays),
+        # while get_pending() would return the proposed row (but is not called here).
+        proposed_row = SchemaOverlayRow(
             id=uuid4(),
             tenant_id="tenant-a",
             overlay_kind="entity_type",
@@ -184,7 +188,11 @@ class TestResolveWithSchemaOverlay:
             state="proposed",  # NOT approved
             asserted_by="admin",
         )
-        schema_svc = _make_schema_service(schema_rows)
+        # get_approved returns [] — only approved rows come back from real service.
+        schema_svc = _make_schema_service(
+            approved_rows=[],
+            pending_rows=[proposed_row],
+        )
         mgr = TenantOntologyManager(
             ontology_dir=ontology_dir,
             schema_overlay_service=schema_svc,

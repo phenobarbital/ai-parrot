@@ -78,58 +78,63 @@ class ConceptCatalogSyncWorker:
             Number of rows fetched (not necessarily all successfully processed).
         """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM ontology_concept_outbox "
-                "WHERE processed_at IS NULL "
-                "ORDER BY enqueued_at "
-                "LIMIT $1 "
-                "FOR UPDATE SKIP LOCKED",
-                batch_size,
-            )
+            # H1 fix: wrap the SELECT FOR UPDATE SKIP LOCKED + all updates in a
+            # single transaction so the row locks persist across the processing loop.
+            # Without the transaction, asyncpg autocommits the SELECT and the locks
+            # are released immediately, allowing duplicate processing by parallel workers.
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    "SELECT * FROM ontology_concept_outbox "
+                    "WHERE processed_at IS NULL "
+                    "ORDER BY enqueued_at "
+                    "LIMIT $1 "
+                    "FOR UPDATE SKIP LOCKED",
+                    batch_size,
+                )
 
-            for row in rows:
-                operation = row["operation"]
-                method_name = self.OPERATIONS.get(operation)
-                if method_name is None:
-                    self.logger.warning(
-                        "Unknown outbox operation '%s' for row %s — skipping.",
-                        operation, row["id"],
-                    )
-                    continue
-
-                handler = getattr(self, method_name)
-                try:
-                    await handler(conn, row)
-                    await conn.execute(
-                        "UPDATE ontology_concept_outbox "
-                        "SET processed_at = now() "
-                        "WHERE id = $1",
-                        row["id"],
-                    )
-                    self.logger.debug(
-                        "Outbox row %s (%s) processed successfully.",
-                        row["id"], operation,
-                    )
-                except Exception as exc:
-                    attempts: int = (row["attempts"] or 0) + 1
-                    if attempts >= self.MAX_RETRIES:
-                        self.logger.error(
-                            "DLQ: outbox row %s after %d attempts — %s",
-                            row["id"], attempts, exc,
-                        )
-                    else:
+                for row in rows:
+                    operation = row["operation"]
+                    method_name = self.OPERATIONS.get(operation)
+                    if method_name is None:
                         self.logger.warning(
-                            "Outbox row %s attempt %d/%d failed: %s",
-                            row["id"], attempts, self.MAX_RETRIES, exc,
+                            "Unknown outbox operation '%s' for row %s — skipping.",
+                            operation, row["id"],
                         )
-                    await conn.execute(
-                        "UPDATE ontology_concept_outbox "
-                        "SET attempts = $1, last_error = $2 "
-                        "WHERE id = $3",
-                        attempts, str(exc), row["id"],
-                    )
+                        continue
 
-            return len(rows)
+                    handler = getattr(self, method_name)
+                    try:
+                        await handler(conn, row)
+                        await conn.execute(
+                            "UPDATE ontology_concept_outbox "
+                            "SET processed_at = now() "
+                            "WHERE id = $1",
+                            row["id"],
+                        )
+                        self.logger.debug(
+                            "Outbox row %s (%s) processed successfully.",
+                            row["id"], operation,
+                        )
+                    except Exception as exc:
+                        attempts: int = (row["attempts"] or 0) + 1
+                        if attempts >= self.MAX_RETRIES:
+                            self.logger.error(
+                                "DLQ: outbox row %s after %d attempts — %s",
+                                row["id"], attempts, exc,
+                            )
+                        else:
+                            self.logger.warning(
+                                "Outbox row %s attempt %d/%d failed: %s",
+                                row["id"], attempts, self.MAX_RETRIES, exc,
+                            )
+                        await conn.execute(
+                            "UPDATE ontology_concept_outbox "
+                            "SET attempts = $1, last_error = $2 "
+                            "WHERE id = $3",
+                            attempts, str(exc), row["id"],
+                        )
+
+        return len(rows)
 
     # ── Operation handlers ────────────────────────────────────────────────────
 

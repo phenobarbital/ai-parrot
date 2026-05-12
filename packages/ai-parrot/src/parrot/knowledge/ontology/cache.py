@@ -196,6 +196,7 @@ class OntologyCache:
                 invalidated alongside the Redis key cache.
         """
         _RECONNECT_DELAY_S = 5.0
+        pubsub = None
 
         while True:
             try:
@@ -224,4 +225,12 @@ class OntologyCache:
                     _RECONNECT_DELAY_S,
                     exc,
                 )
+                # S3 fix: close the stale pubsub handle to avoid duplicate
+                # subscriptions after the connection is re-established.
+                if pubsub is not None:
+                    try:
+                        await pubsub.close()
+                    except Exception:
+                        pass
+                    pubsub = None
                 await asyncio.sleep(_RECONNECT_DELAY_S)

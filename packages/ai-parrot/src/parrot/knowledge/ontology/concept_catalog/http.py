@@ -147,7 +147,8 @@ async def get_concept_history(request: web.Request) -> web.Response:
         _check_role(request, _CURATOR_PLUS)
         concept_id = _parse_uuid(request.match_info["id"])
         svc: ConceptCatalogService = request.app["concept_catalog_service"]
-        history = await svc.get_history(concept_id)
+        # C1 fix: service requires (target_id, target_kind)
+        history = await svc.get_history(concept_id, "concept")
         return web.json_response({"items": history})
     except (web.HTTPException,) as exc:
         raise
@@ -158,10 +159,11 @@ async def get_concept_history(request: web.Request) -> web.Response:
 async def get_concept_isa(request: web.Request) -> web.Response:
     """GET /api/ontology/concepts/{id}/isa — is_a subgraph."""
     try:
-        _check_role(request, _CURATOR_PLUS)
+        # C2 fix: capture tenant_id (required by get_isa_subgraph)
+        tenant_id = _check_role(request, _CURATOR_PLUS)
         concept_id = _parse_uuid(request.match_info["id"])
         svc: ConceptCatalogService = request.app["concept_catalog_service"]
-        subgraph = await svc.get_isa_subgraph(concept_id)
+        subgraph = await svc.get_isa_subgraph(tenant_id, concept_id)
         return web.json_response({"items": subgraph})
     except (web.HTTPException,) as exc:
         raise
@@ -292,9 +294,10 @@ async def modify_concept(request: web.Request) -> web.Response:
         session = request.get("session", {}) or {}
         actor = session.get("email", "unknown")
         body = await request.json()
+        # C3 fix: modify_metadata(concept_id, actor, ...) — no target_kind param,
+        # no label param (label is immutable after approval).
         await svc.modify_metadata(
-            concept_id, "concept", actor,
-            label=body.get("label"),
+            concept_id, actor,
             description=body.get("description"),
             synonyms=body.get("synonyms"),
             domain=body.get("domain"),
