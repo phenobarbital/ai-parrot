@@ -110,7 +110,7 @@
       "feature_id": "FEAT-163",
       "feature": "agentsflow-refactor-spec3",
       "spec": "sdd/specs/agentsflow-refactor-spec3.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -120,8 +120,8 @@
       "parallelism_notes": "Creates the new module. Subsequent tasks (1066, 1067, 1068) extend it sequentially.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1065-scaffold-flow-py-node-registry.md"
+      "completed_at": "2026-05-12T01:49:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1065-scaffold-flow-py-node-registry.md"
     },
     {
       "id": "TASK-1066",
