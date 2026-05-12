@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-12T01:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-12T02:21:42.285412+00:00",
   "tasks": [
     {
       "id": "TASK-1104",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Operational precondition on a gitignored file. Must run first so subsequent modules can be developed against a clean-importing SecurityAgent. Per-spec worktree means sequential anyway.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1104-remove-broken-consolidator-stub.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1104-remove-broken-consolidator-stub.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1105",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Foundation data layer. Every other task imports from here. Could theoretically run in parallel with TASK-1104 (different files), but per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1105-storage-data-models.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1105-storage-data-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1106",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Column names match TASK-1105 Pydantic field names; must follow the model task. Could run in parallel with TASK-1108 (parsers) if isolation were per-task.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1106-postgres-schema-sql.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1106-postgres-schema-sql.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1107",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +84,9 @@
       "parallelism_notes": "Core persistence layer; downstream tasks (1109, 1113, 1114, 1116) all depend on it. Cannot parallelize.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1107-security-report-store.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1107-security-report-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1108",
@@ -91,18 +95,19 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-1105"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends only on TASK-1105 (data models). Could run in parallel with TASK-1106 and TASK-1107 if isolation were per-task — but per-spec worktree means sequential.",
+      "parallelism_notes": "Depends only on TASK-1105 (data models). Could run in parallel with TASK-1106 and TASK-1107 if isolation were per-task \u2014 but per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1108-scanner-parsers.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1108-scanner-parsers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1109",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Composes store + parsers. Producer-toolkit tasks (1110/1111/1112) depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1109-report-persistence-mixin.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1109-report-persistence-mixin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1110",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "Touches a different file than TASK-1111/1112, so could parallelize across worktrees in theory. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1110-cloudsploit-toolkit-mixin.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1110-cloudsploit-toolkit-mixin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1111",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +170,9 @@
       "parallelism_notes": "Independent of TASK-1110/1112 file-wise. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1111-compliance-toolkit-mixin.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1111-compliance-toolkit-mixin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1112",
@@ -173,7 +181,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +191,9 @@
       "parallelism_notes": "Independent of TASK-1110/1111 file-wise; unique because of the resolved U3 temp-file lifecycle. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1112-container-toolkit-mixin-trivy-tempfile.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1112-container-toolkit-mixin-trivy-tempfile.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1113",
@@ -193,7 +202,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -201,20 +210,21 @@
         "TASK-1108"
       ],
       "parallel": false,
-      "parallelism_notes": "Independent of producer-toolkit changes (1110-1112) — could parallelize in separate worktrees. Per-spec worktree means sequential.",
+      "parallelism_notes": "Independent of producer-toolkit changes (1110-1112) \u2014 could parallelize in separate worktrees. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1113-security-report-toolkit.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1113-security-report-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1114",
       "slug": "summarizers",
-      "title": "WeeklySecuritySummarizer + MonthlySecuritySummarizer (multi-provider × framework)",
+      "title": "WeeklySecuritySummarizer + MonthlySecuritySummarizer (multi-provider \u00d7 framework)",
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,17 +234,18 @@
       "parallelism_notes": "Independent of toolkit tasks. Could parallelize in separate worktrees. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1114-summarizers.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1114-summarizers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1115",
       "slug": "aws-credentials-security-slot",
-      "title": "parrot/conf.py — AWS_CREDENTIALS['security'] slot",
+      "title": "parrot/conf.py \u2014 AWS_CREDENTIALS['security'] slot",
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -242,8 +253,9 @@
       "parallelism_notes": "Touches only parrot/conf.py; no dependencies on other FEAT-162 modules. Could run anytime before TASK-1116. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1115-aws-credentials-security-slot.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1115-aws-credentials-security-slot.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1116",
@@ -252,7 +264,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -269,8 +281,9 @@
       "parallelism_notes": "Final integration. Depends on every prior module. agents/security.py is gitignored so commit diff is empty; integration tests carry verification.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1116-security-agent-wiring.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1116-security-agent-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1117",
@@ -279,7 +292,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -287,11 +300,12 @@
         "TASK-1113"
       ],
       "parallel": false,
-      "parallelism_notes": "Docs only — could run any time after the store and toolkit are in place. Per-spec worktree means sequential.",
+      "parallelism_notes": "Docs only \u2014 could run any time after the store and toolkit are in place. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1117-readme-docs.md"
+      "completed_at": "2026-05-12T02:21:42.285412+00:00",
+      "file": "sdd/tasks/active/TASK-1117-readme-docs.md",
+      "verification": "verified"
     }
   ]
 }
