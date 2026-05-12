@@ -458,6 +458,23 @@ AWS_CREDENTIALS = {
 }
 
 """
+Security scanner S3 credentials (FEAT-162).
+Read from the [aws_security] INI section; silently omitted if not configured.
+"""
+_aws_security_key = config.get('aws_key', section='aws_security', fallback=None)
+if _aws_security_key:
+    AWS_CREDENTIALS['security'] = {
+        'aws_key':     _aws_security_key,
+        'aws_secret':  config.get('aws_secret', section='aws_security', fallback=None),
+        'region_name': config.get('region_name', section='aws_security', fallback=AWS_REGION_NAME),
+    }
+else:
+    logging.getLogger(__name__).warning(
+        "aws_security INI section not configured; AWS_CREDENTIALS['security'] not registered. "
+        "SecurityAgent will use default credentials."
+    )
+
+"""
 DynamoDB & S3 Artifact Configuration (FEAT-103)
 """
 DYNAMODB_CONVERSATIONS_TABLE = config.get(
