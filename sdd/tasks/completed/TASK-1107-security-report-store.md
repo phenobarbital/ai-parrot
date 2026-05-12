@@ -345,10 +345,19 @@ class TestStore:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Implemented `SecurityReportStore` Protocol (@runtime_checkable) and
+`PostgresS3SecurityReportStore` in `packages/ai-parrot/src/parrot/storage/security_reports/store.py`.
+AsyncDB imported at module level with try/except fallback to None (enables test patching).
+`query()` never applies an implicit `since` filter — verified by unit test.
+S3 key format: `{prefix}{scanner}/{framework_or_none}/{YYYY/MM/DD}/{report_id}.json`.
+`bootstrap_schema()` uses `importlib.resources.files()` with Path fallback.
+Unit tests: 8 passing (mocked asyncdb + FileManager). Integration tests gated on TEST_PG_DSN.
+Also updated `__init__.py` to re-export new symbols, and created `tests/storage/security_reports/`
+package with conftest.py and test files (test_models.py, test_schema.py, test_store.py).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `create_file(key, content)` used instead of `create_from_bytes(key, data)`
+— the actual FileManagerInterface has `create_file` not `create_from_bytes` (verified in conftest stubs).
+Also needed to add sub-module stubs to worktree conftest.py for `parrot.interfaces.file.{abstract,s3,local,gcs}`
+to fix pre-existing import errors triggered by our new code.

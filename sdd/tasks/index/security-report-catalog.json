@@ -70,7 +70,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Core persistence layer; downstream tasks (1109, 1113, 1114, 1116) all depend on it. Cannot parallelize.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1107-security-report-store.md"
+      "completed_at": "2026-05-12T01:30:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1107-security-report-store.md"
     },
     {
       "id": "TASK-1108",
