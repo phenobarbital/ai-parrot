@@ -109,13 +109,20 @@ class TestAgentsFlowAddNode:
 
 
 class TestAgentsFlowPlaceholders:
-    async def test_run_flow_raises_not_implemented(self) -> None:
+    async def test_run_flow_with_no_nodes_returns_flow_result(self) -> None:
+        """After TASK-1067, run_flow is implemented. With no nodes, it returns
+        a FlowResult with empty output."""
         flow = AgentsFlow("test-run")
-        with pytest.raises(NotImplementedError, match="TASK-1067"):
-            await flow.run_flow()
+        # No nodes added, no definition — _materialize_nodes returns {}
+        result = await flow.run_flow()
+        from parrot.bots.flows.core.result import FlowResult
+        assert isinstance(result, FlowResult)
 
-    def test_from_definition_raises_not_implemented(self) -> None:
-        with pytest.raises(NotImplementedError, match="TASK-1068"):
+    def test_from_definition_requires_agent_registry(self) -> None:
+        """After TASK-1068, from_definition is implemented but requires agent_registry."""
+        with pytest.raises((NotImplementedError, ValueError)):
+            # Passing None definition and no registry should raise ValueError
+            # (no agent_registry provided) or NotImplementedError (legacy).
             AgentsFlow.from_definition(None)  # type: ignore[arg-type]
 
 

@@ -195,15 +195,85 @@ class AgentsFlow(PersistenceMixin):
         *,
         agent_registry: Optional[AgentRegistry] = None,
     ) -> "AgentsFlow":
-        """Materialize an ``AgentsFlow`` from a ``FlowDefinition``.
+        """Materialize an executable ``AgentsFlow`` from a ``FlowDefinition``.
 
-        .. note::
-            This method is a placeholder. Implementation arrives in TASK-1068.
+        Eagerly resolves every ``NodeDefinition.agent_ref`` against
+        ``agent_registry`` at construction time so mis-configured refs fail
+        fast (spec §8 OQ-5). The returned flow stores the definition and a
+        pre-resolved ``{node_id: AgentLike}`` map; actual ``Node`` instances
+        are re-created fresh inside each ``run_flow()`` call for concurrent
+        safety (B-lite contract — TASK-1067 ``_materialize_nodes``).
+
+        Args:
+            definition: A validated ``FlowDefinition``. Cycle detection and
+                referential integrity are enforced by ``FlowDefinition``'s
+                own model-validators (TASK-1064); they are not re-checked here.
+            agent_registry: ``AgentRegistry`` used to resolve ``agent_ref``
+                strings. If ``None``, ``from_definition`` raises ``ValueError``
+                (no global singleton is assumed).
+
+        Returns:
+            Configured ``AgentsFlow`` instance ready to ``run_flow()``.
 
         Raises:
-            NotImplementedError: Always (until TASK-1068 is implemented).
+            ValueError: If ``agent_registry`` is ``None`` or if any
+                ``NodeDefinition.type`` is not in ``NODE_REGISTRY``.
+            AgentNotFoundError: If any ``NodeDefinition.agent_ref`` cannot be
+                resolved in ``agent_registry``.
         """
-        raise NotImplementedError("Implemented in TASK-1068")
+        from .core.context import AgentNotFoundError  # noqa: PLC0415
+
+        if agent_registry is None:
+            raise ValueError(
+                "AgentsFlow.from_definition() requires an agent_registry. "
+                "Pass an AgentRegistry instance explicitly."
+            )
+
+        # Eagerly resolve every agent-type node's agent_ref.
+        resolved_agents: dict[str, Any] = {}
+        for node_def in definition.nodes:
+            # Only "agent" nodes carry an agent_ref.
+            if node_def.type != "agent":
+                continue
+
+            node_type = node_def.type
+            if node_type not in NODE_REGISTRY:
+                raise ValueError(
+                    f"NodeDefinition {node_def.id!r}: node_type {node_type!r} "
+                    f"not in NODE_REGISTRY. Registered types: {sorted(NODE_REGISTRY)}"
+                )
+
+            agent_ref = node_def.agent_ref or ""
+            # AgentRegistry.get_bot_instance is the sync getter (matches TASK-1061 pattern).
+            agent = agent_registry.get_bot_instance(agent_ref)
+            if agent is None:
+                raise AgentNotFoundError(
+                    f"Cannot resolve agent_ref {agent_ref!r} for node {node_def.id!r}"
+                )
+            # Keyed by node_id so _materialize_nodes can look up by node_def.id.
+            resolved_agents[node_def.id] = agent
+
+        # Also validate non-agent node types are registered.
+        for node_def in definition.nodes:
+            if node_def.type == "agent":
+                continue  # already checked above
+            if node_def.type not in NODE_REGISTRY:
+                raise ValueError(
+                    f"NodeDefinition {node_def.id!r}: node_type {node_def.type!r} "
+                    f"not in NODE_REGISTRY. Registered types: {sorted(NODE_REGISTRY)}"
+                )
+
+        # Construct the flow with the definition bound.
+        # FlowDefinition uses .flow for the name.
+        flow_name = getattr(definition, "flow", None) or getattr(definition, "name", "unnamed")
+        flow = cls(
+            name=flow_name,
+            definition=definition,
+            agent_registry=agent_registry,
+        )
+        # Attach pre-resolved agent map (keyed by node_id).
+        flow._resolved_agents = resolved_agents
+        return flow
 
     # ── Scheduler (TASK-1067) ─────────────────────────────────────────────
 
@@ -262,7 +332,8 @@ class AgentsFlow(PersistenceMixin):
 
             # Construct node based on type requirements.
             if node_type == "agent":
-                agent = resolved_agents.get(node_def.agent_ref or "")
+                # _resolved_agents is keyed by node_id (set by from_definition).
+                agent = resolved_agents.get(nid)
                 if agent is None:
                     raise ValueError(
                         f"Agent ref {node_def.agent_ref!r} not resolved for "
