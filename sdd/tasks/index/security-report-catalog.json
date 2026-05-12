@@ -173,7 +173,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Independent of TASK-1110/1111 file-wise; unique because of the resolved U3 temp-file lifecycle. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1112-container-toolkit-mixin-trivy-tempfile.md"
+      "completed_at": "2026-05-12T01:43:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1112-container-toolkit-mixin-trivy-tempfile.md"
     },
     {
       "id": "TASK-1113",
