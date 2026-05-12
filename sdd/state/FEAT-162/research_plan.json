@@ -1,0 +1,195 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is an internal SDD brainstorm that already declares its own goals, architecture, modules, and codebase contract. Verbs are constructive (add, introduce, build) and named entities are concrete (CloudSploitToolkit, ComplianceReportToolkit, ContainerSecurityToolkit, SecurityAgent, FileManagerFactory, navconfig). Research must NOT redesign — it must verify the brainstorm's claims against the actual codebase and surface contradictions or gaps. Anti-hallucination is the primary value driver.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate the SecurityAgent class and capture its current __init__, agent_tools, schedule wiring, and BACKSTORY block.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "agents/security.py", "lines": null}
+    },
+    {
+      "id": "Q002",
+      "intent": "Inspect parrot/tools/file/ to verify S3FileManager, LocalFileManager, FileManagerInterface, FileManagerFactory exist and capture their public method signatures (upload/download/exists/get_url).",
+      "type": "glob",
+      "priority": 1,
+      "params": {"pattern": "parrot/tools/file/*.py"}
+    },
+    {
+      "id": "Q003",
+      "intent": "Read FileManagerFactory and its create() signature for s3/fs/gcs/temp manager types.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "parrot/tools/file/tool.py", "lines": null}
+    },
+    {
+      "id": "Q004",
+      "intent": "Read FileManagerInterface (abstract) to know what methods the mixin must call.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "parrot/tools/file/abstract.py", "lines": null}
+    },
+    {
+      "id": "Q005",
+      "intent": "Read S3FileManager to confirm async upload/download API and aws_config shape.",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "parrot/tools/file/s3.py", "lines": null}
+    },
+    {
+      "id": "Q006",
+      "intent": "Locate AbstractToolkit and capture its auto-discovery rules + lifecycle exclusion list.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "class AbstractToolkit", "path": "parrot/tools/", "case_sensitive": true, "max_results": 5}
+    },
+    {
+      "id": "Q007",
+      "intent": "Read the AbstractToolkit module to confirm constructor signature, get_tools(), and exclude lists.",
+      "type": "glob",
+      "priority": 1,
+      "params": {"pattern": "parrot/tools/abstract*"}
+    },
+    {
+      "id": "Q008",
+      "intent": "Locate the schedule decorator + ScheduleType enum to confirm WEEKLY / MONTHLY enum members and parameter names.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "ScheduleType|def schedule|class ScheduleType", "path": "parrot/", "case_sensitive": true, "max_results": 20}
+    },
+    {
+      "id": "Q009",
+      "intent": "Locate register_agent decorator usage and definition.",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "register_agent|def register_agent", "path": "parrot/", "case_sensitive": true, "max_results": 10}
+    },
+    {
+      "id": "Q010",
+      "intent": "Locate the CloudSploitToolkit module (FEAT-160 just merged; brainstorm says it lives under parrot_tools.cloudsploit).",
+      "type": "glob",
+      "priority": 1,
+      "params": {"pattern": "**/cloudsploit*/**/*.py"}
+    },
+    {
+      "id": "Q011",
+      "intent": "Read CloudSploitToolkit to capture run_cloudsploit_scan signature, results_dir path, and CloudSploitConfig fields.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "class CloudSploitToolkit|run_cloudsploit_scan|CloudSploitConfig", "path": ".", "case_sensitive": true, "max_results": 30}
+    },
+    {
+      "id": "Q012",
+      "intent": "Locate ComplianceReportToolkit and ContainerSecurityToolkit and identify their scan methods + config classes.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "class ComplianceReportToolkit|class ContainerSecurityToolkit|run_.*compliance|scan_filesystem|scan_image", "path": ".", "case_sensitive": true, "max_results": 30}
+    },
+    {
+      "id": "Q013",
+      "intent": "Find where parrot_tools.security lives and list its layout.",
+      "type": "glob",
+      "priority": 1,
+      "params": {"pattern": "**/parrot_tools/security/**/*.py"}
+    },
+    {
+      "id": "Q014",
+      "intent": "Check navconfig (parrot.conf) for AWS_KEY, AWS_SECRET, S3_ARTIFACT_BUCKET, AWS_REGION_NAME, DEFAULT_PG_DSN, aws_security.* keys actually defined.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "AWS_KEY|AWS_SECRET|S3_ARTIFACT_BUCKET|S3_ARTIFACT|AWS_REGION_NAME|DEFAULT_PG_DSN|aws_security", "path": "parrot/conf.py", "case_sensitive": true, "max_results": 30}
+    },
+    {
+      "id": "Q015",
+      "intent": "Decide between asyncdb and asyncpg: search for which Postgres async driver pattern AI-Parrot already uses inside parrot/.",
+      "type": "grep",
+      "priority": 1,
+      "params": {"pattern": "from asyncdb|import asyncdb|asyncpg.connect|asyncpg.create_pool|AsyncDB\\(", "path": "parrot/", "case_sensitive": true, "max_results": 30}
+    },
+    {
+      "id": "Q016",
+      "intent": "Locate any existing storage/migrations layout to know where the new schema.sql should land and how migrations run.",
+      "type": "glob",
+      "priority": 1,
+      "params": {"pattern": "parrot/storage/**"}
+    },
+    {
+      "id": "Q017",
+      "intent": "Find existing FEAT-103 ArtifactStore for reference (the brainstorm cites it as a related abstraction we are NOT replacing).",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "class ArtifactStore|class .*Artifact.*Store|artifact_store", "path": "parrot/", "case_sensitive": true, "max_results": 15}
+    },
+    {
+      "id": "Q018",
+      "intent": "Confirm Pydantic v2 is the project standard (look for BaseModel imports + pydantic version pin).",
+      "type": "grep",
+      "priority": 3,
+      "params": {"pattern": "pydantic>=2|pydantic = \"|pydantic==", "path": "pyproject.toml", "case_sensitive": true, "max_results": 5}
+    },
+    {
+      "id": "Q019",
+      "intent": "Recent activity on the SecurityAgent + scanner toolkits — has anything shifted that would invalidate the brainstorm?",
+      "type": "git_log",
+      "priority": 2,
+      "params": {"path": "agents/security.py", "since": "60.days.ago", "max_results": 15}
+    },
+    {
+      "id": "Q020",
+      "intent": "Recent commits in parrot/tools/file/ to confirm the FileManager surface hasn't recently changed.",
+      "type": "git_log",
+      "priority": 2,
+      "params": {"path": "parrot/tools/file/", "since": "60.days.ago", "max_results": 10}
+    },
+    {
+      "id": "Q021",
+      "intent": "Confirm the LLM client wiring on Agent (the brainstorm sets `llm_client=self.llm` on the summarizer — is that attribute the actual one?).",
+      "type": "grep",
+      "priority": 2,
+      "params": {"pattern": "self\\.llm|self\\._llm|self\\.client|self\\._client", "path": "parrot/bots/", "case_sensitive": true, "max_results": 20}
+    },
+    {
+      "id": "Q022",
+      "intent": "Verify Gemini ThinkingConfig usage already exists somewhere — confirms the brainstorm's structured-output pattern is real.",
+      "type": "grep",
+      "priority": 3,
+      "params": {"pattern": "ThinkingConfig|include_thoughts", "path": "parrot/", "case_sensitive": true, "max_results": 10}
+    },
+    {
+      "id": "Q023",
+      "intent": "Check whether the /tmp/security-reports/ default path is literally hard-coded somewhere we'll need to coordinate with.",
+      "type": "grep",
+      "priority": 3,
+      "params": {"pattern": "/tmp/security-reports|security-reports|results_dir", "path": ".", "case_sensitive": false, "max_results": 20}
+    }
+  ],
+  "expected_findings": [
+    "Confirmed import paths and class signatures for FileManagerFactory, S3FileManager, FileManagerInterface, AbstractToolkit, ScheduleType, and register_agent.",
+    "Confirmed signatures for CloudSploitToolkit.run_cloudsploit_scan, ComplianceReportToolkit's scan methods, ContainerSecurityToolkit.scan_filesystem, including their result shapes.",
+    "Verified navconfig keys (AWS creds, S3 bucket, Postgres DSN) — corrections if the brainstorm guessed wrong names.",
+    "Resolution of the asyncdb-vs-asyncpg open question by observing the codebase's actual driver convention.",
+    "Resolution of the schema-migration open question by observing the existing migration pattern (if any) under parrot/storage/.",
+    "Current SecurityAgent structure (constructor, agent_tools, existing scheduled tasks, BACKSTORY shape).",
+    "Recent commits indicating drift between the brainstorm's snapshot and the live codebase."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "SecurityAgent", "CloudSploitToolkit", "ComplianceReportToolkit", "ContainerSecurityToolkit",
+        "FileManagerFactory", "S3FileManager", "LocalFileManager", "FileManagerInterface",
+        "AbstractToolkit", "ScheduleType", "register_agent", "navconfig",
+        "ReportPersistenceMixin", "SecurityReportToolkit", "PostgresS3SecurityReportStore",
+        "WeeklySecuritySummarizer", "MonthlySecuritySummarizer"
+      ],
+      "verbs": ["introduce", "decouple", "reuse", "auto-persist", "consolidate"],
+      "polarity": "constructive"
+    },
+    "estimated_budget_use": {
+      "files_read": 7,
+      "grep_calls": 14,
+      "git_calls": 2
+    }
+  }
+}
