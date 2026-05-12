@@ -234,7 +234,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -242,8 +242,8 @@
       "parallelism_notes": "Touches only parrot/conf.py; no dependencies on other FEAT-162 modules. Could run anytime before TASK-1116. Per-spec worktree means sequential.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1115-aws-credentials-security-slot.md"
+      "completed_at": "2026-05-12T01:53:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1115-aws-credentials-security-slot.md"
     },
     {
       "id": "TASK-1116",
