@@ -91,7 +91,7 @@
       "feature_id": "FEAT-159",
       "feature": "concept-document-authority",
       "spec": "sdd/specs/concept-document-authority.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -103,7 +103,7 @@
       "assigned_to": null,
       "started_at": "2026-05-11T22:36:28+00:00",
       "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1088-hybrid-concept-match-resolver.md"
+      "file": "sdd/tasks/completed/TASK-1088-hybrid-concept-match-resolver.md"
     },
     {
       "id": "TASK-1089",
