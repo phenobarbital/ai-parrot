@@ -151,7 +151,7 @@
       "feature_id": "FEAT-159",
       "feature": "topic-authority-ontology",
       "spec": "sdd/specs/topic-authority-ontology.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "After TASK-1089 lands, parallel with TASK-1090, TASK-1092 — creates reconcile.py, no shared files.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1091-concept-catalog-reconciliation.md"
+      "completed_at": "2026-05-12T00:47:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1091-concept-catalog-reconciliation.md"
     },
     {
       "id": "TASK-1092",
