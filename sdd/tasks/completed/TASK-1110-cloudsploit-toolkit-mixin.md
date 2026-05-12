@@ -287,10 +287,14 @@ class TestCloudSploitPersistence:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-12
+**Notes**: Changed CloudSploitToolkit to inherit from ReportPersistenceMixin first,
+then AbstractToolkit. Added pop_persistence_kwargs in __init__ before super().__init__.
+Added _persist_after_scan helper. Added persist calls after run_scan and
+run_compliance_scan. Created 6 unit tests in test_toolkit_persistence.py, all pass.
+5 pre-existing failures in executor/model tests unrelated to this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `aws_account_id` field does NOT exist on CloudSploitConfig
+(verified — only aws_region and cloud_provider are present). scope dict uses
+getattr fallback: `{"account_id": None, "region": <aws_region>}`.
