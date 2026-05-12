@@ -23,6 +23,7 @@ from .models import (
     ComplianceFramework,
     EcrCollectionPlan,
     EcrCollectionResult,
+    EcrRepoPlan,
     EcrSeverity,
     ScanResult,
     SeverityLevel,
@@ -51,30 +52,71 @@ _CATALOG_FRAMEWORK_MAP: dict[ComplianceFramework, str] = {
 
 
 class _CollectEcrInput(BaseModel):
-    """Input schema for ``collect_ecr_findings``."""
+    """Input schema for ``collect_ecr_findings``.
 
-    plan: Optional[str] = Field(
-        None,
+    Precedence (highest first): ``repos`` → ``plan`` → configured default.
+    Call with no arguments to scan every repository in the configured plan.
+    """
+
+    repos: Optional[list[EcrRepoPlan]] = Field(
+        default=None,
         description=(
-            "Path to a YAML ECR collection plan. When None, falls back to "
-            "``CloudSploitConfig.ecr_plan_file``."
+            "Inline list of repositories to scan, e.g. "
+            "[{'name': 'navigator-api-tf', 'tags': ['staging']}]. "
+            "Each entry MUST use the key 'name' (NOT 'repo') and a 'tags' "
+            "list with priority order; first matching tag wins. When set, "
+            "takes precedence over 'plan' and the configured default plan. "
+            "Do NOT write a YAML file just to pass a one-off scope — use "
+            "this parameter instead."
+        ),
+    )
+    region: Optional[str] = Field(
+        default=None,
+        description=(
+            "AWS region for the inline 'repos' scope (e.g. 'us-east-1'). "
+            "Required when 'repos' is set unless CloudSploitConfig.aws_region "
+            "is configured. Ignored when 'plan' is used."
+        ),
+    )
+    aws_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Credential identifier resolved by AWSInterface (e.g. 'default'). "
+            "Only used with inline 'repos'. Defaults to 'default'."
+        ),
+    )
+    concurrency: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description=(
+            "Max concurrent ECR API calls for the inline scope. Defaults to 5. "
+            "Ignored when 'plan' is used."
+        ),
+    )
+    plan: Optional[str] = Field(
+        default=None,
+        description=(
+            "Path to a YAML ECR collection plan ON DISK (must already exist). "
+            "Falls back to CloudSploitConfig.ecr_plan_file when None. "
+            "For ad-hoc one-off scopes, prefer the 'repos' parameter instead."
         ),
     )
 
 
 class _GenerateEcrReportInput(BaseModel):
-    """Input schema for ``generate_ecr_report``."""
+    """Input schema for ``generate_ecr_report``.
+
+    The toolkit keeps the last ``collect_ecr_findings`` result internally
+    (``self._last_ecr_result``) and the report is rendered from it — do NOT
+    re-pass the previous tool's output here. Call ``collect_ecr_findings``
+    first if needed, then call ``generate_ecr_report`` with only the
+    optional ``output_path``.
+    """
 
     output_path: Optional[str] = Field(
         None,
         description="File path to write the HTML report. Auto-generated when None.",
-    )
-    result: Optional[EcrCollectionResult] = Field(
-        None,
-        description=(
-            "Override the last collected result. Defaults to "
-            "``self._last_ecr_result``."
-        ),
     )
 
 
@@ -452,33 +494,79 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
 
     @tool_schema(_CollectEcrInput)
     async def collect_ecr_findings(
-        self, plan: Optional[str] = None,
+        self,
+        repos: Optional[list[EcrRepoPlan]] = None,
+        region: Optional[str] = None,
+        aws_id: Optional[str] = None,
+        concurrency: Optional[int] = None,
+        plan: Optional[str] = None,
     ) -> EcrCollectionResult:
         """Aggregate ECR vulnerability scan findings across many repos.
 
-        Loads the collection plan from YAML, calls the ECR collector for each
-        repository in the plan (with bounded concurrency), stores the result
-        as ``self._last_ecr_result``, and persists it to the security-report
-        catalog when the persistence dependencies are wired.
+        Three ways to specify what to scan, in precedence order:
+
+        1. ``repos`` (inline) — preferred for ad-hoc, single-repo, or one-off
+           scopes.  Each entry uses key ``name`` (NOT ``repo``) and a ``tags``
+           list, e.g. ``[{"name": "navigator-api-tf", "tags": ["staging"]}]``.
+           Do NOT write a YAML file on disk just to pass an ad-hoc scope —
+           use this parameter.
+        2. ``plan`` (YAML path on disk) — for stable, version-controlled scopes.
+        3. ``CloudSploitConfig.ecr_plan_file`` — the configured default plan,
+           used when both ``repos`` and ``plan`` are ``None``.
+
+        The result is stored as ``self._last_ecr_result`` and persisted to the
+        security-report catalog when persistence dependencies are wired.
 
         Args:
-            plan: Path to a YAML ECR collection plan.  When ``None``, falls
-                back to ``CloudSploitConfig.ecr_plan_file``.
+            repos: Inline repositories to scan.  When set, takes precedence
+                over ``plan`` and the configured default plan.
+            region: AWS region for the inline scope.  Required when ``repos``
+                is set unless ``CloudSploitConfig.aws_region`` is configured.
+                Ignored when ``plan`` is used.
+            aws_id: Credential identifier for the inline scope.  Defaults to
+                ``"default"``.  Ignored when ``plan`` is used.
+            concurrency: Max concurrent ECR API calls for the inline scope.
+                Defaults to 5.  Ignored when ``plan`` is used.
+            plan: Path to a YAML ECR collection plan on disk.  Falls back to
+                ``CloudSploitConfig.ecr_plan_file`` when ``None``.
 
         Returns:
             ``EcrCollectionResult`` with per-repo findings and severity counts.
 
         Raises:
-            ValueError: When neither ``plan`` nor
-                ``CloudSploitConfig.ecr_plan_file`` is set.
+            ValueError: When no scope can be resolved from any of the inputs,
+                or when ``repos`` is set without a usable region.
         """
-        effective = self._resolve_ecr_plan(plan)
-        if not effective:
-            raise ValueError(
-                "No ECR collection plan configured.  Pass plan=<path.yaml> or "
-                "set CloudSploitConfig.ecr_plan_file."
+        if repos:
+            effective_region = region or self.config.aws_region
+            if not effective_region:
+                raise ValueError(
+                    "Inline 'repos' scope requires a region. Pass region=<aws-region> "
+                    "or set CloudSploitConfig.aws_region."
+                )
+            plan_kwargs: dict = {
+                "region": effective_region,
+                "repos": repos,
+            }
+            if aws_id is not None:
+                plan_kwargs["aws_id"] = aws_id
+            if concurrency is not None:
+                plan_kwargs["concurrency"] = concurrency
+            plan_model = EcrCollectionPlan(**plan_kwargs)
+            self.logger.debug(
+                "Using inline ECR scope: region=%s, %d repo(s)",
+                effective_region, len(repos),
             )
-        plan_model = EcrCollectionPlan.from_yaml(effective)
+        else:
+            effective = self._resolve_ecr_plan(plan)
+            if not effective:
+                raise ValueError(
+                    "No ECR collection plan configured. Pass repos=[...] for an "
+                    "inline scope, plan=<path.yaml> for a YAML file, or set "
+                    "CloudSploitConfig.ecr_plan_file."
+                )
+            plan_model = EcrCollectionPlan.from_yaml(effective)
+
         result = await self.ecr_collector.collect(plan_model)
         self._last_ecr_result = result
         await self._persist_after_ecr_scan(result)
@@ -492,19 +580,25 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
     ) -> str:
         """Render the interactive HTML ECR vulnerability report.
 
-        Uses the provided ``result`` or falls back to the most recent
-        collection stored in ``self._last_ecr_result``.  The output path is
-        auto-generated from ``CloudSploitConfig.results_dir`` when not given.
+        Uses the most recent ``collect_ecr_findings`` result stored in
+        ``self._last_ecr_result`` (or the optional ``result`` argument when
+        called programmatically; LLMs never pass it).  The output path is
+        auto-generated from ``CloudSploitConfig.results_dir`` when not given,
+        and the filename includes the repo name(s) so it's predictable.
+
+        IMPORTANT for LLM callers: the returned string is the ABSOLUTE PATH
+        of the written file.  Quote it back to the user EXACTLY — do not
+        rename, paraphrase, or invent a "friendlier" filename.
 
         Args:
             output_path: File path to write the HTML report.  Parent
                 directories are created automatically.  Auto-generated when
                 ``None``.
             result: Override the last collected result.  Defaults to
-                ``self._last_ecr_result``.
+                ``self._last_ecr_result``.  Not exposed to LLM callers.
 
         Returns:
-            File path of the written report (always a ``str``).
+            Absolute file path of the written report (always a ``str``).
 
         Raises:
             ValueError: When neither ``result`` nor ``self._last_ecr_result``
@@ -516,10 +610,41 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
                 "No ECR collection available.  Call collect_ecr_findings() "
                 "first or pass result=<EcrCollectionResult>."
             )
+        # The tool dispatcher dumps Pydantic args to dicts before invoking the
+        # bound method, so a model handed in via ``result`` arrives as a dict.
+        # Re-hydrate so the rest of the method can use attribute access.
+        if isinstance(target, dict):
+            target = EcrCollectionResult.model_validate(target)
         if not output_path:
             ts = target.generated_at.strftime("%Y%m%d_%H%M%S")
             base_dir = self.config.results_dir or "/tmp"
-            output_path = str(Path(base_dir) / f"ecr_report_{ts}.html")
+            output_path = str(
+                Path(base_dir) / self._ecr_report_filename(target, ts)
+            )
+        self.logger.info("Generating ECR HTML report at %s", output_path)
         return await self.report_generator.generate_ecr_html(
             target, output_path=output_path,
         )
+
+    @staticmethod
+    def _ecr_report_filename(result: EcrCollectionResult, ts: str) -> str:
+        """Build a deterministic, repo-aware filename for the HTML report.
+
+        Single-repo result → ``ecr_report_<repo-slug>_<ts>.html`` so callers
+        (including LLMs that paraphrase) can predict the path.  Multi-repo
+        result → ``ecr_report_<n>repos_<ts>.html``.  Empty result →
+        ``ecr_report_<ts>.html``.
+
+        Args:
+            result: The ECR collection result being rendered.
+            ts: Pre-formatted timestamp slug (``YYYYMMDD_HHMMSS``).
+
+        Returns:
+            The filename (basename only, no directory).
+        """
+        if not result.repos:
+            return f"ecr_report_{ts}.html"
+        if len(result.repos) == 1:
+            slug = result.repos[0].repo.replace("/", "-").replace(":", "-")
+            return f"ecr_report_{slug}_{ts}.html"
+        return f"ecr_report_{len(result.repos)}repos_{ts}.html"

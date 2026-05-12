@@ -148,6 +148,25 @@ _DEFAULT_WEIGHTS: Dict[str, int] = {
 }
 
 
+# Inspector v2 ``list_finding_aggregations`` takes a tagged-union
+# ``aggregationRequest``: exactly one sub-key must be set, matching the
+# ``aggregationType``. Map each accepted aggregation type to its sub-key so
+# callers can pass just the aggregation type string.
+_AGGREGATION_REQUEST_KEY: Dict[str, str] = {
+    "ACCOUNT": "accountAggregation",
+    "AMI": "amiAggregation",
+    "AWS_EC2_INSTANCE": "ec2InstanceAggregation",
+    "AWS_ECR_CONTAINER": "awsEcrContainerAggregation",
+    "AWS_LAMBDA_FUNCTION": "lambdaFunctionAggregation",
+    "FINDING_TYPE": "findingTypeAggregation",
+    "IMAGE_LAYER": "imageLayerAggregation",
+    "LAMBDA_LAYER": "lambdaLayerAggregation",
+    "PACKAGE": "packageAggregation",
+    "REPOSITORY": "repositoryAggregation",
+    "TITLE": "titleAggregation",
+}
+
+
 def _extract_aggregation_key(val: Dict[str, Any]) -> str:
     """Extract a human-readable key from an aggregation response item.
 
@@ -513,13 +532,21 @@ class InspectorToolkit(AbstractToolkit):
             Dict with keys: aggregations (list of rows with severity_counts), count (int).
         """
         try:
+            agg_type = aggregation_type.upper()
+            try:
+                request_key = _AGGREGATION_REQUEST_KEY[agg_type]
+            except KeyError:
+                raise ValueError(
+                    f"Unsupported aggregation_type '{aggregation_type}'. "
+                    f"Valid options: {sorted(_AGGREGATION_REQUEST_KEY)}"
+                )
             filter_criteria = self._build_filter_criteria(
                 severity=severity,
                 resource_type=resource_type,
             )
             kwargs: Dict[str, Any] = {
-                "aggregationType": aggregation_type.upper(),
-                "aggregationRequest": {},
+                "aggregationType": agg_type,
+                "aggregationRequest": {request_key: {}},
                 "maxResults": min(limit, 1000),
             }
             if filter_criteria:
@@ -815,7 +842,7 @@ class InspectorToolkit(AbstractToolkit):
                 # 1. Get severity counts via ACCOUNT aggregation
                 agg_resp = await ins.list_finding_aggregations(
                     aggregationType="ACCOUNT",
-                    aggregationRequest={},
+                    aggregationRequest={"accountAggregation": {}},
                 )
 
                 # 2. Get coverage statistics by resource type
@@ -960,10 +987,13 @@ class InspectorToolkit(AbstractToolkit):
                 }
                 agg_type = type_map.get(resource_type.upper(), "AWS_ECR_CONTAINER")
 
+            request_key = _AGGREGATION_REQUEST_KEY.get(
+                agg_type, "awsEcrContainerAggregation",
+            )
             async with self.aws.client("inspector2") as ins:
                 response = await ins.list_finding_aggregations(
                     aggregationType=agg_type,
-                    aggregationRequest={},
+                    aggregationRequest={request_key: {}},
                     maxResults=min(1000, limit * 10),  # fetch more to sort
                 )
 

@@ -178,7 +178,7 @@ class ReportPersistenceMixin:
         """
         if self.file_manager is None:
             return None
-        fw = framework or "none"
+        fw = framework or "security"
         date_prefix = timestamp.strftime("%Y/%m/%d")
         ts = timestamp.strftime("%Y%m%d_%H%M%S")
         s3_key = (

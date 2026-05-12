@@ -53,6 +53,11 @@ class EcrScanCollector:
         (first-match-wins).  At most ``plan.concurrency`` ECR API calls are
         in flight at any time.
 
+        The plan's ``region`` and ``aws_id`` are honoured: when they differ
+        from the collector's current ``AWSInterface``, a fresh region-scoped
+        interface is built for the call so probes hit the intended region
+        and account.  Otherwise ``self.aws`` is reused.
+
         Args:
             plan: Validated ``EcrCollectionPlan`` loaded from YAML.
 
@@ -62,10 +67,9 @@ class EcrScanCollector:
         """
         sem = asyncio.Semaphore(plan.concurrency)
 
-        # Reuse self.aws on a bare ECRToolkit instance to avoid rebuilding
-        # a fresh AWSInterface (which would re-read credentials).
+        plan_aws = self._aws_for_plan(plan)
         ecr = ECRToolkit.__new__(ECRToolkit)
-        ecr.aws = self.aws
+        ecr.aws = plan_aws
 
         repo_coros = [
             self._collect_one_repo(ecr, repo, sem) for repo in plan.repos
@@ -87,6 +91,31 @@ class EcrScanCollector:
             repos=found,
             skipped=skipped,
         )
+
+    def _aws_for_plan(self, plan: EcrCollectionPlan) -> AWSInterface:
+        """Return an ``AWSInterface`` scoped to the plan's region/aws_id.
+
+        Reuses ``self.aws`` when its region already matches ``plan.region``
+        (the common case in tests and single-region deployments); otherwise
+        constructs a fresh region-scoped ``AWSInterface`` so the boto3
+        session targets the region declared in the plan.
+
+        Args:
+            plan: The collection plan whose ``region`` and ``aws_id`` drive
+                the AWS interface selection.
+
+        Returns:
+            An ``AWSInterface`` whose region matches ``plan.region``.
+        """
+        current_region = getattr(self.aws, "region", None)
+        if isinstance(current_region, str) and current_region == plan.region:
+            return self.aws
+        self.logger.debug(
+            "Plan region=%s (aws_id=%s) differs from collector region=%r — "
+            "rebuilding AWSInterface for this call",
+            plan.region, plan.aws_id, current_region,
+        )
+        return AWSInterface(aws_id=plan.aws_id, region_name=plan.region)
 
     async def _collect_one_repo(
         self,

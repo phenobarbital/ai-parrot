@@ -176,7 +176,7 @@ class PostgresS3SecurityReportStore:
 
     def _build_key(self, ref: ReportRef) -> str:
         """Deterministic S3 key for human browsing in the AWS console."""
-        fw = ref.framework or "none"
+        fw = ref.framework or "security"
         ts = ref.produced_at.strftime("%Y/%m/%d")
         return f"{self._prefix}{ref.scanner}/{fw}/{ts}/{ref.report_id}.json"
 
