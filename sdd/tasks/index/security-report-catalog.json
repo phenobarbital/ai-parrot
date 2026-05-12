@@ -111,7 +111,7 @@
       "feature_id": "FEAT-162",
       "feature": "security-report-catalog",
       "spec": "sdd/specs/security-report-catalog.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Composes store + parsers. Producer-toolkit tasks (1110/1111/1112) depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-12T01:17:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1109-report-persistence-mixin.md"
+      "completed_at": "2026-05-12T01:35:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1109-report-persistence-mixin.md"
     },
     {
       "id": "TASK-1110",
