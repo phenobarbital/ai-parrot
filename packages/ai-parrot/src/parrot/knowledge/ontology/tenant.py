@@ -1,27 +1,27 @@
 """Multi-tenant ontology resolution and caching.
 
-Resolves the merged ontology for each tenant using the four-layer
-YAML chain (base → domain → client → authority) and caches the result in
-memory.
+Resolves the merged ontology for each tenant using the three-layer
+YAML chain (base → domain → client) and caches the result in memory.
 
-FEAT-159 additions:
-- Optional ``concept_pipeline`` parameter for ``ConceptEmbeddingPipeline``
-  integration (fire-and-forget after merge, failures are logged at WARNING).
-- ``authority/`` directory scanning: ``{ontology_dir}/authority/{tenant}.yaml``
-  is appended to the YAML chain after the client layer, before merge.
+FEAT-159 (TASK-1098): Extended to compose PG overlay (approved concept rows
+and approved schema overlay rows) on top of the YAML chain via the new
+async ``resolve_with_overlay()`` method.  The existing synchronous
+``resolve()`` is unchanged for backward compatibility.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .merger import OntologyMerger
-from .schema import MergedOntology, TenantContext
+from .schema import EntityDef, OntologyDefinition, TenantContext, TraversalPattern
 
 if TYPE_CHECKING:
-    from .concept_embedding import ConceptEmbeddingPipeline
+    from parrot.knowledge.ontology.concept_catalog.models import ConceptRow
+    from parrot.knowledge.ontology.concept_catalog.service import ConceptCatalogService
+    from parrot.knowledge.ontology.schema_overlay.models import SchemaOverlayRow
+    from parrot.knowledge.ontology.schema_overlay.service import SchemaOverlayService
 
 logger = logging.getLogger("Parrot.Ontology.Tenant")
 
@@ -33,12 +33,8 @@ class TenantOntologyManager:
         1. Start with the base ontology (ONTOLOGY_BASE_FILE).
         2. If a domain is specified, layer the domain ontology.
         3. Layer the client-specific ontology on top.
-        4. Layer the authority ontology (``authority/{tenant}.yaml``) on top
-           of the client layer, if it exists.
-        5. Merge all layers via OntologyMerger.
-        6. Optionally invoke ``ConceptEmbeddingPipeline.sync()`` (fire-and-
-           forget; failures are logged at WARNING and do not block resolve).
-        7. Cache the result in memory (invalidated on CRON refresh).
+        4. Merge all layers via OntologyMerger.
+        5. Cache the result in memory (invalidated on CRON refresh).
 
     Args:
         ontology_dir: Base directory for ontology YAML files.
@@ -47,10 +43,6 @@ class TenantOntologyManager:
         clients_dir: Subdirectory for client ontologies.
         db_template: ArangoDB database name template ({tenant} placeholder).
         pgvector_schema_template: PgVector schema name template.
-        concept_pipeline: Optional ``ConceptEmbeddingPipeline`` instance.
-            When provided, ``sync()`` is called after merge with the tenant's
-            concept list.  Failure is logged at WARNING only — resolve always
-            succeeds regardless.
     """
 
     def __init__(
@@ -61,7 +53,9 @@ class TenantOntologyManager:
         clients_dir: str | None = None,
         db_template: str | None = None,
         pgvector_schema_template: str | None = None,
-        concept_pipeline: "ConceptEmbeddingPipeline | None" = None,
+        # FEAT-159 (TASK-1098): optional PG overlay services
+        concept_catalog_service: "ConceptCatalogService | None" = None,
+        schema_overlay_service: "SchemaOverlayService | None" = None,
     ) -> None:
         # Resolve config — prefer explicit args, fall back to conf.py
         try:
@@ -90,7 +84,10 @@ class TenantOntologyManager:
 
         self._merger = OntologyMerger()
         self._cache: dict[str, TenantContext] = {}
-        self._concept_pipeline = concept_pipeline
+
+        # FEAT-159: optional PG overlay services
+        self._concept_service = concept_catalog_service
+        self._schema_service = schema_overlay_service
 
     def resolve(
         self, tenant_id: str, domain: str | None = None
@@ -155,22 +152,6 @@ class TenantOntologyManager:
                 tenant_id, client_path,
             )
 
-        # 4. Authority ontology (optional — FEAT-159)
-        # Inserted AFTER the client layer so it can override client-level
-        # concepts and traversal patterns with curated authority data.
-        authority_path = self._ontology_dir / "authority" / f"{tenant_id}.yaml"
-        if authority_path.exists():
-            chain.append(authority_path)
-            logger.debug(
-                "Authority ontology for '%s' found at %s",
-                tenant_id, authority_path,
-            )
-        else:
-            logger.debug(
-                "No authority ontology for '%s' at %s",
-                tenant_id, authority_path,
-            )
-
         if not chain:
             raise FileNotFoundError(
                 f"No ontology YAML files found for tenant '{tenant_id}'. "
@@ -197,75 +178,7 @@ class TenantOntologyManager:
             len(merged.relations),
             len(chain),
         )
-
-        # FEAT-159: fire-and-forget concept embedding sync.
-        # Pipeline failures must NOT block resolve — log WARNING and continue.
-        if self._concept_pipeline is not None:
-            self._schedule_pipeline_sync(tenant_id, merged)
-
         return ctx
-
-    def _schedule_pipeline_sync(
-        self,
-        tenant_id: str,
-        merged: MergedOntology,
-    ) -> None:
-        """Invoke ConceptEmbeddingPipeline.sync() in a non-blocking manner.
-
-        Detects whether an asyncio event loop is already running:
-
-        - **Loop running** (most common — called from async context): schedules
-          the coroutine as a ``asyncio.ensure_future`` task (fire-and-forget).
-        - **No loop running** (rare — called synchronously outside async
-          context): runs the coroutine to completion via
-          ``asyncio.get_event_loop().run_until_complete()``.
-
-        In both cases, any exception is caught and logged at WARNING so it
-        never propagates back to ``resolve()``.
-
-        Args:
-            tenant_id: Tenant identifier forwarded to the pipeline.
-            merged: Merged ontology; concepts are extracted from
-                ``merged.entities``.
-        """
-        # Build a flat list of concept dicts from the merged ontology.
-        # The "Concept" key in entities holds the EntityDef schema —
-        # concept *instances* are stored in its ``instances`` attribute when
-        # available, or we fall back to an empty list.
-        concept_entity = merged.entities.get("Concept")
-        if concept_entity is not None:
-            concepts = list(getattr(concept_entity, "instances", []) or [])
-        else:
-            concepts = []
-
-        async def _run() -> None:
-            try:
-                result = await self._concept_pipeline.sync(tenant_id, concepts)
-                logger.debug(
-                    "ConceptEmbeddingPipeline.sync tenant='%s': %r",
-                    tenant_id, result,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Concept embedding pipeline failed for tenant '%s': %s",
-                    tenant_id, exc,
-                )
-
-        try:
-            # asyncio.get_running_loop() raises RuntimeError when no loop is
-            # active (synchronous call path); that's the correct branch signal.
-            try:
-                asyncio.get_running_loop()
-                # Inside a running event loop — schedule fire-and-forget.
-                asyncio.ensure_future(_run())
-            except RuntimeError:
-                # No running loop (rare sync context) — run synchronously.
-                asyncio.run(_run())
-        except Exception as exc:
-            logger.warning(
-                "Could not schedule concept embedding pipeline for tenant '%s': %s",
-                tenant_id, exc,
-            )
 
     def invalidate(self, tenant_id: str | None = None) -> None:
         """Invalidate cached ontology for a tenant or all tenants.
@@ -289,3 +202,174 @@ class TenantOntologyManager:
             List of tenant ID strings.
         """
         return list(self._cache.keys())
+
+    # ── FEAT-159: async overlay composition ───────────────────────────────────
+
+    async def resolve_with_overlay(
+        self, tenant_id: str, domain: str | None = None
+    ) -> TenantContext:
+        """Resolve ontology composing YAML chain + PG overlay (async).
+
+        Extends the standard ``resolve()`` flow by fetching:
+        1. Approved concept rows from ``ConceptCatalogService`` (if configured).
+        2. Approved schema overlays from ``SchemaOverlayService`` (if configured).
+
+        Both are synthesised into ``OntologyDefinition`` objects and passed to
+        ``OntologyMerger.merge_with_overlay()`` on top of the YAML chain.
+
+        Falls back to ``resolve()`` (sync, YAML only) when neither service is
+        configured.  When the async path completes, the result is stored in
+        ``_cache`` using a separate key prefix (``"overlay:{tenant_id}"``) so
+        it does not evict YAML-only cached entries.
+
+        Args:
+            tenant_id: Unique tenant identifier.
+            domain: Optional domain name.
+
+        Returns:
+            ``TenantContext`` with the fully composed ontology.
+        """
+        cache_key = f"overlay:{tenant_id}"
+        if cache_key in self._cache:
+            logger.debug("Overlay cache hit for tenant '%s'", tenant_id)
+            return self._cache[cache_key]
+
+        if not self._concept_service and not self._schema_service:
+            # No PG services — delegate to synchronous YAML-only path
+            return self.resolve(tenant_id, domain)
+
+        # Build YAML chain (same logic as resolve())
+        yaml_paths = self._build_yaml_chain(tenant_id, domain)
+
+        overlay_defs: list[OntologyDefinition] = []
+
+        if self._concept_service:
+            concept_rows = await self._concept_service.get_live_concepts(tenant_id, domain=domain)
+            overlay_defs.append(self._build_concept_overlay(concept_rows, tenant_id))
+
+        if self._schema_service:
+            # C6 fix: use get_approved() — get_pending() only returns proposed/
+            # pending_review rows and would always produce an empty approved list.
+            approved_schemas = await self._schema_service.get_approved(tenant_id)
+            overlay_defs.append(self._build_schema_overlay(approved_schemas, tenant_id))
+
+        if yaml_paths:
+            merged = self._merger.merge_with_overlay(yaml_paths, overlay_defs)
+        else:
+            merged = self._merger.merge_definitions(overlay_defs) if overlay_defs else self._merger.merge(yaml_paths)
+
+        ctx = TenantContext(
+            tenant_id=tenant_id,
+            arango_db=self._db_template.format(tenant=tenant_id),
+            pgvector_schema=self._pgvector_template.format(tenant=tenant_id),
+            ontology=merged,
+        )
+
+        self._cache[cache_key] = ctx
+        logger.info(
+            "Resolved overlay ontology for tenant '%s': %d entities, %d relations "
+            "(%d PG overlay defs, from %d YAML layers)",
+            tenant_id,
+            len(merged.entities),
+            len(merged.relations),
+            len(overlay_defs),
+            len(yaml_paths),
+        )
+        return ctx
+
+    def _build_yaml_chain(
+        self, tenant_id: str, domain: str | None = None
+    ) -> list[Path]:
+        """Build the ordered YAML path chain for a tenant (no file I/O)."""
+        chain: list[Path] = []
+
+        base_path = self._ontology_dir / self._base_file
+        if base_path.exists():
+            chain.append(base_path)
+        else:
+            from .parser import OntologyParser
+            default_base = OntologyParser.get_defaults_dir() / self._base_file
+            if default_base.exists():
+                chain.append(default_base)
+
+        if domain:
+            domain_path = (
+                self._ontology_dir / self._domains_dir
+                / f"{domain}.ontology.yaml"
+            )
+            if domain_path.exists():
+                chain.append(domain_path)
+
+        client_path = (
+            self._ontology_dir / self._clients_dir
+            / f"{tenant_id}.ontology.yaml"
+        )
+        if client_path.exists():
+            chain.append(client_path)
+
+        return chain
+
+    def _build_concept_overlay(
+        self, concepts: "list[ConceptRow]", tenant_id: str
+    ) -> OntologyDefinition:
+        """Synthesise an ``OntologyDefinition`` from approved concept rows.
+
+        Each approved concept row is mapped to a minimal ``EntityDef`` whose
+        ``collection`` is ``"concepts"`` (the ArangoDB materialized collection).
+
+        Args:
+            concepts: List of approved ``ConceptRow`` objects.
+            tenant_id: Owning tenant (used in naming).
+
+        Returns:
+            ``OntologyDefinition`` with one entry per concept.
+        """
+        entities: dict[str, EntityDef] = {}
+        for concept in concepts:
+            entities[concept.slug] = EntityDef(
+                collection="concepts",
+                key_field="pg_concept_id",
+            )
+        return OntologyDefinition(
+            name=f"pg_concepts_{tenant_id}",
+            entities=entities,
+        )
+
+    def _build_schema_overlay(
+        self, schema_rows: "list[SchemaOverlayRow]", tenant_id: str
+    ) -> OntologyDefinition:
+        """Synthesise an ``OntologyDefinition`` from approved schema overlay rows.
+
+        Args:
+            schema_rows: List of approved ``SchemaOverlayRow`` objects.
+            tenant_id: Owning tenant.
+
+        Returns:
+            ``OntologyDefinition`` composing all schema overlay items.
+        """
+        entities: dict[str, EntityDef] = {}
+        patterns: dict[str, TraversalPattern] = {}
+
+        for row in schema_rows:
+            if row.overlay_kind == "entity_type":
+                try:
+                    entities[row.name] = EntityDef(**row.definition)
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping schema overlay entity '%s': %s", row.name, exc
+                    )
+            elif row.overlay_kind == "traversal_pattern":
+                try:
+                    patterns[row.name] = TraversalPattern(**row.definition)
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping schema overlay pattern '%s': %s", row.name, exc
+                    )
+            # relation_type: would need RelationDef; skipped in v1
+            # (relations require both endpoints to already exist)
+
+        return OntologyDefinition(
+            name=f"pg_schema_{tenant_id}",
+            entities=entities,
+            traversal_patterns=patterns,
+        )
