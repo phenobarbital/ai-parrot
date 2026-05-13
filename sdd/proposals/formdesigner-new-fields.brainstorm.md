@@ -166,7 +166,7 @@ Shipping plan: **three internal phases inside one feature**:
 | `aiohttp` | HTTP client for `OptionsLoader` and `RemoteResponseResolver` | Already a project dep; pattern in `services/forwarder.py:36` |
 | `pydantic` (>=2) | All new data models (`AuthContext`, `RemoteResponseSpec`, extended `OptionsSource`, extended `FieldConstraints`) | Already pinned in `pyproject.toml`; consistent with `core/schema.py` `extra="forbid"` |
 | `redis.asyncio` | Backing store for `OptionsLoader` TTL cache | Already used in `services/cache.py` |
-| `pycountry` (NEW) | Reference data for `LOCATION` field (ISO 3166 country codes + names) | ~26 KB; well-maintained; alternative is bundling our own CSV. To be decided in Phase 2. |
+| `pycountry` (NEW) | Reference data for `LOCATION` field (ISO 3166 country codes + names) | ~26 KB; well-maintained. Adopted (see Open Questions). Added to `packages/parrot-formdesigner/pyproject.toml` in Phase 2. |
 
 🔗 **Existing Code to Reuse:**
 - `packages/parrot-formdesigner/src/parrot_formdesigner/services/forwarder.py:36` — `SubmissionForwarder` is the template for `RemoteResponseResolver` (aiohttp session, timeout, auth header resolution).
@@ -457,7 +457,7 @@ For authoring **Remote Response**, the author writes:
 | `packages/parrot-formdesigner/src/parrot_formdesigner/controls/builtin.py` | extends | One `register_field_control()` call per new type. Auto-surfaces in `GET /form-controls`. |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | extends | Construct `AuthContext` from the inbound request and pass to renderer / validator. |
 | `packages/parrot-formdesigner/tests/` | extends | New unit tests per validator branch; new integration tests for round-trip extractor → schema → renderer. Mock aiohttp server for `OptionsLoader` / `RemoteResponseResolver` tests. |
-| `packages/parrot-formdesigner/pyproject.toml` | optionally extends | Add `pycountry` if we go that route for `LOCATION` (decision deferred to Phase 2). |
+| `packages/parrot-formdesigner/pyproject.toml` | extends | Add `pycountry` dependency for `LOCATION` reference data (adopted per Open Questions). |
 
 No impact on `parrot` core, integrations (Telegram, MS Teams, Slack), MCP
 servers, or other packages. FEAT-166 (multi-origin) is unaffected because
@@ -661,32 +661,54 @@ from parrot_formdesigner.services.forwarder import SubmissionForwarder, ForwardR
 
 ## Open Questions
 
-- [ ] `SIGNATURE` storage format: PNG image only, SVG stroke path only, or
+- [x] `SIGNATURE` storage format: PNG image only, SVG stroke path only, or
   both (SVG for canonical strokes + rendered PNG for previews)? Affects
   validator MIME-type list and the data shape stored on submission.
-  — *Owner: jesuslara*
-- [ ] `AVAILABILITY` data model: discrete `list[{start, end}]` slots only,
+  — *Owner: jesuslara*: **Both.** Store SVG stroke path as canonical data
+  + rendered PNG for preview/embedding. Validator accepts both MIME types
+  (`image/svg+xml`, `image/png`); submitted value is a dict
+  `{"svg": "<path d=...>", "png": "<base64-or-url>"}`.
+- [x] `AVAILABILITY` data model: discrete `list[{start, end}]` slots only,
   or also a recurrence representation (RRULE, weekly templates)? Recurrence
   is significantly more complex; default proposal is discrete slots only.
-  — *Owner: jesuslara*
-- [ ] `LOCATION` reference data source: bundle `pycountry` (~26 KB) as a
+  — *Owner: jesuslara*: **Discrete slots only.** No RRULE support in this
+  feature. Submitted value is `list[{start: datetime, end: datetime}]`.
+  Recurrence can be added in a future feature if user demand emerges.
+- [x] `LOCATION` reference data source: bundle `pycountry` (~26 KB) as a
   new dependency, ship our own ISO 3166 CSV, or fetch via `OptionsLoader`
   against a curated endpoint? Bundling keeps things offline; an endpoint
-  makes the list updatable without releases. — *Owner: jesuslara*
-- [ ] `FieldRenderer` registry migration backwards compatibility: are
+  makes the list updatable without releases. — *Owner: jesuslara*:
+  **`pycountry`.** Add as a new dependency in
+  `packages/parrot-formdesigner/pyproject.toml`. Offline, well-maintained,
+  no network dependency at form-render time.
+- [x] `FieldRenderer` registry migration backwards compatibility: are
   external consumers of `HTML5Renderer` / `AdaptiveCardRenderer` /
   `PdfRenderer` allowed to break, or must the public `render()` signature
   stay byte-identical? If the latter, the registry is internal-only and
-  the if/elif is the public-facing shim. — *Owner: jesuslara*
-- [ ] `AuthContext` propagation when forms are embedded in other forms
+  the if/elif is the public-facing shim. — *Owner: jesuslara*: **Yes —
+  keep `render()` signature byte-identical.** The `FieldRenderer` registry
+  is internal-only (private module attribute or `_registry`); the public
+  `render()` entry point on each renderer class is unchanged. External
+  callers see no API change.
+- [x] `AuthContext` propagation when forms are embedded in other forms
   (`GROUP` / `ARRAY` with nested fields that need auth): does the parent's
   `AuthContext` cascade, or must each nested call re-resolve? Default
-  proposal is cascade. — *Owner: jesuslara*
-- [ ] `REMOTE_RESPONSE` retry / idempotency policy: if the form is
+  proposal is cascade. — *Owner: jesuslara*: **Cascade** (per recommended
+  default). Parent `AuthContext` flows into nested `GROUP`/`ARRAY` field
+  rendering and validation without re-resolution.
+- [x] `REMOTE_RESPONSE` retry / idempotency policy: if the form is
   re-submitted (user re-validates), do we re-call the API or memoise the
   prior response? Memoising risks staleness; re-calling risks duplicate
-  side-effects. — *Owner: jesuslara*
-- [ ] Fallback policy display: do we need a per-renderer `WARNINGS` channel
+  side-effects. — *Owner: jesuslara*: **Retry** — re-call the API on every
+  submission. Callers concerned about duplicate side-effects should design
+  their endpoint to be idempotent (e.g. use a content hash or
+  `Idempotency-Key` header derived from the content). The spec should
+  surface this expectation in the `REMOTE_RESPONSE` documentation.
+- [x] Fallback policy display: do we need a per-renderer `WARNINGS` channel
   in `RenderedForm` so callers can detect degraded rendering, or is silent
   fallback acceptable? Default proposal is explicit warnings.
-  — *Owner: jesuslara*
+  — *Owner: jesuslara*: **Yes — explicit warnings channel.** Add
+  `warnings: list[RenderWarning]` to `RenderedForm` (Pydantic). Each
+  degraded (FieldType, renderer) pair appends a warning with
+  `field_id`, `field_type`, `renderer`, `reason`. Callers can detect lossy
+  rendering programmatically.
