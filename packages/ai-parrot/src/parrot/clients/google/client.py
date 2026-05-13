@@ -82,6 +82,17 @@ logging.getLogger(
 ).setLevel(logging.WARNING)  # Suppress GenAI warnings
 
 
+# Sentinel returned by ``_create_simple_summary`` when the LLM consumed
+# its full tool-calling budget without producing any synthesised text.
+# Callers (e.g. ``PandasAgent``) can detect this exact string to surface
+# a graceful "agent ran out of attempts" message instead of treating the
+# tool-call trace as a real answer.
+LLM_NO_FINAL_ANSWER = (
+    "The model exhausted its tool-calling budget without producing a "
+    "final answer. Please rephrase your question or try again."
+)
+
+
 class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     """
     Client for interacting with Google's Generative AI, with support for parallel function calling.
@@ -2571,9 +2582,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             elif final_tc.result:
                 return str(final_tc.result)[:2000]
 
-        # Last resort: show what tools were called
+        # Last resort: the LLM exhausted its tool-calling budget without
+        # synthesizing a final answer. Surface a clear failure message
+        # instead of a debug-style trace of tool names — the caller can
+        # detect this via the LLM_NO_FINAL_ANSWER sentinel below.
         tool_names = [tc.name for tc in all_tool_calls]
-        return f"Completed {len(all_tool_calls)} tool calls: {', '.join(tool_names)}"
+        self.logger.error(
+            "LLM exhausted tool-calling loop without producing a final "
+            "answer. Tools invoked (%d): %s",
+            len(all_tool_calls),
+            ", ".join(tool_names),
+        )
+        return LLM_NO_FINAL_ANSWER
 
     def _build_function_declarations(self) -> List[types.FunctionDeclaration]:
         """Build function declarations for Google GenAI tools."""

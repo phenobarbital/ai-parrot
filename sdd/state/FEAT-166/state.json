@@ -1,0 +1,43 @@
+{
+  "feat_id": "FEAT-166",
+  "title": "multi-origin-formdesigner",
+  "phase": "committed",
+  "mode": "enrichment",
+  "started_at": "2026-05-13T00:00:00Z",
+  "updated_at": "2026-05-13T00:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-166/source.md",
+    "summary_oneline": "Make DatabaseFormTool pluggable via AbstractFormService; migrate networkninja query into a NetworkninjaFormService."
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 1,
+    "grep_calls": 0,
+    "git_calls": 0,
+    "depth_reached": 0,
+    "wall_seconds": 0
+  },
+  "phases": {
+    "source": {"status": "complete", "completed_at": "2026-05-13T00:00:00Z"},
+    "plan": {"status": "complete", "approved_by_user": true},
+    "research": {"status": "complete", "files_read": 10, "grep_calls": 4, "git_calls": 1, "truncated": false},
+    "synthesis": {"status": "complete", "overall_confidence": "high"},
+    "review": {"status": "complete", "approved_by_user": true},
+    "qa": {"status": "complete", "questions_total": 3, "questions_answered": 3},
+    "output": {"status": "committed", "proposal_path": "sdd/proposals/multi-origin-formdesigner.proposal.md", "commit_sha": "bca446e89907da825aed398337a760206051b640"}
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "output",
+    "next_action": "Commit proposal"
+  }
+}

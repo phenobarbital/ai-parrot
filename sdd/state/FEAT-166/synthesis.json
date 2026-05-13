@@ -1,0 +1,186 @@
+{
+  "feat_id": "FEAT-166",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary_oneline": "Refactor DatabaseFormTool into a thin dispatcher over a pluggable AbstractFormService; migrate the current networkninja logic into a NetworkninjaFormService.",
+  "localization": [
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py",
+      "symbol": "DatabaseFormTool",
+      "line_range": "135-283",
+      "role": "Becomes a thin dispatcher; keeps args_schema, registry coupling, error handling, logging.",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py",
+      "symbol": "DatabaseFormInput",
+      "line_range": "113-127",
+      "role": "Gains a `service: str = 'networkninja'` field.",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py",
+      "symbol": "_FORM_QUERY, _FIELD_TYPE_MAP, _OPTION_FIELD_TYPES, _fetch_form_row, _build_form_schema, _build_metadata_index, _build_question_id_index, _collect_select_options, _map_block_to_section, _map_question_to_field, _map_logic_groups, _get_dsn",
+      "line_range": "43-731",
+      "role": "Move to NetworkninjaFormService (everything DB-specific and mapping-specific).",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/services/ (NEW)",
+      "symbol": "AbstractFormService, NetworkninjaFormService, register_form_service, get_form_service",
+      "line_range": "n/a",
+      "role": "New sub-package implementing the strategy pattern.",
+      "evidence": ["F004", "F006"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/schema.py",
+      "symbol": "FormSchema",
+      "line_range": "108-142",
+      "role": "Service return contract — no changes needed.",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py",
+      "symbol": "FormRegistry.register",
+      "line_range": "146-189",
+      "role": "Still called by the tool, NOT by the service.",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "tests/forms/test_database_form.py",
+      "symbol": "TestFieldTypeMapping, TestConditionalLogic, TestValidationMapping, TestQuestionBlockSections, TestFullFormGeneration",
+      "line_range": "1-end",
+      "role": "Retarget existing 27 tests onto NetworkninjaFormService; keep a small smoke suite at the tool level for dispatch behavior.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py",
+      "symbol": "FormHandlers.__init__",
+      "line_range": "67-74",
+      "role": "Unchanged — constructs DatabaseFormTool(registry=…); the default service='networkninja' preserves behavior.",
+      "evidence": ["F005"]
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "DatabaseFormTool must keep `DatabaseFormTool(registry=…)` constructor signature working with current defaults to avoid changes in `api/handlers.py`.",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "Tool implements AbstractTool's _execute(**kwargs); the framework forwards validated args_schema fields as kwargs — adding `service` to DatabaseFormInput is enough to surface it.",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "claim": "Service contract must return a fully-constructed FormSchema Pydantic instance (not a dict), since the tool registers it and downstream consumers rely on validation.",
+      "confidence": "high",
+      "evidence": ["F002", "F004"]
+    },
+    {
+      "claim": "Existing precedent for plug-and-play sub-components is a module-level dict + register_*() function (controls/registry.py). The new services package should follow the same pattern instead of importlib.import_module.",
+      "confidence": "high",
+      "evidence": ["F006"]
+    },
+    {
+      "claim": "Name `services` is already used at the package level (`parrot_formdesigner.services`). The new sub-package `parrot_formdesigner.tools.services` is a distinct path but worth documenting to avoid confusion.",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "claim": "The fallback copy at `packages/ai-parrot/src/parrot/forms/tools/database_form.py` is only used when parrot-formdesigner is not installed; leaving it as a frozen legacy snapshot keeps scope tight.",
+      "confidence": "medium",
+      "evidence": ["F007"]
+    }
+  ],
+  "recent_history": [
+    {
+      "path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py",
+      "note": "Single recent commit `f79904f2 — migration of form designer`. No other churn since the migration into parrot-formdesigner.",
+      "evidence": ["F005"]
+    }
+  ],
+  "hypothesis": {
+    "id": "H1",
+    "statement": "Split the tool into a dispatcher + a strategy: `DatabaseFormTool` validates args, looks up the service class in a module-level registry by name, instantiates it, calls `service.build_form_schema(**params)`, then registers the returned FormSchema. `NetworkninjaFormService` owns all current SQL + mapping logic. `AbstractFormService` defines `build_form_schema(...) -> FormSchema` as the only abstract method, plus helpers for DB access.",
+    "confidence": "high",
+    "supporting_findings": ["F001", "F003", "F004", "F006"],
+    "reasoning": "Matches the user's explicit brief, aligns with the existing registry-by-name convention in `controls/registry.py`, preserves backward compatibility, and keeps the abstraction at the right level (service = source of truth for FormSchema generation; tool = framework adapter)."
+  },
+  "scope": {
+    "in_scope": [
+      "New sub-package `parrot_formdesigner.tools.services/` with `AbstractFormService`, `registry` (register/get), and `NetworkninjaFormService`.",
+      "Migration of `_FORM_QUERY`, `_FIELD_TYPE_MAP`, `_OPTION_FIELD_TYPES`, and all `_build_*` / `_map_*` / `_collect_*` / `_fetch_form_row` / `_get_dsn` logic from the tool into `NetworkninjaFormService`.",
+      "`DatabaseFormInput.service: str = 'networkninja'` field.",
+      "`DatabaseFormTool._execute` rewrites to: validate service is registered → instantiate → call → register → return ToolResult.",
+      "Test split: relocate the 27 networkninja-specific tests onto the service; add a small dispatcher-level test suite at the tool layer (unknown service errors cleanly; service is invoked with correct params).",
+      "`parrot_formdesigner.tools.services.__init__` exports `AbstractFormService`, `register_form_service`, `get_form_service`, `NetworkninjaFormService`, and registers `networkninja` at import time."
+    ],
+    "out_of_scope": [
+      "REST API service (explicitly excluded by the user).",
+      "Refactor of `packages/ai-parrot/src/parrot/forms/tools/database_form.py` (legacy fallback). Leave as frozen snapshot.",
+      "Changes to `FormRegistry` / `FormSchema` / `AbstractTool`.",
+      "Plumbing a `service` field through the HTTP layer in `api/handlers.py` (not required for backward-compat).",
+      "Renaming the existing `parrot_formdesigner.services` package."
+    ],
+    "confidence": "high"
+  },
+  "confidence_map": [
+    {"claim": "DatabaseFormTool target path is parrot-formdesigner (not parrot_designer)", "level": "high", "source": "F001"},
+    {"claim": "All current SQL + mapping logic is networkninja-specific and should move", "level": "high", "source": "F001"},
+    {"claim": "FormSchema is the right return type", "level": "high", "source": "F002"},
+    {"claim": "Adding `service` to DatabaseFormInput is enough to surface it in _execute", "level": "high", "source": "F003"},
+    {"claim": "Tool keeps registry coupling; service stays pure", "level": "high", "source": "F004"},
+    {"claim": "Module-level registry + register_*() function is the right pattern", "level": "high", "source": "F006"},
+    {"claim": "api/handlers.py needs no changes given default='networkninja'", "level": "high", "source": "F005"},
+    {"claim": "Existing 27 tests need to move to the service layer", "level": "high", "source": "F005"},
+    {"claim": "Legacy duplicate at parrot.forms.tools.database_form can be left alone", "level": "medium", "source": "F007"},
+    {"claim": "AbstractFormService should expose `build_form_schema(**params) -> FormSchema` as the single abstract method (vs. splitting into fetch + transform)", "level": "medium", "source": "F001"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should `AbstractFormService` expose **one** abstract method `build_form_schema(**params) -> FormSchema`, or **two** (`fetch_raw_data` + `build_form_schema_from_raw`)? The two-method shape is more testable and lets future REST services skip fetching with their own pattern.",
+      "context": "Affects the service ABC contract.",
+      "related_claims": ["scope.in_scope"],
+      "plausible_answers": [
+        "Single method: `build_form_schema(**params) -> FormSchema` (simpler).",
+        "Two methods: `fetch(**params) -> dict[str, Any]` + `to_form_schema(raw) -> FormSchema` (more testable, future-proof).",
+        "Single method + protected helpers (`_fetch_form_row`, `_to_schema`) as conventions, not abstract."
+      ],
+      "user_answer": "Two methods: fetch(**params) -> dict[str, Any] + to_form_schema(raw) -> FormSchema. More testable; future REST services can override fetch only."
+    },
+    {
+      "id": "U2",
+      "question": "How does `DatabaseFormTool` pass DB connectivity to the service? Options: (a) tool builds the DB connection from `dsn=` and passes it in; (b) each service owns its own DSN/env var; (c) service takes both at construction.",
+      "context": "Currently `DatabaseFormTool._get_dsn()` resolves DSN from arg → `PARROT_DB_DSN` → `parrot.conf.default_dsn`. After refactor that logic must live somewhere.",
+      "related_claims": ["constraint: backward compat"],
+      "plausible_answers": [
+        "Tool keeps `dsn=`/`db=` kwargs and passes them to the service via constructor (preserves current public API).",
+        "Service handles its own DSN (e.g. `PARROT_NETWORKNINJA_DSN`) — tool drops `dsn`/`db`.",
+        "Both — service constructor takes optional `dsn`/`db`; tool forwards if provided."
+      ],
+      "user_answer": "Service owns its own DSN. Each service resolves its own env var (e.g. PARROT_NETWORKNINJA_DSN). Tool drops dsn/db kwargs."
+    },
+    {
+      "id": "U3",
+      "question": "Are `formid` and `orgid` kept as top-level fields on `DatabaseFormInput`, or are they nested under a `params: dict` that each service interprets? The first keeps the LLM tool-call shape stable; the second is more service-agnostic.",
+      "context": "Other future services (different DBs, REST APIs) may not use formid/orgid at all.",
+      "related_claims": ["DatabaseFormInput shape"],
+      "plausible_answers": [
+        "Keep formid/orgid at top level (LLM-friendly, networkninja-leaning) — out-of-scope services document their own input shapes.",
+        "Replace with `params: dict[str, Any]` — fully generic but loses arg validation/LLM hinting.",
+        "Hybrid: keep formid/orgid + add optional `params: dict[str, Any]` overlay."
+      ],
+      "user_answer": "Hybrid. Keep formid + orgid at top level for LLM-friendly tool-calls; add optional params: dict[str, Any] | None overlay for service-specific extras."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Hypothesis is high-confidence, localization is verified against real source, scope is tight, and only 3 small design decisions remain — these are well-suited to be resolved in the spec frontmatter Q&A.",
+    "alternatives": [
+      {"command": "sdd-brainstorm", "when": "if you want to compare 2-3 service-loader designs side-by-side before committing"},
+      {"command": "sdd-task", "when": "trivial path only — likely not appropriate here given the test refactor footprint"}
+    ]
+  }
+}

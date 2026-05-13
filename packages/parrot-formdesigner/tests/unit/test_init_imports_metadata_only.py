@@ -90,7 +90,7 @@ def test_metadata_attributes_exposed(monkeypatch):
     """Top-level still exposes version metadata."""
     monkeypatch.delitem(sys.modules, "parrot_formdesigner", raising=False)
     pkg = importlib.import_module("parrot_formdesigner")
-    assert pkg.__version__ == "0.2.0"
+    assert pkg.__version__ == "0.3.0"
     assert pkg.__title__ == "parrot-formdesigner"
     assert hasattr(pkg, "__author__")
     assert hasattr(pkg, "__license__")

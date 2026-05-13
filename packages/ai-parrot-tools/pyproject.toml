@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.47",
+    "ai-parrot>=0.24.48",
 ]
 
 [project.optional-dependencies]
@@ -83,6 +83,11 @@ version = {attr = "parrot_tools.__version__"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["parrot_tools*"]
+
+[tool.setuptools.package-data]
+"parrot_tools" = ["py.typed"]
+"parrot_tools.cloudsploit" = ["templates/*.html"]
+"parrot_tools.security.reports" = ["templates/*.html"]
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }

@@ -1,0 +1,133 @@
+{
+  "feature": "multi-origin-formdesigner",
+  "feature_id": "FEAT-166",
+  "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-13T00:00:00Z",
+  "completed_at": "2026-05-13T14:33:39+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1125",
+      "slug": "abstract-form-service",
+      "title": "AbstractFormService ABC",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational — every subsequent task imports this ABC. Must land first.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T11:54:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1125-abstract-form-service.md"
+    },
+    {
+      "id": "TASK-1126",
+      "slug": "form-service-registry",
+      "title": "Form-Service Registry",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1125"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports AbstractFormService from TASK-1125 for the type-hint; cannot start before 1125 lands.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T11:55:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1126-form-service-registry.md"
+    },
+    {
+      "id": "TASK-1127",
+      "slug": "networkninja-form-service",
+      "title": "NetworkninjaFormService — migrate existing logic",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1125",
+        "TASK-1126"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Subclasses AbstractFormService (TASK-1125). TASK-1126 not strictly required for this file but the import-time registration in TASK-1128 needs both — keeping the dependency for clean ordering.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T11:57:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1127-networkninja-form-service.md"
+    },
+    {
+      "id": "TASK-1128",
+      "slug": "services-package-init",
+      "title": "Services sub-package init + self-registration",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1125",
+        "TASK-1126",
+        "TASK-1127"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports all three prior modules to re-export and call register_form_service('networkninja', NetworkninjaFormService).",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T11:57:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1128-services-package-init.md"
+    },
+    {
+      "id": "TASK-1129",
+      "slug": "database-form-tool-dispatcher",
+      "title": "DatabaseFormTool — dispatcher refactor + input update + version bump",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1128"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports get_form_service from the sub-package built up by 1125-1128; deletes the symbols that 1127 moved.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T12:00:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1129-database-form-tool-dispatcher.md"
+    },
+    {
+      "id": "TASK-1130",
+      "slug": "test-split-and-fixtures",
+      "title": "Test split — relocate 27 mapping tests + shared fixtures",
+      "feature_id": "FEAT-166",
+      "feature": "multi-origin-formdesigner",
+      "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1127",
+        "TASK-1129"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Mapping tests target NetworkninjaFormService (TASK-1127); dispatcher smoke tests exercise the rewritten DatabaseFormTool (TASK-1129).",
+      "assigned_to": null,
+      "started_at": "2026-05-13T11:52:10+00:00",
+      "completed_at": "2026-05-13T12:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1130-test-split-and-fixtures.md"
+    }
+  ]
+}

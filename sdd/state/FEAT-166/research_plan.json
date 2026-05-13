@@ -1,0 +1,90 @@
+{
+  "feat_id": "FEAT-166",
+  "mode_hint": "enrichment",
+  "rationale": "Source is detailed and prescriptive (refactor pattern known). Research must verify the target path, AbstractTool contract, FormSchema/FormRegistry shape, existing service-registration patterns, and existing tests/callers — not explore design space.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "read",
+      "intent": "Confirm DatabaseFormTool location and read full module to map current logic that must move to a service.",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q002",
+      "type": "read",
+      "intent": "Inspect FormSchema and supporting types to confirm the service's return contract.",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/core/schema.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "intent": "Inspect AbstractTool / ToolResult to confirm DatabaseFormTool's required interface.",
+      "params": {"target": "parrot.tools.abstract"},
+      "priority": "high"
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "intent": "Inspect FormRegistry to know what register() expects and whether the service or the tool should call it.",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/services/registry.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q005",
+      "type": "glob",
+      "intent": "Look for similar service/strategy registry patterns elsewhere in parrot to align this new sub-package.",
+      "params": {"pattern": "packages/**/registry.py"},
+      "priority": "medium"
+    },
+    {
+      "id": "Q006",
+      "type": "grep",
+      "intent": "Identify callers of DatabaseFormTool/DatabaseFormInput to assess backward-compatibility impact of adding a service field.",
+      "params": {"pattern": "DatabaseFormTool|DatabaseFormInput", "globs": ["**/*.py"]},
+      "priority": "high"
+    },
+    {
+      "id": "Q007",
+      "type": "glob",
+      "intent": "List existing tests for DatabaseFormTool so the proposal can flag updates / new service tests.",
+      "params": {"pattern": "packages/parrot-formdesigner/**/test*database_form*.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q008",
+      "type": "grep",
+      "intent": "Detect existing dynamic loader patterns (e.g. importlib.import_module, register decorator) to recommend the right resolution strategy.",
+      "params": {"pattern": "importlib.import_module|@register|entry_points", "globs": ["packages/parrot-formdesigner/**/*.py", "packages/ai-parrot/**/registry*.py"]},
+      "priority": "medium"
+    },
+    {
+      "id": "Q009",
+      "type": "git_log",
+      "intent": "Get recent activity on database_form.py to surface ongoing churn or recent design intent.",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/database_form.py", "limit": 10},
+      "priority": "medium"
+    },
+    {
+      "id": "Q010",
+      "type": "read",
+      "intent": "Inspect tools/__init__.py to know what symbols the new package must export.",
+      "params": {"path": "packages/parrot-formdesigner/src/parrot_formdesigner/tools/__init__.py"},
+      "priority": "low"
+    },
+    {
+      "id": "Q011",
+      "type": "read",
+      "intent": "Inspect the sibling parrot/forms/tools/database_form.py to clarify whether it shares logic with parrot-formdesigner or is a stale duplicate.",
+      "params": {"path": "packages/ai-parrot/src/parrot/forms/tools/database_form.py"},
+      "priority": "medium"
+    }
+  ],
+  "budget_check": {
+    "estimated_reads": 7,
+    "estimated_greps": 2,
+    "estimated_git": 1,
+    "within_budget": true
+  }
+}
