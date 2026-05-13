@@ -32,7 +32,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Only depends on TASK-1131 (package structure). Can run in parallel with TASK-1133 since they share no files.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1132-response-renderer.md"
+      "completed_at": "2026-05-13T18:43:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1132-response-renderer.md"
     },
     {
       "id": "TASK-1133",
