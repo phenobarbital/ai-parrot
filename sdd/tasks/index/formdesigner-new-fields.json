@@ -172,7 +172,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -182,8 +182,8 @@
       "parallelism_notes": "Gate for Phase 2 — all Phase 2 tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1147-fieldtype-enum-additions.md"
+      "completed_at": "2026-05-13T20:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1147-fieldtype-enum-additions.md"
     },
     {
       "id": "TASK-1148",
