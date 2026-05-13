@@ -84,5 +84,9 @@ version = {attr = "parrot_tools.__version__"}
 where = ["src"]
 include = ["parrot_tools*"]
 
+[tool.setuptools.package-data]
+"parrot_tools.cloudsploit" = ["templates/*.html"]
+"parrot_tools.security.reports" = ["templates/*.html"]
+
 [tool.uv.sources]
 ai-parrot = { workspace = true }

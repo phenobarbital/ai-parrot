@@ -486,6 +486,7 @@ namespaces = true
 
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl"]
+"parrot.auth" = ["templates/*.html"]
 "parrot.integrations.telegram" = ["static/*.html"]
 "parrot.voice" = ["ui/*.html", "ui/*.js", "ui/*.css"]
 "parrot.outputs.formats.assets" = ["*.js", "*.css"]
