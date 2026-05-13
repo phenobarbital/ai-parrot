@@ -115,7 +115,7 @@
       "feature_id": "FEAT-166",
       "feature": "multi-origin-formdesigner",
       "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Mapping tests target NetworkninjaFormService (TASK-1127); dispatcher smoke tests exercise the rewritten DatabaseFormTool (TASK-1129).",
       "assigned_to": null,
       "started_at": "2026-05-13T11:52:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1130-test-split-and-fixtures.md"
+      "completed_at": "2026-05-13T12:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1130-test-split-and-fixtures.md"
     }
   ]
 }
