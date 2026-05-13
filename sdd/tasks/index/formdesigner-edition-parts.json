@@ -14,14 +14,14 @@
       "feature_id": "FEAT-169",
       "feature": "formdesigner-edition-parts",
       "spec": "sdd/specs/formdesigner-edition-parts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Core module — TASK-1132 and TASK-1133 depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T23:22:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1131-edit-toolkit-module.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-169",
       "feature": "formdesigner-edition-parts",
       "spec": "sdd/specs/formdesigner-edition-parts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1131"],
+      "depends_on": [
+        "TASK-1131"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies create_form.py which imports EditToolkit from TASK-1131",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T23:22:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1132-createformtool-toolkit-integration.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-169",
       "feature": "formdesigner-edition-parts",
       "spec": "sdd/specs/formdesigner-edition-parts.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1131", "TASK-1132"],
+      "depends_on": [
+        "TASK-1131",
+        "TASK-1132"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests both TASK-1131 and TASK-1132 code — must run after both",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T23:22:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1133-edit-toolkit-tests.md"
     }
