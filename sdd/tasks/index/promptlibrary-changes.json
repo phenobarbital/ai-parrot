@@ -70,7 +70,7 @@
       "feature_id": "FEAT-167",
       "feature": "promptlibrary-changes",
       "spec": "sdd/specs/promptlibrary-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -78,8 +78,8 @@
       "parallelism_notes": "Module B2 — independent SQL file; can run alongside TASK-1133 and TASK-1135 (schema must match TASK-1135 — both follow spec §2).",
       "assigned_to": null,
       "started_at": "2026-05-13T18:49:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1136-user-prompts-ddl.md"
+      "completed_at": "2026-05-13T18:53:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1136-user-prompts-ddl.md"
     },
     {
       "id": "TASK-1137",
