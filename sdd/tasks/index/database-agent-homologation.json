@@ -92,7 +92,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Modifies DatabaseAgent.ask() (re-ask loop) and SQLToolkit.execute_query (retry dispatch). Both files are touched by TASK-1128; sequential is mandatory.",
       "assigned_to": null,
       "started_at": "2026-05-13T16:36:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1129-toolkit-retry-wiring.md"
+      "completed_at": "2026-05-13T17:02:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1129-toolkit-retry-wiring.md"
     },
     {
       "id": "TASK-1130",
