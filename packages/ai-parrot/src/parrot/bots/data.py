@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
 import asyncio
+import inspect
 import re
 import uuid
 import contextlib
@@ -259,6 +260,55 @@ Write and execute Python code using the exact variable names from Steps 1/2.
 6. `get_dataframe` — Get DataFrame info and samples.
 7. `database_query` — Query external databases if needed.
 
+## DATASET ACCESS POLICY (STRICT — NO BYPASS):
+`list_datasets` is the **authoritative allow-list** of data you may use.
+If a dataset is not in `list_datasets` (and not already visible in the
+dataframe context above), it does **not exist** for this agent.
+
+- **Refusal protocol**: when the user asks about data that is not in the
+  catalog, respond:
+  **"That dataset is not available in this agent's catalog."**
+  Then stop. Do not attempt to retrieve it through any other means, and
+  do not suggest a "similar" dataset unless the user explicitly asks.
+
+- **`python_repl_pandas` MUST NOT be used to load data from outside the
+  catalog.** The following patterns are **forbidden** — even if they look
+  reasonable, even if the user asks for them, even "just to check":
+  • `pd.read_csv` / `read_excel` / `read_json` / `read_parquet` /
+    `read_sql` / `read_html` / `read_clipboard` / `read_pickle`
+  • `open(...)`, `pathlib.Path(...).read_*`, `glob`, `os.listdir`,
+    any filesystem access
+  • `requests`, `urllib`, `httpx`, `aiohttp`, any HTTP client
+  • `sqlalchemy`, `psycopg`, `pymysql`, any direct DB driver
+  • Hardcoded URLs, file paths, or credentials read from environment vars
+
+- The **only** authorized way to bring new data into memory is
+  `fetch_dataset(name=...)` for an entry that already appears in
+  `list_datasets` (typically with `loaded: false`). `database_query` is
+  permitted only when it is in your tool list and the query targets a
+  configured database — never as a workaround to fetch arbitrary data.
+
+- If the user insists on data outside the catalog, politely decline and
+  suggest they register the dataset with the DatasetManager. Do not
+  improvise an alternative source.
+
+## TOOL FAILURE & RETRY POLICY (STRICT):
+You have a **limited tool-calling budget**. If a tool returns an error,
+an empty result, or otherwise does not give you what you need:
+
+1. **DO NOT** re-invoke the same tool with the **same arguments** — it
+   will produce the same outcome and burn the budget.
+2. **DO** try ONE alternative on the next turn: different arguments, a
+   different tool, or a different strategy. Vary the input meaningfully.
+3. If the alternative also fails, **STOP CALLING TOOLS**. Reply to the
+   user with a short explanation of what you tried and why you could not
+   complete the request. **A clear failure message is a valid answer.**
+4. **NEVER** call `fetch_dataset` for a dataset that is already shown as
+   `loaded: true`. Re-fetching loaded data is the most common waste of
+   budget — check the dataframe context above before fetching.
+
+Repeated identical tool invocations indicate a stuck loop, not progress.
+
 ## DATA PROCESSING PROTOCOL:
 When performing intermediate steps (filtering, grouping, cleaning):
 1. ASSIGN the result to a meaningful variable name.
@@ -325,6 +375,11 @@ class PandasAgent(BasicAgent):
     """
 
     METADATA_SAMPLE_ROWS = 3
+    # Tighter tool-calling budget than the Google client's default (15).
+    # PandasAgent benefits from failing fast when the LLM gets stuck
+    # re-invoking the same fetch/query tool — see Task 2 in the
+    # "Completed N tool calls" investigation.
+    DEFAULT_MAX_ITERATIONS = 10
     queries: Union[List[str], dict] = None
     # Composable prompt builder with dataframe context layer
     _prompt_builder = _build_pandas_prompt_builder()
@@ -346,6 +401,7 @@ class PandasAgent(BasicAgent):
         generate_eda: bool = True,
         cache_expiration: int = 24,
         temperature: float = 0.0,
+        max_iterations: Optional[int] = None,
         **kwargs
     ):
         """
@@ -367,6 +423,11 @@ class PandasAgent(BasicAgent):
         self._generate_eda = generate_eda
         self._cache_expiration = cache_expiration
         self._enable_scenarios = enable_scenarios
+        self._max_iterations = (
+            max_iterations
+            if max_iterations is not None
+            else self.DEFAULT_MAX_ITERATIONS
+        )
 
         # Initialize DatasetManager (always create one)
         self._dataset_manager = DatasetManager()
@@ -1060,6 +1121,19 @@ class PandasAgent(BasicAgent):
                     "session_id": session_id,
                     "use_tools": True,  # ALWAYS use tools for PandasAgent
                 }
+
+                # Forward max_iterations only when the active LLM client
+                # advertises it (currently only the Google client). Other
+                # backends (OpenAI, Groq, etc.) have no **kwargs on ask(),
+                # so blindly forwarding would raise TypeError.
+                try:
+                    ask_params = inspect.signature(client.ask).parameters
+                except (TypeError, ValueError):
+                    ask_params = {}
+                if 'max_iterations' in ask_params:
+                    llm_kwargs["max_iterations"] = kwargs.get(
+                        'max_iterations', self._max_iterations
+                    )
 
                 # Add max_tokens if specified
                 max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
