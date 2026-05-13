@@ -12,7 +12,7 @@ from typing import Any
 from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
 from ..core.style import LayoutType, StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +102,28 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         """
         self.version = version or self.DEFAULT_VERSION
         self.logger = logging.getLogger(__name__)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for Adaptive Card output.
+
+        Each entry wraps the existing _build_input_element dispatch in an
+        async FieldRenderer-compatible callable.
+        """
+
+        class _ACInputRenderer:
+            """Wraps AdaptiveCardRenderer._build_input_element for a given FieldType."""
+
+            def __init__(self_, renderer: "AdaptiveCardRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._build_input_element(field, prefilled, locale)
+
+        renderer_inst = _ACInputRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
 
     async def render(
         self,

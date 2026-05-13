@@ -175,6 +175,49 @@ class TestJsonSchemaRenderer:
         assert output is not None
 
 
+@pytest.mark.asyncio
+async def test_pdf_registry_dispatch_existing_types():
+    """All 20 existing FieldType values have registry entries in PdfRenderer."""
+    pytest.importorskip("reportlab", reason="reportlab not installed")
+    from parrot_formdesigner.renderers.pdf import PdfRenderer
+    from parrot_formdesigner.renderers.base import FieldRenderer
+
+    renderer = PdfRenderer()
+    existing_types = [
+        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
+        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
+        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
+        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
+        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+    ]
+    for ft in existing_types:
+        assert ft in renderer._registry, f"PdfRenderer registry missing {ft}"
+        assert isinstance(renderer._registry[ft], FieldRenderer), f"Invalid renderer for {ft}"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_card_registry_dispatch_existing_types():
+    """All 20 existing FieldType values render via registry without error."""
+    from parrot_formdesigner.renderers.adaptive_card import AdaptiveCardRenderer
+
+    renderer = AdaptiveCardRenderer()
+    existing_types = [
+        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
+        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
+        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
+        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
+        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+    ]
+    for ft in existing_types:
+        field = FormField(field_id="f1", field_type=ft, label="Test")
+        form = FormSchema(
+            form_id="test", title="T",
+            sections=[FormSection(section_id="s1", fields=[field])]
+        )
+        result = await renderer.render(form)
+        assert result.content is not None, f"Adaptive Card returned None for {ft}"
+
+
 class TestAdaptiveCardRenderer:
     async def test_renders_adaptive_card(self, sample_schema):
         renderer = AdaptiveCardRenderer()
