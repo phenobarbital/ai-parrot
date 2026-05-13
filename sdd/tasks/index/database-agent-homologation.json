@@ -14,7 +14,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only bots/database/models.py and __init__.py \u2014 no overlap with TASK-1126 (prompts.py). Safe to run in a separate worktree concurrently.",
       "assigned_to": null,
       "started_at": "2026-05-13T14:28:48+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1125-query-dataset-and-response-models.md"
+      "completed_at": "2026-05-13T14:49:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1125-query-dataset-and-response-models.md"
     },
     {
       "id": "TASK-1126",
