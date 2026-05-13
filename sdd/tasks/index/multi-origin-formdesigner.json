@@ -73,7 +73,7 @@
       "feature_id": "FEAT-166",
       "feature": "multi-origin-formdesigner",
       "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -85,8 +85,8 @@
       "parallelism_notes": "Imports all three prior modules to re-export and call register_form_service('networkninja', NetworkninjaFormService).",
       "assigned_to": null,
       "started_at": "2026-05-13T11:52:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1128-services-package-init.md"
+      "completed_at": "2026-05-13T11:57:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1128-services-package-init.md"
     },
     {
       "id": "TASK-1129",
