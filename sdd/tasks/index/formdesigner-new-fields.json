@@ -303,7 +303,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -313,8 +313,8 @@
       "parallelism_notes": "Only needs new FieldType enum values",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1153-controls-registry-seeding.md"
+      "completed_at": "2026-05-13T21:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1153-controls-registry-seeding.md"
     },
     {
       "id": "TASK-1154",
