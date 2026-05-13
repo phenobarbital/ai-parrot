@@ -242,10 +242,8 @@ docker rm -f pg-smoke
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Created `users_prompts_creation.sql` with composite PK `(user_id, prompt_id)`, FK ON DELETE CASCADE, `chatbot_id VARCHAR NOT NULL`, `is_public BOOLEAN NOT NULL DEFAULT FALSE`, UNIQUE constraint, two indexes, updated_at trigger function and trigger, and 4 COMMENT ON lines. Matches `UserPrompts` model field-for-field.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

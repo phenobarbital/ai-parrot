@@ -15,6 +15,7 @@ from parrot.handlers.bots import (
     FeedbackTypeHandler,
     ChatbotFeedbackHandler,
     PromptLibraryManagement,
+    UserPromptsManagement,
     ChatbotUsageHandler,
     ChatbotSharingQuestion,
     ToolList
@@ -133,6 +134,7 @@ class Main(AppHandler):
         ChatbotFeedbackHandler.configure(self.app, '/api/v1/bot_feedback')
         # Prompt Library:
         PromptLibraryManagement.configure(self.app, '/api/v1/chatbots/prompt_library')
+        UserPromptsManagement.configure(self.app, '/api/v1/agents/user_prompts')
         # Questions (Usage handler, for sharing)
         ChatbotUsageHandler.configure(self.app, '/api/v1/chatbots_usage')
         self.app.router.add_view(

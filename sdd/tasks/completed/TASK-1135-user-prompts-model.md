@@ -253,10 +253,8 @@ __all__ = [
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Created `users_prompts.py` with `UserPrompts(Model)` class. `chatbot_id` is `str`, `is_public` is `bool` defaulting to `False`, `PARROT_SCHEMA` used for schema. Exported from `models/__init__.py`. All annotations verified.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

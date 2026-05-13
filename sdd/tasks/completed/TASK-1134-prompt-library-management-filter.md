@@ -237,10 +237,8 @@ class PromptLibraryManagement(ModelView):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Added `import re` and `import uuid as _uuid` at top of handlers/bots.py. Added `_AGENT_SLUG_RE` module-level constant. Overrode `get()` on `PromptLibraryManagement` to validate and route on `chatbot_id` and `agent_id` query params. Returns HTTP 400 for both-supplied, invalid UUID, and invalid slug cases. Falls through to `super().get()` in all valid cases. `_set_created_by` left unchanged. Ruff passes.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

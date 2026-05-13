@@ -250,10 +250,8 @@ hard-code a different one).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Added `UserPrompts` to imports in handlers/bots.py. Added `UserPromptsManagement(ModelView)` class immediately after `PromptLibraryManagement` with `_set_user_id`, `_set_created_by`, and `get` overrides. Wired `UserPromptsManagement.configure(self.app, '/api/v1/agents/user_prompts')` in app.py at line 136 (directly after `PromptLibraryManagement.configure`). Ruff passes on bots.py (pre-existing lint issue in app.py unrelated to our changes).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -1,4 +1,6 @@
 from __future__ import annotations
+import re
+import uuid as _uuid
 from datetime import datetime
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
@@ -28,6 +30,7 @@ from .models import (
     BotModel,
     ChatbotUsage,
     PromptLibrary,
+    UserPrompts,
     ChatbotFeedback,
     FeedbackType
 )
@@ -93,6 +96,9 @@ class _PBACHandlerMixin:
             return None
 
 
+_AGENT_SLUG_RE = re.compile(r"^[a-z0-9_-]+$")
+
+
 class PromptLibraryManagement(ModelView):
     """
     PromptLibraryManagement.
@@ -108,6 +114,85 @@ class PromptLibraryManagement(ModelView):
         if not value:
             return await self.get_userid(session=self._session)
         return value
+
+    async def get(self):
+        """Override GET to filter by chatbot_id OR agent_id query param.
+
+        Returns HTTP 400 if both are supplied simultaneously.
+        Validates chatbot_id as a UUID and agent_id as a registry slug.
+        Falls through to the inherited ModelView behaviour when neither
+        is present.
+        """
+        q = self.request.rel_url.query
+        chatbot_id = q.get("chatbot_id")
+        agent_id = q.get("agent_id")
+
+        if chatbot_id and agent_id:
+            return self.error(
+                response={
+                    "message": (
+                        "Provide exactly one of chatbot_id or agent_id, not both."
+                    ),
+                },
+                status=400,
+            )
+
+        if chatbot_id:
+            try:
+                _uuid.UUID(chatbot_id)
+            except (ValueError, TypeError):
+                return self.error(
+                    response={"message": "chatbot_id must be a valid UUID."},
+                    status=400,
+                )
+            return await super().get()
+
+        if agent_id:
+            if not _AGENT_SLUG_RE.match(agent_id):
+                return self.error(
+                    response={
+                        "message": (
+                            "agent_id must match [a-z0-9_-]+ "
+                            "(registry slug format)."
+                        ),
+                    },
+                    status=400,
+                )
+            return await super().get()
+
+        return await super().get()
+
+
+class UserPromptsManagement(ModelView):
+    """Per-user prompt library.
+
+    Exposes CRUD over ``navigator.users_prompts`` at
+    ``/api/v1/agents/user_prompts``. Every read/write is scoped to the
+    authenticated ``user_id``; clients cannot supply or spoof it.
+    """
+
+    model = UserPrompts
+    name: str = "User Prompts Management"
+    path: str = '/api/v1/agents/user_prompts'
+    pk: str = 'prompt_id'
+
+    async def _set_user_id(self, value, column, data):
+        # ALWAYS overwrite — the request must not carry a client-supplied user_id.
+        return await self.get_userid(session=self._session)
+
+    async def _set_created_by(self, value, column, data):
+        if not value:
+            return await self.get_userid(session=self._session)
+        return value
+
+    async def get(self):
+        """Override GET to scope results to the authenticated user_id."""
+        user_id = await self.get_userid(session=self._session)
+        # Inject user_id into the query string so ModelView's generic
+        # filter machinery picks it up and scopes the query.
+        new_query = dict(self.request.rel_url.query)
+        new_query['user_id'] = str(user_id)
+        return await super().get()
 
 
 class ChatbotUsageHandler(ModelView):

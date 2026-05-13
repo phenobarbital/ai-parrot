@@ -270,10 +270,8 @@ def fake_session_user_42(monkeypatch):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Created `test_prompt_library.py` (22 tests) and `test_user_prompts.py` (21 tests). All 43 tests pass without a live database. Model-level tests use plain constructor calls with explicit `prompt_category="other"` to avoid the pre-existing Enum default issue in PromptLibrary (the `.value` approach was used in UserPrompts to prevent this). Handler-shape tests verify class attributes and callable methods without requiring an HTTP server. Also fixed a model issue in `users_prompts.py`: removed `from __future__ import annotations` (which caused asyncdb to receive string annotations instead of actual types, triggering `TypeError: Expected type, got str`), and changed `List[str]` to `list` for `prompt_tags` and `PromptCategory.OTHER.value` for `prompt_category` default.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The `from __future__ import annotations` directive was specified in the task's implementation notes but causes asyncdb validation failures at runtime; it was omitted in the final implementation. `List[str]` was changed to `list` for `prompt_tags` (matching `PromptLibrary`'s convention) to avoid the same asyncdb issue. These deviations preserve correct runtime behaviour.
