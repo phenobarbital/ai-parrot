@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Literal, cast
 
 from ...core.constraints import ConditionOperator, DependencyRule, FieldCondition
 from ...core.options import FieldOption
@@ -192,12 +192,13 @@ class NetworkninjaFormService(AbstractFormService):
             return env_dsn
         try:
             from parrot.conf import default_dsn  # noqa: PLC0415
-            return default_dsn
-        except ImportError as exc:
-            raise RuntimeError(
-                "No DSN provided. Pass dsn= to NetworkninjaFormService, "
-                "set PARROT_NETWORKNINJA_DSN, or install parrot.conf."
-            ) from exc
+            if default_dsn:
+                return default_dsn
+        except ImportError:
+            pass
+        raise RuntimeError(
+            "No DSN configured. Set PARROT_NETWORKNINJA_DSN env var or pass dsn= to the constructor."
+        )
 
     # ------------------------------------------------------------------
     # Form building pipeline
@@ -606,12 +607,12 @@ class NetworkninjaFormService(AbstractFormService):
         # Multiple logic_groups → AND between groups (each group acts as OR internally)
         # Single group with multiple conditions → OR
         if multi_group:
-            top_logic = "and"
+            top_logic = cast(Literal["and", "or"], "and")
         else:
-            top_logic = "or" if len(all_conditions) > 1 else "and"
+            top_logic = cast(Literal["and", "or"], "or" if len(all_conditions) > 1 else "and")
 
         return DependencyRule(
             conditions=all_conditions,
-            logic=top_logic,  # type: ignore[arg-type]
+            logic=top_logic,
             effect="show",
         )

@@ -173,7 +173,7 @@ class FormAPIHandler:
                 "created_at": ts.isoformat() if ts is not None else None,
             }
 
-        storage = self.registry._storage
+        storage = self.registry.storage
         if storage is not None:
             try:
                 persisted = await storage.list_forms()
@@ -383,7 +383,7 @@ class FormAPIHandler:
         if schema_errors:
             return web.json_response({"errors": schema_errors}, status=422)
 
-        persist = self.registry._storage is not None
+        persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
         return web.json_response(form.model_dump())
@@ -428,7 +428,7 @@ class FormAPIHandler:
         if schema_errors:
             return web.json_response({"errors": schema_errors}, status=422)
 
-        persist = self.registry._storage is not None
+        persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
         return web.json_response(form.model_dump())
@@ -451,7 +451,7 @@ class FormAPIHandler:
 
         await self.registry.unregister(form_id)
 
-        storage = self.registry._storage
+        storage = self.registry.storage
         if storage is not None:
             try:
                 await storage.delete(form_id, tenant=existing.tenant)
@@ -589,7 +589,10 @@ class FormAPIHandler:
                 status=422,
             )
 
-        result = await self._db_tool.execute(formid=formid, orgid=orgid, persist=False)
+        service = str(body.get("service", "networkninja"))
+        result = await self._db_tool.execute(
+            service=service, formid=formid, orgid=orgid, persist=False
+        )
 
         if not result.success:
             error_msg = result.metadata.get("error", "Failed to load form from database")

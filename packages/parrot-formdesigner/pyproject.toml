@@ -69,3 +69,6 @@ include = ["parrot_formdesigner*"]
 [tool.setuptools.package-data]
 "parrot_formdesigner" = ["py.typed"]
 "parrot_formdesigner.renderers" = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

@@ -13,22 +13,29 @@ from parrot_formdesigner.tools.services import (
 )
 from parrot_formdesigner.tools.services.registry import _SERVICE_REGISTRY
 
+# Module-level call log so per-instance tracking is visible across the
+# test boundary (the tool creates the service instance internally).
+_stub_calls: list[dict[str, Any]] = []
+
 
 class _StubService(AbstractFormService):
     """Minimal stub service for dispatcher tests."""
 
-    last_params: dict[str, Any] | None = None
-    last_form: FormSchema | None = None
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialize with instance-level tracking attributes."""
+        self.last_params: dict[str, Any] | None = None
+        self.last_form: FormSchema | None = None
 
     async def fetch(self, **params: Any) -> dict[str, Any]:  # type: ignore[override]
         """Record params and return a stub dict."""
-        _StubService.last_params = params
+        self.last_params = params
+        _stub_calls.append(dict(params))
         return {"params": params}
 
     def to_form_schema(self, raw: dict[str, Any]) -> FormSchema:  # type: ignore[override]
         """Return a stub FormSchema."""
         form = FormSchema(form_id="stub-1", title="Stub", sections=[])
-        _StubService.last_form = form
+        self.last_form = form
         return form
 
 
@@ -41,9 +48,11 @@ def registry() -> FormRegistry:
 @pytest.fixture
 def stub_registered():
     """Register the stub service and clean up after the test."""
+    _stub_calls.clear()
     register_form_service("__stub__", _StubService)
     yield
     _SERVICE_REGISTRY.pop("__stub__", None)
+    _stub_calls.clear()
 
 
 def test_input_defaults() -> None:
@@ -100,7 +109,29 @@ async def test_dispatcher_invokes_service_with_validated_kwargs(
         params={"extra": "value"},
     )
     assert result.success is True
-    assert _StubService.last_params == {"formid": 42, "orgid": 7, "extra": "value"}
+    assert len(_stub_calls) == 1
+    assert _stub_calls[0] == {"formid": 42, "orgid": 7, "extra": "value"}
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_filters_reserved_keys_from_params(
+    registry: FormRegistry,
+    stub_registered: None,
+) -> None:
+    """Reserved keys 'formid' and 'orgid' in params do not cause TypeError."""
+    tool = DatabaseFormTool(registry=registry)
+    result = await tool._execute(
+        service="__stub__",
+        formid=10,
+        orgid=5,
+        params={"formid": 99, "orgid": 88, "extra": "ok"},
+    )
+    assert result.success is True
+    assert len(_stub_calls) == 1
+    # Reserved keys must NOT be duplicated — only the top-level values win.
+    assert _stub_calls[0]["formid"] == 10
+    assert _stub_calls[0]["orgid"] == 5
+    assert _stub_calls[0]["extra"] == "ok"
 
 
 @pytest.mark.asyncio

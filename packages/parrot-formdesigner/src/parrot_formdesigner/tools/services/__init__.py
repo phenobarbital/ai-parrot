@@ -15,6 +15,7 @@ before any DatabaseFormTool invocation that targets that service name.
 
 from .abstract import AbstractFormService
 from .registry import (
+    _SERVICE_REGISTRY,
     register_form_service,
     get_form_service,
     list_form_services,
@@ -22,7 +23,10 @@ from .registry import (
 from .networkninja import NetworkninjaFormService
 
 # Built-in registrations (mirrors parrot_formdesigner/controls/builtin.py).
-register_form_service("networkninja", NetworkninjaFormService)
+# Guard against noisy WARNING on re-import (e.g. pytest collection imports
+# the module more than once in the same process).
+if "networkninja" not in _SERVICE_REGISTRY:
+    register_form_service("networkninja", NetworkninjaFormService)
 
 __all__ = [
     "AbstractFormService",

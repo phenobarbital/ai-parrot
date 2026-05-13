@@ -58,6 +58,10 @@ class DatabaseFormInput(BaseModel):
             "AbstractFormService.fetch(**params)."
         ),
     )
+    service_kwargs: dict[str, Any] | None = Field(
+        default=None,
+        description="Extra kwargs forwarded to the service constructor.",
+    )
     persist: bool = Field(
         default=False,
         description="Save the generated FormSchema to the registry storage",
@@ -127,6 +131,7 @@ class DatabaseFormTool(AbstractTool):
         formid: int = 0,
         orgid: int = 0,
         params: dict[str, Any] | None = None,
+        service_kwargs: dict[str, Any] | None = None,
         persist: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
@@ -137,6 +142,9 @@ class DatabaseFormTool(AbstractTool):
             formid: Numeric form identifier.
             orgid: Organization ID.
             params: Optional service-specific extras forwarded to fetch().
+                Reserved keys ``formid`` and ``orgid`` are filtered out to
+                avoid ``TypeError: got multiple values for keyword argument``.
+            service_kwargs: Optional kwargs forwarded to the service constructor.
             persist: If True, persist the form via the registry storage backend.
             **kwargs: Ignored extra arguments.
 
@@ -158,9 +166,11 @@ class DatabaseFormTool(AbstractTool):
             )
 
         # 2-4. Instantiate + fetch + map
+        _RESERVED = {"formid", "orgid"}
+        extra = {k: v for k, v in (params or {}).items() if k not in _RESERVED}
         try:
-            svc = cls()
-            raw = await svc.fetch(formid=formid, orgid=orgid, **(params or {}))
+            svc = cls(**(service_kwargs or {}))
+            raw = await svc.fetch(formid=formid, orgid=orgid, **extra)
             form = svc.to_form_schema(raw)
         except json.JSONDecodeError as exc:
             self.logger.error("Malformed JSON for formid=%s: %s", formid, exc)

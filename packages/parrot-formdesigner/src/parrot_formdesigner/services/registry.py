@@ -348,6 +348,29 @@ class FormRegistry:
         self.logger.info("Loaded %d forms from storage", count)
         return count
 
+    @property
+    def has_storage(self) -> bool:
+        """Return True if a FormStorage backend is configured.
+
+        Use this instead of accessing ``_storage`` directly from external code.
+
+        Returns:
+            True when a storage backend is configured, False otherwise.
+        """
+        return self._storage is not None
+
+    @property
+    def storage(self) -> "FormStorage | None":
+        """Return the configured FormStorage backend, or None.
+
+        Prefer :attr:`has_storage` for boolean checks and this property
+        when you actually need to call the backend.
+
+        Returns:
+            The configured FormStorage instance, or None.
+        """
+        return self._storage
+
     def on_register(
         self, callback: Callable[[FormSchema], Awaitable[None]]
     ) -> None:
