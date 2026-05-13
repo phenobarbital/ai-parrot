@@ -13,6 +13,7 @@ from .bigquery import BigQueryToolkit
 from .influx import InfluxDBToolkit
 from .elastic import ElasticToolkit
 from .documentdb import DocumentDBToolkit
+from ._internal import DatabaseAgentToolkit
 
 __all__ = [
     "DatabaseToolkit",
@@ -23,4 +24,5 @@ __all__ = [
     "InfluxDBToolkit",
     "ElasticToolkit",
     "DocumentDBToolkit",
+    "DatabaseAgentToolkit",
 ]

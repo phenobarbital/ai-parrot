@@ -1,0 +1,172 @@
+{
+  "feature": "database-agent-homologation",
+  "feature_id": "FEAT-164",
+  "spec": "sdd/specs/database-agent-homologation.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-13T14:13:12Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1125",
+      "slug": "query-dataset-and-response-models",
+      "title": "QueryDataset & QueryResponse Pydantic Models",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only bots/database/models.py and __init__.py \u2014 no overlap with TASK-1126 (prompts.py). Safe to run in a separate worktree concurrently.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T14:28:48+00:00",
+      "completed_at": "2026-05-13T14:49:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1125-query-dataset-and-response-models.md"
+    },
+    {
+      "id": "TASK-1126",
+      "slug": "database-prompt-layers",
+      "title": "Database PromptLayer Constants & Builder Factory",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Rewrites bots/database/prompts.py exclusively \u2014 no overlap with TASK-1125 (models.py). Can run concurrently in a separate worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T14:57:18+00:00",
+      "completed_at": "2026-05-13T15:12:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1126-database-prompt-layers.md"
+    },
+    {
+      "id": "TASK-1127",
+      "slug": "database-agent-internal-toolkit",
+      "title": "DatabaseAgentToolkit (Internal Toolkit)",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1125"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports QueryDataset from TASK-1125 for tool return types. Must wait for TASK-1125 to land in the worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T15:17:02+00:00",
+      "completed_at": "2026-05-13T15:29:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1127-database-agent-internal-toolkit.md"
+    },
+    {
+      "id": "TASK-1128",
+      "slug": "database-agent-rewrite",
+      "title": "Rewrite DatabaseAgent on BasicAgent + Structured Output + Toolkit Gating",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1125",
+        "TASK-1126",
+        "TASK-1127"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Centrepiece task \u2014 depends on models, prompt layers, and internal toolkit all being in place. Must run after 1125/1126/1127.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T15:33:07+00:00",
+      "completed_at": "2026-05-13T16:32:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1128-database-agent-rewrite.md"
+    },
+    {
+      "id": "TASK-1129",
+      "slug": "toolkit-retry-wiring",
+      "title": "Toolkit-Level Retry Wiring + Agent Re-Ask Loop",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1128"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies DatabaseAgent.ask() (re-ask loop) and SQLToolkit.execute_query (retry dispatch). Both files are touched by TASK-1128; sequential is mandatory.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T16:36:58+00:00",
+      "completed_at": "2026-05-13T17:02:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1129-toolkit-retry-wiring.md"
+    },
+    {
+      "id": "TASK-1130",
+      "slug": "delete-abstract-dbagent",
+      "title": "Delete Legacy AbstractDBAgent",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1127",
+        "TASK-1128"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Helpers must be migrated (TASK-1127) and the agent must already be off the old base class (TASK-1128) before deleting abstract.py.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T17:07:03+00:00",
+      "completed_at": "2026-05-13T17:09:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1130-delete-abstract-dbagent.md"
+    },
+    {
+      "id": "TASK-1131",
+      "slug": "postgres-agent-example",
+      "title": "Comprehensive Postgres DatabaseAgent Example",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1128",
+        "TASK-1129"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Creates a brand-new file under examples/database/. Independent of TASK-1132 (CHANGELOG) \u2014 both can be authored in parallel once their dependencies land.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T17:11:57+00:00",
+      "completed_at": "2026-05-13T17:23:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-postgres-agent-example.md"
+    },
+    {
+      "id": "TASK-1132",
+      "slug": "changelog-release-note",
+      "title": "CHANGELOG Release Note for FEAT-164",
+      "feature_id": "FEAT-164",
+      "feature": "database-agent-homologation",
+      "spec": "sdd/specs/database-agent-homologation.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1128",
+        "TASK-1130"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation-only \u2014 modifies packages/ai-parrot/CHANGELOG.md exclusively. Independent of TASK-1131 (example); the two can be done concurrently.",
+      "assigned_to": null,
+      "started_at": "2026-05-13T17:26:09+00:00",
+      "completed_at": "2026-05-13T17:27:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1132-changelog-release-note.md"
+    }
+  ]
+}

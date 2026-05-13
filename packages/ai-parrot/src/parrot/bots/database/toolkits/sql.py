@@ -10,17 +10,15 @@ supported backend. Query builders emit ``$1, $2, …`` positional placeholders.
 """
 from __future__ import annotations
 
-import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..cache import CachePartition
 from ..models import (
     QueryExecutionResponse,
-    SchemaMetadata,
     TableMetadata,
 )
-from ..retries import QueryRetryConfig
+from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
 from .base import DatabaseToolkit
 
 
@@ -165,12 +163,17 @@ class SQLToolkit(DatabaseToolkit):
         query: str,
         limit: int = 1000,
         timeout: int = 30,
-    ) -> QueryExecutionResponse:
-        """Execute a SQL query and return results.
+    ) -> Union[QueryExecutionResponse, RetryContext]:
+        """Execute a SQL query and return results or a retry context.
 
-        Applies the configured safety policy first (``read_only`` mode
-        delegates to ``parrot_tools.databasequery.QueryValidator``; DML mode
-        blocks DDL + multi-statements and requires WHERE on UPDATE/DELETE).
+        Applies the configured safety policy first.  When ``retry_config`` is
+        set and the query fails with a retryable error, returns a
+        ``RetryContext`` instead of ``QueryExecutionResponse`` so that
+        ``DatabaseAgent.ask()`` can re-ask the LLM with error context.
+
+        Non-retryable exceptions are re-raised when ``retry_config`` is set,
+        and wrapped in ``QueryExecutionResponse(success=False)`` otherwise
+        (legacy behaviour for callers that don't check the return type).
 
         Args:
             query: SQL query string.
@@ -178,7 +181,12 @@ class SQLToolkit(DatabaseToolkit):
             timeout: Query timeout in seconds.
 
         Returns:
-            ``QueryExecutionResponse`` with data, row count, and timing.
+            ``QueryExecutionResponse`` on success or when retrying is not
+            configured; ``RetryContext`` when a retryable error occurs and
+            ``retry_config`` is set.
+
+        Raises:
+            Exception: For non-retryable errors when ``retry_config`` is set.
         """
         safety_error = self._check_query_safety(query)
         if safety_error is not None:
@@ -191,38 +199,51 @@ class SQLToolkit(DatabaseToolkit):
                 error_message=f"Query blocked by safety policy: {safety_error}",
             )
 
+        retry_cfg: Optional[QueryRetryConfig] = getattr(self, "retry_config", None)
         start = time.monotonic()
         try:
-            data, error = await self._execute_asyncdb(query, limit=limit, timeout=timeout)
-
+            data = await self._run_query(query, limit=limit, timeout=timeout)
             elapsed = (time.monotonic() - start) * 1000
-
-            if error:
-                return QueryExecutionResponse(
-                    success=False,
-                    row_count=0,
-                    execution_time_ms=elapsed,
-                    schema_used=self.primary_schema,
-                    error_message=str(error),
-                )
-
             return QueryExecutionResponse(
                 success=True,
-                row_count=len(data) if data else 0,
+                row_count=len(data),
                 columns=list(data[0].keys()) if data else [],
                 data=data,
                 execution_time_ms=elapsed,
                 schema_used=self.primary_schema,
             )
-        except Exception as exc:
+        except Exception as err:
             elapsed = (time.monotonic() - start) * 1000
-            self.logger.error("Query execution failed: %s", exc)
-            return QueryExecutionResponse(
-                success=False,
-                row_count=0,
-                execution_time_ms=elapsed,
-                schema_used=self.primary_schema,
-                error_message=str(exc),
+            if retry_cfg is None:
+                # Legacy path: no retry config → swallow and return failure response.
+                self.logger.error("Query execution failed: %s", err)
+                return QueryExecutionResponse(
+                    success=False,
+                    row_count=0,
+                    execution_time_ms=elapsed,
+                    schema_used=self.primary_schema,
+                    error_message=str(err),
+                )
+            handler = SQLRetryHandler(toolkit=self, config=retry_cfg)
+            if not handler._is_retryable_error(err):
+                raise
+            # Retryable error — collect sample data and return RetryContext.
+            table, column = handler._extract_table_column_from_error(query, err)
+            sample_data = ""
+            if table and column:
+                try:
+                    sample_data = await handler._get_sample_data_for_error(
+                        self.primary_schema, table, column
+                    )
+                except Exception:
+                    pass
+            correction = await handler.retry_query(query, err, attempt=1)
+            return RetryContext(
+                query=query,
+                error=str(err),
+                attempt=1,
+                sample_data=sample_data,
+                suggested_correction=correction,
             )
 
     async def explain_query(self, query: str) -> str:
@@ -496,6 +517,30 @@ class SQLToolkit(DatabaseToolkit):
     # ------------------------------------------------------------------
     # Internal execution helpers
     # ------------------------------------------------------------------
+
+    async def _run_query(
+        self,
+        query: str,
+        limit: int = 1000,
+        timeout: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """Execute SQL and return raw row data, raising on any error.
+
+        Args:
+            query: SQL to execute.
+            limit: Maximum rows to return.
+            timeout: Query timeout in seconds.
+
+        Returns:
+            List of row dicts (may be empty).
+
+        Raises:
+            Exception: With the database error message if execution fails.
+        """
+        data, error = await self._execute_asyncdb(query, limit=limit, timeout=timeout)
+        if error:
+            raise Exception(error)
+        return data or []
 
     async def _execute_asyncdb(
         self,
