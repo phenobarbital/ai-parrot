@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-166
 **Date**: 2026-05-13
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.3.0
 
 > Source: `sdd/proposals/multi-origin-formdesigner.proposal.md` (research-grounded
@@ -717,14 +717,14 @@ No new external dependencies.
 
 ### Unresolved (defer to implementation or follow-up feature)
 
-- [ ] **Should `api/handlers.py` surface `service` as an HTTP query parameter,
+- [x] **Should `api/handlers.py` surface `service` as an HTTP query parameter,
   or is the default `"networkninja"` sufficient for now?** — *Owner*: API
-  consumer / follow-up feature. Does not block this spec.
+  consumer / follow-up feature. Does not block this spec.: add `service` at `api/handlers.py`
 
-- [ ] **Should the env-var naming convention be `PARROT_NETWORKNINJA_DSN` or
+- [x] **Should the env-var naming convention be `PARROT_NETWORKNINJA_DSN` or
   `PARROT_FORMSERVICE_NETWORKNINJA_DSN` (longer but namespaced)?** — *Owner*:
   implementer. The spec defaults to the shorter `PARROT_NETWORKNINJA_DSN`;
-  revisit if a second service ships with a name collision risk.
+  revisit if a second service ships with a name collision risk.: use `FORMSERVICE_NETWORKNINJA_DSN`
 
 ---
 
