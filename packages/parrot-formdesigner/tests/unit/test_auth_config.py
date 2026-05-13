@@ -145,3 +145,81 @@ class TestAuthConfig:
             BearerAuth,
             NoAuth,
         )
+
+
+# --- TASK-1155: AuthContext model tests ---
+
+class TestAuthContext:
+    """Tests for AuthContext runtime auth context model."""
+
+    def test_auth_context_resolve_for_bearer(self) -> None:
+        """AuthContext with bearer scheme returns Authorization header."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="bearer", token="my-token")
+        headers = ctx.resolve_for("SOME_REF")
+        assert headers == {"Authorization": "Bearer my-token"}
+
+    def test_auth_context_resolve_for_none_scheme(self) -> None:
+        """AuthContext with 'none' scheme returns empty dict."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="none")
+        assert ctx.resolve_for(None) == {}
+        assert ctx.resolve_for("ANY_REF") == {}
+
+    def test_auth_context_resolve_for_unknown_ref(self) -> None:
+        """Unknown auth_ref with bearer still returns Bearer header — no raise."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="bearer", token="test-token")
+        headers = ctx.resolve_for("UNKNOWN_REF")
+        assert "Authorization" in headers
+
+    def test_auth_context_custom_headers(self) -> None:
+        """Custom scheme returns pre-built headers."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(
+            scheme="custom",
+            headers={"X-Custom-Auth": "secret", "X-Tenant": "acme"},
+        )
+        headers = ctx.resolve_for("CUSTOM_REF")
+        assert headers["X-Custom-Auth"] == "secret"
+
+    def test_auth_context_default_values(self) -> None:
+        """AuthContext defaults are correct."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="none")
+        assert ctx.token is None
+        assert ctx.headers == {}
+        assert ctx.claims == {}
+
+    def test_auth_context_api_key_scheme(self) -> None:
+        """AuthContext with api_key scheme returns X-API-Key header."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="api_key", token="secret-key")
+        headers = ctx.resolve_for("API_KEY_REF")
+        assert headers == {"X-API-Key": "secret-key"}
+
+    def test_auth_context_bearer_no_token_returns_empty(self) -> None:
+        """Bearer scheme with no token returns headers (empty via custom fallback)."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="bearer", token=None)
+        headers = ctx.resolve_for("REF")
+        # No token → falls through to custom headers path → returns {}
+        assert headers == {}
+
+    def test_auth_context_none_auth_ref_returns_empty(self) -> None:
+        """auth_ref=None always returns empty headers regardless of scheme."""
+        from parrot_formdesigner.services.auth_context import AuthContext
+
+        ctx = AuthContext(scheme="bearer", token="tok")
+        assert ctx.resolve_for(None) == {}
+
+    def test_auth_context_importable(self) -> None:
+        """AuthContext is importable from services.auth_context."""
+        from parrot_formdesigner.services.auth_context import AuthContext  # noqa: F401
