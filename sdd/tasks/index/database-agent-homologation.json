@@ -14,14 +14,14 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Touches only bots/database/models.py and __init__.py — no overlap with TASK-1126 (prompts.py). Safe to run in a separate worktree concurrently.",
+      "parallelism_notes": "Touches only bots/database/models.py and __init__.py \u2014 no overlap with TASK-1126 (prompts.py). Safe to run in a separate worktree concurrently.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T14:28:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1125-query-dataset-and-response-models.md"
     },
@@ -37,7 +37,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Rewrites bots/database/prompts.py exclusively — no overlap with TASK-1125 (models.py). Can run concurrently in a separate worktree.",
+      "parallelism_notes": "Rewrites bots/database/prompts.py exclusively \u2014 no overlap with TASK-1125 (models.py). Can run concurrently in a separate worktree.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -53,7 +53,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1125"],
+      "depends_on": [
+        "TASK-1125"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports QueryDataset from TASK-1125 for tool return types. Must wait for TASK-1125 to land in the worktree.",
       "assigned_to": null,
@@ -71,9 +73,13 @@
       "status": "pending",
       "priority": "high",
       "effort": "XL",
-      "depends_on": ["TASK-1125", "TASK-1126", "TASK-1127"],
+      "depends_on": [
+        "TASK-1125",
+        "TASK-1126",
+        "TASK-1127"
+      ],
       "parallel": false,
-      "parallelism_notes": "Centrepiece task — depends on models, prompt layers, and internal toolkit all being in place. Must run after 1125/1126/1127.",
+      "parallelism_notes": "Centrepiece task \u2014 depends on models, prompt layers, and internal toolkit all being in place. Must run after 1125/1126/1127.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -89,7 +95,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1128"],
+      "depends_on": [
+        "TASK-1128"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies DatabaseAgent.ask() (re-ask loop) and SQLToolkit.execute_query (retry dispatch). Both files are touched by TASK-1128; sequential is mandatory.",
       "assigned_to": null,
@@ -107,7 +115,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1127", "TASK-1128"],
+      "depends_on": [
+        "TASK-1127",
+        "TASK-1128"
+      ],
       "parallel": false,
       "parallelism_notes": "Helpers must be migrated (TASK-1127) and the agent must already be off the old base class (TASK-1128) before deleting abstract.py.",
       "assigned_to": null,
@@ -125,9 +136,12 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1128", "TASK-1129"],
+      "depends_on": [
+        "TASK-1128",
+        "TASK-1129"
+      ],
       "parallel": true,
-      "parallelism_notes": "Creates a brand-new file under examples/database/. Independent of TASK-1132 (CHANGELOG) — both can be authored in parallel once their dependencies land.",
+      "parallelism_notes": "Creates a brand-new file under examples/database/. Independent of TASK-1132 (CHANGELOG) \u2014 both can be authored in parallel once their dependencies land.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -143,9 +157,12 @@
       "status": "pending",
       "priority": "low",
       "effort": "S",
-      "depends_on": ["TASK-1128", "TASK-1130"],
+      "depends_on": [
+        "TASK-1128",
+        "TASK-1130"
+      ],
       "parallel": true,
-      "parallelism_notes": "Documentation-only — modifies packages/ai-parrot/CHANGELOG.md exclusively. Independent of TASK-1131 (example); the two can be done concurrently.",
+      "parallelism_notes": "Documentation-only \u2014 modifies packages/ai-parrot/CHANGELOG.md exclusively. Independent of TASK-1131 (example); the two can be done concurrently.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
