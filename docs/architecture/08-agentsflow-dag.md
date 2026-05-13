@@ -1,7 +1,7 @@
 # 8. AgentsFlow — DAG-first orchestration with per-node FSM
 
 > Part of the [Exposure, Interoperability & Hardening](README.md) set.
-> Previous: [AgentCrew](07-agentcrew.md) · Up: [Index](README.md)
+> Previous: [AgentCrew](07-agentcrew.md) · Next: [Ontologic RAG](09-ontologic-rag.md)
 
 `AgentsFlow` (`packages/ai-parrot/src/parrot/bots/flow/fsm.py:278`) is
 AI-Parrot's dedicated **Directed Acyclic Graph executor**. Where
