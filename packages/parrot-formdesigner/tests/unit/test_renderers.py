@@ -5,7 +5,6 @@ from parrot_formdesigner.core.schema import FormField
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers import HTML5Renderer, JsonSchemaRenderer, AdaptiveCardRenderer
 from parrot_formdesigner.renderers.base import FieldRenderer, FallbackRenderer
-from parrot_formdesigner.core.style import StyleSchema
 
 
 # TASK-1150: Validator branches for new field types
@@ -65,7 +64,6 @@ async def test_validator_tags_returns_list_of_strings():
 @pytest.mark.asyncio
 async def test_validator_location_rejects_unknown_iso_code():
     """LOCATION with 'XX' raises; 'ES', 'VE', 'US' pass (when pycountry installed)."""
-    import importlib.util
     from parrot_formdesigner.services.validators import FormValidator, _HAS_PYCOUNTRY
 
     validator = FormValidator()
@@ -341,7 +339,6 @@ async def test_renderer_fallback_emits_warning():
     """PDF rendering of SIGNATURE produces placeholder + appends RenderWarning."""
     pytest.importorskip("reportlab", reason="reportlab not installed")
     from parrot_formdesigner.renderers.pdf import PdfRenderer
-    from parrot_formdesigner.core.schema import RenderWarning
 
     renderer = PdfRenderer()
     sig_field = FormField(
@@ -469,7 +466,7 @@ async def test_jsonschema_new_types_have_format():
 async def test_telegram_new_types_classified():
     """All 10 new FieldTypes appear in either _INLINE_FIELD_TYPES or _WEBAPP_FIELD_TYPES."""
     from parrot_formdesigner.renderers.telegram.renderer import (
-        TelegramRenderer, _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
+        _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
     )
 
     new_types = [
@@ -604,3 +601,106 @@ async def test_e2e_authcontext_cascade_into_group():
     # Rendering completes without error; no auth_context kwarg needed on render()
     assert result is not None
     assert result.content is not None
+
+
+# --- TASK-1159: Validator branch wiring for REMOTE_RESPONSE ---
+
+
+@pytest.mark.asyncio
+async def test_e2e_form_submission_with_remote_response():
+    """Mock RemoteResponseResolver.resolve → resolved value stored in sanitized_data."""
+    from unittest.mock import AsyncMock, patch
+
+    from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.services.remote_response_resolver import RemoteResponseResult
+    from parrot_formdesigner.services.validators import FormValidator
+
+    field = FormField(
+        field_id="ai_summary",
+        field_type=FieldType.REMOTE_RESPONSE,
+        label="AI Summary",
+        meta={
+            "endpoint": "https://api.test/summarize",
+            "http_method": "POST",
+            "prompt": "Summarize this text",
+        },
+    )
+    form = FormSchema(
+        form_id="test",
+        title="Test",
+        sections=[FormSection(section_id="s1", fields=[field])],
+    )
+
+    with patch(
+        "parrot_formdesigner.services.validators.RemoteResponseResolver.resolve",
+        new_callable=AsyncMock,
+        return_value=RemoteResponseResult(success=True, value={"summary": "Short text"}, status_code=200),
+    ):
+        validator = FormValidator()
+        result = await validator.validate(form, {"ai_summary": "Some long text here"})
+
+    assert result.is_valid is True, f"Expected valid, got errors: {result.errors}"
+    assert result.sanitized_data.get("ai_summary") == {"summary": "Short text"}
+
+
+@pytest.mark.asyncio
+async def test_remote_response_validator_missing_endpoint():
+    """REMOTE_RESPONSE field without endpoint in meta produces validation error."""
+    from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.services.validators import FormValidator
+
+    field = FormField(
+        field_id="bad_field",
+        field_type=FieldType.REMOTE_RESPONSE,
+        label="Bad Field",
+        meta={"prompt": "no endpoint here"},
+    )
+    form = FormSchema(
+        form_id="test",
+        title="Test",
+        sections=[FormSection(section_id="s1", fields=[field])],
+    )
+
+    validator = FormValidator()
+    result = await validator.validate(form, {"bad_field": "content"})
+
+    assert result.is_valid is False
+    assert "bad_field" in result.errors
+    assert any("endpoint" in e.lower() for e in result.errors["bad_field"])
+
+
+@pytest.mark.asyncio
+async def test_remote_response_validator_propagates_failure():
+    """When RemoteResponseResolver.resolve() returns failure, validation reports error."""
+    from unittest.mock import AsyncMock, patch
+
+    from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.services.remote_response_resolver import RemoteResponseResult
+    from parrot_formdesigner.services.validators import FormValidator
+
+    field = FormField(
+        field_id="summary",
+        field_type=FieldType.REMOTE_RESPONSE,
+        label="Summary",
+        meta={"endpoint": "https://api.test/summarize"},
+    )
+    form = FormSchema(
+        form_id="test",
+        title="Test",
+        sections=[FormSection(section_id="s1", fields=[field])],
+    )
+
+    with patch(
+        "parrot_formdesigner.services.validators.RemoteResponseResolver.resolve",
+        new_callable=AsyncMock,
+        return_value=RemoteResponseResult(success=False, error="Connection refused", status_code=None),
+    ):
+        validator = FormValidator()
+        result = await validator.validate(form, {"summary": "content"})
+
+    assert result.is_valid is False
+    assert "summary" in result.errors
+    assert any("remote response" in e.lower() for e in result.errors["summary"])
