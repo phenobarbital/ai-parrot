@@ -19,7 +19,7 @@ from ..core.options import FieldOption
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..core.style import FieldSizeHint, LayoutType, StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +106,84 @@ class HTML5Renderer(AbstractFormRenderer):
         )
         # Register tojson filter
         self._env.filters["tojson"] = lambda v: json.dumps(v)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate the per-type renderer registry with existing FieldType handlers.
+
+        Each entry wraps an existing private render method in a FieldRenderer-
+        compatible async callable. The HTML5 renderer's sync methods are wrapped
+        transparently so they satisfy the FieldRenderer protocol.
+        """
+
+        class _SelectRenderer:
+            def __init__(self_, renderer: "HTML5Renderer", multiple: bool = False) -> None:
+                self_._r = renderer
+                self_._multiple = multiple
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_select(field, prefilled, locale, multiple=self_._multiple)
+
+        class _TextAreaRenderer:
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_textarea(field, prefilled, locale)
+
+        class _CheckboxRenderer:
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_checkbox(field, prefilled)
+
+        class _InputRenderer:
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_input(field, prefilled, locale)
+
+        class _GroupRenderer:
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                # Groups are rendered via _render_field_html with children context
+                return None
+
+        class _NoInputRenderer:
+            """Renderer for field types that produce no interactive input (e.g. ARRAY)."""
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return ""
+
+        input_renderer = _InputRenderer(self)
+        self._registry = {
+            FieldType.TEXT: input_renderer,
+            FieldType.NUMBER: input_renderer,
+            FieldType.INTEGER: input_renderer,
+            FieldType.DATE: input_renderer,
+            FieldType.DATETIME: input_renderer,
+            FieldType.TIME: input_renderer,
+            FieldType.EMAIL: input_renderer,
+            FieldType.URL: input_renderer,
+            FieldType.PHONE: input_renderer,
+            FieldType.PASSWORD: input_renderer,
+            FieldType.COLOR: input_renderer,
+            FieldType.HIDDEN: input_renderer,
+            FieldType.FILE: input_renderer,
+            FieldType.IMAGE: input_renderer,
+            FieldType.TEXT_AREA: _TextAreaRenderer(self),
+            FieldType.BOOLEAN: _CheckboxRenderer(self),
+            FieldType.SELECT: _SelectRenderer(self, multiple=False),
+            FieldType.MULTI_SELECT: _SelectRenderer(self, multiple=True),
+            FieldType.GROUP: _GroupRenderer(self),
+            FieldType.ARRAY: _NoInputRenderer(),
+        }
 
     async def render(
         self,
@@ -174,6 +252,9 @@ class HTML5Renderer(AbstractFormRenderer):
         locale: str,
     ) -> str:
         """Render a single field as HTML string.
+
+        Dispatches to the per-type renderer via ``_registry``. Falls back to
+        ``_fallback`` for unknown or unregistered field types.
 
         Args:
             field: FormField to render.

@@ -44,6 +44,29 @@ def sample_schema() -> FormSchema:
     )
 
 
+@pytest.mark.asyncio
+async def test_html5_registry_dispatch_existing_types():
+    """All 20 existing FieldType values render via registry without error."""
+    from parrot_formdesigner.renderers.html5 import HTML5Renderer
+
+    renderer = HTML5Renderer()
+    existing_types = [
+        FieldType.TEXT, FieldType.TEXT_AREA, FieldType.NUMBER, FieldType.INTEGER,
+        FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME, FieldType.TIME,
+        FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.FILE, FieldType.IMAGE,
+        FieldType.COLOR, FieldType.URL, FieldType.EMAIL, FieldType.PHONE,
+        FieldType.PASSWORD, FieldType.HIDDEN, FieldType.GROUP, FieldType.ARRAY,
+    ]
+    for ft in existing_types:
+        field = FormField(field_id="f1", field_type=ft, label="Test")
+        form = FormSchema(
+            form_id="test", title="T",
+            sections=[FormSection(section_id="s1", fields=[field])]
+        )
+        result = await renderer.render(form)
+        assert result.content is not None, f"Renderer returned None for {ft}"
+
+
 class TestHTML5Renderer:
     async def test_renders_html_string(self, sample_schema):
         renderer = HTML5Renderer()
