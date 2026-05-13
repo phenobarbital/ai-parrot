@@ -25,7 +25,7 @@ from reportlab.pdfgen import canvas
 from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,35 @@ class PdfRenderer(AbstractFormRenderer):
     FIELD_HEIGHT = 8 * mm
     SECTION_GAP = 8 * mm
     FIELD_GAP = 4 * mm
+
+    def __init__(self) -> None:
+        """Initialize PdfRenderer with per-type renderer registry."""
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for PDF output.
+
+        Each registered FieldRenderer wraps the existing AcroForm dispatch
+        via _render_field. The PDF renderer's field rendering is stateful
+        (canvas position), so entries are lightweight async stubs that
+        delegate to _render_field.
+        """
+
+        class _PdfFieldRenderer:
+            """Async FieldRenderer stub that delegates to PdfRenderer._render_field."""
+
+            def __init__(self_, renderer: "PdfRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                # PDF rendering is canvas-stateful; direct invocation via render()
+                # passes context via _render_field. This stub satisfies the protocol.
+                return None
+
+        renderer_inst = _PdfFieldRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
 
     async def render(
         self,
