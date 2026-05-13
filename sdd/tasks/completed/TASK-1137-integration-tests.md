@@ -163,4 +163,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Created `tests/cli/__init__.py`, `tests/cli/conftest.py`
+with shared fixtures (mock_agent, repl_config, renderer, mock_agent_response,
+response_with_tools), and `tests/cli/test_integration.py` with 28 tests covering:
+ResponseRenderer (5 tests), SlashCommandDispatcher (4 tests), REPLConfig (2 tests),
+StandaloneAgentLoader (4 tests), AgentREPL.send() (3 tests), slash commands async
+(5 tests including /clear, /tools, /stream, /quit, /exit), /export roundtrip (2 tests),
+and Click CLI command (3 tests). All 28 tests pass. 1 non-blocking warning about
+AsyncMock coroutine in tools test (does not affect test results).

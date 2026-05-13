@@ -15,6 +15,7 @@ import uuid
 import asyncio
 from aiohttp import web
 import pandas as pd
+from pydantic import BaseModel
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from rich.panel import Panel
 from navconfig.logging import logging
@@ -1963,6 +1964,12 @@ class AgentTalk(BaseView):
                         output = str(output.renderable) if hasattr(output, 'renderable') else str(output)
                 except Exception:
                     output = str(output)
+            elif isinstance(output, BaseModel):
+                # Preserve the full structured payload (e.g. QueryResponse from
+                # DatabaseAgent) so the frontend can render dedicated artifacts.
+                # Previously this branch collapsed the model to ``.explanation``
+                # alone, throwing away ``.query``, ``.data``, etc.
+                output = output.model_dump(mode="json")
             elif hasattr(output, 'explanation'):
                 output = output.explanation
             # Safety net: ensure output is JSON-serializable
