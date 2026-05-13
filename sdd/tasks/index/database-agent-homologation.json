@@ -70,7 +70,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": false,
       "parallelism_notes": "Centrepiece task \u2014 depends on models, prompt layers, and internal toolkit all being in place. Must run after 1125/1126/1127.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T15:33:07+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1128-database-agent-rewrite.md"
     },
