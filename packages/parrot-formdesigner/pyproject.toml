@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.24.47",
+    "ai-parrot>=0.24.48",
 ]
 test = [
     "pypdf>=6.0",
