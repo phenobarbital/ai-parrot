@@ -196,7 +196,7 @@ class ResponseRenderer:
             refresh_per_second=10,
             vertical_overflow="visible",
         )
-        self._live.__enter__()
+        self._live.start(refresh=True)
 
     def render_stream_chunk(self, text: str) -> None:
         """Append a streamed token chunk to the live display.
@@ -224,9 +224,9 @@ class ResponseRenderer:
         """
         if self._live is not None:
             try:
-                self._live.__exit__(None, None, None)
+                self._live.stop()
             except Exception as exc:
-                self.logger.debug("Live context exit error: %s", exc)
+                self.logger.debug("Live stop error: %s", exc)
             finally:
                 self._live = None
 

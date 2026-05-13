@@ -7,10 +7,12 @@ Provides ``SlashCommandDispatcher`` with built-in commands:
 Forward reference note: ``AgentREPL`` is imported under ``TYPE_CHECKING``
 only to avoid circular imports — the actual type is resolved at runtime.
 """
+import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List
 from uuid import uuid4
 
@@ -89,49 +91,6 @@ class SlashCommandDispatcher:
         """
         self._commands[cmd.name] = cmd
         self.logger.debug("Registered slash command: /%s", cmd.name)
-
-    def dispatch(self, input_text: str, repl: "AgentREPL") -> bool:
-        """Parse and execute a slash command.
-
-        Args:
-            input_text: Raw input string from the user.
-            repl: The ``AgentREPL`` instance (passed to handlers).
-
-        Returns:
-            ``True`` if the input was a slash command (even if unknown),
-            ``False`` if the input should be treated as an agent query.
-        """
-        if not input_text.startswith("/"):
-            return False
-        parts = input_text[1:].split(maxsplit=1)
-        cmd_name = parts[0].lower()
-        args = parts[1] if len(parts) > 1 else ""
-        # Resolve aliases
-        if cmd_name == "exit":
-            cmd_name = "quit"
-        cmd = self._commands.get(cmd_name)
-        if cmd is None:
-            repl.renderer.print(
-                f"[yellow]Unknown command: /{cmd_name}[/yellow] — "
-                f"type [bold]/help[/bold] to see available commands."
-            )
-            return True
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Schedule as a coroutine — caller must await
-                # We use run_coroutine_threadsafe or create_task
-                future = asyncio.ensure_future(cmd.handler(repl, args))
-                # In the REPL loop (which runs under asyncio), we need to await
-                # The REPL loop handles this by calling dispatch and then awaiting
-                # We store the coro and return True; the REPL handles running it
-                repl._pending_command = future
-            else:
-                loop.run_until_complete(cmd.handler(repl, args))
-        except Exception as exc:
-            repl.renderer.render_error(exc)
-        return True
 
     async def dispatch_async(self, input_text: str, repl: "AgentREPL") -> bool:
         """Parse and execute a slash command asynchronously.
@@ -280,6 +239,14 @@ async def _cmd_export(repl: "AgentREPL", args: str) -> None:
     if not repl.history:
         repl.renderer.print("[yellow]No conversation history to export.[/yellow]")
         return
+    # Path traversal guard — only applies to relative paths to prevent ../escape
+    raw = Path(path)
+    if not raw.is_absolute():
+        resolved = raw.resolve()
+        cwd = Path.cwd().resolve()
+        if not str(resolved).startswith(str(cwd)):
+            repl.renderer.print("[red]Export path must be within the current directory.[/red]")
+            return
     turns = [turn.to_dict() for turn in repl.history]
     export_data = {
         "session_id": repl.config.session_id,
@@ -289,8 +256,11 @@ async def _cmd_export(repl: "AgentREPL", args: str) -> None:
         "turns": turns,
     }
     try:
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(export_data, fh, indent=2, ensure_ascii=False)
+        def _write() -> None:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(export_data, fh, indent=2, ensure_ascii=False)
+
+        await asyncio.to_thread(_write)
         repl.renderer.print(
             f"[green]Conversation exported to:[/green] [bold]{path}[/bold] "
             f"({len(turns)} turn(s))"

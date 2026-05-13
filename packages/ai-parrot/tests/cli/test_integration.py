@@ -7,7 +7,6 @@ All tests use mocks — no running server or real LLM API keys are required.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,23 +19,6 @@ from parrot.cli.commands import SlashCommandDispatcher
 from parrot.cli.loaders import AgentLoadError, StandaloneAgentLoader
 from parrot.cli.repl import AgentREPL, REPLConfig
 from parrot.models.outputs import OutputMode
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _run_async(coro):
-    """Run an async coroutine in the test event loop.
-
-    Args:
-        coro: Coroutine to run.
-
-    Returns:
-        Result of the coroutine.
-    """
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +103,9 @@ class TestSlashCommandDispatcher:
         assert "/clear" in completions
         assert "/info" in completions
 
-    def test_dispatch_non_slash_returns_false(self, mock_agent, repl_config, renderer):
-        """Non-slash input must return False from dispatch().
+    @pytest.mark.asyncio
+    async def test_dispatch_non_slash_returns_false(self, mock_agent, repl_config, renderer):
+        """Non-slash input must return False from dispatch_async().
 
         Args:
             mock_agent: Fixture providing mock bot.
@@ -131,10 +114,11 @@ class TestSlashCommandDispatcher:
         """
         dispatcher = SlashCommandDispatcher()
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        assert dispatcher.dispatch("hello world", repl) is False
+        assert await dispatcher.dispatch_async("hello world", repl) is False
 
-    def test_dispatch_slash_returns_true(self, mock_agent, repl_config, renderer):
-        """Slash input must return True from dispatch().
+    @pytest.mark.asyncio
+    async def test_dispatch_slash_returns_true(self, mock_agent, repl_config, renderer):
+        """Slash input must return True from dispatch_async().
 
         Even unknown commands return True (they are "consumed" as slash commands).
 
@@ -146,10 +130,11 @@ class TestSlashCommandDispatcher:
         dispatcher = SlashCommandDispatcher()
         repl = AgentREPL(mock_agent, repl_config, renderer)
         # /help is a known command — True
-        result = dispatcher.dispatch("/help", repl)
+        result = await dispatcher.dispatch_async("/help", repl)
         assert result is True
 
-    def test_dispatch_unknown_command(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_dispatch_unknown_command(self, mock_agent, repl_config, renderer):
         """Unknown slash commands should return True without raising.
 
         Args:
@@ -159,7 +144,7 @@ class TestSlashCommandDispatcher:
         """
         dispatcher = SlashCommandDispatcher()
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        result = dispatcher.dispatch("/nonexistent_command", repl)
+        result = await dispatcher.dispatch_async("/nonexistent_command", repl)
         assert result is True  # consumed as a slash command
 
 
@@ -201,7 +186,8 @@ class TestREPLConfig:
 class TestStandaloneAgentLoader:
     """Unit tests for StandaloneAgentLoader."""
 
-    def test_load_existing_agent(self, mock_agent):
+    @pytest.mark.asyncio
+    async def test_load_existing_agent(self, mock_agent):
         """Loading a known agent should return the bot instance.
 
         Args:
@@ -211,20 +197,22 @@ class TestStandaloneAgentLoader:
         with patch("parrot.cli.loaders.agent_registry") as mock_reg:
             mock_reg.get_instance = AsyncMock(return_value=mock_agent)
             mock_reg._registered_agents = {"test_agent": MagicMock()}
-            bot = _run_async(loader.load("test_agent"))
+            bot = await loader.load("test_agent")
             assert bot is mock_agent
 
-    def test_load_unknown_agent_raises(self):
+    @pytest.mark.asyncio
+    async def test_load_unknown_agent_raises(self):
         """Loading an unknown agent must raise AgentLoadError with suggestions."""
         loader = StandaloneAgentLoader()
         with patch("parrot.cli.loaders.agent_registry") as mock_reg:
             mock_reg.get_instance = AsyncMock(return_value=None)
             mock_reg._registered_agents = {"security_agent": MagicMock()}
             with pytest.raises(AgentLoadError) as exc_info:
-                _run_async(loader.load("secrity_agent"))
+                await loader.load("secrity_agent")
             assert "security_agent" in exc_info.value.suggestions
 
-    def test_load_unknown_agent_no_suggestions(self):
+    @pytest.mark.asyncio
+    async def test_load_unknown_agent_no_suggestions(self):
         """AgentLoadError should be raised even with no fuzzy suggestions.
 
         Tests empty registry case.
@@ -234,9 +222,10 @@ class TestStandaloneAgentLoader:
             mock_reg.get_instance = AsyncMock(return_value=None)
             mock_reg._registered_agents = {}
             with pytest.raises(AgentLoadError):
-                _run_async(loader.load("nonexistent"))
+                await loader.load("nonexistent")
 
-    def test_list_agents(self):
+    @pytest.mark.asyncio
+    async def test_list_agents(self):
         """list_agents() should return BotMetadata values from registry.
 
         Verifies return type is a list.
@@ -246,7 +235,7 @@ class TestStandaloneAgentLoader:
         meta1.name = "agent1"
         with patch("parrot.cli.loaders.agent_registry") as mock_reg:
             mock_reg._registered_agents = {"agent1": meta1}
-            result = _run_async(loader.list_agents())
+            result = await loader.list_agents()
             assert result == [meta1]
 
 
@@ -258,7 +247,8 @@ class TestStandaloneAgentLoader:
 class TestAgentREPLSend:
     """Integration tests for AgentREPL send() and history tracking."""
 
-    def test_send_calls_ask(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_send_calls_ask(self, mock_agent, repl_config, renderer):
         """send() should call bot.ask() with correct parameters.
 
         Args:
@@ -267,13 +257,14 @@ class TestAgentREPLSend:
             renderer: Fixture providing quiet renderer.
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        _run_async(repl.send("hello"))
+        await repl.send("hello")
         mock_agent.ask.assert_called_once()
         call_kwargs = mock_agent.ask.call_args
         assert call_kwargs.kwargs.get("output_mode") == OutputMode.TERMINAL or \
                (len(call_kwargs.args) > 3 and call_kwargs.args[3] == OutputMode.TERMINAL)
 
-    def test_send_tracks_history(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_send_tracks_history(self, mock_agent, repl_config, renderer):
         """send() should append a ConversationTurn to repl.history.
 
         Args:
@@ -282,11 +273,12 @@ class TestAgentREPLSend:
             renderer: Fixture providing quiet renderer.
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        _run_async(repl.send("hello"))
+        await repl.send("hello")
         assert len(repl.history) == 1
         assert repl.history[0].query == "hello"
 
-    def test_send_session_id_passed(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_send_session_id_passed(self, mock_agent, repl_config, renderer):
         """send() must pass session_id from config to bot.ask().
 
         Args:
@@ -295,9 +287,69 @@ class TestAgentREPLSend:
             renderer: Fixture providing quiet renderer.
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        _run_async(repl.send("test"))
+        await repl.send("test")
         call_kwargs = mock_agent.ask.call_args.kwargs
         assert call_kwargs.get("session_id") == repl.config.session_id
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — AgentREPL.send_stream()
+# ---------------------------------------------------------------------------
+
+
+class TestAgentREPLStream:
+    """Integration tests for AgentREPL send_stream() and streaming rendering."""
+
+    @pytest.mark.asyncio
+    async def test_send_stream_renders_chunks(self, mock_agent, renderer):
+        """send_stream() should call renderer streaming methods and track history.
+
+        Verifies render_stream_start(), render_stream_chunk(), render_stream_end()
+        are all called, and that a ConversationTurn is appended to history.
+
+        Args:
+            mock_agent: Fixture providing mock bot with ask_stream mock.
+            renderer: Fixture providing quiet renderer.
+        """
+        config = REPLConfig(
+            agent_name="test_agent",
+            streaming=True,
+            session_id="test-session-stream",
+            user_id="test-user",
+        )
+        repl = AgentREPL(mock_agent, config, renderer)
+
+        stream_start_calls = []
+        stream_end_calls = []
+        stream_chunk_calls = []
+
+        original_start = renderer.render_stream_start
+        original_end = renderer.render_stream_end
+        original_chunk = renderer.render_stream_chunk
+
+        def _track_start():
+            stream_start_calls.append(True)
+            original_start()
+
+        def _track_end(response=None):
+            stream_end_calls.append(True)
+            original_end(response)
+
+        def _track_chunk(text):
+            stream_chunk_calls.append(text)
+            original_chunk(text)
+
+        renderer.render_stream_start = _track_start
+        renderer.render_stream_end = _track_end
+        renderer.render_stream_chunk = _track_chunk
+
+        await repl.send_stream("hello streaming")
+
+        assert len(stream_start_calls) == 1, "render_stream_start() must be called once"
+        assert len(stream_end_calls) == 1, "render_stream_end() must be called once"
+        assert len(stream_chunk_calls) >= 1, "render_stream_chunk() must be called at least once"
+        assert len(repl.history) == 1, "One ConversationTurn must be appended to history"
+        assert repl.history[0].query == "hello streaming"
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +360,8 @@ class TestAgentREPLSend:
 class TestSlashCommandsAsync:
     """Integration tests for async slash command execution."""
 
-    def test_stream_toggle(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_stream_toggle(self, mock_agent, repl_config, renderer):
         """'/stream' should toggle config.streaming.
 
         Args:
@@ -318,10 +371,11 @@ class TestSlashCommandsAsync:
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
         initial = repl.config.streaming  # False from fixture
-        _run_async(repl.dispatcher.dispatch_async("/stream", repl))
+        await repl.dispatcher.dispatch_async("/stream", repl)
         assert repl.config.streaming != initial
 
-    def test_clear_new_session(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_clear_new_session(self, mock_agent, repl_config, renderer):
         """'/clear' should change session_id and clear history.
 
         Args:
@@ -332,14 +386,15 @@ class TestSlashCommandsAsync:
         repl = AgentREPL(mock_agent, repl_config, renderer)
         old_id = repl.config.session_id
         # Add a turn to history
-        _run_async(repl.send("hello"))
+        await repl.send("hello")
         assert len(repl.history) == 1
         # Now clear
-        _run_async(repl.dispatcher.dispatch_async("/clear", repl))
+        await repl.dispatcher.dispatch_async("/clear", repl)
         assert repl.config.session_id != old_id
         assert len(repl.history) == 0
 
-    def test_tools_command(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_tools_command(self, mock_agent, repl_config, renderer):
         """'/tools' should call bot.get_available_tools() without error.
 
         Args:
@@ -348,10 +403,11 @@ class TestSlashCommandsAsync:
             renderer: Fixture providing quiet renderer.
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
-        _run_async(repl.dispatcher.dispatch_async("/tools", repl))
+        await repl.dispatcher.dispatch_async("/tools", repl)
         mock_agent.get_available_tools.assert_called_once()
 
-    def test_quit_raises_system_exit(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_quit_raises_system_exit(self, mock_agent, repl_config, renderer):
         """'/quit' should raise SystemExit.
 
         Args:
@@ -361,9 +417,10 @@ class TestSlashCommandsAsync:
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
         with pytest.raises(SystemExit):
-            _run_async(repl.dispatcher.dispatch_async("/quit", repl))
+            await repl.dispatcher.dispatch_async("/quit", repl)
 
-    def test_exit_alias_quit(self, mock_agent, repl_config, renderer):
+    @pytest.mark.asyncio
+    async def test_exit_alias_quit(self, mock_agent, repl_config, renderer):
         """'/exit' should be an alias for '/quit' and raise SystemExit.
 
         Args:
@@ -373,7 +430,7 @@ class TestSlashCommandsAsync:
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
         with pytest.raises(SystemExit):
-            _run_async(repl.dispatcher.dispatch_async("/exit", repl))
+            await repl.dispatcher.dispatch_async("/exit", repl)
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +441,8 @@ class TestSlashCommandsAsync:
 class TestExportRoundtrip:
     """Integration tests for the /export slash command."""
 
-    def test_export_creates_json_file(self, mock_agent, repl_config, renderer, tmp_path):
+    @pytest.mark.asyncio
+    async def test_export_creates_json_file(self, mock_agent, repl_config, renderer, tmp_path):
         """'/export path' should create a valid JSON file with conversation turns.
 
         Args:
@@ -395,10 +453,10 @@ class TestExportRoundtrip:
         """
         repl = AgentREPL(mock_agent, repl_config, renderer)
         # Add a conversation turn
-        _run_async(repl.send("What is 2+2?"))
+        await repl.send("What is 2+2?")
         # Export
         export_path = str(tmp_path / "conversation.json")
-        _run_async(repl.dispatcher.dispatch_async(f"/export {export_path}", repl))
+        await repl.dispatcher.dispatch_async(f"/export {export_path}", repl)
         # Verify file
         assert Path(export_path).exists()
         with open(export_path) as f:
@@ -408,7 +466,8 @@ class TestExportRoundtrip:
         assert len(data["turns"]) == 1
         assert data["turns"][0]["query"] == "What is 2+2?"
 
-    def test_export_empty_history(self, mock_agent, repl_config, renderer, tmp_path):
+    @pytest.mark.asyncio
+    async def test_export_empty_history(self, mock_agent, repl_config, renderer, tmp_path):
         """'/export' with empty history should not create a file.
 
         Args:
@@ -420,7 +479,7 @@ class TestExportRoundtrip:
         repl = AgentREPL(mock_agent, repl_config, renderer)
         export_path = str(tmp_path / "empty.json")
         # No history
-        _run_async(repl.dispatcher.dispatch_async(f"/export {export_path}", repl))
+        await repl.dispatcher.dispatch_async(f"/export {export_path}", repl)
         assert not Path(export_path).exists()
 
 

@@ -11,6 +11,7 @@ import asyncio
 import difflib
 import logging
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import aiohttp
 import questionary
@@ -189,7 +190,7 @@ class _ServerBotProxy:
         Raises:
             AgentLoadError: On HTTP errors or connection failure.
         """
-        url = f"{self._server_url}/api/agent/{self.name}/ask"
+        url = f"{self._server_url}/api/agent/{quote(self.name, safe='')}/ask"
         payload: Dict[str, Any] = {
             "question": question,
             "session_id": session_id or "",

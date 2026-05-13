@@ -18,7 +18,15 @@ import click
 class LazyGroup(click.Group):
     """Click group that imports subcommands on first invocation."""
 
-    _lazy_commands: dict[str, str] = {}
+    def __init__(self, *args, **kwargs):
+        """Initialise LazyGroup with an empty lazy command registry.
+
+        Args:
+            *args: Positional arguments forwarded to ``click.Group``.
+            **kwargs: Keyword arguments forwarded to ``click.Group``.
+        """
+        super().__init__(*args, **kwargs)
+        self._lazy_commands: dict[str, str] = {}
 
     def list_commands(self, ctx):
         """Return sorted list of registered subcommand names.

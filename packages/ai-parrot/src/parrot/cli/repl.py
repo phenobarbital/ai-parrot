@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from rich.console import Console
 
 from parrot.bots.abstract import AbstractBot
-from parrot.cli.commands import ConversationTurn, SlashCommandDispatcher
+from parrot.cli.commands import ConversationTurn, SlashCommand, SlashCommandDispatcher
 from parrot.cli.renderer import ResponseRenderer
 from parrot.models.outputs import OutputMode
 from parrot.models.responses import AIMessage
@@ -81,7 +81,6 @@ class AgentREPL:
         self.history: List[ConversationTurn] = []
         self.console = Console()
         self.logger = logging.getLogger(__name__)
-        self._pending_command = None  # used by synchronous dispatch() fallback
 
     async def run(self) -> None:
         """Run the REPL loop until the user exits.
@@ -233,7 +232,7 @@ class AgentREPL:
             )
         )
 
-    def register_command(self, cmd) -> None:  # type: ignore[type-arg]
+    def register_command(self, cmd: SlashCommand) -> None:
         """Register a custom slash command with the dispatcher.
 
         Args:
@@ -261,7 +260,7 @@ class _StreamedResponse:
             query: The original user query.
             output: The accumulated streamed text.
         """
-        self.input = query
+        self.query = query
         self.output = output
         self.response = output
         self.tool_calls = []

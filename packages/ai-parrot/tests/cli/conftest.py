@@ -62,12 +62,13 @@ def mock_agent():
     """
     agent = AsyncMock()
     agent.name = "test_agent"
-    agent.get_available_tools.return_value = ["MathTool", "WebSearch"]
-    agent.get_tools_count.return_value = 2
-    agent.has_tools.return_value = True
+    # These are synchronous methods on AbstractBot — use MagicMock, not AsyncMock
+    agent.get_available_tools = MagicMock(return_value=["MathTool", "WebSearch"])
+    agent.get_tools_count = MagicMock(return_value=2)
+    agent.has_tools = MagicMock(return_value=True)
     agent.configure = AsyncMock(return_value=None)
     agent.ask = AsyncMock(return_value=_make_ai_message("Test response"))
-    agent.ask_stream = AsyncMock(return_value=_async_gen_response("Test streaming response"))
+    agent.ask_stream = MagicMock(side_effect=lambda **kw: _async_gen_response("Test streaming response"))
     return agent
 
 
@@ -105,16 +106,17 @@ def repl_config():
 def renderer():
     """A ResponseRenderer with a no-op console for testing.
 
-    Returns:
+    Yields:
         ResponseRenderer with a file=open(devnull) console to suppress output.
     """
     import os
     from rich.console import Console
     from parrot.cli.renderer import ResponseRenderer
     r = ResponseRenderer()
-    # Replace console with a quiet one to avoid output during tests
-    r.console = Console(file=open(os.devnull, "w"))  # noqa: SIM115
-    return r
+    fh = open(os.devnull, "w")  # noqa: SIM115
+    r.console = Console(file=fh)
+    yield r
+    fh.close()
 
 
 @pytest.fixture
