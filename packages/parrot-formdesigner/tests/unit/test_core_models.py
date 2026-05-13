@@ -95,6 +95,46 @@ class TestFormSchema:
         assert f2.created_at == ts
 
 
+# TASK-1149: OptionsSource extensions tests
+from parrot_formdesigner.core.options import OptionsSource
+
+
+def test_options_source_http_method_default_get():
+    """New OptionsSource defaults http_method to GET."""
+    src = OptionsSource(source_type="endpoint", source_ref="https://api.test/users")
+    assert src.http_method == "GET"
+
+
+def test_options_source_auth_ref_optional():
+    """auth_ref is optional; legacy schemas without it deserialize unchanged."""
+    src = OptionsSource(source_type="endpoint", source_ref="https://api.test/users")
+    assert src.auth_ref is None
+
+
+def test_options_source_with_post_and_auth():
+    """OptionsSource accepts POST method and auth_ref."""
+    src = OptionsSource(
+        source_type="endpoint",
+        source_ref="https://api.test/users",
+        http_method="POST",
+        auth_ref="MY_API_KEY",
+    )
+    assert src.http_method == "POST"
+    assert src.auth_ref == "MY_API_KEY"
+
+
+def test_options_source_value_label_field_names_unchanged():
+    """value_field and label_field names are preserved."""
+    src = OptionsSource(
+        source_type="endpoint",
+        source_ref="https://api.test/users",
+        value_field="id",
+        label_field="full_name",
+    )
+    assert src.value_field == "id"
+    assert src.label_field == "full_name"
+
+
 # TASK-1148: FieldConstraints scale fields tests
 from pydantic import ValidationError
 from parrot_formdesigner.core.constraints import FieldConstraints
