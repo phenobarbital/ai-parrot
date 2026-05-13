@@ -20,6 +20,7 @@
 | 6  | Cross-cutting concerns and reference deployment                | [06-cross-cutting.md](06-cross-cutting.md) |
 | 7  | AgentCrew — sequential, parallel, flow and loop execution      | [07-agentcrew.md](07-agentcrew.md)         |
 | 8  | AgentsFlow — DAG-first orchestration with per-node FSM         | [08-agentsflow-dag.md](08-agentsflow-dag.md) |
+| 9  | Ontologic RAG — graph-first retrieval, intent routing & multi-tenant knowledge | [09-ontologic-rag.md](09-ontologic-rag.md) |
 
 All file references in the chapters use the `package/path/file.py:line`
 convention so the reader can jump directly to the source of truth.
@@ -104,5 +105,8 @@ graph TB
   `AgentCrew` and its four execution modes (sequential, parallel,
   flow, loop); chapter 8 covers `AgentsFlow` as a DAG-first runner
   with per-node FSM, conditional transitions and HITL decision nodes.
+- **RAG / knowledge engineers** — chapter 9 covers ontology definitions,
+  graph traversal, intent routing, entity extraction, authorization,
+  store routing, and the degradation chain.
 - **Framework maintainers** — read in order; the “pointers for reviewers”
   table at the end of chapter 6 is the usual jumping-off point.
