@@ -168,3 +168,62 @@ async def test_internal_toolkit_gating_optimization_components(
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}
     assert "generate_optimization_tips" in tool_names
     assert "extract_sql_from_response" not in tool_names
+
+
+@pytest.mark.asyncio
+async def test_ask_omits_components_uses_router_intent_overlay(
+    mock_llm_client, fake_postgres_toolkit
+):
+    """When output_components is omitted, the router's intent-enriched
+    components (role baseline | intent flags) are used — not the role
+    baseline alone. Otherwise intent-specific tools are silently dropped.
+    """
+    agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
+    agent._llm = mock_llm_client
+    await agent.configure()
+    # "optimize this query" triggers QueryIntent.OPTIMIZE_QUERY in the
+    # router, which adds FULL_ANALYSIS (includes OPTIMIZATION_TIPS).
+    await agent.ask("optimize this query")
+    tools = mock_llm_client.ask.call_args.kwargs.get("tools") or []
+    tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}
+    # Optimization tools must be exposed because the router's
+    # intent-component overlay added OPTIMIZATION_TIPS, even though the
+    # caller did not request it explicitly.
+    assert "generate_optimization_tips" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_ask_non_retryable_exec_error_surfaces_as_failure_response(
+    fake_postgres_toolkit,
+):
+    """Non-retryable error from execute_query must produce a failure
+    QueryResponse instead of returning the LLM's prior successful-looking
+    response unchanged.
+    """
+    from parrot.bots.database.retries import QueryRetryConfig
+
+    qr = QueryResponse(
+        explanation="here is your query",
+        query="SELECT bogus FROM nowhere",
+        data=None,
+    )
+    llm = MagicMock()
+    llm.ask = AsyncMock(return_value=MagicMock(
+        is_structured=True, output=qr, response="here is your query", data=None,
+    ))
+    fake_postgres_toolkit.execute_query = AsyncMock(  # type: ignore[method-assign]
+        side_effect=RuntimeError("permission denied")
+    )
+
+    agent = DatabaseAgent(
+        toolkits=[fake_postgres_toolkit],
+        retry_config=QueryRetryConfig(max_retries=1),
+    )
+    agent._llm = llm
+    await agent.configure()
+
+    msg = await agent.ask("show me the bogus column")
+    assert isinstance(msg.output, QueryResponse)
+    assert "non-retryable" in msg.output.explanation.lower()
+    assert "permission denied" in msg.output.explanation
+    assert msg.output.query == "SELECT bogus FROM nowhere"

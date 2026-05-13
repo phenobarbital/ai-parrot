@@ -539,5 +539,6 @@ INTENT_COMPONENT_MAPPING: Dict[QueryIntent, OutputComponent] = {
     QueryIntent.VALIDATE_QUERY: OutputComponent.SQL_QUERY | OutputComponent.DOCUMENTATION | OutputComponent.OPTIMIZATION_TIPS,
     QueryIntent.OPTIMIZE_QUERY: OutputComponent.FULL_ANALYSIS,
     QueryIntent.EXPLAIN_METADATA: OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT | OutputComponent.EXAMPLES,
-    QueryIntent.CREATE_EXAMPLES: OutputComponent.EXAMPLES | OutputComponent.SCHEMA_CONTEXT
+    QueryIntent.CREATE_EXAMPLES: OutputComponent.EXAMPLES | OutputComponent.SCHEMA_CONTEXT,
+    QueryIntent.GENERATE_REPORT: OutputComponent.DATA_RESULTS | OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT,
 }
