@@ -493,3 +493,114 @@ async def test_telegram_new_types_classified():
             assert in_inline, f"{ft} should be in _INLINE_FIELD_TYPES"
         if ft in webapp_expected:
             assert in_webapp, f"{ft} should be in _WEBAPP_FIELD_TYPES"
+
+
+# --- TASK-1158: API Handler AuthContext tests ---
+
+def test_build_auth_context_from_bearer_header():
+    """Bearer token in Authorization header → AuthContext(scheme='bearer', token=...)."""
+    from unittest.mock import MagicMock
+    from parrot_formdesigner.api.handlers import FormAPIHandler
+    from parrot_formdesigner.services.registry import FormRegistry
+
+    handler = FormAPIHandler(registry=FormRegistry())
+
+    mock_request = MagicMock()
+    mock_request.headers = {"Authorization": "Bearer my-token"}
+    mock_request.__contains__ = MagicMock(return_value=False)
+
+    ctx = handler._build_auth_context(mock_request)
+    assert ctx.scheme == "bearer"
+    assert ctx.token == "my-token"
+    assert ctx.headers.get("Authorization") == "Bearer my-token"
+
+
+def test_build_auth_context_no_header():
+    """No Authorization header → AuthContext(scheme='none')."""
+    from unittest.mock import MagicMock
+    from parrot_formdesigner.api.handlers import FormAPIHandler
+    from parrot_formdesigner.services.registry import FormRegistry
+
+    handler = FormAPIHandler(registry=FormRegistry())
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.__contains__ = MagicMock(return_value=False)
+
+    ctx = handler._build_auth_context(mock_request)
+    assert ctx.scheme == "none"
+    assert ctx.token is None
+
+
+def test_build_auth_context_from_apikey_header():
+    """ApiKey token in Authorization header → AuthContext(scheme='api_key')."""
+    from unittest.mock import MagicMock
+    from parrot_formdesigner.api.handlers import FormAPIHandler
+    from parrot_formdesigner.services.registry import FormRegistry
+
+    handler = FormAPIHandler(registry=FormRegistry())
+
+    mock_request = MagicMock()
+    mock_request.headers = {"Authorization": "ApiKey secret-key"}
+    mock_request.__contains__ = MagicMock(return_value=False)
+
+    ctx = handler._build_auth_context(mock_request)
+    assert ctx.scheme == "api_key"
+    assert ctx.token == "secret-key"
+
+
+def test_build_auth_context_from_middleware_preset():
+    """If request['auth_context'] is already AuthContext, return it as-is."""
+    from unittest.mock import MagicMock
+    from parrot_formdesigner.api.handlers import FormAPIHandler
+    from parrot_formdesigner.services.registry import FormRegistry
+    from parrot_formdesigner.services.auth_context import AuthContext
+
+    handler = FormAPIHandler(registry=FormRegistry())
+
+    preset = AuthContext(scheme="bearer", token="preset-token")
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.__contains__ = MagicMock(return_value=True)
+    mock_request.__getitem__ = MagicMock(return_value=preset)
+
+    ctx = handler._build_auth_context(mock_request)
+    assert ctx is preset
+    assert ctx.token == "preset-token"
+
+
+@pytest.mark.asyncio
+async def test_e2e_authcontext_cascade_into_group():
+    """Nested GROUP field's child renders without error when AuthContext is present."""
+    from parrot_formdesigner.core.schema import FormSchema, FormSection, FormField
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.renderers.html5 import HTML5Renderer as HTML5FormRenderer
+
+    form = FormSchema(
+        form_id="auth-cascade-test",
+        title="Auth Cascade Test",
+        sections=[
+            FormSection(
+                section_id="main",
+                fields=[
+                    FormField(
+                        field_id="group1",
+                        field_type=FieldType.GROUP,
+                        label="Group",
+                        children=[
+                            FormField(
+                                field_id="dynamic1",
+                                field_type=FieldType.DYNAMIC_SELECT,
+                                label="Dynamic Select",
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    renderer = HTML5FormRenderer()
+    result = await renderer.render(form)
+    # Rendering completes without error; no auth_context kwarg needed on render()
+    assert result is not None
+    assert result.content is not None
