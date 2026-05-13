@@ -92,7 +92,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Parallel with other renderer registry tasks after TASK-1139",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1143-renderer-registry-xforms.md"
+      "completed_at": "2026-05-13T20:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1143-renderer-registry-xforms.md"
     },
     {
       "id": "TASK-1144",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Parallel with other renderer registry tasks after TASK-1139",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1144-renderer-registry-jsonschema.md"
+      "completed_at": "2026-05-13T20:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1144-renderer-registry-jsonschema.md"
     },
     {
       "id": "TASK-1145",
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Parallel with other renderer registry tasks after TASK-1139",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1145-renderer-registry-telegram.md"
+      "completed_at": "2026-05-13T20:20:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1145-renderer-registry-telegram.md"
     },
     {
       "id": "TASK-1146",
