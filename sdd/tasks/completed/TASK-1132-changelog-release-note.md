@@ -204,9 +204,7 @@ grep -n "FEAT-164" packages/ai-parrot/CHANGELOG.md
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-13
+**Notes**: Appended FEAT-164 entry under `[Unreleased]` in `packages/ai-parrot/CHANGELOG.md`. Covers all 5 user-visible changes: base class change (AbstractBot → BasicAgent), ask() structured-output flow, QueryResponse/QueryDataset models, DatabaseAgentToolkit, and AbstractDBAgent removal. Migration paragraph included inline under the Changed entry.
+**Deviations from spec**: The Added sub-entries (QueryResponse/QueryDataset and DatabaseAgentToolkit) were placed inside the existing `### Added` block established by FEAT-133 rather than opening a duplicate `### Added` header, to keep the `[Unreleased]` section well-formed.
