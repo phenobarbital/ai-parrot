@@ -59,6 +59,17 @@ _LEGACY_FIELD_TYPE_MAP: dict[str, FieldType] = {
     "hidden": FieldType.HIDDEN,
     "group": FieldType.GROUP,
     "array": FieldType.ARRAY,
+    # New field types (FEAT-167)
+    "signature": FieldType.SIGNATURE,
+    "dynamic_select": FieldType.DYNAMIC_SELECT,
+    "transfer_list": FieldType.TRANSFER_LIST,
+    "remote_response": FieldType.REMOTE_RESPONSE,
+    "availability": FieldType.AVAILABILITY,
+    "location": FieldType.LOCATION,
+    "tags": FieldType.TAGS,
+    "nps": FieldType.NPS,
+    "likert": FieldType.LIKERT,
+    "ranking": FieldType.RANKING,
 }
 
 # Map legacy validation rule names to FieldConstraints attributes

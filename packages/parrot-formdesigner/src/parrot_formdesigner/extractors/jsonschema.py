@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from ..core.constraints import FieldConstraints
-from ..core.options import FieldOption
+from ..core.options import FieldOption, OptionsSource
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType
 
@@ -38,6 +38,20 @@ _FORMAT_MAP: dict[str, FieldType] = {
     "password": FieldType.PASSWORD,
     "color": FieldType.COLOR,
     "phone": FieldType.PHONE,
+    # New field types (FEAT-167)
+    "signature": FieldType.SIGNATURE,
+    "dynamic-select": FieldType.DYNAMIC_SELECT,
+    "dynamic_select": FieldType.DYNAMIC_SELECT,
+    "transfer-list": FieldType.TRANSFER_LIST,
+    "transfer_list": FieldType.TRANSFER_LIST,
+    "remote-response": FieldType.REMOTE_RESPONSE,
+    "remote_response": FieldType.REMOTE_RESPONSE,
+    "availability": FieldType.AVAILABILITY,
+    "location": FieldType.LOCATION,
+    "tags": FieldType.TAGS,
+    "nps": FieldType.NPS,
+    "likert": FieldType.LIKERT,
+    "ranking": FieldType.RANKING,
 }
 
 
@@ -191,6 +205,20 @@ class JsonSchemaExtractor:
                 if v is not None
             ]
 
+        # Handle x-options-source → OptionsSource (FEAT-167)
+        options_source: OptionsSource | None = None
+        x_src = prop.get("x-options-source")
+        if x_src and isinstance(x_src, dict):
+            options_source = OptionsSource(
+                source_type=x_src.get("source_type", "endpoint"),
+                source_ref=x_src.get("source_ref", ""),
+                value_field=x_src.get("value_field", "value"),
+                label_field=x_src.get("label_field", "label"),
+                cache_ttl_seconds=x_src.get("cache_ttl_seconds"),
+                http_method=x_src.get("http_method", "GET"),
+                auth_ref=x_src.get("auth_ref"),
+            )
+
         # Handle object → GROUP with children
         children: list[FormField] | None = None
         if field_type == FieldType.GROUP:
@@ -229,6 +257,7 @@ class JsonSchemaExtractor:
             default=default,
             constraints=constraints if constraints and self._has_constraints(constraints) else None,
             options=options,
+            options_source=options_source,
             children=children if children else None,
             item_template=item_template,
         )
