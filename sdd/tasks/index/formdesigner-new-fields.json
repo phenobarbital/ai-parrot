@@ -404,7 +404,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -416,8 +416,8 @@
       "parallelism_notes": "Needs all Phase 3 services to be available",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1158-api-handler-authcontext-integration.md"
+      "completed_at": "2026-05-13T21:45:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1158-api-handler-authcontext-integration.md"
     },
     {
       "id": "TASK-1159",
