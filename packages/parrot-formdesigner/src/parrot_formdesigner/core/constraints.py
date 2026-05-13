@@ -47,6 +47,62 @@ class FieldConstraints(BaseModel):
     max_file_size_bytes: int | None = Field(
         default=None, ge=0, description="Maximum file size in bytes"
     )
+    # Phase 2 — scale fields for NPS / LIKERT / RANKING (FEAT-167)
+    scale_min: int | None = Field(default=None, ge=0, description="Scale minimum (>= 0)")
+    scale_max: int | None = Field(default=None, description="Scale maximum (must be > scale_min)")
+    scale_step: int | None = Field(default=None, ge=1, description="Scale step increment (>= 1)")
+    anchor_labels: dict[int, LocalizedString] | None = Field(
+        default=None, description="Label for specific scale points"
+    )
+
+    @field_validator("scale_max")
+    @classmethod
+    def _validate_scale_max(cls, v: int | None, info: Any) -> int | None:
+        """Enforce scale_max > scale_min when both are set.
+
+        Args:
+            v: scale_max value.
+            info: Validation info with sibling field data.
+
+        Returns:
+            The scale_max value unchanged.
+
+        Raises:
+            ValueError: If scale_max <= scale_min.
+        """
+        scale_min = info.data.get("scale_min")
+        if v is not None and scale_min is not None and v <= scale_min:
+            raise ValueError(
+                f"scale_max ({v}) must be greater than scale_min ({scale_min})"
+            )
+        return v
+
+    @field_validator("anchor_labels")
+    @classmethod
+    def _validate_anchor_labels(cls, v: dict | None, info: Any) -> dict | None:
+        """Enforce anchor_labels keys are within [scale_min, scale_max].
+
+        Args:
+            v: anchor_labels dict.
+            info: Validation info with sibling field data.
+
+        Returns:
+            The anchor_labels dict unchanged.
+
+        Raises:
+            ValueError: If any key is outside the scale bounds.
+        """
+        if v is None:
+            return v
+        scale_min = info.data.get("scale_min", 0) or 0
+        scale_max = info.data.get("scale_max")
+        if scale_max is not None:
+            for key in v:
+                if not (scale_min <= key <= scale_max):
+                    raise ValueError(
+                        f"anchor_labels key {key} is outside [{scale_min}, {scale_max}]"
+                    )
+        return v
 
     @field_validator("pattern")
     @classmethod

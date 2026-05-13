@@ -95,6 +95,45 @@ class TestFormSchema:
         assert f2.created_at == ts
 
 
+# TASK-1148: FieldConstraints scale fields tests
+from pydantic import ValidationError
+from parrot_formdesigner.core.constraints import FieldConstraints
+
+
+def test_field_constraints_scale_validator_rejects_inverted_range():
+    """scale_max < scale_min raises ValidationError."""
+    with pytest.raises(ValidationError, match="scale_max"):
+        FieldConstraints(scale_min=5, scale_max=3)
+
+
+def test_field_constraints_scale_equal_raises():
+    """scale_max == scale_min raises ValidationError."""
+    with pytest.raises(ValidationError):
+        FieldConstraints(scale_min=5, scale_max=5)
+
+
+def test_field_constraints_anchor_labels_in_bounds():
+    """Anchor label keys outside [scale_min, scale_max] raise."""
+    with pytest.raises(ValidationError, match="anchor_labels"):
+        FieldConstraints(scale_min=0, scale_max=10, anchor_labels={11: "Extreme"})
+
+
+def test_field_constraints_anchor_labels_valid():
+    """Anchor labels within bounds are accepted."""
+    fc = FieldConstraints(
+        scale_min=0, scale_max=10,
+        anchor_labels={0: "Not at all", 5: "Neutral", 10: "Extremely likely"}
+    )
+    assert len(fc.anchor_labels) == 3
+
+
+def test_field_constraints_scale_none_is_ok():
+    """scale_* fields default to None — existing usage unchanged."""
+    fc = FieldConstraints()
+    assert fc.scale_min is None
+    assert fc.scale_max is None
+
+
 # TASK-1147: New FieldType enum values tests
 from parrot_formdesigner.core.types import FieldType
 
