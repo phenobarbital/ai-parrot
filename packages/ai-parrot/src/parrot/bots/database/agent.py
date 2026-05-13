@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Set, Type, Union
-
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional, Set, Union
 
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import StructuredOutputConfig
@@ -19,15 +17,13 @@ from ..prompts.builder import PromptBuilder
 from .cache import CacheManager, CachePartitionConfig
 from .models import (
     OutputComponent,
-    QueryIntent,
-    RouteDecision,
     UserRole,
     components_from_string,
     get_default_components,
 )
-from .models import QueryDataset, QueryResponse
+from .models import QueryResponse
 from .prompts import _build_database_prompt_builder
-from .retries import QueryRetryConfig
+from .retries import QueryRetryConfig, RetryContext
 from .router import SchemaQueryRouter
 from .toolkits import DatabaseAgentToolkit
 from .toolkits.base import DatabaseToolkit
@@ -144,6 +140,10 @@ class DatabaseAgent(BasicAgent):
         for tk in self.toolkits:
             tk_id = f"{tk.database_type}_{tk.primary_schema}"
             self._toolkit_map[tk_id] = tk
+
+            # Propagate agent-level retry config into the toolkit (overrides default).
+            if self.retry_config is not None:
+                tk.retry_config = self.retry_config
 
             if tk.cache_partition is None:
                 partition = self.cache_manager.create_partition(
@@ -349,10 +349,54 @@ class DatabaseAgent(BasicAgent):
                 output_type=QueryResponse
             )
 
-        # Invoke LLM
-        response: AIMessage = await self._llm.ask(**llm_kwargs)
+        # Invoke LLM with retry loop — re-ask up to retry_config.max_retries times
+        # when the toolkit returns a RetryContext (retryable query failure).
+        max_attempts = (self.retry_config.max_retries if self.retry_config else 0) + 1
+        attempt = 0
+        last_retry_ctx: Optional[RetryContext] = None
+        response: Optional[AIMessage] = None
+
+        while attempt < max_attempts:
+            call_kwargs: Dict[str, Any] = dict(llm_kwargs)
+            if last_retry_ctx is not None:
+                retry_section = (
+                    f"\n\n[Retry {last_retry_ctx.attempt}] Previous SQL query failed.\n"
+                    f"Query: {last_retry_ctx.query}\n"
+                    f"Error: {last_retry_ctx.error}"
+                )
+                if last_retry_ctx.sample_data:
+                    retry_section += f"\nSample data: {last_retry_ctx.sample_data}"
+                retry_section += "\nPlease generate a corrected SQL query."
+                call_kwargs["prompt"] = query + retry_section
+
+            response = await self._llm.ask(**call_kwargs)
+
+            qr_check: Optional[QueryResponse] = (
+                response.output if isinstance(response.output, QueryResponse) else None
+            )
+            if qr_check is None or qr_check.query is None or target_toolkit is None:
+                break
+
+            try:
+                exec_result = await target_toolkit.execute_query(qr_check.query)
+            except Exception as exec_exc:
+                self.logger.error("Query execution raised unretryable error: %s", exec_exc)
+                break
+
+            if not isinstance(exec_result, RetryContext):
+                break
+
+            last_retry_ctx = exec_result
+            attempt += 1
+
+        if last_retry_ctx is not None and attempt >= max_attempts:
+            self.logger.warning(
+                "Retry exhausted after %s attempts; surfacing last error.", attempt
+            )
 
         # Unpack structured output into AIMessage fields
+        # response is always set: the while loop runs at least once (max_attempts >= 1).
+        assert response is not None
         qr: Optional[QueryResponse] = (
             response.output if isinstance(response.output, QueryResponse) else None
         )
