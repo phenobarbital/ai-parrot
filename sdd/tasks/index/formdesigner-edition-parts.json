@@ -32,7 +32,7 @@
       "feature_id": "FEAT-169",
       "feature": "formdesigner-edition-parts",
       "spec": "sdd/specs/formdesigner-edition-parts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies create_form.py which imports EditToolkit from TASK-1131",
       "assigned_to": null,
       "started_at": "2026-05-13T23:22:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1132-createformtool-toolkit-integration.md"
+      "completed_at": "2026-05-13T23:29:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1132-createformtool-toolkit-integration.md"
     },
     {
       "id": "TASK-1133",
