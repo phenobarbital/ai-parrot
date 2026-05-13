@@ -550,11 +550,11 @@ from parrot.manager.manager import BotManager      # manager/manager.py:86
 
 ## Open Questions
 
-- [ ] Should the `--server` flag (connect to running server via HTTP) be in scope
-  for v1, or deferred? — *Owner: Jesus*
-- [ ] Should `/export` save as JSON (machine-readable) or Markdown (human-readable),
-  or both? — *Owner: Jesus*
-- [ ] Should there be an `--output-mode` CLI flag to override the default
-  `TERMINAL` mode (e.g., `--output-mode json` for scripting)? — *Owner: Jesus*
-- [ ] Is `questionary` (already in deps) useful for agent selection when name
-  is omitted (interactive picker), or is `--list` + explicit name sufficient? — *Owner: Jesus*
+- [x] Should the `--server` flag (connect to running server via HTTP) be in scope
+  for v1, or deferred? — *Owner: Jesus*: in scope for v1
+- [x] Should `/export` save as JSON (machine-readable) or Markdown (human-readable),
+  or both? — *Owner: Jesus*: json
+- [x] Should there be an `--output-mode` CLI flag to override the default
+  `TERMINAL` mode (e.g., `--output-mode json` for scripting)? — *Owner: Jesus*: no
+- [x] Is `questionary` (already in deps) useful for agent selection when name
+  is omitted (interactive picker), or is `--list` + explicit name sufficient? — *Owner: Jesus*: questionary useful.
