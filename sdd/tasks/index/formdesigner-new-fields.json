@@ -254,7 +254,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -271,8 +271,8 @@
       "parallelism_notes": "Must have all Phase 1 registries and new FieldType values",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1151-per-type-renderer-implementations.md"
+      "completed_at": "2026-05-13T21:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1151-per-type-renderer-implementations.md"
     },
     {
       "id": "TASK-1152",
