@@ -14,7 +14,7 @@
       "feature_id": "FEAT-166",
       "feature": "multi-origin-formdesigner",
       "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational — every subsequent task imports this ABC. Must land first.",
       "assigned_to": null,
       "started_at": "2026-05-13T11:52:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1125-abstract-form-service.md"
+      "completed_at": "2026-05-13T11:54:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1125-abstract-form-service.md"
     },
     {
       "id": "TASK-1126",
