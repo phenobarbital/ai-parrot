@@ -142,6 +142,23 @@ class FormSchema(BaseModel):
     tenant: str | None = None
 
 
+class RenderWarning(BaseModel):
+    """Warning emitted when a renderer uses degraded fallback for a field type.
+
+    Attributes:
+        field_id: The ID of the field that triggered the fallback.
+        field_type: The FieldType.value string (e.g. "signature").
+        renderer: The renderer name ("html5" | "adaptive_card" | "pdf" |
+                  "xforms" | "jsonschema" | "telegram").
+        reason: Human-readable explanation (e.g. "unsupported in PDF — rendered as placeholder").
+    """
+
+    field_id: str
+    field_type: str
+    renderer: str
+    reason: str
+
+
 class RenderedForm(BaseModel):
     """Output of a form renderer.
 
@@ -150,9 +167,13 @@ class RenderedForm(BaseModel):
         content_type: MIME type or format identifier for the content.
         style_output: Optional style-related output from the renderer.
         metadata: Renderer-specific metadata about the rendering process.
+        warnings: Degraded-rendering warnings. Empty list when all fields
+            rendered natively. One entry per (field_id, renderer) pair that
+            used FallbackRenderer.
     """
 
     content: Any
     content_type: str
     style_output: Any | None = None
     metadata: dict[str, Any] | None = None
+    warnings: list[RenderWarning] = []

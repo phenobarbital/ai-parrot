@@ -94,3 +94,33 @@ class TestFormSchema:
         f2 = FormSchema.model_validate_json(js)
         assert f2.created_at == ts
 
+
+# TASK-1146: RenderWarning and RenderedForm.warnings tests
+from parrot_formdesigner.core.schema import RenderedForm, RenderWarning
+
+
+def test_rendered_form_warnings_default_empty():
+    """RenderedForm defaults warnings to empty list."""
+    rf = RenderedForm(content="<form/>", content_type="text/html")
+    assert rf.warnings == []
+
+
+def test_render_warning_model():
+    """RenderWarning has all required fields."""
+    w = RenderWarning(
+        field_id="sig1",
+        field_type="signature",
+        renderer="pdf",
+        reason="unsupported in PDF — rendered as placeholder",
+    )
+    assert w.field_id == "sig1"
+    assert w.renderer == "pdf"
+
+
+def test_rendered_form_with_warnings():
+    """RenderedForm accepts and stores warnings."""
+    w = RenderWarning(field_id="f1", field_type="nps", renderer="xforms", reason="fallback")
+    rf = RenderedForm(content={}, content_type="application/json", warnings=[w])
+    assert len(rf.warnings) == 1
+    assert rf.warnings[0].field_type == "nps"
+
