@@ -95,7 +95,7 @@
       "feature_id": "FEAT-166",
       "feature": "multi-origin-formdesigner",
       "spec": "sdd/specs/multi-origin-formdesigner.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Imports get_form_service from the sub-package built up by 1125-1128; deletes the symbols that 1127 moved.",
       "assigned_to": null,
       "started_at": "2026-05-13T11:52:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1129-database-form-tool-dispatcher.md"
+      "completed_at": "2026-05-13T12:00:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1129-database-form-tool-dispatcher.md"
     },
     {
       "id": "TASK-1130",
