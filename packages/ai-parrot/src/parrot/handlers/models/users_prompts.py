@@ -6,11 +6,9 @@ collection. ``chatbot_id`` is typed as a plain string so it can hold
 either a DB-backed chatbot UUID (stringified) or a registry agent slug
 (e.g. ``"web_search_agent"``).
 """
-from __future__ import annotations
-
 import uuid
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from datamodel import Field
 from asyncdb.models import Model
@@ -43,9 +41,9 @@ class UserPrompts(Model):
     description: Optional[str] = Field(required=False, default=None)
     prompt_category: str = Field(
         required=False,
-        default=PromptCategory.OTHER,
+        default=PromptCategory.OTHER.value,
     )
-    prompt_tags: List[str] = Field(required=False, default_factory=list)
+    prompt_tags: list = Field(required=False, default_factory=list)
 
     # Reserved for future "promote to public" workflow
     is_public: bool = Field(required=False, default=False)
