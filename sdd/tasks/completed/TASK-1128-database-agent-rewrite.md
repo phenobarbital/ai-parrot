@@ -426,9 +426,7 @@ def mock_llm_client():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-05-13
+**Notes**: All 13 unit tests pass. DatabaseAgent now inherits from BasicAgent, uses _build_database_prompt_builder() as class-level _prompt_builder, accepts retry_config, implements get_default_components(), registers DatabaseAgentToolkit in configure(), and gates tools by OutputComponent flags in ask(). Added create_system_prompt() override for test-stub compatibility.
+**Deviations from spec**: Added `create_system_prompt()` override as a fallback for the test environment where BasicAgent is stubbed. Added explicit `self.logger` initialization in `__init__` for the same reason. Module-level `_COMPONENT_TO_TOOL_NAMES` dict instead of per-configure-call (semantically equivalent). Tool gating uses bound method iteration (not `get_tools()`) because `AbstractToolkit._generate_tools()` only collects async methods.
