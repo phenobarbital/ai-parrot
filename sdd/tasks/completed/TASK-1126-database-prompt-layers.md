@@ -292,9 +292,7 @@ def test_no_legacy_placeholder_constants_remain():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-13
+**Notes**: Rewrote `prompts.py` with 4 PromptLayer constants + `_build_database_prompt_builder()`. All 3 tests pass, ruff clean. Adapted test to use `builder.layer_names` (list of str) instead of `builder.layers` (property doesn't exist). Also removed `DB_AGENT_PROMPT` import from `agent.py` (1-line stub placeholder) to unblock the import chain without aliasing.
+**Deviations from spec**: `agent.py` touched minimally — `system_prompt_template = ""` placeholder added (TASK-1128 will replace with PromptBuilder). Test uses `set(builder.layer_names)` instead of `{layer.name for layer in builder.layers}` since `PromptBuilder` exposes `layer_names` not `layers`.
