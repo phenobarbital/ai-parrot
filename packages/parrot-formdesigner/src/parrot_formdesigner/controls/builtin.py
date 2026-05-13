@@ -208,7 +208,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     FieldType.SIGNATURE: {
         "label": "Signature",
         "description": "Handwritten signature capture.",
-        "category": "advanced",
+        "category": "media",
         "icon": "signature",
         "render_hint": "signature",
         "supports_constraints": False,
@@ -253,7 +253,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     FieldType.LOCATION: {
         "label": "Location",
         "description": "Country or location selector using ISO codes.",
-        "category": "advanced",
+        "category": "selection",
         "icon": "location",
         "render_hint": "select",
         "supports_constraints": False,
@@ -262,7 +262,7 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
     FieldType.TAGS: {
         "label": "Tags",
         "description": "Free-form tag input (comma-separated values).",
-        "category": "advanced",
+        "category": "selection",
         "icon": "tag",
         "render_hint": "tags",
         "supports_constraints": True,
