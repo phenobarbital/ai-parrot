@@ -52,7 +52,7 @@
       "feature_id": "FEAT-167",
       "feature": "promptlibrary-changes",
       "spec": "sdd/specs/promptlibrary-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +60,8 @@
       "parallelism_notes": "Module B1 — independent file; can run alongside TASK-1133 and TASK-1136.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:49:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1135-user-prompts-model.md"
+      "completed_at": "2026-05-13T18:52:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1135-user-prompts-model.md"
     },
     {
       "id": "TASK-1136",
