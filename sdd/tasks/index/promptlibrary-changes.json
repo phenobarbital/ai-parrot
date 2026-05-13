@@ -88,7 +88,7 @@
       "feature_id": "FEAT-167",
       "feature": "promptlibrary-changes",
       "spec": "sdd/specs/promptlibrary-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,8 +98,8 @@
       "parallelism_notes": "Module B3 — imports UserPrompts from TASK-1135; same handler file as TASK-1133/1134 but a new class, so it can land after TASK-1135 even if A-pillar tasks are still in flight.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:49:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1137-user-prompts-management-handler.md"
+      "completed_at": "2026-05-13T18:55:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1137-user-prompts-management-handler.md"
     },
     {
       "id": "TASK-1138",
