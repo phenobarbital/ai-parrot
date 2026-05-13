@@ -22,7 +22,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSection, RenderedForm, RenderWarning
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -37,6 +37,15 @@ _UNSUPPORTED_TYPES = frozenset({
     FieldType.IMAGE,
     FieldType.ARRAY,
     FieldType.GROUP,
+})
+
+# New field types that emit RenderWarning in PDF (rendered as placeholder textfields)
+_PDF_FALLBACK_NEW_TYPES = frozenset({
+    FieldType.SIGNATURE,
+    FieldType.REMOTE_RESPONSE,
+    FieldType.AVAILABILITY,
+    FieldType.TRANSFER_LIST,
+    FieldType.DYNAMIC_SELECT,
 })
 
 
@@ -137,6 +146,7 @@ class PdfRenderer(AbstractFormRenderer):
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         unsupported: list[dict[str, str]] = []
+        render_warnings: list[RenderWarning] = []
 
         cursor_y = self.PAGE_HEIGHT - self.MARGIN_Y_TOP
 
@@ -148,7 +158,7 @@ class PdfRenderer(AbstractFormRenderer):
 
         for section in form.sections:
             cursor_y = self._render_section(
-                c, section, cursor_y, locale, prefilled, unsupported
+                c, section, cursor_y, locale, prefilled, unsupported, render_warnings
             )
 
         # Trailing meta note for unsupported fields
@@ -178,6 +188,7 @@ class PdfRenderer(AbstractFormRenderer):
             content=buffer.getvalue(),
             content_type="application/pdf",
             metadata={"unsupported_fields": unsupported},
+            warnings=render_warnings,
         )
 
     # ------------------------------------------------------------------
@@ -204,8 +215,11 @@ class PdfRenderer(AbstractFormRenderer):
         locale: str,
         prefilled: dict[str, Any] | None,
         unsupported: list[dict[str, str]],
+        render_warnings: list[RenderWarning] | None = None,
     ) -> float:
         """Render a section header + its fields. Returns updated ``cursor_y``."""
+        if render_warnings is None:
+            render_warnings = []
         # Section header
         cursor_y = self._maybe_new_page(c, cursor_y, mm * 30)
         section_title = _localize(
@@ -224,7 +238,8 @@ class PdfRenderer(AbstractFormRenderer):
 
         for field in section.fields:
             cursor_y = self._render_field(
-                c, section.section_id, field, cursor_y, locale, prefilled, unsupported
+                c, section.section_id, field, cursor_y, locale, prefilled,
+                unsupported, render_warnings
             )
 
         return cursor_y - self.SECTION_GAP
@@ -238,8 +253,11 @@ class PdfRenderer(AbstractFormRenderer):
         locale: str,
         prefilled: dict[str, Any] | None,
         unsupported: list[dict[str, str]],
+        render_warnings: list[RenderWarning] | None = None,
     ) -> float:
         """Render a single field (label + AcroForm widget). Returns new ``cursor_y``."""
+        if render_warnings is None:
+            render_warnings = []
         cursor_y = self._maybe_new_page(c, cursor_y, mm * 25)
 
         label = _localize(field.label, locale, default=field.field_id)
@@ -333,6 +351,65 @@ class PdfRenderer(AbstractFormRenderer):
                 fieldFlags="hidden",
                 value=prefilled_value,
             )
+
+        # New field types (FEAT-167) — numeric input for NPS/LIKERT/RANKING
+        elif field.field_type == FieldType.NPS:
+            form.textfield(
+                name=field.field_id,
+                tooltip=f"{label} (0–10)",
+                x=x, y=y, width=width, height=height, fontSize=10,
+                value=prefilled_value or "",
+            )
+        elif field.field_type in (FieldType.LIKERT, FieldType.RANKING):
+            c_obj = field.constraints
+            scale_min = c_obj.scale_min if c_obj and c_obj.scale_min is not None else 0
+            scale_max = c_obj.scale_max if c_obj and c_obj.scale_max is not None else 5
+            form.textfield(
+                name=field.field_id,
+                tooltip=f"{label} ({scale_min}–{scale_max})",
+                x=x, y=y, width=width, height=height, fontSize=10,
+                value=prefilled_value or "",
+            )
+        elif field.field_type == FieldType.LOCATION:
+            # Render location as text field — pycountry data cannot populate AcroForm choice
+            form.textfield(
+                name=field.field_id,
+                tooltip=f"{label} (ISO country code)",
+                x=x, y=y, width=width, height=height, fontSize=10,
+                value=prefilled_value or "",
+            )
+        elif field.field_type == FieldType.TAGS:
+            form.textfield(
+                name=field.field_id,
+                tooltip=f"{label} (comma-separated tags)",
+                x=x, y=y, width=width, height=height, fontSize=10,
+                value=prefilled_value or "",
+            )
+
+        elif field.field_type in _PDF_FALLBACK_NEW_TYPES:
+            # Fallback: render as placeholder textfield + emit RenderWarning
+            render_warnings.append(RenderWarning(
+                field_id=field.field_id,
+                field_type=field.field_type.value,
+                renderer="pdf",
+                reason=(
+                    f"unsupported {field.field_type.value} in pdf"
+                    " — rendered as placeholder"
+                ),
+            ))
+            logger.warning(
+                "PDF AcroForm: new field type %s for %s.%s rendered as placeholder",
+                field.field_type.value,
+                section_id,
+                field.field_id,
+            )
+            form.textfield(
+                name=field.field_id,
+                tooltip=f"{field.field_type.value} (not natively fillable in PDF)",
+                x=x, y=y, width=width, height=height, fontSize=10,
+                value=prefilled_value or "",
+            )
+
         else:
             # TEXT, NUMBER, INTEGER, EMAIL, URL, PHONE, DATE, DATETIME, TIME, COLOR
             tooltip = label

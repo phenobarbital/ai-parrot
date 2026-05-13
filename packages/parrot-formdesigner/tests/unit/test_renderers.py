@@ -332,3 +332,164 @@ class TestAdaptiveCardRenderer:
         renderer = AdaptiveCardRenderer()
         result = await renderer.render(sample_schema)
         assert result is not None
+
+
+# TASK-1151: Per-type renderer coverage matrix and fallback warning tests
+
+@pytest.mark.asyncio
+async def test_renderer_fallback_emits_warning():
+    """PDF rendering of SIGNATURE produces placeholder + appends RenderWarning."""
+    pytest.importorskip("reportlab", reason="reportlab not installed")
+    from parrot_formdesigner.renderers.pdf import PdfRenderer
+    from parrot_formdesigner.core.schema import RenderWarning
+
+    renderer = PdfRenderer()
+    sig_field = FormField(
+        field_id="sig1", field_type=FieldType.SIGNATURE, label="Signature"
+    )
+    form = FormSchema(
+        form_id="t", title="T",
+        sections=[FormSection(section_id="s", fields=[sig_field])]
+    )
+    result = await renderer.render(form)
+    assert len(result.warnings) >= 1
+    w = result.warnings[0]
+    assert w.field_type == "signature"
+    assert w.renderer == "pdf"
+    assert "placeholder" in w.reason.lower() or "unsupported" in w.reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_renderer_coverage_matrix():
+    """Each (FieldType, renderer) pair produces output or a warning. No silent None."""
+    from parrot_formdesigner.renderers.html5 import HTML5Renderer
+    from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+
+    new_types = [
+        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
+        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+    ]
+    for renderer in [HTML5Renderer(), JsonSchemaRenderer()]:
+        for ft in new_types:
+            field = FormField(field_id="f1", field_type=ft, label="Test")
+            form = FormSchema(
+                form_id="t", title="T",
+                sections=[FormSection(section_id="s", fields=[field])]
+            )
+            result = await renderer.render(form)
+            assert result is not None, f"{renderer.__class__.__name__} returned None for {ft}"
+            assert result.content is not None, (
+                f"{renderer.__class__.__name__} content is None for {ft}"
+            )
+
+
+@pytest.mark.asyncio
+async def test_html5_new_types_render_without_error():
+    """HTML5 renders all 10 new FieldType values without raising exceptions."""
+    from parrot_formdesigner.renderers.html5 import HTML5Renderer
+
+    renderer = HTML5Renderer()
+    new_types = [
+        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
+        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+    ]
+    for ft in new_types:
+        field = FormField(field_id="f1", field_type=ft, label="Test")
+        form = FormSchema(
+            form_id="test", title="T",
+            sections=[FormSection(section_id="s1", fields=[field])]
+        )
+        result = await renderer.render(form)
+        assert result.content is not None, f"HTML5Renderer returned None content for {ft}"
+        assert len(result.content) > 0, f"HTML5Renderer returned empty content for {ft}"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_card_fallback_types_emit_warnings():
+    """SIGNATURE, REMOTE_RESPONSE, AVAILABILITY emit RenderWarning in AdaptiveCard."""
+    from parrot_formdesigner.renderers.adaptive_card import AdaptiveCardRenderer
+
+    renderer = AdaptiveCardRenderer()
+    fallback_types = [
+        FieldType.SIGNATURE,
+        FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY,
+    ]
+    for ft in fallback_types:
+        field = FormField(field_id="f1", field_type=ft, label="Test")
+        form = FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="s", fields=[field])]
+        )
+        result = await renderer.render(form)
+        assert result.content is not None
+        assert len(result.warnings) >= 1, (
+            f"AdaptiveCardRenderer should emit warning for {ft}"
+        )
+        w = result.warnings[0]
+        assert w.field_type == ft.value
+        assert w.renderer == "adaptive_card"
+
+
+@pytest.mark.asyncio
+async def test_jsonschema_new_types_have_format():
+    """JsonSchemaRenderer emits 'format' keyword for all 10 new FieldTypes."""
+    from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+
+    renderer = JsonSchemaRenderer()
+    new_types = {
+        FieldType.SIGNATURE: "signature",
+        FieldType.DYNAMIC_SELECT: "dynamic-select",
+        FieldType.TRANSFER_LIST: "transfer-list",
+        FieldType.REMOTE_RESPONSE: "remote-response",
+        FieldType.AVAILABILITY: "availability",
+        FieldType.LOCATION: "iso-country",
+        FieldType.TAGS: "tags",
+        FieldType.NPS: "nps",
+        FieldType.LIKERT: "likert",
+        FieldType.RANKING: "ranking",
+    }
+    for ft, expected_format in new_types.items():
+        field = FormField(field_id="f1", field_type=ft, label="Test")
+        form = FormSchema(
+            form_id="t", title="T",
+            sections=[FormSection(section_id="s", fields=[field])]
+        )
+        result = await renderer.render(form)
+        schema = result.content
+        prop = schema["properties"]["f1"]
+        assert prop.get("format") == expected_format, (
+            f"JsonSchema format for {ft} should be {expected_format!r}, got {prop.get('format')!r}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_telegram_new_types_classified():
+    """All 10 new FieldTypes appear in either _INLINE_FIELD_TYPES or _WEBAPP_FIELD_TYPES."""
+    from parrot_formdesigner.renderers.telegram.renderer import (
+        TelegramRenderer, _INLINE_FIELD_TYPES, _WEBAPP_FIELD_TYPES
+    )
+
+    new_types = [
+        FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
+        FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
+        FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+    ]
+    inline_expected = {
+        FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+        FieldType.LOCATION, FieldType.DYNAMIC_SELECT,
+    }
+    webapp_expected = {
+        FieldType.SIGNATURE, FieldType.TRANSFER_LIST, FieldType.REMOTE_RESPONSE,
+        FieldType.AVAILABILITY, FieldType.TAGS,
+    }
+    for ft in new_types:
+        in_inline = ft in _INLINE_FIELD_TYPES
+        in_webapp = ft in _WEBAPP_FIELD_TYPES
+        assert in_inline or in_webapp, f"{ft} not classified in either Telegram set"
+        if ft in inline_expected:
+            assert in_inline, f"{ft} should be in _INLINE_FIELD_TYPES"
+        if ft in webapp_expected:
+            assert in_webapp, f"{ft} should be in _WEBAPP_FIELD_TYPES"

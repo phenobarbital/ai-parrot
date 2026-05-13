@@ -78,6 +78,17 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.HIDDEN: ("input", "string"),
     FieldType.GROUP: ("group", None),
     FieldType.ARRAY: ("repeat", None),
+    # New field types (FEAT-167)
+    FieldType.SIGNATURE: ("input", "string"),        # fallback: plain text
+    FieldType.DYNAMIC_SELECT: ("select1", "string"), # <xf:select1> like SELECT
+    FieldType.TRANSFER_LIST: ("select", "string"),   # <xf:select> multi-value
+    FieldType.REMOTE_RESPONSE: ("input", "string"),  # fallback: plain text
+    FieldType.AVAILABILITY: ("input", "string"),     # fallback: plain text
+    FieldType.LOCATION: ("select1", "string"),       # <xf:select1> country list
+    FieldType.TAGS: ("input", "string"),             # <xf:input> comma-separated
+    FieldType.NPS: ("range", "integer"),             # <xf:range> 0–10
+    FieldType.LIKERT: ("select1", "string"),         # <xf:select1> scale
+    FieldType.RANKING: ("range", "integer"),         # <xf:range>
 }
 
 
@@ -328,10 +339,35 @@ class XFormsRenderer(AbstractFormRenderer):
             hint = etree.SubElement(el, _qn("hint"))
             hint.text = _localize(field.placeholder, locale)
 
-        # SELECT / MULTI_SELECT options
-        if field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT) and field.options:
+        # SELECT / MULTI_SELECT / DYNAMIC_SELECT / LIKERT / LOCATION options
+        if field.field_type in (
+            FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT, FieldType.LIKERT
+        ) and field.options:
             for option in field.options:
                 self._add_xf_item(el, option, locale)
+
+        # LIKERT scale — generate items from constraints if no options provided
+        if field.field_type == FieldType.LIKERT and not field.options and field.constraints:
+            c = field.constraints
+            scale_min = c.scale_min if c.scale_min is not None else 0
+            scale_max = c.scale_max if c.scale_max is not None else 4
+            anchor_labels = c.anchor_labels or {}
+            for i in range(scale_min, scale_max + 1):
+                lbl_text = str(anchor_labels.get(i, i))
+                from ..core.options import FieldOption
+                _opt = FieldOption(value=str(i), label=lbl_text)
+                self._add_xf_item(el, _opt, locale)
+
+        # NPS / RANKING — <xf:range> attributes
+        if field.field_type == FieldType.NPS:
+            el.set("start", "0")
+            el.set("end", "10")
+            el.set("step", "1")
+        elif field.field_type == FieldType.RANKING:
+            c = field.constraints
+            el.set("start", str(c.scale_min) if c and c.scale_min is not None else "0")
+            el.set("end", str(c.scale_max) if c and c.scale_max is not None else "5")
+            el.set("step", "1")
 
         # FILE / IMAGE — mediatype hint
         if field.field_type == FieldType.IMAGE:

@@ -15,9 +15,8 @@ from typing import Any
 import jinja2
 
 from ..core.constraints import DependencyRule
-from ..core.options import FieldOption
-from ..core.schema import FormField, FormSchema, RenderedForm
-from ..core.style import FieldSizeHint, LayoutType, StyleSchema
+from ..core.schema import FormField, FormSchema, RenderedForm, RenderWarning
+from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
@@ -161,6 +160,87 @@ class HTML5Renderer(AbstractFormRenderer):
             async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
                 return ""
 
+        class _TagsRenderer:
+            """Renderer for TAGS field — text input with data-tags attribute."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_tags(field, prefilled, locale)
+
+        class _NpsRenderer:
+            """Renderer for NPS field — radio group 0–10."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_nps(field, prefilled)
+
+        class _ScaleRenderer:
+            """Renderer for LIKERT/RANKING fields — radio/range scale."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_scale(field, prefilled)
+
+        class _SignatureRenderer:
+            """Renderer for SIGNATURE field — canvas + hidden inputs."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_signature(field)
+
+        class _DynamicSelectRenderer:
+            """Renderer for DYNAMIC_SELECT — select with data-source attribute."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_dynamic_select(field, prefilled, locale)
+
+        class _TransferListRenderer:
+            """Renderer for TRANSFER_LIST — dual multi-select."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_transfer_list(field, prefilled, locale)
+
+        class _ReadOnlyDivRenderer:
+            """Renderer for REMOTE_RESPONSE — read-only div placeholder."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_readonly_div(field)
+
+        class _AvailabilityRenderer:
+            """Renderer for AVAILABILITY — date range picker placeholder."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_availability(field)
+
+        class _LocationRenderer:
+            """Renderer for LOCATION — country select."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_location(field, prefilled, locale)
+
         input_renderer = _InputRenderer(self)
         self._registry = {
             FieldType.TEXT: input_renderer,
@@ -183,6 +263,17 @@ class HTML5Renderer(AbstractFormRenderer):
             FieldType.MULTI_SELECT: _SelectRenderer(self, multiple=True),
             FieldType.GROUP: _GroupRenderer(self),
             FieldType.ARRAY: _NoInputRenderer(),
+            # New field types (FEAT-167)
+            FieldType.SIGNATURE: _SignatureRenderer(self),
+            FieldType.DYNAMIC_SELECT: _DynamicSelectRenderer(self),
+            FieldType.TRANSFER_LIST: _TransferListRenderer(self),
+            FieldType.REMOTE_RESPONSE: _ReadOnlyDivRenderer(self),
+            FieldType.AVAILABILITY: _AvailabilityRenderer(self),
+            FieldType.LOCATION: _LocationRenderer(self),
+            FieldType.TAGS: _TagsRenderer(self),
+            FieldType.NPS: _NpsRenderer(self),
+            FieldType.LIKERT: _ScaleRenderer(self),
+            FieldType.RANKING: _ScaleRenderer(self),
         }
 
     async def render(
@@ -223,6 +314,16 @@ class HTML5Renderer(AbstractFormRenderer):
         def depends_on_json(dep: DependencyRule) -> str:
             return dep.model_dump_json()
 
+        # Collect render warnings for new field types rendered as fallbacks
+        warnings: list[RenderWarning] = []
+        _new_types = {
+            FieldType.SIGNATURE, FieldType.DYNAMIC_SELECT, FieldType.TRANSFER_LIST,
+            FieldType.REMOTE_RESPONSE, FieldType.AVAILABILITY, FieldType.LOCATION,
+            FieldType.TAGS, FieldType.NPS, FieldType.LIKERT, FieldType.RANKING,
+        }
+        # HTML5 renders all new types natively; no warnings needed here.
+        # (warnings are emitted only for renderers that use FallbackRenderer)
+
         template = self._env.get_template("form.html.j2")
         rendered_html = template.render(
             form=form,
@@ -241,6 +342,7 @@ class HTML5Renderer(AbstractFormRenderer):
             content=rendered_html,
             content_type="text/html",
             metadata={"locale": locale, "layout": layout_class},
+            warnings=warnings,
         )
 
     def _render_field_html(
@@ -360,6 +462,80 @@ class HTML5Renderer(AbstractFormRenderer):
                     parts.append(self._render_field_html(child, prefilled, errors, style, locale))
             parts.append('</fieldset>')
 
+        # New field types (FEAT-167) dispatch
+        elif ft == FieldType.SIGNATURE:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_signature(field))
+
+        elif ft == FieldType.DYNAMIC_SELECT:
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_dynamic_select(field, value, locale))
+
+        elif ft == FieldType.TRANSFER_LIST:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_transfer_list(field, value, locale))
+
+        elif ft == FieldType.REMOTE_RESPONSE:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            parts.append(self._render_readonly_div(field))
+
+        elif ft == FieldType.AVAILABILITY:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_availability(field))
+
+        elif ft == FieldType.LOCATION:
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_location(field, value, locale))
+
+        elif ft == FieldType.TAGS:
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_tags(field, value, locale))
+
+        elif ft == FieldType.NPS:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_nps(field, value))
+
+        elif ft in (FieldType.LIKERT, FieldType.RANKING):
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_scale(field, value))
+
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
@@ -372,6 +548,284 @@ class HTML5Renderer(AbstractFormRenderer):
         if error:
             parts.append(f'<span class="form-field__error text-sm text-red-600 mt-1 block" role="alert">{error}</span>')
 
+        parts.append('</div>')
+        return "\n".join(parts)
+
+    def _render_signature(self, field: FormField) -> str:
+        """Render a SIGNATURE field as a canvas + hidden inputs.
+
+        Args:
+            field: SIGNATURE FormField.
+
+        Returns:
+            HTML canvas + hidden inputs string.
+        """
+        tw = "block w-full border border-gray-300 rounded-md"
+        return (
+            f'<canvas id="{field.field_id}" class="{tw}" '
+            f'data-signature="true" width="400" height="150"></canvas>'
+            f'<input type="hidden" id="{field.field_id}_svg" name="{field.field_id}_svg">'
+            f'<input type="hidden" id="{field.field_id}_png" name="{field.field_id}_png">'
+        )
+
+    def _render_dynamic_select(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a DYNAMIC_SELECT as a <select> with data-source attribute.
+
+        Args:
+            field: DYNAMIC_SELECT FormField.
+            value: Pre-filled value.
+            locale: Locale for i18n.
+
+        Returns:
+            HTML select element string.
+        """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
+        attrs: list[str] = [
+            f'id="{field.field_id}"',
+            f'name="{field.field_id}"',
+            f'class="{tw}"',
+            'data-dynamic-select="true"',
+        ]
+        if field.options_source:
+            source_ref = html.escape(field.options_source.source_ref, quote=True)
+            attrs.append(f'data-source="{source_ref}"')
+        if field.required:
+            attrs.append("required")
+        selected = str(value) if value is not None else ""
+        placeholder = '<option value="" disabled selected>Loading...</option>'
+        options_html = [placeholder]
+        if field.options:
+            for opt in field.options:
+                opt_label = _resolve(opt.label, locale) or opt.value
+                sel = " selected" if opt.value == selected else ""
+                options_html.append(f'<option value="{opt.value}"{sel}>{opt_label}</option>')
+        return f'<select {" ".join(attrs)}>\n' + "\n".join(options_html) + "\n</select>"
+
+    def _render_transfer_list(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a TRANSFER_LIST as dual <select multiple> elements.
+
+        Args:
+            field: TRANSFER_LIST FormField.
+            value: Pre-selected values (list or comma-separated string).
+            locale: Locale for i18n.
+
+        Returns:
+            HTML dual-select string.
+        """
+        selected: set[str] = set()
+        if isinstance(value, list):
+            selected = {str(v) for v in value}
+        elif isinstance(value, str):
+            selected = {v.strip() for v in value.split(",") if v.strip()}
+
+        tw = "block w-full rounded-md border border-gray-300 text-sm h-32"
+        available_opts: list[str] = []
+        selected_opts: list[str] = []
+        if field.options:
+            for opt in field.options:
+                opt_label = _resolve(opt.label, locale) or opt.value
+                opt_html = f'<option value="{opt.value}">{opt_label}</option>'
+                if opt.value in selected:
+                    selected_opts.append(opt_html)
+                else:
+                    available_opts.append(opt_html)
+
+        available_html = "\n".join(available_opts)
+        selected_html = "\n".join(selected_opts)
+        return (
+            f'<div class="form-field__transfer-list flex gap-2">'
+            f'<div class="flex-1">'
+            f'<label class="text-xs text-gray-500 mb-1 block">Available</label>'
+            f'<select id="{field.field_id}_available" multiple class="{tw}">'
+            f'{available_html}</select></div>'
+            f'<div class="flex-1">'
+            f'<label class="text-xs text-gray-500 mb-1 block">Selected</label>'
+            f'<select id="{field.field_id}" name="{field.field_id}" multiple class="{tw}">'
+            f'{selected_html}</select></div>'
+            f'</div>'
+        )
+
+    def _render_readonly_div(self, field: FormField) -> str:
+        """Render a REMOTE_RESPONSE as a read-only placeholder div.
+
+        Args:
+            field: REMOTE_RESPONSE FormField.
+
+        Returns:
+            HTML read-only div string.
+        """
+        return (
+            f'<div id="{field.field_id}" '
+            f'class="form-field__remote-response block w-full rounded-md border border-gray-200 '
+            f'px-3 py-2 text-sm text-gray-500 bg-gray-50" '
+            f'data-remote-response="true" aria-live="polite">'
+            f'(Loading...)</div>'
+        )
+
+    def _render_availability(self, field: FormField) -> str:
+        """Render an AVAILABILITY field as a date-range picker placeholder.
+
+        Args:
+            field: AVAILABILITY FormField.
+
+        Returns:
+            HTML availability picker div string.
+        """
+        return (
+            f'<div id="{field.field_id}" '
+            f'class="form-field__availability block w-full rounded-md border border-gray-300 '
+            f'px-3 py-2 text-sm" '
+            f'data-availability="true">'
+            f'<input type="date" name="{field.field_id}_start" class="mr-2" placeholder="Start">'
+            f'<input type="date" name="{field.field_id}_end" placeholder="End">'
+            f'</div>'
+        )
+
+    def _render_location(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a LOCATION field as a country <select>.
+
+        Args:
+            field: LOCATION FormField.
+            value: Pre-filled ISO country code.
+            locale: Locale for i18n.
+
+        Returns:
+            HTML select element with country options (uses pycountry if available).
+        """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
+        attrs: list[str] = [
+            f'id="{field.field_id}"',
+            f'name="{field.field_id}"',
+            f'class="{tw}"',
+        ]
+        if field.required:
+            attrs.append("required")
+
+        selected = str(value).upper() if value is not None else ""
+        options_html: list[str] = ['<option value="" disabled selected>Select country...</option>']
+
+        try:
+            import pycountry
+            countries = sorted(pycountry.countries, key=lambda c: c.name)
+            for country in countries:
+                sel = " selected" if country.alpha_2 == selected else ""
+                options_html.append(
+                    f'<option value="{country.alpha_2}"{sel}>{html.escape(country.name)}</option>'
+                )
+        except ImportError:
+            _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"), ("ES", "Spain"),
+                         ("VE", "Venezuela"), ("MX", "Mexico"), ("CA", "Canada")]
+            for code, name in _FALLBACK:
+                sel = " selected" if code == selected else ""
+                options_html.append(f'<option value="{code}"{sel}>{name}</option>')
+
+        return f'<select {" ".join(attrs)}>\n' + "\n".join(options_html) + "\n</select>"
+
+    def _render_tags(self, field: FormField, value: Any, locale: str) -> str:
+        """Render a TAGS field as a text input with data-tags attribute.
+
+        Args:
+            field: TAGS FormField.
+            value: Pre-filled tags (list or comma-separated string).
+            locale: Locale for i18n.
+
+        Returns:
+            HTML input element string.
+        """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm placeholder-gray-400 "
+            "focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
+        if isinstance(value, list):
+            tag_value = ", ".join(str(v) for v in value)
+        elif value is not None:
+            tag_value = str(value)
+        else:
+            tag_value = ""
+
+        placeholder = _resolve(field.placeholder, locale) if field.placeholder else "Add tags..."
+        attrs: list[str] = [
+            'type="text"',
+            f'id="{field.field_id}"',
+            f'name="{field.field_id}"',
+            f'class="{tw}"',
+            'data-tags="true"',
+            f'value="{html.escape(tag_value, quote=True)}"',
+            f'placeholder="{placeholder}"',
+        ]
+        if field.required:
+            attrs.append("required")
+        return f'<input {" ".join(attrs)}>'
+
+    def _render_nps(self, field: FormField, value: Any) -> str:
+        """Render an NPS field as a radio group 0–10.
+
+        Args:
+            field: NPS FormField.
+            value: Pre-filled value (0–10).
+
+        Returns:
+            HTML radio group string.
+        """
+        selected = str(value) if value is not None else ""
+        parts: list[str] = [
+            '<div class="form-field__nps flex gap-1 flex-wrap" role="radiogroup" '
+            'aria-label="NPS 0 to 10">'
+        ]
+        for i in range(11):
+            checked = " checked" if str(i) == selected else ""
+            req = " required" if field.required and i == 0 else ""
+            parts.append(
+                f'<label class="form-field__nps-item flex flex-col items-center cursor-pointer">'
+                f'<input type="radio" name="{field.field_id}" value="{i}"{checked}{req}>'
+                f'<span class="text-xs">{i}</span>'
+                f'</label>'
+            )
+        parts.append('</div>')
+        return "\n".join(parts)
+
+    def _render_scale(self, field: FormField, value: Any) -> str:
+        """Render a LIKERT or RANKING field as a scale of radio inputs.
+
+        Args:
+            field: LIKERT or RANKING FormField.
+            value: Pre-filled value.
+
+        Returns:
+            HTML scale radio group string.
+        """
+        c = field.constraints
+        scale_min = c.scale_min if c and c.scale_min is not None else 0
+        scale_max = c.scale_max if c and c.scale_max is not None else (
+            4 if field.field_type == FieldType.LIKERT else 5
+        )
+        current = str(value) if value is not None else str(scale_min)
+        anchor_labels = {}
+        if c and c.anchor_labels:
+            anchor_labels = c.anchor_labels
+
+        parts: list[str] = [
+            '<div class="form-field__scale flex gap-1 flex-wrap" role="radiogroup">'
+        ]
+        for i in range(scale_min, scale_max + 1):
+            checked = " checked" if str(i) == current else ""
+            req = " required" if field.required and i == scale_min else ""
+            anchor = anchor_labels.get(i, "")
+            label_extra = f' title="{html.escape(str(anchor), quote=True)}"' if anchor else ""
+            parts.append(
+                f'<label class="form-field__scale-item flex flex-col items-center cursor-pointer"'
+                f'{label_extra}>'
+                f'<input type="radio" name="{field.field_id}" value="{i}"{checked}{req}>'
+                f'<span class="text-xs">{i}</span>'
+                f'</label>'
+            )
         parts.append('</div>')
         return "\n".join(parts)
 
@@ -570,7 +1024,7 @@ class HTML5Renderer(AbstractFormRenderer):
             HTML radio group string.
         """
         selected = str(value) if value is not None else ""
-        parts: list[str] = [f'<div class="form-field__radio-group space-y-2">']
+        parts: list[str] = ['<div class="form-field__radio-group space-y-2">']
 
         if field.options:
             for opt in field.options:

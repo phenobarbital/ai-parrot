@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
-from ..core.style import LayoutType, StyleSchema
+from ..core.schema import FormField, FormSchema, FormSection, RenderedForm, RenderWarning
+from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
@@ -64,6 +64,14 @@ _FIELD_TYPE_MAPPING: dict[FieldType, str] = {
     FieldType.FILE: None,
     FieldType.IMAGE: None,
 }
+
+
+# Field types that produce RenderWarning in Adaptive Card (no native AC equivalent)
+_AC_FALLBACK_TYPES = frozenset({
+    FieldType.SIGNATURE,
+    FieldType.REMOTE_RESPONSE,
+    FieldType.AVAILABILITY,
+})
 
 
 class AdaptiveCardRenderer(AbstractFormRenderer):
@@ -185,9 +193,26 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         )
 
         card = self._wrap_card(body, actions)
+
+        # Emit RenderWarning for field types that used the text fallback
+        warnings: list[RenderWarning] = []
+        for section in form.sections:
+            for field in section.fields:
+                if field.field_type in _AC_FALLBACK_TYPES:
+                    warnings.append(RenderWarning(
+                        field_id=field.field_id,
+                        field_type=field.field_type.value,
+                        renderer="adaptive_card",
+                        reason=(
+                            f"unsupported {field.field_type.value} in adaptive_card"
+                            " — rendered as text placeholder"
+                        ),
+                    ))
+
         return RenderedForm(
             content=card,
             content_type=self.CONTENT_TYPE,
+            warnings=warnings,
         )
 
     async def render_section(
@@ -726,7 +751,123 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 "spacing": "Small",
             }
 
-        # Fallback for unsupported types
+        # DYNAMIC_SELECT — Input.ChoiceSet (single)
+        elif ft == FieldType.DYNAMIC_SELECT:
+            choices = self._build_choices(field, locale)
+            elem = {
+                **base,
+                "type": "Input.ChoiceSet",
+                "style": "compact",
+                "choices": choices,
+                "placeholder": "(loading options...)",
+            }
+            if value:
+                elem["value"] = str(value)
+            return elem
+
+        # TRANSFER_LIST — Input.ChoiceSet multi
+        elif ft == FieldType.TRANSFER_LIST:
+            choices = self._build_choices(field, locale)
+            elem = {
+                **base,
+                "type": "Input.ChoiceSet",
+                "isMultiSelect": True,
+                "style": "expanded",
+                "choices": choices,
+            }
+            if value:
+                if isinstance(value, list):
+                    elem["value"] = ",".join(str(v) for v in value)
+                else:
+                    elem["value"] = str(value)
+            return elem
+
+        # LOCATION — Input.ChoiceSet with country options
+        elif ft == FieldType.LOCATION:
+            choices: list[dict[str, str]] = []
+            try:
+                import pycountry
+                countries = sorted(pycountry.countries, key=lambda c: c.name)
+                for c in countries:
+                    choices.append({"title": c.name, "value": c.alpha_2})
+            except ImportError:
+                _FALLBACK = [("US", "United States"), ("GB", "United Kingdom"),
+                             ("ES", "Spain"), ("VE", "Venezuela")]
+                for code, name in _FALLBACK:
+                    choices.append({"title": name, "value": code})
+            elem = {
+                **base,
+                "type": "Input.ChoiceSet",
+                "style": "compact",
+                "choices": choices,
+            }
+            if value:
+                elem["value"] = str(value).upper()
+            return elem
+
+        # TAGS — Input.Text (comma-separated)
+        elif ft == FieldType.TAGS:
+            if isinstance(value, list):
+                tag_str = ", ".join(str(v) for v in value)
+            else:
+                tag_str = str(value) if value is not None else ""
+            return {
+                **base,
+                "type": "Input.Text",
+                "placeholder": "tag1, tag2, tag3",
+                "value": tag_str,
+            }
+
+        # NPS — Input.ChoiceSet 0–10
+        elif ft == FieldType.NPS:
+            choices = [{"title": str(i), "value": str(i)} for i in range(11)]
+            elem = {
+                **base,
+                "type": "Input.ChoiceSet",
+                "style": "expanded",
+                "choices": choices,
+            }
+            if value is not None:
+                elem["value"] = str(value)
+            return elem
+
+        # LIKERT — Input.ChoiceSet scale
+        elif ft == FieldType.LIKERT:
+            c = field.constraints
+            scale_min = c.scale_min if c and c.scale_min is not None else 0
+            scale_max = c.scale_max if c and c.scale_max is not None else 4
+            anchor_labels = {}
+            if c and c.anchor_labels:
+                anchor_labels = c.anchor_labels
+            choices = []
+            for i in range(scale_min, scale_max + 1):
+                label = anchor_labels.get(i, str(i))
+                choices.append({"title": str(label), "value": str(i)})
+            elem = {
+                **base,
+                "type": "Input.ChoiceSet",
+                "style": "expanded",
+                "choices": choices,
+            }
+            if value is not None:
+                elem["value"] = str(value)
+            return elem
+
+        # RANKING — Input.Number
+        elif ft == FieldType.RANKING:
+            c = field.constraints
+            elem = {
+                **base,
+                "type": "Input.Number",
+                "placeholder": "Enter rank",
+                "min": c.scale_min if c and c.scale_min is not None else 0,
+                "max": c.scale_max if c and c.scale_max is not None else 5,
+            }
+            if value is not None:
+                elem["value"] = value
+            return elem
+
+        # Fallback for unsupported types (includes SIGNATURE, REMOTE_RESPONSE, AVAILABILITY)
         else:
             logger.debug("No AC input element for field type %s, using text fallback", ft)
             return {

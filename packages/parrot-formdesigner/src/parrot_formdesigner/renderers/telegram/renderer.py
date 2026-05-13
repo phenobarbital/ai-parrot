@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from ...core.options import FieldOption
-from ...core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ...core.schema import FormField, FormSchema, RenderedForm
 from ...core.style import StyleSchema
 from ...core.types import FieldType, LocalizedString
 from ..base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -30,6 +30,12 @@ _INLINE_FIELD_TYPES = {
     FieldType.MULTI_SELECT,
     FieldType.BOOLEAN,
     FieldType.HIDDEN,
+    # New field types (FEAT-167) — inline-capable
+    FieldType.NPS,
+    FieldType.LIKERT,
+    FieldType.RANKING,
+    FieldType.LOCATION,
+    FieldType.DYNAMIC_SELECT,
 }
 
 # Field types that force WebApp mode
@@ -50,6 +56,12 @@ _WEBAPP_FIELD_TYPES = {
     FieldType.IMAGE,
     FieldType.GROUP,
     FieldType.ARRAY,
+    # New field types (FEAT-167) — WebApp-only
+    FieldType.SIGNATURE,
+    FieldType.TRANSFER_LIST,
+    FieldType.REMOTE_RESPONSE,
+    FieldType.AVAILABILITY,
+    FieldType.TAGS,
 }
 
 # File-type fields that cannot be handled inline even if forced
