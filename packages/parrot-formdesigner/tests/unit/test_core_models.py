@@ -95,6 +95,41 @@ class TestFormSchema:
         assert f2.created_at == ts
 
 
+# TASK-1147: New FieldType enum values tests
+from parrot_formdesigner.core.types import FieldType
+
+
+def test_field_type_enum_has_new_values():
+    """All 10 new FieldType values are present with stable string aliases."""
+    new_types = {
+        FieldType.SIGNATURE: "signature",
+        FieldType.DYNAMIC_SELECT: "dynamic_select",
+        FieldType.TRANSFER_LIST: "transfer_list",
+        FieldType.REMOTE_RESPONSE: "remote_response",
+        FieldType.AVAILABILITY: "availability",
+        FieldType.LOCATION: "location",
+        FieldType.TAGS: "tags",
+        FieldType.NPS: "nps",
+        FieldType.LIKERT: "likert",
+        FieldType.RANKING: "ranking",
+    }
+    for ft, expected_value in new_types.items():
+        assert ft.value == expected_value, f"{ft} has wrong value"
+        assert FieldType(expected_value) == ft, f"String alias broken for {expected_value}"
+
+
+def test_field_type_enum_total_count():
+    """FieldType now has exactly 30 values (20 existing + 10 new)."""
+    assert len(FieldType) == 30
+
+
+def test_field_type_existing_values_unchanged():
+    """All original 20 FieldType values are unchanged."""
+    assert FieldType.TEXT.value == "text"
+    assert FieldType.ARRAY.value == "array"
+    assert FieldType.GROUP.value == "group"
+
+
 # TASK-1146: RenderWarning and RenderedForm.warnings tests
 from parrot_formdesigner.core.schema import RenderedForm, RenderWarning
 
