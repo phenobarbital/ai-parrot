@@ -56,3 +56,57 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     included in `creation.sql`).
 
   Spec: `sdd/specs/bot-reranker-and-parent-searcher-config.spec.md`
+
+### Changed
+
+- **FEAT-164** — `DatabaseAgent` homologated to the `PandasAgent` shape.
+
+  `DatabaseAgent` now inherits from `BasicAgent` (was `AbstractBot`) and
+  exposes a real LLM-backed `ask()` flow that returns a strict structured
+  `QueryResponse` instead of a free-text blob.
+
+  - New base class: `parrot.bots.database.DatabaseAgent` is now a
+    `parrot.bots.agent.BasicAgent` subclass.
+  - System prompts assembled via a class-level
+    `_prompt_builder = _build_database_prompt_builder()` mirroring
+    `PandasAgent`.
+  - Structured output contract: `ask()` returns an `AIMessage` whose
+    `output` is a `parrot.bots.database.QueryResponse` Pydantic model
+    (with optional `QueryDataset` payload). Free-text fallback when the
+    provider does not honour the schema.
+  - `QueryRetryConfig` is now wired end-to-end: pass
+    `retry_config=QueryRetryConfig(...)` to the constructor and the agent
+    re-asks the LLM after a retryable `execute_query` failure (up to
+    `max_retries` attempts).
+
+  **Breaking**: the `enable_retry: bool` parameter on `DatabaseAgent.ask`
+  is removed. Pass `retry_config=QueryRetryConfig(...)` to the constructor
+  instead (or omit it to disable retries entirely). No deprecation shim
+  is shipped.
+
+  **Migration path**: no production code currently imports
+  `AbstractDBAgent`. Downstream code calling
+  `DatabaseAgent(..., enable_retry=True)` must switch to
+  `DatabaseAgent(..., retry_config=QueryRetryConfig())`. Code that read
+  `AIMessage.response` for a string answer continues to work; code that
+  wants the structured payload should read `AIMessage.output` (a
+  `QueryResponse`).
+
+  Spec: `sdd/specs/database-agent-homologation.spec.md`
+
+- **FEAT-164** — `parrot.bots.database.QueryResponse` and
+  `parrot.bots.database.QueryDataset` Pydantic models defining the
+  `DatabaseAgent` structured-output contract.
+
+- **FEAT-164** — `parrot.bots.database.toolkits.DatabaseAgentToolkit`, an
+  internal `AbstractToolkit` collecting 16 helpers ported from the
+  deleted `AbstractDBAgent` (explain-plan formatting, optimization tips,
+  SQL extraction, schema docs, etc.). Auto-registered by
+  `DatabaseAgent.configure()`; individual tools are gated by the
+  active `OutputComponent` flags of each request.
+
+### Removed
+
+- **FEAT-164** — `parrot.bots.database.abstract.AbstractDBAgent` (3067 LOC,
+  legacy). All still-useful helpers were migrated to
+  `DatabaseAgentToolkit`. No backwards-compatibility shim is provided.
