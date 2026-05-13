@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-164
 **Date**: 2026-05-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.5.x (current dev cycle)
 
 ---
@@ -932,18 +932,26 @@ No new third-party dependencies are introduced by this feature.
 - [x] After deletion of `AbstractDBAgent`, do we need a compatibility
   release note for downstream Navigator consumers? — *Resolved in
   brainstorm*: yes, a release note is required (Module 9).
-- [ ] Exact canonical path for the release-note file (top-level
+- [x] Exact canonical path for the release-note file (top-level
   `CHANGELOG.md`, package-level `packages/ai-parrot/CHANGELOG.md`, or
-  `docs/releases/`?). — *Owner: Jesus Lara* — task-phase decision.
-- [ ] Whether to keep `enable_retry: bool = True` as a deprecated alias
+  `docs/releases/`?). — *Resolved at task-phase (2026-05-13)*:
+  `packages/ai-parrot/CHANGELOG.md`, appended under the existing
+  `[Unreleased]` section. It is the only package-level changelog and
+  already follows Keep a Changelog formatting.
+- [x] Whether to keep `enable_retry: bool = True` as a deprecated alias
   for `retry_config is not None` to ease the transition, or hard-rename
-  the parameter. — *Owner: Jesus Lara* — task-phase decision; default
-  is hard rename per the no-backwards-compat directive.
-- [ ] Whether `QueryResponse` needs a `code` field (mirroring
+  the parameter. — *Resolved at task-phase (2026-05-13)*: hard rename.
+  The `enable_retry` parameter is removed entirely; callers pass
+  `retry_config=QueryRetryConfig(...)` (or `None` to disable retries).
+  Aligned with the no-backwards-compat directive in Section 1.
+- [x] Whether `QueryResponse` needs a `code` field (mirroring
   `PandasAgentResponse.code` at `bots/data.py:202`) for cases where
-  the LLM returns a chart/Altair spec instead of pure SQL. — *Owner:
-  Jesus Lara* — could be added later without breaking the contract
-  (Pydantic `extra='allow'`).
+  the LLM returns a chart/Altair spec instead of pure SQL. — *Resolved
+  at task-phase (2026-05-13)*: NOT included in this feature. The field
+  is additive and can be introduced later without breaking the
+  contract (Pydantic models default to non-strict extras at the
+  consumer boundary). Deferred to a follow-up if a concrete need
+  arises.
 
 ---
 
@@ -976,3 +984,4 @@ No new third-party dependencies are introduced by this feature.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-12 | Jesus Lara | Initial draft from brainstorm (FEAT-164). |
+| 0.2 | 2026-05-13 | Jesus Lara | Resolved 3 open questions (changelog path, hard-rename `enable_retry`, defer `code` field). Bumped status to `approved`. |
