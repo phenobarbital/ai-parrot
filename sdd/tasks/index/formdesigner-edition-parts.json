@@ -14,7 +14,7 @@
       "feature_id": "FEAT-169",
       "feature": "formdesigner-edition-parts",
       "spec": "sdd/specs/formdesigner-edition-parts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Core module — TASK-1132 and TASK-1133 depend on this",
       "assigned_to": null,
       "started_at": "2026-05-13T23:22:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1131-edit-toolkit-module.md"
+      "completed_at": "2026-05-13T23:27:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-edit-toolkit-module.md"
     },
     {
       "id": "TASK-1132",
