@@ -303,9 +303,7 @@ async def test_generate_optimization_tips_signature(toolkit):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-05-13
+**Notes**: All 16 methods implemented in `toolkits/_internal.py`. 6/6 tests pass, ruff clean. Added `_async_tool` local helper to preserve `inspect.iscoroutinefunction` for the 3 async methods — the stock `@tool` decorator creates a sync wrapper that breaks the check.
+**Deviations from spec**: `@_async_tool` used for async methods (#7, #10, #16) instead of bare `@tool` to satisfy `inspect.iscoroutinefunction` test. The `@tool` decorator was still applied (inside `_async_tool`) to generate metadata.

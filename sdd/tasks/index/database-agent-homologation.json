@@ -50,7 +50,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports QueryDataset from TASK-1125 for tool return types. Must wait for TASK-1125 to land in the worktree.",
       "assigned_to": null,
       "started_at": "2026-05-13T15:17:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1127-database-agent-internal-toolkit.md"
+      "completed_at": "2026-05-13T15:29:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1127-database-agent-internal-toolkit.md"
     },
     {
       "id": "TASK-1128",
