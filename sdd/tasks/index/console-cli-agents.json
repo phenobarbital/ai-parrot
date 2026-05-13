@@ -14,7 +14,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — creates the package and registers the Click subcommand. All other tasks depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1131-cli-package-setup.md"
+      "completed_at": "2026-05-13T18:42:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-cli-package-setup.md"
     },
     {
       "id": "TASK-1132",
