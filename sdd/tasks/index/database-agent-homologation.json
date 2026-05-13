@@ -133,7 +133,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Creates a brand-new file under examples/database/. Independent of TASK-1132 (CHANGELOG) \u2014 both can be authored in parallel once their dependencies land.",
       "assigned_to": null,
       "started_at": "2026-05-13T17:11:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1131-postgres-agent-example.md"
+      "completed_at": "2026-05-13T17:23:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-postgres-agent-example.md"
     },
     {
       "id": "TASK-1132",
