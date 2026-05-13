@@ -8,6 +8,78 @@ from parrot_formdesigner.renderers.base import FieldRenderer, FallbackRenderer
 from parrot_formdesigner.core.style import StyleSchema
 
 
+# TASK-1150: Validator branches for new field types
+@pytest.mark.asyncio
+async def test_validator_signature_accepts_dict():
+    """SIGNATURE accepts dict with svg+png keys, rejects bare strings."""
+    from parrot_formdesigner.services.validators import FormValidator
+    from parrot_formdesigner.core.constraints import FieldConstraints
+
+    validator = FormValidator()
+    field = FormField(
+        field_id="sig", field_type=FieldType.SIGNATURE, label="Sig",
+        constraints=FieldConstraints(allowed_mime_types=["image/svg+xml", "image/png"])
+    )
+    errors = await validator.validate_field(field, {"svg": "<svg/>", "png": "data:image/png;base64,abc"})
+    assert errors == [], f"Expected no errors, got: {errors}"
+
+    errors_str = await validator.validate_field(field, "<svg/>")
+    assert len(errors_str) > 0
+
+
+@pytest.mark.asyncio
+async def test_validator_nps_clamps_to_0_10():
+    """NPS coerces string '5' → 5, rejects 11 and -1."""
+    from parrot_formdesigner.services.validators import FormValidator
+    from parrot_formdesigner.core.constraints import FieldConstraints
+
+    validator = FormValidator()
+    field = FormField(
+        field_id="nps", field_type=FieldType.NPS, label="NPS",
+        constraints=FieldConstraints(scale_min=0, scale_max=10)
+    )
+    errors = await validator.validate_field(field, "5")
+    assert errors == [], f"NPS 5 should be valid, got: {errors}"
+
+    errors_high = await validator.validate_field(field, 11)
+    assert len(errors_high) > 0
+
+    errors_low = await validator.validate_field(field, -1)
+    assert len(errors_low) > 0
+
+
+@pytest.mark.asyncio
+async def test_validator_tags_returns_list_of_strings():
+    """TAGS accepts 'a,b,c' and ['a','b','c'], both yield valid."""
+    from parrot_formdesigner.services.validators import FormValidator
+
+    validator = FormValidator()
+    field = FormField(field_id="tags", field_type=FieldType.TAGS, label="Tags")
+    errors_str = await validator.validate_field(field, "a,b,c")
+    assert errors_str == []
+
+    errors_list = await validator.validate_field(field, ["a", "b", "c"])
+    assert errors_list == []
+
+
+@pytest.mark.asyncio
+async def test_validator_location_rejects_unknown_iso_code():
+    """LOCATION with 'XX' raises; 'ES', 'VE', 'US' pass (when pycountry installed)."""
+    import importlib.util
+    from parrot_formdesigner.services.validators import FormValidator, _HAS_PYCOUNTRY
+
+    validator = FormValidator()
+    field = FormField(field_id="loc", field_type=FieldType.LOCATION, label="Country")
+    if _HAS_PYCOUNTRY:
+        errors_valid = await validator.validate_field(field, "US")
+        assert errors_valid == []
+        errors_invalid = await validator.validate_field(field, "XX")
+        assert len(errors_invalid) > 0
+    else:
+        errors = await validator.validate_field(field, "US")
+        assert errors == []  # skips when pycountry not available
+
+
 @pytest.mark.asyncio
 async def test_xforms_registry_dispatch_existing_types():
     """All 20 existing FieldType values have registry entries in XFormsRenderer."""

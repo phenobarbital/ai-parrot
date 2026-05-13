@@ -9,6 +9,7 @@ Migrated and enhanced from parrot/integrations/msteams/dialogs/validator.py.
 
 import logging
 import re
+from datetime import datetime
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -17,6 +18,28 @@ from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 
 logger = logging.getLogger(__name__)
+
+# pycountry guard — only used for LOCATION validation
+try:
+    import pycountry as _pycountry
+    _HAS_PYCOUNTRY = True
+except ImportError:
+    _pycountry = None  # type: ignore[assignment]
+    _HAS_PYCOUNTRY = False
+
+
+def _validate_location(value: str) -> bool:
+    """Check if value is a valid ISO 3166 alpha-2 country code.
+
+    Args:
+        value: Country code string to validate.
+
+    Returns:
+        True if valid or pycountry is not installed.
+    """
+    if not _HAS_PYCOUNTRY:
+        return True  # skip validation when pycountry not available
+    return _pycountry.countries.get(alpha_2=value.upper()) is not None
 
 # Standard regex patterns
 EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -299,6 +322,45 @@ class FormValidator:
                 return value
             return [value]
 
+        # Phase 2 — new field types (FEAT-167)
+        elif ft == FieldType.DYNAMIC_SELECT:
+            return str(value).strip()
+
+        elif ft == FieldType.TRANSFER_LIST:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value]
+            elif isinstance(value, str):
+                return [v.strip() for v in value.split(",") if v.strip()]
+            return [str(value)]
+
+        elif ft == FieldType.TAGS:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value if str(v).strip()]
+            elif isinstance(value, str):
+                return [v.strip() for v in value.split(",") if v.strip()]
+            return [str(value)]
+
+        elif ft in (FieldType.NPS, FieldType.LIKERT, FieldType.RANKING):
+            if isinstance(value, int):
+                return value
+            try:
+                return int(str(value).strip())
+            except (ValueError, TypeError):
+                raise ValueError(f"'{value}' is not a valid integer")
+
+        elif ft == FieldType.LOCATION:
+            return str(value).strip().upper()
+
+        elif ft == FieldType.SIGNATURE:
+            if isinstance(value, dict):
+                return value
+            raise ValueError("Signature must be a dict with 'svg' and 'png' keys")
+
+        elif ft == FieldType.AVAILABILITY:
+            if isinstance(value, list):
+                return value
+            raise ValueError("Availability must be a list of slot dicts")
+
         return value
 
     def _validate_by_type(
@@ -331,6 +393,83 @@ class FormValidator:
         elif ft == FieldType.PHONE and isinstance(value, str):
             if not PHONE_PATTERN.match(value):
                 errors.append(f"{label} must be a valid phone number")
+
+        # Phase 2 — new field types (FEAT-167)
+        elif ft == FieldType.SIGNATURE:
+            if not isinstance(value, dict):
+                errors.append(f"{label} must be a dict with 'svg' and 'png' keys")
+            else:
+                if "svg" not in value or "png" not in value:
+                    errors.append(f"{label} must contain 'svg' and 'png' keys")
+
+        elif ft == FieldType.DYNAMIC_SELECT:
+            # Same validation as SELECT — option values checked upstream
+            pass
+
+        elif ft == FieldType.TRANSFER_LIST:
+            # Same validation as MULTI_SELECT — option values checked upstream
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of strings")
+
+        elif ft == FieldType.AVAILABILITY:
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of availability slots")
+            else:
+                allow_overlap = (field.meta or {}).get("allow_overlap", False)
+                slots = []
+                for i, slot in enumerate(value):
+                    if not isinstance(slot, dict) or "start" not in slot or "end" not in slot:
+                        errors.append(f"{label} slot {i} must have 'start' and 'end' keys")
+                        continue
+                    try:
+                        start = datetime.fromisoformat(str(slot["start"])) if isinstance(slot["start"], str) else slot["start"]
+                        end = datetime.fromisoformat(str(slot["end"])) if isinstance(slot["end"], str) else slot["end"]
+                        if end <= start:
+                            errors.append(f"{label} slot {i}: 'end' must be after 'start'")
+                        slots.append((start, end))
+                    except (ValueError, TypeError):
+                        errors.append(f"{label} slot {i} has invalid datetime format")
+                if not allow_overlap and len(slots) > 1:
+                    sorted_slots = sorted(slots, key=lambda s: s[0])
+                    for j in range(len(sorted_slots) - 1):
+                        if sorted_slots[j][1] > sorted_slots[j + 1][0]:
+                            errors.append(f"{label} contains overlapping availability slots")
+                            break
+
+        elif ft == FieldType.LOCATION:
+            if not isinstance(value, str) or len(value) != 2:
+                errors.append(f"{label} must be a 2-character ISO 3166 country code")
+            elif not _validate_location(value):
+                errors.append(f"{label} '{value}' is not a valid ISO 3166 country code")
+
+        elif ft == FieldType.TAGS:
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of strings")
+
+        elif ft == FieldType.NPS:
+            if isinstance(value, int):
+                c = field.constraints
+                scale_min = c.scale_min if c and c.scale_min is not None else 0
+                scale_max = c.scale_max if c and c.scale_max is not None else 10
+                if not (scale_min <= value <= scale_max):
+                    errors.append(f"{label} must be between {scale_min} and {scale_max}")
+
+        elif ft == FieldType.LIKERT:
+            if isinstance(value, int):
+                c = field.constraints
+                if c and c.scale_min is not None and c.scale_max is not None:
+                    if not (c.scale_min <= value <= c.scale_max):
+                        errors.append(f"{label} must be between {c.scale_min} and {c.scale_max}")
+                else:
+                    errors.append(f"{label} requires scale_min and scale_max constraints")
+
+        elif ft == FieldType.RANKING:
+            if isinstance(value, int):
+                c = field.constraints
+                scale_max = c.scale_max if c and c.scale_max is not None else 5
+                scale_min = c.scale_min if c and c.scale_min is not None else 0
+                if not (scale_min <= value <= scale_max):
+                    errors.append(f"{label} must be between {scale_min} and {scale_max}")
 
         return errors
 
