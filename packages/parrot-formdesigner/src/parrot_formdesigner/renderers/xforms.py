@@ -34,7 +34,7 @@ from ..core.options import FieldOption
 from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 
 logger = logging.getLogger(__name__)
@@ -154,6 +154,32 @@ class XFormsRenderer(AbstractFormRenderer):
     The renderer ignores ``style`` / ``prefilled`` / ``errors`` parameters
     (HTML-only concerns) but preserves them for base-class compatibility.
     """
+
+    def __init__(self) -> None:
+        """Initialize XFormsRenderer with per-type renderer registry."""
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for XForms output.
+
+        Each entry wraps the existing _FIELD_TO_XFORMS mapping in an async
+        FieldRenderer-compatible callable.
+        """
+
+        class _XFormsFieldRenderer:
+            """Async FieldRenderer stub for XForms field dispatch."""
+
+            def __init__(self_, renderer: "XFormsRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                # XForms rendering is document-level stateful; this stub satisfies protocol.
+                return _FIELD_TO_XFORMS.get(field.field_type)
+
+        renderer_inst = _XFormsFieldRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
 
     async def render(
         self,

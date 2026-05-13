@@ -14,7 +14,7 @@ from ...core.options import FieldOption
 from ...core.schema import FormField, FormSchema, FormSection, RenderedForm
 from ...core.style import StyleSchema
 from ...core.types import FieldType, LocalizedString
-from ..base import AbstractFormRenderer
+from ..base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 from .models import (
     FormFieldCallback,
     TelegramFormPayload,
@@ -135,6 +135,35 @@ class TelegramRenderer(AbstractFormRenderer):
         self.base_url = (base_url or "").rstrip("/")
         self.html_renderer = html_renderer
         self.logger = logging.getLogger(__name__)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for Telegram output.
+
+        Inline types (SELECT, MULTI_SELECT, BOOLEAN, HIDDEN) are registered
+        with an inline renderer stub; all others use the fallback (WebApp mode).
+        """
+
+        class _TelegramInlineFieldRenderer:
+            """Async FieldRenderer stub for Telegram inline field dispatch."""
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"mode": "inline", "field_type": field.field_type.value}
+
+        class _TelegramWebAppFieldRenderer:
+            """Async FieldRenderer stub for Telegram WebApp field dispatch."""
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"mode": "webapp", "field_type": field.field_type.value}
+
+        inline = _TelegramInlineFieldRenderer()
+        webapp = _TelegramWebAppFieldRenderer()
+        self._registry = {
+            ft: inline if ft in _INLINE_FIELD_TYPES else webapp
+            for ft in FieldType
+        }
 
     def analyze_form(self, form: FormSchema) -> TelegramRenderMode:
         """Determine optimal rendering mode for a form.

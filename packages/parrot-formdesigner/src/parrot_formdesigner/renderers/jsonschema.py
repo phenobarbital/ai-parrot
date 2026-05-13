@@ -19,7 +19,7 @@ from ..core.options import FieldOption, OptionsSource
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -108,8 +108,30 @@ class JsonSchemaRenderer(AbstractFormRenderer):
     """
 
     def __init__(self) -> None:
-        """Initialize JsonSchemaRenderer."""
+        """Initialize JsonSchemaRenderer with per-type renderer registry."""
         self.logger = logging.getLogger(__name__)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for JSON Schema output.
+
+        Each entry wraps the _TYPE_MAP dispatch in an async FieldRenderer-
+        compatible callable.
+        """
+
+        class _JsonSchemaFieldRenderer:
+            """Async FieldRenderer stub for JSON Schema field dispatch."""
+
+            def __init__(self_, renderer: "JsonSchemaRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
+
+        renderer_inst = _JsonSchemaFieldRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
 
     async def render(
         self,

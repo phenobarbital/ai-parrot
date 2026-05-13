@@ -8,6 +8,43 @@ from parrot_formdesigner.renderers.base import FieldRenderer, FallbackRenderer
 from parrot_formdesigner.core.style import StyleSchema
 
 
+@pytest.mark.asyncio
+async def test_xforms_registry_dispatch_existing_types():
+    """All 20 existing FieldType values have registry entries in XFormsRenderer."""
+    pytest.importorskip("lxml", reason="lxml not installed")
+    from parrot_formdesigner.renderers.xforms import XFormsRenderer
+    from parrot_formdesigner.renderers.base import FieldRenderer
+
+    renderer = XFormsRenderer()
+    for ft in FieldType:
+        assert ft in renderer._registry, f"XFormsRenderer registry missing {ft}"
+        assert isinstance(renderer._registry[ft], FieldRenderer), f"Invalid renderer for {ft}"
+
+
+@pytest.mark.asyncio
+async def test_jsonschema_registry_dispatch_existing_types():
+    """All 20 existing FieldType values have registry entries in JsonSchemaRenderer."""
+    from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
+    from parrot_formdesigner.renderers.base import FieldRenderer
+
+    renderer = JsonSchemaRenderer()
+    for ft in FieldType:
+        assert ft in renderer._registry, f"JsonSchemaRenderer registry missing {ft}"
+        assert isinstance(renderer._registry[ft], FieldRenderer), f"Invalid renderer for {ft}"
+
+
+@pytest.mark.asyncio
+async def test_telegram_registry_dispatch_existing_types():
+    """All 20 existing FieldType values have registry entries in TelegramRenderer."""
+    from parrot_formdesigner.renderers.telegram.renderer import TelegramRenderer
+    from parrot_formdesigner.renderers.base import FieldRenderer
+
+    renderer = TelegramRenderer()
+    for ft in FieldType:
+        assert ft in renderer._registry, f"TelegramRenderer registry missing {ft}"
+        assert isinstance(renderer._registry[ft], FieldRenderer), f"Invalid renderer for {ft}"
+
+
 def test_field_renderer_protocol_minimal():
     """FieldRenderer is a Protocol; FallbackRenderer satisfies it."""
     # FallbackRenderer must be a concrete, instantiable class
