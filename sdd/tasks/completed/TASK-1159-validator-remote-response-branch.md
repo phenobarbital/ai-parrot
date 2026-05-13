@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-167 — FormDesigner New Field Types
 **Spec**: `sdd/specs/formdesigner-new-fields.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1150, TASK-1157
@@ -199,10 +199,12 @@ async def test_e2e_form_submission_with_remote_response():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-13
+**Notes**: Threaded auth_context through FormValidator.validate() and validate_field().
+Added _validate_remote_response() method that parses RemoteResponseSpec from field.meta,
+calls RemoteResponseResolver.resolve(), and propagates resolved value into sanitized_data
+via _resolved_remote_value attribute. Added 3 new tests (e2e success, missing endpoint,
+resolver failure). Fixed 4 pre-existing ruff F401 warnings in test_renderers.py.
 
 **Deviations from spec**: none | describe if any
