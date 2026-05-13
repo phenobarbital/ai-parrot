@@ -154,7 +154,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -164,7 +164,7 @@
       "parallel": true,
       "parallelism_notes": "Documentation-only \u2014 modifies packages/ai-parrot/CHANGELOG.md exclusively. Independent of TASK-1131 (example); the two can be done concurrently.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-13T17:26:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1132-changelog-release-note.md"
     }
