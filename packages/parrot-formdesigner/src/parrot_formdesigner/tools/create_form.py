@@ -125,13 +125,16 @@ You MUST follow this workflow to edit the form:
 1. ALWAYS start by calling get_form_summary() to understand the form structure.
 2. Use get_field(field_id) or search_fields(query) to inspect specific elements before modifying them.
 3. Use mutation tools to apply targeted changes:
-   - update_field(section_id, field_id, patch) — to change field properties
+   - update_field(section_id, field_id, patch) — to change field properties (label, required, etc.)
    - add_field(section_id, field, position) — to add a new field
    - remove_field(section_id, field_id) — to delete a field
    - add_section(section, position) — to add a new section
-   - update_section(section_id, patch) — to rename or update a section
+   - update_section_title(section_id, title) — to RENAME a section (change section.title)
+   - update_section(section_id, patch) — to update a section's meta dict ONLY (NOT its title)
    - move_field(from_section, field_id, to_section, position) — to relocate a field
-   - update_form_meta(patch) — to update form title, description, or meta
+   - update_form_title(title) — to RENAME the form (change form.title)
+   - update_form_description(description) — to change the form description
+   - update_form_meta(patch) — to update the form-level meta dict ONLY (NOT title or description)
 4. Call done() IMMEDIATELY when all requested edits are complete.
 
 CRITICAL RULES:
@@ -139,6 +142,8 @@ CRITICAL RULES:
 - NEVER modify fields that were not mentioned in the user's request.
 - ALWAYS call done() to signal completion — do not stop without calling it.
 - Make only the minimal changes necessary to fulfill the request.
+- To rename the form use update_form_title(), NOT update_form_meta().
+- To rename a section use update_section_title(), NOT update_section().
 """
 
 
@@ -307,18 +312,20 @@ class CreateFormTool(AbstractTool):
                         metadata={"error": f"Form '{refine_form_id}' not found in registry"},
                     )
 
-                # Route all form edits through the toolkit path (FEAT-169).
-                # Per spec Q3: all edits use toolkit regardless of form size.
+                # Route form edits through the toolkit path (FEAT-169).
+                # _should_use_toolkit() determines whether to use the toolkit
+                # (currently always True per spec Q3).
                 form: FormSchema | None = None
-                try:
-                    form = await self._execute_toolkit_edit(existing, prompt)
-                except Exception as exc:
-                    self.logger.warning(
-                        "Toolkit edit failed for '%s', falling back to full-form path: %s",
-                        refine_form_id,
-                        exc,
-                    )
-                    form = None
+                if self._should_use_toolkit(existing):
+                    try:
+                        form = await self._execute_toolkit_edit(existing, prompt)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Toolkit edit failed for '%s', falling back to full-form path: %s",
+                            refine_form_id,
+                            exc,
+                        )
+                        form = None
 
                 if form is None:
                     # Fallback: use existing full-form refinement path
@@ -513,11 +520,11 @@ class CreateFormTool(AbstractTool):
         return None
 
     def _should_use_toolkit(self, form: FormSchema) -> bool:
-        """Check whether this form should be edited via the toolkit path.
+        """Determine whether to use the EditToolkit for this form edit.
 
         Per FEAT-169 spec Q3 (resolved): all edit operations use the toolkit
         regardless of form size — no threshold routing.  This method always
-        returns True and is retained for testing and future configuration hooks.
+        returns True.  Override in subclasses for custom routing logic.
 
         Args:
             form: The existing FormSchema being edited.

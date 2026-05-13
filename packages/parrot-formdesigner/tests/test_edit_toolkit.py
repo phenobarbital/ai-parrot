@@ -1,6 +1,6 @@
 """Unit tests for EditToolkit (FEAT-169).
 
-Tests cover all 12 tools (4 inspection + 7 mutation + 1 control),
+Tests cover all 15 tools (4 inspection + 10 mutation + 1 control),
 working copy isolation, tool definitions format, and the execute_tool dispatcher.
 """
 
@@ -406,13 +406,93 @@ class TestEditToolkitMutation:
         assert "error" in result
 
     async def test_update_form_meta(self, small_form: FormSchema) -> None:
-        """update_form_meta updates the form-level metadata."""
+        """update_form_meta updates only the form-level meta dict, NOT form.title."""
         toolkit = EditToolkit(small_form)
         result = await toolkit.update_form_meta(patch={"theme": "dark"})
 
         assert result.get("success") is True
         assert toolkit.form.meta is not None
         assert toolkit.form.meta.get("theme") == "dark"
+        # Confirm form title is untouched
+        assert str(toolkit.form.title) == "Small Form"
+
+    async def test_update_form_meta_does_not_update_title(
+        self, small_form: FormSchema
+    ) -> None:
+        """update_form_meta merges into meta dict — it cannot change form.title."""
+        toolkit = EditToolkit(small_form)
+        # Putting title in the patch goes into form.meta, not form.title
+        await toolkit.update_form_meta(patch={"title": "Wrong Title"})
+        assert str(toolkit.form.title) == "Small Form"
+        assert toolkit.form.meta is not None
+        assert toolkit.form.meta.get("title") == "Wrong Title"
+
+    async def test_update_form_title(self, small_form: FormSchema) -> None:
+        """update_form_title correctly sets form.title."""
+        toolkit = EditToolkit(small_form)
+        result = await toolkit.update_form_title(title="Renamed Form")
+
+        assert result.get("success") is True
+        assert str(toolkit.form.title) == "Renamed Form"
+
+    async def test_update_form_description(self, small_form: FormSchema) -> None:
+        """update_form_description correctly sets form.description."""
+        toolkit = EditToolkit(small_form)
+        result = await toolkit.update_form_description(description="A great form")
+
+        assert result.get("success") is True
+        assert str(toolkit.form.description) == "A great form"
+
+    async def test_update_form_description_clears_with_none(
+        self, small_form: FormSchema
+    ) -> None:
+        """update_form_description with None clears the description."""
+        toolkit = EditToolkit(small_form)
+        await toolkit.update_form_description(description="To be cleared")
+        result = await toolkit.update_form_description(description=None)
+
+        assert result.get("success") is True
+        assert toolkit.form.description is None
+
+    async def test_update_section_title(self, two_section_form: FormSchema) -> None:
+        """update_section_title correctly renames a section."""
+        toolkit = EditToolkit(two_section_form)
+        result = await toolkit.update_section_title(
+            section_id="section_a", title="Personal Information"
+        )
+
+        assert result.get("success") is True
+        section = next(
+            s for s in toolkit.form.sections if s.section_id == "section_a"
+        )
+        assert str(section.title) == "Personal Information"
+
+    async def test_update_section_title_not_found(
+        self, small_form: FormSchema
+    ) -> None:
+        """update_section_title returns error for unknown section_id."""
+        toolkit = EditToolkit(small_form)
+        result = await toolkit.update_section_title(
+            section_id="nonexistent", title="Anything"
+        )
+
+        assert "error" in result
+        assert "nonexistent" in result["error"]
+
+    async def test_update_section_meta_does_not_update_title(
+        self, two_section_form: FormSchema
+    ) -> None:
+        """update_section (meta patch) does NOT change section.title."""
+        toolkit = EditToolkit(two_section_form)
+        original_title = str(
+            next(s for s in two_section_form.sections if s.section_id == "section_a").title
+        )
+        # Putting title in the patch goes into section.meta, not section.title
+        await toolkit.update_section(section_id="section_a", patch={"title": "Wrong"})
+        section = next(
+            s for s in toolkit.form.sections if s.section_id == "section_a"
+        )
+        assert str(section.title) == original_title
 
     async def test_done_returns_success(self, small_form: FormSchema) -> None:
         """done() returns a success dict and sets is_done=True."""
@@ -479,25 +559,33 @@ class TestEditToolkitTools:
     """Tests for tool definitions and dispatcher."""
 
     def test_tool_definitions_count(self, small_form: FormSchema) -> None:
-        """get_tool_definitions() returns exactly 12 tools."""
+        """get_tool_definitions() returns exactly 15 tools (12 original + 3 title/description)."""
         toolkit = EditToolkit(small_form)
         tools = toolkit.get_tool_definitions()
-        assert len(tools) == 12
+        assert len(tools) == 15
 
     def test_tool_definitions_has_required_names(self, small_form: FormSchema) -> None:
-        """All 12 expected tool names are present in get_tool_definitions()."""
+        """All 15 expected tool names are present in get_tool_definitions()."""
         expected_names = {
+            # Inspection
             "get_form_summary",
             "get_section",
             "get_field",
             "search_fields",
+            # Mutation — field ops
             "update_field",
             "add_field",
             "remove_field",
+            "move_field",
+            # Mutation — section ops
             "add_section",
             "update_section",
-            "move_field",
+            "update_section_title",
+            # Mutation — form-level ops
+            "update_form_title",
+            "update_form_description",
             "update_form_meta",
+            # Control
             "done",
         }
         toolkit = EditToolkit(small_form)

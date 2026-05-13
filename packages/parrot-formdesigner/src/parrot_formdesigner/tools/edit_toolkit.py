@@ -19,11 +19,14 @@ from typing import Any
 
 try:
     from parrot.tools.toolkit import AbstractToolkit
+    from parrot.tools.abstract import ToolResult
 except ImportError as exc:
     raise ImportError(
         "parrot-formdesigner EditToolkit requires the 'ai-parrot' package. "
         "Install it with: uv add ai-parrot"
     ) from exc
+
+from pydantic import ValidationError
 
 from ..api.operations import (
     AddField,
@@ -43,9 +46,6 @@ from ..api.operations import (
     _apply_update_section_meta,
 )
 from ..core.schema import FormField, FormSchema, FormSection
-
-logger = logging.getLogger(__name__)
-
 
 class EditToolkit(AbstractToolkit):
     """Toolkit exposing FormSchema inspection and mutation as LLM-callable tools.
@@ -312,10 +312,10 @@ class EditToolkit(AbstractToolkit):
                 ),
             }
         except OperationError as exc:
-            logger.warning("update_field failed: %s", exc)
+            self.logger.warning("update_field failed: %s", exc)
             return {"error": str(exc.message)}
         except Exception as exc:
-            logger.error("update_field unexpected error: %s", exc)
+            self.logger.error("update_field unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def add_field(
@@ -350,10 +350,13 @@ class EditToolkit(AbstractToolkit):
                 "position": position,
             }
         except OperationError as exc:
-            logger.warning("add_field failed: %s", exc)
+            self.logger.warning("add_field failed: %s", exc)
             return {"error": str(exc.message)}
+        except ValidationError as exc:
+            self.logger.warning("add_field validation error: %s", exc)
+            return {"error": f"Invalid field definition: {exc.errors()}"}
         except Exception as exc:
-            logger.error("add_field unexpected error: %s", exc)
+            self.logger.error("add_field unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def remove_field(self, section_id: str, field_id: str) -> dict:
@@ -380,10 +383,10 @@ class EditToolkit(AbstractToolkit):
                 "message": f"Field '{field_id}' removed from section '{section_id}'.",
             }
         except OperationError as exc:
-            logger.warning("remove_field failed: %s", exc)
+            self.logger.warning("remove_field failed: %s", exc)
             return {"error": str(exc.message)}
         except Exception as exc:
-            logger.error("remove_field unexpected error: %s", exc)
+            self.logger.error("remove_field unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def add_section(
@@ -412,20 +415,25 @@ class EditToolkit(AbstractToolkit):
                 "position": position,
             }
         except OperationError as exc:
-            logger.warning("add_section failed: %s", exc)
+            self.logger.warning("add_section failed: %s", exc)
             return {"error": str(exc.message)}
+        except ValidationError as exc:
+            self.logger.warning("add_section validation error: %s", exc)
+            return {"error": f"Invalid section definition: {exc.errors()}"}
         except Exception as exc:
-            logger.error("add_section unexpected error: %s", exc)
+            self.logger.error("add_section unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def update_section(self, section_id: str, patch: dict) -> dict:
-        """Apply an RFC 7396 merge-patch to a section's metadata.
+        """Apply an RFC 7396 merge-patch to a section's ``meta`` dict.
 
-        Updates the section's title, description, or meta fields.
+        This tool updates only the arbitrary ``meta`` key-value store on the
+        section (``section.meta``).  It does NOT update ``section.title``.
+        Use ``update_section_title`` to rename a section.
 
         Args:
             section_id: ID of the section to update.
-            patch: Dict with fields to update (title, description, meta, etc.).
+            patch: Dict of key-value pairs to merge into ``section.meta``.
 
         Returns:
             Success dict, or error dict on failure.
@@ -440,13 +448,13 @@ class EditToolkit(AbstractToolkit):
             return {
                 "success": True,
                 "section_id": section_id,
-                "message": f"Section '{section_id}' updated.",
+                "message": f"Section '{section_id}' meta updated.",
             }
         except OperationError as exc:
-            logger.warning("update_section failed: %s", exc)
+            self.logger.warning("update_section failed: %s", exc)
             return {"error": str(exc.message)}
         except Exception as exc:
-            logger.error("update_section unexpected error: %s", exc)
+            self.logger.error("update_section unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def move_field(
@@ -484,18 +492,22 @@ class EditToolkit(AbstractToolkit):
                 "position": position,
             }
         except OperationError as exc:
-            logger.warning("move_field failed: %s", exc)
+            self.logger.warning("move_field failed: %s", exc)
             return {"error": str(exc.message)}
         except Exception as exc:
-            logger.error("move_field unexpected error: %s", exc)
+            self.logger.error("move_field unexpected error: %s", exc)
             return {"error": str(exc)}
 
     async def update_form_meta(self, patch: dict) -> dict:
-        """Apply an RFC 7396 merge-patch to the form-level metadata.
+        """Apply an RFC 7396 merge-patch to the form-level ``meta`` dict.
+
+        This tool updates only the arbitrary ``meta`` key-value store on the
+        form (``form.meta``).  It does NOT update ``form.title`` or
+        ``form.description``.  Use ``update_form_title`` to rename the form,
+        or ``update_form_description`` to change the description.
 
         Args:
-            patch: Dict with form-level fields to update (title, description,
-                   meta, etc.).
+            patch: Dict of key-value pairs to merge into ``form.meta``.
 
         Returns:
             Success dict, or error dict on failure.
@@ -508,15 +520,109 @@ class EditToolkit(AbstractToolkit):
             self._form = _apply_update_form_meta(self._form, op)
             return {
                 "success": True,
-                "message": "Form metadata updated.",
+                "message": "Form meta dict updated.",
                 "form_id": self._form.form_id,
             }
         except OperationError as exc:
-            logger.warning("update_form_meta failed: %s", exc)
+            self.logger.warning("update_form_meta failed: %s", exc)
             return {"error": str(exc.message)}
         except Exception as exc:
-            logger.error("update_form_meta unexpected error: %s", exc)
+            self.logger.error("update_form_meta unexpected error: %s", exc)
             return {"error": str(exc)}
+
+    async def update_form_title(self, title: str) -> dict:
+        """Update the form title.
+
+        Use this tool when the user asks to rename the form or change its title.
+        This is the correct tool for changing ``form.title`` — do NOT use
+        ``update_form_meta`` for this purpose.
+
+        Args:
+            title: New title for the form.
+
+        Returns:
+            Success dict confirming the title was updated, or error dict on failure.
+        """
+        try:
+            form_dict = self._form.model_dump(mode="json")
+            form_dict["title"] = title
+            self._form = FormSchema.model_validate(form_dict)
+            self.logger.info("update_form_title: set title to '%s'", title)
+            return {
+                "success": True,
+                "message": f"Form title updated to '{title}'.",
+                "form_id": self._form.form_id,
+            }
+        except Exception as exc:
+            self.logger.error("update_form_title unexpected error: %s", exc)
+            return {"error": str(exc)}
+
+    async def update_form_description(self, description: str | None) -> dict:
+        """Update the form description.
+
+        Use this tool when the user asks to change or clear the form description.
+        This is the correct tool for changing ``form.description`` — do NOT use
+        ``update_form_meta`` for this purpose.
+
+        Args:
+            description: New description for the form. Pass null to clear it.
+
+        Returns:
+            Success dict confirming the description was updated, or error dict on failure.
+        """
+        try:
+            form_dict = self._form.model_dump(mode="json")
+            form_dict["description"] = description
+            self._form = FormSchema.model_validate(form_dict)
+            self.logger.info("update_form_description called")
+            return {
+                "success": True,
+                "message": "Form description updated.",
+                "form_id": self._form.form_id,
+            }
+        except Exception as exc:
+            self.logger.error("update_form_description unexpected error: %s", exc)
+            return {"error": str(exc)}
+
+    async def update_section_title(self, section_id: str, title: str) -> dict:
+        """Update a section's title (rename a section).
+
+        Use this tool when the user asks to rename a section.  This is the
+        correct tool for changing ``section.title`` — do NOT use
+        ``update_section`` (which only touches ``section.meta``) for this purpose.
+
+        Args:
+            section_id: ID of the section to rename.
+            title: New title for the section.
+
+        Returns:
+            Success dict, or error dict if the section is not found.
+        """
+        si: int | None = None
+        for i, s in enumerate(self._form.sections):
+            if s.section_id == section_id:
+                si = i
+                break
+        if si is None:
+            return {
+                "error": f"Section '{section_id}' not found.",
+                "available_sections": [s.section_id for s in self._form.sections],
+            }
+        try:
+            section_dict = self._form.sections[si].model_dump(mode="json")
+            section_dict["title"] = title
+            self._form.sections[si] = FormSection.model_validate(section_dict)
+        except Exception as exc:
+            self.logger.error("update_section_title unexpected error: %s", exc)
+            return {"error": f"Failed to rename section: {exc}"}
+        self.logger.info(
+            "update_section_title: section '%s' renamed to '%s'", section_id, title
+        )
+        return {
+            "success": True,
+            "section_id": section_id,
+            "message": f"Section '{section_id}' renamed to '{title}'.",
+        }
 
     # ------------------------------------------------------------------
     # Control tool
@@ -532,7 +638,7 @@ class EditToolkit(AbstractToolkit):
             Success dict confirming edits are complete.
         """
         self._done = True
-        logger.info(
+        self.logger.info(
             "EditToolkit.done() called — form '%s' edit session complete.",
             self._form.form_id,
         )
@@ -580,6 +686,9 @@ class EditToolkit(AbstractToolkit):
             }
         result = await tool.execute(**arguments)
         # AbstractTool.execute() returns a ToolResult — extract the inner result
-        if hasattr(result, "result"):
-            return result.result
+        # and surface any errors so the LLM can correct its next call.
+        if isinstance(result, ToolResult):
+            if not result.success:
+                return {"error": result.error or "Tool execution failed"}
+            return result.result if result.result is not None else {}
         return result
