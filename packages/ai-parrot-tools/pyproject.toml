@@ -85,6 +85,7 @@ where = ["src"]
 include = ["parrot_tools*"]
 
 [tool.setuptools.package-data]
+"parrot_tools" = ["py.typed"]
 "parrot_tools.cloudsploit" = ["templates/*.html"]
 "parrot_tools.security.reports" = ["templates/*.html"]
 

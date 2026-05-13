@@ -43,5 +43,8 @@ version = {attr = "parrot_pipelines.__version__"}
 where = ["src"]
 include = ["parrot_pipelines*"]
 
+[tool.setuptools.package-data]
+"parrot_pipelines" = ["py.typed"]
+
 [tool.uv.sources]
 ai-parrot = { workspace = true }

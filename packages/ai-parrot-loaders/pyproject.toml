@@ -125,5 +125,8 @@ version = {attr = "parrot_loaders.__version__"}
 where = ["src"]
 include = ["parrot_loaders*"]
 
+[tool.setuptools.package-data]
+"parrot_loaders" = ["py.typed"]
+
 [tool.uv.sources]
 ai-parrot = { workspace = true }
