@@ -17,6 +17,7 @@ from parrot.storage.security_reports import (
 class TestReportKind:
     def test_members(self):
         assert ReportKind.SCAN.value == "scan"
+        assert ReportKind.DAILY_SUMMARY.value == "daily_summary"
         assert ReportKind.WEEKLY_SUMMARY.value == "weekly_summary"
         assert ReportKind.MONTHLY_SUMMARY.value == "monthly_summary"
         assert ReportKind.DRIFT_COMPARISON.value == "drift_comparison"

@@ -26,6 +26,7 @@ class ReportKind(str, Enum):
     """Fractal kind hierarchy: raw scans and aggregated summaries share the same shape."""
 
     SCAN = "scan"
+    DAILY_SUMMARY = "daily_summary"
     WEEKLY_SUMMARY = "weekly_summary"
     MONTHLY_SUMMARY = "monthly_summary"
     DRIFT_COMPARISON = "drift_comparison"
