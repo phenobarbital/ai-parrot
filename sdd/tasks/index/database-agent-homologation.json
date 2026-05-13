@@ -112,7 +112,7 @@
       "feature_id": "FEAT-164",
       "feature": "database-agent-homologation",
       "spec": "sdd/specs/database-agent-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Helpers must be migrated (TASK-1127) and the agent must already be off the old base class (TASK-1128) before deleting abstract.py.",
       "assigned_to": null,
       "started_at": "2026-05-13T17:07:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1130-delete-abstract-dbagent.md"
+      "completed_at": "2026-05-13T17:09:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1130-delete-abstract-dbagent.md"
     },
     {
       "id": "TASK-1131",
