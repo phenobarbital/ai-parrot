@@ -93,7 +93,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Depends on renderer and slash commands. Core integration point — cannot be parallelized.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1135-repl-engine.md"
+      "completed_at": "2026-05-13T18:48:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1135-repl-engine.md"
     },
     {
       "id": "TASK-1136",
