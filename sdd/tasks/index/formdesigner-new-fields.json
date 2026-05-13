@@ -192,7 +192,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -202,8 +202,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1147 and TASK-1149",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1148-fieldconstraints-scale-fields.md"
+      "completed_at": "2026-05-13T20:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1148-fieldconstraints-scale-fields.md"
     },
     {
       "id": "TASK-1149",
