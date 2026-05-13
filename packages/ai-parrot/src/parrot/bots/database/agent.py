@@ -295,9 +295,14 @@ class DatabaseAgent(BasicAgent):
         if route.role_source == "default":
             route.user_role = self.default_user_role
 
-        # Default components when caller omitted them
+        # When the caller omitted ``output_components``, the router has
+        # already merged the role baseline with intent-specific flags
+        # (see ``SchemaQueryRouter.route``). Use that result directly,
+        # otherwise intent-specific components (e.g. ``OPTIMIZATION_TIPS``
+        # for ``OPTIMIZE_QUERY``) get silently dropped from tool gating
+        # and the prompt.
         if components is None:
-            components = self.get_default_components(route.user_role)
+            components = route.components
 
         # Schema summary from target toolkit (best-effort)
         schema_summary = ""
@@ -380,7 +385,21 @@ class DatabaseAgent(BasicAgent):
             try:
                 exec_result = await target_toolkit.execute_query(qr_check.query)
             except Exception as exec_exc:
-                self.logger.error("Query execution raised unretryable error: %s", exec_exc)
+                # Non-retryable error re-raised by execute_query when
+                # ``retry_config`` is set. Surface as a failure
+                # QueryResponse so the caller cannot mistake it for a
+                # successful run.
+                self.logger.error(
+                    "Query execution raised non-retryable error: %s", exec_exc
+                )
+                response.output = QueryResponse(
+                    explanation=(
+                        f"Query execution failed with a non-retryable error: "
+                        f"{exec_exc}"
+                    ),
+                    query=qr_check.query,
+                    data=None,
+                )
                 break
 
             if not isinstance(exec_result, RetryContext):
@@ -394,9 +413,15 @@ class DatabaseAgent(BasicAgent):
                 "Retry exhausted after %s attempts; surfacing last error.", attempt
             )
 
-        # Unpack structured output into AIMessage fields
-        # response is always set: the while loop runs at least once (max_attempts >= 1).
-        assert response is not None
+        # Unpack structured output into AIMessage fields.
+        # The while loop always runs at least once (max_attempts >= 1), so
+        # ``response`` is set on every code path. We use an explicit guard
+        # here rather than ``assert`` because production deployments may
+        # run with -O, which strips assertions.
+        if response is None:  # pragma: no cover — defensive
+            raise RuntimeError(
+                "LLM response not generated (retry loop must run at least once)"
+            )
         qr: Optional[QueryResponse] = (
             response.output if isinstance(response.output, QueryResponse) else None
         )

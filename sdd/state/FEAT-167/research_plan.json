@@ -1,0 +1,104 @@
+{
+  "feat_id": "FEAT-167",
+  "generated_at": "2026-05-13T17:55:57Z",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Locate PromptLibrary model definition and schema",
+      "type": "grep",
+      "params": {"pattern": "class PromptLibrary", "globs": ["**/*.py"]},
+      "priority": "high"
+    },
+    {
+      "id": "Q002",
+      "intent": "Read the PromptLibrary model file end-to-end",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/models/bots.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q003",
+      "intent": "Find PromptLibraryManagement view/handler and its GET filtering",
+      "type": "grep",
+      "params": {"pattern": "PromptLibraryManagement|prompt_library", "globs": ["**/*.py"]},
+      "priority": "high"
+    },
+    {
+      "id": "Q004",
+      "intent": "Read the bots handler where PromptLibraryManagement lives",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/bots.py"},
+      "priority": "high"
+    },
+    {
+      "id": "Q005",
+      "intent": "Read the SQL DDL for the prompt_library table",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/models/users_bots_creation.sql"},
+      "priority": "high"
+    },
+    {
+      "id": "Q006",
+      "intent": "Confirm route registrations for /api/v1/agents/* (find where PromptLibraryManagement is wired)",
+      "type": "grep",
+      "params": {"pattern": "prompt_library|PromptLibraryManagement|/agents/", "globs": ["**/*.py"]},
+      "priority": "high"
+    },
+    {
+      "id": "Q007",
+      "intent": "Inspect how chatbot_id is generated/used across bots and agents (uuid vs string)",
+      "type": "grep",
+      "params": {"pattern": "chatbot_id|agent_id", "globs": ["packages/ai-parrot/src/parrot/**/*.py"]},
+      "priority": "high"
+    },
+    {
+      "id": "Q008",
+      "intent": "Find AgentRegistry to understand agent_id semantics for code-registered agents",
+      "type": "grep",
+      "params": {"pattern": "AgentRegistry|register_agent", "globs": ["**/*.py"]},
+      "priority": "medium"
+    },
+    {
+      "id": "Q009",
+      "intent": "Locate base model conventions (asyncdb / datamodel patterns) used in handlers/models/",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/models/__init__.py"},
+      "priority": "medium"
+    },
+    {
+      "id": "Q010",
+      "intent": "Find similar per-user models for reference (constraint patterns, FK choices)",
+      "type": "grep",
+      "params": {"pattern": "user_id|UniqueConstraint|Index|primary_key=True", "globs": ["packages/ai-parrot/src/parrot/handlers/models/*.py"]},
+      "priority": "medium"
+    },
+    {
+      "id": "Q011",
+      "intent": "Identify how user identity is obtained in handlers (auth middleware, request.user)",
+      "type": "grep",
+      "params": {"pattern": "request.user|get_userdata|user_id", "globs": ["packages/ai-parrot/src/parrot/handlers/*.py"]},
+      "priority": "medium"
+    },
+    {
+      "id": "Q012",
+      "intent": "Recent activity on prompt-library files (rename, FK changes)",
+      "type": "git_log",
+      "params": {"paths": ["packages/ai-parrot/src/parrot/handlers/models/bots.py", "packages/ai-parrot/src/parrot/handlers/bots.py", "packages/ai-parrot/src/parrot/handlers/models/users_bots_creation.sql"], "since": "90 days"},
+      "priority": "medium"
+    },
+    {
+      "id": "Q013",
+      "intent": "Tests covering PromptLibrary management",
+      "type": "grep",
+      "params": {"pattern": "PromptLibrary|prompt_library", "globs": ["packages/ai-parrot/tests/**/*.py", "tests/**/*.py"]},
+      "priority": "low"
+    },
+    {
+      "id": "Q014",
+      "intent": "Check existing aiosql/asyncpg constraint patterns for str-typed chatbot_id elsewhere",
+      "type": "grep",
+      "params": {"pattern": "chatbot_id.*=.*Column|chatbot_id:\\s*str", "globs": ["packages/ai-parrot/src/parrot/**/*.py"]},
+      "priority": "low"
+    }
+  ]
+}
