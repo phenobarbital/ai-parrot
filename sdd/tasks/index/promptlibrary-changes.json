@@ -32,7 +32,7 @@
       "feature_id": "FEAT-167",
       "feature": "promptlibrary-changes",
       "spec": "sdd/specs/promptlibrary-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Module A2 — same file as TASK-1133; must wait for the model relax/extension to land first.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:49:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1134-prompt-library-management-filter.md"
+      "completed_at": "2026-05-13T18:54:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1134-prompt-library-management-filter.md"
     },
     {
       "id": "TASK-1135",
