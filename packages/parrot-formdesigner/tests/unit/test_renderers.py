@@ -4,7 +4,26 @@ from parrot_formdesigner.core import FormSchema, FormSection
 from parrot_formdesigner.core.schema import FormField
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers import HTML5Renderer, JsonSchemaRenderer, AdaptiveCardRenderer
+from parrot_formdesigner.renderers.base import FieldRenderer, FallbackRenderer
 from parrot_formdesigner.core.style import StyleSchema
+
+
+def test_field_renderer_protocol_minimal():
+    """FieldRenderer is a Protocol; FallbackRenderer satisfies it."""
+    # FallbackRenderer must be a concrete, instantiable class
+    fb = FallbackRenderer()
+    assert fb is not None
+    # FallbackRenderer must satisfy the FieldRenderer protocol (runtime-checkable)
+    assert isinstance(fb, FieldRenderer)
+
+
+@pytest.mark.asyncio
+async def test_fallback_renderer_returns_none():
+    """FallbackRenderer.render() returns None as placeholder."""
+    fb = FallbackRenderer()
+    field = FormField(field_id="x", field_type=FieldType.TEXT, label="X")
+    result = await fb.render(field)
+    assert result is None
 
 
 @pytest.fixture
