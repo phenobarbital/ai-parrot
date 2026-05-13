@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Set, Union
 
 from ...models import AIMessage, CompletionUsage
-from ...models.outputs import StructuredOutputConfig
+from ...models.outputs import OutputMode, StructuredOutputConfig
 from ...stores.abstract import AbstractStore
 from ..agent import BasicAgent
 from ..prompts.builder import PromptBuilder
@@ -433,6 +433,10 @@ class DatabaseAgent(BasicAgent):
                 if qr.data and qr.data.data
                 else None
             )
+            # Signal to the HTTP layer that this AIMessage carries a structured
+            # QueryResponse the frontend should render as a SQL artifact card
+            # (explanation + dedicated SQL block) rather than plain markdown.
+            response.output_mode = OutputMode.SQL_ANALYSIS
         else:
             # Free-text fallback
             response.is_structured = False
