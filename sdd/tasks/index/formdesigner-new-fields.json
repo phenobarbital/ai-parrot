@@ -343,7 +343,7 @@
       "feature_id": "FEAT-167",
       "feature": "formdesigner-new-fields",
       "spec": "sdd/specs/formdesigner-new-fields.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -353,8 +353,8 @@
       "parallelism_notes": "Phase 3 foundation — can start as soon as TASK-1146 (RenderWarning) is done",
       "assigned_to": null,
       "started_at": "2026-05-13T19:46:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1155-authcontext-model.md"
+      "completed_at": "2026-05-13T21:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1155-authcontext-model.md"
     },
     {
       "id": "TASK-1156",
