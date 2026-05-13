@@ -238,3 +238,60 @@ def test_rendered_form_with_warnings():
     assert len(rf.warnings) == 1
     assert rf.warnings[0].field_type == "nps"
 
+
+# --- TASK-1154: pycountry / LOCATION reference data tests ---
+
+def test_pycountry_dependency_resolves_es():
+    """Wrapper returns ISO-2 ES → name Spain, flag 🇪🇸, dial code +34."""
+    pytest.importorskip("pycountry")
+    from parrot_formdesigner.core._location_data import get_country_info, is_valid_iso_country_code
+
+    info = get_country_info("ES")
+    assert info is not None
+    assert info["name"] == "Spain"
+    assert info["flag"] == "\U0001F1EA\U0001F1F8"  # 🇪🇸
+    assert info["dial_code"] == "+34"
+    assert is_valid_iso_country_code("ES") is True
+
+
+def test_location_rejects_unknown_code():
+    """is_valid_iso_country_code('XX') returns False."""
+    pytest.importorskip("pycountry")
+    from parrot_formdesigner.core._location_data import is_valid_iso_country_code
+
+    assert is_valid_iso_country_code("XX") is False
+
+
+def test_list_country_options_has_entries():
+    """list_country_options returns a non-empty list of FieldOption."""
+    pytest.importorskip("pycountry")
+    from parrot_formdesigner.core._location_data import list_country_options
+
+    options = list_country_options()
+    assert len(options) >= 200
+    values = {o.value for o in options}
+    assert "ES" in values
+    assert "US" in values
+    assert "VE" in values
+
+
+def test_location_data_importable_without_pycountry(monkeypatch):
+    """_location_data degrades gracefully when pycountry is not installed."""
+    import sys
+    import importlib
+
+    # Simulate pycountry absent
+    monkeypatch.setitem(sys.modules, "pycountry", None)
+    sys.modules.pop("parrot_formdesigner.core._location_data", None)
+    try:
+        mod = importlib.import_module("parrot_formdesigner.core._location_data")
+        # is_valid should return True (skip validation)
+        assert mod.is_valid_iso_country_code("US") is True
+        # get_country_info should return None
+        assert mod.get_country_info("US") is None
+        # list_country_options should return []
+        assert mod.list_country_options() == []
+    finally:
+        sys.modules.pop("parrot_formdesigner.core._location_data", None)
+        monkeypatch.delitem(sys.modules, "pycountry", raising=False)
+
