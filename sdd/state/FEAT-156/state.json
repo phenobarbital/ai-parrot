@@ -1,0 +1,37 @@
+{
+  "feature_id": "FEAT-156",
+  "phase": "committed",
+  "started_at": "2026-05-11T00:00:00Z",
+  "updated_at": "2026-05-11T00:00:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "AgentCrew requires a from_definition classmethod"
+  },
+  "consumed": {
+    "files_read": 8,
+    "grep_calls": 7,
+    "git_calls": 0
+  },
+  "truncated": false,
+  "phases": {
+    "plan": { "approved_by_user": true },
+    "research": {
+      "completed_at": "2026-05-11T00:00:00Z",
+      "files_read": 8,
+      "grep_calls": 7
+    },
+    "synthesis": {},
+    "review_gate": {},
+    "qa": {},
+    "output": {}
+  }
+}

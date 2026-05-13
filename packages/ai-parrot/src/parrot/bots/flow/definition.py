@@ -15,6 +15,7 @@ Example:
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -356,6 +357,54 @@ class FlowDefinition(BaseModel):
                         f"Edge references unknown node ID: '{target}'. "
                         f"Available nodes: {sorted(node_ids)}"
                     )
+
+        return self
+
+    @model_validator(mode="after")
+    def _validate_acyclic(self) -> "FlowDefinition":
+        """Reject FlowDefinition whose edges form a cycle.
+
+        Runs Kahn's algorithm: repeatedly remove nodes with in-degree 0.
+        If any node remains after the queue empties, it participates in a cycle.
+
+        Placed AFTER ``validate_node_ids`` so dangling-reference errors surface
+        first (cycle detection assumes referential integrity). Pydantic v2 runs
+        ``mode="after"`` validators in declaration order.
+
+        Raises:
+            ValueError: If any cycle is detected, listing the node IDs involved.
+        """
+        in_degree: Dict[str, int] = defaultdict(int)
+        adj: Dict[str, List[str]] = defaultdict(list)
+        node_ids = {n.id for n in self.nodes}
+
+        for n in self.nodes:
+            in_degree.setdefault(n.id, 0)
+
+        for edge in self.edges:
+            targets = [edge.to] if isinstance(edge.to, str) else edge.to
+            for target in targets:
+                # Reference integrity already validated above; guard defensively.
+                if edge.from_ in node_ids and target in node_ids:
+                    adj[edge.from_].append(target)
+                    in_degree[target] += 1
+
+        queue = [nid for nid in in_degree if in_degree[nid] == 0]
+        visited = 0
+        while queue:
+            node = queue.pop()
+            visited += 1
+            for nxt in adj[node]:
+                in_degree[nxt] -= 1
+                if in_degree[nxt] == 0:
+                    queue.append(nxt)
+
+        if visited < len(in_degree):
+            cyclic = [nid for nid, deg in in_degree.items() if deg > 0]
+            raise ValueError(
+                f"Cycle detected in flow definition. "
+                f"Nodes involved in cycle: {sorted(cyclic)}"
+            )
 
         return self
 

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CloudSploit Comparison Report</title>
+<style>
+  body { font-family: Helvetica, Arial, sans-serif; color: #222; margin: 24px; font-size: 11pt; }
+  h1 { color: #1f3a93; margin-bottom: 4px; }
+  h2 { color: #1f3a93; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 24px; }
+  .meta { color: #666; font-size: 10pt; margin-bottom: 16px; }
+  .cards { width: 100%; margin: 12px 0 20px 0; }
+  .cards table { width: 100%; border-collapse: collapse; }
+  .card { border: 1px solid #ddd; padding: 10px; text-align: center; background: #fafafa; }
+  .card .label { font-size: 9pt; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  .card .value { font-size: 18pt; font-weight: bold; margin-top: 4px; }
+  .card.new      .value { color: #c62828; }
+  .card.resolved .value { color: #2e7d32; }
+  .card.unchanged .value { color: #616161; }
+  .card.changed  .value { color: #ed6c02; }
+  table.data { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 9.5pt; }
+  table.data th, table.data td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }
+  table.data th { background: #f0f3f8; color: #1f3a93; }
+  .badge { display: inline-block; padding: 2px 8px; font-size: 9pt; font-weight: bold; border-radius: 3px; color: #fff; }
+  .badge-ok   { background: #2e7d32; }
+  .badge-warn { background: #ed6c02; }
+  .badge-fail { background: #c62828; }
+  .badge-unknown { background: #616161; }
+  .muted { color: #888; }
+  .empty { padding: 16px; text-align: center; color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+
+<h1>CloudSploit Scan Comparison</h1>
+<div class="meta">
+  {% if comparison.baseline_timestamp %}
+    Baseline: {{ comparison.baseline_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+  {% endif %}
+  {% if comparison.current_timestamp %}
+    &nbsp;&rarr;&nbsp; Current: {{ comparison.current_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+  {% endif %}
+</div>
+
+<h2>Summary</h2>
+<div class="cards">
+  <table>
+    <tr>
+      <td class="card new">
+        <div class="label">New Issues</div>
+        <div class="value">{{ comparison.new_findings|length }}</div>
+      </td>
+      <td class="card resolved">
+        <div class="label">Resolved</div>
+        <div class="value">{{ comparison.resolved_findings|length }}</div>
+      </td>
+      <td class="card unchanged">
+        <div class="label">Unchanged</div>
+        <div class="value">{{ comparison.unchanged_findings|length }}</div>
+      </td>
+      <td class="card changed">
+        <div class="label">Severity Changed</div>
+        <div class="value">{{ comparison.severity_changed|length }}</div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+{% set total = comparison.new_findings|length + comparison.resolved_findings|length + comparison.unchanged_findings|length + comparison.severity_changed|length %}
+{% if total == 0 %}
+<div class="empty">No findings to compare.</div>
+{% endif %}
+
+{% macro findings_table(findings) %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>Status</th>
+      <th>Plugin</th>
+      <th>Category</th>
+      <th>Region</th>
+      <th>Resource</th>
+      <th>Title</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in findings %}
+    <tr>
+      <td><span class="badge badge-{{ f.status.value|lower }}">{{ f.status.value }}</span></td>
+      <td>{{ f.plugin }}</td>
+      <td>{{ f.category }}</td>
+      <td>{{ f.region }}</td>
+      <td>{% if f.resource %}{{ f.resource }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{{ f.title }}</td>
+      <td>{{ f.message }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+<h2>New Findings</h2>
+{% if comparison.new_findings %}
+  {{ findings_table(comparison.new_findings) }}
+{% else %}
+  <div class="empty">No new findings.</div>
+{% endif %}
+
+<h2>Resolved Findings</h2>
+{% if comparison.resolved_findings %}
+  {{ findings_table(comparison.resolved_findings) }}
+{% else %}
+  <div class="empty">No resolved findings.</div>
+{% endif %}
+
+<h2>Unchanged Findings</h2>
+{% if comparison.unchanged_findings %}
+  {{ findings_table(comparison.unchanged_findings) }}
+{% else %}
+  <div class="empty">No unchanged findings.</div>
+{% endif %}
+
+{% if comparison.severity_changed %}
+<h2>Severity Changed</h2>
+<table class="data">
+  <thead>
+    <tr>
+      <th>Plugin</th>
+      <th>Category</th>
+      <th>Region</th>
+      <th>Resource</th>
+      <th>Previous</th>
+      <th>Current</th>
+      <th>Title</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for change in comparison.severity_changed %}
+    <tr>
+      <td>{{ change.plugin if change.plugin is defined else change.get('plugin', '') }}</td>
+      <td>{{ change.category if change.category is defined else change.get('category', '') }}</td>
+      <td>{{ change.region if change.region is defined else change.get('region', '') }}</td>
+      <td>{{ change.resource if change.resource is defined else change.get('resource', '') }}</td>
+      <td>{{ change.previous_status if change.previous_status is defined else change.get('previous_status', '') }}</td>
+      <td>{{ change.current_status if change.current_status is defined else change.get('current_status', '') }}</td>
+      <td>{{ change.title if change.title is defined else change.get('title', '') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+</body>
+</html>

@@ -1,10 +1,10 @@
-"""Unit tests for core AgentNode.execute() and _CrewAgentNode subclass.
+"""Unit tests for core AgentNode.execute() and CrewAgentNode subclass.
 
 Tests cover:
 - execute() returns the expected dict with keys: response, output, execution_time, prompt
 - execute() with timeout raises TimeoutError and transitions FSM to failed
 - execute() fires pre/post action hooks in correct order
-- _CrewAgentNode is a subclass of core AgentNode (isinstance check)
+- CrewAgentNode is a subclass of core AgentNode (isinstance check)
 - _format_prompt produces the expected string format
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from parrot.bots.flows.core.node import AgentNode
-from parrot.bots.orchestration.crew import _CrewAgentNode
+from parrot.bots.flows.crew import CrewAgentNode
 
 
 # ---------------------------------------------------------------------------
@@ -127,32 +127,32 @@ class TestAgentNodeExecute:
 
 
 # ---------------------------------------------------------------------------
-# Tests for _CrewAgentNode subclass
+# Tests for CrewAgentNode subclass
 # ---------------------------------------------------------------------------
 
 
 class TestCrewAgentNodeSubclass:
-    """Tests for _CrewAgentNode as a subclass of core AgentNode."""
+    """Tests for CrewAgentNode as a subclass of core AgentNode."""
 
     def test_isinstance_agentnode(self) -> None:
         agent = MockAgent()
-        node = _CrewAgentNode(agent=agent, node_id="test")
+        node = CrewAgentNode(agent=agent, node_id="test")
         assert isinstance(node, AgentNode)
 
     def test_format_prompt_task_only(self) -> None:
         agent = MockAgent()
-        node = _CrewAgentNode(agent=agent, node_id="test")
+        node = CrewAgentNode(agent=agent, node_id="test")
         result = node._format_prompt({"task": "Analyze data"})
         assert result == "Analyze data"
 
     def test_format_prompt_empty_input(self) -> None:
         agent = MockAgent()
-        node = _CrewAgentNode(agent=agent, node_id="test")
+        node = CrewAgentNode(agent=agent, node_id="test")
         assert node._format_prompt({}) == ""
 
     def test_format_prompt_with_dependencies(self) -> None:
         agent = MockAgent()
-        node = _CrewAgentNode(agent=agent, node_id="test")
+        node = CrewAgentNode(agent=agent, node_id="test")
         input_data = {
             "task": "Analyze data",
             "dependencies": {
@@ -176,9 +176,9 @@ class TestCrewAgentNodeSubclass:
         assert result == expected
 
     async def test_execute_inherited_from_core(self) -> None:
-        """_CrewAgentNode.execute() is inherited from core AgentNode."""
+        """CrewAgentNode.execute() is inherited from core AgentNode."""
         agent = MockAgent()
-        node = _CrewAgentNode(agent=agent, node_id="test")
+        node = CrewAgentNode(agent=agent, node_id="test")
         result = await node.execute("hello")
         assert result["output"] == "test output"
         assert result["prompt"] == "hello"

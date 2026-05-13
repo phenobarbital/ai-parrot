@@ -18,6 +18,8 @@
 | 4  | Interaction surface — WebSockets, audio, integrations          | [04-interaction-surface.md](04-interaction-surface.md) |
 | 5  | Hardening — anti-prompt-injection, PBAC and tool gating        | [05-hardening.md](05-hardening.md)         |
 | 6  | Cross-cutting concerns and reference deployment                | [06-cross-cutting.md](06-cross-cutting.md) |
+| 7  | AgentCrew — sequential, parallel, flow and loop execution      | [07-agentcrew.md](07-agentcrew.md)         |
+| 8  | AgentsFlow — DAG-first orchestration with per-node FSM         | [08-agentsflow-dag.md](08-agentsflow-dag.md) |
 
 All file references in the chapters use the `package/path/file.py:line`
 convention so the reader can jump directly to the source of truth.
@@ -98,5 +100,9 @@ graph TB
 - **Security reviewers** — chapter 5 first, then chapters 1 and 2 for the
   authentication surface.
 - **UI / channel engineers** — chapter 4.
+- **Orchestration engineers** — chapters 7 and 8: chapter 7 covers
+  `AgentCrew` and its four execution modes (sequential, parallel,
+  flow, loop); chapter 8 covers `AgentsFlow` as a DAG-first runner
+  with per-node FSM, conditional transitions and HITL decision nodes.
 - **Framework maintainers** — read in order; the “pointers for reviewers”
   table at the end of chapter 6 is the usual jumping-off point.

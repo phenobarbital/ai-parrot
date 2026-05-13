@@ -5,6 +5,8 @@ Kubernetes, and IaC security scanning.
 All public async methods automatically become agent tools.
 """
 
+import tempfile
+from pathlib import Path
 from typing import Optional
 
 from ..toolkit import AbstractToolkit
@@ -14,12 +16,13 @@ from .models import (
     SecurityFinding,
     SeverityLevel,
 )
+from .persistence import ReportPersistenceMixin, pop_persistence_kwargs
 from .trivy.config import TrivyConfig
 from .trivy.executor import TrivyExecutor
 from .trivy.parser import TrivyParser
 
 
-class ContainerSecurityToolkit(AbstractToolkit):
+class ContainerSecurityToolkit(ReportPersistenceMixin, AbstractToolkit):
     """Container and infrastructure security toolkit powered by Trivy.
 
     Scans container images, filesystems, git repositories, Kubernetes clusters,
@@ -43,11 +46,52 @@ class ContainerSecurityToolkit(AbstractToolkit):
             config: Optional TrivyConfig. Uses defaults if not provided.
             **kwargs: Additional arguments passed to AbstractToolkit.
         """
+        # Pop persistence kwargs BEFORE super().__init__ to avoid unknown-kwarg errors
+        self.file_manager, self.report_store = pop_persistence_kwargs(kwargs)
         super().__init__(**kwargs)
         self.config = config or TrivyConfig()
         self.executor = TrivyExecutor(self.config)
         self.parser = TrivyParser()
         self._last_result: Optional[ScanResult] = None
+
+    async def _persist_trivy(
+        self,
+        stdout: str,
+        *,
+        framework: Optional[str],
+        scope: dict,
+    ) -> None:
+        """Persist Trivy stdout to the catalog via a temp file (resolved U3).
+
+        Short-circuits immediately when persistence deps are absent to avoid
+        creating unnecessary temp files.
+
+        Args:
+            stdout: Raw Trivy JSON string output.
+            framework: Compliance framework or None.
+            scope: Scope dict (e.g. ``{"target_image": "nginx:latest"}``).
+        """
+        if self.file_manager is None or self.report_store is None:
+            return  # No-op: don't create temp files unnecessarily
+
+        stdout_bytes = stdout.encode("utf-8") if isinstance(stdout, str) else stdout
+        ntf = tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".json", delete=False,
+        )
+        tmp = Path(ntf.name)
+        ntf.close()
+        try:
+            tmp.write_bytes(stdout_bytes)
+            await self._persist_report(
+                scanner="trivy",
+                framework=framework,
+                provider="container",
+                scope=scope,
+                content=tmp,
+                content_type="application/json",
+            )
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def trivy_scan_image(
         self,
@@ -88,8 +132,13 @@ class ContainerSecurityToolkit(AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy image scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_trivy(stdout, framework=None, scope={"target_image": image})
         self._last_result = result
         return result
 
@@ -127,8 +176,13 @@ class ContainerSecurityToolkit(AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy fs scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_trivy(stdout, framework=None, scope={"target_path": path})
         self._last_result = result
         return result
 
@@ -165,8 +219,13 @@ class ContainerSecurityToolkit(AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy repo scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_trivy(stdout, framework=None, scope={"target_repo": repo_url})
         self._last_result = result
         return result
 
@@ -207,8 +266,15 @@ class ContainerSecurityToolkit(AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy k8s scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_trivy(
+            stdout, framework=compliance, scope={"k8s_context": context, "namespace": namespace}
+        )
         self._last_result = result
         return result
 
@@ -245,8 +311,15 @@ class ContainerSecurityToolkit(AbstractToolkit):
 
         if code != 0:
             self.logger.error("Trivy IaC scan failed with code %d: %s", code, stderr)
+            result = self.parser.parse(stdout)
+            self._last_result = result
+            return result  # Skip persistence of failed scan
 
         result = self.parser.parse(stdout)
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise)
+        await self._persist_trivy(
+            stdout, framework=compliance, scope={"target_path": path}
+        )
         self._last_result = result
         return result
 
@@ -412,8 +485,9 @@ class ContainerSecurityToolkit(AbstractToolkit):
         if self._last_result is None:
             raise ValueError("No scan results available. Run a scan first.")
 
+        fmt = format.lower()
         # For now, save as JSON (HTML generation would require templates)
-        if format.lower() == "json":
+        if fmt == "json":
             self.parser.save_result(self._last_result, output_path)
         else:
             # Placeholder for HTML generation
@@ -421,6 +495,14 @@ class ContainerSecurityToolkit(AbstractToolkit):
             self.logger.info(
                 "Report format '%s' not fully implemented, saved as JSON", format
             )
+
+        await self._mirror_rendered_report(
+            local_path=output_path,
+            scanner="trivy",
+            framework=None,
+            timestamp=self._last_result.summary.scan_timestamp,
+            extension=fmt if fmt in ("html", "json") else "json",
+        )
 
         return output_path
 

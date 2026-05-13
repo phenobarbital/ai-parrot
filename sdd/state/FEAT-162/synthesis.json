@@ -1,0 +1,333 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-162",
+  "mode": "enrichment",
+  "summary_oneline": "Cross-session Postgres+S3 catalog for security reports, populated by scanner toolkits via a mixin and consumed via a new SecurityReportToolkit, with fractal weekly/monthly summaries — brainstorm architecture sound, codebase contract needs ~10 corrections before specification.",
+
+  "localization": [
+    {
+      "path": "agents/security.py",
+      "symbol": "SecurityAgent",
+      "lines": "1-471",
+      "role": "Live integration target. Hosts the existing scanner toolkit wiring, BACKSTORY block, and @schedule'd tasks. NOTE: file is gitignored AND contains a broken consolidate_weekly_security_summary stub at lines 445-471 referencing yet-to-exist symbols (self._report_store, ReportFilter, self._build_weekly_summary).",
+      "evidence": ["F001", "F019"]
+    },
+    {
+      "path": "parrot/interfaces/file/",
+      "symbol": "FileManagerInterface",
+      "lines": "see F004",
+      "role": "Canonical FileManager surface (April 2026 migration from parrot/tools/file/*). Method names are upload_file, download_file, exists, get_file_url — NOT upload/download/get_url as the brainstorm claimed.",
+      "evidence": ["F002", "F004", "F020"]
+    },
+    {
+      "path": "parrot/tools/file/tool.py",
+      "symbol": "FileManagerFactory.create",
+      "lines": "see F003",
+      "role": "Factory entry point. Accepts manager_type plus per-impl kwargs. S3FileManager takes aws_id (key into navconfig AWS_CREDENTIALS) or a credentials dict; there is NO `aws_config` kwarg.",
+      "evidence": ["F003", "F005"]
+    },
+    {
+      "path": "parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit",
+      "lines": "191-403",
+      "role": "Real location of AbstractToolkit (NOT parrot/tools/abstract). Auto-discovers async public methods; lifecycle exclusion list at lines 368-403: get_tools, get_tools_filtered, get_tools_sync, get_tool, list_tool_names, start, stop, cleanup, plus an exclude_tools tuple consumed by the discovery walk.",
+      "evidence": ["F006", "F007"]
+    },
+    {
+      "path": "parrot/tools/abstract.py",
+      "symbol": "AbstractTool, ToolResult, AbstractToolArgsSchema",
+      "lines": "—",
+      "role": "Module that exports the tool-result types only (NOT the toolkit base — see preceding row).",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "parrot/scheduler/__init__.py",
+      "symbol": "ScheduleType, schedule",
+      "lines": "41-96",
+      "role": "ScheduleType enum (has WEEKLY and MONTHLY members); @schedule decorator passes arbitrary kwargs through to the scheduler, so day_of_week, day, hour, minute are accepted verbatim.",
+      "evidence": ["F008"]
+    },
+    {
+      "path": "parrot/registry/registry.py",
+      "symbol": "register_agent",
+      "lines": "1130-1156",
+      "role": "Decorator factory for AbstractBot subclasses, accepts at_startup=True via **kwargs. SecurityAgent is already registered.",
+      "evidence": ["F009"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/",
+      "symbol": "CloudSploitToolkit, CloudSploitConfig, ScanResult",
+      "lines": "see F011",
+      "role": "Scanner toolkit. PUBLIC scan methods are run_scan(plugins, ignore_ok, suppress, config) and run_compliance_scan(framework, ignore_ok=True, config=None) — both return Pydantic ScanResult, NOT dict. Output-format conversion lives in a separate generate_report(format=...) method. FEAT-160 (merged today) added CloudSploitConfig.config_file plus per-call config arg.",
+      "evidence": ["F010", "F011"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/security/",
+      "symbol": "ComplianceReportToolkit, ContainerSecurityToolkit, ConsolidatedReport, SeverityLevel",
+      "lines": "see F012, F013",
+      "role": "Compliance toolkit (orchestrates Prowler+Trivy+Checkov, returns ConsolidatedReport). Container toolkit (Trivy filesystem/image; methods prefixed trivy_* — real name is trivy_scan_filesystem, NOT scan_filesystem). Container toolkit captures Trivy via stdout — there is NO results_dir / report_output_dir, so a Path-based content branch in the mixin will not work for Trivy unless we capture stdout to bytes or write a temp file.",
+      "evidence": ["F012", "F013", "F023"]
+    },
+    {
+      "path": "parrot/conf.py",
+      "symbol": "S3_ARTIFACT_BUCKET, AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION_NAME, default_dsn, AWS_CREDENTIALS",
+      "lines": "418, 475 (S3_ARTIFACT_BUCKET, AWS_REGION_NAME)",
+      "role": "Real navconfig surface. Names are AWS_ACCESS_KEY / AWS_SECRET_KEY / default_dsn (NOT AWS_KEY / AWS_SECRET / DEFAULT_PG_DSN as brainstorm assumed). aws_security is an INI SECTION read via config.get('aws_security', '<key>'), not a parrot.conf module constant.",
+      "evidence": ["F014"]
+    },
+    {
+      "path": "parrot/bots/abstract.py",
+      "symbol": "AbstractBot.llm",
+      "lines": "922-928",
+      "role": "Real attribute name on the bot base class. Set to a GoogleGenAIClient (or other) after super().__init__() in Agent (agents/agent.py:127-131). The brainstorm's `llm_client=self.llm` is correct.",
+      "evidence": ["F021"]
+    },
+    {
+      "path": "parrot/clients/google/client.py",
+      "symbol": "ThinkingConfig usage",
+      "lines": "1957-1977",
+      "role": "Existing precedent for ThinkingConfig(include_thoughts=False) with structured output. Summarizer module can follow this pattern verbatim.",
+      "evidence": ["F022"]
+    },
+    {
+      "path": "parrot/storage/artifacts.py",
+      "symbol": "ArtifactStore (FEAT-103)",
+      "lines": "22+",
+      "role": "Peer abstraction. Conversation-scoped artifacts backed by DynamoDB/SQLite + OverflowStore. NOT a replacement target for the new catalog — different lifecycle, different consumers.",
+      "evidence": ["F017"]
+    },
+    {
+      "path": "parrot/bots/database/toolkits/base.py",
+      "symbol": "asyncdb.AsyncDB / AsyncPool usage",
+      "lines": "344-351",
+      "role": "Representative example of the project's Postgres-async convention. `from asyncdb import AsyncDB` with `driver='pg', dsn=...`. 30 usages across parrot/ vs 1 raw asyncpg call.",
+      "evidence": ["F015"]
+    },
+    {
+      "path": "parrot/security/security_events.sql",
+      "symbol": "raw DDL precedent",
+      "lines": "—",
+      "role": "Closest precedent for schema layout: a bare .sql file co-located with the module, using CREATE TABLE IF NOT EXISTS + CREATE INDEX. No Python loader reads it; ops applies it out-of-band. No migration framework (no Alembic, no migrations dir) exists.",
+      "evidence": ["F016"]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "pydantic dependency",
+      "lines": "47",
+      "role": "Pydantic pinned to 2.12.5 — Pydantic v2 is confirmed as the project standard.",
+      "evidence": ["F018"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "FileManager method names are upload_file / download_file / get_file_url / exists — NOT upload / download / get_url",
+      "evidence": ["F004"],
+      "implication": "ReportPersistenceMixin and PostgresS3SecurityReportStore must call upload_file/download_file/get_file_url. Every code snippet in the brainstorm using `await fm.upload(...)` etc. is wrong and must be re-written in the spec."
+    },
+    {
+      "statement": "S3FileManager constructor takes aws_id OR a credentials dict — not aws_config",
+      "evidence": ["F003", "F005"],
+      "implication": "Spec must replace the brainstorm's `aws_config={...}` kwarg with either (a) `aws_id='security'` keyed into AWS_CREDENTIALS, or (b) `credentials={'aws_key': ..., 'aws_secret': ..., 'region_name': ...}` literal."
+    },
+    {
+      "statement": "Scanner public methods return Pydantic models, not dict",
+      "evidence": ["F011", "F012"],
+      "implication": "ReportPersistenceMixin must serialize via `result.model_dump_json().encode()` for ScanResult and ConsolidatedReport. Brainstorm's `Path` content branch is correct only for CloudSploit (which writes a JSON file before returning the ScanResult)."
+    },
+    {
+      "statement": "CloudSploit has no output_format kwarg on scan methods; the format is selected post-hoc via generate_report(format=...)",
+      "evidence": ["F011"],
+      "implication": "Spec must drop the brainstorm's `output_format='json'` kwarg on run_cloudsploit_scan. Persistence happens against the JSON output regardless; HTML/PDF is a separate side branch."
+    },
+    {
+      "statement": "ContainerSecurityToolkit has no results_dir — Trivy output is captured from stdout",
+      "evidence": ["F012", "F023"],
+      "implication": "Mixin needs a bytes content branch for Trivy (either ContainerSecurityToolkit captures stdout into bytes, or it writes JSON to a temp Path the mixin reads). Spec must pick one."
+    },
+    {
+      "statement": "agents/security.py is gitignored",
+      "evidence": ["F001", "F019"],
+      "implication": "Spec changes to SecurityAgent are local-only — no CI / no diff review. Worker-side implementation must edit it AND coordinate with ops. Consider committing a redacted template under examples/ or policies/ for traceability."
+    },
+    {
+      "statement": "agents/security.py already contains a broken consolidate_weekly_security_summary stub at lines 445-471 referencing symbols that do not exist yet",
+      "evidence": ["F001"],
+      "implication": "Spec's FIRST implementation task should be to make the import succeed (either remove the stub, or land the Module 1+2 dependencies before flipping it on). Otherwise the SecurityAgent fails to load mid-feature."
+    },
+    {
+      "statement": "BACKSTORY already references find_security_report (lines 56-63) even though the tool doesn't exist anywhere",
+      "evidence": ["F001"],
+      "implication": "Live prompt is referencing vapor. Spec must align Module 4 implementation with the existing BACKSTORY shape OR explicitly rewrite the BACKSTORY block in the same atomic change."
+    },
+    {
+      "statement": "Producer toolkit constructors pass **kwargs through to AbstractToolkit",
+      "evidence": ["F012"],
+      "implication": "ReportPersistenceMixin must pop its own kwargs (file_manager, report_store) BEFORE `super().__init__(**kwargs)` to avoid breaking the parent contract."
+    },
+    {
+      "statement": "Postgres convention is asyncdb (`from asyncdb import AsyncDB`, driver='pg'), not asyncpg",
+      "evidence": ["F015"],
+      "implication": "PostgresS3SecurityReportStore must use asyncdb. Resolves brainstorm OQ #1."
+    },
+    {
+      "statement": "No migration framework exists in the project",
+      "evidence": ["F016"],
+      "implication": "Spec follows the bare-.sql convention: ship schema.sql with CREATE TABLE IF NOT EXISTS, applied out-of-band by ops. A bootstrap_schema() method on the store is a reasonable, additive new convention. Resolves brainstorm OQ #2."
+    },
+    {
+      "statement": "AWS credentials for SecurityAgent come from a non-default INI section (`aws_security`), not from AWS_ACCESS_KEY / AWS_SECRET_KEY",
+      "evidence": ["F014"],
+      "implication": "Cleanest spec move: add an `AWS_CREDENTIALS['security']` slot in parrot/conf.py so `FileManagerFactory.create(manager_type='s3', aws_id='security')` is idiomatic. Alternative: read the INI section keys into a credentials dict per call."
+    },
+    {
+      "statement": "FEAT-160 (cloudsploit-config-support) merged on 2026-05-12, adding CloudSploitConfig.config_file and per-call `config` arg on run_scan/run_compliance_scan",
+      "evidence": ["F019"],
+      "implication": "Spec must align CloudSploit wiring with the new config field. Brainstorm pre-dates this merge."
+    },
+    {
+      "statement": "ThinkingConfig(include_thoughts=False) is an established pattern in parrot/clients/google/client.py:1957-1977",
+      "evidence": ["F022"],
+      "implication": "Summarizer module follows the same pattern — no new architecture needed for structured output."
+    },
+    {
+      "statement": "Pydantic v2 (2.12.5) is the project standard",
+      "evidence": ["F018"],
+      "implication": "All new models must use v2 (model_dump, model_dump_json, model_validate). Consistent with brainstorm."
+    },
+    {
+      "statement": "FEAT-103 ArtifactStore is a peer abstraction with a different lifecycle (DynamoDB/SQLite + OverflowStore, conversation-scoped)",
+      "evidence": ["F017"],
+      "implication": "Spec must explicitly state the new catalog is NOT extending ArtifactStore — confirms brainstorm §2 Non-Goals."
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new_components": [
+      {"name": "parrot/storage/security_reports/models.py", "role": "ReportKind, ReportRef, ReportFilter, SeverityBreakdown, EmbeddedFinding Pydantic v2 models"},
+      {"name": "parrot/storage/security_reports/store.py", "role": "SecurityReportStore Protocol + PostgresS3SecurityReportStore impl using asyncdb"},
+      {"name": "parrot/storage/security_reports/schema.sql", "role": "Bare DDL following the security_events.sql precedent"},
+      {"name": "parrot_tools/security/persistence.py", "role": "ReportPersistenceMixin (no-op when deps are None)"},
+      {"name": "parrot_tools/security/report_toolkit.py", "role": "SecurityReportToolkit (LLM-facing read side: find/read/search/list-frameworks)"},
+      {"name": "parrot_tools/security/parsers/", "role": "Per-scanner deterministic Python parsers (Trivy / CloudSploit / Prowler / Checkov / Aggregator)"},
+      {"name": "parrot_tools/security/summarizer.py", "role": "WeeklySecuritySummarizer + MonthlySecuritySummarizer (deterministic diffs; LLM only for executive paragraph)"}
+    ],
+    "modified_components": [
+      {"path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/toolkit.py", "change": "Add ReportPersistenceMixin to base class chain; thread file_manager/report_store kwargs through __init__ via pop(); auto-persist after run_compliance_scan/run_scan (returning the ScanResult unchanged)", "evidence": ["F011"]},
+      {"path": "packages/ai-parrot-tools/src/parrot_tools/security/compliance_report.py (or similar — confirm in spec)", "change": "Same mixin pattern. The ConsolidatedReport return shape is preserved; persistence is a side effect", "evidence": ["F012"]},
+      {"path": "packages/ai-parrot-tools/src/parrot_tools/security/container.py", "change": "Same mixin pattern. Resolve the no-results_dir issue per the chosen U3 strategy (stdout-to-bytes or temp-file)", "evidence": ["F012", "F023"]},
+      {"path": "agents/security.py", "change": "Wire FileManagerFactory + PostgresS3SecurityReportStore at __init__; inject into producer toolkits in agent_tools(); add weekly/monthly @schedule'd consolidators; FIX the broken stub at lines 445-471; align BACKSTORY with real Module 4 tool names", "evidence": ["F001"]},
+      {"path": "parrot/conf.py", "change": "Add AWS_CREDENTIALS['security'] slot derived from the aws_security INI section (clean path) — pending U2", "evidence": ["F014"]}
+    ],
+    "untouched": [
+      "parrot/storage/artifacts.py — FEAT-103 ArtifactStore stays as a peer abstraction (different consumers, conversation scope)",
+      "parrot/interfaces/file/* — FileManager surface is consumed as-is; the spec must not reshape it",
+      "Existing /tmp/security-reports/ host-filesystem behavior — v1 starts fresh; no migration of legacy reports (brainstorm §11 AC #5)",
+      "Other scheduled tasks in SecurityAgent — they auto-populate the catalog as a side effect of the mixin; their signatures and return dicts are preserved (brainstorm §5 Module 7.E)"
+    ],
+    "patterns_to_follow": [
+      "asyncdb.AsyncDB(driver='pg', dsn=...) — match parrot/bots/database/toolkits/base.py:344-351 [F015]",
+      "Bare .sql DDL co-located with the module — match parrot/security/security_events.sql [F016]",
+      "ThinkingConfig(include_thoughts=False) for structured Gemini calls — match parrot/clients/google/client.py:1957-1977 [F022]",
+      "AbstractToolkit auto-discovery: every async public method on the toolkit (minus the lifecycle exclusion list) becomes a tool exposed to the LLM [F007]",
+      "Mixin .pop() pattern for kwargs to keep super().__init__() contract intact [F012]"
+    ],
+    "integration_risks": [
+      "RISK: agents/security.py is gitignored — implementation cannot rely on diff review and ops must apply the file independently. MITIGATION: U1 resolution (template file under examples/ or policies/).",
+      "RISK: Existing broken stub at agents/security.py:445-471 will block import. MITIGATION: spec orders the storage models + store as Tasks 1-2 and lands the consolidator wiring only AFTER they are in place; or the stub is deleted as Task 0.",
+      "RISK: Trivy stdout pattern doesn't fit the brainstorm's `content: bytes | Path` mixin signature naturally. MITIGATION: U3 resolution. Strong default: capture stdout into bytes inside ContainerSecurityToolkit, drop the Path branch for Trivy. [F012, F023]",
+      "RISK: FEAT-160 just landed; CloudSploitConfig has new fields the brainstorm doesn't reference. MITIGATION: spec explicitly threads CloudSploitConfig.config_file when the SecurityAgent constructs the toolkit. [F019]",
+      "RISK: BACKSTORY already references find_security_report — if Module 4 is shipped late, the live prompt instructs the LLM to call a nonexistent tool. MITIGATION: spec must land Module 4 BEFORE keeping the BACKSTORY policy block, or rewrite the block during the SecurityAgent wiring task. [F001]",
+      "RISK: Two SeverityLevel-like enums (existing parrot_tools.security.models.SeverityLevel + new SeverityBreakdown) could collide on import. MITIGATION: spec names the new model SeverityBreakdown (count container, not level enum) — distinct enough; document the difference in §6 Codebase Contract. [F013]"
+    ]
+  },
+
+  "confidence_map": [
+    {"id": "C1", "statement": "The catalog should be implemented at parrot/storage/security_reports/, peer to parrot/storage/artifacts.py", "evidence": ["F017"], "confidence": "high", "reasoning": "Storage layout already houses peer stores; ArtifactStore was added in FEAT-103 with the same parent dir convention."},
+    {"id": "C2", "statement": "FileManager methods to call are upload_file / download_file / get_file_url / exists", "evidence": ["F004"], "confidence": "high", "reasoning": "Direct read of FileManagerInterface contract."},
+    {"id": "C3", "statement": "FileManagerFactory.create() does NOT accept aws_config; brainstorm's S3FileManager kwarg shape is wrong", "evidence": ["F003", "F005"], "confidence": "high", "reasoning": "Direct read of factory + S3FileManager constructors."},
+    {"id": "C4", "statement": "Scanner public methods return Pydantic ScanResult / ConsolidatedReport, not dict", "evidence": ["F011", "F012"], "confidence": "high", "reasoning": "Direct reads of toolkit method signatures."},
+    {"id": "C5", "statement": "CloudSploit method names are run_scan / run_compliance_scan; output_format is not a scan-method kwarg", "evidence": ["F011"], "confidence": "high", "reasoning": "Direct read; brainstorm's run_cloudsploit_scan is fabricated."},
+    {"id": "C6", "statement": "ContainerSecurityToolkit captures Trivy via stdout; no results_dir attribute", "evidence": ["F012", "F023"], "confidence": "high", "reasoning": "Direct read; brainstorm's results_dir assumption fails for Trivy."},
+    {"id": "C7", "statement": "agents/security.py is gitignored and contains a broken stub referencing planned symbols", "evidence": ["F001", "F019"], "confidence": "high", "reasoning": "Direct file read + git log inspection."},
+    {"id": "C8", "statement": "Postgres driver convention is asyncdb (30 usages vs 1 asyncpg)", "evidence": ["F015"], "confidence": "high", "reasoning": "Codebase-wide grep count; resolves brainstorm OQ #1."},
+    {"id": "C9", "statement": "No schema migration framework exists; bare .sql with CREATE TABLE IF NOT EXISTS is the precedent", "evidence": ["F016"], "confidence": "high", "reasoning": "Codebase search returned no Alembic/migrations dir; security_events.sql is the closest analog. Resolves brainstorm OQ #2."},
+    {"id": "C10", "statement": "ScheduleType has WEEKLY and MONTHLY; @schedule passes arbitrary kwargs through, so day_of_week/day/hour/minute are accepted verbatim", "evidence": ["F008"], "confidence": "high", "reasoning": "Direct read of decorator."},
+    {"id": "C11", "statement": "AbstractToolkit auto-discovery rules confirm Module 4 tools will be exposed by inheriting AbstractToolkit alone (no manual registration needed)", "evidence": ["F007"], "confidence": "high", "reasoning": "Direct read of lifecycle exclusion list."},
+    {"id": "C12", "statement": "AbstractBot.llm is the live attribute; brainstorm's `llm_client=self.llm` is correct", "evidence": ["F021"], "confidence": "high", "reasoning": "Direct read of bot base class + Agent subclass."},
+    {"id": "C13", "statement": "AWS credentials for SecurityAgent currently come from a non-default `aws_security` INI section, not parrot.conf constants", "evidence": ["F014"], "confidence": "high", "reasoning": "Direct read of parrot/conf.py + grep for aws_security usage."},
+    {"id": "C14", "statement": "Adding AWS_CREDENTIALS['security'] to parrot/conf.py would let FileManagerFactory.create(aws_id='security') work idiomatically", "evidence": ["F014"], "confidence": "medium", "reasoning": "Pattern-matched against existing AWS_CREDENTIALS slots; not observed elsewhere but consistent with current shape. Could equally be solved by passing a credentials dict per call (U2)."},
+    {"id": "C15", "statement": "Producer toolkit mixin must pop its kwargs before super().__init__ to preserve **kwargs forwarding to AbstractToolkit", "evidence": ["F012"], "confidence": "high", "reasoning": "Direct read of current toolkit constructors."},
+    {"id": "C16", "statement": "FEAT-160 (merged today) adds CloudSploitConfig.config_file and per-call config arg — spec must thread the new field", "evidence": ["F019"], "confidence": "high", "reasoning": "git log F019 shows the merge commit and TASK references."},
+    {"id": "C17", "statement": "Trivy persistence path does not match the brainstorm's `content: bytes | Path` mixin signature without modifications", "evidence": ["F012", "F023"], "confidence": "high", "reasoning": "ContainerSecurityToolkit has no results_dir/report_output_dir; pipes are stdout-only."},
+    {"id": "C18", "statement": "The brainstorm's architectural decisions (Postgres+S3, mixin, fractal summaries, deterministic parsers) remain sound after research", "evidence": ["F001", "F008", "F011", "F012", "F015", "F016", "F017"], "confidence": "high", "reasoning": "Every architectural pillar maps to an existing convention or a clean extension point. Corrections are tactical (paths, method names) — not architectural."},
+    {"id": "C19", "statement": "BACKSTORY already mentions find_security_report; without Module 4, the live prompt instructs the LLM to call a nonexistent tool", "evidence": ["F001"], "confidence": "high", "reasoning": "Direct read of BACKSTORY block."},
+    {"id": "C20", "statement": "Pydantic v2 (2.12.5) is the project standard, consistent with brainstorm", "evidence": ["F018"], "confidence": "high", "reasoning": "pyproject.toml pin."}
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "How should we handle traceability for the gitignored agents/security.py — commit a redacted template (no secrets) under examples/agents/ or policies/agents/, or accept that the live file stays untracked and only ops applies it?",
+      "blocks_claims": ["C7"],
+      "plausible_answers": [
+        "Commit a redacted template under examples/agents/security.py so the spec and code-review process can reason about the wiring.",
+        "Keep agents/security.py untracked; the spec describes the wiring in §3 and the implementer + ops coordinate via the spec.",
+        "Move SecurityAgent to a tracked location entirely (refactor out of agents/ into parrot/agents/security/) — out of scope for this FEAT."
+      ],
+      "ask_user": true,
+      "user_answer": "Keep agents/security.py untracked. Spec describes wiring in §3 prose; the implementer and ops coordinate via the spec. No new tracked template file in this FEAT."
+    },
+    {
+      "id": "U2",
+      "question": "Should we add AWS_CREDENTIALS['security'] in parrot/conf.py (so S3FileManager(aws_id='security') is idiomatic), or read the aws_security INI section into a credentials dict at the SecurityAgent construction site?",
+      "blocks_claims": ["C13", "C14"],
+      "plausible_answers": [
+        "Add AWS_CREDENTIALS['security'] slot in parrot/conf.py — most consistent with existing FileManagerFactory ergonomics. [Recommended]",
+        "Read aws_security INI keys at SecurityAgent __init__ and pass `credentials={'aws_key': ..., 'aws_secret': ..., 'region_name': ...}` to FileManagerFactory.create.",
+        "Reuse the default AWS_CREDENTIALS slot (no aws_security separation) and rely on bucket-level IAM — only if the security bucket really shares creds with everything else."
+      ],
+      "ask_user": true,
+      "user_answer": "Add AWS_CREDENTIALS['security'] slot in parrot/conf.py derived from the aws_security INI section. SecurityAgent uses FileManagerFactory.create(manager_type='s3', aws_id='security', ...)."
+    },
+    {
+      "id": "U3",
+      "question": "For Trivy (no results_dir), should ReportPersistenceMixin always receive content as bytes (captured from stdout inside ContainerSecurityToolkit), or should we add a temp-file write in the toolkit and keep the mixin's `bytes | Path` signature?",
+      "blocks_claims": ["C17"],
+      "plausible_answers": [
+        "Capture Trivy stdout into bytes inside ContainerSecurityToolkit; mixin keeps `bytes | Path` signature but Trivy always uses the bytes branch. [Recommended — minimal coupling]",
+        "Have ContainerSecurityToolkit write a temp file and pass a Path to the mixin — homogeneous with CloudSploit but adds tmp-dir lifecycle for a synthetic file.",
+        "Add a third `stream: AsyncIterator[bytes]` content type to the mixin for streaming-friendly scanners — overkill for current scanners."
+      ],
+      "ask_user": true,
+      "user_answer": "ContainerSecurityToolkit writes Trivy stdout to a temp file inside the toolkit. Mixin's content signature stays `bytes | Path`; Trivy always uses the Path branch. ContainerSecurityToolkit owns the tmp-file lifecycle (write, hand to mixin, delete after persist)."
+    },
+    {
+      "id": "U4",
+      "question": "For search_findings, accept the SQL ILIKE + JSONB-on-top_findings limitation in v1 (only the embedded top-10 findings per report are searchable) and defer per-finding indexing to a follow-up FEAT, or expand the catalog schema with a findings child table now?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Accept v1 limitation; document it in the tool description and §1 Non-Goals. Defer per-finding indexing + PgVector to a follow-up FEAT. [Recommended — matches brainstorm §9 #5 lean]",
+        "Add a `security_findings` child table now (1:N from reports) with severity/title/resource columns. Costs another schema design pass but unlocks proper search.",
+        "Skip search_findings entirely in v1; rely only on find_security_report metadata. Cuts scope but loses one of the four read-side tools."
+      ],
+      "ask_user": true,
+      "user_answer": "Accept v1 limitation: SQL ILIKE + JSONB on top_findings is the v1 query path. Documented in tool description and §1 Non-Goals. Per-finding indexing + PgVector deferred to a follow-up FEAT."
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence, the architectural approach in the brainstorm is sound after verification, and the corrections needed are tactical (paths, method names, kwargs) rather than architectural. /sdd-spec can produce ordered tasks immediately once U1-U4 are answered in its §3 clarifying round."
+  },
+
+  "overall_confidence": "high",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009", "F010", "F011", "F012", "F013", "F014", "F015", "F016", "F017", "F018", "F019", "F020", "F021", "F022", "F023"],
+    "findings_unused": [],
+    "notes": "All 23 findings cited. Research confirmed every brainstorm architectural pillar but corrected ~10 codebase contract errors. The brainstorm pre-dates today's FEAT-160 merge and the April 2026 fileinterface-migration; both are now baked into the constraints. Overall confidence is high because corrections are concrete (specific paths and method names from direct reads), not speculative."
+  }
+}

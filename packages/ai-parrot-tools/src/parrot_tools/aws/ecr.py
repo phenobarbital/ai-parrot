@@ -45,6 +45,15 @@ class GetImageScanFindingsInput(BaseModel):
     image_tag: str = Field(
         "latest", description="Image tag to check"
     )
+    include_attributes: bool = Field(
+        False,
+        description=(
+            "When True, each finding includes the raw ECR ``attributes[]`` "
+            "array (package_name, package_version, fixed_in_versions, "
+            "CVSS3_SCORE/CVSS4_SCORE). Default False preserves the existing "
+            "payload shape for backward compatibility."
+        ),
+    )
 
 
 class ListRepositoryImagesInput(BaseModel):
@@ -189,8 +198,21 @@ class ECRToolkit(AbstractToolkit):
         self,
         repository_name: str,
         image_tag: str = "latest",
+        include_attributes: bool = False,
     ) -> Dict[str, Any]:
-        """Get vulnerability scan findings for a container image."""
+        """Get vulnerability scan findings for a container image.
+
+        Args:
+            repository_name: Name of the ECR repository.
+            image_tag: Image tag to query.
+            include_attributes: When True, each finding includes the raw ECR
+                ``attributes[]`` list (package_name, package_version,
+                fixed_in_versions, CVSS3_SCORE/CVSS4_SCORE). Default False
+                keeps the existing payload byte-compatible for existing callers.
+
+        Returns:
+            Dictionary with scan status, severity counts, and findings list.
+        """
         try:
             async with self.aws.client("ecr") as ecr:
                 response = await ecr.describe_image_scan_findings(
@@ -204,12 +226,7 @@ class ECRToolkit(AbstractToolkit):
                     "findingSeverityCounts", {}
                 )
                 findings = [
-                    {
-                        "name": f.get("name"),
-                        "severity": f.get("severity"),
-                        "description": f.get("description"),
-                        "uri": f.get("uri"),
-                    }
+                    self._build_finding_dict(f, include_attributes)
                     for f in scan.get("findings", [])
                 ]
 
@@ -238,6 +255,32 @@ class ECRToolkit(AbstractToolkit):
             raise RuntimeError(
                 f"AWS ECR error ({error_code}): {e}"
             ) from e
+
+    @staticmethod
+    def _build_finding_dict(
+        f: Dict[str, Any], include_attributes: bool
+    ) -> Dict[str, Any]:
+        """Build a normalized finding dict from an ECR raw finding.
+
+        Args:
+            f: Raw ECR finding dict from the API response.
+            include_attributes: When True, include the raw ``attributes``
+                list on the returned dict.
+
+        Returns:
+            Normalized finding dict.
+        """
+        out: Dict[str, Any] = {
+            "name": f.get("name"),
+            "severity": f.get("severity"),
+            "description": f.get("description"),
+            "uri": f.get("uri"),
+        }
+        if include_attributes:
+            # ECR returns attributes as a list of {"key": str, "value": str}
+            # dicts, or None when absent.
+            out["attributes"] = f.get("attributes") or []
+        return out
 
     # ------------------------------------------------------------------
     # List Repository Images

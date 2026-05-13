@@ -3,38 +3,49 @@ Agent Scheduler Module for AI-Parrot.
 
 This module provides scheduling capabilities for agents using APScheduler,
 allowing agents to execute operations at specified intervals.
-
-APScheduler is an optional dependency — install with: pip install ai-parrot[scheduler]
 """
 from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
 import json
-from typing import Any, Dict, Optional, Callable, List, Tuple, Set, TYPE_CHECKING
+from typing import Any, Dict, Optional, Callable, List, Tuple, Set
 from datetime import datetime
 import uuid
 from enum import Enum
 from functools import wraps
+from apscheduler.events import (
+    EVENT_JOB_ADDED,
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    EVENT_SCHEDULER_SHUTDOWN,
+    EVENT_SCHEDULER_STARTED,
+    JobExecutionEvent,
+)
+from apscheduler.executors.asyncio import AsyncIOExecutor
+from apscheduler.jobstores.base import JobLookupError
+from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.jobstores.redis import RedisJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from aiohttp import web
 from aiohttp_cors import CorsViewMixin
 from navconfig.logging import logging
 from asyncdb import AsyncDB
 from navigator.connections import PostgresPool
-from parrot._imports import lazy_import
 from parrot.conf import default_dsn, CACHE_HOST, CACHE_PORT
 from .models import AgentSchedule
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
 
-if TYPE_CHECKING:
-    from apscheduler.events import JobExecutionEvent
 
-
-# Suppress APScheduler logging noise when the package is installed
-with contextlib.suppress(Exception):
-    logging.getLogger("apscheduler").setLevel(logging.WARNING)
+# Suppress APScheduler logging noise.
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 
 # Database Model for Scheduler
@@ -280,8 +291,9 @@ class AgentSchedulerManager:
     - Executing scheduled agent operations
     - Safe restart of scheduler
     """
+    registered_name: str = 'scheduler_manager'
 
-    def __init__(self, bot_manager=None):
+    def __init__(self, bot_manager: Any = None, **kwargs):
         self.logger = logging.getLogger('Parrot.Scheduler')
         self.bot_manager = bot_manager
         self.app: Optional[web.Application] = None
@@ -289,24 +301,10 @@ class AgentSchedulerManager:
         self._pool: Optional[AsyncDB] = None  # Database connection pool
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
-
-        # Lazy-import APScheduler components (optional dep: pip install ai-parrot[scheduler])
-        _aps_sched = lazy_import(
-            "apscheduler.schedulers.asyncio", package_name="apscheduler", extra="scheduler"
+        self.registered_name = kwargs.get(
+            "registered_name", self.registered_name
         )
-        _aps_mem = lazy_import(
-            "apscheduler.jobstores.memory", package_name="apscheduler", extra="scheduler"
-        )
-        _aps_redis = lazy_import(
-            "apscheduler.jobstores.redis", package_name="apscheduler", extra="scheduler"
-        )
-        _aps_exec = lazy_import(
-            "apscheduler.executors.asyncio", package_name="apscheduler", extra="scheduler"
-        )
-        AsyncIOScheduler = _aps_sched.AsyncIOScheduler
-        MemoryJobStore = _aps_mem.MemoryJobStore
-        RedisJobStore = _aps_redis.RedisJobStore
-        AsyncIOExecutor = _aps_exec.AsyncIOExecutor
+        self.scheduler: Optional[AsyncIOScheduler] = None
 
         # Configure APScheduler with AsyncIO
         jobstores = {
@@ -422,22 +420,19 @@ class AgentSchedulerManager:
         return call_args, call_kwargs
 
     def define_listeners(self):
-        _ev = lazy_import(
-            "apscheduler.events", package_name="apscheduler", extra="scheduler"
-        )
         # Asyncio Scheduler
         self.scheduler.add_listener(
             self.scheduler_status,
-            _ev.EVENT_SCHEDULER_STARTED
+            EVENT_SCHEDULER_STARTED
         )
         self.scheduler.add_listener(
             self.scheduler_shutdown,
-            _ev.EVENT_SCHEDULER_SHUTDOWN
+            EVENT_SCHEDULER_SHUTDOWN
         )
-        self.scheduler.add_listener(self.job_success, _ev.EVENT_JOB_EXECUTED)
-        self.scheduler.add_listener(self.job_status, _ev.EVENT_JOB_ERROR | _ev.EVENT_JOB_MISSED)
+        self.scheduler.add_listener(self.job_success, EVENT_JOB_EXECUTED)
+        self.scheduler.add_listener(self.job_status, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
         # a new job was added:
-        self.scheduler.add_listener(self.job_added, _ev.EVENT_JOB_ADDED)
+        self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
 
     def scheduler_status(self, event):
         print(event)
@@ -470,12 +465,6 @@ class AgentSchedulerManager:
         scheduler.reschedule_job('my_job_id', trigger='cron', minute='*/5')
 
         """
-        _ev = lazy_import(
-            "apscheduler.events", package_name="apscheduler", extra="scheduler"
-        )
-        EVENT_JOB_MISSED = _ev.EVENT_JOB_MISSED
-        EVENT_JOB_ERROR = _ev.EVENT_JOB_ERROR
-        EVENT_JOB_MAX_INSTANCES = _ev.EVENT_JOB_MAX_INSTANCES
         job_id = event.job_id
         self._job_context.pop(str(job_id), None)
         job = self.scheduler.get_job(job_id)
@@ -525,10 +514,6 @@ class AgentSchedulerManager:
 
         :param apscheduler.events.JobExecutionEvent event: job execution event
         """
-        _base = lazy_import(
-            "apscheduler.jobstores.base", package_name="apscheduler", extra="scheduler"
-        )
-        JobLookupError = _base.JobLookupError
         job_id = event.job_id
         try:
             job = self.scheduler.get_job(job_id)
@@ -899,19 +884,6 @@ class AgentSchedulerManager:
         Returns:
             APScheduler trigger instance
         """
-        _cron_mod = lazy_import(
-            "apscheduler.triggers.cron", package_name="apscheduler", extra="scheduler"
-        )
-        _interval_mod = lazy_import(
-            "apscheduler.triggers.interval", package_name="apscheduler", extra="scheduler"
-        )
-        _date_mod = lazy_import(
-            "apscheduler.triggers.date", package_name="apscheduler", extra="scheduler"
-        )
-        CronTrigger = _cron_mod.CronTrigger
-        IntervalTrigger = _interval_mod.IntervalTrigger
-        DateTrigger = _date_mod.DateTrigger
-
         schedule_type = schedule_type.lower()
 
         if schedule_type == ScheduleType.ONCE.value:
@@ -1342,8 +1314,9 @@ class AgentSchedulerManager:
         return self._pool
 
     def _serialize_job(self, schedule: AgentSchedule) -> Dict[str, Any]:
-        payload = dict(schedule)
+        payload = schedule.to_dict()
         job = self.scheduler.get_job(str(schedule.schedule_id))
+        payload['source'] = 'db'
         payload['jobstore'] = schedule.scheduler_type
         payload['callbacks'] = list(schedule.callbacks or [])
         payload['job'] = {
@@ -1354,6 +1327,67 @@ class AgentSchedulerManager:
             'pending': job is not None,
             'jobstore': getattr(job, '_jobstore_alias', None) if job else schedule.scheduler_type,
         }
+        return payload
+
+    def _serialize_auto_job(self, job: Any) -> Dict[str, Any]:
+        """Serialize an APScheduler job that has no AgentSchedule row.
+
+        Auto-schedules come from ``@schedule``-decorated bot methods registered
+        via :meth:`register_bot_schedules`. They live in APScheduler only, so
+        the payload mirrors :meth:`_serialize_job` minus the DB-derived fields.
+        """
+        bot_name, _, method_name = (job.name or job.id or '').partition('.')
+        jobstore = getattr(job, '_jobstore_alias', 'default')
+        next_run = job.next_run_time.isoformat() if job.next_run_time else None
+        return {
+            'source': 'auto',
+            'schedule_id': job.id,
+            'agent_name': bot_name or job.id,
+            'method_name': method_name or None,
+            'enabled': job.next_run_time is not None,
+            'metadata': {},
+            'callbacks': [],
+            'scheduler_type': jobstore,
+            'jobstore': jobstore,
+            'job': {
+                'id': job.id,
+                'name': job.name,
+                'next_run': next_run,
+                'paused': job.next_run_time is None,
+                'pending': True,
+                'jobstore': jobstore,
+            },
+        }
+
+    async def list_jobs(self) -> List[Dict[str, Any]]:
+        """Return every job in the APScheduler JobStore, normalized for the API.
+
+        DB-backed schedules are enriched with their ``AgentSchedule`` row and
+        tagged ``source='db'``; jobs without a matching row (auto-schedules
+        from ``@schedule``-decorated bot methods) are tagged ``source='auto'``.
+        DB rows whose job is missing from APScheduler are still surfaced so
+        operators can spot drift.
+        """
+        try:
+            db_schedules = await self.list_schedules()
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "list_jobs: could not load DB schedules (%s); returning JobStore-only view",
+                exc,
+            )
+            db_schedules = []
+        db_by_id: Dict[str, AgentSchedule] = {
+            str(s.schedule_id): s for s in db_schedules
+        }
+        payload: List[Dict[str, Any]] = []
+        for job in self.scheduler.get_jobs():
+            schedule = db_by_id.pop(job.id, None)
+            if schedule is not None:
+                payload.append(self._serialize_job(schedule))
+            else:
+                payload.append(self._serialize_auto_job(job))
+        for schedule in db_by_id.values():
+            payload.append(self._serialize_job(schedule))
         return payload
 
     async def get_schedule(self, schedule_id: str) -> AgentSchedule:
@@ -1419,10 +1453,7 @@ class AgentSchedulerManager:
 
     async def delete_schedule(self, schedule_id: str) -> None:
         schedule = await self.get_schedule(schedule_id)
-        _base = lazy_import(
-            "apscheduler.jobstores.base", package_name="apscheduler", extra="scheduler"
-        )
-        with contextlib.suppress(_base.JobLookupError):
+        with contextlib.suppress(JobLookupError):
             self.scheduler.remove_job(str(schedule.schedule_id), jobstore=schedule.scheduler_type)
         pool = await self._get_connection_pool()
         async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
@@ -1446,15 +1477,27 @@ class AgentSchedulerManager:
         self.app = app
 
         # Add to app
-        self.app['scheduler_manager'] = self
+        self.app[self.registered_name] = self
 
         # Configure routes
         router = self.app.router
         from ..handlers.scheduler import SchedulerCallbacksHandler, SchedulerJobsHandler  # pylint: disable=import-outside-toplevel
-        router.add_view('/api/v1/parrot/scheduler/schedules', SchedulerJobsHandler)
-        router.add_view('/api/v1/parrot/scheduler/schedules/{schedule_id}', SchedulerJobsHandler)
-        router.add_view('/api/v1/parrot/scheduler/callbacks', SchedulerCallbacksHandler)
-        router.add_post('/api/v1/parrot/scheduler/restart', self.restart_handler)
+        router.add_view(
+            '/api/v1/parrot/scheduler/schedules',
+            SchedulerJobsHandler
+        )
+        router.add_view(
+            '/api/v1/parrot/scheduler/schedules/{schedule_id}',
+            SchedulerJobsHandler
+        )
+        router.add_view(
+            '/api/v1/parrot/scheduler/callbacks',
+            SchedulerCallbacksHandler
+        )
+        router.add_post(
+            '/api/v1/parrot/scheduler/restart',
+            self.restart_handler
+        )
 
         return self.app
 
@@ -1478,7 +1521,7 @@ class AgentSchedulerManager:
         self.logger.notice(
             "Agent Scheduler started successfully"
         )
-        
+
         # Register code-based schedules from active bots.
         # Fall back to the aiohttp app registry when no bot_manager was
         # injected explicitly at construction time — BotManager.setup()
@@ -1487,9 +1530,10 @@ class AgentSchedulerManager:
             self.bot_manager = app.get('bot_manager')
 
         if self.bot_manager:
-            total_auto = 0
-            for bot_name, bot in self.bot_manager.get_bots().items():
-                total_auto += self.register_bot_schedules(bot)
+            total_auto = sum(
+                self.register_bot_schedules(bot)
+                for _, bot in self.bot_manager.get_bots().items()
+            )
 
             if total_auto > 0:
                 self.logger.notice(

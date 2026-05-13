@@ -202,6 +202,16 @@ class TestCloudSploitConfig:
         config = CloudSploitConfig(timeout_seconds=1200)
         assert config.timeout_seconds == 1200
 
+    def test_config_file_defaults_to_none(self):
+        """CloudSploitConfig.config_file defaults to None."""
+        cfg = CloudSploitConfig()
+        assert cfg.config_file is None
+
+    def test_config_file_accepts_path(self):
+        """CloudSploitConfig.config_file holds an arbitrary path string."""
+        cfg = CloudSploitConfig(config_file="/etc/cloudsploit/config.js")
+        assert cfg.config_file == "/etc/cloudsploit/config.js"
+
 
 class TestScanResult:
     def test_basic_result(self):
@@ -348,3 +358,97 @@ class TestComparisonReport:
         assert len(restored.new_findings) == 1
         assert len(restored.resolved_findings) == 1
         assert restored.new_findings[0].plugin == "new-issue"
+
+
+# ---------------------------------------------------------------------------
+# ECR domain model tests (FEAT-165)
+# ---------------------------------------------------------------------------
+from pydantic import ValidationError  # noqa: E402 (grouped with ECR tests)
+from parrot_tools.cloudsploit.models import (  # noqa: E402
+    CloudSploitConfig as _CloudSploitConfig,
+    EcrCollectionPlan,
+    EcrCollectionResult,
+    EcrRepoFindings,
+    EcrRepoPlan,
+    EcrScanFinding,
+    EcrSeverity,
+    SeverityLevel as _SeverityLevel,
+)
+
+
+class TestEcrSeverity:
+    def test_enum_values(self):
+        assert {e.value for e in EcrSeverity} == {
+            "CRITICAL",
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "INFORMATIONAL",
+            "UNTRIAGED",
+        }
+
+    def test_is_str_enum(self):
+        assert isinstance(EcrSeverity.CRITICAL, str)
+
+
+class TestEcrCollectionPlan:
+    def test_from_yaml_roundtrip(self, tmp_path):
+        p = tmp_path / "plan.yaml"
+        p.write_text(
+            "region: us-east-2\n"
+            "concurrency: 3\n"
+            "repos:\n"
+            "  - name: alpha\n"
+            "    tags: [staging, production]\n"
+        )
+        plan = EcrCollectionPlan.from_yaml(p)
+        assert plan.region == "us-east-2"
+        assert plan.concurrency == 3
+        assert plan.repos[0].name == "alpha"
+        assert plan.repos[0].tags == ["staging", "production"]
+
+    def test_from_yaml_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            EcrCollectionPlan.from_yaml(tmp_path / "missing.yaml")
+
+    def test_from_yaml_bad_shape_raises(self, tmp_path):
+        p = tmp_path / "bad.yaml"
+        p.write_text("region: us-east-2\n# missing repos\n")
+        with pytest.raises(ValidationError):
+            EcrCollectionPlan.from_yaml(p)
+
+    def test_rejects_empty_tags(self):
+        with pytest.raises(ValidationError):
+            EcrRepoPlan(name="x", tags=[])
+
+    @pytest.mark.parametrize("c", [0, 21])
+    def test_concurrency_bounds(self, c):
+        with pytest.raises(ValidationError):
+            EcrCollectionPlan(
+                region="us-east-2",
+                concurrency=c,
+                repos=[EcrRepoPlan(name="x", tags=["t"])],
+            )
+
+    def test_valid_plan_validates(self):
+        plan = EcrCollectionPlan(
+            region="us-east-2",
+            repos=[EcrRepoPlan(name="x", tags=["staging"])],
+        )
+        assert plan.concurrency == 5  # default
+        assert plan.aws_id == "default"
+
+
+class TestCloudSploitConfigEcrPlanFile:
+    def test_default_none(self):
+        assert _CloudSploitConfig().ecr_plan_file is None
+
+    def test_no_validation_at_construction(self):
+        # Mirrors config_file precedent — path is NOT checked here.
+        cfg = _CloudSploitConfig(ecr_plan_file="/nope/never/exists.yaml")
+        assert cfg.ecr_plan_file == "/nope/never/exists.yaml"
+
+
+class TestSeverityLevelRegressionGuard:
+    def test_unchanged(self):
+        assert {e.value for e in _SeverityLevel} == {"OK", "WARN", "FAIL", "UNKNOWN"}

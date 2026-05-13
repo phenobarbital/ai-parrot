@@ -1,0 +1,69 @@
+{
+  "feature": "agentcrew-hooks",
+  "feature_id": "FEAT-157",
+  "spec": "sdd/specs/agentcrew-hooks.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-11T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1063",
+      "slug": "crew-hook-type",
+      "title": "Define CrewHookCallback type alias",
+      "feature_id": "FEAT-157",
+      "feature": "agentcrew-hooks",
+      "spec": "sdd/specs/agentcrew-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 2 depends on this type alias",
+      "assigned_to": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
+      "completed_at": "2026-05-11T01:37:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1063-crew-hook-type.md"
+    },
+    {
+      "id": "TASK-1064",
+      "slug": "crew-hook-registration-dispatch",
+      "title": "Hook registration and dispatch in AgentCrew",
+      "feature_id": "FEAT-157",
+      "feature": "agentcrew-hooks",
+      "spec": "sdd/specs/agentcrew-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1063"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1063 for CrewHookCallback type; tests (TASK-1065) depend on this",
+      "assigned_to": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
+      "completed_at": "2026-05-11T01:42:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1064-crew-hook-registration-dispatch.md"
+    },
+    {
+      "id": "TASK-1065",
+      "slug": "crew-hook-tests",
+      "title": "Tests for AgentCrew lifecycle hooks",
+      "feature_id": "FEAT-157",
+      "feature": "agentcrew-hooks",
+      "spec": "sdd/specs/agentcrew-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1064"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after implementation is complete",
+      "assigned_to": null,
+      "started_at": "2026-05-11T01:25:22+00:00",
+      "completed_at": "2026-05-11T01:47:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1065-crew-hook-tests.md"
+    }
+  ]
+}

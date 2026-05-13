@@ -283,9 +283,10 @@ class TestFlowDefinition:
     def test_flow_with_no_edges(self):
         """Flow can have no edges."""
         flow = FlowDefinition(
-                nodes=[NodeDefinition(id="a", type="start")],
-                edges=[EdgeDefinition(**{"from": "missing", "to": "a"})],
-            )
+            flow="SingleNode",
+            nodes=[NodeDefinition(id="standalone", type="agent", agent_ref="test")],
+        )
+        assert len(flow.edges) == 0
 
     def test_edge_references_unknown_node_target(self):
         with pytest.raises(ValidationError, match="unknown node"):

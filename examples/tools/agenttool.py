@@ -128,7 +128,7 @@ async def test_with_orchestrator():
     print("TEST: With Orchestrator (Quick Check)")
     print("="*80)
 
-    from parrot.bots.orchestration.agent import OrchestratorAgent
+    from parrot.bots.flows.agents import OrchestratorAgent
 
     # Create specialist
     specialist = BasicAgent(

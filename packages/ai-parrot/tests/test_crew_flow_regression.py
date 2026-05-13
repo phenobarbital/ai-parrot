@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from _crew_test_helpers import DummyAgent  # shared test infrastructure
-from parrot.bots.orchestration.crew import AgentCrew
+from parrot.bots.flows.crew import AgentCrew
 
 
 # ---------------------------------------------------------------------------

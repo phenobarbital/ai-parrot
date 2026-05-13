@@ -1,0 +1,174 @@
+{
+  "feature": "ontology-entity-extraction",
+  "feature_id": "FEAT-158",
+  "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-11T00:00:00Z",
+  "completed_at": "2026-05-11T22:21:57+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1071",
+      "slug": "ontology-schema-extensions",
+      "title": "Ontology schema extensions for entity extraction, authorization, tool_call",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; blocks all others. Per-spec single worktree per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1071-ontology-schema-extensions.md"
+    },
+    {
+      "id": "TASK-1072",
+      "slug": "ontology-cache-key-resolved-entities",
+      "title": "Extend OntologyCache.build_key to include resolved entities",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1071"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches cache.py only; could run parallel with 1073/1074/1075 if isolation changed to per-task, but spec mandates per-spec worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1072-ontology-cache-key-resolved-entities.md"
+    },
+    {
+      "id": "TASK-1073",
+      "slug": "entity-resolver",
+      "title": "Implement EntityResolver with four strategies",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1071"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file entity_resolver.py; could run parallel with 1072/1074/1075 (no shared files) but per-spec worktree keeps it sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1073-entity-resolver.md"
+    },
+    {
+      "id": "TASK-1074",
+      "slug": "authorization-checker",
+      "title": "Implement AuthorizationChecker with 5 declarative rules",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1071"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file authorization.py; same parallelism note as 1073.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1074-authorization-checker.md"
+    },
+    {
+      "id": "TASK-1075",
+      "slug": "tool-call-dispatcher",
+      "title": "Implement ToolCallDispatcher with Jinja2 templating and per-user credential plumbing",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1071"
+      ],
+      "parallel": false,
+      "parallelism_notes": "New file tool_dispatcher.py; same parallelism note as 1073.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1075-tool-call-dispatcher.md"
+    },
+    {
+      "id": "TASK-1076",
+      "slug": "ontology-mixin-refactor",
+      "title": "Refactor OntologyRAGMixin.ontology_process to compose resolver, authorization, and dispatch",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1071",
+        "TASK-1072",
+        "TASK-1073",
+        "TASK-1074",
+        "TASK-1075"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Composes prior modules; intrinsically sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1076-ontology-mixin-refactor.md"
+    },
+    {
+      "id": "TASK-1077",
+      "slug": "intent-router-forward-context",
+      "title": "Wire IntentRouterMixin._run_graph_pageindex to forward user_context and tenant_id",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1076"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Downstream of mixin refactor; sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1077-intent-router-forward-context.md"
+    },
+    {
+      "id": "TASK-1078",
+      "slug": "e2e-team-work-in-progress",
+      "title": "End-to-end test + YAML fixture for the team_work_in_progress driving use case",
+      "feature_id": "FEAT-158",
+      "feature": "ontology-entity-extraction",
+      "spec": "sdd/specs/ontology-entity-extraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1076",
+        "TASK-1077"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration test; depends on all production code being in place.",
+      "assigned_to": null,
+      "started_at": "2026-05-11T16:24:31+00:00",
+      "completed_at": "2026-05-11T22:21:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1078-e2e-team-work-in-progress.md"
+    }
+  ]
+}

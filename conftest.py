@@ -91,6 +91,27 @@ try:
     )
     sys.modules.setdefault("parrot.interfaces.file", _parrot_interfaces_file)
 
+    # parrot.interfaces.file.abstract sub-module stub (required by overflow.py)
+    _parrot_interfaces_file_abstract = types.ModuleType("parrot.interfaces.file.abstract")
+    _parrot_interfaces_file_abstract.FileManagerInterface = _FileManagerInterface
+    _parrot_interfaces_file_abstract.FileMetadata = _FileMetadata
+    sys.modules.setdefault("parrot.interfaces.file.abstract", _parrot_interfaces_file_abstract)
+
+    # parrot.interfaces.file.s3 sub-module stub (required by s3_overflow.py)
+    _parrot_interfaces_file_s3 = types.ModuleType("parrot.interfaces.file.s3")
+    _parrot_interfaces_file_s3.S3FileManager = _parrot_interfaces_file.S3FileManager
+    sys.modules.setdefault("parrot.interfaces.file.s3", _parrot_interfaces_file_s3)
+
+    # parrot.interfaces.file.local sub-module stub (required by various modules)
+    _parrot_interfaces_file_local = types.ModuleType("parrot.interfaces.file.local")
+    _parrot_interfaces_file_local.LocalFileManager = _LocalFileManager
+    sys.modules.setdefault("parrot.interfaces.file.local", _parrot_interfaces_file_local)
+
+    # parrot.interfaces.file.gcs sub-module stub
+    _parrot_interfaces_file_gcs = types.ModuleType("parrot.interfaces.file.gcs")
+    _parrot_interfaces_file_gcs.GCSFileManager = _parrot_interfaces_file.GCSFileManager
+    sys.modules.setdefault("parrot.interfaces.file.gcs", _parrot_interfaces_file_gcs)
+
     # parrot.tools.filemanager stub
     _parrot_tools_fm = types.ModuleType("parrot.tools.filemanager")
     _parrot_tools_fm.FileManagerFactory = _FileManagerFactory

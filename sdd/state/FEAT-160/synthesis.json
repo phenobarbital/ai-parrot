@@ -1,0 +1,128 @@
+{
+  "mode": "investigation",
+  "overall_confidence": "high",
+  "summary": "Add `--config CONFIG` support to CloudSploit so a JS credentials file can replace per-call env-var credentials. Add a `config` parameter to `CloudSploitToolkit.run_scan` / `run_compliance_scan` (and a `config_file` field on `CloudSploitConfig` for an instance-wide default), wire it through `CloudSploitExecutor` into `_build_cli_args` (emitting `--config=<path>`), and — when running under Docker — read-only-mount the host file into the container so the in-container `--config` path resolves.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/models.py",
+      "symbol": "CloudSploitConfig",
+      "lines": "81-161",
+      "role": "add optional `config_file: Optional[str]` field (mirrors the `gcp_credentials_path` precedent)",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/executor.py",
+      "symbol": "_build_cli_args",
+      "lines": "109-151",
+      "role": "accept a `config_path` kw-arg and prepend `--config=<path>` when set",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/executor.py",
+      "symbol": "_run_with_outputs / run_scan / run_compliance_scan",
+      "lines": "233-360",
+      "role": "thread a `config: Optional[str]` parameter through and, when set, also pass a `(host_dir, container_dir)` mount for the config file's parent dir",
+      "evidence": ["F001", "F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/executor.py",
+      "symbol": "_build_docker_command",
+      "lines": "59-83",
+      "role": "widen `volume_mount` from a single tuple to a list of tuples so we can mount BOTH output dir AND config dir simultaneously",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/toolkit.py",
+      "symbol": "run_scan / run_compliance_scan",
+      "lines": "43-122",
+      "role": "expose a `config: Optional[str] = None` agent-tool argument that falls back to `self.config.config_file`",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/tests/cloudsploit/test_executor.py",
+      "symbol": "(new test cases)",
+      "lines": "n/a",
+      "role": "argv-level assertions for: config arg → --config in argv; default-from-config-model; volume mount appears; ro flag; no flag emitted when config is None",
+      "evidence": ["F006"]
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "The CLI accepts `--config=<path>` and treats the path as a JS module (e.g., `config.js`), with provider-specific exports. Inline env-var credentials become inert when --config is present.",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "Under Docker the host config-file path must be mounted into the container; only the in-container path is valid as the `--config` value.",
+      "confidence": "high",
+      "evidence": ["F003", "F005"]
+    },
+    {
+      "claim": "Credentials files are sensitive — the mount must be read-only (`:ro`) to prevent accidental writes by the container.",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "claim": "The existing `volume_mount: Optional[tuple[str, str]]` slot supports only one mount; mounting both an output dir AND a config dir requires widening the type to a list.",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "claim": "When `config` is None on a call AND `CloudSploitConfig.config_file` is None, behaviour is unchanged (env-var credentials, no `--config` arg).",
+      "confidence": "high",
+      "evidence": ["F001", "F002"]
+    }
+  ],
+  "recent_history": [
+    {
+      "note": "CloudSploit toolkit was recently migrated from packages/ai-parrot to packages/ai-parrot-tools (the templates/ rebuild this morning is part of the same migration). No churn on executor.py beyond that.",
+      "evidence": ["F001"]
+    }
+  ],
+  "hypothesis": {
+    "statement": "Add a single `config: Optional[str]` parameter to the toolkit methods and a `config_file` default in CloudSploitConfig. The executor splits responsibilities: _build_cli_args emits `--config=<container_path>`; _run_with_outputs orchestrates the mount (host_dir read-only, in-container path passed to args). Falls back cleanly when neither call-time nor config-time value is set.",
+    "confidence": "high",
+    "evidence": ["F001", "F002", "F003", "F004"]
+  },
+  "scope": {
+    "in_scope": [
+      "New `config_file` field on CloudSploitConfig (Optional[str], default None).",
+      "New `config` parameter on toolkit.run_scan and toolkit.run_compliance_scan.",
+      "Plumbing through executor.run_scan, run_compliance_scan, _run_with_outputs, _build_cli_args.",
+      "Widening `_build_docker_command.volume_mount` to accept multiple mounts.",
+      "Read-only volume mount for the host config file.",
+      "Unit tests covering argv shape, default fallback, mount presence, and no-config baseline.",
+      "Docstring updates explaining when env-var creds vs --config takes effect."
+    ],
+    "out_of_scope": [
+      "Validating/parsing the JS config file's contents (CloudSploit does that).",
+      "Generating a config file from CloudSploitConfig credentials — keep the two paths orthogonal.",
+      "Encrypted/secret-manager-backed config files.",
+      "Multi-config-file support (one file per call is enough)."
+    ],
+    "confidence": "high"
+  },
+  "confidence_map": [
+    {"claim": "`--config` is the right CLI flag (not a synonym).", "confidence": "high", "evidence": ["F005"]},
+    {"claim": "Config file is a JS module, not JSON.", "confidence": "high", "evidence": ["F005"]},
+    {"claim": "Mount must be read-only for safety.", "confidence": "high", "evidence": ["F005"]},
+    {"claim": "Single-tuple volume_mount slot is the only blocker on the Docker side.", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "No existing callers of the executor rely on volume_mount being a single tuple (only internal callsite is _run_with_outputs).", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "Existing tests can be extended without spinning up Docker.", "confidence": "high", "evidence": ["F006"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "What is the in-container mount path convention? Options: (a) `/cloudsploit/config/<basename>` (mirrors _DOCKER_OUTPUT_MOUNT); (b) `/cloudsploit/etc/<basename>`; (c) accept the host's absolute path and reuse it inside the container.",
+      "resolves_claims": ["mount-path-convention"]
+    },
+    {
+      "id": "U2",
+      "question": "Per-call `config` argument behaviour when *both* `run_scan(config=...)` and `CloudSploitConfig.config_file` are set — does the call-level value override (the natural Python default), or do we raise an error to surface conflicts?"
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (5 cited files, all in one small module). Constraints are well-grounded in the upstream docs. The two unknowns are narrow API-shape choices the spec author can decide in <5 minutes."
+  }
+}

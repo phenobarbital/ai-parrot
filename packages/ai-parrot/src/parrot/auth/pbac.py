@@ -7,7 +7,7 @@ Typical usage in app.py::
 
     from parrot.auth.pbac import setup_pbac
 
-    pdp, evaluator, guardian = await setup_pbac(app, policy_dir="policies")
+    pdp, evaluator, guardian = setup_pbac(app, policy_dir="policies")
     if evaluator is not None:
         resolver = PBACPermissionResolver(evaluator=evaluator)
         bot_manager.set_default_resolver(resolver)
@@ -75,7 +75,7 @@ def setup_pbac(
 
     Example::
 
-        pdp, evaluator, guardian = await setup_pbac(
+        pdp, evaluator, guardian = setup_pbac(
             app,
             policy_dir="/etc/parrot/policies",
             cache_ttl=30,
@@ -114,7 +114,18 @@ def setup_pbac(
     evaluator = PolicyEvaluator(
         cache_ttl_seconds=cache_ttl,
     )
-    evaluator._default_effect = default_effect
+    # Override the default effect when explicitly specified.
+    # Guard with hasattr: if navigator-auth renames/removes _default_effect,
+    # fail loudly rather than silently applying the wrong default.
+    if hasattr(evaluator, "_default_effect"):
+        evaluator._default_effect = default_effect  # noqa: SLF001
+    else:
+        logger.warning(
+            "PBAC: PolicyEvaluator has no '_default_effect' attribute — "
+            "default_effect=%s could not be applied. "
+            "Navigator-auth API may have changed.",
+            default_effect,
+        )
 
     # Load policies from YAML files in top-level directory
     try:
@@ -145,6 +156,26 @@ def setup_pbac(
                 "PBAC: error loading per-agent policies from '%s': %s. "
                 "Continuing without per-agent policies.",
                 str(agents_subdir),
+                exc,
+            )
+
+    # Load per-dataset YAML policies from policies/datasets/ subdirectory (if present)
+    datasets_subdir = policy_path / "datasets"
+    if datasets_subdir.exists() and datasets_subdir.is_dir():
+        try:
+            dataset_policies = PolicyLoader.load_from_directory(datasets_subdir)
+            if dataset_policies:
+                policies = list(policies) + list(dataset_policies)
+                logger.info(
+                    "PBAC: loaded %d per-dataset policies from '%s'",
+                    len(dataset_policies),
+                    str(datasets_subdir),
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "PBAC: error loading per-dataset policies from '%s': %s. "
+                "Continuing without per-dataset policies.",
+                str(datasets_subdir),
                 exc,
             )
 
@@ -181,7 +212,14 @@ def setup_pbac(
     # HACK: Inject our evaluator via private attribute. Guardian and PDP
     # must share the same instance for consistent policy decisions.
     # TODO: Add PDP.set_evaluator() or constructor parameter in navigator-auth.
-    pdp._evaluator = evaluator  # noqa: SLF001
+    if hasattr(pdp, "_evaluator"):
+        pdp._evaluator = evaluator  # noqa: SLF001
+    else:
+        logger.warning(
+            "PBAC: PDP has no '_evaluator' attribute — cannot inject shared evaluator. "
+            "Guardian and DatasetPolicyGuard may use different PolicyEvaluator instances. "
+            "Navigator-auth API may have changed."
+        )
 
     # Register Guardian, middleware, and REST endpoints
     try:

@@ -31,6 +31,33 @@ class TrivyConfig(BaseExecutorConfig):
         description="Docker image for Trivy execution",
     )
 
+    # Required so Trivy (running inside the aquasec/trivy container) can
+    # access locally-built images via the host Docker daemon. Without this,
+    # `trivy image <local-tag>` fails with "Cannot connect to the Docker
+    # daemon" / "UNAUTHORIZED" when it falls back to docker.io.
+    mount_docker_socket: bool = Field(
+        default=True,
+        description=(
+            "Mount the host Docker socket into the Trivy container "
+            "(required to scan locally-built images via `trivy image`)"
+        ),
+    )
+    docker_socket_path: str = Field(
+        default="/var/run/docker.sock",
+        description="Host path to the Docker socket to mount",
+    )
+
+    # Pre-flight check: verify a `trivy image` target exists on the host
+    # Docker daemon before invoking Trivy. Saves the ~10s DB download
+    # round-trip when the image is missing or mistyped.
+    preflight_image_check: bool = Field(
+        default=True,
+        description=(
+            "Run `docker image inspect <image>` before `trivy image` "
+            "scans and raise ImageNotFoundError if the image is missing"
+        ),
+    )
+
     # Cache settings
     cache_dir: Optional[str] = Field(
         default=None,

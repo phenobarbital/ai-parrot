@@ -18,9 +18,14 @@ forwarded as kwargs to agent calls.
 """
 from __future__ import annotations
 from typing import (
-    List, Dict, Any, Union, Optional, Literal, Set, Callable, Tuple
+    List, Dict, Any, Union, Optional, Literal, Set, Callable, Tuple,
+    TYPE_CHECKING,
 )
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from ....models.crew_definition import CrewDefinition
+from ....models.crew_definition import ExecutionMode
 import contextlib
 import asyncio
 import uuid
@@ -56,6 +61,7 @@ from ..core.storage.synthesis import SYNTHESIS_PROMPT
 from ..core.context import FlowContext  # noqa: F401 — re-export for backward compat
 from ..core.types import (
     AgentRef,  # noqa: F401 — re-export for backward compat
+    CrewHookCallback,
     DependencyResults,  # noqa: F401 — re-export for backward compat
     PromptBuilder,  # noqa: F401 — re-export for backward compat
 )
@@ -216,6 +222,10 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         )
         self._persist_tasks: set[asyncio.Task] = set()
 
+        # Lifecycle hooks (FEAT-157)
+        self._on_complete_hooks: List[CrewHookCallback] = []
+        self._on_error_hooks: List[CrewHookCallback] = []
+
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -236,6 +246,70 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         Get the status of a specific agent.
         """
         return self._agent_statuses.get(agent_id)
+
+    # ── Lifecycle hooks (FEAT-157) ────────────────────────────────────────
+
+    def on_complete(self, callback: CrewHookCallback) -> None:
+        """Register a callback to fire when crew execution completes.
+
+        Fires for status ``'completed'`` and ``'partial'``. Callbacks receive
+        ``(crew_name, result)`` and may be sync or async.
+
+        Hooks fire in registration order. If a hook raises, the exception is
+        caught and logged — it does **not** prevent the result from returning.
+
+        Args:
+            callback: Callable with signature
+                ``(crew_name: str, result: FlowResult) -> None``.
+        """
+        self._on_complete_hooks.append(callback)
+
+    def on_error(self, callback: CrewHookCallback) -> None:
+        """Register a callback to fire when crew execution has errors.
+
+        Fires for status ``'failed'`` and ``'partial'``. Callbacks receive
+        ``(crew_name, result)`` and may be sync or async.
+
+        Hooks fire in registration order. If a hook raises, the exception is
+        caught and logged — it does **not** prevent the result from returning.
+
+        Args:
+            callback: Callable with signature
+                ``(crew_name: str, result: FlowResult) -> None``.
+        """
+        self._on_error_hooks.append(callback)
+
+    async def _fire_hooks(self, result: Any) -> None:
+        """Dispatch lifecycle hooks based on result status.
+
+        Called by all ``run_*()`` methods after ``FlowResult`` is built,
+        before the persist block and ``return`` statement.
+
+        - ``'completed'``: on_complete hooks only
+        - ``'partial'``: both on_complete AND on_error hooks
+        - ``'failed'``: on_error hooks only
+
+        Exceptions in individual hooks are caught and logged — they never
+        block the result from being returned to the caller.
+
+        Args:
+            result: The ``FlowResult`` produced by the run.
+        """
+        hooks_to_fire: List[CrewHookCallback] = []
+        if result.status in ('completed', 'partial'):
+            hooks_to_fire.extend(self._on_complete_hooks)
+        if result.status in ('failed', 'partial'):
+            hooks_to_fire.extend(self._on_error_hooks)
+
+        for hook in hooks_to_fire:
+            try:
+                ret = hook(self.name, result)
+                if asyncio.iscoroutine(ret):
+                    await ret
+            except Exception as exc:
+                self.logger.error(
+                    "Error in crew lifecycle hook %r: %s", hook, exc
+                )
 
     def _register_agents_as_tools(self):
         """
@@ -263,6 +337,104 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 self.logger.warning(
                     f"Failed to register {agent.name} as tool: {e}"
                 )
+
+    # ------------------------------------------------------------------
+    # Factory methods
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_definition(
+        cls,
+        crew_def: "CrewDefinition",
+        *,
+        class_resolver: Callable[[str], Optional[type]],
+        tool_resolver: Optional[Callable[[str], Optional[AbstractTool]]] = None,
+        **kwargs,
+    ) -> "AgentCrew":
+        """Create an AgentCrew from a CrewDefinition.
+
+        Args:
+            crew_def: The crew definition to build from.
+            class_resolver: Callable that maps agent class name str to the
+                concrete class. When it returns ``None`` the agent falls back
+                to ``BasicAgent``.
+            tool_resolver: Optional callable that maps tool name str to an
+                ``AbstractTool`` instance. When ``None`` shared tools are
+                skipped.
+            **kwargs: Extra kwargs forwarded to ``AgentCrew.__init__``
+                (e.g. ``llm``, ``auto_configure``).
+
+        Returns:
+            A fully configured ``AgentCrew`` instance.
+        """
+        agents = []
+        for agent_def in crew_def.agents:
+            agent_class = class_resolver(agent_def.agent_class)
+            if agent_class is None:
+                agent_class = BasicAgent
+            agent = agent_class(
+                name=agent_def.name or agent_def.agent_id,
+                tools=list(agent_def.tools),
+                **agent_def.config,
+            )
+            if agent_def.system_prompt:
+                agent.system_prompt = agent_def.system_prompt
+            agents.append(agent)
+
+        # Allow callers to override max_parallel_tasks via kwargs.
+        max_parallel_tasks = kwargs.pop(
+            "max_parallel_tasks", crew_def.max_parallel_tasks
+        )
+        crew = cls(
+            name=crew_def.name,
+            agents=agents,
+            max_parallel_tasks=max_parallel_tasks,
+            **kwargs,
+        )
+
+        if tool_resolver:
+            for tool_name in crew_def.shared_tools:
+                if tool := tool_resolver(tool_name):
+                    crew.add_shared_tool(tool, tool_name)
+
+        if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
+            for relation in crew_def.flow_relations:
+                source_ids = (
+                    relation.source
+                    if isinstance(relation.source, list)
+                    else [relation.source]
+                )
+                target_ids = (
+                    relation.target
+                    if isinstance(relation.target, list)
+                    else [relation.target]
+                )
+                source_agents = cls._resolve_agents_by_ids(crew.agents, source_ids)
+                target_agents_list = cls._resolve_agents_by_ids(crew.agents, target_ids)
+                if source_agents and target_agents_list:
+                    crew.task_flow(
+                        source_agents if len(source_agents) > 1 else source_agents[0],
+                        target_agents_list if len(target_agents_list) > 1 else target_agents_list[0],
+                    )
+        return crew
+
+    @staticmethod
+    def _resolve_agents_by_ids(
+        agents_dict: Dict[str, Any],
+        agent_ids: List[str],
+    ) -> List[Any]:
+        """Return agent instances for the given agent IDs, skipping missing ones.
+
+        Args:
+            agents_dict: Mapping of agent name/id to agent instance (i.e.
+                ``crew.agents``).
+            agent_ids: List of agent IDs/names to look up.
+
+        Returns:
+            List of resolved agent instances. May be shorter than ``agent_ids``
+            when some IDs are not found in ``agents_dict``.
+        """
+        return [agents_dict[aid] for aid in agent_ids if aid in agents_dict]
 
     def add_agent(self, agent: Union[BasicAgent, AbstractBot], agent_id: str = None) -> None:
         """Add an agent to the crew."""
@@ -569,7 +741,15 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
                 if node.fsm and str(node.fsm.current_state.id) == "ready":
                     node.fsm.start()
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute_in_context(context, timeout=self.agent_execution_timeout))
+                # FEAT-163: execute_in_context removed; use execute(ctx, deps, **kwargs).
+                # deps is the accumulated results dict from context.
+                tasks.append(
+                    node.execute(
+                        context,
+                        context.results,
+                        timeout=self.agent_execution_timeout,
+                    )
+                )
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel
@@ -1300,6 +1480,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -1763,6 +1946,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -2083,6 +2269,9 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
+
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(
             self._save_result(
@@ -2316,6 +2505,9 @@ Current task: {current_input}"""
                         'synthesis_prompt': synthesis_prompt,
                     }
                 )
+
+        # Fire lifecycle hooks (FEAT-157)
+        await self._fire_hooks(result)
 
         # Save result (fire-and-forget, tracked for lifecycle cleanup)
         _persist_task = asyncio.get_running_loop().create_task(

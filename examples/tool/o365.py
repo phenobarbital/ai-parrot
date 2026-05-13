@@ -516,7 +516,7 @@ async def example_calendar_agent():
 
 async def example_orchestrated_agents():
     """Example of using multiple specialized agents together."""
-    from parrot.bots.orchestration.agent import OrchestratorAgent
+    from parrot.bots.flows.agents import OrchestratorAgent
 
     credentials = {
         'client_id': O365_CLIENT_ID,

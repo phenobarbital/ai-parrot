@@ -2,11 +2,22 @@
 import asyncio
 import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Optional
-
 from navconfig.logging import logging
-
 from .models import CloudProvider, CloudSploitConfig, ComplianceFramework
+
+
+# Container path used as the mount target for output files when running
+# CloudSploit inside Docker. CloudSploit writes --json / --collection to
+# real files (fs.createWriteStream), so /dev/stdout is unreliable.
+_DOCKER_OUTPUT_MOUNT = "/cloudsploit/output"
+
+# Container path used as the mount target for the config file when running
+# CloudSploit inside Docker. The parent directory of the host config file
+# is bind-mounted here read-only so CloudSploit can read it via --config=.
+_DOCKER_CONFIG_MOUNT = "/cloudsploit/config"
 
 
 class CloudSploitExecutor:
@@ -48,18 +59,47 @@ class CloudSploitExecutor:
             if self.config.gcp_credentials_path:
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = self.config.gcp_credentials_path
 
+        elif self.config.cloud_provider == CloudProvider.ORACLE:
+            # CloudSploit's Oracle helpers prefer a --config=<file>; these
+            # env vars are best-effort and harmless if ignored.
+            if self.config.oci_tenancy_id:
+                env["OCI_TENANCY_ID"] = self.config.oci_tenancy_id
+            if self.config.oci_user_id:
+                env["OCI_USER_ID"] = self.config.oci_user_id
+            if self.config.oci_key_fingerprint:
+                env["OCI_KEY_FINGERPRINT"] = self.config.oci_key_fingerprint
+            if self.config.oci_key_file:
+                env["OCI_KEY_FILE"] = self.config.oci_key_file
+            if self.config.oci_region:
+                env["OCI_REGION"] = self.config.oci_region
+                env["OCI_REGION_ID"] = self.config.oci_region
+
         return env
 
-    def _build_docker_command(self, args: list[str]) -> list[str]:
+    def _build_docker_command(
+        self,
+        args: list[str],
+        volume_mounts: Optional[list[tuple[str, str, Optional[str]]]] = None,
+    ) -> list[str]:
         """Build docker run command with env vars and CLI args.
 
         Args:
             args: CloudSploit CLI arguments to pass to the container.
+            volume_mounts: Optional list of ``(host_dir, container_dir, mode)``
+                tuples to mount into the container. ``mode`` may be ``None``,
+                ``"ro"`` (read-only), or ``"rw"`` (read-write). Mounts are
+                emitted in list order.
 
         Returns:
             Full docker run command as list of strings.
         """
         cmd = ["docker", "run", "--rm"]
+        for mount in volume_mounts or []:
+            host_dir, container_dir, mode = mount
+            spec = f"{host_dir}:{container_dir}"
+            if mode:
+                spec = f"{spec}:{mode}"
+            cmd.extend(["-v", spec])
         for key, val in self._build_env_vars().items():
             cmd.extend(["-e", f"{key}={val}"])
         cmd.append(self.config.docker_image)
@@ -92,27 +132,41 @@ class CloudSploitExecutor:
 
     def _build_cli_args(
         self,
+        json_path: str,
+        collection_path: Optional[str] = None,
         plugins: Optional[list[str]] = None,
         compliance: Optional[ComplianceFramework] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
+        config_path: Optional[str] = None,
     ) -> list[str]:
         """Build CloudSploit CLI arguments.
 
         Args:
+            json_path: File path CloudSploit will write JSON results to.
+            collection_path: Optional file path for the raw cloud-provider
+                response data (``--collection``).
             plugins: Specific plugins to run. If None, runs all.
             compliance: Compliance framework to filter by.
             ignore_ok: If True, exclude OK (passing) results.
             suppress: Regex patterns to suppress results.
+            config_path: Optional path to a CloudSploit JS credentials file.
+                When set, ``--config=<config_path>`` is emitted as the first
+                CLI argument. An empty string is treated as None (no flag).
 
         Returns:
             List of CLI argument strings.
         """
-        args = [
-            "--json=/dev/stdout",
+        args: list[str] = []
+        if config_path:
+            args.append(f"--config={config_path}")
+        args.extend([
+            f"--json={json_path}",
             "--console=none",
             f"--cloud={self.config.cloud_provider.value}",
-        ]
+        ])
+        if collection_path:
+            args.append(f"--collection={collection_path}")
         if compliance:
             args.append(f"--compliance={compliance.value}")
         if plugins:
@@ -129,6 +183,10 @@ class CloudSploitExecutor:
 
     def _mask_command(self, cmd: list[str]) -> str:
         """Mask sensitive credentials in a command for safe logging.
+
+        AWS credential values are redacted; ``--config=<path>`` is logged
+        verbatim because the path itself is not sensitive (it is a host or
+        container filesystem path, not a secret value).
 
         Args:
             cmd: Command as list of strings.
@@ -160,11 +218,18 @@ class CloudSploitExecutor:
             masked_parts.append(masked)
         return " ".join(masked_parts)
 
-    async def execute(self, args: list[str]) -> tuple[str, str, int]:
+    async def execute(
+        self,
+        args: list[str],
+        volume_mounts: Optional[list[tuple[str, str, Optional[str]]]] = None,
+    ) -> tuple[str, str, int]:
         """Run CloudSploit and return output.
 
         Args:
             args: CloudSploit CLI arguments.
+            volume_mounts: List of ``(host_dir, container_dir, mode)`` tuples
+                for Docker bind-mounts. ``mode`` may be ``None``, ``"ro"``, or
+                ``"rw"``. Ignored when ``use_docker`` is False.
 
         Returns:
             Tuple of (stdout, stderr, exit_code).
@@ -173,7 +238,7 @@ class CloudSploitExecutor:
             asyncio.TimeoutError: If execution exceeds configured timeout.
         """
         if self.config.use_docker:
-            cmd = self._build_docker_command(args)
+            cmd = self._build_docker_command(args, volume_mounts=volume_mounts)
             env = None
         else:
             cmd = self._build_direct_command(args)
@@ -201,45 +266,193 @@ class CloudSploitExecutor:
 
         return stdout.decode(), stderr.decode(), exit_code
 
+    async def _run_with_outputs(
+        self,
+        *,
+        plugins: Optional[list[str]] = None,
+        compliance: Optional[ComplianceFramework] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        capture_collection: bool = True,
+        config: Optional[str] = None,
+    ) -> tuple[str, str, str, str, int]:
+        """Run CloudSploit writing JSON + collection to temp files.
+
+        CloudSploit's ``--json`` and ``--collection`` flags require real
+        file paths (``fs.createWriteStream``); writing to ``/dev/stdout``
+        is unreliable. We materialise a temp directory, point CloudSploit
+        at files inside it, mount it into the container when running via
+        Docker, then read the results back.
+
+        Args:
+            plugins: Specific plugins to run. If None, runs all plugins.
+            compliance: Compliance framework to filter by.
+            ignore_ok: If True, exclude OK results.
+            suppress: Regex patterns to suppress specific results.
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk. Under Docker mode the
+                parent directory is bind-mounted read-only at
+                ``_DOCKER_CONFIG_MOUNT`` and the rewritten in-container path
+                is passed to ``--config=``. Under direct-CLI mode the host
+                path is used verbatim. When ``None``, behaviour is unchanged.
+
+        Returns:
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``. ``collection_json`` is an empty string when
+            ``capture_collection`` is False or the file is missing.
+
+        Raises:
+            FileNotFoundError: If ``config`` is set but does not exist on disk.
+        """
+        with tempfile.TemporaryDirectory(prefix="cloudsploit_") as host_tmp:
+            host_dir = Path(host_tmp)
+            host_results = host_dir / "results.json"
+            host_collection = host_dir / "collection.json"
+
+            # CloudSploit's official Docker image runs as the non-root
+            # ``cloudsploit`` user (uid=100). ``tempfile.TemporaryDirectory``
+            # creates the host dir with mode 0700 owned by the host user, so
+            # the container user cannot write ``results.json`` into the
+            # bind-mount. Open up the dir to world-write so any in-container
+            # UID can land its outputs. Only applies under Docker mode; in
+            # direct-CLI mode the host user owns both ends.
+            if self.config.use_docker:
+                os.chmod(host_dir, 0o777)
+
+            if self.config.use_docker:
+                container_results = f"{_DOCKER_OUTPUT_MOUNT}/results.json"
+                container_collection = (
+                    f"{_DOCKER_OUTPUT_MOUNT}/collection.json"
+                    if capture_collection else None
+                )
+                volume_mounts: list[tuple[str, str, Optional[str]]] = [
+                    (str(host_dir), _DOCKER_OUTPUT_MOUNT, None)
+                ]
+            else:
+                container_results = str(host_results)
+                container_collection = (
+                    str(host_collection) if capture_collection else None
+                )
+                volume_mounts = []
+
+            config_container_path: Optional[str] = None
+            if config is not None:
+                cfg_path = Path(config)
+                cfg_exists = await asyncio.to_thread(cfg_path.is_file)
+                if not cfg_exists:
+                    raise FileNotFoundError(
+                        f"CloudSploit config file not found: {config}"
+                    )
+                if self.config.use_docker:
+                    resolved_cfg_parent = cfg_path.resolve().parent
+                    if resolved_cfg_parent == host_dir.resolve():
+                        raise ValueError(
+                            "CloudSploit config file must not reside inside "
+                            "the executor temp directory. Move the config file "
+                            "to a permanent location before scanning."
+                        )
+                    volume_mounts.append(
+                        (str(resolved_cfg_parent), _DOCKER_CONFIG_MOUNT, "ro")
+                    )
+                    config_container_path = (
+                        f"{_DOCKER_CONFIG_MOUNT}/{cfg_path.name}"
+                    )
+                else:
+                    config_container_path = str(cfg_path)
+
+            args = self._build_cli_args(
+                json_path=container_results,
+                collection_path=container_collection,
+                plugins=plugins,
+                compliance=compliance,
+                ignore_ok=ignore_ok,
+                suppress=suppress,
+                config_path=config_container_path,
+            )
+            stdout, stderr, exit_code = await self.execute(
+                args, volume_mounts=volume_mounts or None,
+            )
+
+            results_json = (
+                host_results.read_text() if host_results.exists() else ""
+            )
+            collection_json = (
+                host_collection.read_text()
+                if capture_collection and host_collection.exists()
+                else ""
+            )
+
+            if not results_json:
+                self.logger.warning(
+                    "CloudSploit produced no JSON results file at %s",
+                    host_results,
+                )
+
+            return results_json, collection_json, stdout, stderr, exit_code
+
     async def run_scan(
         self,
         plugins: Optional[list[str]] = None,
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
-    ) -> tuple[str, str, int]:
+        capture_collection: bool = True,
+        config: Optional[str] = None,
+    ) -> tuple[str, str, str, str, int]:
         """Run a full or targeted CloudSploit scan.
 
         Args:
             plugins: Specific plugins to run. If None, runs all plugins.
             ignore_ok: If True, exclude OK (passing) results.
             suppress: Regex patterns to suppress specific results.
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk (``FileNotFoundError``
+                is raised otherwise). Under Docker, the file's parent directory
+                is bind-mounted read-only and the path is rewritten; under
+                direct-CLI mode the host path is used verbatim.
 
         Returns:
-            Tuple of (stdout, stderr, exit_code).
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``.
         """
-        args = self._build_cli_args(
+        return await self._run_with_outputs(
             plugins=plugins,
             ignore_ok=ignore_ok,
             suppress=suppress,
+            capture_collection=capture_collection,
+            config=config,
         )
-        return await self.execute(args)
 
     async def run_compliance_scan(
         self,
         framework: ComplianceFramework,
         ignore_ok: bool = True,
-    ) -> tuple[str, str, int]:
+        capture_collection: bool = True,
+        config: Optional[str] = None,
+    ) -> tuple[str, str, str, str, int]:
         """Run a compliance-filtered CloudSploit scan.
 
         Args:
             framework: Compliance framework to filter by.
             ignore_ok: If True, exclude OK results (default True for compliance).
+            capture_collection: When True, also request the raw cloud
+                provider collection (``--collection``).
+            config: Optional path to a CloudSploit JS credentials file.
+                When set, the file must exist on disk (``FileNotFoundError``
+                is raised otherwise). Under Docker, the file's parent directory
+                is bind-mounted read-only and the path is rewritten; under
+                direct-CLI mode the host path is used verbatim.
 
         Returns:
-            Tuple of (stdout, stderr, exit_code).
+            Tuple of ``(results_json, collection_json, stdout, stderr,
+            exit_code)``.
         """
-        args = self._build_cli_args(
+        return await self._run_with_outputs(
             compliance=framework,
             ignore_ok=ignore_ok,
+            capture_collection=capture_collection,
+            config=config,
         )
-        return await self.execute(args)

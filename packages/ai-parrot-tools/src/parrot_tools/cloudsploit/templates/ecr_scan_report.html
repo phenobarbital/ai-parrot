@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ECR Vulnerability Scan Report</title>
+  <style>
+    /* ------------------------------------------------------------------ */
+    /* Base                                                                 */
+    /* ------------------------------------------------------------------ */
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    a { color: #60a5fa; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ------------------------------------------------------------------ */
+    /* Hero header                                                          */
+    /* ------------------------------------------------------------------ */
+    .hero {
+      background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%);
+      padding: 28px 32px;
+      border-bottom: 1px solid #1e3a5f;
+    }
+    .hero h1 {
+      margin: 0 0 6px 0;
+      font-size: 1.8rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-meta {
+      color: #94a3b8;
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+    .hero-meta span { margin-right: 20px; }
+
+    /* ------------------------------------------------------------------ */
+    /* Summary cards                                                        */
+    /* ------------------------------------------------------------------ */
+    .summary {
+      display: flex;
+      gap: 16px;
+      padding: 20px 32px;
+      background: #161b27;
+      border-bottom: 1px solid #1e2a3a;
+      flex-wrap: wrap;
+    }
+    .summary-card {
+      flex: 1;
+      min-width: 100px;
+      background: #1e2a3a;
+      border-radius: 8px;
+      padding: 14px 16px;
+      text-align: center;
+      border: 1px solid #2d3748;
+    }
+    .summary-card .sc-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .summary-card .sc-value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .sc-repos   .sc-value { color: #60a5fa; }
+    .sc-critical .sc-value { color: #f87171; }
+    .sc-high    .sc-value { color: #fb923c; }
+    .sc-medium  .sc-value { color: #fbbf24; }
+    .sc-low     .sc-value { color: #94a3b8; }
+
+    /* ------------------------------------------------------------------ */
+    /* Controls bar                                                         */
+    /* ------------------------------------------------------------------ */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 32px;
+      background: #161b27;
+      border-bottom: 1px solid #1e2a3a;
+      flex-wrap: wrap;
+    }
+    .controls input[type="text"] {
+      flex: 1;
+      min-width: 200px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #2d3748;
+      background: #1e2a3a;
+      color: #e2e8f0;
+      font-size: 0.875rem;
+      outline: none;
+    }
+    .controls input[type="text"]:focus { border-color: #60a5fa; }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-filter { background: #1e2a3a; color: #94a3b8; border-color: #2d3748; }
+    .btn-filter:hover, .btn-filter.active { border-color: #60a5fa; color: #e2e8f0; }
+    .btn-critical.active { background: #7f1d1d; border-color: #f87171; color: #f87171; }
+    .btn-high.active    { background: #7c2d12; border-color: #fb923c; color: #fb923c; }
+    .btn-medium.active  { background: #78350f; border-color: #fbbf24; color: #fbbf24; }
+    .btn-toggle { background: #2d3748; color: #94a3b8; border-color: #4a5568; }
+    .btn-toggle:hover { background: #4a5568; color: #e2e8f0; }
+
+    /* ------------------------------------------------------------------ */
+    /* Main content                                                         */
+    /* ------------------------------------------------------------------ */
+    .main { padding: 20px 32px; }
+
+    /* ------------------------------------------------------------------ */
+    /* Repo card                                                            */
+    /* ------------------------------------------------------------------ */
+    .repo-card {
+      background: #1a2236;
+      border-radius: 10px;
+      border-left: 4px solid #4a5568;
+      margin-bottom: 16px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .repo-card[data-worst="CRITICAL"] { border-left-color: #f87171; }
+    .repo-card[data-worst="HIGH"]     { border-left-color: #fb923c; }
+    .repo-card[data-worst="MEDIUM"]   { border-left-color: #fbbf24; }
+    .repo-card[data-worst="LOW"]      { border-left-color: #94a3b8; }
+
+    .repo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .repo-header:hover { background: #1e2a3a; }
+    .repo-name {
+      font-weight: 600;
+      font-size: 1rem;
+      color: #e2e8f0;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .repo-tag {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-left: 8px;
+    }
+    .repo-meta-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .sev-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .badge-critical { background: #7f1d1d; color: #f87171; }
+    .badge-high     { background: #7c2d12; color: #fb923c; }
+    .badge-medium   { background: #78350f; color: #fbbf24; }
+    .badge-low      { background: #1e293b; color: #94a3b8; }
+    .badge-info     { background: #1e293b; color: #64748b; }
+    .scan-date { font-size: 0.75rem; color: #64748b; }
+    .chevron {
+      color: #64748b;
+      font-size: 0.9rem;
+      transition: transform 0.2s;
+      min-width: 18px;
+      text-align: center;
+    }
+    .chevron.open { transform: rotate(90deg); }
+
+    .repo-body { display: none; padding: 0 18px 16px; }
+    .repo-body.open { display: block; }
+
+    /* ------------------------------------------------------------------ */
+    /* Package filter inside a repo card                                   */
+    /* ------------------------------------------------------------------ */
+    .pkg-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .pkg-filter-bar input[type="text"] {
+      flex: 1;
+      min-width: 160px;
+      padding: 5px 10px;
+      border-radius: 5px;
+      border: 1px solid #2d3748;
+      background: #0f1117;
+      color: #e2e8f0;
+      font-size: 0.8rem;
+    }
+    .btn-pkg-sev {
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      border-radius: 5px;
+      border: 1px solid #2d3748;
+      background: #0f1117;
+      color: #64748b;
+      cursor: pointer;
+    }
+    .btn-pkg-sev.active { border-color: #60a5fa; color: #e2e8f0; }
+
+    /* ------------------------------------------------------------------ */
+    /* Package block                                                        */
+    /* ------------------------------------------------------------------ */
+    .pkg-block {
+      background: #0f1117;
+      border: 1px solid #1e2a3a;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .pkg-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .pkg-header:hover { background: #1a2236; }
+    .pkg-name {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+    .pkg-version {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-left: 6px;
+    }
+    .pkg-body { display: none; padding: 0 14px 12px; }
+    .pkg-body.open { display: block; }
+
+    /* ------------------------------------------------------------------ */
+    /* CVE table                                                            */
+    /* ------------------------------------------------------------------ */
+    table.cve-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+    table.cve-table th {
+      background: #1a2236;
+      color: #64748b;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #2d3748;
+    }
+    table.cve-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #1e2a3a;
+      vertical-align: top;
+    }
+    table.cve-table tr:last-child td { border-bottom: none; }
+    table.cve-table tr:hover td { background: #1a2236; }
+    .cve-sev-badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+    .desc-text { color: #94a3b8; line-height: 1.4; }
+    .fix-text  { color: #4ade80; font-family: monospace; font-size: 0.78rem; }
+    .cvss-text { color: #fbbf24; font-weight: 600; }
+    .no-fix    { color: #4a5568; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<!-- ===================================================================== -->
+<!-- Hero                                                                   -->
+<!-- ===================================================================== -->
+<div class="hero">
+  <h1>ECR Vulnerability Scan Report</h1>
+  <div class="hero-meta">
+    <span>Region: <strong>{{ region }}</strong></span>
+    <span>Generated: <strong>{{ generated_at }}</strong></span>
+    <span>Repositories scanned: <strong>{{ repo_count }}</strong></span>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Summary cards                                                          -->
+<!-- ===================================================================== -->
+<div class="summary">
+  <div class="summary-card sc-repos">
+    <div class="sc-label">Repos</div>
+    <div class="sc-value">{{ repo_count }}</div>
+  </div>
+  <div class="summary-card sc-critical">
+    <div class="sc-label">Critical</div>
+    <div class="sc-value">{{ total_counts.get("CRITICAL", 0) }}</div>
+  </div>
+  <div class="summary-card sc-high">
+    <div class="sc-label">High</div>
+    <div class="sc-value">{{ total_counts.get("HIGH", 0) }}</div>
+  </div>
+  <div class="summary-card sc-medium">
+    <div class="sc-label">Medium</div>
+    <div class="sc-value">{{ total_counts.get("MEDIUM", 0) }}</div>
+  </div>
+  <div class="summary-card sc-low">
+    <div class="sc-label">Low</div>
+    <div class="sc-value">{{ total_counts.get("LOW", 0) }}</div>
+  </div>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Controls                                                               -->
+<!-- ===================================================================== -->
+<div class="controls">
+  <input type="text" id="repoSearch" placeholder="Search repositories..."
+         oninput="filterRepos()" />
+  <button class="btn btn-filter btn-critical" id="btn-critical"
+          onclick="toggleFilter('critical')">CRITICAL</button>
+  <button class="btn btn-filter btn-high" id="btn-high"
+          onclick="toggleFilter('high')">HIGH</button>
+  <button class="btn btn-filter btn-medium" id="btn-medium"
+          onclick="toggleFilter('medium')">MEDIUM</button>
+  <button class="btn btn-toggle" onclick="toggleAll()">Toggle All</button>
+</div>
+
+<!-- ===================================================================== -->
+<!-- Repository cards                                                       -->
+<!-- ===================================================================== -->
+<div class="main" id="repoList">
+
+{% for repo in repos_sorted %}
+<div class="repo-card"
+     id="repo-{{ loop.index }}"
+     data-repo="{{ repo.repo }}"
+     data-worst="{{ repo.worst_severity }}"
+     data-has-critical="{{ 'true' if repo.has_critical else 'false' }}"
+     data-has-high="{{ 'true' if repo.has_high else 'false' }}"
+     data-has-medium="{{ 'true' if repo.has_medium else 'false' }}"
+     data-has-low="{{ 'true' if repo.has_low else 'false' }}">
+
+  <!-- Repo header -->
+  <div class="repo-header" onclick="toggleRepo('repo-{{ loop.index }}')">
+    <div>
+      <span class="repo-name">{{ repo.repo }}</span>
+      <span class="repo-tag">:{{ repo.tag }}</span>
+    </div>
+    <div class="repo-meta-right">
+      {% if repo.has_critical %}
+      <span class="sev-badge badge-critical">
+        CRITICAL: {{ repo.counts.get("CRITICAL", 0) }}
+      </span>
+      {% endif %}
+      {% if repo.has_high %}
+      <span class="sev-badge badge-high">
+        HIGH: {{ repo.counts.get("HIGH", 0) }}
+      </span>
+      {% endif %}
+      {% if repo.has_medium %}
+      <span class="sev-badge badge-medium">
+        MED: {{ repo.counts.get("MEDIUM", 0) }}
+      </span>
+      {% endif %}
+      {% if repo.has_low %}
+      <span class="sev-badge badge-low">
+        LOW: {{ repo.counts.get("LOW", 0) }}
+      </span>
+      {% endif %}
+      <span class="scan-date">{{ repo.scan_time_formatted }}</span>
+      <span class="chevron" id="chev-repo-{{ loop.index }}">&#9654;</span>
+    </div>
+  </div>
+
+  <!-- Repo body -->
+  <div class="repo-body{% if repo.repo_open %} open{% endif %}"
+       id="body-repo-{{ loop.index }}">
+
+    {% if repo.pkg_groups %}
+    <!-- Package filter bar -->
+    <div class="pkg-filter-bar">
+      <input type="text"
+             id="pkgSearch-{{ loop.index }}"
+             placeholder="Filter packages..."
+             oninput="filterPkgs('{{ loop.index }}')" />
+      <button class="btn btn-pkg-sev" id="pkgbtn-critical-{{ loop.index }}"
+              onclick="filterPkgBySev('{{ loop.index }}', 'CRITICAL')">CRITICAL</button>
+      <button class="btn btn-pkg-sev" id="pkgbtn-high-{{ loop.index }}"
+              onclick="filterPkgBySev('{{ loop.index }}', 'HIGH')">HIGH</button>
+      <button class="btn btn-pkg-sev" id="pkgbtn-medium-{{ loop.index }}"
+              onclick="filterPkgBySev('{{ loop.index }}', 'MEDIUM')">MEDIUM</button>
+      <button class="btn btn-pkg-sev" id="pkgbtn-all-{{ loop.index }}"
+              onclick="filterPkgBySev('{{ loop.index }}', 'ALL')">ALL</button>
+    </div>
+
+    {% for pkg in repo.pkg_groups %}
+    <div class="pkg-block"
+         id="pkg-{{ loop.index0 }}-{{ loop.index }}"
+         data-pkg="{{ pkg.pkg }}"
+         data-worst="{{ pkg.worst_severity }}"
+         data-repo-idx="{{ loop.index }}">
+      <div class="pkg-header"
+           onclick="togglePkg('pkg-{{ loop.index0 }}-{{ loop.index }}')">
+        <div>
+          <span class="pkg-name">{{ pkg.pkg }}</span>
+          {% if pkg.ver %}
+          <span class="pkg-version">{{ pkg.ver }}</span>
+          {% endif %}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="sev-badge {% if pkg.worst_severity == 'CRITICAL' %}badge-critical{% elif pkg.worst_severity == 'HIGH' %}badge-high{% elif pkg.worst_severity == 'MEDIUM' %}badge-medium{% else %}badge-low{% endif %}">
+            {{ pkg.worst_severity }}
+          </span>
+          <span style="color:#64748b; font-size:0.75rem;">{{ pkg.cves | length }} CVE{% if pkg.cves | length != 1 %}s{% endif %}</span>
+          <span class="chevron" id="chev-pkg-{{ loop.index0 }}-{{ loop.index }}">&#9654;</span>
+        </div>
+      </div>
+
+      <div class="pkg-body{% if pkg.pkg_open %} open{% endif %}"
+           id="body-pkg-{{ loop.index0 }}-{{ loop.index }}">
+        <table class="cve-table">
+          <thead>
+            <tr>
+              <th style="width:90px;">Severity</th>
+              <th>CVE</th>
+              <th>Description</th>
+              <th style="width:120px;">Fix Version</th>
+              <th style="width:60px;">CVSS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cve in pkg.cves %}
+            <tr>
+              <td>
+                <span class="cve-sev-badge"
+                      style="background:{{ cve.sev_bg }}; color:{{ cve.sev_fg }};">
+                  {{ cve.severity }}
+                </span>
+              </td>
+              <td>
+                {% if cve.uri %}
+                <a href="{{ cve.uri }}" target="_blank" rel="noopener">
+                  {{ cve.name }}
+                </a>
+                {% else %}
+                {{ cve.name }}
+                {% endif %}
+              </td>
+              <td class="desc-text">{{ cve.description_short }}</td>
+              <td>
+                {% if cve.fixed_in_versions %}
+                <span class="fix-text">{{ cve.fixed_in_versions }}</span>
+                {% else %}
+                <span class="no-fix">–</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if cve.cvss %}
+                <span class="cvss-text">{{ cve.cvss }}</span>
+                {% else %}
+                <span class="no-fix">–</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    <p style="color:#64748b; font-style:italic;">No package findings available.</p>
+    {% endif %}
+
+  </div><!-- /.repo-body -->
+</div><!-- /.repo-card -->
+{% else %}
+<p style="color:#64748b; text-align:center; padding: 40px 0;">
+  No repositories with scan findings.
+</p>
+{% endfor %}
+
+</div><!-- /.main -->
+
+<!-- ===================================================================== -->
+<!-- Inline JS                                                              -->
+<!-- ===================================================================== -->
+<script>
+  // --- State ---
+  var activeFilters = [];
+  var allOpen = false;
+
+  // --- Repo toggle ---
+  function toggleRepo(cardId) {
+    var body  = document.getElementById('body-' + cardId);
+    var chev  = document.getElementById('chev-' + cardId);
+    if (!body) return;
+    var open = body.classList.toggle('open');
+    if (chev) chev.classList.toggle('open', open);
+  }
+
+  // --- Package toggle ---
+  function togglePkg(pkgId) {
+    var body = document.getElementById('body-' + pkgId);
+    var chev = document.getElementById('chev-' + pkgId);
+    if (!body) return;
+    var open = body.classList.toggle('open');
+    if (chev) chev.classList.toggle('open', open);
+  }
+
+  // --- Global severity filter ---
+  function toggleFilter(sev) {
+    var idx = activeFilters.indexOf(sev);
+    if (idx >= 0) {
+      activeFilters.splice(idx, 1);
+    } else {
+      activeFilters.push(sev);
+    }
+    document.getElementById('btn-' + sev).classList.toggle('active', idx < 0);
+    applyFilters();
+  }
+
+  function applyFilters() {
+    var search = (document.getElementById('repoSearch').value || '').toLowerCase();
+    var cards = document.querySelectorAll('.repo-card');
+    cards.forEach(function(card) {
+      var repo = (card.getAttribute('data-repo') || '').toLowerCase();
+      var matchSearch = !search || repo.indexOf(search) >= 0;
+      var matchFilter = activeFilters.length === 0 || activeFilters.some(function(f) {
+        return card.getAttribute('data-has-' + f) === 'true';
+      });
+      card.style.display = (matchSearch && matchFilter) ? '' : 'none';
+    });
+  }
+
+  // --- Repo search ---
+  function filterRepos() {
+    applyFilters();
+  }
+
+  // --- Per-repo package filter ---
+  function filterPkgs(repoIdx) {
+    var val = (document.getElementById('pkgSearch-' + repoIdx).value || '').toLowerCase();
+    var pkgBlocks = document.querySelectorAll('.pkg-block[data-repo-idx="' + repoIdx + '"]');
+    pkgBlocks.forEach(function(blk) {
+      var pkg = (blk.getAttribute('data-pkg') || '').toLowerCase();
+      blk.style.display = (!val || pkg.indexOf(val) >= 0) ? '' : 'none';
+    });
+  }
+
+  function filterPkgBySev(repoIdx, sev) {
+    // Toggle active class on the clicked button
+    ['CRITICAL','HIGH','MEDIUM','ALL'].forEach(function(s) {
+      var btn = document.getElementById('pkgbtn-' + s.toLowerCase() + '-' + repoIdx);
+      if (btn) btn.classList.toggle('active', s === sev);
+    });
+    var pkgBlocks = document.querySelectorAll('.pkg-block[data-repo-idx="' + repoIdx + '"]');
+    pkgBlocks.forEach(function(blk) {
+      if (sev === 'ALL') {
+        blk.style.display = '';
+      } else {
+        blk.style.display = (blk.getAttribute('data-worst') === sev) ? '' : 'none';
+      }
+    });
+  }
+
+  // --- Expand / collapse all repos ---
+  function toggleAll() {
+    allOpen = !allOpen;
+    document.querySelectorAll('.repo-card').forEach(function(card) {
+      var id = card.getAttribute('id');
+      var body = document.getElementById('body-' + id);
+      var chev = document.getElementById('chev-' + id);
+      if (body) body.classList.toggle('open', allOpen);
+      if (chev) chev.classList.toggle('open', allOpen);
+    });
+  }
+
+  // --- Auto-expand repos with CRITICAL or HIGH on load ---
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.repo-card').forEach(function(card) {
+      var hasCrit = card.getAttribute('data-has-critical') === 'true';
+      var hasHigh = card.getAttribute('data-has-high') === 'true';
+      if (hasCrit || hasHigh) {
+        var id = card.getAttribute('id');
+        var body = document.getElementById('body-' + id);
+        var chev = document.getElementById('chev-' + id);
+        if (body) body.classList.add('open');
+        if (chev) chev.classList.add('open');
+      }
+    });
+  });
+</script>
+</body>
+</html>

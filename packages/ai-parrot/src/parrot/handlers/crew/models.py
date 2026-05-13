@@ -2,25 +2,29 @@
 Data models for AgentCrew API.
 
 Defines structures for crew definitions, job management, and execution tracking.
+
+The core definition models (ExecutionMode, AgentDefinition, FlowRelation,
+CrewDefinition) now live in ``parrot.models.crew_definition`` and are
+re-exported here for backward compatibility.
 """
 from typing import Dict, List, Any, Optional, Union
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from enum import Enum
-import uuid
 from pydantic import BaseModel, Field
 
-
-class ExecutionMode(str, Enum):
-    """Execution modes for AgentCrew."""
-    SEQUENTIAL = "sequential"
-    PARALLEL = "parallel"
-    FLOW = "flow"
-    LOOP = "loop"
+# Re-exports — canonical location is parrot.models.crew_definition
+from parrot.models.crew_definition import (  # noqa: F401
+    ExecutionMode,
+    AgentDefinition,
+    FlowRelation,
+    CrewDefinition,
+)
 
 
 class JobStatus(str, Enum):
     """Status of async job execution."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -28,97 +32,9 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class AgentDefinition(BaseModel):
-    """Definition of an agent in a crew."""
-    agent_id: str = Field(description="Unique identifier for the agent")
-    agent_class: str = Field(
-        default="BaseAgent",
-        description="Agent class name (BaseAgent, Chatbot, etc.)"
-    )
-    name: Optional[str] = Field(
-        default=None,
-        description="Human-readable name for the agent"
-    )
-    config: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Agent configuration (llm, model, temperature, etc.)"
-    )
-    tools: List[str] = Field(
-        default_factory=list,
-        description="List of tool names available to this agent"
-    )
-    system_prompt: Optional[str] = Field(
-        default=None,
-        description="System prompt for the agent"
-    )
-
-
-class FlowRelation(BaseModel):
-    """Defines a dependency relationship between agents in flow mode."""
-    source: Union[str, List[str]] = Field(
-        description="Source agent(s) that must complete first"
-    )
-    target: Union[str, List[str]] = Field(
-        description="Target agent(s) that depend on source completion"
-    )
-
-
-class CrewDefinition(BaseModel):
-    """Complete definition of an AgentCrew."""
-    crew_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
-        description="Unique identifier for the crew"
-    )
-    tenant: str = Field(
-        default="global",
-        description="Tenant identifier for crew isolation"
-    )
-    name: str = Field(description="Name of the crew")
-    description: Optional[str] = Field(
-        default=None,
-        description="Description of the crew's purpose"
-    )
-    execution_mode: ExecutionMode = Field(
-        default=ExecutionMode.SEQUENTIAL,
-        description="Execution mode: sequential, parallel, or flow"
-    )
-    agents: List[AgentDefinition] = Field(
-        description="List of agent definitions in the crew"
-    )
-    flow_relations: List[FlowRelation] = Field(
-        default_factory=list,
-        description="Flow relationships (only used in flow mode)"
-    )
-    shared_tools: List[str] = Field(
-        default_factory=list,
-        description="Tools shared across all agents"
-    )
-    max_parallel_tasks: int = Field(
-        default=10,
-        description="Maximum number of parallel tasks"
-    )
-    metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Additional metadata"
-    )
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Creation timestamp"
-    )
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Last update timestamp"
-    )
-
-    class Config:
-        """Pydantic configuration."""
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
-        }
-
-
 class CrewQueryRequest(BaseModel):
     """Request to query a crew."""
+
     crew_id: str = Field(description="ID of the crew to query")
     query: Union[str, Dict[str, str]] = Field(
         description="Query for the crew (string for all agents, dict for specific agents)"
@@ -148,6 +64,7 @@ class CrewQueryRequest(BaseModel):
 @dataclass
 class CrewJob:
     """Represents an asynchronous crew execution job."""
+
     job_id: str
     crew_id: str
     query: Union[str, Dict[str, str]]
@@ -190,6 +107,7 @@ class CrewJob:
 
 class CrewListResponse(BaseModel):
     """Response for listing crews."""
+
     crews: List[Dict[str, Any]] = Field(
         description="List of crew definitions"
     )
@@ -198,6 +116,7 @@ class CrewListResponse(BaseModel):
 
 class CrewJobResponse(BaseModel):
     """Response when creating a new job."""
+
     job_id: str = Field(description="Unique job identifier for tracking")
     crew_id: str = Field(description="ID of the crew being executed")
     status: JobStatus = Field(description="Current job status")
@@ -208,6 +127,7 @@ class CrewJobResponse(BaseModel):
 
 class CrewJobStatusResponse(BaseModel):
     """Response for job status check."""
+
     job_id: str = Field(description="Job identifier")
     crew_id: str = Field(description="Crew identifier")
     status: JobStatus = Field(description="Current job status")

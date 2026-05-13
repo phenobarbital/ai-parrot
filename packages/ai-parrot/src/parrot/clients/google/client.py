@@ -1426,11 +1426,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # and to prevent reasoning parts from leaking into the final output.
         has_function_call = False
         has_thought = False
+        has_content_parts = False
         try:
             if (hasattr(response, 'candidates') and response.candidates and
                 len(response.candidates) > 0 and hasattr(response.candidates[0], 'content') and
                 response.candidates[0].content and hasattr(response.candidates[0].content, 'parts') and
                 response.candidates[0].content.parts):
+                has_content_parts = True
                 for part in response.candidates[0].content.parts:
                     if hasattr(part, 'function_call') and part.function_call:
                         has_function_call = True
@@ -1442,8 +1444,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             pass
 
         # Method 1: Try response.text first (fastest path)
-        # Skip if we found a function call or a thought
-        if not has_function_call and not has_thought:
+        # Skip if content parts are available: SDK-flattened response.text may
+        # include planning text that should not be shown to callers.
+        if not has_content_parts and not has_function_call and not has_thought:
             try:
                 if hasattr(response, 'text') and response.text:
                     if (text := response.text.strip()):
@@ -1783,6 +1786,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
+        ask_started = time.perf_counter()
 
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
@@ -1803,8 +1807,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             conversation_history = None
         else:
             # Use the unified conversation context preparation from AbstractClient
+            phase_started = time.perf_counter()
             messages, conversation_history, system_prompt = await self._prepare_conversation_context(
                 prompt, files, user_id, session_id, system_prompt, stateless=stateless
+            )
+            self.logger.debug(
+                "Google ask timing: prepare_conversation_context_ms=%.1f messages=%d history=%s",
+                (time.perf_counter() - phase_started) * 1000,
+                len(messages),
+                bool(conversation_history),
             )
 
         # Prepare conversation history for Google GenAI format
@@ -1869,11 +1880,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # on Vertex AI reject temperature < 0.7.
             generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
 
+        phase_started = time.perf_counter()
         tools = self._build_tools(tool_type) if tool_type else []
+        self.logger.debug(
+            "Google ask timing: build_tools_ms=%.1f toolboxes=%d tool_type=%s",
+            (time.perf_counter() - phase_started) * 1000,
+            len(tools),
+            tool_type,
+        )
 
         # Debug: List tool names
+        tool_names = []
         if tools:
-            tool_names = []
             for tool in tools:
                 if getattr(tool, 'function_declarations', None):
                     tool_names.extend([fd.name for fd in tool.function_declarations])
@@ -1949,7 +1967,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         })
 
         chat = None
+        phase_started = time.perf_counter()
         await self._ensure_client(model=model)
+        self.logger.debug(
+            "Google ask timing: ensure_client_ms=%.1f model=%s",
+            (time.perf_counter() - phase_started) * 1000,
+            model,
+        )
         # configure thinking config for gemini:
         thinking_config = None
         _requires_thinking = self._requires_thinking(model)
@@ -2040,10 +2064,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             current_model = model
             while retry_count < max_retries:
                 try:
+                    phase_started = time.perf_counter()
+                    self.logger.info(
+                        "Google ask timing: stateless generate_content start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d",
+                        current_model,
+                        len(prompt or ""),
+                        len(system_prompt or ""),
+                        len(tool_names),
+                    )
                     response = await self.client.aio.models.generate_content(
                         model=current_model,
                         contents=contents,
                         config=final_config
+                    )
+                    self.logger.info(
+                        "Google ask timing: stateless generate_content_ms=%.1f model=%s attempt=%d",
+                        (time.perf_counter() - phase_started) * 1000,
+                        current_model,
+                        retry_count + 1,
                     )
                     finish_reason = getattr(response.candidates[0], 'finish_reason', None)
                     if finish_reason:
@@ -2123,9 +2161,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             # Send initial message
             while retry_count < max_retries:
                 try:
+                    phase_started = time.perf_counter()
+                    self.logger.info(
+                        "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s",
+                        current_model,
+                        len(prompt or ""),
+                        len(system_prompt or ""),
+                        len(tool_names),
+                        bool(thinking_config),
+                    )
                     response = await chat.send_message(
                         message=prompt,
                         config=final_config
+                    )
+                    self.logger.info(
+                        "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
+                        (time.perf_counter() - phase_started) * 1000,
+                        current_model,
+                        retry_count + 1,
                     )
                     finish_reason = getattr(response.candidates[0], 'finish_reason', None)
                     if finish_reason:
@@ -2221,6 +2274,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             )
 
             # Multi-turn function calling loop
+            phase_started = time.perf_counter()
             final_response = await self._handle_multiturn_function_calls(
                 chat,
                 response,
@@ -2235,9 +2289,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 session_id=session_id,
                 messages=messages
             )
+            self.logger.debug(
+                "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
+                (time.perf_counter() - phase_started) * 1000,
+                len(all_tool_calls),
+            )
             model = current_model
 
         # Extract assistant response text for conversation memory
+        phase_started = time.perf_counter()
         assistant_response_text = self._safe_extract_text(final_response)
 
         # Extract code execution content (code, results, images) from the response
@@ -2255,6 +2315,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             assistant_response_text = self._create_simple_summary(
                 all_tool_calls
             )
+        self.logger.debug(
+            "Google ask timing: response_text_extract_ms=%.1f text_chars=%d",
+            (time.perf_counter() - phase_started) * 1000,
+            len(assistant_response_text or ""),
+        )
 
         # Handle structured output
         final_output = None
@@ -2418,6 +2483,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Update conversation memory with unified system
         if not stateless and conversation_history:
+            phase_started = time.perf_counter()
             tools_used = [tc.name for tc in all_tool_calls]
             await self._update_conversation_memory(
                 user_id,
@@ -2430,6 +2496,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 assistant_response_text,
                 tools_used
             )
+            self.logger.debug(
+                "Google ask timing: update_conversation_memory_ms=%.1f",
+                (time.perf_counter() - phase_started) * 1000,
+            )
         # Prepare code execution content for AIMessage
         extracted_images = code_execution_content.get('images', []) if code_execution_content else []
         extracted_code = (
@@ -2439,6 +2509,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
 
         # Create AIMessage using factory
+        phase_started = time.perf_counter()
         ai_message = AIMessageFactory.from_gemini(
             response=response,
             input_text=original_prompt,
@@ -2453,6 +2524,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             files=extracted_images,
             images=extracted_images,
             code=extracted_code
+        )
+        self.logger.debug(
+            "Google ask timing: ai_message_factory_ms=%.1f total_ms=%.1f",
+            (time.perf_counter() - phase_started) * 1000,
+            (time.perf_counter() - ask_started) * 1000,
         )
 
         # Override provider to distinguish from Vertex AI

@@ -2,8 +2,22 @@
 AbstractToolkit for creating collections of tools from class methods.
 """
 import inspect
-from typing import TYPE_CHECKING, Dict, List, Type, Optional, Any, get_type_hints
 from abc import ABC
+from collections.abc import Callable as CallableType
+from types import UnionType
+from typing import (
+    TYPE_CHECKING,
+    Dict,
+    List,
+    Type,
+    Optional,
+    Any,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
+
 from pydantic import BaseModel, create_model, Field
 from navconfig.logging import logging
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
@@ -61,6 +75,15 @@ class ToolkitTool(AbstractTool):
     @classmethod
     def _is_unsupported_type(cls, annotation: Any) -> bool:
         """Return True if *annotation* cannot be represented in a Pydantic schema."""
+        origin = get_origin(annotation)
+        if annotation is CallableType or origin is CallableType:
+            return True
+        if origin in (Union, UnionType):
+            return any(
+                arg is not type(None) and cls._is_unsupported_type(arg)
+                for arg in get_args(annotation)
+            )
+
         try:
             import pandas as pd
             cls._UNSUPPORTED_SCHEMA_TYPES.add(pd.DataFrame)

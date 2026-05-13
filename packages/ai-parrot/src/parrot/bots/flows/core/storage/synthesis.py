@@ -1,4 +1,4 @@
-"""Flow Primitives — SynthesisMixin.
+"""Flow Primitives — SynthesisMixin + synthesize_results util.
 
 Copied from ``parrot.bots.flow.storage.synthesis`` into the shared core
 storage location.  Relative imports updated for the new package depth.
@@ -6,6 +6,12 @@ storage location.  Relative imports updated for the new package depth.
 Accepts both ``CrewResult`` and ``FlowResult`` via duck-typing: only the
 ``.agents`` (iterable of info objects) and ``.responses`` (dict) attributes
 are used. Full migration to ``FlowResult`` will happen in Spec 2.
+
+FEAT-163 additions:
+    ``synthesize_results(ctx, result) -> str`` — top-level async util that
+    replaces the ``SynthesisMixin._synthesize_results`` method for new-style
+    ``AgentsFlow`` callers. Compatible with both ``on_complete`` hooks and
+    in-graph ``SynthesisNode`` DAG nodes.
 """
 from __future__ import annotations
 
@@ -17,6 +23,7 @@ from navconfig.logging import logging
 from .....models.crew import CrewResult
 
 if TYPE_CHECKING:
+    from ..context import FlowContext
     from ..result import FlowResult
 
 
@@ -120,3 +127,98 @@ class SynthesisMixin:
         except Exception as e:
             logger.error("Error during synthesis: %s", e, exc_info=True)
             return None
+
+
+# ---------------------------------------------------------------------------
+# synthesize_results — top-level util (FEAT-163 TASK-1063)
+# ---------------------------------------------------------------------------
+
+_logger = logging.getLogger(__name__)
+
+
+async def synthesize_results(
+    ctx: "FlowContext",
+    result: "FlowResult",
+    *,
+    max_tokens: int = 8192,
+    temperature: float = 0.1,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> str:
+    """LLM-summarize all agent responses collected in a ``FlowResult``.
+
+    This is the single source of truth for synthesis used by both:
+    - ``AgentsFlow.run_flow(on_complete=[synthesize_results])`` hooks.
+    - ``SynthesisNode.execute()`` for in-graph summarization (TASK-1066).
+
+    The function mirrors ``SynthesisMixin._synthesize_results``'s prompt-
+    building and LLM-call logic, adapted for the new-style context-based API.
+
+    Args:
+        ctx: The current flow execution context. Must have a
+            ``synthesis_client`` attribute that is an ``AbstractClient``-
+            compatible object (has ``ask(prompt=...) -> response``).
+        result: The ``FlowResult`` (or duck-type) whose ``.responses``
+            dict provides per-node results to synthesize.
+        max_tokens: Maximum tokens for the LLM response.
+        temperature: LLM sampling temperature.
+        user_id: Optional user identifier forwarded to the LLM.
+        session_id: Optional session identifier forwarded to the LLM.
+
+    Returns:
+        Synthesized summary string.
+
+    Raises:
+        RuntimeError: If ``ctx.synthesis_client`` is ``None`` or absent.
+    """
+    client = getattr(ctx, "synthesis_client", None)
+    if client is None:
+        raise RuntimeError(
+            "No synthesis client bound on FlowContext. "
+            "Set ctx.synthesis_client = <AbstractClient instance> before calling "
+            "synthesize_results(), or pass synthesis_client= when constructing FlowContext."
+        )
+
+    # Build context from node responses (mirrors SynthesisMixin._synthesize_results)
+    context_parts = ["# Agent Execution Results\n"]
+
+    responses: dict = getattr(result, "responses", {}) or {}
+    for i, (node_id, response) in enumerate(responses.items()):
+        if hasattr(response, "content"):
+            text = response.content
+        elif hasattr(response, "output"):
+            text = response.output
+        else:
+            text = str(response)
+
+        context_parts.extend([
+            f"\n## Agent {i + 1}: {node_id}\n",
+            str(text),
+            "\n---\n",
+        ])
+
+    research_context = "\n".join(context_parts)
+    final_prompt = f"{research_context}\n\n{SYNTHESIS_PROMPT}"
+
+    _logger.info("synthesize_results: calling LLM for flow result synthesis")
+
+    synthesis_response = await client.ask(
+        question=final_prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        user_id=user_id or "flow_user",
+        session_id=session_id or str(uuid.uuid4()),
+        use_conversation_history=False,
+    )
+
+    summary = (
+        synthesis_response.content
+        if hasattr(synthesis_response, "content")
+        else str(synthesis_response)
+    )
+
+    # Store on result if it supports the summary attribute
+    if hasattr(result, "summary"):
+        result.summary = summary  # type: ignore[assignment]
+
+    return summary

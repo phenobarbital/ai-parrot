@@ -12,7 +12,7 @@ import sys
 import asyncio
 from navconfig import config
 from parrot.bots.agent import BasicAgent
-from parrot.bots.orchestration.agent import OrchestratorAgent
+from parrot.bots.flows.agents import OrchestratorAgent
 from parrot.tools.workday.tool import WorkdayToolkit
 from parrot.tools.jiratoolkit import JiraToolkit
 from parrot.tools.databasequery import DatabaseQueryTool

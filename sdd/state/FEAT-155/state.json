@@ -1,0 +1,49 @@
+{
+  "feat_id": "FEAT-155",
+  "slug": "migration-orchestration-to-flows",
+  "phase": "committed",
+  "started_at": "2026-05-10T20:00:00Z",
+  "updated_at": "2026-05-10T20:30:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 18,
+    "grep_calls": 12,
+    "git_calls": 2,
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300,
+    "truncated": false
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Final migration phase: move OrchestratorAgent and A2AOrchestrator to flows, remove bots/orchestration"
+  },
+  "phases": {
+    "source_resolved": { "completed_at": "2026-05-10T20:00:10Z" },
+    "plan": { "approved_by_user": true },
+    "research": {
+      "completed_at": "2026-05-10T20:15:00Z",
+      "files_read": 18,
+      "grep_calls": 12,
+      "git_calls": 2,
+      "findings_count": 8
+    },
+    "synthesis": {
+      "completed_at": "2026-05-10T20:25:00Z",
+      "overall_confidence": "high"
+    },
+    "qa": { "status": "skipped", "reason": "no material unknowns" },
+    "output": {
+      "proposal_path": "sdd/proposals/migration-orchestration-to-flows.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "Commit the proposal and recommend next step"
+  }
+}

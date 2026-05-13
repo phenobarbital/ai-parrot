@@ -122,16 +122,12 @@ _BasicBot_cls = type("BasicBot", (_AbstractBot_cls,), {})
 _BasicAgent_cls = type("BasicAgent", (_AbstractBot_cls,), {})
 _Agent_cls = type("Agent", (_AbstractBot_cls,), {})
 _WebSearchAgent_cls = type("WebSearchAgent", (_AbstractBot_cls,), {})
-_AgentCrew_cls = type("AgentCrew", (), {})
-
 # Stub modules that parrot.bots.__init__ imports but can't load in test env
 for _bmod, _attrs in {
     "parrot.bots.base": {"BaseBot": type("BaseBot", (), {})},
     "parrot.bots.basic": {"BasicBot": _BasicBot_cls},
     "parrot.bots.chatbot": {"Chatbot": _Chatbot_cls},
     "parrot.bots.search": {"WebSearchAgent": _WebSearchAgent_cls},
-    "parrot.bots.orchestration": {},
-    "parrot.bots.orchestration.crew": {"AgentCrew": _AgentCrew_cls},
 }.items():
     if _bmod not in _m:
         _stub(_bmod)

@@ -4,7 +4,7 @@ Test script to verify AgentTool._execute() fix
 import asyncio
 import traceback
 from parrot.bots.agent import BasicAgent
-from parrot.bots.orchestration.agent import OrchestratorAgent
+from parrot.bots.flows.agents import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
 

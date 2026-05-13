@@ -1,6 +1,6 @@
 """Unit tests for CloudSploit Docker/CLI executor."""
 import asyncio
-import os
+from typing import Any
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
@@ -116,88 +116,174 @@ class TestBuildDockerCommand:
         assert "my-registry/cloudsploit:v2" in cmd
 
 
+class TestBuildDockerCommandMultiMount:
+    def test_docker_command_no_mount(self):
+        cfg = CloudSploitConfig()
+        e = CloudSploitExecutor(cfg)
+        cmd = e._build_docker_command(["--cloud=aws"], volume_mounts=None)
+        assert "-v" not in cmd
+
+    def test_docker_command_single_mount(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(["--cloud=aws"],
+                                      volume_mounts=[("/h", "/c", None)])
+        assert cmd.count("-v") == 1
+        assert "/h:/c" in cmd
+
+    def test_docker_command_read_only_mount(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(["--cloud=aws"],
+                                      volume_mounts=[("/h", "/c", "ro")])
+        assert "/h:/c:ro" in cmd
+
+    def test_docker_command_multi_mount_order(self):
+        e = CloudSploitExecutor(CloudSploitConfig())
+        cmd = e._build_docker_command(
+            ["--cloud=aws"],
+            volume_mounts=[("/o", "/cloudsploit/output", None),
+                           ("/cfgdir", "/cloudsploit/config", "ro")],
+        )
+        o_idx = cmd.index("/o:/cloudsploit/output")
+        c_idx = cmd.index("/cfgdir:/cloudsploit/config:ro")
+        assert o_idx < c_idx
+
+
 class TestBuildCliArgs:
+    JSON_PATH = "/tmp/results.json"
+    COLLECTION_PATH = "/tmp/collection.json"
+
     def test_full_scan_defaults(self, executor):
-        args = executor._build_cli_args()
-        assert "--json=/dev/stdout" in args
+        args = executor._build_cli_args(json_path=self.JSON_PATH)
+        assert f"--json={self.JSON_PATH}" in args
         assert "--console=none" in args
         assert "--cloud=aws" in args
 
+    def test_collection_flag(self, executor):
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, collection_path=self.COLLECTION_PATH,
+        )
+        assert f"--collection={self.COLLECTION_PATH}" in args
+
+    def test_collection_omitted_when_none(self, executor):
+        args = executor._build_cli_args(json_path=self.JSON_PATH)
+        assert not any(a.startswith("--collection") for a in args)
+
     def test_compliance_flag(self, executor):
-        args = executor._build_cli_args(compliance=ComplianceFramework.PCI)
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, compliance=ComplianceFramework.PCI,
+        )
         assert "--compliance=pci" in args
 
     def test_compliance_hipaa(self, executor):
-        args = executor._build_cli_args(compliance=ComplianceFramework.HIPAA)
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, compliance=ComplianceFramework.HIPAA,
+        )
         assert "--compliance=hipaa" in args
 
     def test_compliance_cis1(self, executor):
-        args = executor._build_cli_args(compliance=ComplianceFramework.CIS1)
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, compliance=ComplianceFramework.CIS1,
+        )
         assert "--compliance=cis1" in args
 
     def test_compliance_cis2(self, executor):
-        args = executor._build_cli_args(compliance=ComplianceFramework.CIS2)
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, compliance=ComplianceFramework.CIS2,
+        )
         assert "--compliance=cis2" in args
 
     def test_single_plugin(self, executor):
-        args = executor._build_cli_args(plugins=["ec2-open-ssh"])
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, plugins=["ec2-open-ssh"],
+        )
         assert "--plugin" in args
         assert "ec2-open-ssh" in args
 
     def test_multiple_plugins(self, executor):
-        args = executor._build_cli_args(plugins=["ec2-open-ssh", "s3-bucket-policy"])
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH,
+            plugins=["ec2-open-ssh", "s3-bucket-policy"],
+        )
         assert args.count("--plugin") == 2
         assert "ec2-open-ssh" in args
         assert "s3-bucket-policy" in args
 
     def test_ignore_ok(self, executor):
-        args = executor._build_cli_args(ignore_ok=True)
+        args = executor._build_cli_args(json_path=self.JSON_PATH, ignore_ok=True)
         assert "--ignore-ok" in args
 
     def test_ignore_ok_false(self, executor):
-        args = executor._build_cli_args(ignore_ok=False)
+        args = executor._build_cli_args(json_path=self.JSON_PATH, ignore_ok=False)
         assert "--ignore-ok" not in args
 
     def test_suppress(self, executor):
-        args = executor._build_cli_args(suppress=["pluginId:us-east-1:*"])
+        args = executor._build_cli_args(
+            json_path=self.JSON_PATH, suppress=["pluginId:us-east-1:*"],
+        )
         assert "--suppress" in args
         assert "pluginId:us-east-1:*" in args
 
     def test_multiple_suppress(self, executor):
         args = executor._build_cli_args(
-            suppress=["pluginA:us-east-1:*", "pluginB:us-west-2:*"]
+            json_path=self.JSON_PATH,
+            suppress=["pluginA:us-east-1:*", "pluginB:us-west-2:*"],
         )
         assert args.count("--suppress") == 2
 
     def test_govcloud_flag(self):
         config = CloudSploitConfig(govcloud=True)
         executor = CloudSploitExecutor(config)
-        args = executor._build_cli_args()
+        args = executor._build_cli_args(json_path=self.JSON_PATH)
         assert "--govcloud" in args
 
     def test_govcloud_off_by_default(self, executor):
-        args = executor._build_cli_args()
+        args = executor._build_cli_args(json_path=self.JSON_PATH)
         assert "--govcloud" not in args
 
     def test_gcp_cloud_arg(self):
         config = CloudSploitConfig(cloud_provider=CloudProvider.GCP, govcloud=True)
         executor = CloudSploitExecutor(config)
-        args = executor._build_cli_args()
+        args = executor._build_cli_args(json_path=self.JSON_PATH)
         assert "--cloud=google" in args
         assert "--govcloud" not in args
 
     def test_combined_args(self, executor):
         args = executor._build_cli_args(
+            json_path=self.JSON_PATH,
+            collection_path=self.COLLECTION_PATH,
             plugins=["ec2-open-ssh"],
             compliance=ComplianceFramework.PCI,
             ignore_ok=True,
             suppress=["rule:region:*"],
         )
-        assert "--json=/dev/stdout" in args
+        assert f"--json={self.JSON_PATH}" in args
+        assert f"--collection={self.COLLECTION_PATH}" in args
         assert "--compliance=pci" in args
         assert "--plugin" in args
         assert "--ignore-ok" in args
         assert "--suppress" in args
+
+
+class TestBuildCliArgsConfig:
+    def test_cli_args_no_config_when_none(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json")
+        assert not any(a.startswith("--config=") for a in args)
+
+    def test_cli_args_config_first(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json",
+                                        config_path="/cs/config.js")
+        assert args[0] == "--config=/cs/config.js"
+
+    def test_cli_args_empty_config_omitted(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json", config_path="")
+        assert not any(a.startswith("--config=") for a in args)
+
+    def test_cli_args_config_before_json(self, executor):
+        args = executor._build_cli_args(json_path="/tmp/r.json",
+                                        config_path="/cs/config.js")
+        config_idx = next(i for i, a in enumerate(args) if a.startswith("--config="))
+        json_idx = next(i for i, a in enumerate(args) if a.startswith("--json="))
+        assert config_idx < json_idx
 
 
 class TestBuildDirectCommand:
@@ -324,42 +410,231 @@ class TestExecute:
 
 
 class TestRunScan:
+    """Tests for the temp-file-based scan runner.
+
+    The executor materialises a temp dir and points CloudSploit at real
+    files via ``--json`` and ``--collection``. Subprocess execution is
+    mocked, so we write the expected output files ourselves from a side
+    effect to simulate CloudSploit writing them.
+    """
+
+    @staticmethod
+    def _make_proc(
+        results_payload: bytes = b'{"pluginA": {"results": []}}',
+        collection_payload: bytes = b'{"aws": {}}',
+        stderr: bytes = b'',
+    ) -> tuple[MagicMock, list[list[str]], Any]:
+        """Build a mock subprocess that writes the expected output files.
+
+        Returns:
+            Tuple of (mock_proc, captured_calls, side_effect_fn).
+            ``captured_calls`` accumulates the raw arg lists from every
+            invocation of the side-effect so tests can assert on the exact
+            command that was built.
+        """
+        captured_calls: list[list[str]] = []
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+
+        async def _communicate():
+            return (b'', stderr)
+
+        mock_proc.communicate = _communicate
+
+        def _materialise(*args, **kwargs):
+            captured_calls.append(list(args))
+            # Build a full container_dir -> host_dir mapping from ALL -v
+            # tokens so that tests work correctly when more than one volume
+            # mount is present (e.g. output mount + config mount).
+            mounts: dict[str, str] = {}
+            for i, token in enumerate(args):
+                if token == "-v" and i + 1 < len(args) and ":" in args[i + 1]:
+                    parts = args[i + 1].split(":")
+                    if len(parts) >= 2:
+                        # parts[0] = host path, parts[1] = container path
+                        mounts[parts[1]] = parts[0]
+
+            def _to_host(path: str) -> str:
+                """Translate a container-side path to its host equivalent."""
+                for container, host in mounts.items():
+                    if path.startswith(container):
+                        return host + path[len(container):]
+                return path
+
+            for token in args:
+                if token.startswith("--json="):
+                    with open(_to_host(token.split("=", 1)[1]), "wb") as fh:
+                        fh.write(results_payload)
+                elif token.startswith("--collection="):
+                    with open(_to_host(token.split("=", 1)[1]), "wb") as fh:
+                        fh.write(collection_payload)
+            return mock_proc
+
+        return mock_proc, captured_calls, _materialise
+
     @pytest.mark.asyncio
     async def test_run_scan_default(self, executor):
-        mock_proc = MagicMock()
-        mock_proc.communicate = AsyncMock(
-            return_value=(b'{"pluginA": {"results": []}}', b'')
-        )
-        mock_proc.returncode = 0
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
-            stdout, stderr, code = await executor.run_scan()
-            assert code == 0
-            # Verify the CLI args include --json and --console none
-            call_args = mock_exec.call_args[0]
-            call_str = " ".join(call_args)
-            assert "--json" in call_str
-            assert "--console" in call_str
+        executor.config.use_docker = False  # write directly to temp dir
+        executor.config.cli_path = "/usr/local/bin/cloudsploit"
+        mock_proc, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            results, collection, _, stderr, code = await executor.run_scan()
+        assert code == 0
+        assert '"pluginA"' in results
+        assert '"aws"' in collection
+        call_str = " ".join(captured[0])
+        assert "--json=" in call_str
+        assert "--collection=" in call_str
+        assert "--console=none" in call_str
 
     @pytest.mark.asyncio
     async def test_run_scan_with_plugins(self, executor):
-        mock_proc = MagicMock()
-        mock_proc.communicate = AsyncMock(return_value=(b'{}', b''))
-        mock_proc.returncode = 0
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+        executor.config.use_docker = False
+        executor.config.cli_path = "/usr/local/bin/cloudsploit"
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
             await executor.run_scan(plugins=["ec2-open-ssh"])
-            call_args = mock_exec.call_args[0]
-            call_str = " ".join(call_args)
-            assert "--plugin" in call_str
-            assert "ec2-open-ssh" in call_str
+        call_str = " ".join(captured[0])
+        assert "--plugin" in call_str
+        assert "ec2-open-ssh" in call_str
+
+    @pytest.mark.asyncio
+    async def test_run_scan_without_collection(self, executor):
+        executor.config.use_docker = False
+        executor.config.cli_path = "/usr/local/bin/cloudsploit"
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            _, collection, _, _, _ = await executor.run_scan(
+                capture_collection=False,
+            )
+        assert collection == ""
+        assert not any("--collection" in a for a in captured[0])
 
     @pytest.mark.asyncio
     async def test_run_compliance_scan(self, executor):
-        mock_proc = MagicMock()
-        mock_proc.communicate = AsyncMock(return_value=(b'{}', b''))
-        mock_proc.returncode = 0
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+        executor.config.use_docker = False
+        executor.config.cli_path = "/usr/local/bin/cloudsploit"
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
             await executor.run_compliance_scan(ComplianceFramework.HIPAA)
-            call_args = mock_exec.call_args[0]
-            call_str = " ".join(call_args)
-            assert "--compliance=hipaa" in call_str
-            assert "--ignore-ok" in call_str
+        call_str = " ".join(captured[0])
+        assert "--compliance=hipaa" in call_str
+        assert "--ignore-ok" in call_str
+
+    @pytest.mark.asyncio
+    async def test_run_scan_docker_mounts_output_volume(self, executor):
+        executor.config.use_docker = True
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            await executor.run_scan()
+        cmd = captured[0]
+        # docker run ... -v <host>:/cloudsploit/output
+        assert cmd[0] == "docker"
+        assert "-v" in cmd
+        v_idx = cmd.index("-v")
+        host_dir, container_dir = cmd[v_idx + 1].split(":", 1)
+        assert container_dir == "/cloudsploit/output"
+        # Host dir is a real tempdir created and removed by the executor
+        # (no longer exists after the context manager exits).
+        joined = " ".join(cmd)
+        assert "--json=/cloudsploit/output/results.json" in joined
+        assert "--collection=/cloudsploit/output/collection.json" in joined
+
+    @pytest.mark.asyncio
+    async def test_run_scan_missing_config_file_raises(self, tmp_path):
+        """run_scan with a non-existent config file raises FileNotFoundError."""
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=False,
+                                                   cli_path="/usr/bin/cloudsploit"))
+        with pytest.raises(FileNotFoundError, match="cloudsploit-missing.js"):
+            await e.run_scan(config=str(tmp_path / "cloudsploit-missing.js"))
+
+    @pytest.mark.asyncio
+    async def test_run_scan_direct_cli_config_passthrough(self, tmp_path):
+        """Under direct-CLI mode, the host config path is used verbatim."""
+        cfg_file = tmp_path / "config.js"
+        cfg_file.write_text("module.exports = {};\n")
+        e = CloudSploitExecutor(CloudSploitConfig(
+            use_docker=False,
+            cli_path="/usr/local/bin/cloudsploit",
+        ))
+        _, captured, side_effect = self._make_proc()
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            await e.run_scan(config=str(cfg_file))
+        call_str = " ".join(captured[0])
+        assert f"--config={cfg_file}" in call_str
+
+    @pytest.mark.asyncio
+    async def test_run_scan_docker_config_path_rewrite(self, tmp_path):
+        """Under Docker mode, config path is rewritten to container path and
+        the config dir is bind-mounted read-only.
+
+        Also verifies the full round-trip: the mock writes results.json to the
+        correct host-side path even when two -v mounts are present (output +
+        config dir), confirming that _materialise resolves all mounts.
+        """
+        cfg_file = tmp_path / "config.js"
+        cfg_file.write_text("module.exports = {};\n")
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=True))
+        _, captured, side_effect = self._make_proc(
+            results_payload=b'{"pluginX": {"results": []}}',
+        )
+        with patch("asyncio.create_subprocess_exec", side_effect=side_effect):
+            results_json, _coll, _out, _err, code = await e.run_scan(
+                config=str(cfg_file)
+            )
+        cmd = captured[0]
+        call_str = " ".join(cmd)
+        # The in-container config path
+        assert "--config=/cloudsploit/config/config.js" in call_str
+        # The read-only bind-mount for the config dir
+        assert "/cloudsploit/config:ro" in call_str
+        # Full round-trip: results.json was correctly written and read back
+        assert code == 0
+        assert "pluginX" in results_json
+
+    @pytest.mark.asyncio
+    async def test_run_compliance_scan_config_raises_when_missing(self, tmp_path):
+        """run_compliance_scan also raises FileNotFoundError for missing config."""
+        e = CloudSploitExecutor(CloudSploitConfig(use_docker=False,
+                                                   cli_path="/usr/bin/cloudsploit"))
+        with pytest.raises(FileNotFoundError):
+            await e.run_compliance_scan(
+                ComplianceFramework.HIPAA,
+                config=str(tmp_path / "missing.js"),
+            )
+
+    @pytest.mark.asyncio
+    async def test_run_scan_docker_config_in_tempdir_raises(self, tmp_path):
+        """Config file inside the executor temp directory raises ValueError.
+
+        The executor creates its own tempdir for output files; if the config
+        file's parent resolves to the same path, the mounts would overlap.
+        This test exercises the collision guard.
+
+        Because the executor creates a NEW tempdir internally (not tmp_path),
+        we cannot easily pass a config file that lives inside it without
+        monkey-patching tempfile.  Instead we verify the guard fires by
+        patching tempfile.TemporaryDirectory to return a known path and
+        creating the config file inside that same path.
+        """
+        import tempfile
+        from unittest.mock import patch as mock_patch
+
+        # Stand up a real temp dir we control.
+        with tempfile.TemporaryDirectory() as controlled_dir:
+            cfg_file = (
+                __import__("pathlib").Path(controlled_dir) / "config.js"
+            )
+            cfg_file.write_text("module.exports = {};\n")
+
+            class _FakeTmpDir:
+                def __enter__(self):
+                    return controlled_dir
+                def __exit__(self, *a):
+                    pass
+
+            e = CloudSploitExecutor(CloudSploitConfig(use_docker=True))
+            with mock_patch("tempfile.TemporaryDirectory",
+                            return_value=_FakeTmpDir()):
+                with pytest.raises(ValueError, match="temp directory"):
+                    await e.run_scan(config=str(cfg_file))

@@ -36,6 +36,7 @@ from .resolver import (
     PBACPermissionResolver,
 )
 from .pbac import setup_pbac
+from .dataset_guard import DatasetPolicyGuard
 from .models import PolicyRuleConfig
 from .exceptions import AuthorizationRequired
 from .agent_guard import AgentAccessDenied
@@ -59,6 +60,8 @@ __all__ = [
     "PBACPermissionResolver",
     # PBAC setup
     "setup_pbac",
+    # Dataset policy guard
+    "DatasetPolicyGuard",
     # Policy models
     "PolicyRuleConfig",
     # Exceptions

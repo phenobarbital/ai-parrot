@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InspectorReadOps",
+      "Effect": "Allow",
+      "Action": [
+        "inspector2:ListFindings",
+        "inspector2:ListFindingAggregations",
+        "inspector2:ListCoverage",
+        "inspector2:ListCoverageStatistics",
+        "inspector2:BatchGetAccountStatus",
+        "inspector2:BatchGetFindingDetails"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "InspectorExports",
+      "Effect": "Allow",
+      "Action": [
+        "inspector2:CreateFindingsReport",
+        "inspector2:GetFindingsReportStatus",
+        "inspector2:CreateSbomExport",
+        "inspector2:GetSbomExport"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

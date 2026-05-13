@@ -6,7 +6,7 @@ import os
 # Ensure we can import parrot
 sys.path.append(os.getcwd())
 
-from parrot.bots.orchestration.agent import OrchestratorAgent
+from parrot.bots.flows.agents import OrchestratorAgent
 from parrot.bots.agent import BasicAgent
 
 # Configure logging

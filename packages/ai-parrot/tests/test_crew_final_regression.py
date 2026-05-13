@@ -1,8 +1,8 @@
-"""Final regression tests for FEAT-137 AgentCrew Primitives Migration.
+"""Final regression tests for FEAT-155 AgentCrew migration to flows.
 
-Tests verify backward-compatible imports, CrewResult structure,
+Tests verify canonical imports from parrot.bots.flows, CrewResult structure,
 absence of circular imports, and that dead local definitions have
-been removed from crew.py.
+been removed from flows/crew/crew.py.
 """
 from __future__ import annotations
 
@@ -14,41 +14,37 @@ from _crew_test_helpers import DummyAgent  # shared test infrastructure
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible import tests
+# Canonical import tests (flows paths — FEAT-155)
 # ---------------------------------------------------------------------------
 
 
 class TestBackwardCompatImports:
-    """Verify that public imports from crew.py still work."""
+    """Verify that public imports from flows.crew work."""
 
-    def test_import_agentnode_from_crew(self) -> None:
-        from parrot.bots.orchestration.crew import AgentNode
-        assert AgentNode is not None
+    def test_import_crewagentnode_from_flows_crew(self) -> None:
+        from parrot.bots.flows.crew import CrewAgentNode
+        assert CrewAgentNode is not None
 
-    def test_import_flowcontext_from_crew(self) -> None:
-        from parrot.bots.orchestration.crew import FlowContext
+    def test_import_flowcontext_from_flows_core(self) -> None:
+        from parrot.bots.flows.core import FlowContext
         assert FlowContext is not None
 
     def test_import_crewresult_from_models(self) -> None:
         from parrot.models.crew import CrewResult
         assert CrewResult is not None
 
-    def test_agentnode_is_crewagentnode(self) -> None:
-        from parrot.bots.orchestration.crew import AgentNode, _CrewAgentNode
-        assert AgentNode is _CrewAgentNode
-
     def test_flowcontext_is_core_flowcontext(self) -> None:
-        """FlowContext re-exported from crew.py is the core one."""
-        from parrot.bots.orchestration.crew import FlowContext
+        """FlowContext from flows.core is the canonical one."""
+        from parrot.bots.flows.core import FlowContext
         from parrot.bots.flows.core.context import FlowContext as CoreFlowContext
         assert FlowContext is CoreFlowContext
 
-    def test_import_agentref_from_crew(self) -> None:
-        from parrot.bots.orchestration.crew import AgentRef
+    def test_import_agentref_from_flows_core(self) -> None:
+        from parrot.bots.flows.core import AgentRef
         assert AgentRef is not None
 
     def test_import_agentcrew(self) -> None:
-        from parrot.bots.orchestration.crew import AgentCrew
+        from parrot.bots.flows.crew import AgentCrew
         assert AgentCrew is not None
 
 
@@ -58,12 +54,7 @@ class TestBackwardCompatImports:
 
 
 class TestFlowsCrewImports:
-    """Verify AgentCrew is importable from the new parrot.bots.flows path.
-
-    FEAT-143 moves the canonical location of AgentCrew to
-    ``parrot.bots.flows.crew``.  The old ``orchestration.crew`` path stays
-    intact as a re-export so existing callers are not broken.
-    """
+    """Verify AgentCrew is importable from the parrot.bots.flows path."""
 
     def test_agentcrew_importable_from_flows_crew(self) -> None:
         from parrot.bots.flows.crew import AgentCrew
@@ -76,12 +67,6 @@ class TestFlowsCrewImports:
     def test_crewagentnode_importable_from_flows(self) -> None:
         from parrot.bots.flows import CrewAgentNode
         assert CrewAgentNode is not None
-
-    def test_flows_agentcrew_is_same_class_as_orchestration(self) -> None:
-        """Both import paths must resolve to the same class object."""
-        from parrot.bots.flows.crew import AgentCrew as FlowsAgentCrew
-        from parrot.bots.orchestration.crew import AgentCrew as OrchAgentCrew
-        assert FlowsAgentCrew is OrchAgentCrew
 
     def test_orchestrator_agent_importable_from_flows(self) -> None:
         from parrot.bots.flows import OrchestratorAgent
@@ -101,8 +86,8 @@ class TestDeadCodeRemoved:
     """Verify that local definitions replaced by core primitives are gone."""
 
     def test_no_local_flowcontext_class(self) -> None:
-        """crew.py should not define its own FlowContext class."""
-        from parrot.bots.orchestration import crew
+        """flows/crew/crew.py should not define its own FlowContext class."""
+        import parrot.bots.flows.crew.crew as crew
         source = inspect.getsource(crew)
         # The source should not contain 'class FlowContext:' (local def)
         # It SHOULD have 'FlowContext' as an import though
@@ -140,16 +125,16 @@ class TestNoCircularImports:
 
 
 class TestModuleExports:
-    """Verify crew.py has __all__ listing public re-exports."""
+    """Verify flows/crew/__init__.py has __all__ listing public exports."""
 
     def test_crew_has_dunder_all(self) -> None:
-        from parrot.bots.orchestration import crew
-        assert hasattr(crew, "__all__"), "crew.py should define __all__"
+        import parrot.bots.flows.crew as crew_pkg
+        assert hasattr(crew_pkg, "__all__"), "flows/crew/__init__.py should define __all__"
 
     def test_dunder_all_contains_public_names(self) -> None:
-        from parrot.bots.orchestration import crew
-        expected = {"AgentCrew", "AgentNode", "FlowContext", "AgentRef"}
-        assert expected.issubset(set(crew.__all__))
+        import parrot.bots.flows.crew as crew_pkg
+        expected = {"AgentCrew", "CrewAgentNode"}
+        assert expected.issubset(set(crew_pkg.__all__))
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +146,7 @@ class TestCrewResultStructure:
     """Verify CrewResult fields and method outputs are intact."""
 
     async def test_result_has_expected_fields(self) -> None:
-        from parrot.bots.orchestration.crew import AgentCrew
+        from parrot.bots.flows.crew import AgentCrew
 
         a = DummyAgent("a")
         crew = AgentCrew(
@@ -179,7 +164,7 @@ class TestCrewResultStructure:
         assert hasattr(result, "execution_log")
 
     async def test_result_to_dict(self) -> None:
-        from parrot.bots.orchestration.crew import AgentCrew
+        from parrot.bots.flows.crew import AgentCrew
 
         a = DummyAgent("a")
         crew = AgentCrew(

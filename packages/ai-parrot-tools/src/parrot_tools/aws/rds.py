@@ -163,6 +163,43 @@ class DownloadLogInput(BaseModel):
     )
 
 
+class DownloadLogFilteredInput(BaseModel):
+    """Input for downloading and filtering RDS log file content by severity."""
+
+    instance_identifier: str = Field(
+        ...,
+        description="RDS instance identifier",
+    )
+    log_file_name: str = Field(
+        ...,
+        description="Log file name from list_log_files (e.g. 'error/postgresql.log.2026-02-16-18')",
+    )
+    severity_filter: Optional[str] = Field(
+        None,
+        description=(
+            "Raw case-insensitive regex applied per line on LogFileData "
+            "(e.g. r'ERROR|FATAL'). If set, overrides severity_levels."
+        ),
+    )
+    severity_levels: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Convenience list of severity tokens (e.g. ['ERROR','WARNING','FATAL']). "
+            "Converted to a case-insensitive word-bounded regex when severity_filter is not provided."
+        ),
+    )
+    marker: Optional[str] = Field(
+        None,
+        description="Pagination marker for large log files",
+    )
+    number_of_lines: int = Field(
+        500,
+        ge=1,
+        le=10000,
+        description="Maximum number of lines to download before filtering",
+    )
+
+
 class DescribeEventsInput(BaseModel):
     """Input for listing RDS operational events."""
 
@@ -238,7 +275,9 @@ class RDSToolkit(AbstractToolkit):
     - aws_rds_create_snapshot: Create a manual DB snapshot
     - aws_rds_list_log_files: List available DB log files
     - aws_rds_download_log: Download DB log file content
+    - aws_rds_download_log_filtered: Download log content filtered by severity (ERROR/WARN/...)
     - aws_rds_describe_events: List RDS operational events/alerts
+    - aws_rds_get_logs: Alias for aws_rds_describe_events
     - aws_rds_get_performance_insights: Fetch PI metrics (blocking queries, waits)
     """
 
@@ -569,6 +608,61 @@ class RDSToolkit(AbstractToolkit):
             ) from e
 
     # ------------------------------------------------------------------
+    # Download Log (severity-filtered)
+    # ------------------------------------------------------------------
+
+    @tool_schema(DownloadLogFilteredInput)
+    async def aws_rds_download_log_filtered(
+        self,
+        instance_identifier: str,
+        log_file_name: str,
+        severity_filter: Optional[str] = None,
+        severity_levels: Optional[List[str]] = None,
+        marker: Optional[str] = None,
+        number_of_lines: int = 500,
+    ) -> Dict[str, Any]:
+        """Download a portion of an RDS log file and keep only lines matching a severity pattern.
+
+        Useful for fishing out ERROR/WARNING/FATAL lines without parsing the
+        full log client-side. If neither ``severity_filter`` nor
+        ``severity_levels`` is provided, defaults to common error severities
+        across PostgreSQL/MySQL/SQL Server engines.
+        """
+        if severity_filter:
+            pattern = severity_filter
+        elif severity_levels:
+            joined = "|".join(re.escape(s) for s in severity_levels)
+            pattern = rf"\b({joined})\b"
+        else:
+            pattern = r"\b(ERROR|FATAL|PANIC|WARNING|WARN|SEVERE)\b"
+
+        try:
+            compiled = re.compile(pattern, re.IGNORECASE)
+        except re.error as e:
+            raise ValueError(f"Invalid severity regex {pattern!r}: {e}") from e
+
+        raw = await self.aws_rds_download_log(
+            instance_identifier=instance_identifier,
+            log_file_name=log_file_name,
+            marker=marker,
+            number_of_lines=number_of_lines,
+        )
+
+        log_data = raw.get("log_data", "") or ""
+        all_lines = log_data.splitlines()
+        matched = [line for line in all_lines if compiled.search(line)]
+
+        return {
+            "log_data": "\n".join(matched),
+            "matched_lines": matched,
+            "matched_count": len(matched),
+            "total_lines": len(all_lines),
+            "pattern": pattern,
+            "marker": raw.get("marker"),
+            "additional_data_pending": raw.get("additional_data_pending", False),
+        }
+
+    # ------------------------------------------------------------------
     # Describe Events
     # ------------------------------------------------------------------
 
@@ -617,6 +711,24 @@ class RDSToolkit(AbstractToolkit):
             raise RuntimeError(
                 f"AWS RDS error ({error_code}): {e}"
             ) from e
+
+    @tool_schema(DescribeEventsInput)
+    async def aws_rds_get_logs(
+        self,
+        source_identifier: Optional[str] = None,
+        source_type: str = "db-instance",
+        duration_minutes: int = 1440,
+        event_categories: Optional[List[str]] = None,
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        """Alias for aws_rds_describe_events — list RDS operational events/alerts."""
+        return await self.aws_rds_describe_events(
+            source_identifier=source_identifier,
+            source_type=source_type,
+            duration_minutes=duration_minutes,
+            event_categories=event_categories,
+            limit=limit,
+        )
 
     # ------------------------------------------------------------------
     # Performance Insights

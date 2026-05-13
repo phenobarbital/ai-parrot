@@ -1,0 +1,63 @@
+{
+  "feat_id": "FEAT-165",
+  "slug": "cloudsploit-ecr",
+  "title": "Instrumentalize ECR image scan collection + HTML report in CloudSploitToolkit",
+  "type": "feature",
+  "base_branch": "dev",
+  "mode": "enrichment",
+  "started_at": "2026-05-12T16:56:09Z",
+  "updated_at": "2026-05-12T16:56:09Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "path": "sdd/state/FEAT-165/source.md",
+    "summary_oneline": "Instrumentalize two Node.js scripts (ECR scan collection + HTML report) inside the existing CloudSploit toolkit"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 11,
+    "grep_calls": 6,
+    "git_calls": 1,
+    "depth_reached": 1,
+    "wall_seconds": 90,
+    "queries_executed": 17,
+    "queries_skipped": 0,
+    "truncated": false,
+    "truncation_reason": null
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": {
+      "status": "complete",
+      "findings": [
+        "F001-cloudsploit-toolkit-shape",
+        "F002-models-mismatch",
+        "F003-existing-ecr-toolkit",
+        "F004-reports-jinja-pattern",
+        "F005-persistence-mixin",
+        "F006-recent-activity",
+        "F007-no-multi-repo-iteration"
+      ]
+    },
+    "synthesis": { "status": "complete" },
+    "qa": { "status": "complete", "questions_total": 4, "questions_answered": 4 },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/cloudsploit-ecr.proposal.md"
+    }
+  },
+  "phase": "proposal_drafted",
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Commit proposal + state"
+  },
+  "errors": []
+}

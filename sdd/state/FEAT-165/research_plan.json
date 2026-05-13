@@ -1,0 +1,131 @@
+{
+  "feat_id": "FEAT-165",
+  "mode": "enrichment",
+  "rationale": "User has working JS scripts and asks if their behavior can be folded into the existing CloudSploitToolkit. We must map: (1) the toolkit's surface and patterns to know where to graft ECR functionality, (2) existing AWS wrappers / auth patterns to avoid duplication, (3) ECR-related code already in the repo, (4) HTML report generation patterns + templates, (5) how persistence + comparator work since ECR findings deserve similar treatment.",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "tree",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit", "max_depth": 2 },
+      "intent": "Inventory the CloudSploit package layout",
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/executor.py" },
+      "intent": "See how scans are executed (subprocess, env, auth)",
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/models.py" },
+      "intent": "Understand existing Pydantic models — schema we should align ECR findings with",
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/reports.py" },
+      "intent": "See how HTML reports are generated (template engine, structure)",
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/parser.py" },
+      "intent": "Understand the parse/save/load lifecycle for scan results",
+      "priority": 2
+    },
+    {
+      "id": "Q006",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/comparator.py" },
+      "intent": "Understand scan-to-scan comparator pattern",
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "tree",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/templates", "max_depth": 1 },
+      "intent": "List HTML templates",
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "type": "grep",
+      "params": { "pattern": "ecr|ECR", "path": "packages/ai-parrot-tools" },
+      "intent": "Detect any existing ECR-related code in the toolkit",
+      "priority": 1
+    },
+    {
+      "id": "Q009",
+      "type": "tree",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/aws", "max_depth": 2 },
+      "intent": "Inventory existing AWS tools / wrappers",
+      "priority": 1
+    },
+    {
+      "id": "Q010",
+      "type": "grep",
+      "params": { "pattern": "boto3|aioboto3|aiobotocore", "path": "packages/ai-parrot-tools" },
+      "intent": "Determine which AWS SDK is canonical here (sync vs async)",
+      "priority": 1
+    },
+    {
+      "id": "Q011",
+      "type": "grep",
+      "params": { "pattern": "describe_image_scan_findings|describeImageScanFindings", "path": "packages" },
+      "intent": "Check if anyone is already calling the ECR scan API",
+      "priority": 2
+    },
+    {
+      "id": "Q012",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/security/parsers/cloudsploit.py" },
+      "intent": "Understand alternate cloudsploit parser (security/parsers)",
+      "priority": 3
+    },
+    {
+      "id": "Q013",
+      "type": "grep",
+      "params": { "pattern": "ReportPersistenceMixin|pop_persistence_kwargs|_persist_report", "path": "packages/ai-parrot-tools" },
+      "intent": "Understand the persistence mixin so an ECR report can opt-in",
+      "priority": 2
+    },
+    {
+      "id": "Q014",
+      "type": "read",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/toolkit.py" },
+      "intent": "AbstractToolkit interface — how new public async methods become tools",
+      "priority": 2
+    },
+    {
+      "id": "Q015",
+      "type": "tree",
+      "params": { "path": "packages/ai-parrot-tools/tests/cloudsploit", "max_depth": 1 },
+      "intent": "Identify test patterns to mirror for ECR features",
+      "priority": 3
+    },
+    {
+      "id": "Q016",
+      "type": "git_log",
+      "params": { "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit/", "since_days": 120 },
+      "intent": "Recent activity / ownership of the toolkit",
+      "priority": 3
+    },
+    {
+      "id": "Q017",
+      "type": "grep",
+      "params": { "pattern": "jinja2|Template|render_template", "path": "packages/ai-parrot-tools/src/parrot_tools/cloudsploit" },
+      "intent": "Confirm templating engine used by report generator",
+      "priority": 3
+    }
+  ],
+  "stop_conditions": [
+    "All queries executed",
+    "Budget exhausted",
+    "Wall clock exceeds 300s"
+  ]
+}

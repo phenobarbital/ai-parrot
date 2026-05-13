@@ -11,10 +11,12 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from ..toolkit import AbstractToolkit
+from .persistence import ReportPersistenceMixin, pop_persistence_kwargs
+from parrot.storage.security_reports import EmbeddedFinding as CatalogEmbeddedFinding, SeverityBreakdown as CatalogSeverityBreakdown
 from .checkov.config import CheckovConfig
 from .checkov.executor import CheckovExecutor
 from .checkov.parser import CheckovParser
@@ -51,7 +53,7 @@ SEVERITY_PRIORITY = {
 }
 
 
-class ComplianceReportToolkit(AbstractToolkit):
+class ComplianceReportToolkit(ReportPersistenceMixin, AbstractToolkit):
     """Multi-scanner compliance reporting toolkit.
 
     Orchestrates Prowler, Trivy, and Checkov to produce unified compliance
@@ -93,6 +95,8 @@ class ComplianceReportToolkit(AbstractToolkit):
             report_output_dir: Directory for generated reports.
             **kwargs: Additional arguments passed to AbstractToolkit.
         """
+        # Pop persistence kwargs BEFORE super().__init__ to avoid unknown-kwarg errors
+        self.file_manager, self.report_store = pop_persistence_kwargs(kwargs)
         super().__init__(**kwargs)
         self.logger = logging.getLogger(__name__)
 
@@ -228,7 +232,7 @@ class ComplianceReportToolkit(AbstractToolkit):
             findings_by_severity=dict(severity_counts),
             findings_by_service=dict(service_counts),
             compliance_coverage=compliance_coverage,
-            generated_at=datetime.now(),
+            generated_at=datetime.now(timezone.utc),
         )
 
     def _get_all_findings(
@@ -327,7 +331,81 @@ class ComplianceReportToolkit(AbstractToolkit):
         self._last_consolidated = consolidated
         self._report_history.append(consolidated)
 
+        # Side-effect: persist to catalog when deps are wired (no-op otherwise).
+        # Pass severity_summary and top_findings explicitly so the aggregator
+        # parser is NOT invoked on ConsolidatedReport JSON (which lacks the
+        # WeeklySummary/MonthlySummary shape the aggregator expects).
+        fbs = consolidated.findings_by_severity
+        catalog_severity = CatalogSeverityBreakdown(
+            critical=fbs.get("CRITICAL", 0),
+            high=fbs.get("HIGH", 0),
+            medium=fbs.get("MEDIUM", 0),
+            low=fbs.get("LOW", 0),
+            informational=fbs.get("INFO", 0) + fbs.get("INFORMATIONAL", 0),
+        )
+        catalog_findings: list[CatalogEmbeddedFinding] = []
+        for scanner_name, scan_result in consolidated.scan_results.items():
+            for finding in scan_result.findings:
+                catalog_findings.append(
+                    CatalogEmbeddedFinding(
+                        finding_id=finding.id,
+                        severity=finding.severity.value
+                        if finding.severity.value in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFORMATIONAL")
+                        else "INFORMATIONAL",
+                        title=finding.title,
+                        resource_id=finding.resource,
+                        rule_id=finding.check_id,
+                        remediation_hint=finding.remediation,
+                    )
+                )
+                if len(catalog_findings) >= 10:
+                    break
+            if len(catalog_findings) >= 10:
+                break
+
+        await self._persist_report(
+            scanner="aggregator",
+            framework=framework,
+            provider=provider,
+            scope={"provider": provider, "regions": regions or []},
+            content=consolidated.model_dump_json().encode("utf-8"),
+            severity_summary=catalog_severity,
+            top_findings=catalog_findings,
+        )
+
         return consolidated
+
+    async def _render_compliance_report(
+        self,
+        framework: ComplianceFramework,
+        provider: str,
+        output_path: Optional[str],
+        include_evidence: bool,
+    ) -> str:
+        """Render a compliance HTML report and mirror to S3 best-effort.
+
+        Triggers a full scan when no consolidated result is cached, hands
+        off to ``report_generator.generate_compliance_report``, then mirrors
+        the rendered HTML to the S3 catalog prefix when ``file_manager``
+        is configured (see ``ReportPersistenceMixin._mirror_rendered_report``).
+        """
+        if not self._last_consolidated:
+            await self.compliance_full_scan(provider=provider)
+
+        local_path = await self.report_generator.generate_compliance_report(
+            self._last_consolidated,
+            framework,
+            output_path=output_path,
+            include_evidence=include_evidence,
+        )
+        await self._mirror_rendered_report(
+            local_path=local_path,
+            scanner="compliance",
+            framework=framework.value,
+            timestamp=self._last_consolidated.generated_at,
+            extension="html",
+        )
+        return local_path
 
     async def compliance_soc2_report(
         self,
@@ -351,14 +429,11 @@ class ComplianceReportToolkit(AbstractToolkit):
         Example:
             path = await toolkit.compliance_soc2_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.SOC2,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_hipaa_report(
@@ -383,14 +458,11 @@ class ComplianceReportToolkit(AbstractToolkit):
         Example:
             path = await toolkit.compliance_hipaa_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.HIPAA,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_pci_report(
@@ -415,14 +487,11 @@ class ComplianceReportToolkit(AbstractToolkit):
         Example:
             path = await toolkit.compliance_pci_report(provider="aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             ComplianceFramework.PCI_DSS,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_custom_report(
@@ -449,9 +518,6 @@ class ComplianceReportToolkit(AbstractToolkit):
         Example:
             path = await toolkit.compliance_custom_report(framework="cis_aws")
         """
-        if not self._last_consolidated:
-            await self.compliance_full_scan(provider=provider)
-
         # Parse framework string to enum
         try:
             compliance_framework = ComplianceFramework(framework.lower())
@@ -461,11 +527,11 @@ class ComplianceReportToolkit(AbstractToolkit):
             )
             compliance_framework = ComplianceFramework.SOC2
 
-        return await self.report_generator.generate_compliance_report(
-            self._last_consolidated,
+        return await self._render_compliance_report(
             compliance_framework,
-            output_path=output_path,
-            include_evidence=include_evidence,
+            provider,
+            output_path,
+            include_evidence,
         )
 
     async def compliance_executive_summary(
@@ -696,7 +762,7 @@ class ComplianceReportToolkit(AbstractToolkit):
         """
         if len(self._report_history) < 2:
             self.logger.warning("Not enough reports for comparison")
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             return ComparisonDelta(
                 new_findings=[],
                 resolved_findings=[],
@@ -710,7 +776,7 @@ class ComplianceReportToolkit(AbstractToolkit):
             current = self._report_history[current_index]
         except IndexError:
             self.logger.warning("Invalid report indices")
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
             return ComparisonDelta(
                 new_findings=[],
                 resolved_findings=[],
@@ -803,9 +869,7 @@ class ComplianceReportToolkit(AbstractToolkit):
                 for f in all_findings
             ]
 
-            Path(output_path).write_text(
-                json.dumps(findings_data, indent=2, default=str),
-                encoding="utf-8",
-            )
+            content_str = json.dumps(findings_data, indent=2, default=str)
+            await asyncio.to_thread(Path(output_path).write_text, content_str, encoding="utf-8")
             self.logger.info("Exported %d findings to JSON: %s", len(all_findings), output_path)
             return output_path

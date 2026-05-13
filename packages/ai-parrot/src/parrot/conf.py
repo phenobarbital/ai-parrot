@@ -455,6 +455,19 @@ AWS_CREDENTIALS = {
         "aws_secret": BACKEND_AWS_SECRET_KEY,
         "region_name": BACKEND_AWS_REGION,
     },
+    "security": {
+        "use_credentials": True,
+        "aws_key": config.get("AWS_ACCESS_SECURITY_KEY_ID"),
+        "aws_secret": config.get("AWS_SECRET_SECURITY_KEY"),
+        "region_name": config.get("AWS_ACCESS_SECURITY_REGION", fallback="us-east-2"),
+    },
+    "security_bucket": {
+        "use_credentials": True,
+        "aws_key": config.get("AWS_ACCESS_SECURITY_KEY_ID"),
+        "aws_secret": config.get("AWS_SECRET_SECURITY_KEY"),
+        "region_name": config.get("AWS_SECURITY_REGION", fallback="us-east-2"),
+        "bucket_name": config.get("AWS_SECURITY_BUCKET_NAME"),
+    },
 }
 
 """

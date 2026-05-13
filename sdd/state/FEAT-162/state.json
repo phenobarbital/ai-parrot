@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-162",
+  "feature_slug": "security-report-catalog",
+  "started_at": "2026-05-12T00:13:00Z",
+  "updated_at": "2026-05-12T00:42:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": "sdd/proposals/security-report-catalog-brainstorm.md",
+    "raw_path": "sdd/state/FEAT-162/source.md",
+    "fetched_at": "2026-05-12T00:13:00Z",
+    "summary_oneline": "Cross-session security report catalog (Postgres metadata + S3 content) populated by producer toolkits and consumed via a new SecurityReportToolkit, with weekly/monthly fractal summaries."
+  },
+  "mode": "enrichment",
+  "detected_mode": "enrichment",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-05-12T00:13:00Z",
+      "completed_at": "2026-05-12T00:13:00Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-05-12T00:14:00Z",
+      "completed_at": "2026-05-12T00:16:00Z",
+      "queries_total": 23,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-162/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-05-12T00:16:00Z",
+      "completed_at": "2026-05-12T00:31:00Z",
+      "queries_executed": 23,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 11,
+      "grep_calls": 17,
+      "git_calls": 5,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-05-12T00:31:00Z",
+      "completed_at": "2026-05-12T00:35:00Z",
+      "synthesis_path": "sdd/state/FEAT-162/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 20,
+      "claims_high_conf": 19,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 0,
+      "unknowns_count": 4,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-05-12T00:38:00Z",
+      "completed_at": "2026-05-12T00:40:00Z",
+      "questions_total": 4,
+      "questions_answered": 4,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "running",
+      "started_at": "2026-05-12T00:40:00Z",
+      "proposal_path": "sdd/proposals/security-report-catalog.proposal.md",
+      "commit_sha": null,
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization is high-confidence, brainstorm architecture survived research, U1-U4 resolved, OQ #1+#2 resolved by codebase. Spec can produce ordered tasks immediately."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 11,
+    "grep_calls": 17,
+    "git_calls": 5,
+    "wall_seconds": 180
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Stage sdd/proposals/security-report-catalog.proposal.md and sdd/state/FEAT-162/ (only); commit; print recommendation."
+  }
+}

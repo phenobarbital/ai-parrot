@@ -27,6 +27,30 @@ from typing import (
 ActionCallback = Callable[..., Union[None, Awaitable[None]]]
 """Callback type for pre/post node action hooks."""
 
+CrewHookCallback = Callable[[str, Any], Union[None, Awaitable[None]]]
+"""Callback type for crew-level lifecycle hooks (on_complete, on_error).
+
+Signature: ``(crew_name: str, result: CrewResult) -> None``
+
+The second parameter is typed as ``Any`` to avoid circular imports with
+``parrot.models.crew.CrewResult``.  Hooks fire after all ``run_*()``
+methods complete — both sync and async callables are supported.
+
+Args:
+    crew_name: The name of the ``AgentCrew`` instance.
+    result: The ``CrewResult`` produced by the run (typed as ``Any``
+        here to avoid import cycles; the actual type is ``CrewResult``).
+
+Note:
+    Hooks fire in registration order.  If a hook raises, the exception
+    is caught and logged — it does **not** prevent the result from
+    being returned to the caller.
+
+    Long-running hooks block the ``return`` of ``CrewResult``.  For
+    expensive post-processing, wrap work in ``asyncio.create_task()``
+    inside your hook.
+"""
+
 DependencyResults = Dict[str, str]
 """Mapping of dependency node IDs → their string results."""
 

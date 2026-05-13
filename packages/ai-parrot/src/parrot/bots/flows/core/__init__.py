@@ -20,6 +20,7 @@ from .types import (
     DependencyResults,
     PromptBuilder,
     ActionCallback,
+    CrewHookCallback,
     FlowStatus,
 )
 
@@ -54,6 +55,7 @@ __all__ = [
     "DependencyResults",
     "PromptBuilder",
     "ActionCallback",
+    "CrewHookCallback",
     "FlowStatus",
     # FSM
     "AgentTaskMachine",

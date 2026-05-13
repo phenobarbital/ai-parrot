@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .exceptions import OntologyIntegrityError, OntologyMergeError
+from .exceptions import FrameworkOverrideError, OntologyIntegrityError, OntologyMergeError
 from .parser import OntologyParser
 from .schema import (
     EntityDef,
@@ -137,6 +137,130 @@ class OntologyMerger:
         )
 
         self._validate_integrity(merged)
+        return merged
+
+    def merge_with_overlay(
+        self,
+        yaml_paths: list[Path],
+        overlay_defs: list[OntologyDefinition],
+    ) -> MergedOntology:
+        """Merge YAML layers + in-memory PG-sourced overlay definitions.
+
+        First merges all YAML layers via the standard merge() logic, identifying
+        the framework layer (first YAML path) whose entity/relation/pattern keys
+        are immutable. Then merges each overlay definition on top, raising
+        FrameworkOverrideError if any overlay attempts to redefine a framework item.
+
+        Regression safety: when overlay_defs is empty, the output is identical
+        to merge(yaml_paths).
+
+        Args:
+            yaml_paths: Ordered list of YAML file paths (base first, client last).
+            overlay_defs: Ordered list of in-memory OntologyDefinition overlays
+                (e.g. approved PG rows). Applied left-to-right on top of the YAML chain.
+
+        Returns:
+            Fully merged and validated MergedOntology including overlay content.
+
+        Raises:
+            FrameworkOverrideError: An overlay attempts to mutate a framework
+                entity, relation, or traversal pattern.
+            OntologyMergeError: If merge rules are violated within the YAML chain.
+            OntologyIntegrityError: If the final result fails integrity checks.
+        """
+        # Step 1: Identify framework (base) keys from the first YAML layer.
+        framework_entity_keys: set[str] = set()
+        framework_relation_keys: set[str] = set()
+        framework_pattern_keys: set[str] = set()
+
+        if yaml_paths:
+            try:
+                base_layer = OntologyParser.load(yaml_paths[0])
+                framework_entity_keys = set(base_layer.entities.keys())
+                framework_relation_keys = set(base_layer.relations.keys())
+                framework_pattern_keys = set(base_layer.traversal_patterns.keys())
+            except Exception as exc:
+                # S6 fix: log the failure so operators know the guard is disabled.
+                # The standard merge() call below will surface the real parse error.
+                logger.warning(
+                    "Could not load base layer '%s' for FrameworkOverrideError guard — "
+                    "protection disabled for this merge: %s",
+                    yaml_paths[0],
+                    exc,
+                )
+
+        # Step 2: Merge all YAML layers normally.
+        result_entities: dict[str, EntityDef] = {}
+        result_relations: dict[str, RelationDef] = {}
+        result_patterns: dict[str, TraversalPattern] = {}
+        layers: list[str] = []
+        last_name = "unnamed"
+
+        for path in yaml_paths:
+            layer = OntologyParser.load(path)
+            layers.append(str(path))
+            last_name = layer.name
+            self._merge_entities(result_entities, layer.entities, path)
+            self._merge_relations(result_relations, layer.relations, result_entities, path)
+            self._merge_patterns(result_patterns, layer.traversal_patterns)
+
+        # Step 3: Apply each overlay definition on top.
+        for overlay in overlay_defs:
+            overlay_path = Path(overlay.name)
+
+            # Framework-override guard — overlays may NOT redefine framework items.
+            for name in overlay.entities:
+                if name in framework_entity_keys:
+                    raise FrameworkOverrideError(
+                        f"Overlay '{overlay.name}' attempts to override framework "
+                        f"entity '{name}'. Framework items are immutable.",
+                        entity_name=name,
+                    )
+            for name in overlay.relations:
+                if name in framework_relation_keys:
+                    raise FrameworkOverrideError(
+                        f"Overlay '{overlay.name}' attempts to override framework "
+                        f"relation '{name}'. Framework items are immutable.",
+                        entity_name=name,
+                    )
+            for name in overlay.traversal_patterns:
+                if name in framework_pattern_keys:
+                    raise FrameworkOverrideError(
+                        f"Overlay '{overlay.name}' attempts to override framework "
+                        f"traversal pattern '{name}'. Framework items are immutable.",
+                        entity_name=name,
+                    )
+
+            # Merge overlay content using the standard helpers.
+            self._merge_entities(result_entities, overlay.entities, overlay_path)
+            self._merge_relations(
+                result_relations, overlay.relations, result_entities, overlay_path
+            )
+            self._merge_patterns(result_patterns, overlay.traversal_patterns)
+            layers.append(overlay.name)
+            last_name = overlay.name or last_name
+
+        merged = MergedOntology(
+            name=last_name,
+            version="1.0",
+            entities=result_entities,
+            relations=result_relations,
+            traversal_patterns=result_patterns,
+            layers=layers,
+            merge_timestamp=datetime.now(timezone.utc),
+        )
+
+        self._validate_integrity(merged)
+        logger.info(
+            "merge_with_overlay: %d YAML layers + %d overlays → ontology '%s': "
+            "%d entities, %d relations, %d patterns",
+            len(yaml_paths),
+            len(overlay_defs),
+            last_name,
+            len(result_entities),
+            len(result_relations),
+            len(result_patterns),
+        )
         return merged
 
     # ── Entity merging ──
