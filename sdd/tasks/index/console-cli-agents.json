@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-13T00:00:00Z",
-  "completed_at": "2026-05-13T21:23:58+00:00",
+  "completed_at": "2026-05-13T18:52:37+00:00",
   "tasks": [
     {
       "id": "TASK-1131",
@@ -19,12 +19,11 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task \u2014 creates the package and registers the Click subcommand. All other tasks depend on it.",
+      "parallelism_notes": "Foundation task — creates the package and registers the Click subcommand. All other tasks depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1131-cli-package-setup.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:42:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-cli-package-setup.md"
     },
     {
       "id": "TASK-1132",
@@ -43,14 +42,13 @@
       "parallelism_notes": "Only depends on TASK-1131 (package structure). Can run in parallel with TASK-1133 since they share no files.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1132-response-renderer.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:43:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1132-response-renderer.md"
     },
     {
       "id": "TASK-1133",
       "slug": "agent-loaders",
-      "title": "Agent Loading \u2014 Standalone & Server",
+      "title": "Agent Loading — Standalone & Server",
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
@@ -64,9 +62,8 @@
       "parallelism_notes": "Only depends on TASK-1131 (package structure). Can run in parallel with TASK-1132 since they share no files.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1133-agent-loaders.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:45:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1133-agent-loaders.md"
     },
     {
       "id": "TASK-1134",
@@ -86,9 +83,8 @@
       "parallelism_notes": "Depends on TASK-1132 (ResponseRenderer) for output rendering. Must run after renderer is complete.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1134-slash-commands.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:46:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1134-slash-commands.md"
     },
     {
       "id": "TASK-1135",
@@ -106,12 +102,11 @@
         "TASK-1134"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on renderer and slash commands. Core integration point \u2014 cannot be parallelized.",
+      "parallelism_notes": "Depends on renderer and slash commands. Core integration point — cannot be parallelized.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1135-repl-engine.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:48:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1135-repl-engine.md"
     },
     {
       "id": "TASK-1136",
@@ -131,12 +126,11 @@
         "TASK-1135"
       ],
       "parallel": false,
-      "parallelism_notes": "Wires all modules together \u2014 depends on every prior task.",
+      "parallelism_notes": "Wires all modules together — depends on every prior task.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1136-cli-command-wiring.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1136-cli-command-wiring.md"
     },
     {
       "id": "TASK-1137",
@@ -157,12 +151,11 @@
         "TASK-1136"
       ],
       "parallel": false,
-      "parallelism_notes": "Final validation task \u2014 depends on all implementation tasks being complete.",
+      "parallelism_notes": "Final validation task — depends on all implementation tasks being complete.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": "2026-05-13T21:23:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1137-integration-tests.md",
-      "verification": "verified"
+      "completed_at": "2026-05-13T18:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1137-integration-tests.md"
     }
   ]
 }

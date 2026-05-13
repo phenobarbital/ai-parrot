@@ -134,4 +134,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Created `parrot/cli/` subpackage by converting `cli.py`
+into `cli/__init__.py` (rename + content preserved + LazyGroup registration added),
+created stub `cli/agent_repl.py` with `agent` Click command (matching LazyGroup
+`getattr(mod, cmd_name)` pattern — key "agent" requires function named `agent`),
+and added `prompt_toolkit>=3.0` to `pyproject.toml`. Import verified:
+`from parrot.cli.agent_repl import agent` works correctly. All linting passed.
