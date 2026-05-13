@@ -59,6 +59,21 @@ class CloudSploitExecutor:
             if self.config.gcp_credentials_path:
                 env["GOOGLE_APPLICATION_CREDENTIALS"] = self.config.gcp_credentials_path
 
+        elif self.config.cloud_provider == CloudProvider.ORACLE:
+            # CloudSploit's Oracle helpers prefer a --config=<file>; these
+            # env vars are best-effort and harmless if ignored.
+            if self.config.oci_tenancy_id:
+                env["OCI_TENANCY_ID"] = self.config.oci_tenancy_id
+            if self.config.oci_user_id:
+                env["OCI_USER_ID"] = self.config.oci_user_id
+            if self.config.oci_key_fingerprint:
+                env["OCI_KEY_FINGERPRINT"] = self.config.oci_key_fingerprint
+            if self.config.oci_key_file:
+                env["OCI_KEY_FILE"] = self.config.oci_key_file
+            if self.config.oci_region:
+                env["OCI_REGION"] = self.config.oci_region
+                env["OCI_REGION_ID"] = self.config.oci_region
+
         return env
 
     def _build_docker_command(

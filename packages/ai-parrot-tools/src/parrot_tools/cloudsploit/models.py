@@ -33,6 +33,7 @@ class CloudProvider(str, Enum):
     AWS = "aws"
     GCP = "google"
     AZURE = "azure"
+    ORACLE = "oracle"
 
 
 class ScanFinding(BaseModel):
@@ -145,6 +146,30 @@ class CloudSploitConfig(BaseModel):
     gcp_credentials_path: Optional[str] = Field(
         default=None,
         description="Path to GCP service account JSON file"
+    )
+
+    # OCI (Oracle Cloud Infrastructure) credentials.
+    # NOTE: CloudSploit's Oracle helpers traditionally read credentials from a
+    # JS config file via --config=<path>. The env vars below are set
+    # optimistically (in case the OCI SDK/helpers pick them up) but for a
+    # reliable OCI scan you should also supply config_file= or mount
+    # ~/.oci/config into the container.
+    oci_tenancy_id: Optional[str] = Field(
+        default=None, description="OCI tenancy OCID"
+    )
+    oci_user_id: Optional[str] = Field(
+        default=None, description="OCI user OCID"
+    )
+    oci_key_fingerprint: Optional[str] = Field(
+        default=None, description="Fingerprint of the OCI API signing key"
+    )
+    oci_key_file: Optional[str] = Field(
+        default=None,
+        description="Path to the OCI API private key (PEM)"
+    )
+    oci_region: Optional[str] = Field(
+        default=None,
+        description="OCI region identifier (e.g. 'us-ashburn-1')"
     )
 
     # Cross-provider config override — takes precedence over all env-var

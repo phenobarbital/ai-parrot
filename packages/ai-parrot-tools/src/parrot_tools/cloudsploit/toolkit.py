@@ -18,6 +18,7 @@ from .comparator import ScanComparator
 from .ecr_collector import EcrScanCollector
 from .executor import CloudSploitExecutor
 from .models import (
+    CloudProvider,
     CloudSploitConfig,
     ComparisonReport,
     ComplianceFramework,
@@ -43,6 +44,41 @@ _CATALOG_FRAMEWORK_MAP: dict[ComplianceFramework, str] = {
     ComplianceFramework.CIS1: "cis",
     ComplianceFramework.CIS2: "cis",
     ComplianceFramework.PCI: "pci_dss",
+}
+
+
+# Curated "open ports" plugin lists per provider. Each entry is a real
+# CloudSploit plugin name; refer to the upstream plugins/ tree:
+#   - AWS:    plugins/aws/ec2/open*
+#   - GCP:    plugins/google/compute/open*
+#   - Oracle: plugins/oracle/networking/open*
+_OPEN_PORTS_PLUGINS: dict[CloudProvider, list[str]] = {
+    CloudProvider.AWS: [
+        "openSSH", "openRDP", "openMySQL", "openPostgreSQL",
+        "openMongo", "openMsSQL", "openOracle", "openRedis",
+        "openDNS", "openTelnet", "openSMTP", "openFTP",
+        "openCIFS", "openNetBIOS", "openCassandra", "openDocker",
+        "openElasticsearch", "openHadoopNameNode", "openKibana",
+        "openSalt", "openLDAP", "openLDAPS",
+        "openVNCClient", "openVNCServer",
+        "openCustomPorts", "openAllPortsProtocols",
+    ],
+    CloudProvider.GCP: [
+        "openSSH", "openRDP", "openMySQL", "openPostgreSQL",
+        "openMongoDB", "openMsSQL", "openOracle", "openRedis",
+        "openDNS", "openTelnet", "openSMTP", "openFTP",
+        "openCIFS", "openCassandra", "openDocker", "openElasticsearch",
+        "openHadoop", "openKibana", "openSalt", "openVNC",
+        "openCustomPorts", "openAllPorts",
+    ],
+    CloudProvider.ORACLE: [
+        "openSSH", "openRDP", "openMySQL", "openPostgreSQL",
+        "openMongoDB", "openMsSQL", "openOracle", "openRedis",
+        "openDNS", "openTelnet", "openSMTP", "openFTP",
+        "openCIFS", "openCassandra", "openDocker", "openElasticsearch",
+        "openHadoop", "openKibana", "openVNC",
+        "openCustomPorts", "openAllPorts",
+    ],
 }
 
 
@@ -366,6 +402,120 @@ class CloudSploitToolkit(ReportPersistenceMixin, AbstractToolkit):
         # Side-effect: persist to catalog when deps are wired (no-op otherwise)
         await self._persist_after_scan(result, framework=catalog_framework)
         return result
+
+    # -- Open-ports / firewall scans (provider-aware helpers) --------------
+
+    async def scan_open_ports(
+        self,
+        provider: str = "aws",
+        extra_plugins: Optional[list[str]] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
+    ) -> ScanResult:
+        """Scan only the "open ports" plugins for a given cloud provider.
+
+        Runs CloudSploit's curated open-port plugin set for the target
+        provider (AWS EC2 Security Groups, GCP Firewall Rules, or OCI
+        Security Lists). Temporarily switches ``self.config.cloud_provider``
+        for the duration of the scan and restores it afterwards.
+
+        Args:
+            provider: One of ``"aws"``, ``"google"``, ``"oracle"``.
+            extra_plugins: Additional CloudSploit plugin names to append.
+            ignore_ok: If True, exclude passing (OK) results.
+            suppress: Regex patterns to suppress specific results.
+            config: Per-call CloudSploit JS credentials file (see run_scan).
+
+        Returns:
+            ScanResult with findings limited to the open-port plugins.
+        """
+        try:
+            target = CloudProvider(provider.lower())
+        except ValueError as e:
+            valid = [p.value for p in _OPEN_PORTS_PLUGINS]
+            raise ValueError(
+                f"Unsupported provider '{provider}'. Valid options: {valid}"
+            ) from e
+
+        plugins = _OPEN_PORTS_PLUGINS.get(target)
+        if not plugins:
+            valid = [p.value for p in _OPEN_PORTS_PLUGINS]
+            raise ValueError(
+                f"No open-port plugin list registered for provider "
+                f"'{provider}'. Supported: {valid}"
+            )
+        if extra_plugins:
+            plugins = [*plugins, *extra_plugins]
+
+        previous_provider = self.config.cloud_provider
+        self.config.cloud_provider = target
+        try:
+            return await self.run_scan(
+                plugins=plugins,
+                ignore_ok=ignore_ok,
+                suppress=suppress,
+                config=config,
+            )
+        finally:
+            self.config.cloud_provider = previous_provider
+
+    async def scan_security_groups(
+        self,
+        extra_plugins: Optional[list[str]] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
+    ) -> ScanResult:
+        """Scan AWS EC2 Security Groups for open-port misconfigurations.
+
+        Convenience alias for ``scan_open_ports(provider="aws", ...)``.
+        """
+        return await self.scan_open_ports(
+            provider="aws",
+            extra_plugins=extra_plugins,
+            ignore_ok=ignore_ok,
+            suppress=suppress,
+            config=config,
+        )
+
+    async def scan_firewall_rules(
+        self,
+        extra_plugins: Optional[list[str]] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
+    ) -> ScanResult:
+        """Scan GCP Firewall Rules for open-port misconfigurations.
+
+        Convenience alias for ``scan_open_ports(provider="google", ...)``.
+        """
+        return await self.scan_open_ports(
+            provider="google",
+            extra_plugins=extra_plugins,
+            ignore_ok=ignore_ok,
+            suppress=suppress,
+            config=config,
+        )
+
+    async def scan_security_lists(
+        self,
+        extra_plugins: Optional[list[str]] = None,
+        ignore_ok: bool = False,
+        suppress: Optional[list[str]] = None,
+        config: Optional[str] = None,
+    ) -> ScanResult:
+        """Scan OCI Security Lists for open-port misconfigurations.
+
+        Convenience alias for ``scan_open_ports(provider="oracle", ...)``.
+        """
+        return await self.scan_open_ports(
+            provider="oracle",
+            extra_plugins=extra_plugins,
+            ignore_ok=ignore_ok,
+            suppress=suppress,
+            config=config,
+        )
 
     async def get_summary(self) -> dict:
         """Get a summary of the most recent scan results.
