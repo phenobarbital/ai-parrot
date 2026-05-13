@@ -30,6 +30,7 @@ from .models import (
     BotModel,
     ChatbotUsage,
     PromptLibrary,
+    UserPrompts,
     ChatbotFeedback,
     FeedbackType
 )
@@ -159,6 +160,38 @@ class PromptLibraryManagement(ModelView):
                 )
             return await super().get()
 
+        return await super().get()
+
+
+class UserPromptsManagement(ModelView):
+    """Per-user prompt library.
+
+    Exposes CRUD over ``navigator.users_prompts`` at
+    ``/api/v1/agents/user_prompts``. Every read/write is scoped to the
+    authenticated ``user_id``; clients cannot supply or spoof it.
+    """
+
+    model = UserPrompts
+    name: str = "User Prompts Management"
+    path: str = '/api/v1/agents/user_prompts'
+    pk: str = 'prompt_id'
+
+    async def _set_user_id(self, value, column, data):
+        # ALWAYS overwrite — the request must not carry a client-supplied user_id.
+        return await self.get_userid(session=self._session)
+
+    async def _set_created_by(self, value, column, data):
+        if not value:
+            return await self.get_userid(session=self._session)
+        return value
+
+    async def get(self):
+        """Override GET to scope results to the authenticated user_id."""
+        user_id = await self.get_userid(session=self._session)
+        # Inject user_id into the query string so ModelView's generic
+        # filter machinery picks it up and scopes the query.
+        new_query = dict(self.request.rel_url.query)
+        new_query['user_id'] = str(user_id)
         return await super().get()
 
 
