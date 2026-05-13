@@ -24,7 +24,6 @@ from .models import (
     UserRole,
     get_default_components,
 )
-from .prompts import DB_AGENT_PROMPT
 from .retries import QueryRetryConfig
 from .router import SchemaQueryRouter
 from .toolkits.base import DatabaseToolkit
@@ -49,7 +48,7 @@ class DatabaseAgent(AbstractBot):
 
     _default_temperature: float = 0.0
     max_tokens: int = 8192
-    system_prompt_template = DB_AGENT_PROMPT
+    system_prompt_template = ""  # replaced by PromptBuilder in TASK-1128
 
     def __init__(
         self,
