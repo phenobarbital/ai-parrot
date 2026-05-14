@@ -31,7 +31,6 @@ from ..models import (
 )
 from ..models.basic import ToolCall
 from ..models.responses import InvokeResult
-from ..exceptions import InvokeError
 from ..tools.manager import ToolFormat
 
 
@@ -648,8 +647,13 @@ class Gemma4Client(AbstractClient):
         session_id: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs
-    ) -> AsyncIterator[str]:
-        """Pseudo-streaming: generates fully then yields chunks."""
+    ) -> AsyncIterator[Union[str, AIMessage]]:
+        """Pseudo-streaming: generates fully then yields chunks then final AIMessage.
+
+        Calls ``self.ask()`` which returns a full :class:`~parrot.models.responses.AIMessage`.
+        Yields the response text in small chunks for compatibility with streaming consumers,
+        then yields the ``AIMessage`` itself as the final element.
+        """
         response = await self.ask(
             prompt=prompt,
             max_tokens=max_tokens,
@@ -666,6 +670,8 @@ class Gemma4Client(AbstractClient):
         for i in range(0, len(text), chunk_size):
             yield text[i : i + chunk_size]
             await asyncio.sleep(0.01)
+        # response is already an AIMessage from self.ask() — yield it as the final element
+        yield response
 
     # ------------------------------------------------------------------
     # Invoke / Resume (abstract method implementations)
