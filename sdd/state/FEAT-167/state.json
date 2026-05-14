@@ -13,7 +13,7 @@
     "summary_oneline": "PromptLibrary supports public per-chatbot prompts only; need agent_id support and a new UserPrompts model for per-user prompts."
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "feature_slug": "promptlibrary-changes",
   "detected_mode": "enrichment",
   "phases": {
@@ -68,9 +68,11 @@
       "skipped_reason": null
     },
     "output": {
-      "status": "running",
+      "status": "completed",
       "started_at": "2026-05-13T18:00:00Z",
+      "completed_at": "2026-05-13T18:00:30Z",
       "proposal_path": "sdd/proposals/promptlibrary-changes.proposal.md",
+      "commit_sha": "59bb2c117874f62a2c8aaeefcc60b44eb92cce62",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "High-confidence localization, sibling template available, all unknowns resolved."
     }
