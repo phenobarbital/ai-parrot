@@ -212,12 +212,12 @@ class StreamHandler(BaseHandler):
                     else:
                         raise web.HTTPUnauthorized(reason="Missing Token")
                 except (ValueError, IndexError):
-                     raise web.HTTPUnauthorized(reason="Invalid Protocol Format")
+                    raise web.HTTPUnauthorized(reason="Invalid Protocol Format")
 
         if selected_protocol:
-             await ws.prepare(request, protocols=[selected_protocol])
+            await ws.prepare(request, protocols=[selected_protocol])
         else:
-             await ws.prepare(request)
+            await ws.prepare(request)
 
         self.active_connections.add(ws)
         bot = await self._get_bot(request)
