@@ -1258,6 +1258,7 @@ class AgentTalk(BaseView):
                 "query": "What is the weather like?",
                 "session_id": "optional-session-id",
                 "user_id": "optional-user-id",
+                "stream": false,
                 "output_mode": "json|html|markdown|terminal|default",
                 "search_type": "similarity",
                 "use_vector_context": true,
@@ -1280,6 +1281,9 @@ class AgentTalk(BaseView):
         - JSON response if output_mode is 'json' or Accept header is application/json
         - HTML page if output_mode is 'html' or Accept header is text/html
         - Markdown/plain text otherwise
+        - When ``stream=true``: HTTP chunked ``text/plain`` response.  Text
+          chunks arrive progressively; the final chunk (after a ``\\n\\x00``
+          separator) is a JSON object with the AIMessage metadata envelope.
         """
         qs = self.query_parameters(self.request)
         app = self.request.app
@@ -1353,6 +1357,8 @@ class AgentTalk(BaseView):
         query = data.pop('query', None)
         # task background:
         use_background = data.pop('background', False)
+        # Chunked HTTP streaming (no SSE/WS/NDJSON):
+        use_stream = data.pop('stream', False)
 
         # Determine output mode
         # output_mode = self._get_output_mode(self.request)
@@ -1506,6 +1512,24 @@ class AgentTalk(BaseView):
                     )
                 if not query:
                     return await self._handle_attachments(bot, agent, attachments)
+                if use_stream and isinstance(bot, AbstractBot):
+                    return await self._handle_stream_response(
+                        bot=bot,
+                        query=query,
+                        session_id=session_id,
+                        user_id=user_id,
+                        search_type=search_type,
+                        return_sources=return_sources,
+                        use_vector_context=use_vector_context,
+                        use_conversation_history=use_conversation_history,
+                        output_mode=output_mode,
+                        format_kwargs=format_kwargs,
+                        memory=memory,
+                        llm=llm,
+                        agent_name=agent.name,
+                        client_message_id=client_message_id,
+                        **data,
+                    )
                 if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
                     start_time = time.perf_counter()
                     response: AIMessage = await bot.followup(
@@ -1920,6 +1944,159 @@ class AgentTalk(BaseView):
                 "output_modes": ["json", "html", "markdown", "terminal", "default"]
             }
         })
+
+    async def _handle_stream_response(
+        self,
+        bot: AbstractBot,
+        query: str,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        search_type: str,
+        return_sources: bool,
+        use_vector_context: bool,
+        use_conversation_history: bool,
+        output_mode: OutputMode,
+        format_kwargs: Dict[str, Any],
+        memory: Optional[Any],
+        llm: Optional[Any],
+        agent_name: str = '',
+        client_message_id: Optional[str] = None,
+        **kwargs,
+    ) -> web.StreamResponse:
+        """Stream bot response via HTTP chunked transfer encoding.
+
+        Text chunks are written as-is.  The final yielded element from
+        ``bot.ask_stream`` is an ``AIMessage``; its JSON representation is
+        appended after an ``\\n\\x00`` separator so the client can split
+        text from metadata deterministically.
+        """
+        stream_resp = web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={
+                'Content-Type': 'text/plain; charset=utf-8',
+                'Transfer-Encoding': 'chunked',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'X-Parrot-Stream': 'chunked-aimessage',
+                'Access-Control-Allow-Origin': '*',
+                'X-Accel-Buffering': 'no',
+            },
+        )
+        await stream_resp.prepare(self.request)
+        start_time = time.perf_counter()
+        ai_message: Optional[AIMessage] = None
+        try:
+            async for chunk in bot.ask_stream(
+                question=query,
+                session_id=session_id,
+                user_id=user_id,
+                search_type=search_type,
+                return_sources=return_sources,
+                use_vector_context=use_vector_context,
+                use_conversation_history=use_conversation_history,
+                output_mode=output_mode,
+                memory=memory,
+                llm=llm,
+                **kwargs,
+            ):
+                if isinstance(chunk, AIMessage):
+                    ai_message = chunk
+                else:
+                    await stream_resp.write(chunk.encode('utf-8'))
+                    await stream_resp.drain()
+
+            response_time_ms = int((time.perf_counter() - start_time) * 1000)
+
+            if ai_message is not None:
+                envelope = {
+                    'input': ai_message.input,
+                    'output': ai_message.response or str(ai_message.output),
+                    'metadata': {
+                        'model': getattr(ai_message, 'model', None),
+                        'provider': getattr(ai_message, 'provider', None),
+                        'session_id': str(getattr(ai_message, 'session_id', '') or ''),
+                        'turn_id': str(getattr(ai_message, 'turn_id', '') or ''),
+                        'user_id': (
+                            str(ai_message.user_id) if ai_message.user_id is not None else None
+                        ),
+                        'response_time': response_time_ms,
+                        'usage': (
+                            ai_message.usage.model_dump()
+                            if ai_message.usage is not None else None
+                        ),
+                        'finish_reason': getattr(ai_message, 'finish_reason', None),
+                        'stop_reason': getattr(ai_message, 'stop_reason', None),
+                    },
+                    'sources': [
+                        s if isinstance(s, dict) else s.to_dict()
+                        for s in getattr(ai_message, 'source_documents', [])
+                    ] if format_kwargs.get('include_sources', True) else [],
+                    'tool_calls': [
+                        {
+                            'name': getattr(t, 'name', 'unknown'),
+                            'status': getattr(t, 'status', 'completed'),
+                            'output': getattr(t, 'output', None),
+                            'arguments': getattr(t, 'arguments', None),
+                        }
+                        for t in getattr(ai_message, 'tool_calls', [])
+                    ] if format_kwargs.get('include_tool_calls', True) else [],
+                }
+                separator = b'\n\x00'
+                await stream_resp.write(
+                    separator + json_encoder(envelope).encode('utf-8')
+                )
+                await stream_resp.drain()
+
+            # Persist chat turn via ChatStorage
+            try:
+                chat_storage = self.request.app.get('chat_storage')
+                if chat_storage and user_id and session_id and ai_message:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        chat_storage.save_turn(
+                            turn_id=client_message_id,
+                            user_id=user_id,
+                            session_id=session_id,
+                            agent_id=agent_name,
+                            user_message=ai_message.input or '',
+                            assistant_response=ai_message.response or '',
+                            output=ai_message.response or str(ai_message.output),
+                            output_mode=str(output_mode),
+                            data=ai_message.data,
+                            code=str(ai_message.code) if ai_message.code else None,
+                            model=getattr(ai_message, 'model', None),
+                            provider=getattr(ai_message, 'provider', None),
+                            response_time_ms=response_time_ms,
+                            tool_calls=[
+                                {
+                                    'name': getattr(t, 'name', 'unknown'),
+                                    'status': getattr(t, 'status', 'completed'),
+                                    'output': getattr(t, 'output', None),
+                                    'arguments': getattr(t, 'arguments', None),
+                                }
+                                for t in getattr(ai_message, 'tool_calls', [])
+                            ],
+                            sources=[
+                                s if isinstance(s, dict) else s.to_dict()
+                                for s in getattr(ai_message, 'source_documents', [])
+                            ],
+                        )
+                    )
+            except Exception as ex:
+                self.logger.warning("Error scheduling streamed chat turn save: %s", ex)
+
+        except asyncio.CancelledError:
+            self.logger.info("Stream cancelled by client for agent '%s'.", agent_name)
+        except Exception as e:
+            error_payload = json_encoder({'error': str(e)})
+            await stream_resp.write(
+                f'\n\x00{error_payload}'.encode('utf-8')
+            )
+            self.logger.error("Error in stream response for agent '%s': %s", agent_name, e)
+        finally:
+            await stream_resp.write_eof()
+        return stream_resp
 
     def _format_response(
         self,

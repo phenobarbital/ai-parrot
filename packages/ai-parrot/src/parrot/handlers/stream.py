@@ -5,6 +5,7 @@ from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable
 from navigator.views import BaseHandler
 from navigator_auth.conf import exclude_list
 from parrot.bots import AbstractBot
+from parrot.models.responses import AIMessage
 
 
 class StreamHandler(BaseHandler):
@@ -66,13 +67,19 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
+            ai_message = None
             async for chunk in bot.ask_stream(prompt, **ask_kwargs):
-                # Format as SSE
+                if isinstance(chunk, AIMessage):
+                    ai_message = chunk
+                    continue
                 sse_data = f"data: {json_encoder({'content': chunk})}\n\n"
                 await response.write(sse_data.encode('utf-8'))
                 await response.drain()
 
-            # Send completion event
+            if ai_message is not None:
+                meta_event = f"data: {json_encoder({'type': 'ai_message', 'data': ai_message.to_dict()})}\n\n"
+                await response.write(meta_event.encode('utf-8'))
+                await response.drain()
             await response.write(b"data: [DONE]\n\n")
             await response.drain()
         except asyncio.CancelledError as e:
@@ -107,8 +114,11 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
+            ai_message = None
             async for chunk in bot.ask_stream(prompt, **ask_kwargs):
-                # Each line is a complete JSON object
+                if isinstance(chunk, AIMessage):
+                    ai_message = chunk
+                    continue
                 line = json_encoder({
                     'type': 'content',
                     'data': chunk,
@@ -117,7 +127,13 @@ class StreamHandler(BaseHandler):
                 await response.write(line.encode('utf-8'))
                 await response.drain()
 
-            # Send completion line
+            if ai_message is not None:
+                meta_line = json_encoder({
+                    'type': 'ai_message',
+                    'data': ai_message.to_dict(),
+                }) + '\n'
+                await response.write(meta_line.encode('utf-8'))
+                await response.drain()
             await response.write(
                 json_encoder({'done': True}).encode('utf-8') + b'\n'
             )
@@ -154,11 +170,20 @@ class StreamHandler(BaseHandler):
         )
         await response.prepare(request)
         try:
+            ai_message = None
             async for chunk in bot.ask_stream(prompt, **ask_kwargs):
+                if isinstance(chunk, AIMessage):
+                    ai_message = chunk
+                    continue
                 await response.write(chunk.encode('utf-8'))
                 await response.drain()
 
-            # Indicate end of stream
+            if ai_message is not None:
+                separator = b'\n\x00'
+                await response.write(
+                    separator + json_encoder(ai_message.to_dict()).encode('utf-8')
+                )
+                await response.drain()
             await response.write_eof()
         except asyncio.CancelledError as e:
             raise web.HTTPInternalServerError(
@@ -295,14 +320,18 @@ class StreamHandler(BaseHandler):
             })
 
             try:
-                # Stream the LLM response
                 async for chunk in bot.ask_stream(prompt, **ask_kwargs):
+                    if isinstance(chunk, AIMessage):
+                        await ws.send_json({
+                            'type': 'ai_message',
+                            'data': chunk.to_dict()
+                        })
+                        continue
                     await ws.send_json({
                         'type': 'content',
                         'data': chunk
                     })
 
-                # Send completion
                 await ws.send_json({
                     'type': 'stream_complete'
                 })
