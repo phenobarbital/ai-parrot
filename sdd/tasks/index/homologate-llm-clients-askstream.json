@@ -14,7 +14,7 @@
       "feature_id": "FEAT-174",
       "feature": "homologate-llm-clients-askstream",
       "spec": "sdd/specs/homologate-llm-clients-askstream.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-05-14T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1173-abstract-client-type-signature.md"
+      "completed_at": "2026-05-14T23:42:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1173-abstract-client-type-signature.md"
     },
     {
       "id": "TASK-1174",
