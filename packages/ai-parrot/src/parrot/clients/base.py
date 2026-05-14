@@ -11,6 +11,7 @@ from typing import (
 )
 from parrot._imports import lazy_import
 from datetime import datetime
+import inspect
 import json
 import random
 import re
@@ -1111,7 +1112,18 @@ $backstory
         try:
             ctx = tool_context or getattr(self, '_tool_context', None)
             if ctx:
-                merged = {**ctx, **parameters}
+                # Only inject context keys the target tool actually accepts —
+                # otherwise tools whose signature does not declare
+                # ``user_id`` / ``session_id`` raise ``TypeError`` and the
+                # whole tool call fails. When introspection cannot determine
+                # the accepted set (or the tool takes ``**kwargs``), the
+                # full context is forwarded as before.
+                accepted = self._tool_param_names(tool_name)
+                if accepted is None:
+                    filtered_ctx = ctx
+                else:
+                    filtered_ctx = {k: v for k, v in ctx.items() if k in accepted}
+                merged = {**filtered_ctx, **parameters}
             else:
                 merged = parameters
             perm_ctx = getattr(self, '_permission_context', None)
@@ -1128,6 +1140,52 @@ $backstory
                 f"Error executing tool {tool_name}: {e}"
             )
             raise
+
+    def _tool_param_names(self, tool_name: str) -> Optional[set]:
+        """Return the set of parameter names ``tool_name`` accepts.
+
+        Returns ``None`` when the tool accepts ``**kwargs`` (anything goes)
+        or when introspection fails — callers should treat ``None`` as
+        "do not filter".
+        """
+        try:
+            from parrot.tools.toolkit import AbstractTool  # local — avoid cycles
+            from parrot.tools.manager import ToolDefinition
+        except Exception:
+            return None
+        tool = self.tool_manager._tools.get(tool_name) if hasattr(self, 'tool_manager') else None
+        if tool is None:
+            # Request-scoped tools (passed via ``ask(tools=[...])``) live in
+            # ``self._request_tools`` and are not registered in the
+            # ToolManager — check the per-call overlay so subclasses that
+            # support request-scoped tools still get context filtering.
+            request_tools = getattr(self, '_request_tools', None) or {}
+            tool = request_tools.get(tool_name)
+        if tool is None:
+            return None
+        fn = None
+        if isinstance(tool, ToolDefinition):
+            fn = tool.function
+        elif isinstance(tool, AbstractTool):
+            fn = getattr(tool, 'bound_method', None)
+        if fn is None:
+            return None
+        try:
+            sig = inspect.signature(fn)
+        except (ValueError, TypeError):
+            return None
+        for p in sig.parameters.values():
+            if p.kind == inspect.Parameter.VAR_KEYWORD:
+                return None  # ``**kwargs`` accepts anything — no filtering
+        return {
+            name
+            for name, p in sig.parameters.items()
+            if name != 'self'
+            and p.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            )
+        }
 
     async def _execute_tool_call(
         self,

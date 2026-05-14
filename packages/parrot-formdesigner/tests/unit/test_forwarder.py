@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot_formdesigner.core.schema import SubmitAction
-from parrot_formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
+from parrot_formdesigner.core.auth import BearerAuth, NoAuth
 from parrot_formdesigner.services.forwarder import ForwardResult, SubmissionForwarder
 
 
@@ -116,8 +116,6 @@ class TestSubmissionForwarder:
         self, forwarder: SubmissionForwarder, endpoint_action: SubmitAction, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Successful forward returns ForwardResult(success=True, status_code=200)."""
-        import aiohttp
-        from unittest.mock import AsyncMock
 
         mock_resp = MagicMock()
         mock_resp.status = 200
@@ -152,3 +150,181 @@ class TestSubmissionForwarder:
         # Just verify it doesn't raise and returns a result
         result = await forwarder.forward({}, sa)
         assert isinstance(result, ForwardResult)
+
+
+# --- TASK-1157: RemoteResponseResolver tests ---
+
+class TestRemoteResponseSpec:
+    """Tests for RemoteResponseSpec Pydantic model."""
+
+    def test_default_values(self) -> None:
+        """RemoteResponseSpec has correct defaults."""
+        from parrot_formdesigner.services.remote_response_resolver import RemoteResponseSpec
+
+        spec = RemoteResponseSpec(endpoint="https://api.example.com")
+        assert spec.http_method == "POST"
+        assert spec.content_field is None
+        assert spec.prompt is None
+        assert spec.auth_ref is None
+        assert spec.timeout_seconds == 30
+        assert spec.response_schema is None
+
+    def test_custom_values(self) -> None:
+        """RemoteResponseSpec accepts custom values."""
+        from parrot_formdesigner.services.remote_response_resolver import RemoteResponseSpec
+
+        spec = RemoteResponseSpec(
+            endpoint="https://api.example.com/summarize",
+            http_method="POST",
+            content_field="body_text",
+            prompt="Summarize this",
+            auth_ref="bearer-token",
+            timeout_seconds=60,
+        )
+        assert spec.endpoint == "https://api.example.com/summarize"
+        assert spec.content_field == "body_text"
+        assert spec.prompt == "Summarize this"
+        assert spec.auth_ref == "bearer-token"
+        assert spec.timeout_seconds == 60
+
+
+class TestRemoteResponseResult:
+    """Tests for RemoteResponseResult Pydantic model."""
+
+    def test_success_result(self) -> None:
+        """Success result stores value and status_code."""
+        from parrot_formdesigner.services.remote_response_resolver import RemoteResponseResult
+
+        r = RemoteResponseResult(success=True, value={"key": "val"}, status_code=200)
+        assert r.success is True
+        assert r.value == {"key": "val"}
+        assert r.status_code == 200
+        assert r.error is None
+
+    def test_failure_result(self) -> None:
+        """Failure result stores error and status_code."""
+        from parrot_formdesigner.services.remote_response_resolver import RemoteResponseResult
+
+        r = RemoteResponseResult(success=False, status_code=500, error="Internal Server Error")
+        assert r.success is False
+        assert r.error == "Internal Server Error"
+        assert r.value is None
+
+
+class TestRemoteResponseResolver:
+    """Tests for RemoteResponseResolver service."""
+
+    async def test_posts_content_and_prompt(self, aiohttp_server) -> None:
+        """Resolver sends {'content': ..., 'prompt': ...} and returns API value."""
+        from parrot_formdesigner.services.remote_response_resolver import (
+            RemoteResponseResolver,
+            RemoteResponseSpec,
+        )
+        from aiohttp import web
+
+        received: dict = {}
+
+        async def handler(request):
+            received.update(await request.json())
+            return web.json_response({"summary": "hello"})
+
+        app = web.Application()
+        app.router.add_post("/summarize", handler)
+        server = await aiohttp_server(app)
+
+        resolver = RemoteResponseResolver()
+        spec = RemoteResponseSpec(
+            endpoint=str(server.make_url("/summarize")),
+            prompt="Summarize this",
+        )
+        result = await resolver.resolve(spec, "some content")
+        assert result.success is True
+        assert result.value == {"summary": "hello"}
+        assert result.status_code == 200
+        assert received["content"] == "some content"
+        assert received["prompt"] == "Summarize this"
+
+    async def test_no_memoisation_two_calls_hit_endpoint_twice(self, aiohttp_server) -> None:
+        """Two sequential resolve() calls hit the endpoint twice (no memoisation)."""
+        from parrot_formdesigner.services.remote_response_resolver import (
+            RemoteResponseResolver,
+            RemoteResponseSpec,
+        )
+        from aiohttp import web
+
+        call_count = 0
+
+        async def handler(request):
+            nonlocal call_count
+            call_count += 1
+            return web.json_response({"count": call_count})
+
+        app = web.Application()
+        app.router.add_post("/action", handler)
+        server = await aiohttp_server(app)
+
+        resolver = RemoteResponseResolver()
+        spec = RemoteResponseSpec(endpoint=str(server.make_url("/action")))
+
+        await resolver.resolve(spec, "first")
+        await resolver.resolve(spec, "second")
+        assert call_count == 2
+
+    async def test_failure_returns_error_result(self, aiohttp_server) -> None:
+        """HTTP 500 yields RemoteResponseResult(success=False, error=...)."""
+        from parrot_formdesigner.services.remote_response_resolver import (
+            RemoteResponseResolver,
+            RemoteResponseSpec,
+        )
+        from aiohttp import web
+
+        async def handler(request):
+            return web.Response(status=500, text="Internal Server Error")
+
+        app = web.Application()
+        app.router.add_post("/fail", handler)
+        server = await aiohttp_server(app)
+
+        resolver = RemoteResponseResolver()
+        spec = RemoteResponseSpec(endpoint=str(server.make_url("/fail")))
+        result = await resolver.resolve(spec, "content")
+        assert result.success is False
+        assert result.status_code == 500
+        assert result.error is not None
+
+    async def test_auth_context_injects_bearer_header(self, aiohttp_server) -> None:
+        """Auth context bearer token is injected into request headers."""
+        from parrot_formdesigner.services.remote_response_resolver import (
+            RemoteResponseResolver,
+            RemoteResponseSpec,
+        )
+        from parrot_formdesigner.services.auth_context import AuthContext
+        from aiohttp import web
+
+        received_auth: list = []
+
+        async def handler(request):
+            received_auth.append(request.headers.get("Authorization"))
+            return web.json_response({"ok": True})
+
+        app = web.Application()
+        app.router.add_post("/secure", handler)
+        server = await aiohttp_server(app)
+
+        resolver = RemoteResponseResolver()
+        spec = RemoteResponseSpec(
+            endpoint=str(server.make_url("/secure")),
+            auth_ref="my-token",
+        )
+        ctx = AuthContext(scheme="bearer", token="secret-token")
+        result = await resolver.resolve(spec, "data", auth_context=ctx)
+        assert result.success is True
+        assert received_auth[0] == "Bearer secret-token"
+
+    async def test_importable(self) -> None:
+        """RemoteResponseResolver is importable from services module."""
+        from parrot_formdesigner.services.remote_response_resolver import (  # noqa: F401
+            RemoteResponseResolver,
+            RemoteResponseResult,
+            RemoteResponseSpec,
+        )

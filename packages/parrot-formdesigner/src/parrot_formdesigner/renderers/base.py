@@ -5,10 +5,53 @@ output from FormSchema + StyleSchema input.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
-from ..core.schema import FormSchema, RenderedForm
+from ..core.schema import FormField, FormSchema, RenderedForm
 from ..core.style import StyleSchema
+
+
+@runtime_checkable
+class FieldRenderer(Protocol):
+    """Per-target field renderer. One concrete impl per (FieldType, output target).
+
+    The render() signature uses keyword-only args so callers can pass optional
+    context without breaking positional compatibility. Return type is Any
+    because each output target uses a different representation (str for HTML5,
+    dict for Adaptive Card/JSON Schema, bytes for PDF, etc.).
+    """
+
+    async def render(
+        self,
+        field: FormField,
+        *,
+        locale: str = "en",
+        prefilled: Any = None,
+        error: str | None = None,
+    ) -> Any: ...
+
+
+class FallbackRenderer:
+    """Concrete fallback emitter — degraded representation.
+
+    Each renderer subclasses or instantiates this to define what 'degraded'
+    means for its target. The base implementation returns None — subclasses
+    must override render() to emit target-appropriate content.
+
+    Warning appending is the renderer's responsibility (it has access to
+    RenderedForm.warnings once Module 8 is merged).
+    """
+
+    async def render(
+        self,
+        field: FormField,
+        *,
+        locale: str = "en",
+        prefilled: Any = None,
+        error: str | None = None,
+    ) -> Any:
+        """Return None as placeholder. Override in renderer-specific subclasses."""
+        return None
 
 
 class AbstractFormRenderer(ABC):

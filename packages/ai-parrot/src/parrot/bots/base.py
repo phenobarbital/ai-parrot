@@ -11,12 +11,11 @@ import uuid
 import asyncio
 import time
 import warnings
-import re
 from pydantic import BaseModel
 from ..memory import (
     ConversationTurn
 )
-from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
+from ..models import AIMessage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..utils.helpers import RequestContext
 from ..security import PromptInjectionException
@@ -63,69 +62,6 @@ class BaseBot(AbstractBot):
         if isinstance(cfg, dict) and cfg.get('metric_type'):
             return cfg['metric_type']
         return getattr(self, '_metric_type', None) or 'COSINE'
-
-    def _is_tool_inventory_request(self, question: str) -> bool:
-        """Return True for short meta requests asking what tools are available."""
-        normalized = re.sub(r"[^a-z0-9\s]", " ", (question or "").lower())
-        words = normalized.split()
-        if not words or len(words) > 8 or "tool" not in normalized:
-            return False
-
-        operational_verbs = {
-            "run",
-            "scan",
-            "check",
-            "analyze",
-            "analyse",
-            "execute",
-            "use",
-            "call",
-            "find",
-            "get",
-            "create",
-            "generate",
-        }
-        if any(word in operational_verbs for word in words):
-            return False
-
-        list_words = {"list", "show", "available", "what", "which"}
-        return bool(list_words.intersection(words))
-
-    def _build_tool_inventory_message(
-        self,
-        question: str,
-        user_id: str,
-        session_id: str,
-        turn_id: str,
-    ) -> AIMessage:
-        """Build a deterministic tool inventory response without invoking an LLM."""
-        summary = (
-            self.tool_manager.get_tools_summary()
-            if getattr(self, "tool_manager", None) is not None
-            else {"count": 0, "tools": []}
-        )
-        tools = summary.get("tools", [])
-        count = summary.get("count", len(tools))
-        lines = [f"Available tools ({count}):"]
-        for tool in tools:
-            name = tool.get("name", "unknown")
-            description = tool.get("description") or "No description"
-            lines.append(f"- `{name}`: {description}")
-        output = "\n".join(lines)
-        llm = getattr(self, "_llm", None)
-        return AIMessage(
-            input=question,
-            output=output,
-            response=output,
-            data=summary,
-            model=getattr(llm, "model", None) or getattr(llm, "default_model", None) or "",
-            provider=getattr(llm, "client_type", None) or getattr(llm, "client_name", None) or "local",
-            usage=CompletionUsage(),
-            finish_reason="tool_inventory_fast_path",
-            user_id=user_id,
-            session_id=session_id,
-            turn_id=turn_id,
-        )
 
     def _debug_prompt_dump(
         self,
@@ -766,18 +702,6 @@ class BaseBot(AbstractBot):
         user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
         _trusted_source = kwargs.pop("_trusted_source", False)
-
-        if use_tools and self._is_tool_inventory_request(question):
-            self.logger.info(
-                "[%s] ask() using local tool inventory fast path",
-                self.name,
-            )
-            return self._build_tool_inventory_message(
-                question=question,
-                user_id=user_id,
-                session_id=session_id,
-                turn_id=turn_id,
-            )
 
         # Security: sanitize the user's question. The wrap is for the LLM
         # call ONLY — keep ``question`` clean so events, conversation memory,

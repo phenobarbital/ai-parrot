@@ -48,8 +48,8 @@ class PDFMarkdownLoader(BasePDF):
         source_type: str = 'pdf',
         language: str = "eng",
         markdown_backend: str = "auto",  # "markitdown", "pymupdf4llm", "manual", "auto"
-        chunk_size: int = 512,
-        chunk_overlap: int = 50,
+        chunk_size: int = 2048,
+        chunk_overlap: int = 200,
         preserve_tables: bool = True,
         extract_images: bool = False,
         **kwargs

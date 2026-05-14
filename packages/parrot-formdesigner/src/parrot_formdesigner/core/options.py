@@ -4,6 +4,8 @@ This module defines the data models for static options and dynamic
 options sources that can be loaded from external services.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from .types import LocalizedString
@@ -36,6 +38,8 @@ class OptionsSource(BaseModel):
         value_field: Field in the source response to use as option value.
         label_field: Field in the source response to use as option label.
         cache_ttl_seconds: How long to cache the fetched options. None means no cache.
+        http_method: HTTP verb for endpoint sources. Defaults to "GET".
+        auth_ref: Reference to an AuthContext auth entry for authenticated endpoints.
     """
 
     source_type: str
@@ -43,3 +47,6 @@ class OptionsSource(BaseModel):
     value_field: str = "value"
     label_field: str = "label"
     cache_ttl_seconds: int | None = None
+    # Phase 2 additions (FEAT-167)
+    http_method: Literal["GET", "POST"] = "GET"
+    auth_ref: str | None = None

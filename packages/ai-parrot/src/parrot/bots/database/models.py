@@ -6,9 +6,19 @@ from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from enum import Enum, Flag, auto
 from datetime import datetime
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, model_validator
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 import yaml
+
+# Matches a fenced ```sql ... ``` (or ```postgres / ```plpgsql / ```sqlite /
+# unmarked fences that look like SQL) so that ``QueryResponse`` can strip the
+# block from ``explanation`` when the same SQL already lives in ``query`` and
+# the frontend would otherwise render it twice. Multiline, case-insensitive.
+_SQL_FENCE_RE = re.compile(
+    r"```(?:sql|postgres(?:ql)?|plpgsql|sqlite|tsql|mysql)?\s*\n?.*?```",
+    re.IGNORECASE | re.DOTALL,
+)
 from parrot.bots.data import PandasTable  # noqa: F401 — used by QueryDataset
 
 if TYPE_CHECKING:
@@ -254,6 +264,34 @@ class QueryResponse(BaseModel):
         default=None,
         description="Multi-dataset variant; list of variable names.",
     )
+
+    @model_validator(mode="after")
+    def _dedupe_sql_from_explanation(self) -> "QueryResponse":
+        """Strip redundant ```sql ... ``` fences from ``explanation``.
+
+        Gemini (and other LLMs that don't honour the structured-output
+        contract strictly) sometimes emit the SQL in **both** ``query`` and
+        ``explanation`` (with a ``\`\`\`sql ... \`\`\``` fence inside the
+        prose). The frontend renders ``explanation`` as markdown and the
+        ``SqlArtifactCard`` from ``query``, so the user sees the same
+        statement twice.
+
+        When ``query`` is present we treat ``explanation`` as prose-only and
+        strip any fenced SQL block from it. We only collapse blank lines
+        introduced by the strip; we never touch ``query`` itself.
+        """
+        if not self.query or not self.explanation:
+            return self
+        stripped = _SQL_FENCE_RE.sub("", self.explanation)
+        if stripped == self.explanation:
+            return self
+        # Collapse 3+ consecutive newlines down to two — keep paragraph breaks
+        # but drop the gap the fence used to fill.
+        cleaned = re.sub(r"\n{3,}", "\n\n", stripped).strip()
+        # If the explanation collapsed to nothing useful, leave it as a short
+        # generic summary so the bubble isn't blank.
+        self.explanation = cleaned or "Here is the SQL for your request."
+        return self
 
 
 # ============================================================================

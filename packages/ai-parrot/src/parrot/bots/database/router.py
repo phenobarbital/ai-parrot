@@ -34,66 +34,144 @@ class SchemaQueryRouter:
         # Database identifiers → toolkit names (FEAT-082)
         self.registered_databases: Dict[str, str] = {}
         # Enhanced pattern matching
+        # Patterns are matched against the lower-cased query. Each intent
+        # carries both English and Spanish triggers — the agent is used by
+        # a bilingual team and the previous English-only set silently fell
+        # back to ``GENERATE_QUERY`` for Spanish prompts, so EXPLAIN /
+        # optimization tools were never surfaced when the user wrote
+        # "optimizá este query" in Spanish.
         self.patterns = {
-            # Data retrieval patterns - EXPANDED
             'show_data': [
+                # English
                 r'\bshow\s+me\b', r'\bdisplay\b', r'\blist\s+all\b',
                 r'\bget\s+all\b', r'\bfind\s+all\b', r'\breturn\s+all\b',
                 r'\bselect\s+.*\s+from\b',
-                # ADD THESE MISSING PATTERNS:
-                r'\bget\s+\w+\s+\d+\s+records?\b',  # "get last 5 records"
-                r'\bget\s+(last|first|top)\s+\d+\b',  # "get last 5", "get top 10"
-                r'\bshow\s+\d+\s+records?\b',  # "show 5 records"
-                r'\bfetch\s+\d+\s+records?\b',  # "fetch 10 records"
-                r'\breturn\s+\d+\s+records?\b',  # "return 5 records"
-                r'\bget\s+records?\s+from\b',  # "get records from"
-                r'\bselect\s+from\b',  # "select from table"
-                r'\blist\s+data\b',  # "list data"
-                r'\bshow\s+data\b',  # "show data"
+                r'\bget\s+\w+\s+\d+\s+records?\b',
+                r'\bget\s+(last|first|top)\s+\d+\b',
+                r'\bshow\s+\d+\s+records?\b',
+                r'\bfetch\s+\d+\s+records?\b',
+                r'\breturn\s+\d+\s+records?\b',
+                r'\bget\s+records?\s+from\b',
+                r'\bselect\s+from\b',
+                r'\blist\s+data\b',
+                r'\bshow\s+data\b',
+                # Spanish
+                r'\bmu[eé]strame\b',
+                r'\bmostrar\b',
+                r'\bdame\s+(todos|todas|los|las)\b',
+                r'\blistar?\s+(todos|todas|los|las)\b',
+                r'\btraer?\s+(todos|todas|los|las)\b',
+                r'\bobtener?\s+(todos|todas|los|las)\b',
+                r'\bver\s+(los|las)\b',
+                r'\b(los|las)\s+(primeros?|primeras?|[uú]ltimos?|[uú]ltimas?)\s+\d+\b',
+                r'\btraer?\s+\d+\s+registros?\b',
+                r'\bdame\s+\d+\s+registros?\b',
             ],
-            # Query generation patterns - EXPANDED
             'generate_query': [
+                # English
                 r'\bget\s+\w+\s+and\s+\w+\b', r'\bfind\s+\w+\s+where\b',
                 r'\bcalculate\b', r'\bcount\b', r'\bsum\b', r'\baverage\b',
-                # ADD THESE:
-                r'\bget\s+.*\s+where\b',  # "get users where"
-                r'\bfind\s+.*\s+with\b',  # "find records with"
-                r'\bretrieve\s+.*\s+from\b',  # "retrieve data from"
-                r'\bquery\s+.*\s+for\b',  # "query table for"
+                r'\bget\s+.*\s+where\b',
+                r'\bfind\s+.*\s+with\b',
+                r'\bretrieve\s+.*\s+from\b',
+                r'\bquery\s+.*\s+for\b',
+                r'\bgenerate\s+.*\s+(query|sql)\b',
+                # Spanish
+                r'\bcalcular?\b',
+                r'\bcontar?\b', r'\bcu[eé]nta(me)?\b',
+                r'\bsuma(r)?\b',
+                r'\bpromedio\b', r'\bpromediar?\b',
+                r'\bagrupar?\b', r'\bagrupando\b',
+                r'\bquiero\s+(saber|ver|consultar)\b',
+                r'\bpuedes?\s+(dar(me)?|generar|crear|hacer)\s+(un|una)\s+(query|consulta)\b',
+                r'\bgenera(r|me)?\s+(un|una)\s+(query|consulta|sql)\b',
+                r'\bconsulta\s+que\b',
+                r'\bdame\s+(un|una)\s+(query|consulta|sql)\b',
             ],
-            # Schema exploration patterns - NARROWED DOWN
             'explore_schema': [
+                # English
                 r'\bwhat\s+tables?\b', r'\blist\s+tables?\b', r'\bshow\s+tables?\b',
                 r'\bwhat\s+.*\s+available\b', r'\bschema\s+structure\b',
                 r'\bdatabase\s+schema\b', r'\btable\s+structure\b',
-                # REMOVE patterns that conflict with data retrieval
-                # Don't include generic "describe", "metadata" here
+                # Spanish
+                r'\bqu[eé]\s+tablas?\b',
+                r'\bcu[aá]les\s+tablas?\b',
+                r'\blistar?\s+tablas?\b',
+                r'\btablas?\s+(disponibles|hay|tenemos|existen)\b',
+                r'\btenemos\s+(una\s+)?tabla\b',
+                r'\bexiste\s+(una\s+)?tabla\b',
+                r'\besquema\s+(de\s+la\s+)?(base\s+de\s+datos)?\b',
+                r'\bestructura\s+(de\s+la\s+)?tabla\b',
             ],
-            # Documentation/Metadata requests - SPECIFIC
             'explain_metadata': [
-                r'\bmetadata\s+of\s+table\b',  # "metadata of table X"
-                r'\bdescribe\s+table\b',  # "describe table X"
-                r'\btable\s+.*\s+metadata\b',  # "table X metadata"
-                r'\bin\s+markdown\s+format\b',  # "in markdown format"
+                # English
+                r'\bmetadata\s+of\s+table\b',
+                r'\bdescribe\s+table\b',
+                r'\btable\s+.*\s+metadata\b',
+                r'\bin\s+markdown\s+format\b',
                 r'\bformat.*metadata\b',
-                r'\bdocument\w*.*table\b',  # "document table X"
-                r'\bexplain\s+.*\s+structure\b',  # "explain table structure"
+                r'\bdocument\w*.*table\b',
+                r'\bexplain\s+.*\s+structure\b',
+                r'\bwhat\s+columns?\s+(does|has|are)\b',
+                # Spanish
+                r'\bdescribe?\s+(la\s+)?tabla\b',
+                r'\bdescribir?\s+(la\s+)?tabla\b',
+                r'\bmetadata\s+de\s+(la\s+)?tabla\b',
+                r'\bqu[eé]\s+columnas?\s+tiene\b',
+                r'\bcu[aá]les\s+(son\s+las\s+)?columnas?\b',
+                r'\bdocumenta(r|me)?\s+(la\s+)?tabla\b',
+                r'\bexplica(r|me)?\s+(la\s+)?(estructura|tabla|esquema)\b',
             ],
-            # Data analysis patterns
             'analyze_data': [
+                # English
                 r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
                 r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
                 r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b',
+                # Spanish
+                r'\banaliza(r|me)?\b',
+                r'\ban[aá]lisis\b',
+                r'\btendencias?\b',
+                r'\bpatr(o|ó)n(es)?\b',
+                r'\bestad[ií]sticas?\b',
+                r'\bcorrelaci[oó]n\b',
+                r'\bdistribuci[oó]n\b',
+                r'\bcomparar?\b', r'\bcompara(me)?\b',
             ],
-            # Performance / optimization patterns
             'optimize_query': [
+                # English
                 r'\boptimiz\w+\b', r'\bperformance\b', r'\bslow\b',
-                r'\bindex\b', r'\btuning?\b', r'\bexplain\s+analyze\b',
+                r'\bindex(es|ing)?\b', r'\btuning?\b',
+                r'\bexplain\s+analyze\b', r'\bquery\s+plan\b',
+                r'\bexecution\s+plan\b',
+                r'\bsuggest\s+indexes?\b',
+                r'\bbottleneck\b',
+                r'\bmake\s+.*\s+faster\b',
+                r'\bspeed\s+up\b',
+                # Spanish (note: ``optimiz\w+`` above already matches
+                # "optimizar/optimización" by suffix — these add the rest)
+                r'\b[ií]ndices?\b',
+                r'\brendimiento\b',
+                r'\blent[oa]s?\b',
+                r'\bm[aá]s\s+r[aá]pid[oa]\b',
+                r'\bacelerar?\b', r'\bacelera(me|r|lo)\b',
+                r'\bmejorar?\s+(el\s+|la\s+)?(rendimiento|performance|query|consulta|velocidad)\b',
+                r'\bplan\s+de\s+ejecuci[oó]n\b',
+                r'\bcuello\s+de\s+botella\b',
+                r'\bsugerir?\s+[ií]ndices?\b',
+                r'\bproponer?\s+[ií]ndices?\b',
+                r'\bagregar?\s+[ií]ndices?\b',
+                r'\bexplain\s+anal[ií]za(r|me)?\b',
             ],
             'create_examples': [
+                # English
                 r'\bexamples?\b', r'\bhow\s+to\s+use\b', r'\busage\b',
-                r'\bshow.*examples?\b'
-            ]
+                r'\bshow.*examples?\b',
+                # Spanish
+                r'\bejemplos?\b',
+                r'\bc[oó]mo\s+(usar|usarlo|usarla)\b',
+                r'\buso\s+de\b',
+                r'\bd[aá]me?\s+(un|unos)\s+ejemplos?\b',
+            ],
         }
 
     def register_database(self, identifier: str, toolkit_name: str) -> None:

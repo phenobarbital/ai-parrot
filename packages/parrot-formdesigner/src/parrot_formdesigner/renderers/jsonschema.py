@@ -19,7 +19,7 @@ from ..core.options import FieldOption, OptionsSource
 from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,17 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.IMAGE: "string",
     FieldType.GROUP: "object",
     FieldType.ARRAY: "array",
+    # New field types (FEAT-167)
+    FieldType.SIGNATURE: "object",
+    FieldType.DYNAMIC_SELECT: "string",
+    FieldType.TRANSFER_LIST: "array",
+    FieldType.REMOTE_RESPONSE: "object",
+    FieldType.AVAILABILITY: "array",
+    FieldType.LOCATION: "string",
+    FieldType.TAGS: "array",
+    FieldType.NPS: "integer",
+    FieldType.LIKERT: "integer",
+    FieldType.RANKING: "integer",
 }
 
 # FieldType → JSON Schema "format" keyword (where applicable)
@@ -54,6 +65,17 @@ _FORMAT_MAP: dict[FieldType, str] = {
     FieldType.DATE: "date",
     FieldType.DATETIME: "date-time",
     FieldType.TIME: "time",
+    # New field types (FEAT-167)
+    FieldType.SIGNATURE: "signature",
+    FieldType.DYNAMIC_SELECT: "dynamic-select",
+    FieldType.TRANSFER_LIST: "transfer-list",
+    FieldType.REMOTE_RESPONSE: "remote-response",
+    FieldType.AVAILABILITY: "availability",
+    FieldType.LOCATION: "iso-country",
+    FieldType.TAGS: "tags",
+    FieldType.NPS: "nps",
+    FieldType.LIKERT: "likert",
+    FieldType.RANKING: "ranking",
 }
 
 
@@ -108,8 +130,30 @@ class JsonSchemaRenderer(AbstractFormRenderer):
     """
 
     def __init__(self) -> None:
-        """Initialize JsonSchemaRenderer."""
+        """Initialize JsonSchemaRenderer with per-type renderer registry."""
         self.logger = logging.getLogger(__name__)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for JSON Schema output.
+
+        Each entry wraps the _TYPE_MAP dispatch in an async FieldRenderer-
+        compatible callable.
+        """
+
+        class _JsonSchemaFieldRenderer:
+            """Async FieldRenderer stub for JSON Schema field dispatch."""
+
+            def __init__(self_, renderer: "JsonSchemaRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
+
+        renderer_inst = _JsonSchemaFieldRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
 
     async def render(
         self,
@@ -269,6 +313,50 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 prop["minItems"] = c.min_items
             if c.max_items is not None:
                 prop["maxItems"] = c.max_items
+
+        # NPS / LIKERT / RANKING — add minimum/maximum from scale constraints
+        if ft == FieldType.NPS:
+            prop["minimum"] = 0
+            prop["maximum"] = 10
+        elif ft in (FieldType.LIKERT, FieldType.RANKING):
+            if field.constraints:
+                if field.constraints.scale_min is not None:
+                    prop["minimum"] = field.constraints.scale_min
+                if field.constraints.scale_max is not None:
+                    prop["maximum"] = field.constraints.scale_max
+            if "minimum" not in prop:
+                prop["minimum"] = 0
+            if "maximum" not in prop:
+                prop["maximum"] = 5 if ft == FieldType.RANKING else 4
+
+        # SIGNATURE — object with svg + png keys
+        if ft == FieldType.SIGNATURE:
+            prop["properties"] = {
+                "svg": {"type": "string"},
+                "png": {"type": "string"},
+            }
+
+        # AVAILABILITY — array of slot objects
+        if ft == FieldType.AVAILABILITY:
+            prop["items"] = {
+                "type": "object",
+                "properties": {
+                    "start": {"type": "string", "format": "date-time"},
+                    "end": {"type": "string", "format": "date-time"},
+                },
+            }
+
+        # TAGS — array of strings
+        if ft == FieldType.TAGS:
+            prop["items"] = {"type": "string"}
+
+        # TRANSFER_LIST — array of string values
+        if ft == FieldType.TRANSFER_LIST:
+            prop["items"] = {"type": "string"}
+
+        # DYNAMIC_SELECT — options source required; enum not pre-set
+        if ft == FieldType.DYNAMIC_SELECT and field.options_source:
+            prop["x-options-source"] = field.options_source.model_dump()
 
         # Options: enum for SELECT/MULTI_SELECT
         if ft == FieldType.SELECT and field.options:

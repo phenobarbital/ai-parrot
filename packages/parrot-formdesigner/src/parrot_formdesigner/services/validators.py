@@ -9,14 +9,39 @@ Migrated and enhanced from parrot/integrations/msteams/dialogs/validator.py.
 
 import logging
 import re
+from datetime import datetime
 from typing import Any, Callable
 
 from pydantic import BaseModel
 
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
+from .auth_context import AuthContext
+from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 
 logger = logging.getLogger(__name__)
+
+# pycountry guard — only used for LOCATION validation
+try:
+    import pycountry as _pycountry
+    _HAS_PYCOUNTRY = True
+except ImportError:
+    _pycountry = None  # type: ignore[assignment]
+    _HAS_PYCOUNTRY = False
+
+
+def _validate_location(value: str) -> bool:
+    """Check if value is a valid ISO 3166 alpha-2 country code.
+
+    Args:
+        value: Country code string to validate.
+
+    Returns:
+        True if valid or pycountry is not installed.
+    """
+    if not _HAS_PYCOUNTRY:
+        return True  # skip validation when pycountry not available
+    return _pycountry.countries.get(alpha_2=value.upper()) is not None
 
 # Standard regex patterns
 EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
@@ -90,6 +115,7 @@ class FormValidator:
         data: dict[str, Any],
         *,
         locale: str = "en",
+        auth_context: AuthContext | None = None,
     ) -> ValidationResult:
         """Validate all form submission data against the schema.
 
@@ -97,6 +123,7 @@ class FormValidator:
             form: The FormSchema to validate against.
             data: Submitted form data keyed by field_id.
             locale: Locale for error message resolution.
+            auth_context: Optional runtime auth context for REMOTE_RESPONSE fields.
 
         Returns:
             ValidationResult with field-level errors and sanitized data.
@@ -122,13 +149,20 @@ class FormValidator:
                 data.get(field.field_id),
                 all_data=data,
                 locale=locale,
+                auth_context=auth_context,
             )
             if field_errors:
                 errors[field.field_id] = field_errors
             else:
-                coerced = self._coerce_value(data.get(field.field_id), field)
-                if coerced is not None:
-                    sanitized[field.field_id] = coerced
+                # For REMOTE_RESPONSE, use the resolved value stored by the validator
+                if field.field_type == FieldType.REMOTE_RESPONSE:
+                    resolved = getattr(field, "_resolved_remote_value", None)
+                    if resolved is not None:
+                        sanitized[field.field_id] = resolved
+                else:
+                    coerced = self._coerce_value(data.get(field.field_id), field)
+                    if coerced is not None:
+                        sanitized[field.field_id] = coerced
 
         return ValidationResult(
             is_valid=len(errors) == 0,
@@ -143,6 +177,7 @@ class FormValidator:
         *,
         all_data: dict[str, Any] | None = None,
         locale: str = "en",
+        auth_context: AuthContext | None = None,
     ) -> list[str]:
         """Validate a single field value against its constraints.
 
@@ -151,6 +186,7 @@ class FormValidator:
             value: The submitted value.
             all_data: Full submission data for cross-field validation.
             locale: Locale for error message resolution.
+            auth_context: Optional runtime auth context for REMOTE_RESPONSE fields.
 
         Returns:
             List of error messages (empty list if valid).
@@ -159,6 +195,12 @@ class FormValidator:
 
         # Resolve label for error messages
         label = _resolve_localized(field.label, locale) or field.field_id
+
+        # REMOTE_RESPONSE: resolve via external API before standard validation
+        if field.field_type == FieldType.REMOTE_RESPONSE:
+            return await self._validate_remote_response(
+                field, value, label, auth_context=auth_context
+            )
 
         # Required check
         is_empty = value is None or (isinstance(value, str) and not value.strip())
@@ -299,6 +341,45 @@ class FormValidator:
                 return value
             return [value]
 
+        # Phase 2 — new field types (FEAT-167)
+        elif ft == FieldType.DYNAMIC_SELECT:
+            return str(value).strip()
+
+        elif ft == FieldType.TRANSFER_LIST:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value]
+            elif isinstance(value, str):
+                return [v.strip() for v in value.split(",") if v.strip()]
+            return [str(value)]
+
+        elif ft == FieldType.TAGS:
+            if isinstance(value, list):
+                return [str(v).strip() for v in value if str(v).strip()]
+            elif isinstance(value, str):
+                return [v.strip() for v in value.split(",") if v.strip()]
+            return [str(value)]
+
+        elif ft in (FieldType.NPS, FieldType.LIKERT, FieldType.RANKING):
+            if isinstance(value, int):
+                return value
+            try:
+                return int(str(value).strip())
+            except (ValueError, TypeError):
+                raise ValueError(f"'{value}' is not a valid integer")
+
+        elif ft == FieldType.LOCATION:
+            return str(value).strip().upper()
+
+        elif ft == FieldType.SIGNATURE:
+            if isinstance(value, dict):
+                return value
+            raise ValueError("Signature must be a dict with 'svg' and 'png' keys")
+
+        elif ft == FieldType.AVAILABILITY:
+            if isinstance(value, list):
+                return value
+            raise ValueError("Availability must be a list of slot dicts")
+
         return value
 
     def _validate_by_type(
@@ -331,6 +412,156 @@ class FormValidator:
         elif ft == FieldType.PHONE and isinstance(value, str):
             if not PHONE_PATTERN.match(value):
                 errors.append(f"{label} must be a valid phone number")
+
+        # Phase 2 — new field types (FEAT-167)
+        elif ft == FieldType.SIGNATURE:
+            if not isinstance(value, dict):
+                errors.append(f"{label} must be a dict with 'svg' and 'png' keys")
+            else:
+                if "svg" not in value or "png" not in value:
+                    errors.append(f"{label} must contain 'svg' and 'png' keys")
+
+        elif ft == FieldType.DYNAMIC_SELECT:
+            # Same validation as SELECT — option values checked upstream
+            pass
+
+        elif ft == FieldType.TRANSFER_LIST:
+            # Same validation as MULTI_SELECT — option values checked upstream
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of strings")
+
+        elif ft == FieldType.AVAILABILITY:
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of availability slots")
+            else:
+                allow_overlap = (field.meta or {}).get("allow_overlap", False)
+                slots = []
+                for i, slot in enumerate(value):
+                    if not isinstance(slot, dict) or "start" not in slot or "end" not in slot:
+                        errors.append(f"{label} slot {i} must have 'start' and 'end' keys")
+                        continue
+                    try:
+                        start = datetime.fromisoformat(str(slot["start"])) if isinstance(slot["start"], str) else slot["start"]
+                        end = datetime.fromisoformat(str(slot["end"])) if isinstance(slot["end"], str) else slot["end"]
+                        if end <= start:
+                            errors.append(f"{label} slot {i}: 'end' must be after 'start'")
+                        slots.append((start, end))
+                    except (ValueError, TypeError):
+                        errors.append(f"{label} slot {i} has invalid datetime format")
+                if not allow_overlap and len(slots) > 1:
+                    sorted_slots = sorted(slots, key=lambda s: s[0])
+                    for j in range(len(sorted_slots) - 1):
+                        if sorted_slots[j][1] > sorted_slots[j + 1][0]:
+                            errors.append(f"{label} contains overlapping availability slots")
+                            break
+
+        elif ft == FieldType.LOCATION:
+            if not isinstance(value, str) or len(value) != 2:
+                errors.append(f"{label} must be a 2-character ISO 3166 country code")
+            elif not _validate_location(value):
+                errors.append(f"{label} '{value}' is not a valid ISO 3166 country code")
+
+        elif ft == FieldType.TAGS:
+            if not isinstance(value, list):
+                errors.append(f"{label} must be a list of strings")
+
+        elif ft == FieldType.NPS:
+            if isinstance(value, int):
+                c = field.constraints
+                scale_min = c.scale_min if c and c.scale_min is not None else 0
+                scale_max = c.scale_max if c and c.scale_max is not None else 10
+                if not (scale_min <= value <= scale_max):
+                    errors.append(f"{label} must be between {scale_min} and {scale_max}")
+
+        elif ft == FieldType.LIKERT:
+            if isinstance(value, int):
+                c = field.constraints
+                if c and c.scale_min is not None and c.scale_max is not None:
+                    if not (c.scale_min <= value <= c.scale_max):
+                        errors.append(f"{label} must be between {c.scale_min} and {c.scale_max}")
+                else:
+                    errors.append(f"{label} requires scale_min and scale_max constraints")
+
+        elif ft == FieldType.RANKING:
+            if isinstance(value, int):
+                c = field.constraints
+                scale_max = c.scale_max if c and c.scale_max is not None else 5
+                scale_min = c.scale_min if c and c.scale_min is not None else 0
+                if not (scale_min <= value <= scale_max):
+                    errors.append(f"{label} must be between {scale_min} and {scale_max}")
+
+        return errors
+
+    async def _validate_remote_response(
+        self,
+        field: FormField,
+        value: Any,
+        label: str,
+        *,
+        auth_context: AuthContext | None = None,
+    ) -> list[str]:
+        """Validate a REMOTE_RESPONSE field by calling the configured external API.
+
+        Parses ``RemoteResponseSpec`` from ``field.meta``, calls
+        ``RemoteResponseResolver.resolve()``, and stores the resolved value.
+        If ``response_schema`` is set in the spec, the resolved value is checked
+        against the required top-level keys (informational — 2xx always succeeds).
+
+        Args:
+            field: FormField of type REMOTE_RESPONSE.
+            value: Submitted content sent as the API request body.
+            label: Resolved label for error messages.
+            auth_context: Optional runtime auth context for header injection.
+
+        Returns:
+            List of error strings (empty means valid and resolved value stored).
+        """
+        errors: list[str] = []
+        meta = field.meta or {}
+
+        # Extract only known RemoteResponseSpec fields from meta to avoid
+        # extra keys that are not part of the spec.
+        spec_fields = {
+            "endpoint", "http_method", "content_field", "prompt",
+            "auth_ref", "timeout_seconds", "response_schema",
+        }
+        spec_kwargs = {k: v for k, v in meta.items() if k in spec_fields}
+
+        if not spec_kwargs.get("endpoint"):
+            errors.append(f"{label}: REMOTE_RESPONSE field must have 'endpoint' in meta")
+            return errors
+
+        try:
+            spec = RemoteResponseSpec(**spec_kwargs)
+        except Exception as exc:
+            errors.append(f"{label}: invalid REMOTE_RESPONSE spec in meta: {exc}")
+            return errors
+
+        resolver = RemoteResponseResolver()
+        result = await resolver.resolve(spec, value, auth_context=auth_context)
+
+        if not result.success:
+            errors.append(
+                f"{label}: remote response failed"
+                + (f": {result.error}" if result.error else "")
+            )
+            return errors
+
+        # Optional response_schema key presence check (informational only)
+        if spec.response_schema and result.value is not None:
+            required_keys = spec.response_schema.get("required", [])
+            if required_keys and isinstance(result.value, dict):
+                missing = [k for k in required_keys if k not in result.value]
+                if missing:
+                    self.logger.warning(
+                        "REMOTE_RESPONSE field '%s': response missing required schema keys: %s",
+                        field.field_id,
+                        missing,
+                    )
+
+        # Store the resolved value back into the field for downstream use
+        # (sanitized_data is populated by the caller)
+        field._resolved_remote_value = result.value  # type: ignore[attr-defined]
 
         return errors
 

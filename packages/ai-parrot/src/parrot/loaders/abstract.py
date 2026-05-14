@@ -65,8 +65,8 @@ class AbstractLoader(ABC):
                 by this loader unless overridden per call.
             **kwargs: Additional keyword arguments for configuration
         """
-        self.chunk_size: int = kwargs.get('chunk_size', 512)
-        self.chunk_overlap: int = kwargs.get('chunk_overlap', 50)
+        self.chunk_size: int = kwargs.get('chunk_size', 2048)
+        self.chunk_overlap: int = kwargs.get('chunk_overlap', 200)
         self.min_chunk_size: int = kwargs.get('min_chunk_size', 30)
         self.full_document: bool = kwargs.get('full_document', True)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))

@@ -146,6 +146,84 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
             "label": "Item",
         },
     },
+    # New field types (FEAT-167)
+    FieldType.SIGNATURE.value: {
+        "field_id": "customer_signature",
+        "field_type": "signature",
+        "label": "Customer Signature",
+        "required": True,
+    },
+    FieldType.DYNAMIC_SELECT.value: {
+        "field_id": "country",
+        "field_type": "dynamic_select",
+        "label": "Country",
+        "options_source": {
+            "source_type": "endpoint",
+            "source_ref": "https://api.example.com/countries",
+            "value_field": "code",
+            "label_field": "name",
+        },
+    },
+    FieldType.TRANSFER_LIST.value: {
+        "field_id": "selected_skills",
+        "field_type": "transfer_list",
+        "label": "Selected Skills",
+        "options": [
+            {"value": "python", "label": "Python"},
+            {"value": "sql", "label": "SQL"},
+            {"value": "ml", "label": "Machine Learning"},
+        ],
+    },
+    FieldType.REMOTE_RESPONSE.value: {
+        "field_id": "customer_data",
+        "field_type": "remote_response",
+        "label": "Customer Data",
+        "read_only": True,
+        "options_source": {
+            "source_type": "endpoint",
+            "source_ref": "https://api.example.com/customers/{{customer_id}}",
+        },
+    },
+    FieldType.AVAILABILITY.value: {
+        "field_id": "meeting_availability",
+        "field_type": "availability",
+        "label": "Meeting Availability",
+    },
+    FieldType.LOCATION.value: {
+        "field_id": "country_code",
+        "field_type": "location",
+        "label": "Country",
+        "required": True,
+    },
+    FieldType.TAGS.value: {
+        "field_id": "interests",
+        "field_type": "tags",
+        "label": "Interests",
+        "placeholder": "Add a tag...",
+    },
+    FieldType.NPS.value: {
+        "field_id": "nps_score",
+        "field_type": "nps",
+        "label": "How likely are you to recommend us?",
+        "required": True,
+        "constraints": {"scale_min": 0, "scale_max": 10},
+    },
+    FieldType.LIKERT.value: {
+        "field_id": "satisfaction",
+        "field_type": "likert",
+        "label": "Overall Satisfaction",
+        "constraints": {
+            "scale_min": 1,
+            "scale_max": 5,
+            "anchor_labels": {1: "Very Dissatisfied", 5: "Very Satisfied"},
+        },
+    },
+    FieldType.RANKING.value: {
+        "field_id": "priority_rank",
+        "field_type": "ranking",
+        "label": "Priority Rank",
+        "constraints": {"scale_min": 1, "scale_max": 5},
+    },
 }
 
 
