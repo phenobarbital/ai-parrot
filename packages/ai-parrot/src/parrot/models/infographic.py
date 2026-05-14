@@ -27,8 +27,10 @@ from typing import (
     Optional,
     Any,
     Annotated,
+    ClassVar,
     Dict,
     Literal,
+    Tuple,
     Union,
 )
 import json
@@ -183,8 +185,14 @@ class TitleBlock(BaseModel):
 class HeroCardBlock(BaseModel):
     """Key metric card with value, label, and optional trend indicator."""
     type: Literal["hero_card"] = "hero_card"
-    label: str = Field(..., description="Metric label (e.g., 'Total Revenue')")
-    value: str = Field(..., description="Formatted metric value (e.g., '$1.2M', '98%')")
+    label: str = Field(
+        "",
+        description="Metric label (e.g., 'Total Revenue')",
+    )
+    value: str = Field(
+        "",
+        description="Formatted metric value (e.g., '$1.2M', '98%')",
+    )
     icon: Optional[str] = Field(
         None,
         description="Icon identifier (e.g., 'money', 'users', 'chart', 'time', 'target')"
@@ -224,12 +232,36 @@ class HeroCardBlock(BaseModel):
             return None
         return None
 
+    _LABEL_ALIASES: ClassVar[Tuple[str, ...]] = (
+        "label", "title", "name", "metric", "metric_name",
+        "caption", "heading", "header", "key",
+    )
+    _VALUE_ALIASES: ClassVar[Tuple[str, ...]] = (
+        "value", "number", "text", "content", "figure",
+        "count", "total", "amount", "kpi_value", "metric_value",
+    )
+    _NESTED_WRAPPERS: ClassVar[Tuple[str, ...]] = (
+        "card", "card_data", "data", "metric", "kpi",
+        "content", "callout", "hero_card", "details",
+    )
+
     @model_validator(mode="before")
     @classmethod
     def _extract_from_items(cls, values: Any) -> Any:
-        """Handle LLM returning items list instead of flat label/value."""
+        """Recover label/value from common LLM hallucinations.
+
+        Handles three flavours of malformed hero_card payloads:
+        * ``items=[{...}]`` instead of flat label/value
+        * Alternative key names (``title``, ``number``, ``text``, ...)
+        * Nested wrapper dicts (``card``, ``callout``, ``data``, ...)
+
+        Falls back to empty strings so a single bad card never crashes
+        the whole infographic render.
+        """
         if not isinstance(values, dict):
             return values
+
+        # 1) items list → flatten first item into label/value
         if "label" not in values and "items" in values:
             items = values.get("items")
             if isinstance(items, list) and items:
@@ -238,6 +270,51 @@ class HeroCardBlock(BaseModel):
                 values["value"] = str(first.get("value", ""))
                 if not values.get("icon") and first.get("icon"):
                     values["icon"] = first["icon"]
+
+        # 2) Alternative key names at the top level
+        if "label" not in values:
+            for alt in cls._LABEL_ALIASES:
+                if alt == "label":
+                    continue
+                v = values.get(alt)
+                if isinstance(v, str) and v:
+                    values["label"] = v
+                    break
+        if "value" not in values:
+            for alt in cls._VALUE_ALIASES:
+                if alt == "value":
+                    continue
+                v = values.get(alt)
+                if isinstance(v, (str, int, float)) and not isinstance(v, bool):
+                    values["value"] = str(v)
+                    break
+
+        # 3) Nested wrapper dicts
+        if "label" not in values or "value" not in values:
+            for wrapper_key in cls._NESTED_WRAPPERS:
+                nested = values.get(wrapper_key)
+                if not isinstance(nested, dict):
+                    continue
+                if "label" not in values:
+                    for k in cls._LABEL_ALIASES:
+                        nv = nested.get(k)
+                        if isinstance(nv, str) and nv:
+                            values["label"] = nv
+                            break
+                if "value" not in values:
+                    for k in cls._VALUE_ALIASES:
+                        nv = nested.get(k)
+                        if isinstance(nv, (str, int, float)) and not isinstance(nv, bool):
+                            values["value"] = str(nv)
+                            break
+                if not values.get("icon") and isinstance(nested.get("icon"), str):
+                    values["icon"] = nested["icon"]
+                if "label" in values and "value" in values:
+                    break
+
+        # 4) Final safety net — never block validation on these fields
+        values.setdefault("label", "")
+        values.setdefault("value", "")
         return values
 
 

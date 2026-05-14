@@ -1,14 +1,16 @@
 """Core form schema data models.
 
 This module defines the canonical Pydantic models for form structure:
-FormField, FormSection, SubmitAction, FormSchema, and RenderedForm.
-These models are the foundation of the entire forms abstraction layer.
+FormField, FormSubsection, FormSection, SubmitAction, FormSchema, and
+RenderedForm.  These models are the foundation of the entire forms
+abstraction layer.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, ConfigDict
 
@@ -65,17 +67,52 @@ class FormField(BaseModel):
 FormField.model_rebuild()
 
 
+class FormSubsection(BaseModel):
+    """A visual sub-grouping of fields within a section.
+
+    Subsections provide an additional level of organization below sections.
+    They co-exist alongside ``FormField`` items in ``FormSection.fields``,
+    giving renderers a grouping boundary (header, divider, container) without
+    creating a full section (which would affect wizard steps, accordion
+    panels, etc.).
+
+    Attributes:
+        subsection_id: Unique identifier for this subsection within the form.
+        title: Optional title displayed as a subsection header.
+        description: Optional description shown under the subsection title.
+        fields: List of fields in this subsection.
+        depends_on: Dependency rule controlling conditional visibility.
+        meta: Arbitrary metadata for renderer-specific extensions.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    subsection_id: str
+    title: LocalizedString | None = None
+    description: LocalizedString | None = None
+    fields: list[FormField]
+    depends_on: DependencyRule | None = None
+    meta: dict[str, Any] | None = None
+
+
+SectionItem = Union[FormField, FormSubsection]
+
+
 class FormSection(BaseModel):
     """A logical grouping of fields within a form.
 
     Sections can be used to organize fields visually and in wizard-style forms
     each section becomes a separate step.
 
+    The ``fields`` list may contain both ``FormField`` and ``FormSubsection``
+    items in any order.  Use :meth:`iter_fields` to iterate over all
+    ``FormField`` instances (flattening through subsections).
+
     Attributes:
         section_id: Unique identifier for this section.
         title: Optional title displayed as a section header.
         description: Optional description shown under the section title.
-        fields: List of fields in this section.
+        fields: Ordered list of fields and subsections in this section.
         depends_on: Dependency rule controlling conditional section visibility.
         meta: Arbitrary metadata for renderer-specific extensions.
     """
@@ -83,9 +120,17 @@ class FormSection(BaseModel):
     section_id: str
     title: LocalizedString | None = None
     description: LocalizedString | None = None
-    fields: list[FormField]
+    fields: list[SectionItem]
     depends_on: DependencyRule | None = None
     meta: dict[str, Any] | None = None
+
+    def iter_fields(self) -> Iterator[FormField]:
+        """Yield every ``FormField``, flattening through subsections."""
+        for item in self.fields:
+            if isinstance(item, FormSubsection):
+                yield from item.fields
+            else:
+                yield item
 
 
 class SubmitAction(BaseModel):
@@ -142,6 +187,23 @@ class FormSchema(BaseModel):
     tenant: str | None = None
 
 
+class RenderWarning(BaseModel):
+    """Warning emitted when a renderer uses degraded fallback for a field type.
+
+    Attributes:
+        field_id: The ID of the field that triggered the fallback.
+        field_type: The FieldType.value string (e.g. "signature").
+        renderer: The renderer name ("html5" | "adaptive_card" | "pdf" |
+                  "xforms" | "jsonschema" | "telegram").
+        reason: Human-readable explanation (e.g. "unsupported in PDF — rendered as placeholder").
+    """
+
+    field_id: str
+    field_type: str
+    renderer: str
+    reason: str
+
+
 class RenderedForm(BaseModel):
     """Output of a form renderer.
 
@@ -150,9 +212,13 @@ class RenderedForm(BaseModel):
         content_type: MIME type or format identifier for the content.
         style_output: Optional style-related output from the renderer.
         metadata: Renderer-specific metadata about the rendering process.
+        warnings: Degraded-rendering warnings. Empty list when all fields
+            rendered natively. One entry per (field_id, renderer) pair that
+            used FallbackRenderer.
     """
 
     content: Any
     content_type: str
     style_output: Any | None = None
     metadata: dict[str, Any] | None = None
+    warnings: list[RenderWarning] = []

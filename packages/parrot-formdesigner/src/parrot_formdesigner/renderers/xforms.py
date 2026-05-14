@@ -31,10 +31,10 @@ from ..core.constraints import (
     FieldConstraints,
 )
 from ..core.options import FieldOption
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
-from .base import AbstractFormRenderer
+from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,17 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.HIDDEN: ("input", "string"),
     FieldType.GROUP: ("group", None),
     FieldType.ARRAY: ("repeat", None),
+    # New field types (FEAT-167)
+    FieldType.SIGNATURE: ("input", "string"),        # fallback: plain text
+    FieldType.DYNAMIC_SELECT: ("select1", "string"), # <xf:select1> like SELECT
+    FieldType.TRANSFER_LIST: ("select", "string"),   # <xf:select> multi-value
+    FieldType.REMOTE_RESPONSE: ("input", "string"),  # fallback: plain text
+    FieldType.AVAILABILITY: ("input", "string"),     # fallback: plain text
+    FieldType.LOCATION: ("select1", "string"),       # <xf:select1> country list
+    FieldType.TAGS: ("input", "string"),             # <xf:input> comma-separated
+    FieldType.NPS: ("range", "integer"),             # <xf:range> 0–10
+    FieldType.LIKERT: ("select1", "string"),         # <xf:select1> scale
+    FieldType.RANKING: ("range", "integer"),         # <xf:range>
 }
 
 
@@ -155,6 +166,32 @@ class XFormsRenderer(AbstractFormRenderer):
     (HTML-only concerns) but preserves them for base-class compatibility.
     """
 
+    def __init__(self) -> None:
+        """Initialize XFormsRenderer with per-type renderer registry."""
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for XForms output.
+
+        Each entry wraps the existing _FIELD_TO_XFORMS mapping in an async
+        FieldRenderer-compatible callable.
+        """
+
+        class _XFormsFieldRenderer:
+            """Async FieldRenderer stub for XForms field dispatch."""
+
+            def __init__(self_, renderer: "XFormsRenderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                # XForms rendering is document-level stateful; this stub satisfies protocol.
+                return _FIELD_TO_XFORMS.get(field.field_type)
+
+        renderer_inst = _XFormsFieldRenderer(self)
+        self._registry = {ft: renderer_inst for ft in FieldType}
+
     async def render(
         self,
         form: FormSchema,
@@ -187,9 +224,14 @@ class XFormsRenderer(AbstractFormRenderer):
 
         for section in form.sections:
             section_el = etree.SubElement(data, section.section_id)
-            for field in section.fields:
-                self._build_data_node(section_el, field)
-                self._collect_binds(binds, section.section_id, field)
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    for field in item.fields:
+                        self._build_data_node(section_el, field)
+                        self._collect_binds(binds, section.section_id, field)
+                else:
+                    self._build_data_node(section_el, item)
+                    self._collect_binds(binds, section.section_id, item)
 
         # Place all binds inside <xf:model>.
         for bind in binds:
@@ -280,8 +322,16 @@ class XFormsRenderer(AbstractFormRenderer):
         if title:
             label = etree.SubElement(group, _qn("label"))
             label.text = title
-        for field in section.fields:
-            group.append(self._build_ui_control(section.section_id, field, locale))
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                sub_group = etree.SubElement(group, _qn("group"), attrib={"id": item.subsection_id})
+                if item.title:
+                    sub_label = etree.SubElement(sub_group, _qn("label"))
+                    sub_label.text = _localize(item.title, locale, default=item.subsection_id)
+                for field in item.fields:
+                    sub_group.append(self._build_ui_control(section.section_id, field, locale))
+            else:
+                group.append(self._build_ui_control(section.section_id, item, locale))
         return group
 
     def _build_ui_control(
@@ -302,10 +352,35 @@ class XFormsRenderer(AbstractFormRenderer):
             hint = etree.SubElement(el, _qn("hint"))
             hint.text = _localize(field.placeholder, locale)
 
-        # SELECT / MULTI_SELECT options
-        if field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT) and field.options:
+        # SELECT / MULTI_SELECT / DYNAMIC_SELECT / LIKERT / LOCATION options
+        if field.field_type in (
+            FieldType.SELECT, FieldType.MULTI_SELECT, FieldType.DYNAMIC_SELECT, FieldType.LIKERT
+        ) and field.options:
             for option in field.options:
                 self._add_xf_item(el, option, locale)
+
+        # LIKERT scale — generate items from constraints if no options provided
+        if field.field_type == FieldType.LIKERT and not field.options and field.constraints:
+            c = field.constraints
+            scale_min = c.scale_min if c.scale_min is not None else 0
+            scale_max = c.scale_max if c.scale_max is not None else 4
+            anchor_labels = c.anchor_labels or {}
+            for i in range(scale_min, scale_max + 1):
+                lbl_text = str(anchor_labels.get(i, i))
+                from ..core.options import FieldOption
+                _opt = FieldOption(value=str(i), label=lbl_text)
+                self._add_xf_item(el, _opt, locale)
+
+        # NPS / RANKING — <xf:range> attributes
+        if field.field_type == FieldType.NPS:
+            el.set("start", "0")
+            el.set("end", "10")
+            el.set("step", "1")
+        elif field.field_type == FieldType.RANKING:
+            c = field.constraints
+            el.set("start", str(c.scale_min) if c and c.scale_min is not None else "0")
+            el.set("end", str(c.scale_max) if c and c.scale_max is not None else "5")
+            el.set("step", "1")
 
         # FILE / IMAGE — mediatype hint
         if field.field_type == FieldType.IMAGE:

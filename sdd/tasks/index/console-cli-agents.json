@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-13T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-13T18:52:37+00:00",
   "tasks": [
     {
       "id": "TASK-1131",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — creates the package and registers the Click subcommand. All other tasks depend on it.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1131-cli-package-setup.md"
+      "completed_at": "2026-05-13T18:42:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1131-cli-package-setup.md"
     },
     {
       "id": "TASK-1132",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Only depends on TASK-1131 (package structure). Can run in parallel with TASK-1133 since they share no files.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1132-response-renderer.md"
+      "completed_at": "2026-05-13T18:43:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1132-response-renderer.md"
     },
     {
       "id": "TASK-1133",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Only depends on TASK-1131 (package structure). Can run in parallel with TASK-1132 since they share no files.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1133-agent-loaders.md"
+      "completed_at": "2026-05-13T18:45:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1133-agent-loaders.md"
     },
     {
       "id": "TASK-1134",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Depends on TASK-1132 (ResponseRenderer) for output rendering. Must run after renderer is complete.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1134-slash-commands.md"
+      "completed_at": "2026-05-13T18:46:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1134-slash-commands.md"
     },
     {
       "id": "TASK-1135",
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Depends on renderer and slash commands. Core integration point — cannot be parallelized.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1135-repl-engine.md"
+      "completed_at": "2026-05-13T18:48:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1135-repl-engine.md"
     },
     {
       "id": "TASK-1136",
@@ -115,7 +115,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -129,8 +129,8 @@
       "parallelism_notes": "Wires all modules together — depends on every prior task.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1136-cli-command-wiring.md"
+      "completed_at": "2026-05-13T18:49:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1136-cli-command-wiring.md"
     },
     {
       "id": "TASK-1137",
@@ -139,7 +139,7 @@
       "feature_id": "FEAT-168",
       "feature": "console-cli-agents",
       "spec": "sdd/specs/console-cli-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -154,8 +154,8 @@
       "parallelism_notes": "Final validation task — depends on all implementation tasks being complete.",
       "assigned_to": null,
       "started_at": "2026-05-13T18:39:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1137-integration-tests.md"
+      "completed_at": "2026-05-13T18:52:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1137-integration-tests.md"
     }
   ]
 }

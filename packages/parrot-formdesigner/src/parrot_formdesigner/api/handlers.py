@@ -18,6 +18,7 @@ from pydantic import ValidationError
 
 from ..core.schema import FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
+from ..services.auth_context import AuthContext
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
@@ -144,6 +145,47 @@ class FormAPIHandler:
             return []
         userinfo = session.get("session", {})
         return userinfo.get("programs", [])
+
+    def _build_auth_context(self, request: web.Request) -> AuthContext:
+        """Build AuthContext from the inbound aiohttp request.
+
+        Checks (in order):
+        1. ``request["auth_context"]`` — set by navigator-auth middleware if present.
+        2. ``Authorization: Bearer <token>`` header.
+        3. ``Authorization: ApiKey <token>`` header.
+        4. Defaults to ``AuthContext(scheme="none")``.
+
+        Args:
+            request: The incoming aiohttp web.Request.
+
+        Returns:
+            AuthContext for this request.
+        """
+        # 1. Check if middleware already resolved auth
+        if "auth_context" in request:
+            existing = request["auth_context"]
+            if isinstance(existing, AuthContext):
+                return existing
+
+        # 2. Authorization header
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            return AuthContext(
+                scheme="bearer",
+                token=token,
+                headers={"Authorization": auth_header},
+            )
+        if auth_header.startswith("ApiKey "):
+            token = auth_header[7:]
+            return AuthContext(
+                scheme="api_key",
+                token=token,
+                headers={"X-API-Key": token},
+            )
+
+        # 3. Default: no auth
+        return AuthContext(scheme="none")
 
     async def list_forms(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms — List all registered forms with rich metadata.

@@ -40,11 +40,12 @@ dependencies = [
     "navigator-auth",
     "lxml>=6.1.0",
     "reportlab>=4.1.0",
+    "pycountry>=23.0",
 ]
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.24.48",
+    "ai-parrot>=0.24.49",
 ]
 test = [
     "pypdf>=6.0",

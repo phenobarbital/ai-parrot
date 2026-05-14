@@ -93,7 +93,7 @@ class ToolExtractor:
         # Filter fields to remove excluded ones
         filtered_fields: list[FormField] = []
         for section in full_schema.sections:
-            for field in section.fields:
+            for field in section.iter_fields():
                 if field.field_id not in excluded:
                     filtered_fields.append(field)
 

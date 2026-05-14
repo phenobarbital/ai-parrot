@@ -11,10 +11,10 @@ import logging
 from typing import Any
 
 from ...core.options import FieldOption
-from ...core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ...core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ...core.style import StyleSchema
 from ...core.types import FieldType, LocalizedString
-from ..base import AbstractFormRenderer
+from ..base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 from .models import (
     FormFieldCallback,
     TelegramFormPayload,
@@ -30,6 +30,12 @@ _INLINE_FIELD_TYPES = {
     FieldType.MULTI_SELECT,
     FieldType.BOOLEAN,
     FieldType.HIDDEN,
+    # New field types (FEAT-167) — inline-capable
+    FieldType.NPS,
+    FieldType.LIKERT,
+    FieldType.RANKING,
+    FieldType.LOCATION,
+    FieldType.DYNAMIC_SELECT,
 }
 
 # Field types that force WebApp mode
@@ -50,6 +56,12 @@ _WEBAPP_FIELD_TYPES = {
     FieldType.IMAGE,
     FieldType.GROUP,
     FieldType.ARRAY,
+    # New field types (FEAT-167) — WebApp-only
+    FieldType.SIGNATURE,
+    FieldType.TRANSFER_LIST,
+    FieldType.REMOTE_RESPONSE,
+    FieldType.AVAILABILITY,
+    FieldType.TAGS,
 }
 
 # File-type fields that cannot be handled inline even if forced
@@ -106,7 +118,7 @@ def _flatten_fields(form: FormSchema) -> list[FormField]:
     """
     fields: list[FormField] = []
     for section in form.sections:
-        for field in section.fields:
+        for field in section.iter_fields():
             if field.field_type != FieldType.HIDDEN:
                 fields.append(field)
     return fields
@@ -135,6 +147,35 @@ class TelegramRenderer(AbstractFormRenderer):
         self.base_url = (base_url or "").rstrip("/")
         self.html_renderer = html_renderer
         self.logger = logging.getLogger(__name__)
+        self._fallback = FallbackRenderer()
+        self._registry: dict[FieldType, FieldRenderer] = {}
+        self._build_registry()
+
+    def _build_registry(self) -> None:
+        """Populate per-type renderer registry for Telegram output.
+
+        Inline types (SELECT, MULTI_SELECT, BOOLEAN, HIDDEN) are registered
+        with an inline renderer stub; all others use the fallback (WebApp mode).
+        """
+
+        class _TelegramInlineFieldRenderer:
+            """Async FieldRenderer stub for Telegram inline field dispatch."""
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"mode": "inline", "field_type": field.field_type.value}
+
+        class _TelegramWebAppFieldRenderer:
+            """Async FieldRenderer stub for Telegram WebApp field dispatch."""
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return {"mode": "webapp", "field_type": field.field_type.value}
+
+        inline = _TelegramInlineFieldRenderer()
+        webapp = _TelegramWebAppFieldRenderer()
+        self._registry = {
+            ft: inline if ft in _INLINE_FIELD_TYPES else webapp
+            for ft in FieldType
+        }
 
     def analyze_form(self, form: FormSchema) -> TelegramRenderMode:
         """Determine optimal rendering mode for a form.
@@ -151,7 +192,7 @@ class TelegramRenderer(AbstractFormRenderer):
             The recommended TelegramRenderMode.
         """
         for section in form.sections:
-            for field in section.fields:
+            for field in section.iter_fields():
                 if field.field_type in _WEBAPP_FIELD_TYPES:
                     return TelegramRenderMode.WEBAPP
                 if field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT):
@@ -194,7 +235,7 @@ class TelegramRenderer(AbstractFormRenderer):
             has_files = any(
                 field.field_type in _FILE_FIELD_TYPES
                 for section in form.sections
-                for field in section.fields
+                for field in section.iter_fields()
             )
             if has_files:
                 self.logger.warning(

@@ -28,11 +28,13 @@ try:
         FormSchema,
         FormSection,
         FormStyle,
+        FormSubsection,
         LayoutType,
         LocalizedString,
         NoAuth,
         OptionsSource,
         RenderedForm,
+        SectionItem,
         StyleSchema,
         SubmitAction,
     )
@@ -75,7 +77,7 @@ except ImportError:
         FieldConstraints,
     )
     from .options import FieldOption, OptionsSource  # noqa: F401
-    from .schema import FormField, FormSchema, FormSection, RenderedForm, SubmitAction  # noqa: F401
+    from .schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm, SectionItem, SubmitAction  # noqa: F401
     from .style import FieldSizeHint, FieldStyleHint, LayoutType, StyleSchema  # noqa: F401
     from .types import FieldType, LocalizedString  # noqa: F401
     from .validators import FormValidator, ValidationResult  # noqa: F401

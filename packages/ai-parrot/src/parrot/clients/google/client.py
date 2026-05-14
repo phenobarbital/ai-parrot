@@ -102,7 +102,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     """
     client_type: str = 'google'
     client_name: str = 'google'
-    _default_model: str = 'gemini-2.5-flash'
+    _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
@@ -635,10 +635,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
-            # Group function declarations by their category
+            # Group function declarations by their category.
+            #
+            # Tools come from two sources for this build:
+            #   1. ``self._request_tools`` — request-scoped tools passed via
+            #      ``ask(tools=[...])``. Not registered in the ToolManager;
+            #      live only for the duration of this call. Win on collisions.
+            #   2. ``self.tool_manager.all_tools()`` — persistent tools.
             declarations_by_category = defaultdict(list)
-            for tool in self.tool_manager.all_tools():
+            request_tools = getattr(self, '_request_tools', None) or {}
+            seen_names: set = set()
+            tool_sources = []
+            tool_sources.extend(request_tools.values())
+            tool_sources.extend(self.tool_manager.all_tools())
+            for tool in tool_sources:
                 tool_name = tool.name
+                if tool_name in seen_names:
+                    continue
+                seen_names.add(tool_name)
                 if filter_names is not None and tool_name not in filter_names:
                     continue
 
@@ -696,136 +710,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             ]
 
         return None
-
-    def _extract_function_calls(self, response) -> List:
-        """Extract function calls from response - handles both proper function calls AND code blocks."""
-        function_calls = []
-
-        try:
-            if (response.candidates and
-                len(response.candidates) > 0 and
-                response.candidates[0].content and
-                response.candidates[0].content.parts):
-
-                for part in response.candidates[0].content.parts:
-                    # First, check for proper function calls
-                    if hasattr(part, 'function_call') and part.function_call:
-                        function_calls.append(part.function_call)
-                        self.logger.debug(f"Found proper function call: {part.function_call.name}")
-
-                    # Second, check for text that contains tool code blocks
-                    elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
-                        self.logger.info("Found tool code block - parsing as function call")
-                        code_block_calls = self._parse_tool_code_blocks(part.text)
-                        function_calls.extend(code_block_calls)
-
-        except (AttributeError, IndexError) as e:
-            self.logger.debug(f"Error extracting function calls: {e}")
-
-        self.logger.debug(f"Total function calls extracted: {len(function_calls)}")
-        return function_calls
-
-    async def _handle_stateless_function_calls(
-        self,
-        response,
-        model: str,
-        contents: List,
-        config,
-        all_tool_calls: List[ToolCall],
-        original_prompt: Optional[str] = None,
-        session_id: Optional[str] = None,
-        messages: Optional[List[Dict[str, Any]]] = None
-    ) -> Any:
-        """Handle function calls in stateless mode (single request-response)."""
-        function_calls = self._extract_function_calls(response)
-
-        if not function_calls:
-            return response
-
-        # Execute function calls
-        tool_call_objects = []
-        for fc in function_calls:
-            tc = ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                name=fc.name,
-                arguments=dict(fc.args)
-            )
-            tool_call_objects.append(tc)
-
-        start_time = time.time()
-        tool_execution_tasks = [
-            self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
-        ]
-        tool_results = await asyncio.gather(
-            *tool_execution_tasks,
-            return_exceptions=True
-        )
-        execution_time = time.time() - start_time
-
-        for tc, result in zip(tool_call_objects, tool_results):
-            tc.execution_time = execution_time / len(tool_call_objects)
-            if isinstance(result, HumanInteractionInterrupt):
-                result.session_id = session_id
-                result.messages = messages.copy() if messages else []
-                result.tool_call_id = tc.id
-                result.agent_name = getattr(self, "name", "Google_Agent")
-                raise result
-            elif isinstance(result, Exception):
-                tc.error = str(result)
-            else:
-                tc.result = result
-
-        all_tool_calls.extend(tool_call_objects)
-
-        # Prepare function responses
-        function_response_parts = []
-        for fc, result in zip(function_calls, tool_results):
-            if isinstance(result, Exception):
-                response_content = f"Error: {str(result)}"
-            else:
-                response_content = str(result.get('result', result) if isinstance(result, dict) else result)
-
-            function_response_parts.append(
-                Part(
-                    function_response=types.FunctionResponse(
-                        name=fc.name,
-                        response={"result": response_content}
-                    )
-                )
-            )
-
-        if summary_part := self._create_tool_summary_part(
-            function_calls,
-            tool_results,
-            original_prompt
-        ):
-            function_response_parts.append(summary_part)
-
-        # Add function call and responses to conversation
-        contents.append({
-            "role": "model",
-            "parts": [{"function_call": fc} for fc in function_calls]
-        })
-        contents.append({
-            "role": "user",
-            "parts": function_response_parts
-        })
-
-        # After the initial tool round relax ANY → AUTO so the model can
-        # produce the final text answer instead of being forced to call again.
-        fcc = getattr(getattr(config, "tool_config", None),
-                      "function_calling_config", None)
-        if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
-            fcc.mode = types.FunctionCallingConfigMode.AUTO
-
-        # Generate final response
-        final_response = await self.client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config
-        )
-
-        return final_response
 
     # Maximum characters per tool result sent back to the model.
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
@@ -1057,6 +941,45 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         ``if summary_part:``), so no other code needs to change.
         """
         return None
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        tool_context: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Resolve and execute a tool.
+
+        Request-scoped tools (passed via ``ask(tools=[...])`` and held in
+        ``self._request_tools`` for the duration of one call) are checked
+        first and executed directly via ``AbstractTool.execute()`` — they
+        are not registered in the ToolManager. If the name is not found
+        in the overlay, fall through to the base implementation which
+        dispatches via ``self.tool_manager``.
+        """
+        request_tools = getattr(self, '_request_tools', None) or {}
+        if tool_name in request_tools:
+            tool = request_tools[tool_name]
+            ctx = tool_context or getattr(self, '_tool_context', None)
+            merged = {**ctx, **parameters} if ctx else dict(parameters)
+            perm_ctx = getattr(self, '_permission_context', None)
+            if perm_ctx is not None:
+                merged['_permission_context'] = perm_ctx
+            try:
+                result = await tool.execute(**merged)
+                if isinstance(result, ToolResult):
+                    if result.status == 'error':
+                        raise ValueError(result.error)
+                    return result.result
+                return result
+            except Exception as exc:
+                self.logger.error(
+                    "Error executing request-scoped tool %s: %s",
+                    tool_name,
+                    exc,
+                )
+                raise
+        return await super()._execute_tool(tool_name, parameters, tool_context)
 
     async def _handle_multiturn_function_calls(
         self,
@@ -1807,6 +1730,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             }.items() if v is not None
         }
 
+        # Per-call overlay of request-scoped tools. Tools passed via
+        # ``tools=[...]`` are NOT registered into the persistent ToolManager —
+        # they are combined with manager tools only when building this call's
+        # function declarations and when looking up a tool to execute.
+        # Indexed by tool name; request-scoped tools win on collisions.
+        self._request_tools = {
+            getattr(t, 'name', None): t
+            for t in (tools or [])
+            if getattr(t, 'name', None)
+        }
+
         # Prepare conversation context using unified memory system
         conversation_history = None
         messages = []
@@ -1879,9 +1813,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tool_type = kw_tool_type
             _use_tools = True
         elif _use_tools:
-            if requested_tools and isinstance(requested_tools, list):
-                for tool in requested_tools:
-                    self.register_tool(tool)
             tool_type = kw_tool_type or "custom_functions"
         else:
             tool_type = kw_tool_type
@@ -1958,26 +1889,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Track tool calls for the response
         all_tool_calls = []
-        # Build contents for conversation
-        contents = []
 
-        for msg in messages:
-            role = "model" if msg["role"] == "assistant" else msg["role"]
-            if role in ["user", "model"]:
-                text_parts = [part["text"] for part in msg["content"] if "text" in part]
-                if text_parts:
-                    contents.append({
-                        "role": role,
-                        "parts": [{"text": " ".join(text_parts)}]
-                    })
-
-        # Add the current prompt
-        contents.append({
-            "role": "user",
-            "parts": [{"text": prompt}]
-        })
-
-        chat = None
         phase_started = time.perf_counter()
         await self._ensure_client(model=model)
         self.logger.debug(
@@ -2058,254 +1970,156 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             thinking_config=thinking_config,
             **generation_config
         )
-        if stateless:
-            # For stateless mode, handle in a single call (existing behavior)
-            contents = []
-
-            for msg in messages:
-                role = "model" if msg["role"] == "assistant" else msg["role"]
-                if role in ["user", "model"]:
-                    text_parts = [part["text"] for part in msg["content"] if "text" in part]
-                    if text_parts:
-                        contents.append({
-                            "role": role,
-                            "parts": [{"text": " ".join(text_parts)}]
-                        })
-            retry_count = 0
-            current_model = model
-            while retry_count < max_retries:
-                try:
-                    phase_started = time.perf_counter()
-                    self.logger.info(
-                        "Google ask timing: stateless generate_content start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d",
-                        current_model,
-                        len(prompt or ""),
-                        len(system_prompt or ""),
-                        len(tool_names),
-                    )
-                    response = await self.client.aio.models.generate_content(
-                        model=current_model,
-                        contents=contents,
-                        config=final_config
-                    )
-                    self.logger.info(
-                        "Google ask timing: stateless generate_content_ms=%.1f model=%s attempt=%d",
-                        (time.perf_counter() - phase_started) * 1000,
-                        current_model,
-                        retry_count + 1,
-                    )
-                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason:
-                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
-                            retry_count += 1
-                            self.logger.warning(
-                                f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
-                            )
-                            final_config.max_output_tokens = 8192
-                            continue
-                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            retry_count += 1
-                            if retry_count >= max_retries:
-                                self.logger.error(
-                                    "Malformed function call detected (stateless). "
-                                    "Exhausted %d retries — raising.",
-                                    max_retries,
-                                )
-                                raise RuntimeError(
-                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
-                                    f"{max_retries} retries. The tool schema may be "
-                                    "too complex or the model failed to produce a valid call."
-                                )
-                            self.logger.warning(
-                                "Malformed function call detected (stateless). Retrying %d/%d...",
-                                retry_count, max_retries,
-                            )
-                            await asyncio.sleep(2 ** retry_count)
-                            continue
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    if self._should_use_fallback(current_model, e):
-                        self.logger.warning(
-                            "Google model '%s' capacity error: %s. "
-                            "Retrying once with fallback: '%s'.",
-                            current_model,
-                            e,
-                            self._fallback_model,
-                        )
-                        current_model = self._fallback_model
-
-                    delay = self._retry_delay_from_error(retry_count, e)
-                    self.logger.warning(
-                        "Error during stateless generate_content (attempt %d/%d): %s. "
-                        "Retrying in %ss.",
-                        retry_count,
-                        max_retries,
-                        e,
-                        delay,
-                    )
-                    if retry_count >= max_retries:
-                        self.logger.error("Max retries reached for stateless generate_content")
-                        raise
-                    await asyncio.sleep(delay)
-
-            # Handle function calls in stateless mode
-            final_response = await self._handle_stateless_function_calls(
-                response,
-                current_model,
-                contents,
-                final_config,
-                all_tool_calls,
-                original_prompt=prompt,
-                session_id=session_id,
-                messages=messages
-            )
-            model = current_model
-        else:
-            # MULTI-TURN CONVERSATION MODE
-            current_model = model
-            chat = self.client.aio.chats.create(
-                model=current_model,
-                history=history
-            )
-            retry_count = 0
-            # Send initial message
-            while retry_count < max_retries:
-                try:
-                    phase_started = time.perf_counter()
-                    self.logger.info(
-                        "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s",
-                        current_model,
-                        len(prompt or ""),
-                        len(system_prompt or ""),
-                        len(tool_names),
-                        bool(thinking_config),
-                    )
-                    response = await chat.send_message(
-                        message=prompt,
-                        config=final_config
-                    )
-                    self.logger.info(
-                        "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
-                        (time.perf_counter() - phase_started) * 1000,
-                        current_model,
-                        retry_count + 1,
-                    )
-                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason:
-                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
-                            retry_count += 1
-                            self.logger.warning(
-                                f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
-                            )
-                            final_config.max_output_tokens = 8192
-                            continue
-                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            retry_count += 1
-                            if retry_count >= max_retries:
-                                self.logger.error(
-                                    "Malformed function call detected (stateful). "
-                                    "Exhausted %d retries — raising.",
-                                    max_retries,
-                                )
-                                raise RuntimeError(
-                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
-                                    f"{max_retries} retries. The tool schema may be "
-                                    "too complex or the model failed to produce a valid call."
-                                )
-                            self.logger.warning(
-                                "Malformed function call detected (stateful). Retrying %d/%d...",
-                                retry_count, max_retries,
-                            )
-                            await asyncio.sleep(2 ** retry_count)
-                            continue
-                    break
-                except Exception as e:
-                    # Handle specific network client error (socket/aiohttp issue)
-                    if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+        # Single execution path for both stateless and stateful modes.
+        # ``stateless`` only controls whether conversation history is loaded
+        # earlier (see _prepare_conversation_context above) — it does NOT
+        # change how tool-calling iterates or how the request is dispatched.
+        # In stateless mode ``history`` is empty; in stateful mode it carries
+        # the prior turns. Everything else is identical.
+        current_model = model
+        chat = self.client.aio.chats.create(
+            model=current_model,
+            history=history
+        )
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                phase_started = time.perf_counter()
+                self.logger.info(
+                    "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s stateless=%s history=%d",
+                    current_model,
+                    len(prompt or ""),
+                    len(system_prompt or ""),
+                    len(tool_names),
+                    bool(thinking_config),
+                    stateless,
+                    len(history),
+                )
+                response = await chat.send_message(
+                    message=prompt,
+                    config=final_config
+                )
+                self.logger.info(
+                    "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
+                    (time.perf_counter() - phase_started) * 1000,
+                    current_model,
+                    retry_count + 1,
+                )
+                finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                if finish_reason:
+                    if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
                         retry_count += 1
                         self.logger.warning(
-                            f"Encountered network client error: {e}. Resetting client and retrying."
+                            f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
                         )
-                        # Reset the current-loop client only; sibling loops are unaffected.
-                        await self._close_current_loop_entry()
-                        await self._ensure_client(model=current_model)
-                        # Recreate the chat session
-                        chat = self.client.aio.chats.create(
-                            model=current_model,
-                            history=history
-                        )
-                        delay = self._retry_delay_from_error(retry_count, e)
-                        if retry_count >= max_retries:
-                            raise
-                        await asyncio.sleep(delay)
+                        final_config.max_output_tokens = 8192
                         continue
-
-                    retry_count += 1
-                    if self._should_use_fallback(current_model, e):
+                    elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            self.logger.error(
+                                "Malformed function call detected. "
+                                "Exhausted %d retries — raising.",
+                                max_retries,
+                            )
+                            raise RuntimeError(
+                                f"Gemini returned MALFORMED_FUNCTION_CALL after "
+                                f"{max_retries} retries. The tool schema may be "
+                                "too complex or the model failed to produce a valid call."
+                            )
                         self.logger.warning(
-                            "Google model '%s' capacity error: %s. "
-                            "Retrying once with fallback: '%s'.",
-                            current_model,
-                            e,
-                            self._fallback_model,
+                            "Malformed function call detected. Retrying %d/%d...",
+                            retry_count, max_retries,
                         )
-                        current_model = self._fallback_model
-                        chat = self.client.aio.chats.create(
-                            model=current_model,
-                            history=history
-                        )
-
-                    delay = self._retry_delay_from_error(retry_count, e)
+                        await asyncio.sleep(2 ** retry_count)
+                        continue
+                break
+            except Exception as e:
+                # Handle specific network client error (socket/aiohttp issue)
+                if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                    retry_count += 1
                     self.logger.warning(
-                        "Error during initial chat.send_message (attempt %d/%d): %s. "
-                        "Retrying in %ss.",
-                        retry_count,
-                        max_retries,
-                        e,
-                        delay,
+                        f"Encountered network client error: {e}. Resetting client and retrying."
                     )
+                    # Reset the current-loop client only; sibling loops are unaffected.
+                    await self._close_current_loop_entry()
+                    await self._ensure_client(model=current_model)
+                    # Recreate the chat session
+                    chat = self.client.aio.chats.create(
+                        model=current_model,
+                        history=history
+                    )
+                    delay = self._retry_delay_from_error(retry_count, e)
                     if retry_count >= max_retries:
                         raise
                     await asyncio.sleep(delay)
+                    continue
 
-            has_function_calls = False
-            if response and getattr(response, "candidates", None):
-                candidate = response.candidates[0] if response.candidates else None
-                content = getattr(candidate, "content", None) if candidate else None
-                parts = getattr(content, "parts", None) if content else None
-                if parts:
-                    has_function_calls = any(
-                        hasattr(p, 'function_call') and p.function_call
-                        for p in parts
+                retry_count += 1
+                if self._should_use_fallback(current_model, e):
+                    self.logger.warning(
+                        "Google model '%s' capacity error: %s. "
+                        "Retrying once with fallback: '%s'.",
+                        current_model,
+                        e,
+                        self._fallback_model,
+                    )
+                    current_model = self._fallback_model
+                    chat = self.client.aio.chats.create(
+                        model=current_model,
+                        history=history
                     )
 
-            self.logger.debug(
-                f"Initial response has function calls: {has_function_calls}"
-            )
+                delay = self._retry_delay_from_error(retry_count, e)
+                self.logger.warning(
+                    "Error during initial chat.send_message (attempt %d/%d): %s. "
+                    "Retrying in %ss.",
+                    retry_count,
+                    max_retries,
+                    e,
+                    delay,
+                )
+                if retry_count >= max_retries:
+                    raise
+                await asyncio.sleep(delay)
 
-            # Multi-turn function calling loop
-            phase_started = time.perf_counter()
-            final_response = await self._handle_multiturn_function_calls(
-                chat,
-                response,
-                all_tool_calls,
-                original_prompt=original_prompt,
-                model=current_model,
-                max_iterations=max_iterations,
-                config=final_config,
-                max_retries=max_retries,
-                lazy_loading=lazy_loading,
-                active_tool_names=active_tool_names,
-                session_id=session_id,
-                messages=messages
-            )
-            self.logger.debug(
-                "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
-                (time.perf_counter() - phase_started) * 1000,
-                len(all_tool_calls),
-            )
-            model = current_model
+        has_function_calls = False
+        if response and getattr(response, "candidates", None):
+            candidate = response.candidates[0] if response.candidates else None
+            content = getattr(candidate, "content", None) if candidate else None
+            parts = getattr(content, "parts", None) if content else None
+            if parts:
+                has_function_calls = any(
+                    hasattr(p, 'function_call') and p.function_call
+                    for p in parts
+                )
+
+        self.logger.debug(
+            f"Initial response has function calls: {has_function_calls}"
+        )
+
+        # Multi-turn function calling loop
+        phase_started = time.perf_counter()
+        final_response = await self._handle_multiturn_function_calls(
+            chat,
+            response,
+            all_tool_calls,
+            original_prompt=original_prompt,
+            model=current_model,
+            max_iterations=max_iterations,
+            config=final_config,
+            max_retries=max_retries,
+            lazy_loading=lazy_loading,
+            active_tool_names=active_tool_names,
+            session_id=session_id,
+            messages=messages
+        )
+        self.logger.debug(
+            "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
+            (time.perf_counter() - phase_started) * 1000,
+            len(all_tool_calls),
+        )
+        model = current_model
 
         # Extract assistant response text for conversation memory
         phase_started = time.perf_counter()
@@ -2545,6 +2359,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
 
+        # Drop the per-call request-tools overlay so its bound state does
+        # not leak into subsequent calls.
+        self._request_tools = {}
+
         return ai_message
 
     def _create_simple_summary(self, all_tool_calls: List[ToolCall]) -> str:
@@ -2639,16 +2457,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         temperature: Optional[float] = None,
         files: Optional[List[Union[str, Path]]] = None,
         system_prompt: Optional[str] = None,
+        structured_output: Union[type, StructuredOutputConfig] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         retry_config: Optional[StreamingRetryConfig] = None,
         on_max_tokens: Optional[str] = "retry",  # "retry", "notify", "ignore"
         tools: Optional[List[Dict[str, Any]]] = None,
         use_tools: Optional[bool] = None,
+        use_thinking: Optional[bool] = None,
+        stateless: bool = False,
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
-    ) -> AsyncIterator[str]:
+        max_iterations: int = 15,
+        **kwargs
+    ) -> AsyncIterator[Union[str, AIMessage]]:
         """
         Stream Google Generative AI's response using AsyncIterator with support for Tool Calling.
 
@@ -2668,15 +2491,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if isinstance(model, (list, tuple)):
             model = model[0]
 
-        # Stub for deep research streaming
-        if deep_research:
-            self.logger.warning(
-                "Google Deep Research streaming is not yet fully implemented. "
-                "Falling back to standard ask_stream() behavior."
-            )
-            # TODO: Implement interactions.create(stream=True) when SDK supports it
-            # For now, just use regular streaming
-
         turn_id = str(uuid.uuid4())
 
         # Store runtime context so _execute_tool can inject it into tools
@@ -2687,19 +2501,38 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             }.items() if v is not None
         }
 
+        if deep_research:
+            yield "⏳ **Running Deep Research...**\n"
+            yield "_Gathering information and exploring sources..._\n\n"
+            try:
+                ai_message = await self._deep_research_ask(
+                    prompt=prompt,
+                    model=model,
+                    agent_config=agent_config,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+                yield ai_message.text_response
+                yield ai_message
+            except Exception as e:
+                self.logger.error(f"Deep Research failed: {e}")
+                import traceback
+                traceback.print_exc()
+                yield f"\n\n❌ **Deep Research failed: {str(e)}**\n"
+            return
+
         # Default retry configuration
         if retry_config is None:
             retry_config = StreamingRetryConfig()
 
-        # Use the unified conversation context preparation from AbstractClient
+        # Use the unified conversation context preparation
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
 
-        # Prepare conversation history for Google GenAI format
         history = []
         if messages:
-            for msg in messages[:-1]:  # Exclude the current user message (last in list)
+            for msg in messages[:-1]:  # Exclude current user message
                 role = msg['role'].lower()
                 if role == 'user':
                     parts = []
@@ -2716,212 +2549,354 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if parts:
                         history.append(ModelContent(parts=parts))
 
-        # --- Tool Configuration (Mirrored from ask method) ---
-        _use_tools = use_tools if use_tools is not None else self.enable_tools
+        _use_tools = use_tools if use_tools is not None else getattr(self, "enable_tools", False)
 
-        # Register requested tools if any
-        if tools and isinstance(tools, list):
-            for tool in tools:
-                self.register_tool(tool)
+        # Per-call overlay
+        self._request_tools = {
+            getattr(t, 'name', None): t
+            for t in (tools or [])
+            if getattr(t, 'name', None)
+        }
 
-        # Determine tool strategy
-        if _use_tools:
-            # If explicit tools passed or just enabled, force low temp
-            temperature = 0 if temperature is None else temperature
-            tool_type = "custom_functions"
-        elif _use_tools is None:
-            # Analyze prompt
-            tool_type = self._analyze_prompt_for_tools(prompt)
-        else:
-            tool_type = 'builtin_tools' if _use_tools else None
+        try:
+            if _use_tools:
+                temperature = 0.0 if temperature is None else temperature
+                tool_type = "custom_functions"
+            elif _use_tools is None:
+                tool_type = self._analyze_prompt_for_tools(prompt)
+            else:
+                tool_type = 'builtin_tools' if _use_tools else None
 
-        # Build the actual tool objects for Gemini
-        gemini_tools = self._build_tools(tool_type) if tool_type else []
+            active_tool_names = set()
+            if tool_type and _use_tools and lazy_loading:
+                active_tool_names.add("search_tools")
+                gemini_tools = self._build_tools("custom_functions", filter_names=["search_tools"])
+                search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+                system_prompt = f"{system_prompt}\n\n{search_prompt}" if system_prompt else search_prompt
+            else:
+                gemini_tools = self._build_tools(tool_type) if tool_type else []
 
-        if _use_tools and tool_type == "custom_functions" and not gemini_tools:
-            # Fallback if no tools registered
-            gemini_tools = None
+            if _use_tools and tool_type == "custom_functions" and not gemini_tools:
+                gemini_tools = None
 
-        # --- Execution Loop ---
+            # configure thinking config
+            thinking_config = None
+            _requires_thinking = self._requires_thinking(model)
+            if use_thinking:
+                thinking_config = ThinkingConfig(
+                    max_thinking_steps=1,
+                    max_thinking_tokens=100,
+                    max_thinking_time=10,
+                )
+            elif _requires_thinking:
+                thinking_config = ThinkingConfig(
+                    thinking_budget=8192,
+                    include_thoughts=False
+                )
+            elif 'flash' in model.lower():
+                thinking_config = ThinkingConfig(
+                    thinking_budget=0,
+                    include_thoughts=False
+                )
+            elif _use_tools:
+                thinking_config = ThinkingConfig(
+                    thinking_budget=0,
+                    include_thoughts=False
+                )
+            else:
+                thinking_config = ThinkingConfig(
+                    thinking_budget=8192,
+                    include_thoughts=False
+                )
 
-        # Retry loop variables
-        current_max_tokens = max_tokens or self.max_tokens
-        retry_count = 0
+            current_max_tokens = max_tokens or getattr(self, "max_tokens", 8192)
+            retry_count = 0
+            iteration = 0
+            current_message_content = prompt
+            keep_looping = True
 
-        # Variables for multi-turn tool loop
-        current_message_content = prompt # Start with the user prompt
-        keep_looping = True
+            generation_config_args = {
+                "temperature": temperature or getattr(self, "temperature", 0.0),
+                "max_output_tokens": current_max_tokens,
+            }
+            if thinking_config:
+                generation_config_args["thinking_config"] = thinking_config
+            if system_prompt:
+                generation_config_args["system_instruction"] = system_prompt
+            if gemini_tools:
+                generation_config_args["tools"] = gemini_tools
 
-        # Start the chat session once
-        chat = self.client.aio.chats.create(
-            model=model,
-            history=history,
-            config=GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=gemini_tools,
-                temperature=temperature or self.temperature,
-                max_output_tokens=current_max_tokens
+            # Handle structured output mapping
+            schema_config = None
+            if structured_output and not _use_tools:
+                schema_config = (
+                    structured_output
+                    if isinstance(structured_output, StructuredOutputConfig)
+                    else self._get_structured_config(structured_output)
+                )
+                if schema_config:
+                    self._apply_structured_output_schema(generation_config_args, schema_config)
+
+            chat = self.client.aio.chats.create(
+                model=model,
+                history=history,
+                config=GenerateContentConfig(**generation_config_args)
             )
-        )
 
-        all_assistant_text = [] # Keep track of full text for memory update
+            all_assistant_text = []
+            all_tool_calls_history = []
 
-        while keep_looping and retry_count <= retry_config.max_retries:
-            # By default, we stop after one turn unless a tool is called
-            keep_looping = False
+            while keep_looping and retry_count <= retry_config.max_retries and iteration < max_iterations:
+                keep_looping = False
+                iteration += 1
 
-            try:
-                # If we are retrying due to max tokens, update config
-                chat._config.max_output_tokens = current_max_tokens
+                try:
+                    chat._config.max_output_tokens = current_max_tokens
+                    assistant_content_chunk = ""
+                    max_tokens_reached = False
+                    collected_function_calls = []
 
-                assistant_content_chunk = ""
-                max_tokens_reached = False
+                    async for chunk in await chat.send_message_stream(current_message_content):
+                        if hasattr(chunk, 'candidates') and chunk.candidates:
+                            candidate = chunk.candidates[0]
+                            if hasattr(candidate, 'finish_reason') and str(candidate.finish_reason) == 'FinishReason.MAX_TOKENS':
+                                max_tokens_reached = True
+                                if on_max_tokens == "notify":
+                                    yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens).**\n"
+                                elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
+                                    break
 
-                # We need to capture function calls from the chunks as they arrive
-                collected_function_calls = []
+                        if hasattr(chunk, 'candidates') and chunk.candidates:
+                            for candidate in chunk.candidates:
+                                if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                                    for part in candidate.content.parts:
+                                        if hasattr(part, 'function_call') and part.function_call:
+                                            collected_function_calls.append(part.function_call)
 
-                async for chunk in await chat.send_message_stream(current_message_content):
-                    # Check for MAX_TOKENS finish reason
-                    if (hasattr(chunk, 'candidates') and chunk.candidates and len(chunk.candidates) > 0):
-                        candidate = chunk.candidates[0]
-                        if (hasattr(candidate, 'finish_reason') and
-                            str(candidate.finish_reason) == 'FinishReason.MAX_TOKENS'):
-                            max_tokens_reached = True
+                        if chunk.text:
+                            assistant_content_chunk += chunk.text
+                            all_assistant_text.append(chunk.text)
+                            yield chunk.text
 
-                            if on_max_tokens == "notify":
-                                yield f"\n\n⚠️ **Response truncated due to token limit ({current_max_tokens} tokens).**\n"
-                            elif on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
-                                # Break inner loop to handle retry in outer loop
-                                break
+                    if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
+                        if retry_count < retry_config.max_retries:
+                            new_max_tokens = int(current_max_tokens * retry_config.token_increase_factor)
+                            yield f"\n\n🔄 **Retrying with increased limit ({new_max_tokens})...**\n\n"
+                            current_max_tokens = new_max_tokens
+                            retry_count += 1
+                            await self._wait_with_backoff(retry_count, retry_config)
+                            keep_looping = True
+                            continue
+                        else:
+                            yield f"\n\n❌ **Maximum retries reached.**\n"
 
-                    # Capture function calls from the chunk
-                    if (hasattr(chunk, 'candidates') and chunk.candidates):
-                         for candidate in chunk.candidates:
-                            if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
-                                for part in candidate.content.parts:
-                                    if hasattr(part, 'function_call') and part.function_call:
-                                        collected_function_calls.append(part.function_call)
+                    if collected_function_calls:
+                        self.logger.info(f"Streaming detected {len(collected_function_calls)} tool calls.")
 
-                    # Yield text content if present
-                    if chunk.text:
-                        assistant_content_chunk += chunk.text
-                        all_assistant_text.append(chunk.text)
-                        yield chunk.text
+                        tool_call_objects = []
+                        for fc in collected_function_calls:
+                            tc = ToolCall(
+                                id=f"call_{uuid.uuid4().hex[:8]}",
+                                name=fc.name,
+                                arguments=dict(fc.args) if hasattr(fc.args, 'items') else fc.args
+                            )
+                            tool_call_objects.append(tc)
 
-                # --- Handle Max Tokens Retry ---
-                if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
-                    if retry_count < retry_config.max_retries:
-                        new_max_tokens = int(current_max_tokens * retry_config.token_increase_factor)
-                        yield f"\n\n🔄 **Retrying with increased limit ({new_max_tokens})...**\n\n"
-                        current_max_tokens = new_max_tokens
-                        retry_count += 1
-                        await self._wait_with_backoff(retry_count, retry_config)
-                        keep_looping = True # Force loop to continue
-                        continue
-                    else:
-                        yield f"\n\n❌ **Maximum retries reached.**\n"
+                        start_time = time.time()
+                        tool_execution_tasks = [
+                            self._execute_tool(fc.name, dict(fc.args) if hasattr(fc.args, 'items') else fc.args)
+                            for fc in collected_function_calls
+                        ]
+                        tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+                        execution_time = time.time() - start_time
 
-                # --- Handle Function Calls ---
-                if collected_function_calls:
-                    # We have tool calls to execute!
-                    self.logger.info(f"Streaming detected {len(collected_function_calls)} tool calls.")
+                        if lazy_loading:
+                            found_new = False
+                            for fc, result in zip(collected_function_calls, tool_results):
+                                if fc.name == "search_tools" and isinstance(result, str):
+                                    new_tools = self._check_new_tools(fc.name, result)
+                                    for nt in new_tools:
+                                        if nt not in active_tool_names:
+                                            active_tool_names.add(nt)
+                                            found_new = True
 
-                    # Execute tools (parallel)
-                    tool_execution_tasks = [
-                        self._execute_tool(fc.name, dict(fc.args))
-                        for fc in collected_function_calls
-                    ]
-                    tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
+                            if found_new:
+                                new_tools_list = self._build_tools("custom_functions", filter_names=list(active_tool_names))
+                                chat._config.tools = new_tools_list
+                                self.logger.info(f"Updated tools for next turn. Count: {len(active_tool_names)}")
 
-                    # Check for HumanInteractionInterrupt before processing results
-                    for fc, result in zip(collected_function_calls, tool_results):
-                        if isinstance(result, HumanInteractionInterrupt):
-                            result.session_id = session_id
-                            result.messages = messages.copy() if messages else []
-                            result.tool_call_id = getattr(fc, 'id', '')
-                            result.agent_name = getattr(self, "name", "Google_Agent")
-                            raise result
+                        for tc, fc, result in zip(tool_call_objects, collected_function_calls, tool_results):
+                            tc.execution_time = execution_time / len(tool_call_objects) if tool_call_objects else 0
+                            if isinstance(result, HumanInteractionInterrupt):
+                                result.session_id = session_id
+                                result.messages = messages.copy() if messages else []
+                                result.tool_call_id = getattr(fc, 'id', '')
+                                result.agent_name = getattr(self, "name", "Google_Agent")
+                                raise result
+                            elif isinstance(result, Exception):
+                                tc.error = str(result)
+                                self.logger.error(f"Tool {tc.name} failed: {result}")
+                            else:
+                                tc.result = result
+                                
+                        all_tool_calls_history.extend(tool_call_objects)
 
-                    # Build the response parts containing tool outputs
-                    function_response_parts = []
-                    for fc, result in zip(collected_function_calls, tool_results):
-                        response_content = self._process_tool_result_for_api(result)
-                        function_response_parts.append(
-                            Part(
-                                function_response=types.FunctionResponse(
-                                    name=fc.name,
-                                    response=response_content
+                        function_response_parts = []
+                        for fc, result in zip(collected_function_calls, tool_results):
+                            response_content = self._process_tool_result_for_api(result)
+                            function_response_parts.append(
+                                Part(
+                                    function_response=types.FunctionResponse(
+                                        name=fc.name,
+                                        response=response_content
+                                    )
                                 )
                             )
-                        )
 
-                    # Set the next message to be these tool outputs
-                    current_message_content = function_response_parts
+                        current_message_content = function_response_parts
+                        keep_looping = True
 
-                    # Force the loop to run again to stream the answer based on these tools
-                    keep_looping = True
-
-            except Exception as e:
-                # Handle specific network client error
-                if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
-                    if retry_count < retry_config.max_retries:
-                        self.logger.warning(
-                            f"Encountered network client error during stream: {e}. Resetting client..."
-                        )
-                        # Reset the current-loop client only; sibling loops are unaffected.
-                        await self._close_current_loop_entry()
-                        await self._ensure_client(model=model)
-
-                        # Recreate chat session
-                        # Note: We rely on history variable being the initial history.
-                        # Intermediate turn state might be lost if this happens mid-conversation,
-                        # but this error usually happens at connection start.
-                        chat = self.client.aio.chats.create(
-                            model=model,
-                            history=history,
-                            config=GenerateContentConfig(
-                                system_instruction=system_prompt,
-                                tools=gemini_tools,
-                                temperature=temperature or self.temperature,
-                                max_output_tokens=current_max_tokens
+                except Exception as e:
+                    if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                        if retry_count < retry_config.max_retries:
+                            self.logger.warning(f"Encountered network client error during stream: {e}. Resetting...")
+                            await self._close_current_loop_entry()
+                            await self._ensure_client(model=model)
+                            
+                            chat = self.client.aio.chats.create(
+                                model=model,
+                                history=history,
+                                config=GenerateContentConfig(**generation_config_args)
                             )
-                        )
+                            retry_count += 1
+                            await self._wait_with_backoff(retry_count, retry_config)
+                            keep_looping = True
+                            continue
+
+                    if retry_count < retry_config.max_retries:
+                        error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
+                        yield error_msg
                         retry_count += 1
                         await self._wait_with_backoff(retry_count, retry_config)
                         keep_looping = True
                         continue
+                    else:
+                        yield f"\n\n❌ **Streaming failed: {str(e)}**\n"
+                        break
 
-                if retry_count < retry_config.max_retries:
-                    error_msg = f"\n\n⚠️ **Streaming error (attempt {retry_count + 1}): {str(e)}. Retrying...**\n\n"
-                    yield error_msg
-                    retry_count += 1
-                    await self._wait_with_backoff(retry_count, retry_config)
-                    keep_looping = True
-                    continue
+            final_text = "".join(all_assistant_text)
+            
+            if not final_text and all_tool_calls_history:
+                final_text = self._create_simple_summary(all_tool_calls_history)
+                yield final_text
+                
+            final_output = None
+            if structured_output and final_text:
+                if _use_tools:
+                    try:
+                        is_json_candidate = (
+                            final_text.strip().startswith('{') or
+                            final_text.strip().startswith('[') or
+                            '```json' in final_text.strip()
+                        )
+                        if is_json_candidate:
+                            fast_parsed = await self._parse_structured_output(final_text, structured_output)
+                            if not isinstance(fast_parsed, str):
+                                final_output = fast_parsed
+                        
+                        if final_output is None:
+                            struct_cfg = {"response_mime_type": "application/json"}
+                            if schema_config := (structured_output if isinstance(structured_output, StructuredOutputConfig) else self._get_structured_config(structured_output)):
+                                self._apply_structured_output_schema(struct_cfg, schema_config)
+                                
+                            reformat_model = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+                            if not self._requires_thinking(reformat_model):
+                                struct_cfg["thinking_config"] = ThinkingConfig(thinking_budget=0)
+                                
+                            format_prompt = (
+                                "Convert the following response into the requested JSON structure.\n\n"
+                                "RULES (STRICT — violating these produces corrupted data):\n"
+                                "1. The `explanation` field MUST contain the COMPLETE original text "
+                                "verbatim — do NOT summarize, truncate, rewrite, or omit any part of it.\n"
+                                "2. NEVER invent, fabricate, extend, complete, infer, or 'fill in' any "
+                                "row, column, or value that is not literally present in the text below. "
+                                "If the text shows only N rows of a table, the `data` field must contain "
+                                "AT MOST those N rows — even if the text mentions that more rows exist "
+                                "(e.g. 'Shape: (21, 4)'). Do not guess the missing rows.\n"
+                                "3. If the text references a pandas variable holding the full result "
+                                "(e.g. `data_variable = 'foo'` or 'the full breakdown is in `foo`'), "
+                                "set `data_variable` to that exact variable name and leave `data` as "
+                                "null or an empty table. The caller will inject the full DataFrame "
+                                "from memory — you must not try to reconstruct it from the text.\n"
+                                "4. Only populate `data` from a markdown table when ALL of its rows are "
+                                "literally present in the text. When in doubt, prefer `data_variable` "
+                                "over `data`.\n\n"
+                                f"Return only the JSON object:\n\n{final_text}"
+                            )
+                            structured_response = await self.client.aio.models.generate_content(
+                                model=reformat_model,
+                                contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+                                config=GenerateContentConfig(**struct_cfg)
+                            )
+                            if structured_text := self._safe_extract_text(structured_response):
+                                if isinstance(structured_output, StructuredOutputConfig):
+                                    final_output = await self._parse_structured_output(structured_text, structured_output)
+                                elif isinstance(structured_output, type):
+                                    if hasattr(structured_output, 'model_validate_json'):
+                                        final_output = structured_output.model_validate_json(structured_text)
+                                    elif hasattr(structured_output, 'model_validate'):
+                                        parsed_json = self._json.loads(structured_text)
+                                        final_output = structured_output.model_validate(parsed_json)
+                                else:
+                                    final_output = self._json.loads(structured_text)
+                    except Exception as e:
+                        self.logger.error(f"Streaming structured output reformat failed: {e}")
                 else:
-                    yield f"\n\n❌ **Streaming failed: {str(e)}**\n"
-                    break
+                    try:
+                        final_output = await self._parse_structured_output(final_text, structured_output)
+                    except Exception:
+                        pass
 
-        # Update conversation memory
-        final_text = "".join(all_assistant_text)
-        if final_text:
-            final_assistant_message = {
-                "role": "assistant", "content": [
-                    {"type": "text", "text": final_text}
-                ]
-            }
-            # Extract assistant response text for conversation memory
-            await self._update_conversation_memory(
-                user_id,
-                session_id,
-                conversation_history,
-                messages + [final_assistant_message],
-                system_prompt,
-                turn_id,
-                prompt,
-                final_text,
-                [] # We don't easily track tool usage in stream return yet, or we could track in loop
+            if final_text and not stateless:
+                final_assistant_message = {
+                    "role": "model",
+                    "content": [
+                        {"type": "text", "text": str(final_output) if final_output else final_text}
+                    ]
+                }
+                tools_used = [tc.name for tc in all_tool_calls_history]
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_history,
+                    messages + [final_assistant_message],
+                    system_prompt,
+                    turn_id,
+                    prompt,
+                    final_text,
+                    tools_used
+                )
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=None,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=final_output if final_output is not None else final_text,
+                tool_calls=all_tool_calls_history,
+                conversation_history=conversation_history,
+                text_response=final_text,
+                files=[],
+                images=[],
+                code=None
             )
+            ai_message.provider = "google_genai"
+            yield ai_message
+
+        finally:
+            self._request_tools = {}
 
     async def batch_ask(self, requests) -> List[AIMessage]:
         """Process multiple requests in batch."""

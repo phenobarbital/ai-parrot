@@ -192,4 +192,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Implemented `StandaloneAgentLoader` (uses `agent_registry.get_instance()`
+with `difflib.get_close_matches` fuzzy suggestions and `questionary.select` picker),
+`ServerAgentProxy` (HTTP proxy via `aiohttp`, includes `load()`, `list_agents()`,
+`select_agent()`, `close()`), `AgentLoadError` exception with `suggestions` attribute,
+and `_ServerBotProxy` thin proxy implementing the ask/stream interface. All linting passed.

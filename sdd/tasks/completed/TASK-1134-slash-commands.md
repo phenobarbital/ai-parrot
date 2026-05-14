@@ -180,4 +180,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Implemented `SlashCommandDispatcher` with `register()`,
+`dispatch()`, `dispatch_async()`, and `get_completions()` methods. All 7 built-in
+commands implemented: `/tools`, `/info`, `/clear`, `/export`, `/stream`, `/help`,
+`/quit` (with `/exit` alias). `SlashCommand` and `ConversationTurn` dataclasses
+defined. `TYPE_CHECKING` guard used for `AgentREPL` forward reference. All linting passed.
