@@ -222,4 +222,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Implemented `AgentREPL` with full async REPL loop using
+`prompt_toolkit.PromptSession.prompt_async()`, `InMemoryHistory`, slash-command
+`WordCompleter`, and `patch_stdout()` context. `send()` calls `bot.ask()` with
+`OutputMode.TERMINAL` and tracks history. `send_stream()` calls `bot.ask_stream()`
+with streaming renderer. `REPLConfig` is a Pydantic v2 BaseModel. Handles Ctrl+C
+(cancel), Ctrl+D (exit), and empty input. All linting passed.

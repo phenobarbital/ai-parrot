@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from ...core.options import FieldOption
-from ...core.schema import FormField, FormSchema, RenderedForm
+from ...core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ...core.style import StyleSchema
 from ...core.types import FieldType, LocalizedString
 from ..base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -118,7 +118,7 @@ def _flatten_fields(form: FormSchema) -> list[FormField]:
     """
     fields: list[FormField] = []
     for section in form.sections:
-        for field in section.fields:
+        for field in section.iter_fields():
             if field.field_type != FieldType.HIDDEN:
                 fields.append(field)
     return fields
@@ -192,7 +192,7 @@ class TelegramRenderer(AbstractFormRenderer):
             The recommended TelegramRenderMode.
         """
         for section in form.sections:
-            for field in section.fields:
+            for field in section.iter_fields():
                 if field.field_type in _WEBAPP_FIELD_TYPES:
                     return TelegramRenderMode.WEBAPP
                 if field.field_type in (FieldType.SELECT, FieldType.MULTI_SELECT):
@@ -235,7 +235,7 @@ class TelegramRenderer(AbstractFormRenderer):
             has_files = any(
                 field.field_type in _FILE_FIELD_TYPES
                 for section in form.sections
-                for field in section.fields
+                for field in section.iter_fields()
             )
             if has_files:
                 self.logger.warning(

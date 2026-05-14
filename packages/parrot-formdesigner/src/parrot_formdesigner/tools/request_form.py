@@ -211,7 +211,7 @@ class RequestFormTool(AbstractTool):
             # Collect the field labels for the user message
             fields_needed: list[str] = []
             for section in form.sections:
-                for field in section.fields:
+                for field in section.iter_fields():
                     lbl = field.label
                     if isinstance(lbl, dict):
                         lbl = lbl.get("en", field.field_id)

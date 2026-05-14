@@ -189,4 +189,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-13. Replaced stub `agent_repl.py` with full `agent` Click command
+(named `agent` to match LazyGroup's `getattr(mod, "agent")` convention). Implemented
+`_run()` async function with `--list`, standalone/server loader selection, agent loading
+with `AgentLoadError` handling, welcome banner, and `AgentREPL` launch. `_handle_list()`
+renders agent table for both BotMetadata (standalone) and dict (server) formats.
+All linting passed.

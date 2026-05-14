@@ -31,7 +31,7 @@ from ..core.constraints import (
     FieldConstraints,
 )
 from ..core.options import FieldOption
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -224,9 +224,14 @@ class XFormsRenderer(AbstractFormRenderer):
 
         for section in form.sections:
             section_el = etree.SubElement(data, section.section_id)
-            for field in section.fields:
-                self._build_data_node(section_el, field)
-                self._collect_binds(binds, section.section_id, field)
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    for field in item.fields:
+                        self._build_data_node(section_el, field)
+                        self._collect_binds(binds, section.section_id, field)
+                else:
+                    self._build_data_node(section_el, item)
+                    self._collect_binds(binds, section.section_id, item)
 
         # Place all binds inside <xf:model>.
         for bind in binds:
@@ -317,8 +322,16 @@ class XFormsRenderer(AbstractFormRenderer):
         if title:
             label = etree.SubElement(group, _qn("label"))
             label.text = title
-        for field in section.fields:
-            group.append(self._build_ui_control(section.section_id, field, locale))
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                sub_group = etree.SubElement(group, _qn("group"), attrib={"id": item.subsection_id})
+                if item.title:
+                    sub_label = etree.SubElement(sub_group, _qn("label"))
+                    sub_label.text = _localize(item.title, locale, default=item.subsection_id)
+                for field in item.fields:
+                    sub_group.append(self._build_ui_control(section.section_id, field, locale))
+            else:
+                group.append(self._build_ui_control(section.section_id, item, locale))
         return group
 
     def _build_ui_control(

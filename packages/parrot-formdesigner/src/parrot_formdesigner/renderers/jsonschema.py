@@ -14,7 +14,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.schema import FormField, FormSchema, RenderedForm
+from ..core.constraints import DependencyRule
+from ..core.options import FieldOption, OptionsSource
+from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
@@ -212,17 +214,35 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 "description": _resolve(section.description, locale) if section.description else None,
             }
 
-            for field in section.fields:
-                prop = self._field_to_property(field, locale, prefilled)
-                prop["x-section"] = section_meta
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    sub_meta = {
+                        "subsection_id": item.subsection_id,
+                        "title": _resolve(item.title, locale) if item.title else None,
+                        "description": _resolve(item.description, locale) if item.description else None,
+                    }
+                    for field in item.fields:
+                        prop = self._field_to_property(field, locale, prefilled)
+                        prop["x-section"] = section_meta
+                        prop["x-subsection"] = sub_meta
+                        if section.depends_on:
+                            prop["x-section-depends-on"] = section.depends_on
+                        if item.depends_on:
+                            prop["x-subsection-depends-on"] = item.depends_on.model_dump()
+                        properties[field.field_id] = prop
+                        if field.required:
+                            required.append(field.field_id)
+                else:
+                    prop = self._field_to_property(item, locale, prefilled)
+                    prop["x-section"] = section_meta
 
-                if section.depends_on:
-                    prop["x-section-depends-on"] = section.depends_on
+                    if section.depends_on:
+                        prop["x-section-depends-on"] = section.depends_on
 
-                properties[field.field_id] = prop
+                    properties[item.field_id] = prop
 
-                if field.required:
-                    required.append(field.field_id)
+                    if item.required:
+                        required.append(item.field_id)
 
         schema: dict[str, Any] = {
             "$schema": "http://json-schema.org/draft-07/schema#",

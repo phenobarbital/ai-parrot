@@ -228,10 +228,8 @@ p2 = PromptLibrary(chatbot_id=uuid.uuid4(),                 title="x", query="q"
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-13
+**Notes**: Added `agent_id: Optional[str]` field, relaxed `chatbot_id` to `Optional[uuid.UUID]`. Updated docstring with the full new CREATE TABLE DDL (including XOR CHECK constraint and UNIQUE constraint) and the ALTER TABLE migration block. Verified annotations via PYTHONPATH smoke test.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

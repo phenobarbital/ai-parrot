@@ -16,7 +16,7 @@ import jinja2
 
 from ..constraints import DependencyRule
 from ..options import FieldOption
-from ..schema import FormField, FormSchema, RenderedForm
+from ..schema import FormField, FormSchema, FormSubsection, RenderedForm
 from ..style import FieldSizeHint, LayoutType, StyleSchema
 from ..types import FieldType, LocalizedString
 from .base import AbstractFormRenderer
@@ -137,7 +137,9 @@ class HTML5Renderer(AbstractFormRenderer):
         def resolve(value: LocalizedString | None) -> str:
             return _resolve(value, locale)
 
-        def render_field(field: FormField) -> str:
+        def render_field(field: FormField | FormSubsection) -> str:
+            if isinstance(field, FormSubsection):
+                return self._render_subsection_html(field, prefilled, errors, style, locale)
             return self._render_field_html(field, prefilled, errors, style, locale)
 
         def depends_on_json(dep: DependencyRule) -> str:
@@ -272,6 +274,38 @@ class HTML5Renderer(AbstractFormRenderer):
         if error:
             parts.append(f'<span class="form-field__error" role="alert">{error}</span>')
 
+        parts.append('</div>')
+        return "\n".join(parts)
+
+    def _render_subsection_html(
+        self,
+        subsection: FormSubsection,
+        prefilled: dict[str, Any],
+        errors: dict[str, str],
+        style: StyleSchema,
+        locale: str,
+    ) -> str:
+        """Render a FormSubsection as an HTML sub-group."""
+        title = _resolve(subsection.title, locale) if subsection.title else ""
+        description = _resolve(subsection.description, locale) if subsection.description else ""
+
+        depends_attr = ""
+        if subsection.depends_on:
+            import html as _html
+            safe_json = _html.escape(json.dumps(subsection.depends_on.model_dump()), quote=True)
+            depends_attr = f' data-depends-on="{safe_json}"'
+
+        parts: list[str] = [
+            f'<div class="form-subsection" id="subsection-{subsection.subsection_id}"{depends_attr}>',
+        ]
+        if title:
+            parts.append(f'<h3 class="form-subsection__title">{title}</h3>')
+        if description:
+            parts.append(f'<p class="form-subsection__description">{description}</p>')
+        parts.append('<div class="form-subsection__fields">')
+        for field in subsection.fields:
+            parts.append(self._render_field_html(field, prefilled, errors, style, locale))
+        parts.append('</div>')
         parts.append('</div>')
         return "\n".join(parts)
 

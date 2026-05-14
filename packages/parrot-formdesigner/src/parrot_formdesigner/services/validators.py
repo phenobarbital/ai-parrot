@@ -646,6 +646,8 @@ class FormValidator:
     def _collect_fields(self, section: FormSection) -> list[FormField]:
         """Recursively collect all fields from a section, including children.
 
+        Flattens through subsections and nested GROUP/ARRAY children.
+
         Args:
             section: FormSection to traverse.
 
@@ -653,7 +655,7 @@ class FormValidator:
             Flat list of all FormField instances.
         """
         fields: list[FormField] = []
-        for field in section.fields:
+        for field in section.iter_fields():
             fields.append(field)
             fields.extend(self._collect_nested_fields(field))
         return fields
