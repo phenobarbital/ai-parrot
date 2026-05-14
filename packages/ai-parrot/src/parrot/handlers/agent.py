@@ -510,13 +510,19 @@ class AgentTalk(BaseView):
         formatter = OutputFormatter()
 
         if output_mode == OutputMode.JSON:
-            # Return structured JSON response
+            usage = getattr(ai_message, 'usage', None)
             response_data = {
                 "content": ai_message.content,
                 "metadata": {
                     "session_id": getattr(ai_message, 'session_id', None),
                     "user_id": getattr(ai_message, 'user_id', None),
                     "timestamp": getattr(ai_message, 'timestamp', None),
+                    "model": getattr(ai_message, 'model', None),
+                    "provider": getattr(ai_message, 'provider', None),
+                    "usage": usage.model_dump() if usage is not None else None,
+                    "response_time": getattr(ai_message, 'response_time', None),
+                    "finish_reason": getattr(ai_message, 'finish_reason', None),
+                    "stop_reason": getattr(ai_message, 'stop_reason', None),
                 },
                 "tool_calls": getattr(ai_message, 'tool_calls', []),
                 "sources": getattr(ai_message, 'documents', []) if hasattr(ai_message, 'documents') else []
