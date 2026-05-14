@@ -41,6 +41,7 @@ dependencies = [
     "lxml>=6.1.0",
     "reportlab>=4.1.0",
     "pycountry>=23.0",
+    "markdown2>=2.5.0",
 ]
 
 [project.optional-dependencies]

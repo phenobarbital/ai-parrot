@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import jinja2
+import markdown2
 
 from ..core.constraints import DependencyRule
 from ..core.options import FieldOption
@@ -410,8 +411,14 @@ class HTML5Renderer(AbstractFormRenderer):
 
         # Read-only display fields: render content as HTML, no input element
         if field.read_only and render_as in ("display_text", "display_image"):
-            # Labels may contain double-escaped HTML entities — unescape them
-            display_content = html.unescape(field_label)
+            # Label may arrive as HTML (sometimes entity-escaped) or as markdown.
+            # Unescape entities first, then run through markdown2 — it converts
+            # markdown markers to HTML and passes block-level HTML through.
+            unescaped = html.unescape(field_label)
+            display_content = markdown2.markdown(
+                unescaped,
+                extras=["fenced-code-blocks", "tables", "break-on-newline"],
+            )
             parts.append(
                 f'<div class="form-field__display text-gray-700" id="{field.field_id}">'
                 f'{display_content}</div>'
