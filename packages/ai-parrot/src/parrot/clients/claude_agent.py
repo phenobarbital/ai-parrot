@@ -36,7 +36,6 @@ Highlights:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
@@ -539,13 +538,17 @@ class ClaudeAgentClient(AbstractClient):
         lazy_loading: bool = False,
         *,
         run_options: Optional[ClaudeAgentRunOptions] = None,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[Union[str, AIMessage]]:
         """Yield the agent's text output incrementally as ``TextBlock``s arrive.
 
         The agent SDK does not expose a token-by-token streaming primitive
         equivalent to Anthropic's ``messages.stream``; instead we yield each
         ``TextBlock.text`` payload as soon as the corresponding
         ``AssistantMessage`` is received.
+
+        After all text chunks are yielded, yields a final
+        :class:`~parrot.models.responses.AIMessage` with full metadata via
+        :py:meth:`AIMessageFactory.from_claude_agent`.
 
         Tool-use blocks are not yielded (they have no user-facing text); the
         full tool-call list is recoverable via ``ask`` if needed.
@@ -556,11 +559,14 @@ class ClaudeAgentClient(AbstractClient):
             run_options: Optional :class:`ClaudeAgentRunOptions` for this call.
 
         Yields:
-            ``str`` chunks corresponding to consecutive ``TextBlock``s.
+            ``str`` chunks corresponding to consecutive ``TextBlock``s, then
+            a final :class:`AIMessage` with metadata.
 
         Raises:
             ImportError: When ``claude_agent_sdk`` is not installed.
         """
+        # Save user_id before del (needed for final AIMessage)
+        saved_user_id = user_id
         del max_tokens, temperature, files, user_id, tools, deep_research
         del agent_config, lazy_loading
         query, _, _ = _import_sdk()
@@ -578,7 +584,10 @@ class ClaudeAgentClient(AbstractClient):
         except ImportError as exc:  # pragma: no cover
             raise ImportError(_INSTALL_HINT) from exc
 
+        all_messages = []
+        turn_id = str(uuid.uuid4())
         async for msg in query(prompt=prompt, options=options):
+            all_messages.append(msg)
             # Duck-typed defensive checks in case the SDK introduces new
             # subclasses or aliases.
             if isinstance(msg, AssistantMessage) or type(msg).__name__ == "AssistantMessage":
@@ -590,6 +599,17 @@ class ClaudeAgentClient(AbstractClient):
                         text = getattr(block, "text", "") or ""
                         if text:
                             yield text
+
+        # Build and yield final AIMessage using accumulated messages
+        ai_message = AIMessageFactory.from_claude_agent(
+            messages=all_messages,
+            input_text=prompt,
+            model=resolved_model,
+            user_id=saved_user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        yield ai_message
 
     async def resume(
         self,
