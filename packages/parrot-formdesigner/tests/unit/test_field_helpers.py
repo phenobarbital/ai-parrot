@@ -49,13 +49,15 @@ def test_rest_snippet_roundtrips_to_form_field() -> None:
 
 def test_rest_snippet_meta_rest_parses_as_callback() -> None:
     """meta.rest in the REST snippet must parse as CallbackRestFieldSpec."""
+    from pydantic import TypeAdapter
+
     from parrot_formdesigner.services.rest_field_resolver import (
         CallbackRestFieldSpec,
         RestFieldSpec,
     )
 
     snippet = get_form_field_schema_snippets()["rest"]
-    spec = RestFieldSpec.model_validate(snippet["meta"]["rest"])
+    spec = TypeAdapter(RestFieldSpec).validate_python(snippet["meta"]["rest"])
     assert isinstance(spec, CallbackRestFieldSpec)
     assert spec.callback_ref == "planogram_compliance"
     assert spec.response_path == "$.compliance_score"

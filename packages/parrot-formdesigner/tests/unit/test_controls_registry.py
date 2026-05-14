@@ -163,11 +163,11 @@ def test_builtin_snippets_are_deep_copies():
 
 
 def test_controls_registry_has_all_new_types():
-    """get_controls() returns 30 entries (20 existing + 10 new) after import."""
+    """get_controls() returns 31 entries (20 existing + 10 FEAT-167 + 1 FEAT-170 REST)."""
     sys.modules.pop("parrot_formdesigner.controls.builtin", None)
     importlib.import_module("parrot_formdesigner.controls.builtin")
     controls = get_controls()
-    assert len(controls) == 30, f"Expected 30 controls, got {len(controls)}"
+    assert len(controls) == 31, f"Expected 31 controls, got {len(controls)}"
 
     # Spot-check new types are present
     control_types = {c.type for c in controls}

@@ -9,8 +9,9 @@ from __future__ import annotations
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from parrot_formdesigner.services.callback_registry import (
     _CALLBACK_REGISTRY,
@@ -61,23 +62,26 @@ def _make_payload(**kwargs) -> RestCallbackInput:
 # ---------------------------------------------------------------------------
 
 
+_spec_adapter: TypeAdapter = TypeAdapter(RestFieldSpec)
+
+
 class TestRestFieldSpecModels:
     def test_discriminated_remote(self):
-        spec = RestFieldSpec.model_validate(
+        spec = _spec_adapter.validate_python(
             {"mode": "remote", "endpoint": "https://api.test/x"}
         )
         assert isinstance(spec, RemoteRestFieldSpec)
         assert spec.mode == "remote"
 
     def test_discriminated_internal(self):
-        spec = RestFieldSpec.model_validate(
+        spec = _spec_adapter.validate_python(
             {"mode": "internal", "endpoint": "/api/v1/x"}
         )
         assert isinstance(spec, InternalRestFieldSpec)
         assert spec.mode == "internal"
 
     def test_discriminated_callback(self):
-        spec = RestFieldSpec.model_validate(
+        spec = _spec_adapter.validate_python(
             {"mode": "callback", "callback_ref": "planogram"}
         )
         assert isinstance(spec, CallbackRestFieldSpec)
@@ -85,11 +89,11 @@ class TestRestFieldSpecModels:
 
     def test_internal_requires_leading_slash(self):
         with pytest.raises(ValidationError):
-            RestFieldSpec.model_validate({"mode": "internal", "endpoint": "api/x"})
+            _spec_adapter.validate_python({"mode": "internal", "endpoint": "api/x"})
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(ValidationError):
-            RestFieldSpec.model_validate(
+            _spec_adapter.validate_python(
                 {"mode": "remote", "endpoint": "https://x", "unknown_field": 1}
             )
 
@@ -280,7 +284,8 @@ class TestResolverDisplayTemplate:
         resolver = RestFieldResolver()
         spec = CallbackRestFieldSpec(
             callback_ref="unsafe_fn",
-            display_template="{{ ''.__class__ }}",
+            # Access __mro__ triggers Jinja2 SandboxedEnvironment SecurityError
+            display_template="{{ ''.__class__.__mro__[2].__subclasses__() }}",
         )
         result = await resolver.resolve(spec, _make_payload())
 

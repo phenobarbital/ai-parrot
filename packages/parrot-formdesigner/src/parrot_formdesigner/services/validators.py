@@ -606,6 +606,8 @@ class FormValidator:
         Returns:
             List of error strings (empty means valid).
         """
+        from pydantic import TypeAdapter
+
         from parrot_formdesigner.services.rest_field_resolver import RestFieldSpec
 
         errors: list[str] = []
@@ -615,7 +617,7 @@ class FormValidator:
         rest_meta = meta.get("rest")
         if rest_meta is not None:
             try:
-                RestFieldSpec.model_validate(rest_meta)
+                TypeAdapter(RestFieldSpec).validate_python(rest_meta)
             except Exception as exc:
                 errors.append(f"{label}: invalid REST spec in meta['rest']: {exc}")
                 return errors
