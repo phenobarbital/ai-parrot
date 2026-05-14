@@ -181,4 +181,4 @@ def test_design_time_parse_catches_typo():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added REST dispatch in `validate_field()`, REST coercion in `_coerce_value()`, REST handling in `validate()` sanitized_data section, and `_validate_rest_field()` method. The method validates dict shape, rejects status=="in_progress" with structured error, rejects null answer when required, strips "status" key, and performs design-time RestFieldSpec parse from meta["rest"]. Created test file `tests/unit/services/test_validators_rest.py` with 11 tests, all passing.
