@@ -680,35 +680,35 @@ from parrot.registry import register_agent  # decorator-registry idiom to mirror
 
 ## Open Questions
 
-- [ ] Should the `controls/builtin.py` `category` for `FieldType.REST`
+- [x] Should the `controls/builtin.py` `category` for `FieldType.REST`
       be `"media"` (because uploads are media-flavoured) or `"advanced"`
       (because the live API call is in the same conceptual bucket as
-      `REMOTE_RESPONSE`)? — *Owner: jesuslara*
-- [ ] Internal-mode URL composition: should `spec.endpoint` be a strict
+      `REMOTE_RESPONSE`)? — *Owner: jesuslara*: advanced
+- [x] Internal-mode URL composition: should `spec.endpoint` be a strict
       path (`/api/v1/...`) and we prepend the aiohttp app's host, or
       do we expose an environment variable `PARROT_INTERNAL_BASE_URL`
-      so the value is centralized? — *Owner: jesuslara*
-- [ ] Should the callback registry be **tenant-scoped** or global? A
+      so the value is centralized? — *Owner: jesuslara*: strict path with prepend app's host.
+- [x] Should the callback registry be **tenant-scoped** or global? A
       global registry is simpler; a tenant-scoped one matches the
-      multi-tenant model of `FormSubmissionStorage.tenant`. — *Owner: jesuslara*
-- [ ] On re-upload, should the previous `blob_ref` be deleted
+      multi-tenant model of `FormSubmissionStorage.tenant`. — *Owner: jesuslara*: tenant-scoped.
+- [x] On re-upload, should the previous `blob_ref` be deleted
       synchronously (slower upload, guaranteed cleanup) or marked for
-      lifecycle expiry (faster, eventually consistent)? — *Owner: jesuslara*
-- [ ] If `spec.response_schema` is provided, is a validation miss a
+      lifecycle expiry (faster, eventually consistent)? — *Owner: jesuslara*: be deleted.
+- [x] If `spec.response_schema` is provided, is a validation miss a
       hard reject (HTTP 422) or a `RenderWarning` (informational)?
       `REMOTE_RESPONSE` treats it as informational; consistency
-      suggests the same. — *Owner: jesuslara*
-- [ ] Concurrent uploads per submission: should there be a per-field
+      suggests the same. — *Owner: jesuslara*: RenderWarning
+- [x] Concurrent uploads per submission: should there be a per-field
       lock so the same `field_id` can't have two in-flight uploads
       from the same session? V1 default would be **last-write-wins**
-      (no lock) — confirm. — *Owner: jesuslara*
-- [ ] `display_template` syntax: simple `{var}` substitution, full
+      (no lock) — confirm. — *Owner: jesuslara*: confirm.
+- [x] `display_template` syntax: simple `{var}` substitution, full
       Jinja2 (already a dep), or just plain text with no interpolation
-      and let the frontend do the rendering? — *Owner: jesuslara*
-- [ ] Antivirus / content scanning hook before blob persistence:
+      and let the frontend do the rendering? — *Owner: jesuslara*: full jinja2.
+- [x] Antivirus / content scanning hook before blob persistence:
       out-of-scope for V1 or a stub interface (`AbstractBlobStorage.put`
-      with optional pre-write hook)? — *Owner: jesuslara*
-- [ ] Frontend (separate repo) coordination: do we need to publish a
+      with optional pre-write hook)? — *Owner: jesuslara*: stub interface to be developed in v2.
+- [x] Frontend (separate repo) coordination: do we need to publish a
       JSON Schema fragment for `RestFieldSpec` so the form-builder UI
       can render the config panel? FEAT-167 left UI work for a
-      follow-up spec — same approach here. — *Owner: jesuslara*
+      follow-up spec — same approach here. — *Owner: jesuslara*: same approach, generates a documentation for Frontend implementation.
