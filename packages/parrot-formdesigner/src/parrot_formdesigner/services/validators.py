@@ -159,6 +159,12 @@ class FormValidator:
                     resolved = getattr(field, "_resolved_remote_value", None)
                     if resolved is not None:
                         sanitized[field.field_id] = resolved
+                elif field.field_type == FieldType.REST:
+                    # REST field: the validator mutates the dict in-place (strips status).
+                    # Use the submitted dict directly (already coerced by _validate_rest_field).
+                    submitted = data.get(field.field_id)
+                    if submitted is not None:
+                        sanitized[field.field_id] = submitted
                 else:
                     coerced = self._coerce_value(data.get(field.field_id), field)
                     if coerced is not None:
@@ -201,6 +207,10 @@ class FormValidator:
             return await self._validate_remote_response(
                 field, value, label, auth_context=auth_context
             )
+
+        # REST: validate the submitted {answer, blob_ref, status?} shape
+        if field.field_type == FieldType.REST:
+            return self._validate_rest_field(field, value, label)
 
         # Required check
         is_empty = value is None or (isinstance(value, str) and not value.strip())
@@ -379,6 +389,12 @@ class FormValidator:
             if isinstance(value, list):
                 return value
             raise ValueError("Availability must be a list of slot dicts")
+
+        # Phase 3 — FEAT-170
+        elif ft == FieldType.REST:
+            if isinstance(value, dict):
+                return value
+            raise ValueError("REST field value must be a dict with 'answer' and 'blob_ref' keys")
 
         return value
 
@@ -562,6 +578,71 @@ class FormValidator:
         # Store the resolved value back into the field for downstream use
         # (sanitized_data is populated by the caller)
         field._resolved_remote_value = result.value  # type: ignore[attr-defined]
+
+        return errors
+
+    def _validate_rest_field(
+        self,
+        field: FormField,
+        value: Any,
+        label: str,
+    ) -> list[str]:
+        """Validate a REST field submission at form-submit time.
+
+        Enforces the shape ``{answer, blob_ref, status?}``:
+        - Rejects non-dict values.
+        - Rejects ``status == "in_progress"`` with a structured error.
+        - Rejects ``answer is None`` when ``field.required``.
+        - Strips ``status`` from the accepted value (callers use the mutated dict).
+
+        Also parses ``field.meta["rest"]`` via ``RestFieldSpec.model_validate``
+        so design-time configuration errors surface early.
+
+        Args:
+            field: FormField of type REST.
+            value: Submitted value (should be a dict).
+            label: Resolved field label for error messages.
+
+        Returns:
+            List of error strings (empty means valid).
+        """
+        from parrot_formdesigner.services.rest_field_resolver import RestFieldSpec
+
+        errors: list[str] = []
+
+        # Design-time: parse RestFieldSpec from meta to catch config errors
+        meta = field.meta or {}
+        rest_meta = meta.get("rest")
+        if rest_meta is not None:
+            try:
+                RestFieldSpec.model_validate(rest_meta)
+            except Exception as exc:
+                errors.append(f"{label}: invalid REST spec in meta['rest']: {exc}")
+                return errors
+
+        # Shape check
+        if not isinstance(value, dict):
+            errors.append(
+                f"{label}: REST field value must be a dict with "
+                "'answer' and 'blob_ref' keys"
+            )
+            return errors
+
+        # Reject in-flight uploads
+        if value.get("status") == "in_progress":
+            errors.append(
+                f"field_id={field.field_id} status=in_progress: "
+                "cannot submit a field that is still uploading"
+            )
+            return errors
+
+        # Required check
+        if field.required and value.get("answer") is None:
+            errors.append(f"{label} is required (answer must not be null)")
+            return errors
+
+        # Strip status from the accepted shape so it is not persisted
+        value.pop("status", None)
 
         return errors
 
