@@ -150,4 +150,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented 2026-05-15. Created `tests/unit/test_stream_contract.py` with 10 tests
+covering the full streaming contract:
+
+1. `test_abstract_client_ask_stream_return_type` — verifies `AsyncIterator[Union[str, AIMessage]]`
+   annotation via `get_type_hints`.
+2. `test_anthropic_ask_stream_yields_aimessage` — AnthropicClient mock, checks str chunks
+   and final AIMessage with `provider="claude"`.
+3. `test_openai_ask_stream_yields_aimessage` — OpenAIClient mock.
+4. `test_groq_ask_stream_yields_aimessage` — GroqClient mock.
+5. `test_grok_ask_stream_yields_aimessage` — GrokClient mock.
+6. `test_gemma4_ask_stream_yields_aimessage` — Gemma4Client mock, isinstance check.
+7. `test_transformers_ask_stream_yields_aimessage` — TransformersClient mock, isinstance check.
+8. `test_claude_agent_ask_stream_yields_aimessage` — ClaudeAgentClient mock, checks
+   `provider="claude-agent"`.
+9. `test_stream_contract_last_item_is_aimessage` — contract invariant: last item must
+   be AIMessage, using a bare async generator.
+10. `test_ask_stream_signature_has_correct_annotation` — verifies "AIMessage" appears in
+    the return annotation repr via `inspect.signature`.
+
+All 10 tests pass: `pytest tests/unit/test_stream_contract.py -v` — 10 passed in ~3s.
+Lint passes clean after removing 2 unused imports (`AsyncMock`, `SimpleNamespace`) with
+`ruff check --fix`.
