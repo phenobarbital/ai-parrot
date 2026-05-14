@@ -1155,6 +1155,13 @@ $backstory
             return None
         tool = self.tool_manager._tools.get(tool_name) if hasattr(self, 'tool_manager') else None
         if tool is None:
+            # Request-scoped tools (passed via ``ask(tools=[...])``) live in
+            # ``self._request_tools`` and are not registered in the
+            # ToolManager — check the per-call overlay so subclasses that
+            # support request-scoped tools still get context filtering.
+            request_tools = getattr(self, '_request_tools', None) or {}
+            tool = request_tools.get(tool_name)
+        if tool is None:
             return None
         fn = None
         if isinstance(tool, ToolDefinition):

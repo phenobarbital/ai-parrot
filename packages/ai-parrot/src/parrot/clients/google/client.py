@@ -961,7 +961,18 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if tool_name in request_tools:
             tool = request_tools[tool_name]
             ctx = tool_context or getattr(self, '_tool_context', None)
-            merged = {**ctx, **parameters} if ctx else dict(parameters)
+            if ctx:
+                # Filter ctx keys to those the tool actually declares —
+                # request-scoped tools that don't accept ``user_id`` /
+                # ``session_id`` would otherwise raise ``TypeError``.
+                accepted = self._tool_param_names(tool_name)
+                if accepted is None:
+                    filtered_ctx = ctx
+                else:
+                    filtered_ctx = {k: v for k, v in ctx.items() if k in accepted}
+                merged = {**filtered_ctx, **parameters}
+            else:
+                merged = dict(parameters)
             perm_ctx = getattr(self, '_permission_context', None)
             if perm_ctx is not None:
                 merged['_permission_context'] = perm_ctx
