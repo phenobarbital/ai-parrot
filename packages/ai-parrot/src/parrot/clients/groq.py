@@ -604,9 +604,16 @@ class GroqClient(AbstractClient):
         system_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[dict]] = None
-    ) -> AsyncIterator[str]:
-        """Stream Groq's response with optional conversation memory."""
+        tools: Optional[List[dict]] = None,
+        deep_research: bool = False,
+        agent_config: Optional[dict] = None,
+        lazy_loading: bool = False,
+    ) -> AsyncIterator[Union[str, AIMessage]]:
+        """Stream Groq's response with optional conversation memory.
+
+        Yields successive string chunks followed by a final
+        :class:`~parrot.models.responses.AIMessage` with metadata.
+        """
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -626,7 +633,8 @@ class GroqClient(AbstractClient):
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
-            "stream": True
+            "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
         # Note: For streaming, we don't handle tools in this version
@@ -643,11 +651,33 @@ class GroqClient(AbstractClient):
         response_stream = await self.client.chat.completions.create(**request_args)
 
         assistant_content = ""
+        usage_data = None
         async for chunk in response_stream:
             if chunk.choices and chunk.choices[0].delta.content:
                 text_chunk = chunk.choices[0].delta.content
                 assistant_content += text_chunk
                 yield text_chunk
+            # Capture usage from the final chunk (present when stream_options.include_usage=True)
+            if hasattr(chunk, 'usage') and chunk.usage is not None:
+                usage_data = chunk.usage
+
+        # Build and yield final AIMessage
+        if usage_data is not None:
+            usage = CompletionUsage.from_groq(usage_data)
+        else:
+            usage = CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)
+        ai_message = AIMessage(
+            input=prompt,
+            output=assistant_content,
+            response=assistant_content,
+            model=model,
+            provider="groq",
+            usage=usage,
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        yield ai_message
 
         # Update conversation memory if content was generated
         if assistant_content:
