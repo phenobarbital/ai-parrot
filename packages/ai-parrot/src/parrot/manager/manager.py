@@ -3,7 +3,7 @@ Chatbot Manager.
 
 Tool for instanciate, managing and interacting with Chatbot through APIs.
 """
-from typing import Any, Dict, Type, Optional, Tuple, List
+from typing import Any, Dict, Type, Optional, Tuple, List, TYPE_CHECKING
 from importlib import import_module
 import contextlib
 import time
@@ -79,8 +79,11 @@ from ..handlers.mcp_helper import setup_mcp_helper_routes
 # FEAT-146: Web HITL response endpoint + bootstrap
 from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # Telegram integration
-# Integrations (Telegram, MS Teams)
-from ..integrations import IntegrationBotManager
+# Integrations (Telegram, MS Teams) — imported lazily inside on_startup
+# because IntegrationBotManager pulls aiogram (~1.5s); we only need it
+# when the app starts serving traffic.
+if TYPE_CHECKING:
+    from ..integrations import IntegrationBotManager
 
 
 class BotManager:
@@ -133,7 +136,7 @@ class BotManager:
         # Initialize Redis persistence for crews — keyed off instance attr
         self.crew_redis = CrewRedis() if self.enable_crews else None
         # Integration manager
-        self._integration_manager: Optional[IntegrationBotManager] = None
+        self._integration_manager: Optional["IntegrationBotManager"] = None
         # Shared Redis client published at app['redis'] during setup(). True
         # when BotManager created it (and must close it during on_cleanup);
         # False when another component had already set app['redis'] and
@@ -1691,7 +1694,8 @@ Available documentation UIs:
         if ENABLE_DASHBOARDS:
             await _ensure_dashboard_indexes(app)
         app['chat_storage'] = chat_storage
-        # Start Integration bots
+        # Start Integration bots (deferred aiogram import — see top of file)
+        from ..integrations import IntegrationBotManager
         self._integration_manager = IntegrationBotManager(self)
         await self._integration_manager.startup()
 

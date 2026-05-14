@@ -420,10 +420,8 @@ class ChatHandler(BaseView):
             chatbot = await manager.get_user_bot(self.request, name)
             if chatbot is not None:
                 is_user_bot = True
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "get_user_bot failed for %s, falling back to system: %s", name, exc,
-            )
+        except Exception:  # noqa: BLE001
+            pass
         if chatbot is None:
             try:
                 chatbot = await manager.get_bot(name)
@@ -446,7 +444,7 @@ class ChatHandler(BaseView):
         if not session:
             return self.json_response(
                 {
-                "message": "User Session is required to interact with a Chatbot."
+                    "message": "User Session is required to interact with a Chatbot."
                 },
                 status=400
             )
@@ -457,11 +455,9 @@ class ChatHandler(BaseView):
             async with chatbot.retrieval(self.request, app=app, llm=llm) as bot:
                 # Prioritize session_id from request data (conversation-specific)
                 # Generate new UUID if not provided - never use browser session
-                session_id = data.pop('session_id', None)
-                if not session_id:
-                    session_id = uuid.uuid4().hex
+                session_id = data.pop('session_id', None) or uuid.uuid4().hex
                 user_id = session.get('user_id', None)
-                if method:= self._check_methods(bot, method_name):
+                if method := self._check_methods(bot, method_name):
                     sig = inspect.signature(method)
                     method_params = {}
                     missing_required = []
@@ -494,8 +490,8 @@ class ChatHandler(BaseView):
                                 "message": f"Required parameters missing: {', '.join(missing_required)}",
                                 "required_params": [p for p in sig.parameters.keys() if p != 'self']
                             },
-                                status=400
-                            )
+                            status=400
+                        )
                     try:
                         method_params = {**method_params, **data}
                         response = await method(

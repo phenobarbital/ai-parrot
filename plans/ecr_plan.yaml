@@ -1,0 +1,62 @@
+#
+# ECR collection plan consumed by SecurityAgent.run_ecr_image_scan().
+#
+# Resolved through CloudSploitConfig.ecr_plan_file (see agents/security.py)
+# with the env override ECR_COLLECTION_PLAN_FILE.  Loaded by
+# EcrCollectionPlan.from_yaml() — schema in parrot_tools/cloudsploit/models.py.
+#
+# `tags` are tried in priority order; the first one with scan findings wins.
+# Keep this file in sync with the ECR repositories actually deployed.
+#
+
+region: us-east-2
+aws_id: security          # AWSInterface credential identifier (navconfig)
+concurrency: 5            # Max concurrent describe_image_scan_findings calls
+
+repos:
+  - name: navigator-api-tf
+    tags: [staging, production, dev]
+  - name: navigator-next-tf
+    tags: [staging, production, dev]
+  - name: navigator-front-tf
+    tags: [staging, production]
+  - name: navigator-frontend-next-tf
+    tags: [staging, production, dev]
+  - name: navigator-svelte-tf
+    tags: [porygon-staging, staging, production]
+  - name: navigator-apps-tf
+    tags: [staging, dev]
+  - name: navigator-front-middleware-tf
+    tags: [staging, production]
+  - name: navigator-eventhooks-tf
+    tags: [staging, dev]
+  - name: navigator-chatbots-tf
+    tags: [staging, production]
+  - name: navigator-voice-tf
+    tags: [staging, production]
+  - name: navigator-partner-portal-tf
+    tags: [staging, dev]
+  - name: navigator-agents-server-tf
+    tags: [staging, staging-jira, production]
+  - name: navigator-api-ai-tf
+    tags: [staging, dev]
+  - name: navigator-mcp-tf
+    tags: [aws-staging, aws-dev]
+  - name: navigator-copilot-svelte-tf
+    tags: [staging, production]
+  - name: dataintegrator-tf
+    tags: [staging, production, dev]
+  - name: dataintegrator-worker-tf
+    tags: [staging, production, dev]
+  - name: dataintegrator-worker-ai-tf
+    tags: [staging, dev]
+  - name: dataintegrator-worker-scraping-tf
+    tags: [staging, dev]
+  - name: dataintegrator-sftp-tf
+    tags: [staging, production]
+  - name: logstash-tf
+    tags: [staging, latest]
+  - name: zammad-tf
+    tags: [staging, latest, dev]
+  - name: zammad-teams-middleware-tf
+    tags: [staging, dev]

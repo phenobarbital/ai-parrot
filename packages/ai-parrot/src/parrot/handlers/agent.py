@@ -958,11 +958,7 @@ class AgentTalk(BaseView):
         # 1. Per-user bot — session cache or DB lookup.
         try:
             user_bot = await manager.get_user_bot(self.request, agent_name)
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning(
-                "get_user_bot failed for %s, falling back to system: %s",
-                agent_name, exc,
-            )
+        except Exception:  # noqa: BLE001
             user_bot = None
         if user_bot is not None:
             return user_bot, True
