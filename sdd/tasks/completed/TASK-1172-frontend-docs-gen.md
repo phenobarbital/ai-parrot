@@ -102,4 +102,4 @@ def test_frontend_docs_generated(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `scripts/gen_frontend_docs.py` that reads RestFieldSpec + RestFieldResult Pydantic schemas via TypeAdapter and model_json_schema(), then generates `docs/frontend/rest-field.md`. Output covers: JSON-Schema x-parrot-rest extension, all three modes (remote/internal/callback), upload endpoint contract (URL template, multipart body, X-Parrot-Prior-Blob-Ref/X-Parrot-Tenant headers), response envelope shape, HTTP error codes (400/401/404/413/415/500), HTML5 component hints, and planogram worked example. Script accepts --out argument. Re-running is idempotent. Created integration test with 9 tests, all passing.
