@@ -1560,3 +1560,144 @@ class JiraSpecialist(Agent):
             question=question,
             structured_output=JiraTicketDetail
         )
+
+    async def get_in_progress_by_assignee(
+        self,
+        projects: Optional[List[str]] = None,
+        max_per_assignee: int = 3,
+        statuses: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Return all "In Progress" Jira tickets grouped by assignee.
+
+        Queries Jira directly via :attr:`jira_toolkit` for issues currently
+        in the target status (default ``"In Progress"``), then groups them
+        by assignee. For each assignee, returns up to ``max_per_assignee``
+        tickets (default 3) with the ticket key, summary, creation time,
+        due date, and — when available from the issue changelog — the
+        most recent transition timestamp into the target status.
+
+        Args:
+            projects: Jira project keys to search. Defaults to
+                :attr:`DailyStandupConfig.jira_projects`.
+            max_per_assignee: Maximum number of tickets to include per
+                assignee in the bullet list. Defaults to ``3``.
+            statuses: Status names to filter on. Defaults to
+                ``["In Progress"]``. The first entry is also the status
+                whose transition timestamp is extracted from the
+                changelog.
+
+        Returns:
+            A dict with two keys:
+
+            * ``markdown``: A Markdown-formatted bullet list (one bullet
+              per assignee, with up to ``max_per_assignee`` nested
+              ticket bullets).
+            * ``by_assignee``: Ordered mapping ``assignee -> list[ticket]``
+              where each ticket dict contains ``key``, ``summary``,
+              ``created``, ``due_date`` and ``in_progress_at``.
+
+        Raises:
+            RuntimeError: If :attr:`jira_toolkit` is not configured yet
+                or the underlying Jira search returns an error envelope.
+        """
+        if self.jira_toolkit is None:
+            raise RuntimeError(
+                "JiraSpecialist.get_in_progress_by_assignee: jira_toolkit "
+                "is not configured. Call post_configure() first."
+            )
+
+        project_list = projects or self._standup_config.jira_projects
+        status_list = statuses or ["In Progress"]
+
+        projects_clause = ", ".join(project_list)
+        statuses_clause = '", "'.join(status_list)
+        jql = (
+            f'project IN ({projects_clause}) '
+            f'AND status IN ("{statuses_clause}") '
+            f'ORDER BY assignee ASC, updated DESC'
+        )
+
+        envelope = await self.jira_toolkit.jira_search_issues(
+            jql=jql,
+            fields="key,summary,assignee,status,created,duedate",
+            expand="changelog",
+            max_results=None,
+            store_as_dataframe=False,
+            json_result=True,
+        )
+
+        env_status = envelope.get("status")
+        if env_status not in ("ok", "empty"):
+            message = envelope.get("message") or "unknown error"
+            raise RuntimeError(
+                f"jira_search_issues failed for in-progress query: {message}"
+            )
+
+        issues: List[Dict[str, Any]] = (
+            (envelope.get("data") or {}).get("issues") or []
+        )
+        target_status = (status_list[0] if status_list else "In Progress").lower()
+
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for issue in issues:
+            fields = issue.get("fields") or {}
+            assignee_obj = fields.get("assignee") or {}
+            assignee_name = (
+                assignee_obj.get("displayName")
+                or assignee_obj.get("name")
+                or "Unassigned"
+            )
+
+            in_progress_at: Optional[str] = None
+            changelog = issue.get("changelog") or {}
+            for entry in changelog.get("histories") or []:
+                for item in entry.get("items") or []:
+                    if item.get("field") != "status":
+                        continue
+                    to_string = (item.get("toString") or "").lower()
+                    if to_string != target_status:
+                        continue
+                    created = entry.get("created")
+                    if created and (
+                        in_progress_at is None or created > in_progress_at
+                    ):
+                        in_progress_at = created
+
+            grouped.setdefault(assignee_name, []).append({
+                "key": issue.get("key"),
+                "summary": fields.get("summary"),
+                "created": fields.get("created"),
+                "due_date": fields.get("duedate"),
+                "in_progress_at": in_progress_at,
+            })
+
+        def _sort_key(t: Dict[str, Any]) -> str:
+            return t.get("in_progress_at") or t.get("created") or ""
+
+        by_assignee: Dict[str, List[Dict[str, Any]]] = {}
+        for assignee in sorted(grouped.keys(), key=lambda n: n.lower()):
+            sorted_tickets = sorted(grouped[assignee], key=_sort_key, reverse=True)
+            by_assignee[assignee] = sorted_tickets[:max_per_assignee]
+
+        lines: List[str] = []
+        for assignee, tickets in by_assignee.items():
+            lines.append(f"- **{assignee}**")
+            if not tickets:
+                lines.append("  - _No in-progress tickets_")
+                continue
+            for t in tickets:
+                key = t["key"] or "—"
+                summary = t["summary"] or "(no summary)"
+                created = t["created"] or "—"
+                due = t["due_date"] or "—"
+                ip_at = t["in_progress_at"] or "—"
+                lines.append(
+                    f"  - `{key}` — {summary} "
+                    f"(created: {created}, due: {due}, "
+                    f"in-progress since: {ip_at})"
+                )
+
+        return {
+            "markdown": "\n".join(lines),
+            "by_assignee": by_assignee,
+        }
