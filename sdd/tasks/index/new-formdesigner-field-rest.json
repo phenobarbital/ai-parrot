@@ -14,7 +14,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Independent new module; can run concurrently with TASK-1161 in a sub-worktree if desired. Spec recommends single worktree for simplicity.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1160-blob-storage.md"
+      "completed_at": "2026-05-14T23:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1160-blob-storage.md"
     },
     {
       "id": "TASK-1161",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Independent new module; can run concurrently with TASK-1160.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1161-callback-registry.md"
+      "completed_at": "2026-05-14T23:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1161-callback-registry.md"
     },
     {
       "id": "TASK-1162",
@@ -71,7 +71,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -79,8 +79,8 @@
       "parallelism_notes": "One-line enum addition; gating for Phase 2 but itself independent of Phase 1 services.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1163-field-type-rest-enum.md"
+      "completed_at": "2026-05-14T23:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1163-field-type-rest-enum.md"
     },
     {
       "id": "TASK-1164",
@@ -191,7 +191,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -199,8 +199,8 @@
       "parallelism_notes": "Standalone dependency bump; can run before any code task (Phase 1 services rely on these deps at test time).",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1169-pyproject-deps.md"
+      "completed_at": "2026-05-14T23:16:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1169-pyproject-deps.md"
     },
     {
       "id": "TASK-1170",
