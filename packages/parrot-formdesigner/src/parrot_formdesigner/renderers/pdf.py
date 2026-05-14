@@ -53,6 +53,8 @@ _PDF_FALLBACK_NEW_TYPES = frozenset({
     FieldType.AVAILABILITY,
     FieldType.TRANSFER_LIST,
     FieldType.DYNAMIC_SELECT,
+    # Phase 3 — FEAT-170
+    FieldType.REST,
 })
 
 
