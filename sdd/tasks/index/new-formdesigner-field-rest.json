@@ -50,7 +50,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Depends on blob_storage and callback_registry interfaces.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1162-rest-field-resolver.md"
+      "completed_at": "2026-05-14T23:18:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1162-rest-field-resolver.md"
     },
     {
       "id": "TASK-1163",
