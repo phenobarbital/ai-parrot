@@ -42,6 +42,8 @@ dependencies = [
     "reportlab>=4.1.0",
     "pycountry>=23.0",
     "markdown2>=2.5.0",
+    "jsonpath-ng>=1.6.1",
+    "aioboto3>=12.0",
 ]
 
 [project.optional-dependencies]
