@@ -34,7 +34,12 @@ Available block types:
 
 Rules:
 - Every block MUST include a "type" field
-- hero_card blocks: use descriptive labels and formatted values (e.g., "$1.2M", "98%")
+- hero_card blocks REQUIRE flat "label" and "value" string fields at the top
+  level. Do NOT nest them inside "callout", "card", "data" or "items".
+  Example:
+    {"type": "hero_card", "label": "Total Revenue", "value": "$1.2M",
+     "icon": "money", "trend": "up", "trend_value": "+12.5%"}
+- Use callout (not hero_card) for alerts/warnings/info boxes
 - chart blocks: include labels array and series with name+values
 - All text fields support markdown formatting
 - Output ONLY valid JSON, no explanatory text before or after
