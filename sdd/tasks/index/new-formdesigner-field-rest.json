@@ -209,7 +209,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -224,8 +224,8 @@
       "parallelism_notes": "Full pipeline integration; must run after Phase 1 + the validator branch.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1170-upload-route-handler.md"
+      "completed_at": "2026-05-14T23:39:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1170-upload-route-handler.md"
     },
     {
       "id": "TASK-1171",
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Edits api/routes.py — same file TASK-1170 touches; must serialize to avoid merge friction.",
       "assigned_to": null,
       "started_at": "2026-05-14T23:12:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1171-bootstrap-wiring.md"
+      "completed_at": "2026-05-14T23:39:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1171-bootstrap-wiring.md"
     },
     {
       "id": "TASK-1172",
