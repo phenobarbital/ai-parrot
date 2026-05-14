@@ -516,18 +516,24 @@ class DatabaseAgentToolkit(AbstractToolkit):
     # ── 12 ─────────────────────────────────────────────────────────
 
     @tool
-    def format_as_text(self, data: Any, components: OutputComponent) -> str:
+    def format_as_text(self, data: Any, components: int = 0) -> str:
         """Format arbitrary data into a human-readable string based on active components.
 
         Args:
             data: Data to format — may be a string, list, dict, or ``None``.
-            components: ``OutputComponent`` flags indicating what to include.
+            components: Bitmask of ``OutputComponent`` flags indicating what
+                to include. Accepts an int (the underlying Flag value) — the
+                type hint is ``int`` instead of ``OutputComponent`` because
+                Gemini's ``FunctionDeclaration`` rejects enum members whose
+                values are integers (it requires string enums).
 
         Returns:
             Formatted string representation of the data.
         """
         if data is None:
             return "No data available"
+
+        components = OutputComponent(int(components or 0))
 
         parts: List[str] = []
 

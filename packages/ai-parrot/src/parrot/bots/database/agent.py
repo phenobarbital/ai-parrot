@@ -6,8 +6,15 @@ and uses QueryResponse structured output for every ask() call.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional, Set, Union
+
+# Matches the schema part of a ``schema.table`` reference. Conservative:
+# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
+# we don't want flowing into identifier checks); ASCII identifiers cover
+# every Postgres schema we've seen in practice.
+_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
 
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import OutputMode, StructuredOutputConfig
@@ -35,8 +42,13 @@ from .toolkits.base import DatabaseToolkit
 
 _COMPONENT_TO_TOOL_NAMES: Dict[OutputComponent, Set[str]] = {
     OutputComponent.SQL_QUERY: {
+        # Internal helpers
         "extract_sql_from_response",
         "extract_table_name_from_query",
+        # Toolkit tools (auto-prefixed by tool_prefix on the toolkit; e.g.
+        # ``PostgresToolkit`` uses prefix ``db``)
+        "db_generate_query",
+        "db_validate_query",
     },
     OutputComponent.OPTIMIZATION_TIPS: {
         "generate_optimization_tips",
@@ -47,12 +59,14 @@ _COMPONENT_TO_TOOL_NAMES: Dict[OutputComponent, Set[str]] = {
     OutputComponent.EXECUTION_PLAN: {
         "format_explain_plan",
         "extract_performance_metrics",
+        "db_explain_query",
     },
     OutputComponent.SCHEMA_CONTEXT: {
         "generate_create_table_statement",
         "simplify_column_type",
         "extract_table_names_from_metadata",
         "get_schema_counts_direct",
+        "db_search_schema",
     },
     OutputComponent.EXAMPLES: {
         "generate_examples",
@@ -304,16 +318,35 @@ class DatabaseAgent(BasicAgent):
         if components is None:
             components = route.components
 
-        # Schema summary from target toolkit (best-effort)
-        schema_summary = ""
         target_toolkit = self._select_toolkit(route.target_database)
-        if target_toolkit is not None:
-            try:
-                tables = await target_toolkit.search_schema(query, limit=5)
-                if tables:
-                    schema_summary = "\n".join(t.to_yaml_context() for t in tables)
-            except Exception as exc:
-                self.logger.debug("Schema search failed: %s", exc)
+
+        # Infer which schemas are "active" for this turn — used both as a
+        # hint in ``schema_summary`` and to scope the LLM's search calls.
+        # Heuristic: qualified ``schema.table`` references in the user's
+        # prompt or in the editor SQL piped via ``context``. We deliberately
+        # do NOT match bare schema names (too many false positives with
+        # short / common names like ``hr``, ``next``, ``apple``); when no
+        # qualified ref is present the frontend is expected to surface the
+        # list explicitly inside ``context`` (the LLM reads that block).
+        allowed = (
+            list(target_toolkit.allowed_schemas)
+            if target_toolkit is not None
+            else []
+        )
+        active_schemas = self._infer_active_schemas(query, context, allowed)
+
+        # Build schema_summary. When the frontend pipes its own schema
+        # block inside ``context`` it serves as the authoritative list;
+        # this hint only adds a short focus line for the LLM. We keep it
+        # empty when there's no signal — the previous behaviour ran an
+        # ILIKE prefetch on the full user prompt which never matched and
+        # cost a DB round-trip per turn.
+        schema_summary = (
+            f"Active schemas (inferred from this turn): {', '.join(active_schemas)}.\n"
+            "When you need schema details, prefer these before searching other schemas."
+            if active_schemas
+            else ""
+        )
 
         # Build system prompt via PromptBuilder layers
         db_name = route.target_database or (
@@ -379,7 +412,18 @@ class DatabaseAgent(BasicAgent):
             qr_check: Optional[QueryResponse] = (
                 response.output if isinstance(response.output, QueryResponse) else None
             )
-            if qr_check is None or qr_check.query is None or target_toolkit is None:
+            # Skip execution when the LLM returned no SQL — this is the
+            # legitimate "meta-question" path (e.g. "do we have a table
+            # called X?" → answer is just prose). The previous check only
+            # caught ``None``; an empty/whitespace string fell through to
+            # ``execute_query`` and tripped the "Empty query" safety rule,
+            # emitting a misleading warning.
+            if (
+                qr_check is None
+                or qr_check.query is None
+                or not qr_check.query.strip()
+                or target_toolkit is None
+            ):
                 break
 
             try:
@@ -428,11 +472,7 @@ class DatabaseAgent(BasicAgent):
         if qr is not None:
             response.is_structured = True
             response.response = qr.explanation
-            response.data = (
-                qr.data.data.to_dataframe()
-                if qr.data and qr.data.data
-                else None
-            )
+            response.data = self._materialise_query_dataset(qr.data)
             # Signal to the HTTP layer that this AIMessage carries a structured
             # QueryResponse the frontend should render as a SQL artifact card
             # (explanation + dedicated SQL block) rather than plain markdown.
@@ -460,6 +500,72 @@ class DatabaseAgent(BasicAgent):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _infer_active_schemas(
+        user_query: str,
+        context: Optional[str],
+        allowed: List[str],
+    ) -> List[str]:
+        """Return the schemas most likely "active" for this turn.
+
+        Two sources, in priority order:
+          1. Qualified ``schema.table`` references in the **user prompt**.
+          2. Qualified refs in the **context** string (typically the SQL
+             being edited, piped by the frontend).
+
+        Bare schema-name matching is intentionally NOT done — short
+        schema names (``hr``, ``pe``, ``next``, ``apple``) collide with
+        common Spanish/English words and produce false positives. The
+        frontend is expected to surface a schema/table inventory inside
+        ``context`` for the cases where qualified refs are absent.
+
+        Returns an ordered, deduped list. Empty when no signal — the
+        caller should fall back to the toolkit's full ``allowed_schemas``.
+        """
+        if not allowed:
+            return []
+        allowed_lower = {s.lower() for s in allowed}
+
+        def _qualified(text: str) -> List[str]:
+            if not text:
+                return []
+            seen: List[str] = []
+            for match in _QUALIFIED_REF_RE.finditer(text):
+                schema = match.group(1).lower()
+                if schema in allowed_lower and schema not in seen:
+                    seen.append(schema)
+            return seen
+
+        result = _qualified(user_query)
+        if result:
+            return result
+        return _qualified(context or "")
+
+    @staticmethod
+    def _materialise_query_dataset(dataset: Any) -> Any:
+        """Convert a ``QueryDataset.data`` (``PandasTable``) into a DataFrame.
+
+        ``PandasTable`` is a Pydantic model holding ``columns`` + ``rows``;
+        the previous implementation called ``dataset.data.to_dataframe()``
+        but that method lives on ``PandasAgentResponse`` (the outer
+        wrapper) — ``PandasTable`` itself has no ``to_dataframe``. We
+        build the DataFrame inline. Returns ``None`` when there is no
+        tabular payload so the caller can short-circuit.
+        """
+        if dataset is None:
+            return None
+        table = getattr(dataset, "data", None)
+        if table is None:
+            return None
+        columns = getattr(table, "columns", None)
+        rows = getattr(table, "rows", None)
+        if not columns and not rows:
+            return None
+        # Local import keeps pandas out of the import-time cost on agents
+        # that never produce tabular data.
+        import pandas as pd
+        return pd.DataFrame(rows or [], columns=columns or [])
 
     def _make_structured_message(
         self,
@@ -520,17 +626,27 @@ class DatabaseAgent(BasicAgent):
         return None
 
     def _compute_active_tools(self, components: OutputComponent) -> List[Any]:
-        """Return the subset of internal toolkit tools relevant to ``components``.
+        """Return the subset of tools relevant to ``components``.
 
-        Iterates ``_COMPONENT_TO_TOOL_NAMES`` and collects tool names whose
-        associated ``OutputComponent`` flag is present in ``components``, then
-        returns the corresponding bound methods from ``self._internal_toolkit``.
+        Collects two kinds of tools, both gated by the same component map:
+
+        1. Internal helper tools from ``_internal_toolkit`` (string
+           manipulation, formatting) — returned as bound methods carrying
+           ``_is_tool=True``.
+        2. Database toolkit tools from every registered ``self.toolkits[i]``
+           (``db_*`` after ``tool_prefix`` is applied) — returned as
+           ``ToolkitTool`` instances. Toolkits filter out anything in
+           ``exclude_tools`` automatically.
+
+        Without (2) the LLM has no way to introspect the database, even
+        though the backstory references tools like ``db_search_schema``.
 
         Args:
             components: Active output component flags for the current request.
 
         Returns:
-            List of callable tool objects (bound methods with ``_is_tool=True``).
+            List of tool objects accepted by ``ToolManager.register_tool``
+            (mix of decorated bound methods and ``AbstractTool`` instances).
         """
         if self._internal_toolkit is None:
             return []
@@ -540,11 +656,25 @@ class DatabaseAgent(BasicAgent):
             if flag in components:
                 exposed_names |= tool_names
 
-        return [
-            getattr(self._internal_toolkit, name)
-            for name in exposed_names
-            if hasattr(self._internal_toolkit, name)
-            and getattr(
-                getattr(self._internal_toolkit, name, None), "_is_tool", False
-            )
-        ]
+        tools: List[Any] = []
+        seen: Set[str] = set()
+
+        for name in exposed_names:
+            attr = getattr(self._internal_toolkit, name, None)
+            if attr is not None and getattr(attr, "_is_tool", False):
+                tools.append(attr)
+                seen.add(name)
+
+        for tk in self.toolkits:
+            get_tool = getattr(tk, "get_tool", None)
+            if get_tool is None:
+                continue
+            for name in exposed_names:
+                if name in seen:
+                    continue
+                tk_tool = get_tool(name)
+                if tk_tool is not None:
+                    tools.append(tk_tool)
+                    seen.add(name)
+
+        return tools

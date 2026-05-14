@@ -245,29 +245,147 @@ class CachePartition:
                 score += 2.0
         return score
 
+    # Match qualified ``schema.table`` references. ASCII identifiers only —
+    # Postgres identifiers can include other chars when quoted, but every
+    # cached table we see in practice uses snake_case ASCII.
+    _QUALIFIED_REF_RE = re.compile(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)\b"
+    )
+
     def _search_cache_only(
         self,
         schema_names: List[str],
         query: str,
         limit: int,
     ) -> List[TableMetadata]:
-        """Fallback search using only cache when vector store unavailable."""
-        results: List[TableMetadata] = []
-        keywords = self._extract_search_keywords(query.lower())
+        """Cache-only fallback search, layered by precision.
 
+        Three passes, each consulted only if the previous one left room
+        under ``limit``. DB fallback (in the caller) only fires when all
+        three return empty.
+
+        1. **Qualified refs** — ``schema.table`` tokens in ``query`` are
+           looked up directly in the cache. Guarantees that a prompt
+           mentioning ``pokemon.products`` returns that exact row before
+           alphabetically-earlier ``products`` tables steal the slot
+           (the 144-schema warehouse has dozens of ``products`` tables).
+
+        2. **Keyword scoring** — fuzzy match the original tokens
+           against table names / columns.
+
+        3. **Stem-aware keyword scoring** — when (2) returns nothing,
+           retry with stems of the longer keywords (drop 1-2 trailing
+           chars on tokens ≥6 chars). Catches plural/singular drift like
+           ``category`` vs ``categories`` where exact substring match
+           fails (the ``y`` → ``ies`` swap breaks ILIKE-style ``%term%``).
+        """
+        results: List[TableMetadata] = []
+        seen: set = set()
+        allowed = set(schema_names)
+
+        # Pass 1 — exact lookups for qualified refs in the query.
+        for match in self._QUALIFIED_REF_RE.finditer(query):
+            schema, table = match.group(1), match.group(2)
+            if schema not in allowed or schema not in self.schema_cache:
+                continue
+            schema_meta = self.schema_cache[schema]
+            meta = schema_meta.tables.get(table) or schema_meta.views.get(table)
+            key = (schema, table)
+            if meta is not None and key not in seen:
+                results.append(meta)
+                seen.add(key)
+                if len(results) >= limit:
+                    return results
+
+        # Pass 2 — keyword scoring with the original tokens.
+        keywords = self._extract_search_keywords(query.lower())
+        if not keywords:
+            return results
+
+        scored = self._score_against_cache(schema_names, keywords, seen, limit - len(results))
+        for meta in scored:
+            key = (meta.schema, meta.tablename)
+            results.append(meta)
+            seen.add(key)
+        if len(results) >= limit:
+            return results[:limit]
+
+        # Pass 3 — stem-aware retry. Only fires when (2) found nothing —
+        # otherwise the original keywords already had hits and stem
+        # variants would just produce noisier scores. Returning even one
+        # extra row here is much cheaper than the DB roundtrip the
+        # caller would otherwise make.
+        if not scored:
+            stem_keywords = self._stem_keywords(keywords)
+            if stem_keywords:
+                stem_scored = self._score_against_cache(
+                    schema_names, stem_keywords, seen, limit - len(results)
+                )
+                for meta in stem_scored:
+                    key = (meta.schema, meta.tablename)
+                    results.append(meta)
+                    seen.add(key)
+                if stem_scored:
+                    self.logger.debug(
+                        "cache stem-aware hit: keywords=%s stems=%s",
+                        keywords, stem_keywords,
+                    )
+
+        return results[:limit]
+
+    def _score_against_cache(
+        self,
+        schema_names: List[str],
+        keywords: List[str],
+        seen: set,
+        remaining: int,
+    ) -> List[TableMetadata]:
+        """Score every cached table in ``schema_names`` against ``keywords``.
+
+        Used by ``_search_cache_only`` for both the exact and stem-aware
+        passes — extracted so the two passes share scoring logic.
+        Returns up to ``remaining`` matches in iteration order; the
+        caller controls dedup via ``seen``.
+        """
+        out: List[TableMetadata] = []
+        if remaining <= 0 or not keywords:
+            return out
         for schema_name in schema_names:
             if schema_name not in self.schema_cache:
                 continue
             all_objects = self.schema_cache[schema_name].get_all_objects()
             for table_name, table_meta in all_objects.items():
+                key = (schema_name, table_name)
+                if key in seen:
+                    continue
                 score = self._calculate_relevance_score(table_name, table_meta, keywords)
                 if score > 0:
-                    results.append(table_meta)
-                    if len(results) >= limit:
-                        break
-            if len(results) >= limit:
-                break
-        return results[:limit]
+                    out.append(table_meta)
+                    if len(out) >= remaining:
+                        return out
+        return out
+
+    @staticmethod
+    def _stem_keywords(keywords: List[str]) -> List[str]:
+        """Generate stem variants of ``keywords`` for the cache pass-3 retry.
+
+        For every keyword of length ≥6, emit the keyword with 1 trailing
+        character dropped, and (when the result is still ≥4 chars) the
+        keyword with 2 trailing characters dropped. Stems shorter than 4
+        chars are skipped — they would match nearly every table name and
+        only add noise.
+
+        Deduped, preserves the order of first occurrence.
+        """
+        out: List[str] = []
+        for kw in keywords:
+            if len(kw) < 6:
+                continue
+            for trim in (1, 2):
+                stem = kw[:-trim]
+                if len(stem) >= 4 and stem not in out and stem not in keywords:
+                    out.append(stem)
+        return out
 
     # -- Redis helpers ------------------------------------------------------
 
