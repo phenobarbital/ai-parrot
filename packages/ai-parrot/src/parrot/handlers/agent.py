@@ -1983,6 +1983,8 @@ class AgentTalk(BaseView):
                 # Use response.response (already serialized HTML) if available
                 output = response.response if isinstance(response.response, str) else str(output)
             output_mode = response.output_mode or 'json'
+            usage = getattr(response, 'usage', None)
+            created_at = getattr(response, 'created_at', None)
             obj_response = {
                 "input": response.input,
                 "output": output,
@@ -1995,7 +1997,15 @@ class AgentTalk(BaseView):
                     "provider": getattr(response, 'provider', None),
                     "session_id": str(getattr(response, 'session_id', '')),
                     "turn_id": str(getattr(response, 'turn_id', '')),
+                    "user_id": (
+                        str(getattr(response, 'user_id', ''))
+                        if getattr(response, 'user_id', None) is not None else None
+                    ),
                     "response_time": response_time_ms,
+                    "usage": usage.model_dump() if usage is not None else None,
+                    "finish_reason": getattr(response, 'finish_reason', None),
+                    "stop_reason": getattr(response, 'stop_reason', None),
+                    "created_at": created_at.isoformat() if created_at is not None else None,
                 },
                 "sources": [
                     source if isinstance(source, dict) else source.to_dict()
