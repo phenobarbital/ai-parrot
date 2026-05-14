@@ -635,10 +635,24 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
-            # Group function declarations by their category
+            # Group function declarations by their category.
+            #
+            # Tools come from two sources for this build:
+            #   1. ``self._request_tools`` — request-scoped tools passed via
+            #      ``ask(tools=[...])``. Not registered in the ToolManager;
+            #      live only for the duration of this call. Win on collisions.
+            #   2. ``self.tool_manager.all_tools()`` — persistent tools.
             declarations_by_category = defaultdict(list)
-            for tool in self.tool_manager.all_tools():
+            request_tools = getattr(self, '_request_tools', None) or {}
+            seen_names: set = set()
+            tool_sources = []
+            tool_sources.extend(request_tools.values())
+            tool_sources.extend(self.tool_manager.all_tools())
+            for tool in tool_sources:
                 tool_name = tool.name
+                if tool_name in seen_names:
+                    continue
+                seen_names.add(tool_name)
                 if filter_names is not None and tool_name not in filter_names:
                     continue
 
@@ -696,162 +710,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             ]
 
         return None
-
-    def _extract_function_calls(self, response) -> List:
-        """Extract function calls from response - handles both proper function calls AND code blocks."""
-        function_calls = []
-
-        try:
-            if (response.candidates and
-                len(response.candidates) > 0 and
-                response.candidates[0].content and
-                response.candidates[0].content.parts):
-
-                for part in response.candidates[0].content.parts:
-                    # First, check for proper function calls
-                    if hasattr(part, 'function_call') and part.function_call:
-                        function_calls.append(part.function_call)
-                        self.logger.debug(f"Found proper function call: {part.function_call.name}")
-
-                    # Second, check for text that contains tool code blocks
-                    elif hasattr(part, 'text') and part.text and '```tool_code' in part.text:
-                        self.logger.info("Found tool code block - parsing as function call")
-                        code_block_calls = self._parse_tool_code_blocks(part.text)
-                        function_calls.extend(code_block_calls)
-
-        except (AttributeError, IndexError) as e:
-            self.logger.debug(f"Error extracting function calls: {e}")
-
-        self.logger.debug(f"Total function calls extracted: {len(function_calls)}")
-        return function_calls
-
-    async def _handle_stateless_function_calls(
-        self,
-        response,
-        model: str,
-        contents: List,
-        config,
-        all_tool_calls: List[ToolCall],
-        max_iterations: int = 15,
-        original_prompt: Optional[str] = None,
-        session_id: Optional[str] = None,
-        messages: Optional[List[Dict[str, Any]]] = None
-    ) -> Any:
-        """Handle function calls in stateless mode.
-
-        "Stateless" means no conversation memory carried across ``ask()``
-        invocations — it does NOT mean single-turn. The model can still
-        invoke multiple tools across successive rounds; this loop iterates
-        until the model stops requesting tools or ``max_iterations`` is hit.
-        """
-        current_response = response
-        iteration = 0
-
-        while iteration < max_iterations:
-            iteration += 1
-            function_calls = self._extract_function_calls(current_response)
-
-            if not function_calls:
-                self.logger.debug(
-                    "Stateless tool loop: no function calls — completed after %d iteration(s)",
-                    iteration - 1,
-                )
-                return current_response
-
-            self.logger.info(
-                "Stateless tool loop iteration %d: processing %d function call(s)",
-                iteration,
-                len(function_calls),
-            )
-
-            # Execute function calls
-            tool_call_objects = []
-            for fc in function_calls:
-                tc = ToolCall(
-                    id=f"call_{uuid.uuid4().hex[:8]}",
-                    name=fc.name,
-                    arguments=dict(fc.args)
-                )
-                tool_call_objects.append(tc)
-
-            start_time = time.time()
-            tool_execution_tasks = [
-                self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
-            ]
-            tool_results = await asyncio.gather(
-                *tool_execution_tasks,
-                return_exceptions=True
-            )
-            execution_time = time.time() - start_time
-
-            for tc, result in zip(tool_call_objects, tool_results):
-                tc.execution_time = execution_time / len(tool_call_objects)
-                if isinstance(result, HumanInteractionInterrupt):
-                    result.session_id = session_id
-                    result.messages = messages.copy() if messages else []
-                    result.tool_call_id = tc.id
-                    result.agent_name = getattr(self, "name", "Google_Agent")
-                    raise result
-                elif isinstance(result, Exception):
-                    tc.error = str(result)
-                else:
-                    tc.result = result
-
-            all_tool_calls.extend(tool_call_objects)
-
-            # Prepare function responses
-            function_response_parts = []
-            for fc, result in zip(function_calls, tool_results):
-                if isinstance(result, Exception):
-                    response_content = f"Error: {str(result)}"
-                else:
-                    response_content = str(result.get('result', result) if isinstance(result, dict) else result)
-
-                function_response_parts.append(
-                    Part(
-                        function_response=types.FunctionResponse(
-                            name=fc.name,
-                            response={"result": response_content}
-                        )
-                    )
-                )
-
-            if summary_part := self._create_tool_summary_part(
-                function_calls,
-                tool_results,
-                original_prompt
-            ):
-                function_response_parts.append(summary_part)
-
-            # Add function call and responses to conversation
-            contents.append({
-                "role": "model",
-                "parts": [{"function_call": fc} for fc in function_calls]
-            })
-            contents.append({
-                "role": "user",
-                "parts": function_response_parts
-            })
-
-            # After the initial tool round relax ANY → AUTO so the model can
-            # produce a final text answer instead of being forced to call again.
-            fcc = getattr(getattr(config, "tool_config", None),
-                          "function_calling_config", None)
-            if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
-                fcc.mode = types.FunctionCallingConfigMode.AUTO
-
-            # Generate next response — may contain more function calls or the final text.
-            current_response = await self.client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config
-            )
-
-        self.logger.warning(
-            "Stateless tool loop reached max_iterations=%d without the model stopping tool calls",
-            max_iterations,
-        )
-        return current_response
 
     # Maximum characters per tool result sent back to the model.
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
@@ -1083,6 +941,45 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         ``if summary_part:``), so no other code needs to change.
         """
         return None
+
+    async def _execute_tool(
+        self,
+        tool_name: str,
+        parameters: Dict[str, Any],
+        tool_context: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Resolve and execute a tool.
+
+        Request-scoped tools (passed via ``ask(tools=[...])`` and held in
+        ``self._request_tools`` for the duration of one call) are checked
+        first and executed directly via ``AbstractTool.execute()`` — they
+        are not registered in the ToolManager. If the name is not found
+        in the overlay, fall through to the base implementation which
+        dispatches via ``self.tool_manager``.
+        """
+        request_tools = getattr(self, '_request_tools', None) or {}
+        if tool_name in request_tools:
+            tool = request_tools[tool_name]
+            ctx = tool_context or getattr(self, '_tool_context', None)
+            merged = {**ctx, **parameters} if ctx else dict(parameters)
+            perm_ctx = getattr(self, '_permission_context', None)
+            if perm_ctx is not None:
+                merged['_permission_context'] = perm_ctx
+            try:
+                result = await tool.execute(**merged)
+                if isinstance(result, ToolResult):
+                    if result.status == 'error':
+                        raise ValueError(result.error)
+                    return result.result
+                return result
+            except Exception as exc:
+                self.logger.error(
+                    "Error executing request-scoped tool %s: %s",
+                    tool_name,
+                    exc,
+                )
+                raise
+        return await super()._execute_tool(tool_name, parameters, tool_context)
 
     async def _handle_multiturn_function_calls(
         self,
@@ -1833,6 +1730,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             }.items() if v is not None
         }
 
+        # Per-call overlay of request-scoped tools. Tools passed via
+        # ``tools=[...]`` are NOT registered into the persistent ToolManager —
+        # they are combined with manager tools only when building this call's
+        # function declarations and when looking up a tool to execute.
+        # Indexed by tool name; request-scoped tools win on collisions.
+        self._request_tools = {
+            getattr(t, 'name', None): t
+            for t in (tools or [])
+            if getattr(t, 'name', None)
+        }
+
         # Prepare conversation context using unified memory system
         conversation_history = None
         messages = []
@@ -1905,9 +1813,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             tool_type = kw_tool_type
             _use_tools = True
         elif _use_tools:
-            if requested_tools and isinstance(requested_tools, list):
-                for tool in requested_tools:
-                    self.register_tool(tool)
             tool_type = kw_tool_type or "custom_functions"
         else:
             tool_type = kw_tool_type
@@ -1984,26 +1889,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Track tool calls for the response
         all_tool_calls = []
-        # Build contents for conversation
-        contents = []
 
-        for msg in messages:
-            role = "model" if msg["role"] == "assistant" else msg["role"]
-            if role in ["user", "model"]:
-                text_parts = [part["text"] for part in msg["content"] if "text" in part]
-                if text_parts:
-                    contents.append({
-                        "role": role,
-                        "parts": [{"text": " ".join(text_parts)}]
-                    })
-
-        # Add the current prompt
-        contents.append({
-            "role": "user",
-            "parts": [{"text": prompt}]
-        })
-
-        chat = None
         phase_started = time.perf_counter()
         await self._ensure_client(model=model)
         self.logger.debug(
@@ -2084,255 +1970,156 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             thinking_config=thinking_config,
             **generation_config
         )
-        if stateless:
-            # For stateless mode, handle in a single call (existing behavior)
-            contents = []
-
-            for msg in messages:
-                role = "model" if msg["role"] == "assistant" else msg["role"]
-                if role in ["user", "model"]:
-                    text_parts = [part["text"] for part in msg["content"] if "text" in part]
-                    if text_parts:
-                        contents.append({
-                            "role": role,
-                            "parts": [{"text": " ".join(text_parts)}]
-                        })
-            retry_count = 0
-            current_model = model
-            while retry_count < max_retries:
-                try:
-                    phase_started = time.perf_counter()
-                    self.logger.info(
-                        "Google ask timing: stateless generate_content start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d",
-                        current_model,
-                        len(prompt or ""),
-                        len(system_prompt or ""),
-                        len(tool_names),
-                    )
-                    response = await self.client.aio.models.generate_content(
-                        model=current_model,
-                        contents=contents,
-                        config=final_config
-                    )
-                    self.logger.info(
-                        "Google ask timing: stateless generate_content_ms=%.1f model=%s attempt=%d",
-                        (time.perf_counter() - phase_started) * 1000,
-                        current_model,
-                        retry_count + 1,
-                    )
-                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason:
-                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] == 1024:
-                            retry_count += 1
-                            self.logger.warning(
-                                f"Hit MAX_TOKENS limit on stateless response. Retrying {retry_count}/{max_retries} with increased token limit."
-                            )
-                            final_config.max_output_tokens = 8192
-                            continue
-                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            retry_count += 1
-                            if retry_count >= max_retries:
-                                self.logger.error(
-                                    "Malformed function call detected (stateless). "
-                                    "Exhausted %d retries — raising.",
-                                    max_retries,
-                                )
-                                raise RuntimeError(
-                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
-                                    f"{max_retries} retries. The tool schema may be "
-                                    "too complex or the model failed to produce a valid call."
-                                )
-                            self.logger.warning(
-                                "Malformed function call detected (stateless). Retrying %d/%d...",
-                                retry_count, max_retries,
-                            )
-                            await asyncio.sleep(2 ** retry_count)
-                            continue
-                    break
-                except Exception as e:
-                    retry_count += 1
-                    if self._should_use_fallback(current_model, e):
-                        self.logger.warning(
-                            "Google model '%s' capacity error: %s. "
-                            "Retrying once with fallback: '%s'.",
-                            current_model,
-                            e,
-                            self._fallback_model,
-                        )
-                        current_model = self._fallback_model
-
-                    delay = self._retry_delay_from_error(retry_count, e)
-                    self.logger.warning(
-                        "Error during stateless generate_content (attempt %d/%d): %s. "
-                        "Retrying in %ss.",
-                        retry_count,
-                        max_retries,
-                        e,
-                        delay,
-                    )
-                    if retry_count >= max_retries:
-                        self.logger.error("Max retries reached for stateless generate_content")
-                        raise
-                    await asyncio.sleep(delay)
-
-            # Handle function calls in stateless mode
-            final_response = await self._handle_stateless_function_calls(
-                response,
-                current_model,
-                contents,
-                final_config,
-                all_tool_calls,
-                max_iterations=max_iterations,
-                original_prompt=prompt,
-                session_id=session_id,
-                messages=messages
-            )
-            model = current_model
-        else:
-            # MULTI-TURN CONVERSATION MODE
-            current_model = model
-            chat = self.client.aio.chats.create(
-                model=current_model,
-                history=history
-            )
-            retry_count = 0
-            # Send initial message
-            while retry_count < max_retries:
-                try:
-                    phase_started = time.perf_counter()
-                    self.logger.info(
-                        "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s",
-                        current_model,
-                        len(prompt or ""),
-                        len(system_prompt or ""),
-                        len(tool_names),
-                        bool(thinking_config),
-                    )
-                    response = await chat.send_message(
-                        message=prompt,
-                        config=final_config
-                    )
-                    self.logger.info(
-                        "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
-                        (time.perf_counter() - phase_started) * 1000,
-                        current_model,
-                        retry_count + 1,
-                    )
-                    finish_reason = getattr(response.candidates[0], 'finish_reason', None)
-                    if finish_reason:
-                        if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
-                            retry_count += 1
-                            self.logger.warning(
-                                f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
-                            )
-                            final_config.max_output_tokens = 8192
-                            continue
-                        elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            retry_count += 1
-                            if retry_count >= max_retries:
-                                self.logger.error(
-                                    "Malformed function call detected (stateful). "
-                                    "Exhausted %d retries — raising.",
-                                    max_retries,
-                                )
-                                raise RuntimeError(
-                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
-                                    f"{max_retries} retries. The tool schema may be "
-                                    "too complex or the model failed to produce a valid call."
-                                )
-                            self.logger.warning(
-                                "Malformed function call detected (stateful). Retrying %d/%d...",
-                                retry_count, max_retries,
-                            )
-                            await asyncio.sleep(2 ** retry_count)
-                            continue
-                    break
-                except Exception as e:
-                    # Handle specific network client error (socket/aiohttp issue)
-                    if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+        # Single execution path for both stateless and stateful modes.
+        # ``stateless`` only controls whether conversation history is loaded
+        # earlier (see _prepare_conversation_context above) — it does NOT
+        # change how tool-calling iterates or how the request is dispatched.
+        # In stateless mode ``history`` is empty; in stateful mode it carries
+        # the prior turns. Everything else is identical.
+        current_model = model
+        chat = self.client.aio.chats.create(
+            model=current_model,
+            history=history
+        )
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                phase_started = time.perf_counter()
+                self.logger.info(
+                    "Google ask timing: chat.send_message start model=%s prompt_chars=%d system_prompt_chars=%d tools=%d thinking=%s stateless=%s history=%d",
+                    current_model,
+                    len(prompt or ""),
+                    len(system_prompt or ""),
+                    len(tool_names),
+                    bool(thinking_config),
+                    stateless,
+                    len(history),
+                )
+                response = await chat.send_message(
+                    message=prompt,
+                    config=final_config
+                )
+                self.logger.info(
+                    "Google ask timing: chat.send_message_ms=%.1f model=%s attempt=%d",
+                    (time.perf_counter() - phase_started) * 1000,
+                    current_model,
+                    retry_count + 1,
+                )
+                finish_reason = getattr(response.candidates[0], 'finish_reason', None)
+                if finish_reason:
+                    if finish_reason.name == "MAX_TOKENS" and generation_config["max_output_tokens"] <= 1024:
                         retry_count += 1
                         self.logger.warning(
-                            f"Encountered network client error: {e}. Resetting client and retrying."
+                            f"Hit MAX_TOKENS limit on initial response. Retrying {retry_count}/{max_retries} with increased token limit."
                         )
-                        # Reset the current-loop client only; sibling loops are unaffected.
-                        await self._close_current_loop_entry()
-                        await self._ensure_client(model=current_model)
-                        # Recreate the chat session
-                        chat = self.client.aio.chats.create(
-                            model=current_model,
-                            history=history
-                        )
-                        delay = self._retry_delay_from_error(retry_count, e)
-                        if retry_count >= max_retries:
-                            raise
-                        await asyncio.sleep(delay)
+                        final_config.max_output_tokens = 8192
                         continue
-
-                    retry_count += 1
-                    if self._should_use_fallback(current_model, e):
+                    elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
+                        retry_count += 1
+                        if retry_count >= max_retries:
+                            self.logger.error(
+                                "Malformed function call detected. "
+                                "Exhausted %d retries — raising.",
+                                max_retries,
+                            )
+                            raise RuntimeError(
+                                f"Gemini returned MALFORMED_FUNCTION_CALL after "
+                                f"{max_retries} retries. The tool schema may be "
+                                "too complex or the model failed to produce a valid call."
+                            )
                         self.logger.warning(
-                            "Google model '%s' capacity error: %s. "
-                            "Retrying once with fallback: '%s'.",
-                            current_model,
-                            e,
-                            self._fallback_model,
+                            "Malformed function call detected. Retrying %d/%d...",
+                            retry_count, max_retries,
                         )
-                        current_model = self._fallback_model
-                        chat = self.client.aio.chats.create(
-                            model=current_model,
-                            history=history
-                        )
-
-                    delay = self._retry_delay_from_error(retry_count, e)
+                        await asyncio.sleep(2 ** retry_count)
+                        continue
+                break
+            except Exception as e:
+                # Handle specific network client error (socket/aiohttp issue)
+                if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                    retry_count += 1
                     self.logger.warning(
-                        "Error during initial chat.send_message (attempt %d/%d): %s. "
-                        "Retrying in %ss.",
-                        retry_count,
-                        max_retries,
-                        e,
-                        delay,
+                        f"Encountered network client error: {e}. Resetting client and retrying."
                     )
+                    # Reset the current-loop client only; sibling loops are unaffected.
+                    await self._close_current_loop_entry()
+                    await self._ensure_client(model=current_model)
+                    # Recreate the chat session
+                    chat = self.client.aio.chats.create(
+                        model=current_model,
+                        history=history
+                    )
+                    delay = self._retry_delay_from_error(retry_count, e)
                     if retry_count >= max_retries:
                         raise
                     await asyncio.sleep(delay)
+                    continue
 
-            has_function_calls = False
-            if response and getattr(response, "candidates", None):
-                candidate = response.candidates[0] if response.candidates else None
-                content = getattr(candidate, "content", None) if candidate else None
-                parts = getattr(content, "parts", None) if content else None
-                if parts:
-                    has_function_calls = any(
-                        hasattr(p, 'function_call') and p.function_call
-                        for p in parts
+                retry_count += 1
+                if self._should_use_fallback(current_model, e):
+                    self.logger.warning(
+                        "Google model '%s' capacity error: %s. "
+                        "Retrying once with fallback: '%s'.",
+                        current_model,
+                        e,
+                        self._fallback_model,
+                    )
+                    current_model = self._fallback_model
+                    chat = self.client.aio.chats.create(
+                        model=current_model,
+                        history=history
                     )
 
-            self.logger.debug(
-                f"Initial response has function calls: {has_function_calls}"
-            )
+                delay = self._retry_delay_from_error(retry_count, e)
+                self.logger.warning(
+                    "Error during initial chat.send_message (attempt %d/%d): %s. "
+                    "Retrying in %ss.",
+                    retry_count,
+                    max_retries,
+                    e,
+                    delay,
+                )
+                if retry_count >= max_retries:
+                    raise
+                await asyncio.sleep(delay)
 
-            # Multi-turn function calling loop
-            phase_started = time.perf_counter()
-            final_response = await self._handle_multiturn_function_calls(
-                chat,
-                response,
-                all_tool_calls,
-                original_prompt=original_prompt,
-                model=current_model,
-                max_iterations=max_iterations,
-                config=final_config,
-                max_retries=max_retries,
-                lazy_loading=lazy_loading,
-                active_tool_names=active_tool_names,
-                session_id=session_id,
-                messages=messages
-            )
-            self.logger.debug(
-                "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
-                (time.perf_counter() - phase_started) * 1000,
-                len(all_tool_calls),
-            )
-            model = current_model
+        has_function_calls = False
+        if response and getattr(response, "candidates", None):
+            candidate = response.candidates[0] if response.candidates else None
+            content = getattr(candidate, "content", None) if candidate else None
+            parts = getattr(content, "parts", None) if content else None
+            if parts:
+                has_function_calls = any(
+                    hasattr(p, 'function_call') and p.function_call
+                    for p in parts
+                )
+
+        self.logger.debug(
+            f"Initial response has function calls: {has_function_calls}"
+        )
+
+        # Multi-turn function calling loop
+        phase_started = time.perf_counter()
+        final_response = await self._handle_multiturn_function_calls(
+            chat,
+            response,
+            all_tool_calls,
+            original_prompt=original_prompt,
+            model=current_model,
+            max_iterations=max_iterations,
+            config=final_config,
+            max_retries=max_retries,
+            lazy_loading=lazy_loading,
+            active_tool_names=active_tool_names,
+            session_id=session_id,
+            messages=messages
+        )
+        self.logger.debug(
+            "Google ask timing: function_loop_ms=%.1f tool_calls=%d",
+            (time.perf_counter() - phase_started) * 1000,
+            len(all_tool_calls),
+        )
+        model = current_model
 
         # Extract assistant response text for conversation memory
         phase_started = time.perf_counter()
@@ -2571,6 +2358,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         # Override provider to distinguish from Vertex AI
         ai_message.provider = "google_genai"
+
+        # Drop the per-call request-tools overlay so its bound state does
+        # not leak into subsequent calls.
+        self._request_tools = {}
 
         return ai_message
 
