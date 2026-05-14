@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-169
 **Date**: 2026-05-14
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.4.0
 
 ---
@@ -645,18 +645,18 @@ No new external dependencies. All functionality is built on existing:
 
 ## 8. Open Questions
 
-- [ ] **Q1**: Should the toolkit support batch operations (multiple `update_field`
+- [x] **Q1**: Should the toolkit support batch operations (multiple `update_field`
   calls in a single tool invocation) or strictly one-at-a-time? One-at-a-time
-  is simpler but may add rounds for bulk edits. — *Owner: Jesus*
-- [ ] **Q2**: Should `get_form_summary()` include field descriptions/constraints in
-  the summary, or keep it truly minimal (ID + label + type only)? — *Owner: Jesus*
-- [ ] **Q3**: What should the size threshold be for routing to the toolkit path?
+  is simpler but may add rounds for bulk edits. — *Owner: Jesus*: yes, support batch operations
+- [x] **Q2**: Should `get_form_summary()` include field descriptions/constraints in
+  the summary, or keep it truly minimal (ID + label + type only)? — *Owner: Jesus*: yes
+- [x] **Q3**: What should the size threshold be for routing to the toolkit path?
   Current proposal: >10 fields OR >20K chars serialized. Should this be
-  configurable via `CreateFormTool.__init__`? — *Owner: Jesus*
-- [ ] **Q4**: Should toolkit tools be registered as `AbstractTool` instances on
+  configurable via `CreateFormTool.__init__`? — *Owner: Jesus*: No threshold, I think all atomic or batch operations can be sent to toolkit, is easier than routing by size (no matter if form is a 2-question form).
+- [x] **Q4**: Should toolkit tools be registered as `AbstractTool` instances on
   the client's `tool_manager`, or should we bypass registration and build
   `types.FunctionDeclaration` objects directly? Direct building avoids
-  side effects but requires more Google-specific code. — *Owner: Jesus*
+  side effects but requires more Google-specific code. — *Owner: Jesus*: as `AbstractToolkit` using `AbstractToolkit` rules (public async-methods are the tools), stay agnostic to LLM.
 
 ---
 

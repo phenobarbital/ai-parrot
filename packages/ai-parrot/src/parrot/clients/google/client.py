@@ -102,7 +102,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     """
     client_type: str = 'google'
     client_name: str = 'google'
-    _default_model: str = 'gemini-2.5-flash'
+    _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
