@@ -48,6 +48,7 @@ from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.auth.context import UserContext
 from parrot.core.hooks.models import HookEvent
+from parrot.scheduler import schedule_weekly_report
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -1541,6 +1542,151 @@ class JiraSpecialist(Agent):
             return []
 
         return [] if df.empty else df
+
+    @schedule_weekly_report
+    async def weekly_ticket_count_report(self) -> Dict[str, Any]:
+        """Month-to-date ticket count by Assignee grouped by Component.
+
+        Decorated with :func:`schedule_weekly_report` so the scheduler runs
+        it weekly (defaults to ``MON 09:00`` UTC; override via the
+        ``{AGENT_ID}_WEEKLY_REPORT`` env var, format ``DDD HH:MM``).
+
+        Pulls every ticket from the configured Jira projects created since
+        the first day of the current month, groups the rows by
+        ``component × assignee``, and emails a plain-text summary to
+        ``jlara@trocglobal.com``.
+
+        Returns:
+            Dict with ``period``, ``total_tickets``, ``by_component``
+            (nested ``{component: {assignee: count}}``) and a flat
+            ``rows`` list — useful for tests and downstream consumers.
+        """
+        report_recipient = "jlara@trocglobal.com"
+
+        today = date.today()
+        start_of_month = today.replace(day=1)
+        start_str = start_of_month.isoformat()
+        end_str = today.isoformat()
+
+        projects = ", ".join(self._standup_config.jira_projects)
+        df_name = f"jira_mtd_count_{end_str}"
+        jql = (
+            f'project IN ({projects}) '
+            f'AND created >= "{start_str}" '
+            f'AND created <= "{end_str}" '
+            f'ORDER BY assignee ASC'
+        )
+
+        question = f"""
+        Use the tool `jira_search_issues` with:
+        - jql: '{jql}'
+        - fields: 'key,assignee,components'
+        - max_results: None
+        - store_as_dataframe: True
+        - dataframe_name: '{df_name}'
+
+        Execute the search and confirm when done.
+        Do not list the tickets or add commentary.
+        """
+        await self.ask(question=question)
+
+        try:
+            df = self.tool_manager.get_shared_dataframe(df_name)
+        except (KeyError, AttributeError):
+            df = None
+
+        empty = df is None or (hasattr(df, "empty") and df.empty)
+
+        period = {"start": start_str, "end": end_str}
+
+        if empty:
+            result: Dict[str, Any] = {
+                "period": period,
+                "total_tickets": 0,
+                "by_component": {},
+                "rows": [],
+            }
+            body = (
+                f"Jira Weekly Ticket Report — Month-to-Date "
+                f"({start_str} to {end_str})\n\n"
+                f"No tickets found in projects: {projects}.\n"
+            )
+        else:
+            exploded = df.copy()
+            exploded["components"] = exploded["components"].apply(
+                lambda c: c if isinstance(c, list) and c else ["(no component)"]
+            )
+            exploded["assignee"] = (
+                exploded["assignee"].astype(object).where(exploded["assignee"].notna(), "(unassigned)")
+            )
+            exploded = exploded.explode("components").rename(
+                columns={"components": "component"}
+            )
+            exploded["component"] = exploded["component"].apply(
+                lambda c: c.get("name") if isinstance(c, dict) else (c or "(no component)")
+            )
+
+            grouped = (
+                exploded.groupby(["component", "assignee"]).size().reset_index(name="count")
+            )
+
+            by_component: Dict[str, Dict[str, int]] = {}
+            rows: List[Dict[str, Any]] = []
+            for _, r in grouped.iterrows():
+                component = str(r["component"])
+                assignee = str(r["assignee"])
+                count = int(r["count"])
+                by_component.setdefault(component, {})[assignee] = count
+                rows.append(
+                    {"component": component, "assignee": assignee, "count": count}
+                )
+
+            result = {
+                "period": period,
+                "total_tickets": int(len(df)),
+                "by_component": by_component,
+                "rows": rows,
+            }
+
+            lines = [
+                "Jira Weekly Ticket Report — Month-to-Date",
+                f"Period: {start_str} to {end_str}",
+                f"Projects: {projects}",
+                f"Total tickets: {result['total_tickets']}",
+                "",
+            ]
+            for component in sorted(by_component):
+                lines.append(f"[{component}]")
+                for assignee, count in sorted(
+                    by_component[component].items(), key=lambda kv: (-kv[1], kv[0])
+                ):
+                    lines.append(f"  {assignee}: {count}")
+                lines.append("")
+            body = "\n".join(lines)
+
+        subject = f"Jira Weekly Ticket Report — MTD {start_str} → {end_str}"
+
+        try:
+            await self.send_notification(
+                message=body,
+                recipients=report_recipient,
+                provider="email",
+                subject=subject,
+            )
+        except Exception as exc:
+            self.logger.error(
+                "weekly_ticket_count_report: failed to email %s: %s",
+                report_recipient,
+                exc,
+                exc_info=True,
+            )
+
+        self.logger.info(
+            "Weekly MTD report generated: %d tickets across %d component(s).",
+            result["total_tickets"],
+            len(result["by_component"]),
+        )
+        return result
 
     async def get_ticket(self, issue_number: str) -> JiraTicketDetail:
         """Get detailed information for a specific Jira ticket, including history."""
