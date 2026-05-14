@@ -14,14 +14,14 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent new module; can run concurrently with TASK-1161 in a sub-worktree if desired. Spec recommends single worktree for simplicity.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-14T19:51:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1160-blob-storage.md"
     },
@@ -53,7 +53,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1160", "TASK-1161"],
+      "depends_on": [
+        "TASK-1160",
+        "TASK-1161"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on blob_storage and callback_registry interfaces.",
       "assigned_to": null,
@@ -89,7 +92,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1163"],
+      "depends_on": [
+        "TASK-1163"
+      ],
       "parallel": false,
       "parallelism_notes": "Single-file edit on central registry; sequential after enum.",
       "assigned_to": null,
@@ -107,7 +112,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1163"],
+      "depends_on": [
+        "TASK-1163"
+      ],
       "parallel": true,
       "parallelism_notes": "Touches a different file from TASK-1164; can run in parallel after TASK-1163.",
       "assigned_to": null,
@@ -125,7 +132,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1162", "TASK-1163"],
+      "depends_on": [
+        "TASK-1162",
+        "TASK-1163"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports RestFieldSpec and edits central validators.py.",
       "assigned_to": null,
@@ -143,7 +153,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1163", "TASK-1164"],
+      "depends_on": [
+        "TASK-1163",
+        "TASK-1164"
+      ],
       "parallel": false,
       "parallelism_notes": "Six renderer files share a similar pattern; could split per-renderer but stays as one task since they all consume the same FieldType.REST contract.",
       "assigned_to": null,
@@ -161,7 +174,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1163"],
+      "depends_on": [
+        "TASK-1163"
+      ],
       "parallel": true,
       "parallelism_notes": "Independent of renderers and validator; touches only extractor files.",
       "assigned_to": null,
@@ -197,7 +212,14 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1160", "TASK-1161", "TASK-1162", "TASK-1163", "TASK-1164", "TASK-1166"],
+      "depends_on": [
+        "TASK-1160",
+        "TASK-1161",
+        "TASK-1162",
+        "TASK-1163",
+        "TASK-1164",
+        "TASK-1166"
+      ],
       "parallel": false,
       "parallelism_notes": "Full pipeline integration; must run after Phase 1 + the validator branch.",
       "assigned_to": null,
@@ -215,9 +237,12 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1160", "TASK-1162"],
+      "depends_on": [
+        "TASK-1160",
+        "TASK-1162"
+      ],
       "parallel": false,
-      "parallelism_notes": "Edits api/routes.py — same file TASK-1170 touches; must serialize to avoid merge friction.",
+      "parallelism_notes": "Edits api/routes.py \u2014 same file TASK-1170 touches; must serialize to avoid merge friction.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -233,7 +258,11 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1162", "TASK-1167", "TASK-1170"],
+      "depends_on": [
+        "TASK-1162",
+        "TASK-1167",
+        "TASK-1170"
+      ],
       "parallel": false,
       "parallelism_notes": "Terminal task; reads finished models and renderer extension.",
       "assigned_to": null,
