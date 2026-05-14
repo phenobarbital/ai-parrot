@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-170
 **Date**: 2026-05-14
 **Author**: jesuslara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 0.5.0
 
 > **Source of design decisions**: this spec is derived from
