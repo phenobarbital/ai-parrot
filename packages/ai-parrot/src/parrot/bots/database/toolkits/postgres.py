@@ -112,6 +112,12 @@ class PostgresToolkit(SQLToolkit):
     def _get_explain_prefix(self) -> str:
         return "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)"
 
+    def _get_explain_prefix_planner_only(self) -> str:
+        # No ANALYZE, no BUFFERS — pure planner output, the statement is
+        # not executed. ``FORMAT JSON`` is preserved so the result remains
+        # parseable by ``format_explain_plan``.
+        return "EXPLAIN (FORMAT JSON)"
+
     def _get_information_schema_query(
         self,
         search_term: str,

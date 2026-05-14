@@ -100,8 +100,24 @@ class EpisodicMemoryMixin:
         Call this from the bot's configure() method. Creates the store
         with the appropriate backend, embedding provider, and reflection
         engine based on configuration attributes.
+
+        Idempotent: hosts that call ``configure()`` more than once during a
+        process lifecycle (e.g. navigator-api's at_startup + lazy per-route
+        init) would otherwise hit ``ToolNameCollisionError`` on
+        ``ep_*`` tool re-registration, which silently disables episodic
+        memory for the rest of the process. Bail early when the store and
+        its tools are already wired.
         """
         if not self.enable_episodic_memory:
+            return
+
+        if getattr(self, "_episodic_store", None) is not None:
+            return
+
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is not None and tool_manager.get_tool(
+            "ep_get_warnings"
+        ) is not None:
             return
 
         try:
