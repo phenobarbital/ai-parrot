@@ -732,100 +732,126 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         contents: List,
         config,
         all_tool_calls: List[ToolCall],
+        max_iterations: int = 15,
         original_prompt: Optional[str] = None,
         session_id: Optional[str] = None,
         messages: Optional[List[Dict[str, Any]]] = None
     ) -> Any:
-        """Handle function calls in stateless mode (single request-response)."""
-        function_calls = self._extract_function_calls(response)
+        """Handle function calls in stateless mode.
 
-        if not function_calls:
-            return response
+        "Stateless" means no conversation memory carried across ``ask()``
+        invocations — it does NOT mean single-turn. The model can still
+        invoke multiple tools across successive rounds; this loop iterates
+        until the model stops requesting tools or ``max_iterations`` is hit.
+        """
+        current_response = response
+        iteration = 0
 
-        # Execute function calls
-        tool_call_objects = []
-        for fc in function_calls:
-            tc = ToolCall(
-                id=f"call_{uuid.uuid4().hex[:8]}",
-                name=fc.name,
-                arguments=dict(fc.args)
+        while iteration < max_iterations:
+            iteration += 1
+            function_calls = self._extract_function_calls(current_response)
+
+            if not function_calls:
+                self.logger.debug(
+                    "Stateless tool loop: no function calls — completed after %d iteration(s)",
+                    iteration - 1,
+                )
+                return current_response
+
+            self.logger.info(
+                "Stateless tool loop iteration %d: processing %d function call(s)",
+                iteration,
+                len(function_calls),
             )
-            tool_call_objects.append(tc)
 
-        start_time = time.time()
-        tool_execution_tasks = [
-            self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
-        ]
-        tool_results = await asyncio.gather(
-            *tool_execution_tasks,
-            return_exceptions=True
-        )
-        execution_time = time.time() - start_time
+            # Execute function calls
+            tool_call_objects = []
+            for fc in function_calls:
+                tc = ToolCall(
+                    id=f"call_{uuid.uuid4().hex[:8]}",
+                    name=fc.name,
+                    arguments=dict(fc.args)
+                )
+                tool_call_objects.append(tc)
 
-        for tc, result in zip(tool_call_objects, tool_results):
-            tc.execution_time = execution_time / len(tool_call_objects)
-            if isinstance(result, HumanInteractionInterrupt):
-                result.session_id = session_id
-                result.messages = messages.copy() if messages else []
-                result.tool_call_id = tc.id
-                result.agent_name = getattr(self, "name", "Google_Agent")
-                raise result
-            elif isinstance(result, Exception):
-                tc.error = str(result)
-            else:
-                tc.result = result
+            start_time = time.time()
+            tool_execution_tasks = [
+                self._execute_tool(fc.name, dict(fc.args)) for fc in function_calls
+            ]
+            tool_results = await asyncio.gather(
+                *tool_execution_tasks,
+                return_exceptions=True
+            )
+            execution_time = time.time() - start_time
 
-        all_tool_calls.extend(tool_call_objects)
+            for tc, result in zip(tool_call_objects, tool_results):
+                tc.execution_time = execution_time / len(tool_call_objects)
+                if isinstance(result, HumanInteractionInterrupt):
+                    result.session_id = session_id
+                    result.messages = messages.copy() if messages else []
+                    result.tool_call_id = tc.id
+                    result.agent_name = getattr(self, "name", "Google_Agent")
+                    raise result
+                elif isinstance(result, Exception):
+                    tc.error = str(result)
+                else:
+                    tc.result = result
 
-        # Prepare function responses
-        function_response_parts = []
-        for fc, result in zip(function_calls, tool_results):
-            if isinstance(result, Exception):
-                response_content = f"Error: {str(result)}"
-            else:
-                response_content = str(result.get('result', result) if isinstance(result, dict) else result)
+            all_tool_calls.extend(tool_call_objects)
 
-            function_response_parts.append(
-                Part(
-                    function_response=types.FunctionResponse(
-                        name=fc.name,
-                        response={"result": response_content}
+            # Prepare function responses
+            function_response_parts = []
+            for fc, result in zip(function_calls, tool_results):
+                if isinstance(result, Exception):
+                    response_content = f"Error: {str(result)}"
+                else:
+                    response_content = str(result.get('result', result) if isinstance(result, dict) else result)
+
+                function_response_parts.append(
+                    Part(
+                        function_response=types.FunctionResponse(
+                            name=fc.name,
+                            response={"result": response_content}
+                        )
                     )
                 )
+
+            if summary_part := self._create_tool_summary_part(
+                function_calls,
+                tool_results,
+                original_prompt
+            ):
+                function_response_parts.append(summary_part)
+
+            # Add function call and responses to conversation
+            contents.append({
+                "role": "model",
+                "parts": [{"function_call": fc} for fc in function_calls]
+            })
+            contents.append({
+                "role": "user",
+                "parts": function_response_parts
+            })
+
+            # After the initial tool round relax ANY → AUTO so the model can
+            # produce a final text answer instead of being forced to call again.
+            fcc = getattr(getattr(config, "tool_config", None),
+                          "function_calling_config", None)
+            if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
+                fcc.mode = types.FunctionCallingConfigMode.AUTO
+
+            # Generate next response — may contain more function calls or the final text.
+            current_response = await self.client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
             )
 
-        if summary_part := self._create_tool_summary_part(
-            function_calls,
-            tool_results,
-            original_prompt
-        ):
-            function_response_parts.append(summary_part)
-
-        # Add function call and responses to conversation
-        contents.append({
-            "role": "model",
-            "parts": [{"function_call": fc} for fc in function_calls]
-        })
-        contents.append({
-            "role": "user",
-            "parts": function_response_parts
-        })
-
-        # After the initial tool round relax ANY → AUTO so the model can
-        # produce the final text answer instead of being forced to call again.
-        fcc = getattr(getattr(config, "tool_config", None),
-                      "function_calling_config", None)
-        if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
-            fcc.mode = types.FunctionCallingConfigMode.AUTO
-
-        # Generate final response
-        final_response = await self.client.aio.models.generate_content(
-            model=model,
-            contents=contents,
-            config=config
+        self.logger.warning(
+            "Stateless tool loop reached max_iterations=%d without the model stopping tool calls",
+            max_iterations,
         )
-
-        return final_response
+        return current_response
 
     # Maximum characters per tool result sent back to the model.
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
@@ -2156,6 +2182,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 contents,
                 final_config,
                 all_tool_calls,
+                max_iterations=max_iterations,
                 original_prompt=prompt,
                 session_id=session_id,
                 messages=messages
