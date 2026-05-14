@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional, Union, AsyncIterator, TYPE_CHECKING
 import os
-import asyncio
-import logging
 import json
 import uuid
 from enum import Enum
@@ -36,12 +34,10 @@ from ..models import (
     CompletionUsage,
     AIMessage,
     StructuredOutputConfig,
-    ToolCall,
-    OutputFormat
+    ToolCall
 )
 from ..models.responses import InvokeResult
 from ..exceptions import InvokeError
-from ..tools.abstract import AbstractTool
 from ..memory import ConversationTurn
 from ..tools.manager import ToolFormat
 
@@ -416,10 +412,15 @@ class GrokClient(AbstractClient):
         structured_output: Union[type, StructuredOutputConfig, None] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None
-    ) -> AsyncIterator[str]:
-        """
-        Stream response from Grok.
+        tools: Optional[List[Dict[str, Any]]] = None,
+        deep_research: bool = False,
+        agent_config: Optional[Dict[str, Any]] = None,
+        lazy_loading: bool = False,
+    ) -> AsyncIterator[Union[str, AIMessage]]:
+        """Stream response from Grok.
+
+        Yields successive string chunks followed by a final
+        :class:`~parrot.models.responses.AIMessage` with metadata.
         """
         turn_id = str(uuid.uuid4())
         client = await self.get_client()
@@ -462,19 +463,34 @@ class GrokClient(AbstractClient):
         chat.append(user(prompt))
 
         full_response = []
-        
+
         async for token in chat.stream():
-            content = token 
+            content = token
             if hasattr(token, 'choices'):
-                 delta = token.choices[0].delta
-                 if hasattr(delta, 'content'):
-                     content = delta.content
+                delta = token.choices[0].delta
+                if hasattr(delta, 'content'):
+                    content = delta.content
             elif hasattr(token, 'content'):
-                 content = token.content
-            
+                content = token.content
+
             if content:
                 full_response.append(content)
                 yield content
+
+        # Build and yield final AIMessage (xAI has no final response object)
+        final_text = "".join(full_response)
+        ai_message = AIMessage(
+            input=prompt,
+            output=final_text,
+            response=final_text,
+            model=model or self.model or self.default_model,
+            provider="grok",
+            usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        yield ai_message
 
         if user_id and session_id:
             turn = ConversationTurn(
