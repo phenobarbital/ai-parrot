@@ -112,7 +112,7 @@
       "feature_id": "FEAT-174",
       "feature": "homologate-llm-clients-askstream",
       "spec": "sdd/specs/homologate-llm-clients-askstream.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Independent — pseudo-streaming, just yield existing AIMessage from ask()",
       "assigned_to": null,
       "started_at": "2026-05-14T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1178-gemma4-client-askstream-aimessage.md"
+      "completed_at": "2026-05-14T23:50:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1178-gemma4-client-askstream-aimessage.md"
     },
     {
       "id": "TASK-1179",
