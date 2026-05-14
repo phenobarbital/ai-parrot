@@ -160,3 +160,57 @@ def test_builtin_snippets_are_deep_copies():
 
     snippets = get_form_field_schema_snippets()
     assert "mutated" not in snippets["text"]
+
+
+def test_controls_registry_has_all_new_types():
+    """get_controls() returns 30 entries (20 existing + 10 new) after import."""
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    controls = get_controls()
+    assert len(controls) == 30, f"Expected 30 controls, got {len(controls)}"
+
+    # Spot-check new types are present
+    control_types = {c.type for c in controls}
+    assert "signature" in control_types
+    assert "nps" in control_types
+    assert "likert" in control_types
+    assert "ranking" in control_types
+    assert "dynamic_select" in control_types
+    assert "transfer_list" in control_types
+    assert "remote_response" in control_types
+    assert "availability" in control_types
+    assert "location" in control_types
+    assert "tags" in control_types
+
+
+def test_controls_new_type_categories():
+    """New types have correct categories per TASK-1153 spec."""
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    controls = {c.type: c for c in get_controls()}
+    # media category
+    assert controls["signature"].category == "media"
+    # selection category
+    assert controls["dynamic_select"].category == "selection"
+    assert controls["transfer_list"].category == "selection"
+    assert controls["location"].category == "selection"
+    assert controls["tags"].category == "selection"
+    # advanced category
+    assert controls["remote_response"].category == "advanced"
+    assert controls["availability"].category == "advanced"
+    assert controls["nps"].category == "advanced"
+    assert controls["likert"].category == "advanced"
+    assert controls["ranking"].category == "advanced"
+
+
+def test_controls_new_type_render_hints():
+    """New types have correct render_hint values."""
+    sys.modules.pop("parrot_formdesigner.controls.builtin", None)
+    importlib.import_module("parrot_formdesigner.controls.builtin")
+    controls = {c.type: c for c in get_controls()}
+    assert controls["signature"].render_hint == "signature"
+    assert controls["dynamic_select"].render_hint == "select"
+    assert controls["transfer_list"].render_hint == "transfer-list"
+    assert controls["nps"].render_hint == "rating"
+    assert controls["likert"].render_hint == "rating"
+    assert controls["ranking"].render_hint == "rating"
