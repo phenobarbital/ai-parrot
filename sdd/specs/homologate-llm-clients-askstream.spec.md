@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-174
 **Date**: 2026-05-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/homologate-llm-clients-askstream.proposal.md`
 
