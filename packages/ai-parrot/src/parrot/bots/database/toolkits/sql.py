@@ -10,8 +10,26 @@ supported backend. Query builders emit ``$1, $2, …`` positional placeholders.
 """
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 from typing import Any, Dict, List, Optional, Union
+
+# Matches leading SQL/PL-pgSQL comments and whitespace so we can identify the
+# first significant keyword. Used by ``explain_query`` safety guard to decide
+# whether ``EXPLAIN ANALYZE`` is safe (read-only) or must fall back to the
+# planner-only variant.
+_LEADING_NOISE_RE = re.compile(
+    r"^(?:\s+|--[^\n]*\n|/\*.*?\*/)*",
+    re.DOTALL,
+)
+
+# A CTE may still be a write — ``WITH ... DELETE`` / ``UPDATE`` / ``INSERT``
+# / ``MERGE`` inside a CTE mutates data and must NOT be run with ANALYZE.
+_CTE_DML_RE = re.compile(
+    r"\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke)\b",
+    re.IGNORECASE,
+)
 
 from ..cache import CachePartition
 from ..models import (
@@ -249,13 +267,25 @@ class SQLToolkit(DatabaseToolkit):
     async def explain_query(self, query: str) -> str:
         """Run an EXPLAIN on the given query and return the plan.
 
+        Safety: ``EXPLAIN ANALYZE`` actually **executes** the statement —
+        for ``DELETE``/``UPDATE``/``INSERT``/``MERGE`` this would mutate
+        data, which the read-only DBA-helper use case must never do. When
+        the query is not provably read-only we strip ``ANALYZE`` (and any
+        execution-time options) and run the planner-only variant.
+
         Args:
             query: SQL query to explain.
 
         Returns:
             Execution plan text.
         """
-        prefix = self._get_explain_prefix()
+        if self._is_read_only_query(query):
+            prefix = self._get_explain_prefix()
+        else:
+            prefix = self._get_explain_prefix_planner_only()
+            self.logger.info(
+                "explain_query: stripping ANALYZE — query is not read-only"
+            )
         explain_sql = f"{prefix} {query}"
         try:
             data, error = await self._execute_asyncdb(explain_sql, limit=0, timeout=60)
@@ -266,6 +296,110 @@ class SQLToolkit(DatabaseToolkit):
             return "No plan returned."
         except Exception as exc:
             return f"EXPLAIN failed: {exc}"
+
+    def _is_read_only_query(self, query: str) -> bool:
+        """Return ``True`` when *query* has no side effects on the database.
+
+        Accepts queries whose first significant keyword is ``SELECT``,
+        ``WITH``, ``VALUES``, ``SHOW``, or ``TABLE``. ``WITH`` is only
+        considered safe if its body does not reference DML/DDL keywords
+        (CTE may still wrap an ``UPDATE``/``DELETE``).
+
+        This is a conservative check — false negatives (a SELECT
+        misclassified as unsafe) only mean the plan is generated without
+        ANALYZE, which is correct and just less detailed. False positives
+        (DML misclassified as safe) would defeat the safety guard, so the
+        check errs on the side of stripping ANALYZE.
+        """
+        if not query:
+            return False
+        stripped = _LEADING_NOISE_RE.sub("", query).lstrip().lower()
+        if not stripped:
+            return False
+        first_word, _, _ = stripped.partition(" ")
+        first_word = first_word.strip("(")  # tolerate "(SELECT ..."
+        if first_word in {"select", "values", "show", "table"}:
+            return True
+        if first_word == "with":
+            # CTE: scan the body for DML/DDL.
+            return _CTE_DML_RE.search(stripped) is None
+        return False
+
+    def _get_explain_prefix_planner_only(self) -> str:
+        """Return an EXPLAIN prefix that does NOT execute the statement.
+
+        Subclasses override this when their default prefix runs the query
+        (e.g. PostgreSQL's ``EXPLAIN (ANALYZE, ...)``). The base
+        implementation returns plain ``EXPLAIN`` which is planner-only on
+        every major dialect.
+        """
+        return "EXPLAIN"
+
+    @staticmethod
+    def _stem_variants(search_term: str) -> List[str]:
+        """Generate fallback search terms by truncating the longest token.
+
+        Examples:
+            "category"          -> ["categor", "catego"]      (drop 1, 2)
+            "user_orders"       -> ["user_order", "user_ord"]
+            "ab"                -> []                          (too short)
+            "users orders"      -> ["users", "user"]           (use longest)
+
+        We only stem the **longest token** (≥ 6 chars). Anything shorter
+        is unlikely to have a meaningful suffix swap and stemming risks
+        false positives ("user" → "use", "us" — too generic).
+
+        When the caller passes a full natural-language sentence (e.g. the
+        prefetch in ``DatabaseAgent.ask`` forwards the entire user prompt
+        as the ``search_term``), we short-circuit and return ``[]``: the
+        first ILIKE on a sentence-length pattern will never match anyway,
+        and 2× retries on garbage stems just burn DB roundtrips. The
+        sentence heuristic: >5 whitespace-separated words OR length > 60.
+        """
+        if not search_term:
+            return []
+        stripped_term = search_term.strip()
+        if not stripped_term:
+            return []
+        # Skip sentences entirely — they are not useful for ILIKE search and
+        # were never going to hit on retries either.
+        if len(stripped_term) > 60 or len(stripped_term.split()) > 5:
+            return []
+        tokens = re.split(r"(\W+)", stripped_term)
+        if not tokens:
+            return []
+        # Find the longest non-delimiter token (delimiters land on odd indices)
+        idx_longest = max(
+            (i for i in range(0, len(tokens), 2) if i < len(tokens)),
+            key=lambda i: len(tokens[i]) if tokens[i].isalnum() else 0,
+            default=-1,
+        )
+        if idx_longest < 0:
+            return []
+        longest = tokens[idx_longest]
+        if len(longest) < 6:
+            return []
+        variants: List[str] = []
+        # Strategy A: stem-trim the longest token in place (preserves
+        # delimiters / surrounding tokens). Handles "category" → "categor".
+        for trim in (1, 2):
+            if len(longest) - trim < 4:
+                break
+            stem = longest[: -trim]
+            new_tokens = list(tokens)
+            new_tokens[idx_longest] = stem
+            variants.append("".join(new_tokens))
+        # Strategy B: when the search has multiple alphanumeric tokens, the
+        # discriminating word is usually the longest one — fall back to the
+        # bare longest token (and its stem) so e.g. ``"orders table"`` also
+        # tries ``"orders"`` and ``"order"``.
+        word_count = sum(1 for i in range(0, len(tokens), 2) if i < len(tokens) and tokens[i].isalnum())
+        if word_count > 1:
+            variants.append(longest)
+            if len(longest) >= 5:
+                variants.append(longest[:-1])
+        # Dedupe preserving order
+        return list(dict.fromkeys(variants))
 
     async def validate_query(self, sql: str) -> Dict[str, Any]:
         """Validate SQL syntax and referenced objects.
@@ -585,33 +719,92 @@ class SQLToolkit(DatabaseToolkit):
         schema_name: Optional[str] = None,
         limit: int = 10,
     ) -> List[TableMetadata]:
-        """Query information_schema for matching tables and build metadata."""
+        """Query information_schema for matching tables and build metadata.
+
+        Metadata for the matching tables is fetched in parallel — every
+        ``_build_table_metadata`` call is independent (one connection
+        acquire per call from the pool) and previously dominated wall time
+        because we awaited each table sequentially. Order is preserved by
+        zipping the gathered results back against the ``information_schema``
+        row order.
+
+        Stem-fallback: the LLM frequently searches for the singular root of
+        a concept (e.g. ``"category"``) but tables are named with the
+        plural (``"products_categories"``). ``ILIKE %category%`` does not
+        match ``products_categories`` because the suffix differs (``y`` vs
+        ``ies``). When the exact term returns nothing we retry with a
+        progressively shorter prefix of the longest token so plural/
+        singular variants do match. We do NOT pre-merge these into a single
+        OR'd query because that would slow the common case (where the
+        first pattern hits) by forcing an additional planner pass on every
+        call.
+        """
         target_schemas = [schema_name] if schema_name else self.allowed_schemas
-        info_sql, params = self._get_information_schema_query(search_term, target_schemas)
+
+        async def _run(pattern: str) -> tuple[Optional[list], Optional[str]]:
+            info_sql, params = self._get_information_schema_query(pattern, target_schemas)
+            try:
+                return await self._execute_asyncdb(info_sql, params=params, limit=limit, timeout=30)
+            except Exception as exc:
+                self.logger.warning("Schema search failed: %s", exc)
+                return None, str(exc)
+
+        data, error = await _run(search_term)
+
+        if (not data) and not error:
+            for fallback in self._stem_variants(search_term):
+                self.logger.debug(
+                    "search_schema: retrying with stem %r (no hits for %r)",
+                    fallback, search_term,
+                )
+                data, error = await _run(fallback)
+                if data:
+                    break
+
+        if error or not data:
+            return []
+
+        rows = [
+            (
+                row.get("table_schema", self.primary_schema),
+                row.get("table_name", ""),
+                row.get("table_type", "BASE TABLE"),
+                row.get("comment"),
+            )
+            for row in data
+            if row.get("table_name")
+        ]
+        if not rows:
+            return []
+
+        # Bound the per-table fan-out. Each ``_build_table_metadata`` call
+        # fires three concurrent information_schema queries internally, all
+        # routed through the same ``asyncdb`` driver instance. Without a
+        # semaphore, a 10-table result set produces ~30 simultaneous
+        # ``connection()`` calls and trips
+        #     asyncpg.exceptions._base.InternalClientError:
+        #         got result for unknown protocol state 3
+        # because the underlying asyncpg protocol object is not safe under
+        # that level of concurrent re-entry. Four-at-a-time keeps total
+        # in-flight queries at ~12 which the pool comfortably handles.
+        sem = asyncio.Semaphore(4)
+
+        async def _with_sem(s: str, t: str, tt: str, c: Optional[str]):
+            async with sem:
+                return await self._build_table_metadata(s, t, tt, c)
+
+        metadata_list = await asyncio.gather(
+            *(_with_sem(s, t, tt, c) for s, t, tt, c in rows),
+            return_exceptions=False,
+        )
 
         results: List[TableMetadata] = []
-        try:
-            data, error = await self._execute_asyncdb(info_sql, params=params, limit=limit, timeout=30)
-            if error or not data:
-                return results
-
-            for row in data:
-                schema = row.get("table_schema", self.primary_schema)
-                table = row.get("table_name", "")
-                table_type = row.get("table_type", "BASE TABLE")
-                comment = row.get("comment")
-
-                metadata = await self._build_table_metadata(
-                    schema, table, table_type, comment
-                )
-                if metadata:
-                    # Cache the result
-                    if self.cache_partition:
-                        await self.cache_partition.store_table_metadata(metadata)
-                    results.append(metadata)
-
-        except Exception as exc:
-            self.logger.warning("Schema search failed: %s", exc)
+        for metadata in metadata_list:
+            if metadata is None:
+                continue
+            if self.cache_partition:
+                await self.cache_partition.store_table_metadata(metadata)
+            results.append(metadata)
 
         return results[:limit]
 
@@ -622,12 +815,32 @@ class SQLToolkit(DatabaseToolkit):
         table_type: str,
         comment: Optional[str] = None,
     ) -> Optional[TableMetadata]:
-        """Build a ``TableMetadata`` object by querying column and key info."""
-        try:
-            # Columns
-            col_sql, col_params = self._get_columns_query(schema, table)
-            col_data, _ = await self._execute_asyncdb(col_sql, params=col_params, limit=0, timeout=15)
+        """Build a ``TableMetadata`` object by querying column and key info.
 
+        The three information_schema queries (columns, primary keys, unique
+        constraints) are issued concurrently — they are independent and the
+        bottleneck of ``search_schema`` was previously the serial await on
+        each. The unique-constraints query is treated as best-effort: any
+        exception is swallowed (logged at DEBUG) and the table is still
+        returned with the column / primary-key info we managed to fetch.
+        """
+        col_sql, col_params = self._get_columns_query(schema, table)
+        pk_sql, pk_params = self._get_primary_keys_query(schema, table)
+        uq_sql, uq_params = self._get_unique_constraints_query(schema, table)
+
+        try:
+            col_result, pk_result, uq_result = await asyncio.gather(
+                self._execute_asyncdb(col_sql, params=col_params, limit=0, timeout=15),
+                self._execute_asyncdb(pk_sql, params=pk_params, limit=0, timeout=15),
+                self._execute_asyncdb(uq_sql, params=uq_params, limit=0, timeout=15),
+                return_exceptions=True,
+            )
+        except Exception as exc:
+            self.logger.warning("Failed to build metadata for %s.%s: %s", schema, table, exc)
+            return None
+
+        try:
+            col_data, _ = col_result if not isinstance(col_result, Exception) else (None, str(col_result))
             columns = []
             if col_data:
                 for col in col_data:
@@ -638,19 +851,19 @@ class SQLToolkit(DatabaseToolkit):
                         "default": col.get("column_default"),
                     })
 
-            # Primary keys
-            pk_sql, pk_params = self._get_primary_keys_query(schema, table)
-            pk_data, _ = await self._execute_asyncdb(pk_sql, params=pk_params, limit=0, timeout=15)
-
+            pk_data, _ = pk_result if not isinstance(pk_result, Exception) else (None, str(pk_result))
             primary_keys = [
                 row.get("column_name", "") for row in (pk_data or [])
             ]
 
-            # Unique constraints
             unique_constraints: List[List[str]] = []
-            try:
-                uq_sql, uq_params = self._get_unique_constraints_query(schema, table)
-                uq_data, uq_error = await self._execute_asyncdb(uq_sql, params=uq_params, limit=0, timeout=15)
+            if isinstance(uq_result, Exception):
+                self.logger.debug(
+                    "Failed to fetch UNIQUE constraints for %s.%s: %s",
+                    schema, table, uq_result,
+                )
+            else:
+                uq_data, _uq_error = uq_result
                 if uq_data:
                     grouped: Dict[str, List[str]] = {}
                     for row in uq_data:
@@ -658,7 +871,6 @@ class SQLToolkit(DatabaseToolkit):
                         column_name = row.get("column_name", "")
                         if constraint_name and column_name:
                             grouped.setdefault(constraint_name, []).append(column_name)
-                    # Sort for deterministic ordering
                     unique_constraints = sorted(
                         grouped.values(),
                         key=lambda cols: (cols[0] if cols else ""),
@@ -667,11 +879,6 @@ class SQLToolkit(DatabaseToolkit):
                     self.logger.debug(
                         "No UNIQUE constraints found for %s.%s", schema, table
                     )
-            except Exception as uq_exc:
-                self.logger.debug(
-                    "Failed to fetch UNIQUE constraints for %s.%s: %s",
-                    schema, table, uq_exc,
-                )
 
             return TableMetadata(
                 schema=schema,
