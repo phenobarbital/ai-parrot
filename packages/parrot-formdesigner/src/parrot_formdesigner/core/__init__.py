@@ -12,7 +12,15 @@ from .constraints import (
     FieldConstraints,
 )
 from .options import FieldOption, OptionsSource
-from .schema import FormField, FormSchema, FormSection, RenderedForm, SubmitAction
+from .schema import (
+    FormField,
+    FormSchema,
+    FormSection,
+    FormSubsection,
+    RenderedForm,
+    SectionItem,
+    SubmitAction,
+)
 from .style import (
     FieldSizeHint,
     FieldStyleHint,
@@ -41,6 +49,8 @@ __all__ = [
     "OptionsSource",
     # Schema
     "FormField",
+    "FormSubsection",
+    "SectionItem",
     "FormSection",
     "SubmitAction",
     "FormSchema",

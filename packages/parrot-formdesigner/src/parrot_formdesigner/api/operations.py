@@ -26,7 +26,7 @@ from typing import Annotated, Any, Literal, Union
 from aiohttp import web
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..core.schema import FormField, FormSchema, FormSection
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge
 
@@ -177,13 +177,15 @@ def _section_index(form: FormSchema, section_id: str) -> int:
 
 def _field_index(section: FormSection, field_id: str) -> int:
     for i, f in enumerate(section.fields):
+        if isinstance(f, FormSubsection):
+            continue
         if f.field_id == field_id:
             return i
     raise OperationError(-1, "?", f"field '{field_id}' not found")
 
 
 def _check_unique_field_id(section: FormSection, field_id: str) -> None:
-    if any(f.field_id == field_id for f in section.fields):
+    if any(f.field_id == field_id for f in section.iter_fields()):
         raise OperationError(
             -1,
             "?",
@@ -242,7 +244,7 @@ def _apply_move_field(form: FormSchema, op: MoveField) -> FormSchema:
 
     # When moving within the same section, the destination position refers
     # to the new index AFTER removal — we do not need a special case.
-    if any(f.field_id == field.field_id for f in dst_section.fields):
+    if any(f.field_id == field.field_id for f in dst_section.iter_fields()):
         # Restore original location before raising.
         src_section.fields.insert(src_fi, field)
         raise OperationError(

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ..core.style import LayoutType, StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer
@@ -280,7 +280,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
         # Data as FactSet per section
         for section in form.sections:
             facts = []
-            for field in section.fields:
+            for field in section.iter_fields():
                 value = form_data.get(field.field_id)
                 if value is not None:
                     label = _resolve(field.label, locale)
@@ -499,10 +499,51 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 "spacing": "Small",
             })
 
-        for field in section.fields:
-            elements.extend(self._build_field(field, prefilled, errors, locale))
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                elements.extend(self._build_subsection(item, prefilled, errors, locale))
+            else:
+                elements.extend(self._build_field(item, prefilled, errors, locale))
 
         return elements
+
+    def _build_subsection(
+        self,
+        subsection: FormSubsection,
+        prefilled: dict[str, Any],
+        errors: dict[str, str],
+        locale: str,
+    ) -> list[dict[str, Any]]:
+        """Build Adaptive Card elements for a subsection container."""
+        items: list[dict[str, Any]] = []
+
+        if subsection.title:
+            items.append({
+                "type": "TextBlock",
+                "text": _resolve(subsection.title, locale),
+                "weight": "Bolder",
+                "size": "Default",
+                "spacing": "Medium",
+                "separator": True,
+            })
+        if subsection.description:
+            items.append({
+                "type": "TextBlock",
+                "text": _resolve(subsection.description, locale),
+                "isSubtle": True,
+                "wrap": True,
+                "size": "Small",
+                "spacing": "None",
+            })
+
+        for field in subsection.fields:
+            items.extend(self._build_field(field, prefilled, errors, locale))
+
+        return [{
+            "type": "Container",
+            "items": items,
+            "spacing": "Medium",
+        }]
 
     def _build_field(
         self,

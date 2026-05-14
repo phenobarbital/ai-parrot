@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-167",
+  "started_at": "2026-05-13T17:55:57Z",
+  "updated_at": "2026-05-13T18:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-167/source.md",
+    "fetched_at": "2026-05-13T17:55:57Z",
+    "summary_oneline": "PromptLibrary supports public per-chatbot prompts only; need agent_id support and a new UserPrompts model for per-user prompts."
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "feature_slug": "promptlibrary-changes",
+  "detected_mode": "enrichment",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-05-13T17:55:57Z",
+      "completed_at": "2026-05-13T17:55:57Z"
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-05-13T17:55:57Z",
+      "completed_at": "2026-05-13T17:56:30Z",
+      "queries_total": 14,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-167/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-05-13T17:56:30Z",
+      "completed_at": "2026-05-13T17:58:00Z",
+      "queries_executed": 14,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 6,
+      "grep_calls": 12,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-05-13T17:58:00Z",
+      "completed_at": "2026-05-13T17:59:00Z",
+      "synthesis_path": "sdd/state/FEAT-167/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 8,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 0
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-05-13T17:59:00Z",
+      "completed_at": "2026-05-13T18:00:00Z",
+      "questions_total": 3,
+      "questions_answered": 3,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-05-13T18:00:00Z",
+      "completed_at": "2026-05-13T18:00:30Z",
+      "proposal_path": "sdd/proposals/promptlibrary-changes.proposal.md",
+      "commit_sha": "59bb2c117874f62a2c8aaeefcc60b44eb92cce62",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "High-confidence localization, sibling template available, all unknowns resolved."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 6,
+    "grep_calls": 12,
+    "git_calls": 1,
+    "wall_seconds": 240
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Run /sdd-spec FEAT-167 to scaffold the spec from this proposal."
+  }
+}

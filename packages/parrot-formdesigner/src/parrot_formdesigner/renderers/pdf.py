@@ -22,7 +22,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-from ..core.schema import FormField, FormSchema, FormSection, RenderedForm
+from ..core.schema import FormField, FormSchema, FormSection, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer
@@ -193,12 +193,41 @@ class PdfRenderer(AbstractFormRenderer):
         )
         cursor_y -= self.LINE_HEIGHT
 
-        for field in section.fields:
-            cursor_y = self._render_field(
-                c, section.section_id, field, cursor_y, locale, prefilled, unsupported
-            )
+        for item in section.fields:
+            if isinstance(item, FormSubsection):
+                cursor_y = self._render_subsection(
+                    c, section.section_id, item, cursor_y, locale, prefilled, unsupported
+                )
+            else:
+                cursor_y = self._render_field(
+                    c, section.section_id, item, cursor_y, locale, prefilled, unsupported
+                )
 
         return cursor_y - self.SECTION_GAP
+
+    def _render_subsection(
+        self,
+        c: canvas.Canvas,
+        section_id: str,
+        subsection: FormSubsection,
+        cursor_y: float,
+        locale: str,
+        prefilled: dict[str, Any] | None,
+        unsupported: list[dict[str, str]],
+    ) -> float:
+        """Render a subsection header and its fields. Returns new ``cursor_y``."""
+        if subsection.title:
+            cursor_y = self._maybe_new_page(c, cursor_y, mm * 20)
+            title = _localize(subsection.title, locale, default=subsection.subsection_id)
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(self.MARGIN_X + mm * 4, cursor_y, title)
+            cursor_y -= self.LINE_HEIGHT
+
+        for field in subsection.fields:
+            cursor_y = self._render_field(
+                c, section_id, field, cursor_y, locale, prefilled, unsupported
+            )
+        return cursor_y
 
     def _render_field(
         self,

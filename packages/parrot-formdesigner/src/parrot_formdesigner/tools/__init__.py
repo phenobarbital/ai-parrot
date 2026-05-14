@@ -10,6 +10,7 @@ These tools allow LLMs to interact with the form system:
 from .request_form import RequestFormTool
 from .create_form import CreateFormTool
 from .database_form import DatabaseFormTool
+from .edit_toolkit import EditToolkit
 from .field_helpers import (
     get_form_field_schema_snippets,
     list_supported_form_field_types,
@@ -19,6 +20,7 @@ __all__ = [
     "RequestFormTool",
     "CreateFormTool",
     "DatabaseFormTool",
+    "EditToolkit",
     "list_supported_form_field_types",
     "get_form_field_schema_snippets",
 ]

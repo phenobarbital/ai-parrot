@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 import yaml
+from parrot.bots.data import PandasTable  # noqa: F401 — used by QueryDataset
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -213,6 +214,46 @@ class QueryExecutionResponse(BaseModel):
     error_message: Optional[str] = None
     schema_used: str
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+
+class QueryDataset(BaseModel):
+    """Result dataset for a single executed query.
+
+    Wraps PandasTable with DB-specific metadata so consumers can
+    distinguish a 'no results' empty table from a non-tabular response.
+    """
+
+    data: Optional[PandasTable] = Field(
+        default=None,
+        description="Tabular result rows; null for non-tabular responses.",
+    )
+    columns: List[str] = Field(default_factory=list)
+    row_count: int = 0
+    execution_time_ms: Optional[float] = None
+
+
+class QueryResponse(BaseModel):
+    """Structured LLM output for DatabaseAgent.ask()."""
+
+    explanation: str = Field(
+        description="Human-readable summary of the query and its result."
+    )
+    query: Optional[str] = Field(
+        default=None,
+        description="The SQL/DSL the agent generated and executed.",
+    )
+    data: Optional[QueryDataset] = Field(
+        default=None,
+        description="Inline dataset; populated when row_count <= inline_threshold.",
+    )
+    data_variable: Optional[str] = Field(
+        default=None,
+        description="Variable name holding the result DataFrame (for large datasets).",
+    )
+    data_variables: Optional[List[str]] = Field(
+        default=None,
+        description="Multi-dataset variant; list of variable names.",
+    )
 
 
 # ============================================================================
@@ -498,5 +539,6 @@ INTENT_COMPONENT_MAPPING: Dict[QueryIntent, OutputComponent] = {
     QueryIntent.VALIDATE_QUERY: OutputComponent.SQL_QUERY | OutputComponent.DOCUMENTATION | OutputComponent.OPTIMIZATION_TIPS,
     QueryIntent.OPTIMIZE_QUERY: OutputComponent.FULL_ANALYSIS,
     QueryIntent.EXPLAIN_METADATA: OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT | OutputComponent.EXAMPLES,
-    QueryIntent.CREATE_EXAMPLES: OutputComponent.EXAMPLES | OutputComponent.SCHEMA_CONTEXT
+    QueryIntent.CREATE_EXAMPLES: OutputComponent.EXAMPLES | OutputComponent.SCHEMA_CONTEXT,
+    QueryIntent.GENERATE_REPORT: OutputComponent.DATA_RESULTS | OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT,
 }

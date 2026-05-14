@@ -31,6 +31,9 @@ from .cache import (
     SchemaMetadataCache,  # backward-compat alias
 )
 
+# Response models
+from .models import QueryDataset, QueryResponse
+
 __all__ = [
     # New public API
     "DatabaseAgent",
@@ -46,4 +49,7 @@ __all__ = [
     "CachePartition",
     "CachePartitionConfig",
     "SchemaMetadataCache",
+    # Structured output models
+    "QueryDataset",
+    "QueryResponse",
 ]

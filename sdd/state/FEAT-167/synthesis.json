@@ -1,0 +1,142 @@
+{
+  "feat_id": "FEAT-167",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "PromptLibrary currently binds prompts to DB-backed bots via a UUID chatbot_id only, so registry/code-defined agents (whose identity is a string agent_id) cannot have public prompts. The change has two pillars: (1) extend PromptLibrary to also accept agent_id (string), and teach PromptLibraryManagement to GET-filter by chatbot_id or agent_id; (2) introduce a new UserPrompts model + /api/v1/agents/user_prompts handler keyed by (user_id, chatbot_id), where chatbot_id is a free-form VARCHAR to accommodate both UUID strings and agent slugs.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/models/bots.py",
+      "symbol": "PromptLibrary",
+      "lines": "558-598",
+      "role": "Model to alter (add agent_id, relax chatbot_id constraint)",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/bots.py",
+      "symbol": "PromptLibraryManagement",
+      "lines": "96-110",
+      "role": "Handler to teach about agent_id filtering on GET",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/models/__init__.py",
+      "symbol": "module exports",
+      "lines": "3-34",
+      "role": "Add UserPrompts export",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/models/users_bots.py",
+      "symbol": "UserBotModel",
+      "lines": "26-117",
+      "role": "Reference pattern for per-user model + composite PK",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/models/users_bots_creation.sql",
+      "symbol": "navigator.users_bots DDL",
+      "lines": "7-91",
+      "role": "Reference DDL pattern (FK CASCADE, indexes, trigger, comments)",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "app.py",
+      "symbol": "PromptLibraryManagement.configure",
+      "lines": "135",
+      "role": "Existing route wiring; add UserPromptsManagement.configure here",
+      "evidence": ["F002"]
+    }
+  ],
+  "constraints": [
+    {
+      "id": "C1",
+      "statement": "agent_id is always a Python str (registry slug) across bots/agents — never a UUID.",
+      "confidence": "high",
+      "evidence": ["F003"]
+    },
+    {
+      "id": "C2",
+      "statement": "Per-user resources in this codebase use composite PK (user_id, <resource_pk>) with FK to auth.users(user_id) ON DELETE CASCADE.",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "id": "C3",
+      "statement": "DDL pattern for new models is a separate <model>_creation.sql file, NOT embedded in the docstring — PromptLibrary's embedded-DDL approach is the exception.",
+      "confidence": "high",
+      "evidence": ["F004"]
+    },
+    {
+      "id": "C4",
+      "statement": "User identity inside handlers is obtained via `await self.get_userid(session=self._session)`.",
+      "confidence": "high",
+      "evidence": ["F005"]
+    },
+    {
+      "id": "C5",
+      "statement": "Route wiring uses ModelView.configure(app, path) in app.py; the class-level `path` attribute is a fallback only.",
+      "confidence": "high",
+      "evidence": ["F002"]
+    },
+    {
+      "id": "C6",
+      "statement": "PromptLibrary has zero existing test coverage; we should add at least a smoke test alongside the new model.",
+      "confidence": "medium",
+      "evidence": ["F005"]
+    }
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "PromptLibrary should gain an `agent_id VARCHAR NULL` column with a CHECK constraint enforcing that exactly one of (chatbot_id, agent_id) is set per row. The Python model relaxes `chatbot_id` to `Optional[uuid.UUID]` and adds `agent_id: Optional[str]`. PromptLibraryManagement adds GET filtering by either key.",
+      "confidence": "high",
+      "evidence": ["F001", "F002", "F003"]
+    },
+    {
+      "id": "H2",
+      "statement": "UserPrompts is a new model at navigator.users_prompts, keyed by composite PK (user_id, prompt_id) with `chatbot_id VARCHAR` (free-form to support UUIDs OR agent slugs), FK to auth.users(user_id) ON DELETE CASCADE, plus UNIQUE (user_id, chatbot_id, title) to prevent duplicates per (user,bot). Exposed via a new UserPromptsManagement(ModelView) at /api/v1/agents/user_prompts.",
+      "confidence": "high",
+      "evidence": ["F004", "F005"]
+    },
+    {
+      "id": "H3",
+      "statement": "Migration uses a single ALTER TABLE block for the existing prompt_library (add column, alter constraint) and a fresh CREATE TABLE for users_prompts. Both go into a new migration SQL inside the model file (for PromptLibrary) and into a new users_prompts_creation.sql (for UserPrompts).",
+      "confidence": "high",
+      "evidence": ["F001", "F004"]
+    }
+  ],
+  "confidence_map": [
+    {"claim": "Single PromptLibrary model file + handler file", "level": "high", "evidence": ["F001", "F002"]},
+    {"claim": "agent_id is always str across the bot/agent codebase", "level": "high", "evidence": ["F003"]},
+    {"claim": "users_bots is the right reference for the new UserPrompts model", "level": "high", "evidence": ["F004"]},
+    {"claim": "Route wiring path is in app.py, not the class attribute", "level": "high", "evidence": ["F002"]},
+    {"claim": "Authenticated user_id is read via self.get_userid()", "level": "high", "evidence": ["F005"]},
+    {"claim": "CHECK constraint on (chatbot_id XOR agent_id) is acceptable to the user", "level": "medium", "evidence": ["F001", "F003"]},
+    {"claim": "users_prompts.chatbot_id should be VARCHAR (not UUID)", "level": "high", "evidence": ["F003"]},
+    {"claim": "No existing tests for PromptLibrary — gap to fill optionally", "level": "high", "evidence": ["F005"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "For the existing public PromptLibrary: should rows be uniquely identified by (chatbot_id|agent_id, title), or do we allow duplicate titles within the same bot/agent?",
+      "would_resolve_claim": ["H1"],
+      "user_answer": "Yes — add UNIQUE constraint on (bot_or_agent, title)."
+    },
+    {
+      "id": "U2",
+      "question": "For UserPrompts: should `prompt_category` and `prompt_tags` mirror PromptLibrary, or be simplified for the per-user store?",
+      "would_resolve_claim": ["H2"],
+      "user_answer": "Mirror — keep both prompt_category and prompt_tags for parity with the public library."
+    },
+    {
+      "id": "U3",
+      "question": "For UserPrompts visibility/sharing: are these strictly private to user_id, or do we want a future `is_public BOOLEAN` flag (kept defaulted to FALSE)?",
+      "would_resolve_claim": ["H2"],
+      "user_answer": "Yes — add is_public BOOLEAN DEFAULT FALSE so prompts can later be promoted to public."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (single model, single handler, single sibling pattern) and the change set is well-bounded. A spec can codify the migration, model fields, handler GET-filter behaviour, and the new endpoint without further architectural exploration."
+  }
+}

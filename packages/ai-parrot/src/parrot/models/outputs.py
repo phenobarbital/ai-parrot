@@ -68,6 +68,7 @@ class OutputMode(str, Enum):
     WHATSAPP = "whatsapp"
     SLACK = "slack"
     INFOGRAPHIC = "infographic"
+    SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
 
 @dataclass
 class StructuredOutputConfig:

@@ -9,9 +9,31 @@ import re
 from typing import Any, List, Optional, Tuple
 
 from navconfig.logging import logging
+from pydantic import BaseModel, Field
 
 #: Regex for safe SQL identifiers.
 _SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+class RetryContext(BaseModel):
+    """Payload returned by SQLToolkit.execute_query on a retryable error.
+
+    Signals to DatabaseAgent.ask() that the last query failed but is worth
+    retrying.  The LLM receives this context on the re-ask so it can generate
+    a corrected query.
+    """
+
+    query: str = Field(..., description="The SQL query that failed.")
+    error: str = Field(..., description="Error message from the database.")
+    attempt: int = Field(..., description="Retry attempt number (1-based).")
+    sample_data: str = Field(
+        default="",
+        description="Sample data context for the failing table/column.",
+    )
+    suggested_correction: Optional[str] = Field(
+        default=None,
+        description="Suggested query correction from the retry handler, if any.",
+    )
 
 
 class QueryRetryConfig:
@@ -143,13 +165,14 @@ class SQLRetryHandler(RetryHandler):
             WHERE "{column_name}" IS NOT NULL
             LIMIT {int(self.config.max_sample_rows)};
             '''
-            # Try using toolkit's execute method
-            if hasattr(self.toolkit, "execute_query"):
-                result = await self.toolkit.execute_query(
+            # Use low-level _execute_asyncdb to avoid recursion with SQLToolkit
+            # (which can now return RetryContext from execute_query).
+            if hasattr(self.toolkit, "_execute_asyncdb"):
+                data, err = await self.toolkit._execute_asyncdb(
                     sample_query, limit=self.config.max_sample_rows
                 )
-                if result.success and result.data:
-                    samples = [row.get(column_name) for row in result.data]
+                if not err and data:
+                    samples = [row.get(column_name) for row in data]
                     return f"Sample values from {column_name}: {samples}"
             # Fallback for agents with engine attribute
             elif hasattr(self.toolkit, "engine") and self.toolkit.engine is not None:

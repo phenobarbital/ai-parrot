@@ -32,6 +32,7 @@ except ImportError as exc:
     ) from exc
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema
+from .edit_toolkit import EditToolkit
 from .field_helpers import get_form_field_schema_snippets, list_supported_form_field_types
 from ..services.validators import FormValidator
 
@@ -115,6 +116,34 @@ _RETRY_PROMPT = """Your previous response was not a valid FormSchema. Error: {er
 
 Please try again and respond with ONLY valid JSON matching the FormSchema structure.
 {previous_attempt}
+"""
+
+_TOOLKIT_SYSTEM_PROMPT = """You are a form schema editor with access to surgical editing tools.
+
+You MUST follow this workflow to edit the form:
+
+1. ALWAYS start by calling get_form_summary() to understand the form structure.
+2. Use get_field(field_id) or search_fields(query) to inspect specific elements before modifying them.
+3. Use mutation tools to apply targeted changes:
+   - update_field(section_id, field_id, patch) — to change field properties (label, required, etc.)
+   - add_field(section_id, field, position) — to add a new field
+   - remove_field(section_id, field_id) — to delete a field
+   - add_section(section, position) — to add a new section
+   - update_section_title(section_id, title) — to RENAME a section (change section.title)
+   - update_section(section_id, patch) — to update a section's meta dict ONLY (NOT its title)
+   - move_field(from_section, field_id, to_section, position) — to relocate a field
+   - update_form_title(title) — to RENAME the form (change form.title)
+   - update_form_description(description) — to change the form description
+   - update_form_meta(patch) — to update the form-level meta dict ONLY (NOT title or description)
+4. Call done() IMMEDIATELY when all requested edits are complete.
+
+CRITICAL RULES:
+- NEVER return the full form JSON as text — use the tools instead.
+- NEVER modify fields that were not mentioned in the user's request.
+- ALWAYS call done() to signal completion — do not stop without calling it.
+- Make only the minimal changes necessary to fulfill the request.
+- To rename the form use update_form_title(), NOT update_form_meta().
+- To rename a section use update_section_title(), NOT update_section().
 """
 
 
@@ -282,12 +311,34 @@ class CreateFormTool(AbstractTool):
                         result=None,
                         metadata={"error": f"Form '{refine_form_id}' not found in registry"},
                     )
-                messages = self._build_refinement_messages(existing, prompt)
+
+                # Route form edits through the toolkit path (FEAT-169).
+                # _should_use_toolkit() determines whether to use the toolkit
+                # (currently always True per spec Q3).
+                form: FormSchema | None = None
+                if self._should_use_toolkit(existing):
+                    try:
+                        form = await self._execute_toolkit_edit(existing, prompt)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Toolkit edit failed for '%s', falling back to full-form path: %s",
+                            refine_form_id,
+                            exc,
+                        )
+                        form = None
+
+                if form is None:
+                    # Fallback: use existing full-form refinement path
+                    self.logger.info(
+                        "Falling back to full-form refinement for '%s'.", refine_form_id
+                    )
+                    messages = self._build_refinement_messages(existing, prompt)
+                    effective_form_id = form_id or refine_form_id
+                    form = await self._generate_with_retry(messages, effective_form_id)
             else:
                 messages = self._build_creation_messages(prompt)
-
-            effective_form_id = form_id or refine_form_id
-            form = await self._generate_with_retry(messages, effective_form_id)
+                effective_form_id = form_id or refine_form_id
+                form = await self._generate_with_retry(messages, effective_form_id)
 
             if form is None:
                 return ToolResult(
@@ -467,3 +518,84 @@ class CreateFormTool(AbstractTool):
                 ]
 
         return None
+
+    def _should_use_toolkit(self, form: FormSchema) -> bool:
+        """Determine whether to use the EditToolkit for this form edit.
+
+        Per FEAT-169 spec Q3 (resolved): all edit operations use the toolkit
+        regardless of form size — no threshold routing.  This method always
+        returns True.  Override in subclasses for custom routing logic.
+
+        Args:
+            form: The existing FormSchema being edited.
+
+        Returns:
+            True — always use the toolkit for form edits.
+        """
+        return True
+
+    async def _execute_toolkit_edit(
+        self,
+        existing: FormSchema,
+        prompt: str,
+    ) -> FormSchema | None:
+        """Edit a FormSchema using the tool-calling toolkit loop.
+
+        Creates an EditToolkit from the existing form and calls the LLM client
+        with the toolkit tools.  The LLM inspects the form via inspection tools,
+        applies targeted changes via mutation tools, and signals completion by
+        calling ``done()``.
+
+        Args:
+            existing: The FormSchema to edit (a deep copy is made by EditToolkit).
+            prompt: The user's edit request.
+
+        Returns:
+            Updated FormSchema if the LLM called ``done()``, or None if the
+            session exhausted max_iterations without completion.
+        """
+        toolkit = EditToolkit(existing)
+        tools = toolkit.get_tool_definitions()
+
+        self.logger.info(
+            "Starting toolkit edit for form '%s' with %d tools.",
+            existing.form_id,
+            len(tools),
+        )
+
+        ask_kwargs: dict[str, Any] = {
+            "system_prompt": _TOOLKIT_SYSTEM_PROMPT,
+            "tools": tools,
+            "use_tools": True,
+            "stateless": True,
+            "max_iterations": 15,
+        }
+        if self._model:
+            ask_kwargs["model"] = self._model
+
+        try:
+            await self._client.ask(prompt, **ask_kwargs)
+        except Exception as exc:
+            self.logger.warning(
+                "Toolkit LLM session raised exception for form '%s': %s",
+                existing.form_id,
+                exc,
+            )
+            # Return the form even if an exception occurred partway through —
+            # any mutations already applied are preserved in toolkit.form.
+            # If done() was called before the exception, we return the result.
+            if toolkit.is_done:
+                return toolkit.form
+            raise
+
+        if not toolkit.is_done:
+            self.logger.warning(
+                "Toolkit edit for form '%s' exhausted max_iterations without calling done().",
+                existing.form_id,
+            )
+            return None
+
+        self.logger.info(
+            "Toolkit edit for form '%s' completed successfully.", existing.form_id
+        )
+        return toolkit.form
