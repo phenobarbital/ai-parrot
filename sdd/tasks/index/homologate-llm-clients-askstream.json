@@ -52,7 +52,7 @@
       "feature_id": "FEAT-174",
       "feature": "homologate-llm-clients-askstream",
       "spec": "sdd/specs/homologate-llm-clients-askstream.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of other client tasks — different files. Largest task (two streaming paths)",
       "assigned_to": null,
       "started_at": "2026-05-14T23:41:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1175-openai-client-askstream-aimessage.md"
+      "completed_at": "2026-05-14T23:46:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1175-openai-client-askstream-aimessage.md"
     },
     {
       "id": "TASK-1176",
