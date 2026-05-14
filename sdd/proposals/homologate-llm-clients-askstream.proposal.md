@@ -3,7 +3,7 @@ id: FEAT-174
 title: "Homologate ask_stream Across All LLM Clients"
 type: feature
 mode: enrichment
-status: review
+status: accepted
 base_branch: dev
 source:
   kind: inline
@@ -215,9 +215,9 @@ doesn't bill per token.
 
 1. **Should clients that can't provide usage stats yield AIMessage with zeroed usage
    or skip the yield?**
-   - **Recommendation**: Always yield AIMessage with best-effort metadata. Zeroed usage
+   - **Answer**: Always yield AIMessage with best-effort metadata. Zeroed usage
      is better than no AIMessage — consumers get turn_id, provider, model, stop_reason.
-   - **Status**: `[ ]` unresolved (design decision, not blocking)
+   - **Status**: `[x]` resolved — always yield
 
 ---
 

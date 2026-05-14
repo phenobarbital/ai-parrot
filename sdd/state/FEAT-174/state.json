@@ -47,7 +47,7 @@
       "claims_medium": 2,
       "claims_low": 0,
       "unknowns_total": 1,
-      "unknowns_resolved": 0
+      "unknowns_resolved": 1
     },
     "qa": {
       "status": "skipped",
