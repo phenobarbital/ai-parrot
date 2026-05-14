@@ -344,7 +344,7 @@ class RestFieldResult(BaseModel):
     blob_ref: str | None = None
     display: str | None = None                 # rendered Jinja2 output
     status_code: int | None = None
-    warnings: list[RenderWarning] = []
+    warnings: list[str] = []                   # informational; convention: "code: detail"
     error: str | None = None
 ```
 
@@ -528,8 +528,9 @@ Phase 3 modules (11–13) depend on Phase 2.
   `RestFieldResolver.resolve()` dispatching by `mode`. Apply `response_path`
   via `jsonpath-ng` and `display_template` via Jinja2 (sandboxed
   `jinja2.sandbox.SandboxedEnvironment` for safety). Never raises.
-- **Depends on**: Modules 1, 2; existing `AuthContext`,
-  `RenderWarning` (`core/schema.py:194`).
+- **Depends on**: Modules 1, 2; existing `AuthContext`. Resolver
+  warnings are emitted as `list[str]` on `RestFieldResult` (NOT
+  `RenderWarning` — that model is renderer-scoped; see Patterns §7).
 
 ### Phase 2 — Schema + new field type
 
@@ -664,10 +665,10 @@ Phase 3 modules (11–13) depend on Phase 2.
 | `test_resolver_callback_invokes_registered_fn` | 3 | A registered callback is awaited; its return becomes `raw_value`. |
 | `test_resolver_callback_missing_returns_error` | 3 | Unknown `callback_ref` → `RestFieldResult(success=False, error=...)` (no raise). |
 | `test_resolver_jsonpath_extraction` | 3 | `response_path="$.score"` extracts `answer=0.86` from `{"score":0.86,...}`. |
-| `test_resolver_jsonpath_miss_appends_warning` | 3 | A non-matching path yields `answer=None` plus a `RenderWarning`. |
+| `test_resolver_jsonpath_miss_appends_warning` | 3 | A non-matching path yields `answer=None` plus `"jsonpath_miss: …"` in `RestFieldResult.warnings: list[str]`. |
 | `test_resolver_display_template_jinja2` | 3 | `display_template="Score: {{ answer }}"` renders `"Score: 0.86"`. |
 | `test_resolver_display_template_sandbox_blocks_unsafe` | 3 | Templates using filesystem / `os` access raise — sandboxed env. |
-| `test_resolver_response_schema_miss_emits_warning_not_reject` | 3 | Response-schema validation miss → `success=True` + `RenderWarning`. |
+| `test_resolver_response_schema_miss_emits_warning_not_reject` | 3 | Response-schema validation miss → `success=True` + `"response_schema_mismatch: …"` in `result.warnings`. |
 | `test_resolver_timeout_returns_error_not_raise` | 3 | aiohttp timeout → `RestFieldResult(success=False, status_code=None, error="…")`. |
 | `test_blob_storage_s3_put_returns_ref` | 1 | Mocked aioboto3 client receives put_object with expected key. |
 | `test_blob_storage_s3_delete_idempotent` | 1 | Deleting an absent key does not raise. |
@@ -788,11 +789,11 @@ This feature is complete when ALL of the following are true:
 - [ ] `AbstractBlobStorage.pre_persist_hook` is exposed as a hook in V1; default impl is a no-op coroutine.
 - [ ] `services/callback_registry` exposes `@register_form_callback(name, *, tenant=None)` and `get_form_callback(name, *, tenant=None)`; tenant-scoped with fallback to global (`tenant=None`).
 - [ ] Duplicate `(tenant, name)` registration raises `ValueError` — registrations cannot be silently overridden.
-- [ ] Internal-mode `endpoint` must start with `/` (enforced by `field_validator`); the resolver prepends `internal_base_url` (defaulting to the running app's host).
+- [ ] Internal-mode `endpoint` must start with `/` (enforced by `field_validator`); the resolver prepends `internal_base_url` resolved in order: constructor arg → `PARROT_INTERNAL_BASE_URL` env var → `request.host` fallback (request-bound only) → `ConfigurationError`. Resolved host must pass the `PARROT_INTERNAL_ALLOWED_HOSTS` (or be loopback).
 - [ ] Re-upload deletes the previous `blob_ref` synchronously (guaranteed cleanup); a regression test asserts this.
-- [ ] `response_path` extraction uses `jsonpath-ng`; a miss yields `answer=None` plus a `RenderWarning` (no raise).
+- [ ] `response_path` extraction uses `jsonpath-ng`; a miss yields `answer=None` plus a `"jsonpath_miss: …"` string in `RestFieldResult.warnings` (no raise).
 - [ ] `display_template` is rendered via Jinja2's `SandboxedEnvironment`; templates accessing `os`/filesystem raise at render time.
-- [ ] `response_schema` validation miss yields a `RenderWarning`, not a hard reject (informational only — consistent with `REMOTE_RESPONSE`).
+- [ ] `response_schema` validation miss appends an informational warning string to `RestFieldResult.warnings` (convention `"response_schema_mismatch: <detail>"`) AND calls `logger.warning(...)`; does not hard-reject. Warning is propagated to the upload response envelope under `"warnings"`.
 - [ ] `POST /api/v1/forms/{form_id}/fields/{field_id}/upload` is mounted by `setup_form_api()` and wrapped by `is_authenticated + user_session`.
 - [ ] The validator branch rejects submissions whose REST field carries `status == "in_progress"` with `400 {field_id, status: "in_progress"}`.
 - [ ] MIME / size checks reuse `FieldConstraints.allowed_mime_types` and `max_file_size_bytes` (no new constraint fields).
@@ -1085,35 +1086,76 @@ import jinja2
 - **Aiohttp pattern is `RemoteResponseResolver`** (Phase 3 of FEAT-167,
   `services/remote_response_resolver.py:66-177`). Reuse the
   `ClientSession + ClientTimeout(total=...)` + `try/except` skeleton.
-- **Internal-mode URL composition.**
-  `endpoint` MUST start with `/` (validated). At resolve time,
-  `internal_base_url` is prepended. Resolution order for
-  `internal_base_url`:
+- **Internal-mode URL composition (NEW pattern in FEAT-170, no
+  FEAT-167 precedent).** `endpoint` MUST start with `/` (validated).
+  At resolve time, `internal_base_url` is prepended. Resolution order:
   1. Explicit `RestFieldResolver(internal_base_url=...)` constructor
-     argument.
-  2. `PARROT_INTERNAL_BASE_URL` env var.
-  3. Fallback: `request.url.scheme + "://" + request.url.host[+port]`
-     extracted at handler time and threaded into the resolver.
-- **Tenant-scoped callback registry**: the key is
-  `(tenant_slug_or_None, name)`. Lookup falls back from tenant → global.
-  Tenant slug is derived from `FormAPIHandler._get_programs(request)[0]`
-  when available; resolvers receive `tenant` as an explicit kwarg.
+     argument (test / DI override).
+  2. `PARROT_INTERNAL_BASE_URL` env var — **primary** in production.
+     Bootstrap MUST log the resolved value at startup.
+  3. Last-resort fallback: `request.url.scheme + "://" + request.host`
+     extracted at handler time and threaded in. Only available when the
+     resolver is invoked from a request-bound code path; background
+     tasks / scheduled callbacks MUST set the env var or pass the
+     constructor argument.
+  4. If none of the above yield a value, raise `ConfigurationError`
+     on the *first* internal-mode invocation (fail fast, not silent).
+  - **SSRF guardrail**: the resolved host MUST match one of:
+    `localhost`, `127.0.0.1`, or a value in
+    `PARROT_INTERNAL_ALLOWED_HOSTS` (comma-separated). Any other host
+    rejects with `RestFieldResult(success=False, error="...")`.
+- **Tenant-scoped callback registry (NEW pattern in FEAT-170).** No
+  existing registry in `parrot-formdesigner` uses composite tenant
+  keys; `controls/registry.py` and `services/registry.py` are
+  name-only. The motivation here is **namespace shadowing** (not
+  isolation): tenants can override a globally-registered callback
+  name with a tenant-specific implementation. Concretely:
+  - Key: `(tenant_slug_or_None, name)` where `None` is a sentinel
+    (the literal Python `None`), NOT the string `"None"`. A tenant
+    whose slug is literally `"None"` MUST be detected at registration
+    time and rejected with `ValueError`.
+  - Lookup order: `(tenant, name)` → `(None, name)` → `KeyError`.
+  - Tenant slug is derived from
+    `FormAPIHandler._get_programs(request)[0]` when available;
+    resolvers receive `tenant` as an explicit kwarg.
+  - The registry resolves *which implementation* a tenant gets; it is
+    NOT an authorization layer. Per-tenant ACLs ("can this user
+    invoke `compute_compliance`?") live at the handler/resolver
+    boundary, not inside the registry.
 - **Jinja2 `SandboxedEnvironment`** for `display_template`. Do NOT reuse
   the renderer-side `Environment(autoescape=True)` — that env trusts the
   template author and is not sandboxed.
+- **Resolver/handler warnings are `list[str]` on `RestFieldResult`,
+  NOT `RenderWarning`.** `RenderWarning` (defined by FEAT-167 in
+  `core/schema.py`) carries a `renderer: "html5"|"pdf"|...` field and
+  is meant for *renderer-side* fallbacks (PDF placeholder, Adaptive
+  Card not-supported, etc.). The resolver and upload handler are a
+  different layer; warnings here are *informational* strings echoed
+  back to the client in the upload envelope under `"warnings"`. They
+  MUST also be emitted via `self.logger.warning(...)` for ops
+  visibility — both channels, not either/or. A future V2 may upgrade
+  this to a structured `RestFieldWarning` model if richer client-side
+  handling is needed; V1 stays simple.
+  - Convention: `"<code>: <detail>"`, e.g.
+    `"jsonpath_miss: $.compliance_score"`,
+    `"response_schema_mismatch: missing 'violations'"`,
+    `"blob_cleanup_failed: prior blob_ref=s3://… (NoSuchKey)"`.
 - **JSONPath errors are warnings, not failures.** `jsonpath-ng`'s
   `parse(...).find(payload)` returns an empty list on miss; that path
-  produces `answer=None` plus a `RenderWarning(field_id, field_type="rest",
-  renderer="resolver", reason="jsonpath miss")`.
+  produces `answer=None` and appends
+  `"jsonpath_miss: <expression>"` to `result.warnings`.
 - **`response_schema` is informational.** When provided and validation
-  fails (e.g. with `jsonschema.validate`), append a `RenderWarning`;
-  do NOT reject the response (matches `REMOTE_RESPONSE` policy).
+  fails (e.g. with `jsonschema.validate`), append a `"response_schema_
+  mismatch: <error>"` warning; do NOT reject the response. Matches
+  `REMOTE_RESPONSE` policy at `services/validators.py:556` (which uses
+  `logger.warning()` for the equivalent miss).
 - **Re-upload deletes the previous blob synchronously.** The handler
   reads the prior `blob_ref` from the in-progress submission state
   (or from a header echoed by the frontend) and calls
   `blob_storage.delete(prior_ref)` *after* the new blob is durably
   written but *before* the new envelope is returned. Failure to delete
-  surfaces as a `RenderWarning` but does NOT fail the request.
+  appends a `"blob_cleanup_failed: …"` warning to `result.warnings`
+  but does NOT fail the request.
 - **No `requests` / `httpx` / `urllib`** — `aiohttp` only, per project
   rules.
 - **No new constraint fields on `FieldConstraints`** — MIME / size
@@ -1158,8 +1200,9 @@ renderer=<name>, reason=<human-readable>)`.
   read; abort on overflow).
 - **Re-upload delete failure.** If the new blob writes successfully but
   the prior delete fails (S3 transient error), we keep the new blob and
-  emit a `RenderWarning` on the submission. The orphan blob is reaped
-  by bucket lifecycle policy.
+  append `"blob_cleanup_failed: …"` to `RestFieldResult.warnings`
+  (string, not `RenderWarning` — see §7 Patterns). The orphan blob is
+  reaped by bucket lifecycle policy.
 - **Internal-mode loopback over HTTP.** Calling `/api/v1/...` from
   inside the same aiohttp app round-trips over HTTP (not in-process).
   Acceptable for V1 — clearer semantics + uniform middleware. A future
@@ -1219,20 +1262,46 @@ No other new dependencies.
   this in the same conceptual bucket as `REMOTE_RESPONSE`
   (also `"advanced"`).
 - [x] Internal-mode URL composition —
-  *Resolved in brainstorm*: strict path (must start with `/`) and the
-  resolver prepends the running aiohttp app's host. Env-var override
-  via `PARROT_INTERNAL_BASE_URL` is allowed but optional.
+  *Resolved (refined at spec-validation 2026-05-14)*: strict path
+  (must start with `/`). **No FEAT-167 precedent for internal vs
+  external dispatch** — this is a new pattern in FEAT-170. Resolution
+  order for `internal_base_url`: **(1)** constructor argument,
+  **(2) `PARROT_INTERNAL_BASE_URL` env var (PRIMARY in production)**,
+  **(3) `request.host` fallback only when request-bound**,
+  **(4) fail-fast with `ConfigurationError`** if none. SSRF guard:
+  resolved host must be `localhost`/`127.0.0.1` or in
+  `PARROT_INTERNAL_ALLOWED_HOSTS`. See §7 *Patterns to Follow*.
 - [x] Callback registry scoping —
-  *Resolved in brainstorm*: **tenant-scoped**. Key is
-  `(tenant_slug_or_None, name)` with lookup fallback from tenant to
-  global.
+  *Resolved (refined at spec-validation 2026-05-14)*: **tenant-scoped
+  with namespace-shadowing semantics**. Key is `(tenant_slug_or_None,
+  name)` where `None` is the literal Python sentinel (a tenant slug
+  equal to the string `"None"` is rejected at registration). Lookup
+  falls back from `(tenant, name)` → `(None, name)` → `KeyError`.
+  **This is a new pattern** in `parrot-formdesigner` — no existing
+  registry uses composite tenant keys; `controls/registry.py:67` and
+  `services/registry.py` are name-only. The motivation is **per-tenant
+  override**, not isolation (an ACL would not provide override
+  semantics). Authorisation (who-may-invoke) is NOT part of the
+  registry — it lives at the handler/resolver boundary.
 - [x] Blob deletion on re-upload —
-  *Resolved in brainstorm*: synchronous delete of the previous
-  `blob_ref` after the new blob is durably written. Failure surfaces
-  as a `RenderWarning` but does not fail the request.
+  *Resolved (refined at spec-validation 2026-05-14)*: synchronous
+  delete of the previous `blob_ref` after the new blob is durably
+  written. Failure appends `"blob_cleanup_failed: <detail>"` to
+  `RestFieldResult.warnings` (string, not `RenderWarning` — see Q5
+  refinement above) and does not fail the request.
 - [x] `response_schema` validation miss —
-  *Resolved in brainstorm*: emit a `RenderWarning` (informational
-  only), do **not** hard-reject. Consistent with `REMOTE_RESPONSE`.
+  *Resolved (refined at spec-validation 2026-05-14)*: informational
+  only — do **not** hard-reject. Implementation: append a string
+  warning (convention: `"response_schema_mismatch: <detail>"`) to
+  `RestFieldResult.warnings: list[str]` AND call
+  `self.logger.warning(...)`. **Do NOT use the FEAT-167 `RenderWarning`
+  model** — that class is renderer-scoped (its `renderer` field is
+  `"html5"|"pdf"|"adaptive_card"|...`, not `"resolver"`). The earlier
+  brainstorm wording conflated two distinct layers; this resolution
+  fixes it. The string-list shape mirrors how `validators.py:556`
+  handles the equivalent miss for `REMOTE_RESPONSE` (logger.warning
+  + no rejection); the new piece is propagating the warning into the
+  HTTP response envelope so the frontend can surface it.
 - [x] Concurrent uploads on the same `(form_id, field_id)` —
   *Resolved in brainstorm*: **last-write-wins**, no per-field lock in
   V1.
@@ -1292,3 +1361,4 @@ proceed.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-14 | jesuslara | Initial draft from `new-formdesigner-field-rest.brainstorm.md` (Option A). All 9 brainstorm open questions resolved and carried forward. |
+| 0.2 | 2026-05-14 | jesuslara | Spec-validation pass against codebase. Refinements: (Q2) Internal-mode URL composition explicitly marked as new in FEAT-170; env-var precedence reversed (`PARROT_INTERNAL_BASE_URL` primary, `request.host` fallback only when request-bound); fail-fast `ConfigurationError` + SSRF allow-list `PARROT_INTERNAL_ALLOWED_HOSTS`. (Q3) Callback registry marked as new pattern; motivation reframed as namespace-shadowing (not isolation); `None` sentinel rule and ACL-vs-registry boundary clarified. (Q5) `RestFieldResult.warnings` retyped to `list[str]` (with `"code: detail"` convention) — `RenderWarning` reuse rejected as a layer leak (its `renderer` field is renderer-scoped); warnings emitted both via `logger.warning(...)` AND propagated into the upload-response envelope. |
