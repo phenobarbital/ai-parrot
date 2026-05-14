@@ -481,8 +481,12 @@ class AnthropicClient(AbstractClient):
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
         context_1m: bool = False,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream Claude's response using AsyncIterator with optional conversation memory.
+
+        Yields successive string chunks of the response followed by a single
+        final :class:`~parrot.models.responses.AIMessage` with full metadata
+        (usage, stop_reason, model, turn_id).
 
         Args:
             deep_research: If True, use enhanced system prompt for thorough research
@@ -520,6 +524,7 @@ class AnthropicClient(AbstractClient):
         current_max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
         retry_count = 0
         assistant_content = ""
+        final_message = None
         model = (
             model.value if isinstance(model, ClaudeModel) else model
         ) or (self.model or self.default_model)
@@ -567,7 +572,7 @@ class AnthropicClient(AbstractClient):
                             await self._wait_with_backoff(retry_count, retry_config)
                             continue
                         else:
-                            yield f"\n\n❌ **Rate limit exceeded. Max retries reached.**\n"
+                            yield "\n\n❌ **Rate limit exceeded. Max retries reached.**\n"
                             break
                     elif '5' in error_str[:3]:  # 5xx errors
                         if retry_config.retry_on_server_error and retry_count < retry_config.max_retries:
@@ -576,7 +581,7 @@ class AnthropicClient(AbstractClient):
                             await self._wait_with_backoff(retry_count, retry_config)
                             continue
                         else:
-                            yield f"\n\n❌ **Server error. Max retries reached.**\n"
+                            yield "\n\n❌ **Server error. Max retries reached.**\n"
                             break
                     else:
                         raise
@@ -600,7 +605,7 @@ class AnthropicClient(AbstractClient):
                             continue
                         else:
                             # Max retries reached
-                            yield f"\n\n❌ **Maximum retries reached. Response may be incomplete due to token limits.**\n"
+                            yield "\n\n❌ **Maximum retries reached. Response may be incomplete due to token limits.**\n"
                     elif on_max_tokens == "ignore":
                         continue  # Just ignore and yield what we have
                 # If we get here, streaming completed successfully
@@ -617,6 +622,34 @@ class AnthropicClient(AbstractClient):
                     # Max retries reached, yield error and break
                     yield f"\n\n❌ **Streaming failed after {retry_config.max_retries} retries: {str(e)}**\n"
                     break
+
+        # Yield final AIMessage with full metadata
+        if final_message is not None:
+            ai_message = AIMessageFactory.from_claude(
+                response=final_message.model_dump(),
+                input_text=original_prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+        else:
+            ai_message = AIMessage(
+                input=original_prompt,
+                output=assistant_content,
+                response=assistant_content,
+                model=model,
+                provider="claude",
+                usage=CompletionUsage(
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                ),
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+        yield ai_message
 
         # Update conversation memory
         if assistant_content:
