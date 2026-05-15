@@ -1512,7 +1512,7 @@ class AgentTalk(BaseView):
                     )
                 if not query:
                     return await self._handle_attachments(bot, agent, attachments)
-                if use_stream and isinstance(bot, AbstractBot):
+                if use_stream:
                     return await self._handle_stream_response(
                         bot=bot,
                         query=query,
@@ -1530,7 +1530,7 @@ class AgentTalk(BaseView):
                         client_message_id=client_message_id,
                         **data,
                     )
-                if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
+                if followup_turn_id and followup_data is not None:
                     start_time = time.perf_counter()
                     response: AIMessage = await bot.followup(
                         question=query,

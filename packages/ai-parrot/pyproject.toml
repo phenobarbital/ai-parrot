@@ -495,6 +495,7 @@ parrot = ["py.typed", "templates/*.tpl"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]
 "parrot.flows.dev_loop" = ["_subagent_data/*.md"]
+"parrot.storage.security_reports" = ["*.sql"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)
