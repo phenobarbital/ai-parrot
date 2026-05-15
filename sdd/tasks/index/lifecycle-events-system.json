@@ -213,7 +213,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "Touches subscribers/webhook.py only; runs in parallel with 1190/1191.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1192-webhook-subscriber.md"
+      "completed_at": "2026-05-15T13:55:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1192-webhook-subscriber.md"
     },
     {
       "id": "TASK-1193",

@@ -277,3 +277,9 @@ class TestWebhookSubscriber:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: WebhookSubscriber implemented with HMAC, retry, aclose(). 8/8 tests pass using pytest-aiohttp stub server. Ruff clean.
+
+**Deviations from spec**: none
