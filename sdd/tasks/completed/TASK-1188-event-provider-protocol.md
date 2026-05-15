@@ -208,3 +208,9 @@ class TestEventProvider:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: EventProvider Protocol implemented with @runtime_checkable. add_provider() updated to use diff-of-subscription-IDs approach (before_ids set vs after). 9/9 tests pass. Ruff clean. No deviations.
+
+**Deviations from spec**: none
