@@ -451,4 +451,29 @@ class TestRuntimeWarningSuffix:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Status**: done  
+**Completed**: 2026-05-15  
+**Agent**: sdd-worker
+
+### What was implemented
+
+1. `_TOOL_PREFIX_PATTERN` added at module scope in `agent.py` (after all imports,
+   before the component maps) with pattern `^[A-Za-z][A-Za-z0-9_]*$`.
+2. Three validation passes inserted in `configure()` between the `tk.start()` loop and
+   `self._internal_toolkit = DatabaseAgentToolkit()` (Pass A: prefix presence, Pass B:
+   identifier-safe shape, Pass C: collision detection via `list_tool_names()`).
+3. `configure()` docstring updated with new `Raises:` entries and partial-state safety note.
+4. Runtime warning suffix added to `_compute_active_tools`: "This should have been caught
+   at configure() time — please file a bug."
+5. `conftest.py` extended: `database_type` parameter on `MockDatabaseToolkit`, a
+   module-level `_MOCK_COUNTER` for unique IDs, and `method_name`/`methods` parameters
+   on `mock_toolkit_factory._make` via dynamic class creation.
+
+### Test results
+- 17 new unit tests in `test_configure_validation.py` — all passing.
+- 8 existing FEAT-171 tests in `test_compute_active_tools.py` — all still passing.
+- `ruff check` — clean.
+
+### Key note: unique `database_type`
+Each factory call generates `mock_0`, `mock_1`, … as the toolkit's `database_type` to
+prevent `CacheManager.create_partition()` namespace collisions in multi-toolkit tests.
