@@ -103,3 +103,10 @@ def test_frontend_docs_generated(tmp_path):
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+### Completion Note
+
+Created `scripts/gen_frontend_docs.py`: reads `RestFieldSpec` / `RestFieldResult`
+Pydantic schemas, emits `docs/frontend/rest-field.md` with JSON-Schema extension,
+upload endpoint contract, response envelope, all three modes, and planogram example.
+Idempotent (same output on repeated runs). 5 integration tests, all passing.
