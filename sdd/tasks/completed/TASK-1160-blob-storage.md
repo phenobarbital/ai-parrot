@@ -204,4 +204,11 @@ Standard SDD task flow. Before coding:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `packages/parrot-formdesigner/src/parrot_formdesigner/services/blob_storage.py`:
+- `BlobMetadata`, `PrePersistContext` Pydantic v2 models with `ConfigDict(extra="forbid")`.
+- `BlobRejectedError` exception for hook-based aborts.
+- `AbstractBlobStorage` ABC: `put`/`get`/`delete` + default no-op `pre_persist_hook`.
+- `S3BlobStorage`: aioboto3 multipart upload (stream-friendly, no full-blob buffering).
+- `blob_ref` format: `s3://<bucket>/<prefix><form_id>/<field_id>/<uuid>`.
+- `delete` idempotent via `delete_object` (S3 never raises on absent keys).
+- 7 unit tests all passing; ruff clean.

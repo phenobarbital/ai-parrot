@@ -14,7 +14,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Independent new module; can run concurrently with TASK-1161 in a sub-worktree if desired. Spec recommends single worktree for simplicity.",
       "assigned_to": null,
       "started_at": "2026-05-14T19:51:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1160-blob-storage.md"
+      "completed_at": "2026-05-15T01:18:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1160-blob-storage.md"
     },
     {
       "id": "TASK-1161",
