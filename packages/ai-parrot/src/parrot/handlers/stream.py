@@ -184,7 +184,6 @@ class StreamHandler(BaseHandler):
                     separator + json_encoder(ai_message.to_dict()).encode('utf-8')
                 )
                 await response.drain()
-            await response.write_eof()
         except asyncio.CancelledError as e:
             raise web.HTTPInternalServerError(
                 reason="Client disconnected during streaming."
