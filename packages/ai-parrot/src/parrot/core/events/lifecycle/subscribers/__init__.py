@@ -13,7 +13,9 @@ Available subscribers:
 """
 
 from parrot.core.events.lifecycle.subscribers.logging import LoggingSubscriber
+from parrot.core.events.lifecycle.subscribers.webhook import WebhookSubscriber
 
 __all__ = [
     "LoggingSubscriber",
+    "WebhookSubscriber",
 ]
