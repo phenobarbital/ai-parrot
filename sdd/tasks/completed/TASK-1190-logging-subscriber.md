@@ -226,3 +226,9 @@ class TestLoggingSubscriber:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: LoggingSubscriber implemented as EventProvider, subscribes to LifecycleEvent base. 7/7 tests pass. Ruff clean.
+
+**Deviations from spec**: none

@@ -173,7 +173,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Subscribers don't share files with each other or with the registry. Can run alongside 1186/1187/1188/1189/1191/1192.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1190-logging-subscriber.md"
+      "completed_at": "2026-05-15T13:50:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1190-logging-subscriber.md"
     },
     {
       "id": "TASK-1191",
