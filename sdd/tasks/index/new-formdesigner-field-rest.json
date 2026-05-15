@@ -89,7 +89,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -99,8 +99,8 @@
       "parallelism_notes": "Single-file edit on central registry; sequential after enum.",
       "assigned_to": null,
       "started_at": "2026-05-15T02:04:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1164-builtin-metadata-rest.md"
+      "completed_at": "2026-05-15T02:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1164-builtin-metadata-rest.md"
     },
     {
       "id": "TASK-1165",
@@ -109,7 +109,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -118,9 +118,9 @@
       "parallel": true,
       "parallelism_notes": "Touches a different file from TASK-1164; can run in parallel after TASK-1163.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1165-field-helper-snippet.md"
+      "started_at": "2026-05-15T02:00:00+00:00",
+      "completed_at": "2026-05-15T02:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1165-field-helper-snippet.md"
     },
     {
       "id": "TASK-1166",
@@ -129,7 +129,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,9 +139,9 @@
       "parallel": false,
       "parallelism_notes": "Imports RestFieldSpec and edits central validators.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1166-validator-rest-branch.md"
+      "started_at": "2026-05-15T02:00:00+00:00",
+      "completed_at": "2026-05-15T02:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1166-validator-rest-branch.md"
     },
     {
       "id": "TASK-1167",
@@ -150,7 +150,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -160,9 +160,9 @@
       "parallel": false,
       "parallelism_notes": "Six renderer files share a similar pattern; could split per-renderer but stays as one task since they all consume the same FieldType.REST contract.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1167-renderer-entries.md"
+      "started_at": "2026-05-15T02:00:00+00:00",
+      "completed_at": "2026-05-15T02:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1167-renderer-entries.md"
     },
     {
       "id": "TASK-1168",
@@ -171,7 +171,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -180,7 +180,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of renderers and validator; touches only extractor files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T02:55:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1168-extractor-mappings.md"
     },
