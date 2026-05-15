@@ -14,7 +14,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation. Every other task depends on this (Completeness enum + new TableMetadata fields).",
       "assigned_to": null,
       "started_at": "2026-05-15T17:57:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1201-completeness-model-and-metadata-fields.md"
+      "completed_at": "2026-05-15T18:18:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1201-completeness-model-and-metadata-fields.md"
     },
     {
       "id": "TASK-1202",
