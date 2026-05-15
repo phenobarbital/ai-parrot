@@ -286,10 +286,14 @@ class TestYamlLoader:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-15
 **Notes**:
+- Created parrot/core/events/lifecycle/yaml_loader.py with EVENT_CLASSES dict (16 classes including LifecycleEvent), _resolve() dotted-path resolver, _make_where() predicate builder, wire_events() entry point, _wire_handler() and _wire_provider() helpers
+- Added events_block: Optional[Dict[str, Any]] = None field to BotMetadata dataclass (slots=True)
+- Modified BotMetadata.get_instance(): after configure(), calls wire_events(instance, self.events_block) with error logging on failure (not fatal)
+- Modified AgentRegistry.load_agent_definitions(): parses top-level 'events:' key and stores in BotMetadata.events_block
+- 19 unit tests covering resolve, where predicates, handler/provider forms, where clause, forward_to_bus, bad inputs, empty block, EVENT_CLASSES population
+- All 110 registry tests pass (no regressions)
 
 **Deviations from spec**: none

@@ -298,7 +298,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -314,8 +314,8 @@
       "parallelism_notes": "Wires every subscriber/provider into the bot registry at construction time; requires the full subscriber catalog to exist.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1196-botmanager-yaml-events-loader.md"
+      "completed_at": "2026-05-15T14:44:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1196-botmanager-yaml-events-loader.md"
     },
     {
       "id": "TASK-1197",
