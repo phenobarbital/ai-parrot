@@ -11,12 +11,6 @@ import uuid
 import warnings
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
-# Matches the schema part of a ``schema.table`` reference. Conservative:
-# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
-# we don't want flowing into identifier checks); ASCII identifiers cover
-# every Postgres schema we've seen in practice.
-_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
-
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import OutputMode, StructuredOutputConfig
 from ...stores.abstract import AbstractStore
@@ -36,6 +30,12 @@ from .router import SchemaQueryRouter
 from .toolkits import DatabaseAgentToolkit
 from .toolkits.base import DatabaseToolkit
 
+
+# Matches the schema part of a ``schema.table`` reference. Conservative:
+# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
+# we don't want flowing into identifier checks); ASCII identifiers cover
+# every Postgres schema we've seen in practice.
+_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
 
 # ---------------------------------------------------------------------------
 # Component → tool name mappings (FEAT-171: prefix-aware two-map split)
@@ -124,6 +124,7 @@ class DatabaseAgent(BasicAgent):
         vector_store: Optional[AbstractStore] = None,
         redis_url: Optional[str] = None,
         retry_config: Optional[QueryRetryConfig] = None,
+        cache_ttl_by_completeness: Optional[Dict[int, int]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(name=name, **kwargs)
@@ -133,6 +134,7 @@ class DatabaseAgent(BasicAgent):
         self.toolkits: List[DatabaseToolkit] = toolkits or []
         self.default_user_role = default_user_role
         self.retry_config = retry_config
+        self._cache_ttl_by_completeness = cache_ttl_by_completeness
         self.cache_manager = CacheManager(
             redis_url=redis_url, vector_store=vector_store
         )
@@ -180,12 +182,15 @@ class DatabaseAgent(BasicAgent):
                 tk.retry_config = self.retry_config
 
             if tk.cache_partition is None:
+                config_kwargs: Dict[str, Any] = {
+                    "namespace": tk_id,
+                    "lru_maxsize": 500,
+                    "lru_ttl": 1800,
+                }
+                if self._cache_ttl_by_completeness is not None:
+                    config_kwargs["ttl_by_completeness"] = self._cache_ttl_by_completeness
                 partition = self.cache_manager.create_partition(
-                    CachePartitionConfig(
-                        namespace=tk_id,
-                        lru_maxsize=500,
-                        lru_ttl=1800,
-                    )
+                    CachePartitionConfig(**config_kwargs)
                 )
                 tk.cache_partition = partition
 

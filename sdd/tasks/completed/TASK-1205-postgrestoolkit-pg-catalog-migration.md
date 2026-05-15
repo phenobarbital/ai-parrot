@@ -283,4 +283,16 @@ async def test_full_introspection_source_is_pg_catalog(seeded_pg, pg_toolkit):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- Added `_metadata_source = "pg_catalog"` class attribute on `PostgresToolkit`; base `SQLToolkit` defaults to `"information_schema"`.
+- Rewrote `_get_information_schema_query`: uses `pg_catalog.pg_class` + `pg_catalog.pg_namespace`; honors caller-provided `limit` as `$3` (no more hardcoded 20); returns `obj_description()` for comments.
+- Rewrote `_get_columns_query`: uses `pg_catalog.pg_attribute` + `pg_catalog.pg_type` + `pg_catalog.pg_attrdef`; filters `attnum > 0 AND NOT attisdropped`; `col_description()` for column comments.
+- Added `_get_primary_keys_query` override: uses `pg_catalog.pg_constraint` `contype='p'`; replaces `information_schema` base.
+- Added `_get_unique_constraints_query` override: uses `pg_catalog.pg_constraint` `contype='u'`; compatible shape with base-class grouping logic.
+- Added `_get_indexes_query`: returns one row per index with `index_name`, `is_unique`, `is_primary`, `column_expressions` via `pg_get_indexdef`.
+- Added `_get_foreign_keys_query`: returns FK constraints with referencing/referenced columns and ON UPDATE/DELETE action codes.
+- Updated base `SQLToolkit._build_table_metadata` to stamp `source=self._metadata_source` on returned `TableMetadata`.
+- Updated `_introspect_table_full` to use `self._metadata_source` instead of hardcoded `"information_schema"`.
+- Base `_get_information_schema_query` updated to accept and forward `limit` parameter; `_search_in_database` passes the caller-supplied limit.
+- 38/38 unit tests pass; 119/119 database tests pass; ruff clean.

@@ -14,34 +14,36 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation. Every other task depends on this (Completeness enum + new TableMetadata fields).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1201-completeness-model-and-metadata-fields.md"
+      "started_at": "2026-05-15T17:57:53+00:00",
+      "completed_at": "2026-05-15T18:18:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1201-completeness-model-and-metadata-fields.md"
     },
     {
       "id": "TASK-1202",
       "slug": "cachepartition-api-rework",
-      "title": "CachePartition API rework — completeness + TTL gating + score-sorted search",
+      "title": "CachePartition API rework \u2014 completeness + TTL gating + score-sorted search",
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1201"],
+      "depends_on": [
+        "TASK-1201"
+      ],
       "parallel": true,
       "parallelism_notes": "Edits cache.py + agent.py. Disjoint from TASK-1203 (sql.py) and TASK-1205 (postgres.py). Can run in parallel with both after TASK-1201 lands.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1202-cachepartition-api-rework.md"
+      "started_at": "2026-05-15T18:27:25+00:00",
+      "completed_at": "2026-05-15T18:40:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1202-cachepartition-api-rework.md"
     },
     {
       "id": "TASK-1203",
@@ -50,52 +52,59 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1201"],
+      "depends_on": [
+        "TASK-1201"
+      ],
       "parallel": true,
       "parallelism_notes": "Adds private helpers in sql.py. Disjoint from TASK-1202 (cache.py) and TASK-1205 (postgres.py). Must finish before TASK-1204 (which also edits sql.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1203-introspection-coalescing.md"
+      "started_at": "2026-05-15T18:43:21+00:00",
+      "completed_at": "2026-05-15T18:54:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1203-introspection-coalescing.md"
     },
     {
       "id": "TASK-1204",
       "slug": "sqltoolkit-methods-fix-extend-repurpose",
-      "title": "SQLToolkit — fix search_schema, add describe_table, repurpose generate_query",
+      "title": "SQLToolkit \u2014 fix search_schema, add describe_table, repurpose generate_query",
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1202", "TASK-1203"],
+      "depends_on": [
+        "TASK-1202",
+        "TASK-1203"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits sql.py with deep changes; sequential after TASK-1203.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1204-sqltoolkit-methods-fix-extend-repurpose.md"
+      "started_at": "2026-05-15T18:59:34+00:00",
+      "completed_at": "2026-05-15T19:16:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1204-sqltoolkit-methods-fix-extend-repurpose.md"
     },
     {
       "id": "TASK-1205",
       "slug": "postgrestoolkit-pg-catalog-migration",
-      "title": "PostgresToolkit — migrate introspection queries to pg_catalog",
+      "title": "PostgresToolkit \u2014 migrate introspection queries to pg_catalog",
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-1201"],
+      "depends_on": [
+        "TASK-1201"
+      ],
       "parallel": true,
       "parallelism_notes": "Edits postgres.py only. Disjoint from TASK-1202, TASK-1203, TASK-1204. Can run in parallel with the whole sql.py / cache.py chain.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1205-postgrestoolkit-pg-catalog-migration.md"
+      "started_at": "2026-05-15T19:20:15+00:00",
+      "completed_at": "2026-05-15T19:30:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1205-postgrestoolkit-pg-catalog-migration.md"
     },
     {
       "id": "TASK-1206",
@@ -104,16 +113,18 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1204"],
+      "depends_on": [
+        "TASK-1204"
+      ],
       "parallel": true,
       "parallelism_notes": "Edits prompts.py. Disjoint from TASK-1205. Can run in parallel with TASK-1205 once TASK-1204 lands.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1206-schema-tool-usage-prompt-layer.md"
+      "started_at": "2026-05-15T19:45:21+00:00",
+      "completed_at": "2026-05-15T19:53:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1206-schema-tool-usage-prompt-layer.md"
     },
     {
       "id": "TASK-1207",
@@ -122,16 +133,20 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1204", "TASK-1205", "TASK-1206"],
+      "depends_on": [
+        "TASK-1204",
+        "TASK-1205",
+        "TASK-1206"
+      ],
       "parallel": false,
       "parallelism_notes": "End-to-end coverage; depends on the toolkit + prompt + pg_catalog landing.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1207-regression-and-integration-tests.md"
+      "started_at": "2026-05-15T20:01:56+00:00",
+      "completed_at": "2026-05-15T20:12:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1207-regression-and-integration-tests.md"
     }
   ]
 }

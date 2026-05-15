@@ -18,7 +18,7 @@ from typing import (
     Any, AsyncIterator, Dict, FrozenSet, List, Optional, Type,
 )
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from ..models import TableMetadata
 from .sql import SQLToolkit
@@ -37,6 +37,8 @@ class PostgresToolkit(SQLToolkit):
     input via a per-table dynamic Pydantic model, and cache parameterized
     SQL templates per instance.
     """
+
+    _metadata_source: str = "pg_catalog"
 
     @staticmethod
     def _normalize_pg_dsn(dsn: Optional[str]) -> Optional[str]:
@@ -122,41 +124,55 @@ class PostgresToolkit(SQLToolkit):
         self,
         search_term: str,
         schemas: List[str],
+        limit: int = 20,
     ) -> tuple[str, tuple]:
-        """Use ``pg_class``/``pg_namespace`` joins for comment support.
+        """Discover tables via ``pg_catalog.pg_class`` / ``pg_namespace``.
+
+        Uses pg_catalog directly (faster than information_schema views) and
+        returns ``obj_description()`` for table-level comments.  The caller-
+        provided *limit* is bound as ``$3`` — no hardcoded ``LIMIT 20``.
 
         Args:
-            search_term: Term to match against table names.
+            search_term: Term to match against table names (ILIKE).
             schemas: List of schema names to restrict the search.
+            limit: Maximum rows to return.
 
         Returns:
             ``(sql, params_tuple)`` with ``$1=schemas, $2=term, $3=limit``.
         """
         sql = """
             SELECT DISTINCT
-                ist.table_schema,
-                ist.table_name,
-                ist.table_type,
-                obj_description(pgc.oid) AS comment
-            FROM information_schema.tables ist
-            LEFT JOIN pg_namespace pgn ON pgn.nspname = ist.table_schema
-            LEFT JOIN pg_class pgc ON pgc.relname = ist.table_name
-                AND pgc.relnamespace = pgn.oid
-            WHERE ist.table_schema = ANY($1)
+                n.nspname AS table_schema,
+                c.relname AS table_name,
+                CASE c.relkind
+                    WHEN 'r' THEN 'BASE TABLE'
+                    WHEN 'v' THEN 'VIEW'
+                    WHEN 'm' THEN 'VIEW'
+                    ELSE 'OTHER'
+                END AS table_type,
+                obj_description(c.oid) AS comment
+            FROM pg_catalog.pg_class c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ANY($1)
+            AND c.relkind IN ('r', 'v', 'm')
             AND (
-                ist.table_name ILIKE $2
-                OR (ist.table_schema || '.' || ist.table_name) ILIKE $2
+                c.relname ILIKE $2
+                OR (n.nspname || '.' || c.relname) ILIKE $2
             )
-            AND ist.table_type IN ('BASE TABLE', 'VIEW')
-            ORDER BY ist.table_name
+            ORDER BY c.relname
             LIMIT $3
         """
-        return sql, (schemas, f"%{search_term}%", 20)
+        return sql, (schemas, f"%{search_term}%", limit)
 
     def _get_columns_query(
         self, schema: str, table: str
     ) -> tuple[str, tuple]:
-        """Include ``col_description()`` for column comments.
+        """Query columns via ``pg_catalog.pg_attribute`` with comment support.
+
+        Filters out dropped columns (``attisdropped``) and system columns
+        (``attnum <= 0``) to match ``information_schema.columns`` visibility.
+        Column defaults come from ``pg_attrdef``; comments from
+        ``col_description()``.
 
         Args:
             schema: Schema name.
@@ -167,19 +183,153 @@ class PostgresToolkit(SQLToolkit):
         """
         sql = """
             SELECT
-                c.column_name,
-                c.data_type,
-                c.is_nullable,
-                c.column_default,
-                c.ordinal_position,
-                col_description(
-                    (SELECT oid FROM pg_class WHERE relname = $2
-                     AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)),
-                    c.ordinal_position
-                ) AS column_comment
-            FROM information_schema.columns c
-            WHERE c.table_schema = $1 AND c.table_name = $2
-            ORDER BY c.ordinal_position
+                a.attname AS column_name,
+                pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+                CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable,
+                pg_get_expr(ad.adbin, ad.adrelid) AS column_default,
+                a.attnum AS ordinal_position,
+                col_description(a.attrelid, a.attnum) AS column_comment
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            LEFT JOIN pg_catalog.pg_attrdef ad
+                ON ad.adrelid = c.oid AND ad.adnum = a.attnum
+            WHERE n.nspname = $1
+            AND c.relname = $2
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            ORDER BY a.attnum
+        """
+        return sql, (schema, table)
+
+    def _get_primary_keys_query(self, schema: str, table: str) -> tuple[str, tuple]:
+        """Query primary-key columns via ``pg_catalog.pg_constraint``.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
+        sql = """
+            SELECT a.attname AS column_name
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_catalog.pg_attribute a
+                ON a.attrelid = c.oid AND a.attnum = ANY(con.conkey)
+            WHERE con.contype = 'p'
+            AND n.nspname = $1
+            AND c.relname = $2
+            ORDER BY array_position(con.conkey, a.attnum)
+        """
+        return sql, (schema, table)
+
+    def _get_unique_constraints_query(
+        self, schema: str, table: str
+    ) -> tuple[str, tuple]:
+        """Query UNIQUE constraint columns via ``pg_catalog.pg_constraint``.
+
+        Returns one row per constraint/column combination so the base-class
+        grouping logic in ``_build_table_metadata`` works unchanged.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
+        sql = """
+            SELECT
+                con.conname AS constraint_name,
+                a.attname AS column_name
+            FROM pg_catalog.pg_constraint con
+            JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_catalog.pg_attribute a
+                ON a.attrelid = c.oid AND a.attnum = ANY(con.conkey)
+            WHERE con.contype = 'u'
+            AND n.nspname = $1
+            AND c.relname = $2
+            ORDER BY con.conname, array_position(con.conkey, a.attnum)
+        """
+        return sql, (schema, table)
+
+    def _get_indexes_query(self, schema: str, table: str) -> tuple[str, tuple]:
+        """Query indexes via ``pg_catalog.pg_index``.
+
+        Returns one row per index: name, uniqueness flag, primary flag, and
+        column expressions (evaluated via ``pg_get_indexdef``).
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
+        sql = """
+            SELECT
+                i.relname AS index_name,
+                ix.indisunique AS is_unique,
+                ix.indisprimary AS is_primary,
+                ARRAY(
+                    SELECT pg_get_indexdef(ix.indexrelid, k + 1, true)
+                    FROM generate_subscripts(ix.indkey, 1) AS k
+                ) AS column_expressions
+            FROM pg_catalog.pg_index ix
+            JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid
+            JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = $1 AND t.relname = $2
+            ORDER BY i.relname
+        """
+        return sql, (schema, table)
+
+    def _get_foreign_keys_query(self, schema: str, table: str) -> tuple[str, tuple]:
+        """Query foreign keys via ``pg_catalog.pg_constraint``.
+
+        Returns one row per FK constraint with referencing columns, referenced
+        schema/table/columns, and ON UPDATE / ON DELETE action codes.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``(sql, params_tuple)`` with ``$1=schema, $2=table``.
+        """
+        sql = """
+            SELECT
+                c.conname AS constraint_name,
+                ARRAY(
+                    SELECT a.attname
+                    FROM unnest(c.conkey) WITH ORDINALITY x(attnum, ord)
+                    JOIN pg_catalog.pg_attribute a
+                        ON a.attrelid = c.conrelid AND a.attnum = x.attnum
+                    ORDER BY x.ord
+                ) AS referencing_columns,
+                rn.nspname AS referenced_schema,
+                rt.relname AS referenced_table,
+                ARRAY(
+                    SELECT a.attname
+                    FROM unnest(c.confkey) WITH ORDINALITY x(attnum, ord)
+                    JOIN pg_catalog.pg_attribute a
+                        ON a.attrelid = c.confrelid AND a.attnum = x.attnum
+                    ORDER BY x.ord
+                ) AS referenced_columns,
+                c.confupdtype AS on_update,
+                c.confdeltype AS on_delete
+            FROM pg_catalog.pg_constraint c
+            JOIN pg_catalog.pg_class t ON t.oid = c.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+            JOIN pg_catalog.pg_class rt ON rt.oid = c.confrelid
+            JOIN pg_catalog.pg_namespace rn ON rn.oid = rt.relnamespace
+            WHERE c.contype = 'f'
+            AND n.nspname = $1
+            AND t.relname = $2
         """
         return sql, (schema, table)
 

@@ -179,4 +179,8 @@ def test_builder_registers_layer():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- Added `SCHEMA_TOOL_USAGE_LAYER` in `prompts.py`: `phase=CONFIGURE`, `condition=None` (unconditional), `priority=LayerPriority.PRE_INSTRUCTIONS + 2`. Template documents the 3-step workflow (`db_search_schema` → `db_describe_table` → `db_generate_query`), explicitly states that `db_search_schema` searches identifiers not data values, and warns never to reference a column not seen in a `db_describe_table` result.
+- Registered the new layer in `_build_database_prompt_builder()` between `DATABASE_INSTRUCTIONS_LAYER` and `SQL_DIALECT_LAYER`.
+- Added 6 new tests to `test_database_prompts.py`; 9/9 total pass; ruff clean.

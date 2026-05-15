@@ -297,4 +297,9 @@ class TestGenerateQuery:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- **`search_schema`** rewritten: drops the early-return cache block; always calls `cache_partition.search()` (new TASK-1202 API) AND `_search_in_database()`; merges by `(schema, tablename)` preferring the higher-completeness entry on collision; sorts descending by `_calculate_relevance_score`; returns top `limit`. Docstring updated to say "identifiers, not data values".
+- **`describe_table`** added as new public tool: checks cache with `required=Completeness.FULL`, falls through to `_introspect_table_full` (TASK-1203) on miss, stores the result, returns `None` if table does not exist.
+- **`generate_query`** repurposed: resolves `"schema.table"` and bare `"table"` entries via `describe_table`; if `target_tables` is empty uses `search_schema(limit=5)` top-3; renders SELECT skeleton with real column list plus `to_yaml_context()` YAML block; LLM never sees `columns: []` for existing tables.
+- 15/15 new tests pass; 81/81 database tests pass; ruff clean.

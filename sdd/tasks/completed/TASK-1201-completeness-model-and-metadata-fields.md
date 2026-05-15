@@ -237,4 +237,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- Added `Completeness(IntEnum)` with NAME_ONLY=1, WITH_COLUMNS=2, FULL=3.
+- Added `MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "unknown"]`.
+- Extended `TableMetadata` with `completeness` (default FULL), `loaded_at` (default utcnow), `source` (default "unknown") — keyword-only with defaults, existing call sites unaffected.
+- Added `TableMetadata.satisfies(required)` using `>=` comparison.
+- Updated `to_yaml_context()` to emit `completeness`, `loaded_at`, and `_warning` for non-FULL entries.
+- Pre-existing `E402` lint suppressed with `noqa` (import after module-level regex; not introduced here).
+- 11/11 tests pass: `pytest packages/ai-parrot/tests/bots/database/test_models.py -v`.

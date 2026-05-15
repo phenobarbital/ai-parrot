@@ -307,4 +307,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- Added `ttl_by_completeness: Dict[int, int]` to `CachePartitionConfig` (defaults NAME_ONLY=86400, WITH_COLUMNS=21600, FULL=3600).
+- Added `ttl_by_completeness` attribute to `CachePartition.__init__`.
+- New `get(required, max_age)`: resolves LRU→schema_cache→Redis→vector, gates on completeness and `loaded_at`-based freshness.
+- New `list(schema_names, completeness_min, max_age, limit)`: in-memory iteration with freshness gate.
+- New `search(schema_names, search_term, completeness_min, max_age, limit)`: vector path with post-hoc filtering via `get()`; cache-only fallback with completeness/age gate.
+- Fixed `_score_against_cache`: collects all scored items, sorts descending by score, then truncates — eliminates the early-truncation bug.
+- `store_table_metadata` now computes `effective_ttl = min(redis_ttl, tier_cap)` before Redis write.
+- `_store_in_redis` accepts optional `ttl` kwarg.
+- `get_table_metadata` and `search_similar_tables` emit `DeprecationWarning` and delegate to new methods.
+- `DatabaseAgent` accepts `cache_ttl_by_completeness` kwarg and forwards to `CachePartitionConfig`.
+- Pre-existing `_QUALIFIED_REF_RE` regex moved after imports to fix E402 lint (pre-existing issue).
+- 17/17 new tests pass; 59/59 existing tests pass.
