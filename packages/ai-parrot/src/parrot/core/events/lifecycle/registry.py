@@ -320,6 +320,32 @@ class EventRegistry:
                 repr(sub.callback),
             )
 
+    def emit_nowait(self, event: LifecycleEvent) -> None:
+        """Schedule :meth:`emit` on the running event loop, or drop silently.
+
+        Use this from synchronous contexts (e.g., property setters) where
+        ``await`` is not available.  The event is NOT guaranteed to be
+        processed if no event loop is running at call time — this is
+        acceptable for observability events.
+
+        Resolution of spec open question Q9.
+
+        Args:
+            event: The ``LifecycleEvent`` to schedule.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug(
+                "emit_nowait dropped %s: no running event loop",
+                type(event).__name__,
+            )
+            return
+        loop.create_task(
+            self.emit(event),
+            name=f"lifecycle.{type(event).__name__}",
+        )
+
     def _forward_to_global_safely(self, event: LifecycleEvent) -> None:
         """Forward *event* to the global registry as a fire-and-forget task.
 
