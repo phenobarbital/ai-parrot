@@ -288,3 +288,9 @@ class TestOpenTelemetrySubscriber:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: OpenTelemetrySubscriber with lazy imports, registers 9 subscriptions, tracer_provider kwarg added for test isolation (OTel only allows one global TracerProvider per process). pyproject.toml otel extra added. 9/9 tests pass. Ruff clean.
+
+**Deviations from spec**: Added optional `tracer_provider` kwarg to `__init__` for test isolation (OTel's `set_tracer_provider` can only be called once; the spec doesn't mention this constraint but it's necessary for unit test isolation without global state conflicts).
