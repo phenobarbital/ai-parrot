@@ -13,6 +13,7 @@ for detailed design decisions and resolution order rules.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Annotated, Any, Literal, Union
@@ -162,7 +163,7 @@ class RestCallbackInput(BaseModel):
     tenant: str | None
     content_type: str
     content: Any
-    extra_fields: dict[str, Any] = {}
+    extra_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class RestCallbackOutput(BaseModel):
@@ -221,6 +222,12 @@ class RestFieldResult(BaseModel):
 
 _SANDBOX_ENV = SandboxedEnvironment()
 
+# Per-render timeout in seconds (configurable via env var, spec §7).
+# Rendering runs in a thread executor so this is a real wall-clock timeout.
+_JINJA2_DISPLAY_TIMEOUT: float = float(
+    os.environ.get("JINJA2_DISPLAY_TIMEOUT_SECONDS", "2")
+)
+
 # ---------------------------------------------------------------------------
 # Resolver
 # ---------------------------------------------------------------------------
@@ -255,6 +262,10 @@ class RestFieldResolver:
         self.timeout = timeout
         self._internal_base_url = internal_base_url
         self.logger = logging.getLogger(__name__)
+        # Cache SSRF allow-list at construction time (not per-call).
+        self._ssrf_allowed_hosts: set[str] = {"localhost", "127.0.0.1", "::1"}
+        _extra = os.environ.get("PARROT_INTERNAL_ALLOWED_HOSTS", "")
+        self._ssrf_allowed_hosts.update(h.strip() for h in _extra.split(",") if h.strip())
 
     # ------------------------------------------------------------------
     # Public interface
@@ -267,6 +278,7 @@ class RestFieldResolver:
         *,
         auth_context: AuthContext | None = None,
         tenant: str | None = None,
+        request_host: str | None = None,
     ) -> RestFieldResult:
         """Dispatch by ``spec.mode`` and return the result.
 
@@ -278,6 +290,11 @@ class RestFieldResolver:
             payload: Callback input carrying content, IDs, and metadata.
             auth_context: Optional inbound auth context for header injection.
             tenant: Tenant slug for callback registry lookup.
+            request_host: Host string from the inbound request
+                (e.g. ``"localhost:8080"``). Used as the last-resort
+                fallback for ``internal`` mode base-URL resolution when
+                neither ``internal_base_url`` nor
+                ``PARROT_INTERNAL_BASE_URL`` is configured.
 
         Returns:
             ``RestFieldResult`` — always; never raises.
@@ -294,6 +311,7 @@ class RestFieldResolver:
                     spec,  # type: ignore[arg-type]
                     payload,
                     auth_context=auth_context,
+                    request_host=request_host,
                 )
             elif spec.mode == "callback":
                 result = await self._dispatch_callback(
@@ -307,8 +325,15 @@ class RestFieldResolver:
                     success=False,
                     error=f"unknown mode {spec.mode!r}",
                 )
-        except ConfigurationError:
-            raise  # re-raise config errors; they are programmer errors
+        except ConfigurationError as exc:
+            # ConfigurationError is a programmer/deployment error.
+            # Capture it in the result envelope — the "never-raises" contract
+            # applies to all callers including handlers that have no try/except.
+            self.logger.error("RestFieldResolver configuration error: %s", exc)
+            return RestFieldResult(
+                success=False,
+                error=f"configuration_error: {exc}",
+            )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("RestFieldResolver.resolve unexpected error: %s", exc)
             return RestFieldResult(success=False, error=str(exc))
@@ -371,12 +396,11 @@ class RestFieldResolver:
         payload: RestCallbackInput,
         *,
         auth_context: AuthContext | None,
+        request_host: str | None = None,
     ) -> RestFieldResult:
         """Call a relative path on the running server (internal mode)."""
-        try:
-            base_url = self._resolve_internal_base_url()
-        except ConfigurationError:
-            raise
+        # ConfigurationError propagates to resolve(), which captures it.
+        base_url = self._resolve_internal_base_url(request_host=request_host)
 
         full_url = f"{base_url.rstrip('/')}{spec.endpoint}"
         parsed = urlparse(full_url)
@@ -520,12 +544,33 @@ class RestFieldResolver:
                     "RestFieldResolver: response schema validation failed: %s", detail
                 )
 
-        # Jinja2 display template (sandboxed)
+        # Jinja2 display template (sandboxed, with per-render timeout).
+        # Rendering is synchronous (Jinja2 limitation) so it runs in a
+        # thread executor. asyncio.wait_for() caps wall-clock time to
+        # _JINJA2_DISPLAY_TIMEOUT seconds (default 2s, spec §7).
         display: str | None = None
         if result.success and spec.display_template:
             try:
                 tmpl = _SANDBOX_ENV.from_string(spec.display_template)
-                display = tmpl.render(answer=answer, raw_value=result.raw_value)
+                _captured_answer = answer
+                _captured_raw = result.raw_value
+                display = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        lambda: tmpl.render(
+                            answer=_captured_answer, raw_value=_captured_raw
+                        )
+                    ),
+                    timeout=_JINJA2_DISPLAY_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                warnings.append(
+                    f"display_template_error: render timed out after "
+                    f"{_JINJA2_DISPLAY_TIMEOUT}s"
+                )
+                self.logger.warning(
+                    "RestFieldResolver: display template timed out (%ss)",
+                    _JINJA2_DISPLAY_TIMEOUT,
+                )
             except Exception as exc:  # noqa: BLE001
                 warnings.append(f"display_template_error: {exc}")
                 self.logger.warning(
@@ -620,7 +665,8 @@ class RestFieldResolver:
         """Reject internal-mode calls to hosts outside the allow-list.
 
         Allow-list: ``localhost``, ``127.0.0.1``, ``::1``, plus any host
-        in the ``PARROT_INTERNAL_ALLOWED_HOSTS`` env var (comma-separated).
+        configured via ``PARROT_INTERNAL_ALLOWED_HOSTS`` (comma-separated).
+        The list is cached at construction time — not re-read on every call.
 
         Args:
             host: Hostname extracted from the resolved internal URL.
@@ -628,11 +674,9 @@ class RestFieldResolver:
         Raises:
             ValueError: When the host is not in the allow-list.
         """
-        allowed: set[str] = {"localhost", "127.0.0.1", "::1"}
-        extra = os.environ.get("PARROT_INTERNAL_ALLOWED_HOSTS", "")
-        allowed.update(h.strip() for h in extra.split(",") if h.strip())
-        if host not in allowed:
+        if host not in self._ssrf_allowed_hosts:
             raise ValueError(
                 f"internal host {host!r} is not in the SSRF allow-list "
-                f"(PARROT_INTERNAL_ALLOWED_HOSTS). Allowed: {sorted(allowed)}"
+                f"(PARROT_INTERNAL_ALLOWED_HOSTS). Allowed: "
+                f"{sorted(self._ssrf_allowed_hosts)}"
             )

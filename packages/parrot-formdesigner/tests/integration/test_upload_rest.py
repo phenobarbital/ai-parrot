@@ -320,8 +320,8 @@ async def test_upload_delete_failure_appends_warning(
     )
     assert resp.status == 200
     body = await resp.json()
-    # Delete failure becomes a warning, not an error
-    assert any("delete" in w.lower() for w in body.get("warnings", []))
+    # Delete failure becomes a warning with the canonical prefix
+    assert any("blob_cleanup_failed" in w for w in body.get("warnings", []))
 
 
 @pytest.mark.asyncio
@@ -364,3 +364,135 @@ async def test_upload_resolver_failure_returns_200_with_success_false(
     body = await resp.json()
     assert body["success"] is False
     assert body["error"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Backwards compatibility (FEAT-167 forms must still work unchanged)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_e2e_backwards_compat_existing_forms(
+    aiohttp_client,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """Pre-FEAT-170 forms (no REST fields) must load, validate, and route correctly.
+
+    Ensures that the addition of FieldType.REST does not break any existing
+    field types when the handler is asked to upload to a non-REST field.
+    """
+    from parrot_formdesigner.core.types import FieldType
+
+    # Build a form using several pre-FEAT-170 field types
+    text_field = FormField(
+        field_id="name",
+        field_type=FieldType.TEXT,
+        label={"en": "Full Name"},
+        required=True,
+    )
+    number_field = FormField(
+        field_id="age",
+        field_type=FieldType.NUMBER,
+        label={"en": "Age"},
+        required=False,
+    )
+    select_field = FormField(
+        field_id="country",
+        field_type=FieldType.SELECT,
+        label={"en": "Country"},
+        required=False,
+    )
+
+    legacy_form = FormSchema(
+        form_id="legacy-form",
+        title={"en": "Legacy Form"},
+        sections=[
+            FormSection(
+                section_id="s1",
+                fields=[text_field, number_field, select_field],
+            )
+        ],
+    )
+
+    client = await _make_client(aiohttp_client, legacy_form, mock_blob_storage, mock_resolver)
+
+    # Trying to upload to a non-REST field must return 404 (not a server crash)
+    data = FormData()
+    data.add_field("file", io.BytesIO(b"ignored"), filename="f.jpg", content_type="image/jpeg")
+
+    resp = await client.post(
+        "/api/v1/forms/legacy-form/fields/name/upload",
+        data=data,
+    )
+    # The handler must return 404 with a clear message (field is not FieldType.REST)
+    assert resp.status == 404
+    # Form integrity: all three legacy fields are still accessible via iteration
+    field_ids = [
+        item.field_id
+        for section in legacy_form.sections
+        for item in section.iter_fields()
+    ]
+    assert "name" in field_ids
+    assert "age" in field_ids
+    assert "country" in field_ids
+    # REST field is NOT present (backwards compat: adding REST doesn't pollute others)
+    assert "rest" not in field_ids
+
+
+# ---------------------------------------------------------------------------
+# Sequential uploads — last-write-wins (no state corruption)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_e2e_concurrent_uploads_last_write_wins(
+    aiohttp_client,
+    form_with_rest: FormSchema,
+    mock_resolver: MagicMock,
+) -> None:
+    """Two sequential uploads to the same field must each produce independent blob refs.
+
+    Validates the last-write-wins design: neither upload corrupts the other's
+    blob reference. blob_storage.put() is called twice; each call returns a
+    distinct blob_ref. The response envelope for each upload contains only
+    its own blob_ref.
+    """
+    # Storage mock returns distinct refs on successive calls
+    mock_blob_storage = MagicMock()
+    mock_blob_storage.put = AsyncMock(
+        side_effect=["s3://bucket/upload-1", "s3://bucket/upload-2"]
+    )
+    mock_blob_storage.delete = AsyncMock(return_value=None)
+
+    client = await _make_client(aiohttp_client, form_with_rest, mock_blob_storage, mock_resolver)
+
+    async def _do_upload() -> dict:
+        data = FormData()
+        data.add_field(
+            "file",
+            io.BytesIO(b"photo bytes"),
+            filename="photo.jpg",
+            content_type="image/jpeg",
+        )
+        resp = await client.post(
+            "/api/v1/forms/demo-form/fields/planogram_photo/upload",
+            data=data,
+        )
+        assert resp.status == 200
+        return await resp.json()
+
+    body1 = await _do_upload()
+    body2 = await _do_upload()
+
+    # Both uploads succeed independently
+    assert body1["success"] is True
+    assert body2["success"] is True
+
+    # Each gets its own blob_ref — no cross-contamination
+    assert body1["blob_ref"] == "s3://bucket/upload-1"
+    assert body2["blob_ref"] == "s3://bucket/upload-2"
+    assert body1["blob_ref"] != body2["blob_ref"]
+
+    # Storage was called exactly twice
+    assert mock_blob_storage.put.call_count == 2

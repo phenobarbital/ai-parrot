@@ -19,12 +19,9 @@ import os
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +109,12 @@ class AbstractBlobStorage(ABC):
     ) -> str:
         """Persist a blob and return a stable blob reference.
 
-        The stream is consumed incrementally — the entire blob is NOT
-        buffered in memory. The returned reference format is
-        implementation-defined (e.g. ``s3://bucket/prefix/form/field/uuid``).
+        The stream is consumed from the async iterator. The V1 default
+        ``S3BlobStorage`` implementation collects all chunks before
+        uploading (single ``put_object`` call); future revisions will
+        use multipart streaming for large blobs. The returned reference
+        format is implementation-defined
+        (e.g. ``s3://bucket/prefix/form/field/uuid``).
 
         The ``pre_persist_hook`` is invoked before writing begins; if it
         raises ``BlobRejectedError`` the blob is NOT written and the error
@@ -286,7 +286,7 @@ class S3BlobStorage(AbstractBlobStorage):
         key = self._build_key(metadata)
 
         session = aioboto3.Session()
-        client_kwargs: dict = {}
+        client_kwargs: dict[str, Any] = {}
         if self.endpoint_url:
             client_kwargs["endpoint_url"] = self.endpoint_url
 
@@ -319,7 +319,7 @@ class S3BlobStorage(AbstractBlobStorage):
         import aioboto3  # deferred import
 
         key = self._parse_ref(blob_ref)
-        client_kwargs: dict = {}
+        client_kwargs: dict[str, Any] = {}
         if self.endpoint_url:
             client_kwargs["endpoint_url"] = self.endpoint_url
 
@@ -338,7 +338,7 @@ class S3BlobStorage(AbstractBlobStorage):
         import aioboto3  # deferred import
 
         key = self._parse_ref(blob_ref)
-        client_kwargs: dict = {}
+        client_kwargs: dict[str, Any] = {}
         if self.endpoint_url:
             client_kwargs["endpoint_url"] = self.endpoint_url
 

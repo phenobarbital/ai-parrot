@@ -43,6 +43,7 @@ On first request, this module constructs default instances from env vars.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator
 
 from aiohttp import web
@@ -54,10 +55,10 @@ from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.rest_field_resolver import RestCallbackInput, RestFieldResolver, RestFieldSpec
 
-_rest_spec_adapter: TypeAdapter | None = None
+_rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
 
-def _get_rest_spec_adapter() -> TypeAdapter:
+def _get_rest_spec_adapter() -> TypeAdapter[RestFieldSpec]:
     """Return a lazily-constructed TypeAdapter for RestFieldSpec.
 
     Returns:
@@ -301,13 +302,14 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
 
     session_id: str | None = None
     if "session" in request:
-        session_id = str(request["session"].get("id", ""))
+        _sid = request["session"].get("id")
+        session_id = str(_sid) if _sid else None
 
     blob_meta = BlobMetadata(
         form_id=form_id,
         field_id=field_id,
-        submission_id=session_id or "",
-        tenant=tenant or "",
+        submission_id=session_id,   # str | None — None is correct when absent
+        tenant=tenant,              # str | None — None is correct when absent
         content_type=detected_mime or "application/octet-stream",
         size_bytes=len(file_bytes),
     )
@@ -315,8 +317,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     blob_ref: str | None = None
     try:
         blob_ref = await blob_storage.put(
-            blob_meta,
             _bytes_iter(file_bytes),
+            metadata=blob_meta,
         )
     except Exception as exc:
         logger.exception("blob_storage.put failed for %s/%s", form_id, field_id)
@@ -328,19 +330,25 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         try:
             await blob_storage.delete(prior_blob_ref)
         except Exception as exc:
-            warnings.append(f"prior blob delete failed: {exc}")
+            warnings.append(f"blob_cleanup_failed: {exc}")
             logger.warning(
                 "Failed to delete prior blob %r for %s/%s: %s",
                 prior_blob_ref, form_id, field_id, exc,
             )
 
     # --- 8. Resolve -----------------------------------------------------------
+    # Derive user_id from JWT claims (sub / user_id), not the raw token string.
+    _claims = auth_context.claims
+    _user_id: str | None = (
+        _claims.get("sub") or _claims.get("user_id") or None
+    )
+
     payload = RestCallbackInput(
         form_id=form_id,
         field_id=field_id,
-        session_id=session_id or "",
-        user_id=str(auth_context.token or ""),
-        tenant=tenant or "",
+        session_id=session_id,          # str | None
+        user_id=_user_id,               # str | None — from JWT claims
+        tenant=tenant,                  # str | None
         content_type=detected_mime or "application/octet-stream",
         content=file_bytes,
     )
@@ -351,6 +359,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         payload,
         auth_context=auth_context,
         tenant=tenant,
+        request_host=request.host,      # enables internal-mode host fallback
     )
 
     # Merge any resolver warnings with ours
@@ -369,7 +378,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     )
 
 
-async def _bytes_iter(data: bytes):
+async def _bytes_iter(data: bytes) -> AsyncGenerator[bytes, None]:
     """Async generator wrapping a bytes object as a single chunk.
 
     Args:

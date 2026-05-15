@@ -351,14 +351,20 @@ class TestResolverInternalMode:
         assert call_url == "http://localhost:8080/api/v1/x"
 
     @pytest.mark.asyncio
-    async def test_internal_no_base_url_raises_config_error(self, monkeypatch):
-        """Missing base URL → ConfigurationError (fail fast)."""
+    async def test_internal_no_base_url_returns_config_error_result(self, monkeypatch):
+        """Missing base URL → RestFieldResult with configuration_error (never raises).
+
+        resolve() must honour the "never-raises" contract — ConfigurationError
+        is captured in the result envelope rather than propagated to the caller.
+        """
         monkeypatch.delenv("PARROT_INTERNAL_BASE_URL", raising=False)
         resolver = RestFieldResolver()
         spec = InternalRestFieldSpec(endpoint="/api/v1/x")
 
-        with pytest.raises(ConfigurationError):
-            await resolver.resolve(spec, _make_payload())
+        result = await resolver.resolve(spec, _make_payload())
+        assert result.success is False
+        assert result.error is not None
+        assert "configuration_error" in result.error
 
     @pytest.mark.asyncio
     async def test_internal_env_var_used(self, monkeypatch):
