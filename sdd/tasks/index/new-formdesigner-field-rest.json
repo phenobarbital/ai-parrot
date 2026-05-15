@@ -191,7 +191,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -199,8 +199,8 @@
       "parallelism_notes": "Standalone dependency bump; can run before any code task (Phase 1 services rely on these deps at test time).",
       "assigned_to": null,
       "started_at": "2026-05-15T01:54:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1169-pyproject-deps.md"
+      "completed_at": "2026-05-15T02:02:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1169-pyproject-deps.md"
     },
     {
       "id": "TASK-1170",
