@@ -129,7 +129,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -139,7 +139,7 @@
       "parallel": false,
       "parallelism_notes": "Imports RestFieldSpec and edits central validators.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T02:25:39+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1166-validator-rest-branch.md"
     },
