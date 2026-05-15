@@ -5,12 +5,19 @@ from typing import ClassVar, Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
+import time
 import traceback
 from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
 from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
+# FEAT-176: Lifecycle Events System
+from ..core.events.lifecycle.mixin import EventEmitterMixin
+from ..core.events.lifecycle.trace import TraceContext
+from ..core.events.lifecycle.events import (
+    BeforeToolCallEvent, AfterToolCallEvent, ToolCallFailedEvent,
+)
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -68,7 +75,7 @@ class ToolResult(BaseModel):
         return self.display_data is not None
 
 
-class AbstractTool(ABC):
+class AbstractTool(EventEmitterMixin, ABC):
     """
     Abstract base class for all tools in the ai-parrot framework.
 
@@ -79,6 +86,7 @@ class AbstractTool(ABC):
     - File path management
     - Logging and error handling
     - Async/sync execution support
+    - Lifecycle event emission (FEAT-176)
     """
 
     # Class attributes that should be set by subclasses
@@ -155,6 +163,9 @@ class AbstractTool(ABC):
         # Ensure output directory exists if specified
         if self.output_dir and not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # FEAT-176: initialise per-instance event registry
+        self._init_events()
 
     def _default_output_dir(self) -> Optional[Path]:
         """Get the default output directory for this tool type.
@@ -372,6 +383,58 @@ class AbstractTool(ABC):
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
 
+    # ── FEAT-176 lifecycle helpers ────────────────────────────────────────────
+
+    def _args_summary(self, kwargs: dict) -> dict:
+        """Build a JSON-safe, bounded summary of tool kwargs for lifecycle events.
+
+        Strings longer than 200 characters are truncated.  Binary/opaque values
+        are replaced with a type placeholder.  Private kwargs (``_``-prefixed)
+        are skipped.
+
+        Args:
+            kwargs: The tool keyword arguments (already stripped of ``_permission_context``
+                and ``_resolver`` by ``execute()``).
+
+        Returns:
+            A JSON-serialisable dict suitable for ``BeforeToolCallEvent.args_summary``.
+        """
+        out: dict = {}
+        for k, v in kwargs.items():
+            if k.startswith("_"):
+                continue
+            if isinstance(v, str):
+                out[k] = (v[:200] + "…") if len(v) > 200 else v
+            elif isinstance(v, (int, float, bool)) or v is None:
+                out[k] = v
+            elif isinstance(v, (list, dict, tuple)):
+                out[k] = f"<{type(v).__name__} len={len(v)}>"
+            else:
+                out[k] = f"<{type(v).__name__}>"
+        return out
+
+    def _result_size(self, result: Any) -> int:
+        """Return an approximate byte size of a ToolResult for lifecycle events.
+
+        Args:
+            result: A ToolResult (or any object).
+
+        Returns:
+            Byte length of the serialised result, or ``0`` on any error.
+        """
+        try:
+            if hasattr(result, "value"):
+                return len(str(result.value).encode("utf-8"))
+            if hasattr(result, "content"):
+                return len(str(result.content).encode("utf-8"))
+            if hasattr(result, "result"):
+                return len(str(result.result).encode("utf-8"))
+            return len(str(result).encode("utf-8"))
+        except Exception:
+            return 0
+
+    # ── Core execution ────────────────────────────────────────────────────────
+
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
         Execute the tool with error handling and result standardization.
@@ -420,6 +483,26 @@ class AbstractTool(ABC):
         # If that assumption changes, replace this with a contextvars.ContextVar.
         self._current_pctx = pctx
 
+        # ── FEAT-176: lifecycle — derive / mint trace context ─────────────────
+        _tool_name = self.name or type(self).__name__
+        parent_tc = pctx.trace_context if pctx is not None else None
+        tool_tc: TraceContext = parent_tc.child() if parent_tc is not None else TraceContext.new_root()
+        # Propagate updated trace to sub-agents: write back BEFORE _execute so
+        # any AgentB invoked inside the tool sees tool_tc as its parent span.
+        if pctx is not None:
+            pctx.trace_context = tool_tc
+
+        # Emit BeforeToolCallEvent (sync — low-overhead hot path)
+        self.events.emit_nowait(BeforeToolCallEvent(
+            trace_context=tool_tc,
+            tool_name=_tool_name,
+            tool_class=type(self).__name__,
+            args_summary=self._args_summary(kwargs),
+            source_type="tool",
+            source_name=_tool_name,
+        ))
+        _lc_t0 = time.perf_counter()
+
         # ── Normal execution ─────────────────────────────────────────────────
         try:
             self.logger.info("Executing tool: %s", self.name)
@@ -429,41 +512,51 @@ class AbstractTool(ABC):
 
             # Execute the tool
             if hasattr(validated_args, 'model_dump'):
-                result = await self._execute(*args, **validated_args.model_dump())
+                raw_result = await self._execute(*args, **validated_args.model_dump())
             else:
-                result = await self._execute(*args, **kwargs)
+                raw_result = await self._execute(*args, **kwargs)
 
-            # if is an toolResult, return it directly
-            if isinstance(result, ToolResult):
-                return result
-            elif isinstance(result, dict) and 'status' in result and 'result' in result:
+            # Normalise to ToolResult
+            if isinstance(raw_result, ToolResult):
+                tool_result = raw_result
+            elif isinstance(raw_result, dict) and 'status' in raw_result and 'result' in raw_result:
                 try:
-                    return ToolResult(**result)
+                    tool_result = ToolResult(**raw_result)
                 except Exception as e:
                     self.logger.error("Error creating ToolResult from dict: %s", e)
-                    return ToolResult(
+                    tool_result = ToolResult(
                         status="done_with_errors",
-                        result=result.get('result', []),
+                        result=raw_result.get('result', []),
                         error=f"Error creating ToolResult: {e}",
-                        metadata=result.get('metadata', {})
+                        metadata=raw_result.get('metadata', {})
                     )
-            if result is None:
+            elif raw_result is None:
                 raise ValueError(
                     "Tool execution returned None, expected a result."
                 )
+            else:
+                self.logger.info("Tool %s executed successfully", self.name)
+                tool_result = ToolResult(
+                    status="success",
+                    result=raw_result,
+                    metadata={
+                        "tool_name": self.name,
+                        "execution_time": datetime.now().isoformat()
+                    }
+                )
 
-            self.logger.info(
-                "Tool %s executed successfully", self.name
-            )
-
-            return ToolResult(
-                status="success",
-                result=result,
-                metadata={
-                    "tool_name": self.name,
-                    "execution_time": datetime.now().isoformat()
-                }
-            )
+            # ── FEAT-176: emit AfterToolCallEvent on success ──────────────────
+            _lc_dur = (time.perf_counter() - _lc_t0) * 1000
+            await self.events.emit(AfterToolCallEvent(
+                trace_context=tool_tc,
+                tool_name=_tool_name,
+                duration_ms=_lc_dur,
+                result_status=tool_result.status,
+                result_size_bytes=self._result_size(tool_result),
+                source_type="tool",
+                source_name=_tool_name,
+            ))
+            return tool_result
 
         except Exception as e:
             # Let ``AuthorizationRequired`` bubble up to ``ToolManager`` so it
@@ -473,6 +566,18 @@ class AbstractTool(ABC):
             from ..auth.exceptions import AuthorizationRequired
             if isinstance(e, AuthorizationRequired):
                 raise
+
+            # ── FEAT-176: emit ToolCallFailedEvent before returning error ─────
+            _lc_dur = (time.perf_counter() - _lc_t0) * 1000
+            await self.events.emit(ToolCallFailedEvent(
+                trace_context=tool_tc,
+                tool_name=_tool_name,
+                duration_ms=_lc_dur,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                source_type="tool",
+                source_name=_tool_name,
+            ))
 
             error_msg = f"Error in {self.name}: {str(e)}"
             self.logger.error("%s", error_msg)
