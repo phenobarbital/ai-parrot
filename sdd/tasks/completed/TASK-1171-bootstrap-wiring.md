@@ -114,3 +114,10 @@ def test_setup_with_kwargs_stashes(blob_storage_mock, resolver_mock):
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+### Completion Note
+
+Extended `setup_form_api()` signature with `blob_storage: AbstractBlobStorage | None = None`
+and `resolver: RestFieldResolver | None = None`. Both stashed as `app["blob_storage"]` and
+`app["rest_resolver"]`. Lazy None is valid — handler raises HTTP 500 if not wired.
+5 unit tests covering backwards-compat and kwarg stashing, all passing.
