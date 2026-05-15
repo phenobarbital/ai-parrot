@@ -233,7 +233,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Edits parrot/bots/abstract.py; intentionally NOT marked parallel because AbstractBot ties together many of the other modules.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1193-abstractbot-lifecycle-integration.md"
+      "completed_at": "2026-05-15T14:17:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1193-abstractbot-lifecycle-integration.md"
     },
     {
       "id": "TASK-1194",
