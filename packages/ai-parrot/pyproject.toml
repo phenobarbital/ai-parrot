@@ -460,6 +460,14 @@ otel = [
     "opentelemetry-sdk>=1.25",
 ]
 
+# Developer / CI tooling (not shipped to end users)
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-benchmark>=4.0",
+    "ruff>=0.4",
+]
+
 # Convenience groups
 all = [
     "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
