@@ -204,4 +204,35 @@ See "Implementation Notes" above for the full skeleton.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Status**: done  
+**Completed**: 2026-05-15  
+**Agent**: sdd-worker
+
+### What was implemented
+
+Created `packages/ai-parrot/tests/integration/bots/database/test_feat_172_no_regression.py`
+with a fully self-contained integration test `test_sql_analyst_unchanged_after_feat_172`.
+
+Following the same pattern as the existing `test_multi_toolkit.py`, the test defines an
+inline `_SqlAnalystMockToolkit` class (inheriting from `DatabaseToolkit` with
+`tool_prefix="db"`) that exposes exactly the four canonical tools:
+`search_schema`, `generate_query`, `validate_query`, `explain_query`.
+
+The test verifies:
+1. `configure()` succeeds without raising (FEAT-172 validation passes with `tool_prefix="db"`).
+2. `_internal_toolkit is not None` after `configure()`.
+3. The canonical surface `{db_search_schema, db_generate_query, db_validate_query,
+   db_explain_query}` is present in `_compute_active_tools()` output.
+4. No collision warning fires on the clean request path.
+
+### Test results
+- `test_sql_analyst_unchanged_after_feat_172` — PASSED.
+- All 30 database tests (unit + integration) — PASSED.
+- `ruff check` — clean.
+
+### Note on mock_toolkit_factory
+Per the task spec, the test could use `mock_toolkit_factory`. However, since pytest
+conftest fixtures from `tests/unit/bots/database/conftest.py` are not automatically
+available in `tests/integration/bots/database/`, the test uses an inline mock class
+consistent with the existing integration test pattern in `test_multi_toolkit.py`.
+This avoids cross-directory conftest coupling while achieving the same coverage goal.
