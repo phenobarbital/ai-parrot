@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-170 — FormDesigner `FieldType.REST`
 **Spec**: `sdd/specs/new-formdesigner-field-rest.spec.md` (Module 5)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1163
@@ -102,4 +102,9 @@ def test_rest_metadata_present():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `FieldType.REST` entry to `_BUILTIN_METADATA` in `controls/builtin.py` with
+`category="advanced"`, `label="REST"`, `render_hint="upload"`, `supports_constraints=True`,
+`icon="rest"`, `is_container=False`. The snippet will be `{}` until TASK-1165 adds it.
+Created `tests/unit/controls/test_builtin.py` with `test_rest_metadata_present` and
+`test_rest_metadata_full_shape`. Both tests pass. `ruff` clean. Committed on branch
+`feat-170-new-formdesigner-field-rest`.
