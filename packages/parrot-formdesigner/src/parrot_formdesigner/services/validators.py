@@ -18,6 +18,7 @@ from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
+from .rest_field_resolver import RestFieldSpec
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,10 @@ class FormValidator:
                 field, value, label, auth_context=auth_context
             )
 
+        # REST: validate submitted answer dict shape and status
+        if field.field_type == FieldType.REST:
+            return self._validate_rest_field(field, value, label)
+
         # Required check
         is_empty = value is None or (isinstance(value, str) and not value.strip())
         if field.required and is_empty:
@@ -380,6 +385,11 @@ class FormValidator:
                 return value
             raise ValueError("Availability must be a list of slot dicts")
 
+        elif ft == FieldType.REST:
+            if not isinstance(value, dict):
+                raise ValueError("REST field value must be a dict with 'answer' and 'blob_ref' keys")
+            return {k: v for k, v in value.items() if k != "status"}
+
         return value
 
     def _validate_by_type(
@@ -490,6 +500,59 @@ class FormValidator:
                 if not (scale_min <= value <= scale_max):
                     errors.append(f"{label} must be between {scale_min} and {scale_max}")
 
+        return errors
+
+    def _validate_rest_field(
+        self,
+        field: FormField,
+        value: Any,
+        label: str,
+    ) -> list[str]:
+        """Validate a REST field submission dict.
+
+        Args:
+            field: FormField of type REST.
+            value: Submitted value — expected dict with 'answer' and 'blob_ref' keys.
+            label: Resolved label for error messages.
+
+        Returns:
+            List of error messages (empty if valid).
+        """
+        if not isinstance(value, dict):
+            return [f"{label} must be a dict with 'answer' and 'blob_ref' keys"]
+        if value.get("status") == "in_progress":
+            return [f"{label} upload is still in_progress"]
+        if field.required and value.get("answer") is None:
+            return [f"{label} is required"]
+        return []
+
+    def validate_field_schema(self, field: FormField) -> list[str]:
+        """Validate a field's schema at design time (not submission time).
+
+        For REST fields, parses ``field.meta['rest']`` via ``RestFieldSpec``
+        and surfaces any ``ValidationError`` as a designer-facing error.
+
+        Args:
+            field: FormField to validate structurally.
+
+        Returns:
+            List of design-time error messages (empty if valid).
+        """
+        errors: list[str] = []
+        if field.field_type == FieldType.REST:
+            meta = field.meta or {}
+            rest_meta = meta.get("rest")
+            if rest_meta is None:
+                errors.append(
+                    f"{field.field_id}: REST field must have a 'rest' key in meta"
+                )
+                return errors
+            try:
+                RestFieldSpec.model_validate(rest_meta)
+            except Exception as exc:
+                errors.append(
+                    f"{field.field_id}: invalid REST field spec in meta: {exc}"
+                )
         return errors
 
     async def _validate_remote_response(
