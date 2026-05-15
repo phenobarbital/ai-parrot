@@ -33,7 +33,6 @@ from ..models import (
     AIMessageFactory,
     ToolCall,
     CompletionUsage,
-    VideoGenerationPrompt,
     StructuredOutputConfig,
     OutputFormat
 )
@@ -46,7 +45,6 @@ from ..models.openai import (
     resolve_alias,
 )
 from ..models.outputs import (
-    SentimentAnalysis,
     ProductReview
 )
 from ..models.detections import (
@@ -1177,8 +1175,11 @@ class OpenAIClient(AbstractClient):
         enable_web_search: bool = True,
         enable_code_interpreter: bool = False,
         lazy_loading: bool = False,
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream OpenAI's response with optional conversation memory.
+
+        Yields successive string chunks followed by a final
+        :class:`~parrot.models.responses.AIMessage` with metadata.
 
         Args:
             deep_research: If True, use deep research models with streaming
@@ -1356,8 +1357,33 @@ class OpenAIClient(AbstractClient):
                 if output_text:
                     assistant_content = output_text
                     yield output_text
+
+            # Build and yield final AIMessage for Responses API path
+            resp_usage_obj = getattr(final_response, "usage", None) if final_response else None
+            if resp_usage_obj is not None:
+                resp_usage = CompletionUsage.from_openai(resp_usage_obj)
+            else:
+                resp_usage = CompletionUsage(
+                    prompt_tokens=0, completion_tokens=0, total_tokens=0
+                )
+            resp_ai_message = AIMessage(
+                input=prompt,
+                output=assistant_content,
+                response=assistant_content,
+                model=model_str,
+                provider="openai",
+                usage=resp_usage,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            yield resp_ai_message
         else:
             chat_args = dict(args)
+            # Request usage stats in the final streaming chunk (OpenAI SDK >= 1.17)
+            chat_args["stream_options"] = {"include_usage": True}
+            usage_data = None
+            response_stream = None  # initialise; assigned by whichever branch runs
             method = getattr(
                 self.client.chat.completions, "parse",
                 None
@@ -1374,7 +1400,7 @@ class OpenAIClient(AbstractClient):
                 except TypeError:
                     # parse() in this SDK may not accept stream=True → fallback to create()
                     method = None
-            else:
+            if not callable(method):
                 response_stream = await self.client.chat.completions.create(
                     model=model_str,
                     messages=messages,
@@ -1388,6 +1414,29 @@ class OpenAIClient(AbstractClient):
                     text_chunk = chunk.choices[0].delta.content
                     assistant_content += text_chunk
                     yield text_chunk
+                # Capture usage from the final chunk (present when stream_options.include_usage=True)
+                if hasattr(chunk, 'usage') and chunk.usage is not None:
+                    usage_data = chunk.usage
+
+            # Build and yield final AIMessage for Chat Completions path
+            if usage_data is not None:
+                chat_usage = CompletionUsage.from_openai(usage_data)
+            else:
+                chat_usage = CompletionUsage(
+                    prompt_tokens=0, completion_tokens=0, total_tokens=0
+                )
+            chat_ai_message = AIMessage(
+                input=prompt,
+                output=assistant_content,
+                response=assistant_content,
+                model=model_str,
+                provider="openai",
+                usage=chat_usage,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            yield chat_ai_message
 
         # Update conversation memory if content was generated
         if assistant_content:
@@ -1635,8 +1684,6 @@ class OpenAIClient(AbstractClient):
             temperature=temperature or self.temperature,
             use_tools=False,
         )
-
-        result = response.choices[0].message
 
         return AIMessageFactory.from_openai(
             response=response,

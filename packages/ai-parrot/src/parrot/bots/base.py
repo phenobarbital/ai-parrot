@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from ..memory import (
     ConversationTurn
 )
-from ..models import AIMessage, StructuredOutputConfig
+from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
 from ..utils.helpers import RequestContext
 from ..security import PromptInjectionException
@@ -1172,7 +1172,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         system_prompt: Optional[str] = None,
         **kwargs
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
 
         session_id = session_id or str(uuid.uuid4())
@@ -1325,9 +1325,13 @@ class BaseBot(AbstractBot):
                         llm_kwargs["structured_output"] = structured_output
 
                 full_response = ""
+                ai_message = None
                 async for chunk in client.ask_stream(**llm_kwargs):
-                    full_response += chunk
-                    yield chunk
+                    if isinstance(chunk, AIMessage):
+                        ai_message = chunk
+                    else:
+                        full_response += chunk
+                        yield chunk
 
                 # Save conversation turn
                 if use_conversation_history and memory:
@@ -1343,6 +1347,28 @@ class BaseBot(AbstractBot):
                         }
                     )
                     await memory.add_turn(user_id, session_id, turn)
+
+                if ai_message is None:
+                    # Defensive fallback: client did not yield an AIMessage sentinel.
+                    # Use prompt_for_llm (the actual text sent to the LLM) so that
+                    # ai_message.input is consistent with what client-yielded AIMessages
+                    # carry (they use the processed prompt, not the raw user question).
+                    ai_message = AIMessage(
+                        input=prompt_for_llm,
+                        output=full_response,
+                        response=full_response,
+                        model=kwargs.get('model', self._llm_model) or '',
+                        provider=getattr(client, 'provider', '') or type(client).__name__,
+                        usage=CompletionUsage(
+                            prompt_tokens=0,
+                            completion_tokens=0,
+                            total_tokens=0,
+                        ),
+                        user_id=user_id,
+                        session_id=session_id,
+                        turn_id=_turn_id,
+                    )
+                yield ai_message
 
         except asyncio.CancelledError:
             self.logger.info("Ask stream task was cancelled.")

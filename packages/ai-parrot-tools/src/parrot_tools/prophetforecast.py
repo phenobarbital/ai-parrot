@@ -11,8 +11,10 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 from pydantic import Field, field_validator
-from prophet import Prophet
 
+# `prophet` is imported lazily inside .run() — it pulls Plotly + cmdstanpy
+# (~3-6s warm, much more cold), and importing this tool at module load
+# (e.g. from parrot.bots.data) shouldn't pay that cost up front.
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 
@@ -122,6 +124,7 @@ class ProphetForecastTool(AbstractTool):
                 },
             )
 
+        from prophet import Prophet  # lazy: see module docstring
         model = Prophet()
         model.fit(cleaned_df)
 

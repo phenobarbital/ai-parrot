@@ -46,6 +46,7 @@ from ..memory import (
 )
 from ..tools.pythonrepl import PythonREPLTool
 from ..models import (
+    AIMessage,
     StructuredOutputConfig,
     OutputFormat
 )
@@ -1334,8 +1335,18 @@ $backstory
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
-    ) -> AsyncIterator[str]:
-        """Stream the model's response."""
+    ) -> AsyncIterator[Union[str, AIMessage]]:
+        """Stream the model's response.
+
+        Yields successive string chunks of the model response followed by a
+        single final :class:`~parrot.models.responses.AIMessage` carrying full
+        response metadata (token usage, stop reason, model, provider, turn_id,
+        etc.).
+
+        Implementors MUST yield at least one ``str`` chunk before the final
+        ``AIMessage``.  Consumers can detect the end-of-stream sentinel via
+        ``isinstance(chunk, AIMessage)``.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
     @abstractmethod

@@ -62,16 +62,11 @@ from ...models.google import (
 from ...exceptions import SpeechGenerationError
 from parrot.interfaces.file import FileManagerInterface
 from parrot.tools.filemanager import FileManagerFactory
-try:
-    from moviepy import (
-        VideoFileClip,
-        AudioFileClip,
-        CompositeAudioClip,
-        concatenate_videoclips,
-        vfx
-    )
-except ImportError:
-    pass
+import importlib.util
+# moviepy is heavy (~3-5s, pulls FFmpeg detection + audio FX chain). Only
+# the _strip_audio / video assembly methods use it. We probe availability
+# at import time and import the actual symbols lazily at point of use.
+MOVIEPY_AVAILABLE = importlib.util.find_spec("moviepy") is not None
 
 
 class GoogleGeneration:
@@ -1105,11 +1100,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Returns the path to the muted video (overwrites the original file in-place).
         Skips silently if moviepy is not installed.
         """
-        try:
-            VideoFileClip  # noqa: F821 — imported at top, may be absent
-        except NameError:
+        if not MOVIEPY_AVAILABLE:
             self.logger.warning("moviepy not available; could not strip audio from video.")
             return video_path
+        from moviepy import VideoFileClip  # lazy: see top of file
 
         def _do_strip(src: Path) -> None:
             clip = VideoFileClip(str(src))

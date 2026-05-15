@@ -4,7 +4,8 @@ Human-in-the-Loop (HITL) Architecture for AI-Parrot.
 Provides agent-level (HumanTool) and flow-level (HumanDecisionNode)
 human interaction capabilities with pluggable communication channels.
 """
-from typing import Optional
+import importlib
+from typing import TYPE_CHECKING, Optional
 
 from .models import (
     InteractionType,
@@ -18,10 +19,29 @@ from .models import (
 )
 from .channels.base import HumanChannel
 from .channels.cli import CLIDaemonHumanChannel, CLIHumanChannel
-from .channels.telegram import TelegramHumanChannel
 from .manager import HumanInteractionManager
 from .tool import HumanTool
 from .node import HumanDecisionNode
+
+# Lazy: TelegramHumanChannel pulls aiogram (~1.5s). Resolved on access via
+# PEP 562 __getattr__ below.
+_LAZY_EXPORTS = {
+    "TelegramHumanChannel": ".channels.telegram",
+}
+
+
+def __getattr__(name: str):
+    module_path = _LAZY_EXPORTS.get(name)
+    if module_path is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = importlib.import_module(module_path, package=__name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+if TYPE_CHECKING:
+    from .channels.telegram import TelegramHumanChannel
 
 
 # Process-wide default HumanInteractionManager.
