@@ -72,7 +72,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Only touches parrot/auth/permission.py; depends only on TraceContext from 1182. Can run alongside 1183/1184.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1185-permission-context-trace-field.md"
+      "completed_at": "2026-05-15T13:43:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1185-permission-context-trace-field.md"
     },
     {
       "id": "TASK-1186",

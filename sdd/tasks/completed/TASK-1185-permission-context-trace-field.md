@@ -173,3 +173,9 @@ class TestPermissionContextTrace:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: Added `trace_context: Optional[TraceContext] = None` between `channel` and `extra` using TYPE_CHECKING import to avoid circular dependency risk. All 7 new tests pass; existing channel tests and auth test suite pass (6 pre-existing failures in test_dataset_guard.py and test_pbac_setup.py unrelated to this change). Ruff clean.
+
+**Deviations from spec**: Test placed at `tests/unit/auth/test_permission_context_trace.py` as specified. Used real `UserSession` fixture (not MagicMock) to match existing test_permission_context_channel.py pattern. TYPE_CHECKING guard used for TraceContext import to avoid any circular import risk at runtime.
