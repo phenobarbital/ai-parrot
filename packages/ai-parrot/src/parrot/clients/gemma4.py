@@ -504,6 +504,19 @@ class Gemma4Client(AbstractClient):
             )
         )
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        import time as _lc_time_g4
+        _lc_model_g4 = self.model_name if hasattr(self, 'model_name') else ""
+        _lc_tc_g4 = self._emit_before_call(
+            client_name="gemma4",
+            model=_lc_model_g4,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(tools),
+            parent_trace=None,
+        )
+        _lc_t0_g4 = _lc_time_g4.perf_counter()
+
         # Prepare tools
         gemma_tools = self._prepare_gemma4_tools(tools)
 
@@ -629,6 +642,15 @@ class Gemma4Client(AbstractClient):
             except Exception as e:
                 self.logger.warning(f"Failed to parse structured output: {e}")
 
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        _lc_g4_usage = getattr(ai_message, 'usage', None)
+        await self._emit_after_call(
+            _lc_tc_g4, client_name="gemma4", model=_lc_model_g4,
+            duration_ms=(_lc_time_g4.perf_counter() - _lc_t0_g4) * 1000,
+            input_tokens=getattr(_lc_g4_usage, 'prompt_tokens', None) if _lc_g4_usage else None,
+            output_tokens=getattr(_lc_g4_usage, 'completion_tokens', None) if _lc_g4_usage else None,
+            finish_reason=None,
+        )
         return ai_message
 
     # ------------------------------------------------------------------

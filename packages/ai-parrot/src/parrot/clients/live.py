@@ -1105,6 +1105,18 @@ class GeminiLiveClient(AbstractClient):
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        import time as _lc_time_live
+        _lc_tc_live = self._emit_before_call(
+            client_name="gemini-live",
+            model=self.model or "",
+            temperature=None,
+            system_prompt=system_prompt,
+            has_tools=False,
+            parent_trace=None,
+        )
+        _lc_t0_live = _lc_time_live.perf_counter()
+
         live_config = self._build_live_config(
             system_prompt=system_prompt,
             **kwargs
@@ -1236,6 +1248,12 @@ class GeminiLiveClient(AbstractClient):
 
         except Exception as e:
             self.logger.error(f"Text session error: {e}")
+            # FEAT-176: lifecycle event — ClientCallFailedEvent
+            await self._emit_failed_call(
+                _lc_tc_live, client_name="gemini-live", model=self.model or "",
+                duration_ms=(_lc_time_live.perf_counter() - _lc_t0_live) * 1000,
+                exc=e,
+            )
             yield LiveVoiceResponse(
                 text="",
                 is_complete=True,
@@ -1244,6 +1262,14 @@ class GeminiLiveClient(AbstractClient):
                 turn_id=turn_id,
                 user_id=user_id,
             )
+            return
+
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        await self._emit_after_call(
+            _lc_tc_live, client_name="gemini-live", model=self.model or "",
+            duration_ms=(_lc_time_live.perf_counter() - _lc_t0_live) * 1000,
+            input_tokens=None, output_tokens=None, finish_reason=None,
+        )
 
     async def close(self) -> None:
         """Close the client and clean up resources."""

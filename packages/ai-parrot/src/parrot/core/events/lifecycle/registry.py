@@ -172,6 +172,31 @@ class EventRegistry:
         ]
         return len(self._subscriptions) < before
 
+    def has_subscribers(self, event_type: Type[E]) -> bool:
+        """Return ``True`` if any subscriber would receive *event_type*.
+
+        A subscriber matches if the registered ``event_type`` is a superclass or
+        subclass of the queried ``event_type`` (bidirectional ``issubclass``).
+        This catches both narrowly-typed subscribers (``ClientStreamChunkEvent``)
+        and broadly-typed ones (``LifecycleEvent``).
+
+        Use this on hot paths to short-circuit event construction when no one
+        is listening (e.g., ``ClientStreamChunkEvent`` per streamed chunk).
+
+        Args:
+            event_type: The ``LifecycleEvent`` subclass to query.
+
+        Returns:
+            ``True`` if at least one registered subscription would match.
+        """
+        for s in self._subscriptions:
+            try:
+                if issubclass(event_type, s.event_type) or issubclass(s.event_type, event_type):
+                    return True
+            except TypeError:
+                continue
+        return False
+
     def add_provider(self, provider: Any) -> list[str]:
         """Register all subscriptions declared by an ``EventProvider``.
 

@@ -15,6 +15,8 @@ from navconfig import config
 # from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from .base import AbstractClient, BatchRequest, StreamingRetryConfig
+# FEAT-176: lifecycle events
+from parrot.core.events.lifecycle.events import ClientStreamChunkEvent
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
@@ -134,6 +136,18 @@ class AnthropicClient(AbstractClient):
         messages, conversation_history, system_prompt = await self._prepare_conversation_context(
             prompt, files, user_id, session_id, system_prompt
         )
+
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        import time as _lc_time
+        _lc_tc = self._emit_before_call(
+            client_name="anthropic",
+            model=model,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(_use_tools),
+            parent_trace=None,
+        )
+        _lc_t0 = _lc_time.perf_counter()
 
         # Enhance system prompt for deep research mode
         if deep_research:
@@ -355,6 +369,17 @@ class AnthropicClient(AbstractClient):
             ai_message.metadata['original_model'] = model
             ai_message.metadata['fallback_model'] = self._fallback_model
 
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        _lc_usage = getattr(ai_message, 'usage', None)
+        await self._emit_after_call(
+            _lc_tc,
+            client_name="anthropic",
+            model=model,
+            duration_ms=(_lc_time.perf_counter() - _lc_t0) * 1000,
+            input_tokens=getattr(_lc_usage, 'input_tokens', None) if _lc_usage else None,
+            output_tokens=getattr(_lc_usage, 'output_tokens', None) if _lc_usage else None,
+            finish_reason=getattr(ai_message, 'stop_reason', None),
+        )
         return ai_message
 
     async def resume(
@@ -516,6 +541,21 @@ class AnthropicClient(AbstractClient):
             )
             self.logger.info("Deep research mode enabled for streaming")
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
+        import time as _lc_time_s
+        _lc_model_s = (model.value if isinstance(model, type(model)) and hasattr(model, 'value') else model) or (self.model or getattr(self, 'default_model', ''))
+        _lc_tc_s = self._emit_before_call(
+            client_name="anthropic",
+            model=_lc_model_s or "",
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=False,
+            parent_trace=None,
+        )
+        _lc_t0_s = _lc_time_s.perf_counter()
+        _lc_has_chunk_subs = self.events.has_subscribers(ClientStreamChunkEvent)
+        _lc_chunk_idx = 0
+
         if tools and isinstance(tools, list):
             for tool in tools:
                 self.register_tool(tool)
@@ -554,6 +594,18 @@ class AnthropicClient(AbstractClient):
                     async with self.client.messages.stream(**payload) as stream:
                         async for text in stream.text_stream:
                             assistant_content += text
+                            # FEAT-176: per-chunk event (short-circuited when no subscribers)
+                            if _lc_has_chunk_subs:
+                                await self.events.emit(ClientStreamChunkEvent(
+                                    trace_context=_lc_tc_s,
+                                    client_name="anthropic",
+                                    model=_lc_model_s or "",
+                                    chunk_index=_lc_chunk_idx,
+                                    chunk_size_bytes=len(text.encode("utf-8")),
+                                    source_type="client",
+                                    source_name="anthropic",
+                                ))
+                                _lc_chunk_idx += 1
                             yield text
 
                         # Get the final message to check stop reason
@@ -669,6 +721,17 @@ class AnthropicClient(AbstractClient):
                 []  # No tools used in streaming
             )
 
+        # FEAT-176: lifecycle event — AfterClientCallEvent for stream
+        _lc_stream_usage = getattr(ai_message, 'usage', None)
+        await self._emit_after_call(
+            _lc_tc_s,
+            client_name="anthropic",
+            model=_lc_model_s or "",
+            duration_ms=(_lc_time_s.perf_counter() - _lc_t0_s) * 1000,
+            input_tokens=getattr(_lc_stream_usage, 'input_tokens', None) if _lc_stream_usage else None,
+            output_tokens=getattr(_lc_stream_usage, 'output_tokens', None) if _lc_stream_usage else None,
+            finish_reason=getattr(ai_message, 'stop_reason', None),
+        )
         yield ai_message
 
     async def batch_ask(self, requests: List[BatchRequest], context_1m: bool = False) -> List[AIMessage]:
