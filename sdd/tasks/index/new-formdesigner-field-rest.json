@@ -171,7 +171,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -181,8 +181,8 @@
       "parallelism_notes": "Independent of renderers and validator; touches only extractor files.",
       "assigned_to": null,
       "started_at": "2026-05-15T02:55:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1168-extractor-mappings.md"
+      "completed_at": "2026-05-15T03:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1168-extractor-mappings.md"
     },
     {
       "id": "TASK-1169",

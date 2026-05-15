@@ -91,3 +91,11 @@ def test_yaml_rest_roundtrip():
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+### Completion Note
+
+Added `"rest": FieldType.REST` to `_LEGACY_FIELD_TYPE_MAP` in `extractors/yaml.py`.
+Detects `x-parrot-rest` JSON Schema extension in `JsonSchemaExtractor._property_to_field`,
+overrides `field_type` to `FieldType.REST` and sets `meta["rest"]` from the extension value.
+Created `tests/unit/extractors/test_yaml_rest.py` and `test_jsonschema_rest.py` with 7 tests
+covering forward mapping, meta preservation, and round-trips. All 7 pass.
