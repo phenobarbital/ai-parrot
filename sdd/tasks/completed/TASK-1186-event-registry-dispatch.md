@@ -405,3 +405,9 @@ class TestEventRegistryDispatch:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: EventRegistry implemented with isinstance dispatch, forward/reverse ordering (Before*=forward, After*/contain-Failed=reverse), per-subscriber forward_to_bus dual-emit, model-B error isolation, SubscriberErrorEvent scheduling, recursion guard via contextvars.ContextVar, and lazy global_registry import. 19/19 tests pass. Ruff clean. Deviation: reversed ordering check uses `"Failed" in cls_name` (not `endswith("Failed")`) because concrete event classes end with "Event" (e.g., "InvokeFailedEvent").
+
+**Deviations from spec**: `"Failed" in cls_name` used instead of `cls_name.endswith("Failed")` to handle class names like `InvokeFailedEvent` that embed "Failed" but end with "Event".
