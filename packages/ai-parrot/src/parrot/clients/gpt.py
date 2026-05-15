@@ -1383,6 +1383,7 @@ class OpenAIClient(AbstractClient):
             # Request usage stats in the final streaming chunk (OpenAI SDK >= 1.17)
             chat_args["stream_options"] = {"include_usage": True}
             usage_data = None
+            response_stream = None  # initialise; assigned by whichever branch runs
             method = getattr(
                 self.client.chat.completions, "parse",
                 None

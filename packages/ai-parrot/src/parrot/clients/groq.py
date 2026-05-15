@@ -677,15 +677,15 @@ class GroqClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
         )
-        yield ai_message
-
-        # Update conversation memory if content was generated
+        # Update conversation memory BEFORE yielding the final AIMessage so the
+        # memory write executes even if the consumer stops iterating after receiving
+        # the sentinel (generators are not fully drained once the caller exits the
+        # async-for loop).
         if assistant_content:
             messages.append({
                 "role": "assistant",
                 "content": assistant_content
             })
-            # Update conversation memory
             tools_used = []
             await self._update_conversation_memory(
                 user_id,
@@ -698,6 +698,8 @@ class GroqClient(AbstractClient):
                 assistant_content,
                 tools_used
             )
+
+        yield ai_message
 
     async def resume(
         self,

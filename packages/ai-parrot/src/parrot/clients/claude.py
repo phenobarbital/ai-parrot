@@ -649,9 +649,10 @@ class AnthropicClient(AbstractClient):
                 session_id=session_id,
                 turn_id=turn_id,
             )
-        yield ai_message
-
-        # Update conversation memory
+        # Update conversation memory BEFORE yielding the final AIMessage so the
+        # memory write executes even if the consumer stops iterating after receiving
+        # the sentinel (generators are not fully drained once the caller exits the
+        # async-for loop).
         if assistant_content:
             await self._update_conversation_memory(
                 user_id,
@@ -667,6 +668,8 @@ class AnthropicClient(AbstractClient):
                 assistant_content,
                 []  # No tools used in streaming
             )
+
+        yield ai_message
 
     async def batch_ask(self, requests: List[BatchRequest], context_1m: bool = False) -> List[AIMessage]:
         """Process multiple requests in batch."""

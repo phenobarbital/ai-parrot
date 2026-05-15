@@ -2053,7 +2053,7 @@ class AgentTalk(BaseView):
                 chat_storage = self.request.app.get('chat_storage')
                 if chat_storage and user_id and session_id and ai_message:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(
+                    _task = loop.create_task(
                         chat_storage.save_turn(
                             turn_id=client_message_id,
                             user_id=user_id,
@@ -2082,6 +2082,14 @@ class AgentTalk(BaseView):
                                 for s in getattr(ai_message, 'source_documents', [])
                             ],
                         )
+                    )
+                    # Log any exception raised inside the background save so it is
+                    # not silently swallowed when the task is garbage-collected.
+                    _task.add_done_callback(
+                        lambda t: self.logger.warning(
+                            "Streamed chat-turn save failed for agent '%s': %s",
+                            agent_name, t.exception(),
+                        ) if not t.cancelled() and t.exception() else None
                     )
             except Exception as ex:
                 self.logger.warning("Error scheduling streamed chat turn save: %s", ex)

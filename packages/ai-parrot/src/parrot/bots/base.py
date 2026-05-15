@@ -1349,8 +1349,12 @@ class BaseBot(AbstractBot):
                     await memory.add_turn(user_id, session_id, turn)
 
                 if ai_message is None:
+                    # Defensive fallback: client did not yield an AIMessage sentinel.
+                    # Use prompt_for_llm (the actual text sent to the LLM) so that
+                    # ai_message.input is consistent with what client-yielded AIMessages
+                    # carry (they use the processed prompt, not the raw user question).
                     ai_message = AIMessage(
-                        input=question,
+                        input=prompt_for_llm,
                         output=full_response,
                         response=full_response,
                         model=kwargs.get('model', self._llm_model) or '',
