@@ -11,12 +11,6 @@ import uuid
 import warnings
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
-# Matches the schema part of a ``schema.table`` reference. Conservative:
-# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
-# we don't want flowing into identifier checks); ASCII identifiers cover
-# every Postgres schema we've seen in practice.
-_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
-
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import OutputMode, StructuredOutputConfig
 from ...stores.abstract import AbstractStore
@@ -35,6 +29,22 @@ from .retries import QueryRetryConfig, RetryContext
 from .router import SchemaQueryRouter
 from .toolkits import DatabaseAgentToolkit
 from .toolkits.base import DatabaseToolkit
+
+
+# ---------------------------------------------------------------------------
+# Module-level compiled patterns
+# ---------------------------------------------------------------------------
+
+# Matches the schema part of a ``schema.table`` reference. Conservative:
+# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
+# we don't want flowing into identifier checks); ASCII identifiers cover
+# every Postgres schema we've seen in practice.
+_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
+
+# FEAT-172: Pattern for a valid, identifier-safe tool_prefix.
+# Must start with an ASCII letter; may contain letters, digits, and underscores.
+# Checked at configure() time before any toolkit tool-name is resolved.
+_TOOL_PREFIX_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +165,32 @@ class DatabaseAgent(BasicAgent):
         """Configure the agent: create cache partitions, start toolkits,
         register tools with the router, and instantiate the internal toolkit.
 
+        Validation steps (FEAT-172) run after all toolkits are started but
+        before ``self._internal_toolkit`` is assigned:
+
+        1. **Prefix presence** — raises ``ValueError`` if any toolkit's
+           ``tool_prefix`` is ``None`` or ``""``; every database toolkit
+           must declare a non-empty prefix.
+        2. **Prefix shape** — raises ``ValueError`` if any toolkit's
+           ``tool_prefix`` does not match ``^[A-Za-z][A-Za-z0-9_]*$``;
+           a non-identifier-safe prefix would produce tool names rejected
+           by LLM providers.
+        3. **Collision detection** — raises ``ValueError`` if two toolkits
+           expose the same fully-qualified tool name (detected via
+           ``list_tool_names()``); the error names both conflicting classes.
+
+        On any validation failure ``self._internal_toolkit`` remains ``None``.
+        Callers must construct a fresh ``DatabaseAgent`` instance after a
+        ``ValueError`` — a failed agent must not be re-used.
+
         Args:
             app: Optional application context (unused, for API compatibility).
+
+        Raises:
+            ValueError: If a toolkit's ``tool_prefix`` is empty or ``None``.
+            ValueError: If a toolkit's ``tool_prefix`` is not identifier-safe.
+            ValueError: If two toolkits register the same fully-qualified tool
+                name.
         """
         primary_schema = "public"
         allowed_schemas: List[str] = []
@@ -196,6 +230,48 @@ class DatabaseAgent(BasicAgent):
                 self.logger.info("Started toolkit: %s", tk_id)
             except Exception as exc:
                 self.logger.warning("Failed to start toolkit %s: %s", tk_id, exc)
+
+        # --- FEAT-172 Pass A: prefix presence ---
+        # Every database toolkit must declare a non-empty tool_prefix.
+        for tk in self.toolkits:
+            if not tk.tool_prefix:
+                raise ValueError(
+                    f"DatabaseToolkit subclasses must declare a non-empty "
+                    f"tool_prefix; {type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
+                    f"Set `tool_prefix` on the toolkit class (e.g. \"db\", \"bq\")."
+                )
+
+        # --- FEAT-172 Pass B: identifier-safe prefix shape ---
+        # The prefix is embedded in LLM-visible tool names; providers
+        # (OpenAI / Anthropic) reject names containing dashes, spaces, or
+        # non-ASCII characters.
+        for tk in self.toolkits:
+            if not _TOOL_PREFIX_PATTERN.fullmatch(tk.tool_prefix):
+                raise ValueError(
+                    f"DatabaseToolkit subclasses must declare an identifier-safe "
+                    f"tool_prefix matching {_TOOL_PREFIX_PATTERN.pattern!r}; "
+                    f"{type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
+                    f"Use only ASCII letters, digits, and underscores, starting "
+                    f"with a letter."
+                )
+
+        # --- FEAT-172 Pass C: collision detection ---
+        # Walk every toolkit's fully-qualified tool names; raise on first
+        # duplicate.  list_tool_names() triggers _generate_tools() lazily
+        # here — the warm cache benefits _compute_active_tools later.
+        fully_qualified_owners: Dict[str, type] = {}
+        for tk in self.toolkits:
+            for full_name in tk.list_tool_names():
+                if full_name in fully_qualified_owners:
+                    prior_owner = fully_qualified_owners[full_name]
+                    raise ValueError(
+                        f"Tool name collision while configuring DatabaseAgent: "
+                        f"{full_name!r} is exposed by both {prior_owner.__name__} and "
+                        f"{type(tk).__name__}. Two toolkits must not register the same "
+                        f"fully-qualified tool name. Change one toolkit's tool_prefix or "
+                        f"remove the duplicate from one of the toolkits."
+                    )
+                fully_qualified_owners[full_name] = type(tk)
 
         self._internal_toolkit = DatabaseAgentToolkit()
 
@@ -765,7 +841,9 @@ class DatabaseAgent(BasicAgent):
                                 "exposed by %s; skipping duplicate from %s "
                                 "(component=%s). Toolkit order in "
                                 "self.toolkits determines first-wins; "
-                                "reorder if needed.",
+                                "reorder if needed. "
+                                "This should have been caught at configure() time "
+                                "— please file a bug.",
                                 full_name,
                                 owner_cls,
                                 this_cls,
