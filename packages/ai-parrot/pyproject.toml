@@ -454,6 +454,12 @@ matrix = [
     "python-olm>=3.2.16",
 ]
 
+# OpenTelemetry distributed tracing (FEAT-176 — lifecycle events)
+otel = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+]
+
 # Convenience groups
 all = [
     "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
