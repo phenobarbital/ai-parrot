@@ -6,7 +6,18 @@ installed will fail at import time. This is intentional — see FEAT-152.
 Public API:
 
     setup_form_api(app, registry, *, client=None, submission_storage=None,
-                   forwarder=None, base_path="/api/v1") -> None
+                   forwarder=None, base_path="/api/v1",
+                   blob_storage=None, resolver=None) -> None
+
+Lazy-init contract for REST field services (FEAT-170):
+- ``app["blob_storage"]`` — instance of ``AbstractBlobStorage``, or ``None``.
+  When ``None``, the upload handler (TASK-1170) constructs ``S3BlobStorage()``
+  on first use from environment variables (``PARROT_BLOB_BUCKET``, etc.).
+- ``app["rest_resolver"]`` — instance of ``RestFieldResolver``, or ``None``.
+  When ``None``, the upload handler creates a default instance on first use.
+
+Callers that do not use ``FieldType.REST`` need not provide these kwargs;
+defaults are ``None`` and no exception is raised.
 """
 
 from __future__ import annotations
@@ -26,13 +37,16 @@ from ..services.registry import FormRegistry
 from . import controls as controls_module
 from . import operations as operations_module
 from . import render as render_module
+from . import uploads as uploads_module
 from .handlers import FormAPIHandler
 
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
+    from ..services.rest_field_resolver import RestFieldResolver
     from ..services.submissions import FormSubmissionStorage
 
 
@@ -75,6 +89,8 @@ def setup_form_api(
     submission_storage: "FormSubmissionStorage | None" = None,
     forwarder: "SubmissionForwarder | None" = None,
     base_path: str = "/api/v1",
+    blob_storage: "AbstractBlobStorage | None" = None,
+    resolver: "RestFieldResolver | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -89,9 +105,19 @@ def setup_form_api(
         submission_storage: Optional storage backend for submissions.
         forwarder: Optional submission forwarder.
         base_path: URL prefix for all routes (default ``"/api/v1"``).
+        blob_storage: Optional ``AbstractBlobStorage`` instance for REST field
+            binary uploads. If ``None``, the upload handler will construct an
+            ``S3BlobStorage()`` lazily on first use from environment variables.
+        resolver: Optional ``RestFieldResolver`` instance. If ``None``, the
+            upload handler will create a default instance on first use.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     app["form_registry"] = registry
+
+    # Stash REST-field services (FEAT-170). Both may be None; the upload
+    # handler resolves defaults lazily on first request.
+    app["blob_storage"] = blob_storage
+    app["rest_resolver"] = resolver
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
@@ -151,6 +177,12 @@ def setup_form_api(
     app.router.add_patch(
         f"{bp}/forms/{{form_id}}/operations",
         _wrap_auth(operations_module.handle_operations),
+    )
+
+    # REST field upload endpoint (Phase 3 — FEAT-170)
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/fields/{{field_id}}/upload",
+        _wrap_auth(uploads_module.handle_rest_upload),
     )
 
     logger.info("setup_form_api: mounted on %s", bp)

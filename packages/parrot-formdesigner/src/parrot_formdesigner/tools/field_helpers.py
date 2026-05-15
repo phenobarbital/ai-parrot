@@ -224,6 +224,26 @@ _FIELD_SCHEMA_SNIPPETS: dict[str, dict[str, Any]] = {
         "label": "Priority Rank",
         "constraints": {"scale_min": 1, "scale_max": 5},
     },
+    # Phase 3 — FEAT-170
+    FieldType.REST.value: {
+        "field_id": "planogram_photo",
+        "field_type": "rest",
+        "label": "Subir foto para planogram compliance",
+        "required": True,
+        "constraints": {
+            "allowed_mime_types": ["image/jpeg", "image/png"],
+            "max_file_size_bytes": 10485760,  # 10 MiB
+        },
+        "meta": {
+            "rest": {
+                "mode": "callback",
+                "callback_ref": "planogram_compliance",
+                "response_path": "$.compliance_score",
+                "display_template": "Compliance: {{ (answer * 100) | round }}/100",
+                "persist_binary": True,
+            }
+        },
+    },
 }
 
 

@@ -295,6 +295,19 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supports_constraints": True,
         "is_container": False,
     },
+    # Phase 3 — FEAT-170
+    FieldType.REST: {
+        "label": "REST",
+        "description": (
+            "Upload content to a REST endpoint or callback; "
+            "the API response becomes the field answer."
+        ),
+        "category": "advanced",
+        "icon": "rest",
+        "render_hint": "upload",
+        "supports_constraints": True,
+        "is_container": False,
+    },
 }
 
 

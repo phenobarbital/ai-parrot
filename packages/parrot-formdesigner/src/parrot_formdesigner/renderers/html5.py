@@ -552,6 +552,15 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_scale(field, value))
 
+        # Phase 3 — FEAT-170
+        elif ft == FieldType.REST:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_rest_uploader(field))
+
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
@@ -844,6 +853,52 @@ class HTML5Renderer(AbstractFormRenderer):
             )
         parts.append('</div>')
         return "\n".join(parts)
+
+    def _render_rest_uploader(self, field: FormField) -> str:
+        """Render a REST upload field as a native <RestUploader> markup block.
+
+        Emits:
+        - A visible ``<input type="file">`` for user-side file picking.
+        - Hidden ``<input>`` fields for ``answer`` and ``blob_ref`` (populated
+          by the frontend ``<RestUploader>`` component after upload).
+        - Data attributes for the upload endpoint URL template, spinner, and
+          retry hooks consumed by the frontend component.
+
+        Args:
+            field: REST FormField.
+
+        Returns:
+            HTML string for the REST uploader control.
+        """
+        # MIME type accept string from constraints
+        mime_types = ""
+        if field.constraints and field.constraints.allowed_mime_types:
+            mime_types = ",".join(field.constraints.allowed_mime_types)
+
+        upload_url = (
+            f"/api/v1/forms/{{form_id}}/fields/{field.field_id}/upload"
+        )
+        required_attr = " required" if field.required else ""
+        accept_attr = f' accept="{mime_types}"' if mime_types else ""
+
+        return (
+            f'<div class="parrot-rest-uploader" '
+            f'data-field-id="{field.field_id}" '
+            f'data-upload-url="{upload_url}" '
+            f'data-rest-uploader="true">'
+            f'<input type="file" '
+            f'name="{field.field_id}_file"'
+            f'{accept_attr}'
+            f'{required_attr}'
+            f' class="form-field__rest-file block w-full text-sm">'
+            f'<input type="hidden" name="{field.field_id}.answer" '
+            f'id="{field.field_id}_answer">'
+            f'<input type="hidden" name="{field.field_id}.blob_ref" '
+            f'id="{field.field_id}_blob_ref">'
+            f'<span class="rest-status text-xs text-gray-500 mt-1 block" '
+            f'aria-live="polite"></span>'
+            f'</div>'
+        )
 
     def _render_subsection_html(
         self,

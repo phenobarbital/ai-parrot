@@ -78,6 +78,8 @@ _AC_FALLBACK_TYPES = frozenset({
     FieldType.SIGNATURE,
     FieldType.REMOTE_RESPONSE,
     FieldType.AVAILABILITY,
+    # Phase 3 — FEAT-170
+    FieldType.REST,
 })
 
 
