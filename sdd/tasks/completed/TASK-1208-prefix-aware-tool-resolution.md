@@ -543,4 +543,19 @@ class TestNoRegression:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-15.
+
+**Changes made:**
+- `agent.py`: Added `import warnings` and `FrozenSet, Tuple` to typing imports.
+- `agent.py`: Replaced `_COMPONENT_TO_TOOL_NAMES` with two maps:
+  `_INTERNAL_TOOLS_BY_COMPONENT` (names without prefix, resolved via `getattr`)
+  and `_TOOLKIT_TOOLS_BY_COMPONENT` (logical names, each toolkit applies its own prefix).
+- `agent.py`: Added `self._logged_collisions: Set[Tuple[str, FrozenSet[str]]]` and
+  `self._warned_none_prefix: Set[int]` to `DatabaseAgent.__init__`.
+- `agent.py`: Rewrote `_compute_active_tools` with two-pass prefix-aware resolution.
+- Updated docstring to drop hardcoded prefix wording.
+- `tests/unit/bots/database/conftest.py`: Created `MockDatabaseToolkit` fixture.
+- `tests/unit/bots/database/test_compute_active_tools.py`: Created 8 unit tests.
+
+**Acceptance grep:** `grep '"db_' agent.py` returned zero matches.
+**Tests:** 8/8 passed.
