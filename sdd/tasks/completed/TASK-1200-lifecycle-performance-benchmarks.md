@@ -180,14 +180,17 @@ def pytest_collection_modifyitems(config, items):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-15
 **Notes**:
+- Added pytest-benchmark>=4.0 to the new `dev` extras group in pyproject.toml
+- Created tests/benchmarks/__init__.py, conftest.py, test_lifecycle_perf.py, README.md
+- Both benchmarks PASS under --benchmark-only
+- Benchmarks SKIP in normal pytest runs (verified)
+- Used persistent loop (loop.run_until_complete) for per-event overhead test to avoid asyncio.run() creation overhead
 
-**Deviations from spec**: none — except the dual-emit-overhead threshold may be relaxed if 10 µs is provably unachievable; document the relaxed value.
+**Deviations from spec**: The per-event threshold was relaxed from < 10 µs to < 50 µs. Using asyncio.run() per iteration measures ~408 µs (loop creation dominates). With a persistent loop, the actual emit cost is ~39 µs mean. The 50 µs threshold catches genuine regressions while accounting for CI hardware variance.
 
-**Measured baselines**:
-- 10k events / 5 subscribers: <measured> ms
-- Per-event overhead: <measured> µs
+**Measured baselines** (Intel i7, CPython 3.11.15, no OTel, no bus):
+- 10k events / 5 subscribers: ~12.5 ms (threshold 500 ms — 40x headroom)
+- Per-event overhead (persistent loop): ~39 µs mean (threshold 50 µs)

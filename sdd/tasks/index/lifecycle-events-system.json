@@ -393,7 +393,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -404,8 +404,8 @@
       "parallelism_notes": "Touches only tests/benchmarks/ + pyproject extras; parallel with 1198/1199.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1200-lifecycle-performance-benchmarks.md"
+      "completed_at": "2026-05-15T14:56:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1200-lifecycle-performance-benchmarks.md"
     }
   ]
 }
