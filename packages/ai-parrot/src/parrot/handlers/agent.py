@@ -1979,7 +1979,6 @@ class AgentTalk(BaseView):
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'X-Parrot-Stream': 'chunked-aimessage',
-                'Access-Control-Allow-Origin': '*',
                 'X-Accel-Buffering': 'no',
             },
         )
