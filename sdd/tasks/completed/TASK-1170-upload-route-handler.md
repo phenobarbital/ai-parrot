@@ -178,4 +178,4 @@ Mirror spec §4 Integration Tests rows.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `api/uploads.py` with `handle_rest_upload()`: multipart streaming with size limit, MIME validation (415), form/field resolution (404), RestFieldSpec TypeAdapter validation, blob storage put, prior-blob deletion via X-Parrot-Prior-Blob-Ref header (delete failure appends warning, no 500), RestFieldResolver.resolve() call, JSON envelope response. Resolver success=False maps to 200 with success:false. Mounted route in routes.py. Created integration test with 9 tests covering happy path, 404, 400, 415, delete failure, and resolver failure cases.

@@ -70,6 +70,8 @@ _LEGACY_FIELD_TYPE_MAP: dict[str, FieldType] = {
     "nps": FieldType.NPS,
     "likert": FieldType.LIKERT,
     "ranking": FieldType.RANKING,
+    # Phase 3 — FEAT-170
+    "rest": FieldType.REST,
 }
 
 # Map legacy validation rule names to FieldConstraints attributes

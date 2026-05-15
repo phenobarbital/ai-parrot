@@ -198,8 +198,8 @@ def test_field_type_enum_has_new_values():
 
 
 def test_field_type_enum_total_count():
-    """FieldType now has exactly 30 values (20 existing + 10 new)."""
-    assert len(FieldType) == 30
+    """FieldType now has exactly 31 values (20 existing + 10 FEAT-167 + 1 FEAT-170 REST)."""
+    assert len(FieldType) == 31
 
 
 def test_field_type_existing_values_unchanged():

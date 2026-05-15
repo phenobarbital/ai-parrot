@@ -195,4 +195,11 @@ def test_pdf_fallback_warns(rest_callback_field):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented all 6 renderer entries for FieldType.REST:
+- html5.py: native `<div class="parrot-rest-uploader">` with `<input type="file">`, hidden answer/blob_ref inputs, data attributes.
+- jsonschema.py: object schema with properties.answer/{}, properties.blob_ref/nullable-string, required=["answer"], x-parrot-rest extension with mode/response_path/display_template/upload_url_template.
+- adaptive_card.py: added REST to `_AC_FALLBACK_TYPES`; renders as text placeholder + RenderWarning(renderer="adaptive_card").
+- pdf.py: added REST to `_PDF_FALLBACK_NEW_TYPES`; renders as placeholder textfield + RenderWarning(renderer="pdf").
+- xforms.py: added REST to `_FIELD_TO_XFORMS` as ("input", "string") fallback mapping.
+- telegram/renderer.py: added REST to `_WEBAPP_FIELD_TYPES`; analyze_form() returns WEBAPP mode.
+Created 6 test files (31 tests total), all passing. No FEAT-167 renderer regressions (53 total tests pass).

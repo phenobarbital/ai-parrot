@@ -89,6 +89,8 @@ _FIELD_TO_XFORMS: dict[FieldType, tuple[str, str | None]] = {
     FieldType.NPS: ("range", "integer"),             # <xf:range> 0–10
     FieldType.LIKERT: ("select1", "string"),         # <xf:select1> scale
     FieldType.RANKING: ("range", "integer"),         # <xf:range>
+    # Phase 3 — FEAT-170
+    FieldType.REST: ("input", "string"),             # fallback: plain text
 }
 
 

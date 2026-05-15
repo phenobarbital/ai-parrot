@@ -52,6 +52,8 @@ _FORMAT_MAP: dict[str, FieldType] = {
     "nps": FieldType.NPS,
     "likert": FieldType.LIKERT,
     "ranking": FieldType.RANKING,
+    # Phase 3 — FEAT-170
+    "rest": FieldType.REST,
 }
 
 
@@ -188,6 +190,25 @@ class JsonSchemaExtractor:
             prop = non_null[0] if non_null else {"type": "string"}
             if "$ref" in prop:
                 prop = self._resolve_ref(prop["$ref"], root_schema)
+
+        # Handle x-parrot-rest extension → FieldType.REST (FEAT-170)
+        x_parrot_rest = prop.get("x-parrot-rest")
+        if x_parrot_rest and isinstance(x_parrot_rest, dict):
+            meta = {"rest": x_parrot_rest}
+            label = prop.get("title", name.replace("_", " ").title())
+            description = prop.get("description")
+            default = prop.get("default")
+            constraints = self._extract_constraints(prop)
+            return FormField(
+                field_id=name,
+                field_type=FieldType.REST,
+                label=label,
+                description=description,
+                required=required,
+                default=default,
+                constraints=constraints if constraints and self._has_constraints(constraints) else None,
+                meta=meta,
+            )
 
         field_type = self._map_type(prop)
         label = prop.get("title", name.replace("_", " ").title())

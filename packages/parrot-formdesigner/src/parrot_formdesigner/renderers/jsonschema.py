@@ -56,6 +56,8 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.NPS: "integer",
     FieldType.LIKERT: "integer",
     FieldType.RANKING: "integer",
+    # Phase 3 — FEAT-170
+    FieldType.REST: "object",
 }
 
 # FieldType → JSON Schema "format" keyword (where applicable)
@@ -76,6 +78,8 @@ _FORMAT_MAP: dict[FieldType, str] = {
     FieldType.NPS: "nps",
     FieldType.LIKERT: "likert",
     FieldType.RANKING: "ranking",
+    # Phase 3 — FEAT-170
+    FieldType.REST: "rest",
 }
 
 
@@ -416,6 +420,24 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         if field.read_only:
             prop["readOnly"] = True
             prop["x-read-only"] = True
+
+        # REST — native object schema with x-parrot-rest extension (FEAT-170)
+        if ft == FieldType.REST:
+            prop["properties"] = {
+                "answer": {},  # heterogeneous — any type
+                "blob_ref": {"type": ["string", "null"]},
+            }
+            prop["required"] = ["answer"]
+            # Populate x-parrot-rest from meta["rest"]
+            rest_meta = (field.meta or {}).get("rest", {})
+            prop["x-parrot-rest"] = {
+                "mode": rest_meta.get("mode"),
+                "response_path": rest_meta.get("response_path"),
+                "display_template": rest_meta.get("display_template"),
+                "upload_url_template": (
+                    "/api/v1/forms/{form_id}/fields/{field_id}/upload"
+                ),
+            }
 
         # Default / pre-filled value
         if field.field_id in prefilled:

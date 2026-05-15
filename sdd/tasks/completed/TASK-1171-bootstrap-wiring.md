@@ -113,4 +113,4 @@ def test_setup_with_kwargs_stashes(blob_storage_mock, resolver_mock):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Extended `setup_form_api()` with `blob_storage: AbstractBlobStorage | None = None` and `resolver: RestFieldResolver | None = None` kwargs. Both stashed on app dict as `app["blob_storage"]` and `app["rest_resolver"]`. Added lazy-init contract documentation in module docstring. Also mounted the REST upload route. Created `tests/unit/api/test_setup_form_api_rest.py` with 7 tests covering backwards compat, kwarg stashing, route mounting, and custom base_path. All tests pass.

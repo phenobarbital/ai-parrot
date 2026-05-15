@@ -90,4 +90,4 @@ def test_yaml_rest_roundtrip():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added "rest": FieldType.REST to `_LEGACY_FIELD_TYPE_MAP` in yaml.py extractor. Added "rest": FieldType.REST to `_FORMAT_MAP` in jsonschema.py extractor, plus x-parrot-rest detection at the start of `_property_to_field()` that maps any property with x-parrot-rest extension to FieldType.REST and preserves meta["rest"]. Created test files `tests/unit/extractors/test_yaml_rest.py` and `tests/unit/extractors/test_jsonschema_rest.py`, all tests passing.
