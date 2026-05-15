@@ -32,7 +32,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": true,
       "parallelism_notes": "Edits cache.py + agent.py. Disjoint from TASK-1203 (sql.py) and TASK-1205 (postgres.py). Can run in parallel with both after TASK-1201 lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T18:27:25+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1202-cachepartition-api-rework.md"
     },
