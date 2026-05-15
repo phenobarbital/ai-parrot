@@ -113,7 +113,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Edits prompts.py. Disjoint from TASK-1205. Can run in parallel with TASK-1205 once TASK-1204 lands.",
       "assigned_to": null,
       "started_at": "2026-05-15T19:45:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1206-schema-tool-usage-prompt-layer.md"
+      "completed_at": "2026-05-15T19:53:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1206-schema-tool-usage-prompt-layer.md"
     },
     {
       "id": "TASK-1207",
