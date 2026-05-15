@@ -32,7 +32,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Independent new module; can run concurrently with TASK-1160.",
       "assigned_to": null,
       "started_at": "2026-05-15T01:32:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1161-callback-registry.md"
+      "completed_at": "2026-05-15T01:34:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1161-callback-registry.md"
     },
     {
       "id": "TASK-1162",
