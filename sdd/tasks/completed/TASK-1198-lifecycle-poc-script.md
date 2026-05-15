@@ -190,10 +190,14 @@ python packages/ai-parrot/examples/lifecycle_events_poc.py
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-15
 **Notes**:
+- Created packages/ai-parrot/examples/lifecycle_events_poc.py with all 5 scenarios
+- All scenarios PASS (exit code 0): basic_telemetry, otel_spans, a2a_trace_propagation, yaml_declarative, subscriber_error_isolation
+- Scenario 2 (OTel) passes because opentelemetry-sdk is installed; it would SKIP gracefully if absent
+- Fixed 6 unused imports (logging, TraceContext alias, EventEmitterMixin, LoggingSubscriber, InvokeFailedEvent, ToolCallFailedEvent) before final commit
+- Uses _CapturingProvider(EventProvider) with register() method for YAML declarative scenario
+- BeforeToolCallEvent (emit_nowait) captured after await asyncio.sleep(0) drains the task queue
 
 **Deviations from spec**: none
