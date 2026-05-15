@@ -93,7 +93,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": true,
       "parallelism_notes": "Edits postgres.py only. Disjoint from TASK-1202, TASK-1203, TASK-1204. Can run in parallel with the whole sql.py / cache.py chain.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T19:20:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1205-postgrestoolkit-pg-catalog-migration.md"
     },
