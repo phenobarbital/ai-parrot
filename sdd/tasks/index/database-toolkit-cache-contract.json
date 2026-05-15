@@ -72,7 +72,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Edits sql.py with deep changes; sequential after TASK-1203.",
       "assigned_to": null,
       "started_at": "2026-05-15T18:59:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1204-sqltoolkit-methods-fix-extend-repurpose.md"
+      "completed_at": "2026-05-15T19:16:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1204-sqltoolkit-methods-fix-extend-repurpose.md"
     },
     {
       "id": "TASK-1205",
