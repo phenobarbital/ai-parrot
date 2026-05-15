@@ -14,14 +14,14 @@
       "feature_id": "FEAT-171",
       "feature": "databaseagent-prefix-aware-tools",
       "spec": "sdd/specs/databaseagent-prefix-aware-tools.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single-file refactor of agent.py + new conftest + unit tests. Must land before TASK-1209.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T18:50:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1208-prefix-aware-tool-resolution.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-171",
       "feature": "databaseagent-prefix-aware-tools",
       "spec": "sdd/specs/databaseagent-prefix-aware-tools.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1208"],
+      "depends_on": [
+        "TASK-1208"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on the Mock fixture and prefix-aware implementation from TASK-1208.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T18:50:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1209-multi-toolkit-integration-test.md"
     }
