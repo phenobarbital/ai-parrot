@@ -76,6 +76,9 @@ class SQLToolkit(DatabaseToolkit):
         "health_check",
     )
 
+    # Subclasses that migrate to pg_catalog override this to "pg_catalog".
+    _metadata_source: str = "information_schema"
+
     def __init__(
         self,
         dsn: str,
@@ -620,6 +623,7 @@ class SQLToolkit(DatabaseToolkit):
         self,
         search_term: str,
         schemas: List[str],
+        limit: int = 20,
     ) -> tuple[str, tuple]:
         """Return ``(sql, params)`` for table discovery via information_schema.
 
@@ -629,6 +633,7 @@ class SQLToolkit(DatabaseToolkit):
         Args:
             search_term: Term to match against table names.
             schemas: List of schema names to search.
+            limit: Maximum rows to return (bound as ``$3``).
 
         Returns:
             ``(sql, params_tuple)`` ready for :meth:`_execute_asyncdb`.
@@ -648,7 +653,7 @@ class SQLToolkit(DatabaseToolkit):
             ORDER BY table_name
             LIMIT $3
         """
-        return sql, (schemas, f"%{search_term}%", 20)
+        return sql, (schemas, f"%{search_term}%", limit)
 
     def _get_columns_query(self, schema: str, table: str) -> tuple[str, tuple]:
         """Return ``(sql, params)`` for column metadata.
@@ -830,7 +835,7 @@ class SQLToolkit(DatabaseToolkit):
         target_schemas = [schema_name] if schema_name else self.allowed_schemas
 
         async def _run(pattern: str) -> tuple[Optional[list], Optional[str]]:
-            info_sql, params = self._get_information_schema_query(pattern, target_schemas)
+            info_sql, params = self._get_information_schema_query(pattern, target_schemas, limit)
             try:
                 return await self._execute_asyncdb(info_sql, params=params, limit=limit, timeout=30)
             except Exception as exc:
@@ -931,7 +936,7 @@ class SQLToolkit(DatabaseToolkit):
             )
             if meta is not None:
                 meta.completeness = Completeness.FULL
-                meta.source = "information_schema"
+                meta.source = self._metadata_source
             future.set_result(meta)
             return meta
         except Exception as exc:  # noqa: BLE001
@@ -1024,6 +1029,7 @@ class SQLToolkit(DatabaseToolkit):
                 indexes=[],
                 comment=comment,
                 unique_constraints=unique_constraints,
+                source=self._metadata_source,
             )
         except Exception as exc:
             self.logger.warning("Failed to build metadata for %s.%s: %s", schema, table, exc)
