@@ -53,6 +53,7 @@ _PDF_FALLBACK_NEW_TYPES = frozenset({
     FieldType.AVAILABILITY,
     FieldType.TRANSFER_LIST,
     FieldType.DYNAMIC_SELECT,
+    FieldType.REST,  # FEAT-170: REST upload not supported in PDF
 })
 
 

@@ -62,6 +62,8 @@ _WEBAPP_FIELD_TYPES = {
     FieldType.REMOTE_RESPONSE,
     FieldType.AVAILABILITY,
     FieldType.TAGS,
+    # New field type (FEAT-170) — WebApp-only
+    FieldType.REST,
 }
 
 # File-type fields that cannot be handled inline even if forced

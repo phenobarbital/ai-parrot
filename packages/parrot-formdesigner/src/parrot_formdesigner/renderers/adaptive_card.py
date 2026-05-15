@@ -78,6 +78,7 @@ _AC_FALLBACK_TYPES = frozenset({
     FieldType.SIGNATURE,
     FieldType.REMOTE_RESPONSE,
     FieldType.AVAILABILITY,
+    FieldType.REST,  # FEAT-170: no native AC equivalent
 })
 
 

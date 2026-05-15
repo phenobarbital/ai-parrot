@@ -240,6 +240,15 @@ class HTML5Renderer(AbstractFormRenderer):
             async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
                 return self_._r._render_availability(field)
 
+        class _RestUploaderRenderer:
+            """Renderer for REST — file uploader with hidden answer/blob_ref inputs."""
+
+            def __init__(self_, renderer: "HTML5Renderer") -> None:
+                self_._r = renderer
+
+            async def render(self_, field: FormField, *, locale: str = "en", prefilled: Any = None, error: str | None = None) -> Any:
+                return self_._r._render_rest(field)
+
         class _LocationRenderer:
             """Renderer for LOCATION — country select."""
 
@@ -282,6 +291,8 @@ class HTML5Renderer(AbstractFormRenderer):
             FieldType.NPS: _NpsRenderer(self),
             FieldType.LIKERT: _ScaleRenderer(self),
             FieldType.RANKING: _ScaleRenderer(self),
+            # New field type (FEAT-170)
+            FieldType.REST: _RestUploaderRenderer(self),
         }
 
     async def render(
@@ -552,6 +563,15 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_scale(field, value))
 
+        # New field type (FEAT-170)
+        elif ft == FieldType.REST:
+            parts.append(
+                f'<label class="block text-sm font-medium text-gray-700 mb-1">{label_text}</label>'
+            )
+            if description:
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
+            parts.append(self._render_rest(field))
+
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
@@ -582,6 +602,29 @@ class HTML5Renderer(AbstractFormRenderer):
             f'data-signature="true" width="400" height="150"></canvas>'
             f'<input type="hidden" id="{field.field_id}_svg" name="{field.field_id}_svg">'
             f'<input type="hidden" id="{field.field_id}_png" name="{field.field_id}_png">'
+        )
+
+    def _render_rest(self, field: FormField) -> str:
+        """Render a REST field as a file-uploader widget with hidden answer/blob_ref inputs.
+
+        Args:
+            field: REST FormField.
+
+        Returns:
+            HTML markup for the REST uploader widget.
+        """
+        constraints = field.constraints
+        accept = ",".join(constraints.allowed_mime_types) if constraints and constraints.allowed_mime_types else ""
+        accept_attr = f' accept="{accept}"' if accept else ""
+        required_attr = " required" if field.required else ""
+        return (
+            f'<div class="parrot-rest-uploader" data-field-id="{field.field_id}"'
+            f' data-upload-url="/api/v1/forms/{{form_id}}/fields/{field.field_id}/upload">'
+            f'<input type="file" name="{field.field_id}_file"{accept_attr}{required_attr}>'
+            f'<input type="hidden" name="{field.field_id}.answer">'
+            f'<input type="hidden" name="{field.field_id}.blob_ref">'
+            f'<span class="rest-status"></span>'
+            f'</div>'
         )
 
     def _render_dynamic_select(self, field: FormField, value: Any, locale: str) -> str:

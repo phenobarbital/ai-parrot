@@ -56,6 +56,8 @@ _TYPE_MAP: dict[FieldType, str] = {
     FieldType.NPS: "integer",
     FieldType.LIKERT: "integer",
     FieldType.RANKING: "integer",
+    # New field type (FEAT-170)
+    FieldType.REST: "object",
 }
 
 # FieldType → JSON Schema "format" keyword (where applicable)
@@ -353,6 +355,21 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         # TRANSFER_LIST — array of string values
         if ft == FieldType.TRANSFER_LIST:
             prop["items"] = {"type": "string"}
+
+        # REST — object with answer + blob_ref; x-parrot-rest extension (FEAT-170)
+        if ft == FieldType.REST:
+            rest_meta = (field.meta or {}).get("rest", {})
+            prop["properties"] = {
+                "answer": {},
+                "blob_ref": {"type": ["string", "null"]},
+            }
+            prop["required"] = ["answer"]
+            prop["x-parrot-rest"] = {
+                "mode": rest_meta.get("mode"),
+                "response_path": rest_meta.get("response_path"),
+                "display_template": rest_meta.get("display_template"),
+                "upload_url_template": "/api/v1/forms/{form_id}/fields/{field_id}/upload",
+            }
 
         # DYNAMIC_SELECT — options source required; enum not pre-set
         if ft == FieldType.DYNAMIC_SELECT and field.options_source:
