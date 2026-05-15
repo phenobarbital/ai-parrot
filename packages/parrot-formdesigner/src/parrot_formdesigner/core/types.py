@@ -47,3 +47,5 @@ class FieldType(str, Enum):
     NPS = "nps"
     LIKERT = "likert"
     RANKING = "ranking"
+    # Phase 3 — FEAT-170
+    REST = "rest"
