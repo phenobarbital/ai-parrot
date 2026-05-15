@@ -14,14 +14,16 @@
       "feature_id": "FEAT-172",
       "feature": "databaseagent-mandatory-prefix-collision",
       "spec": "sdd/specs/databaseagent-mandatory-prefix-collision.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1208"],
+      "depends_on": [
+        "TASK-1208"
+      ],
       "parallel": false,
       "parallelism_notes": "Builds on FEAT-171's two-map split and runtime warning (TASK-1208 in feat-171 worktree). Must wait for FEAT-171 to land on dev before starting.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T20:05:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1210-configure-time-prefix-and-collision-checks.md"
     },
@@ -32,14 +34,16 @@
       "feature_id": "FEAT-172",
       "feature": "databaseagent-mandatory-prefix-collision",
       "spec": "sdd/specs/databaseagent-mandatory-prefix-collision.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1210"],
+      "depends_on": [
+        "TASK-1210"
+      ],
       "parallel": false,
       "parallelism_notes": "Smoke test for the canonical sql_analyst config. Depends on TASK-1210 landing.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T20:05:09+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1211-sql-analyst-no-regression-integration.md"
     }
