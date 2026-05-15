@@ -235,4 +235,12 @@ async def test_clears_inflight_on_exception(toolkit):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented on branch `feat-178-database-toolkit-cache-contract`.
+
+- Added `Tuple` to typing imports and `Completeness` to models import in `sql.py`.
+- Added `_inflight: Dict[Tuple[str, str], asyncio.Future]` and `_inflight_lock: asyncio.Lock` to `SQLToolkit.__init__` (pattern consistent with rest of codebase).
+- Added `_introspect_table_full(schema, table)`: coalesces concurrent calls via a future map; owner does the DB call, waiters await the same future; `finally` cleans up the map under the lock.
+- Sets `completeness=FULL` and `source="information_schema"` on the result (ready for TASK-1205 to flip to `"pg_catalog"`).
+- Done-callback added to the future to suppress asyncio's "Future exception was never retrieved" warning in single-caller exception scenarios.
+- Pre-existing E402 lint (regexes before relative imports) fixed by moving constants after imports.
+- 7/7 new tests pass with no asyncio warnings; all 59 existing database tests unaffected.

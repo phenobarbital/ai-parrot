@@ -52,7 +52,7 @@
       "feature_id": "FEAT-178",
       "feature": "database-toolkit-cache-contract",
       "spec": "sdd/specs/database-toolkit-cache-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Adds private helpers in sql.py. Disjoint from TASK-1202 (cache.py) and TASK-1205 (postgres.py). Must finish before TASK-1204 (which also edits sql.py).",
       "assigned_to": null,
       "started_at": "2026-05-15T18:43:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1203-introspection-coalescing.md"
+      "completed_at": "2026-05-15T18:54:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1203-introspection-coalescing.md"
     },
     {
       "id": "TASK-1204",
