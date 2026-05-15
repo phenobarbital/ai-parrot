@@ -26,6 +26,7 @@ from ..services.registry import FormRegistry
 from . import controls as controls_module
 from . import operations as operations_module
 from . import render as render_module
+from . import uploads as uploads_module
 from .handlers import FormAPIHandler
 
 
@@ -151,6 +152,12 @@ def setup_form_api(
     app.router.add_patch(
         f"{bp}/forms/{{form_id}}/operations",
         _wrap_auth(operations_module.handle_operations),
+    )
+
+    # REST field file upload (FEAT-170)
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/fields/{{field_id}}/upload",
+        _wrap_auth(uploads_module.handle_rest_upload),
     )
 
     logger.info("setup_form_api: mounted on %s", bp)
