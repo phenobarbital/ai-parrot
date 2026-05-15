@@ -90,6 +90,16 @@ class BaseVideoLoader(AbstractLoader):
         self._summarizer_device = None
         self._summarizer_dtype = None
 
+        # Cached WhisperX pipelines — loaded on first use, reused across files.
+        # Keyed by (model_id, device, compute_type) so a config change forces reload.
+        self._whisperx_model = None
+        self._whisperx_model_key: tuple = ()   # (model_id, device, compute_type)
+        self._align_model = None
+        self._align_meta = None
+        self._align_model_key: tuple = ()      # (language_code, device)
+        self._diarizer = None
+        self._diarizer_key: tuple = ()         # (token, device)
+
         # Store device info for lazy loading
         device, _, dtype = self._get_device()
         self._summarizer_device = device
@@ -445,22 +455,27 @@ class BaseVideoLoader(AbstractLoader):
                 "Missing PYANNOTE token. Set PYANNOTE_AUDIO_AUTH or pass pyannote_token=..."
             )
 
-        # 1) Run WhisperX diarization on the file
-        try:
-            diarizer = whisperx.diarize.DiarizationPipeline(
-                token=token,
-                device=device
-            )
-        except Exception as e:
-            if "mps" in str(e).lower() and device == "mps":
-                print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
-                device = "cpu"
-                diarizer = whisperx.diarize.DiarizationPipeline(
+        # 1) Run WhisperX diarization on the file — reuse cached pipeline when possible
+        diarizer_key = (token, device)
+        if self._diarizer is None or self._diarizer_key != diarizer_key:
+            try:
+                self._diarizer = whisperx.diarize.DiarizationPipeline(
                     token=token,
-                    device=device
+                    device=device,
                 )
-            else:
-                raise
+                self._diarizer_key = diarizer_key
+            except Exception as e:
+                if "mps" in str(e).lower() and device == "mps":
+                    print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
+                    device = "cpu"
+                    self._diarizer = whisperx.diarize.DiarizationPipeline(
+                        token=token,
+                        device=device,
+                    )
+                    self._diarizer_key = (token, device)
+                else:
+                    raise
+        diarizer = self._diarizer
 
         if speaker_names and len(speaker_names) > 1:
             min_speakers = max(2, len(speaker_names) - 1)
@@ -1041,29 +1056,36 @@ class BaseVideoLoader(AbstractLoader):
         else:
             model_id = self._get_whisperx_name(lang, self._model_size)
 
-        # 1) ASR
-        model = whisperx.load_model(
-            model_id,
-            device=device,
-            compute_type=compute_type,
-            language=language
-        )
+        # 1) ASR — reuse cached model when config matches
+        asr_key = (model_id, device, compute_type)
+        if self._whisperx_model is None or self._whisperx_model_key != asr_key:
+            self._whisperx_model = whisperx.load_model(
+                model_id,
+                device=device,
+                compute_type=compute_type,
+                language=language,
+            )
+            self._whisperx_model_key = asr_key
         audio = whisperx.load_audio(str(audio_path))
-        asr_result = model.transcribe(audio, batch_size=batch_size)
+        asr_result = self._whisperx_model.transcribe(audio, batch_size=batch_size)
         lang = asr_result.get("language", language)
         segs = asr_result.get("segments", []) or []
 
-        # 2) Alignment → precise word times
-        align_model, align_meta = whisperx.load_align_model(
-            language_code=asr_result.get("language", language), device=device
-        )
+        # 2) Alignment — reuse cached align model when language+device match
+        detected_lang = asr_result.get("language", language)
+        align_key = (detected_lang, device)
+        if self._align_model is None or self._align_model_key != align_key:
+            self._align_model, self._align_meta = whisperx.load_align_model(
+                language_code=detected_lang, device=device
+            )
+            self._align_model_key = align_key
         aligned = whisperx.align(
             segs,
-            align_model,
-            align_meta,
+            self._align_model,
+            self._align_meta,
             audio,
             device=device,
-            return_char_alignments=False
+            return_char_alignments=False,
         )
 
         # build the return payload in your existing schema
@@ -1086,16 +1108,6 @@ class BaseVideoLoader(AbstractLoader):
             chunks.append({"text": text, "timestamp": (s, e), "words": words_out})
             if text:
                 full_text_parts.append(text)
-
-        # Cleanup
-        del model
-        del align_model
-        gc.collect()
-        try:
-            if device.startswith("cuda"):
-                torch.cuda.empty_cache()
-        except Exception:
-            pass
 
         return {"text": " ".join(full_text_parts).strip(), "chunks": chunks, "language": lang}
 
@@ -1618,6 +1630,24 @@ class BaseVideoLoader(AbstractLoader):
         Call this method when done processing to free VRAM for other tasks.
         """
         freed_items = []
+
+        # Free cached WhisperX pipelines
+        if self._whisperx_model is not None:
+            del self._whisperx_model
+            self._whisperx_model = None
+            self._whisperx_model_key = ()
+            freed_items.append("whisperx_model")
+        if self._align_model is not None:
+            del self._align_model
+            self._align_model = None
+            self._align_meta = None
+            self._align_model_key = ()
+            freed_items.append("align_model")
+        if self._diarizer is not None:
+            del self._diarizer
+            self._diarizer = None
+            self._diarizer_key = ()
+            freed_items.append("diarizer")
 
         # Free summarizer if it was loaded
         if self._summarizer is not None:
