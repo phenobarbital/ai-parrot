@@ -159,10 +159,14 @@ None (this is documentation). Quality check: an internal reviewer must be able t
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-15
 **Notes**:
+- Created packages/ai-parrot/docs/lifecycle_events.md (599 lines)
+- All 13 content sections per scope: Overview/Quickstart, Event catalog, Registry API, TraceContext semantics, Global registry/scope, Dispatch ordering, Error isolation, Dual-emit, YAML syntax, Built-in subscribers, emit_nowait gotcha, Migration guide, What is not here yet
+- Event catalog tables cover all 15 events grouped by domain with fields from spec §2
+- Migration table covers both `add_event_listener` and `_trigger_event` with before/after comparison
+- Reverse-ordering surprise explained with cleanup-symmetry rationale (try/finally / context-manager __exit__ analogy)
+- All code examples use verified public API from parrot.core.events.lifecycle
 
 **Deviations from spec**: none

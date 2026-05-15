@@ -373,7 +373,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -383,8 +383,8 @@
       "parallelism_notes": "Only edits docs/lifecycle_events.md; can run alongside 1198 (PoC) and 1200 (benchmarks).",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1199-lifecycle-events-docs.md"
+      "completed_at": "2026-05-15T14:53:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1199-lifecycle-events-docs.md"
     },
     {
       "id": "TASK-1200",
