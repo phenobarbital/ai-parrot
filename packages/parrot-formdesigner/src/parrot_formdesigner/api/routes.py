@@ -33,7 +33,9 @@ from .handlers import FormAPIHandler
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+    from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
+    from ..services.rest_field_resolver import RestFieldResolver
     from ..services.submissions import FormSubmissionStorage
 
 
@@ -75,6 +77,8 @@ def setup_form_api(
     client: "AbstractClient | None" = None,
     submission_storage: "FormSubmissionStorage | None" = None,
     forwarder: "SubmissionForwarder | None" = None,
+    blob_storage: "AbstractBlobStorage | None" = None,
+    resolver: "RestFieldResolver | None" = None,
     base_path: str = "/api/v1",
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
@@ -83,16 +87,25 @@ def setup_form_api(
     ``user_session`` decorators. Telegram webhook routes do NOT belong here
     — see ``parrot_formdesigner.ui.setup_form_ui`` for those.
 
+    ``blob_storage`` and ``resolver`` are optional. When ``None``, the upload
+    handler (``api/uploads.py``) will raise HTTP 500 for REST-field uploads
+    until they are wired. Pass concrete instances to enable REST-field uploads.
+
     Args:
         app: aiohttp application to register routes on.
         registry: Pre-built ``FormRegistry`` shared across requests.
         client: Optional LLM client for natural language form creation.
         submission_storage: Optional storage backend for submissions.
         forwarder: Optional submission forwarder.
+        blob_storage: Optional blob storage backend for REST-field uploads.
+        resolver: Optional REST field resolver for REST-field uploads.
         base_path: URL prefix for all routes (default ``"/api/v1"``).
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     app["form_registry"] = registry
+    # REST-field upload dependencies (FEAT-170); None when not configured.
+    app["blob_storage"] = blob_storage
+    app["rest_resolver"] = resolver
 
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
