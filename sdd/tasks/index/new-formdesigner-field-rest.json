@@ -234,7 +234,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -244,7 +244,7 @@
       "parallel": false,
       "parallelism_notes": "Edits api/routes.py \u2014 same file TASK-1170 touches; must serialize to avoid merge friction.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T04:05:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1171-bootstrap-wiring.md"
     },
