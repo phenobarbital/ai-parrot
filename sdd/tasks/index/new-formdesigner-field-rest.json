@@ -209,7 +209,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -223,9 +223,9 @@
       "parallel": false,
       "parallelism_notes": "Full pipeline integration; must run after Phase 1 + the validator branch.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1170-upload-route-handler.md"
+      "started_at": "2026-05-15T03:15:00+00:00",
+      "completed_at": "2026-05-15T04:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1170-upload-route-handler.md"
     },
     {
       "id": "TASK-1171",

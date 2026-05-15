@@ -179,3 +179,13 @@ Mirror spec §4 Integration Tests rows.
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+### Completion Note
+
+Created `api/uploads.py` with `handle_rest_upload`:
+multipart parse → MIME/size check → `AbstractBlobStorage.put` →
+`RestFieldResolver.resolve` → JSON envelope.
+Prior-blob cleanup via `X-Parrot-Prior-Blob-Ref` header; delete failure
+appended as warning (never 500). Resolver `success=False` → 200 envelope.
+Mounted `POST .../forms/{form_id}/fields/{field_id}/upload` in `setup_form_api`.
+9 integration tests (all passing) using `aiohttp.test_utils.TestServer`.
