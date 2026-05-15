@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-170 — FormDesigner `FieldType.REST`
 **Spec**: `sdd/specs/new-formdesigner-field-rest.spec.md` (Module 8)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-1163, TASK-1164
@@ -195,4 +195,11 @@ def test_pdf_fallback_warns(rest_callback_field):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `FieldType.REST` to all 6 renderers:
+- **html5.py**: `_RestUploaderRenderer` + `_render_rest()` (native: `<input type="file">` + hidden answer/blob_ref). 
+- **jsonschema.py**: `_TYPE_MAP["rest"]="object"` + `x-parrot-rest` extension with mode/response_path/display_template/upload_url_template.
+- **adaptive_card.py**: added to `_AC_FALLBACK_TYPES` → emits `RenderWarning(renderer="adaptive_card")`.
+- **pdf.py**: added to `_PDF_FALLBACK_NEW_TYPES` → emits `RenderWarning(renderer="pdf")`.
+- **xforms.py**: added `("input", "string")` fallback entry to `_XFORMS_TYPE_MAP`.
+- **telegram/renderer.py**: added to `_WEBAPP_FIELD_TYPES` → WebApp redirect mode.
+Created `tests/unit/renderers/test_rest_renderers.py` with 6 tests (all pass). 28 existing renderer tests pass (no regressions). Ruff: no new errors introduced. Committed on `feat-170-new-formdesigner-field-rest`.
