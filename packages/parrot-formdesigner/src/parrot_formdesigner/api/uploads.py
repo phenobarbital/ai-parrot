@@ -294,7 +294,11 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     try:
         spec = _get_rest_spec_adapter().validate_python(rest_meta)
     except Exception as exc:
-        raise web.HTTPBadRequest(reason=f"Invalid REST field spec: {exc}") from exc
+        detail = " ".join(str(exc).split())
+        raise web.HTTPBadRequest(
+            reason="Invalid REST field spec",
+            text=f"Invalid REST field spec for {field_id!r}: {detail}",
+        ) from exc
 
     # --- 6. Write blob --------------------------------------------------------
     blob_storage = _get_blob_storage(request.app)
@@ -322,7 +326,11 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         )
     except Exception as exc:
         logger.exception("blob_storage.put failed for %s/%s", form_id, field_id)
-        raise web.HTTPInternalServerError(reason=f"Blob storage error: {exc}") from exc
+        detail = " ".join(str(exc).split())
+        raise web.HTTPInternalServerError(
+            reason="Blob storage error",
+            text=f"Blob storage error: {detail}",
+        ) from exc
 
     # --- 7. Delete prior blob -------------------------------------------------
     prior_blob_ref = request.headers.get("X-Parrot-Prior-Blob-Ref")
