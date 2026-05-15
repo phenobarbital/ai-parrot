@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-170 — FormDesigner `FieldType.REST`
 **Spec**: `sdd/specs/new-formdesigner-field-rest.spec.md` (Module 7)
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1162, TASK-1163
@@ -181,4 +181,12 @@ def test_design_time_parse_catches_typo():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `FieldType.REST` branch in `services/validators.py`:
+- Early-return via `_validate_rest_field()` (sync helper): rejects non-dict, `status="in_progress"`,
+  and required+null-answer; returns structured error strings matching existing conventions.
+- `_coerce_value()` REST case returns dict with `status` key stripped.
+- `validate_field_schema(field)` design-time method: parses `field.meta["rest"]` via
+  `RestFieldSpec.model_validate()` and surfaces `ValidationError` as designer-facing errors.
+- Created `tests/unit/services/test_validators_rest.py` with 9 tests (all pass).
+- `ruff` clean. No regressions in existing `test_services.py` (8 pass, 4 pre-existing errors
+  unrelated to this task). Committed on branch `feat-170-new-formdesigner-field-rest`.
