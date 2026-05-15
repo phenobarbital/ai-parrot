@@ -14,7 +14,7 @@
       "feature_id": "FEAT-172",
       "feature": "databaseagent-mandatory-prefix-collision",
       "spec": "sdd/specs/databaseagent-mandatory-prefix-collision.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -24,8 +24,8 @@
       "parallelism_notes": "Builds on FEAT-171's two-map split and runtime warning (TASK-1208 in feat-171 worktree). Must wait for FEAT-171 to land on dev before starting.",
       "assigned_to": null,
       "started_at": "2026-05-15T20:05:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1210-configure-time-prefix-and-collision-checks.md"
+      "completed_at": "2026-05-15T20:14:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1210-configure-time-prefix-and-collision-checks.md"
     },
     {
       "id": "TASK-1211",
