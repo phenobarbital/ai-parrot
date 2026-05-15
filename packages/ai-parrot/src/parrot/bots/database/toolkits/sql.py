@@ -13,7 +13,17 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from ..cache import CachePartition
+from ..models import (
+    Completeness,
+    QueryExecutionResponse,
+    TableMetadata,
+)
+from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
+from .base import DatabaseToolkit
+
 
 # Matches leading SQL/PL-pgSQL comments and whitespace so we can identify the
 # first significant keyword. Used by ``explain_query`` safety guard to decide
@@ -30,15 +40,6 @@ _CTE_DML_RE = re.compile(
     r"\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke)\b",
     re.IGNORECASE,
 )
-
-from ..cache import CachePartition
-from ..models import (
-    QueryExecutionResponse,
-    TableMetadata,
-)
-from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
-from .base import DatabaseToolkit
-
 
 #: Map ``DatabaseToolkit.database_type`` values to sqlglot dialect names.
 _SQLGLOT_DIALECT_MAP: Dict[str, str] = {
@@ -98,6 +99,9 @@ class SQLToolkit(DatabaseToolkit):
             database_type=database_type,
             **kwargs,
         )
+        # Coalescing map for concurrent introspection calls (Module 3, FEAT-178)
+        self._inflight: Dict[Tuple[str, str], asyncio.Future] = {}
+        self._inflight_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # LLM-callable tool methods
@@ -807,6 +811,51 @@ class SQLToolkit(DatabaseToolkit):
             results.append(metadata)
 
         return results[:limit]
+
+    async def _introspect_table_full(
+        self,
+        schema: str,
+        table: str,
+    ) -> Optional[TableMetadata]:
+        """Fully introspect *schema.table* with concurrency coalescing.
+
+        Concurrent calls for the same key share a single DB round-trip —
+        the first caller performs the query and the rest await its Future.
+        """
+        key = (schema, table)
+
+        async with self._inflight_lock:
+            existing = self._inflight.get(key)
+            if existing is not None:
+                future = existing
+                owner = False
+            else:
+                future = asyncio.get_running_loop().create_future()
+                # Prevent "Future exception was never retrieved" when no waiters exist
+                future.add_done_callback(
+                    lambda f: f.exception() if not f.cancelled() and f.exception() is not None else None
+                )
+                self._inflight[key] = future
+                owner = True
+
+        if not owner:
+            return await future
+
+        try:
+            meta = await self._build_table_metadata(
+                schema, table, table_type="BASE TABLE",
+            )
+            if meta is not None:
+                meta.completeness = Completeness.FULL
+                meta.source = "information_schema"
+            future.set_result(meta)
+            return meta
+        except Exception as exc:  # noqa: BLE001
+            future.set_exception(exc)
+            raise
+        finally:
+            async with self._inflight_lock:
+                self._inflight.pop(key, None)
 
     async def _build_table_metadata(
         self,
