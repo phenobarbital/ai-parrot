@@ -1326,15 +1326,29 @@ class BaseBot(AbstractBot):
 
                 full_response = ""
                 ai_message = None
-                async for chunk in client.ask_stream(**llm_kwargs):
-                    if isinstance(chunk, AIMessage):
-                        ai_message = chunk
-                    else:
-                        full_response += chunk
-                        yield chunk
+                stream_error: Optional[Exception] = None
+                try:
+                    async for chunk in client.ask_stream(**llm_kwargs):
+                        if isinstance(chunk, AIMessage):
+                            ai_message = chunk
+                        else:
+                            full_response += chunk
+                            yield chunk
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # Capture so the partial text already yielded to the caller
+                    # is preserved as a fallback AIMessage instead of being lost.
+                    stream_error = exc
+                    self.logger.error(
+                        "ask_stream: client stream raised after %d chars; "
+                        "synthesizing fallback AIMessage: %s",
+                        len(full_response), exc,
+                    )
 
-                # Save conversation turn
-                if use_conversation_history and memory:
+                # Save conversation turn — also runs on partial/error so the
+                # accumulated text is not lost from memory.
+                if use_conversation_history and memory and full_response:
                     turn = ConversationTurn(
                         turn_id=_turn_id,
                         user_id=user_id,
@@ -1349,10 +1363,12 @@ class BaseBot(AbstractBot):
                     await memory.add_turn(user_id, session_id, turn)
 
                 if ai_message is None:
-                    # Defensive fallback: client did not yield an AIMessage sentinel.
+                    # Defensive fallback: client did not yield an AIMessage sentinel
+                    # (either because it errored mid-stream, or because the client
+                    # implementation forgot to yield the final envelope).
                     # Use prompt_for_llm (the actual text sent to the LLM) so that
-                    # ai_message.input is consistent with what client-yielded AIMessages
-                    # carry (they use the processed prompt, not the raw user question).
+                    # ai_message.input is consistent with what client-yielded
+                    # AIMessages carry.
                     ai_message = AIMessage(
                         input=prompt_for_llm,
                         output=full_response,
@@ -1367,7 +1383,18 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         session_id=session_id,
                         turn_id=_turn_id,
+                        finish_reason="error" if stream_error else "completed",
+                        stop_reason="error" if stream_error else "completed",
                     )
+                elif stream_error and not (ai_message.response or '').strip():
+                    # Client yielded an AIMessage but it carries no text (e.g.
+                    # validation built it before the chunks were attached).
+                    # Patch the accumulated text in so the final envelope still
+                    # reflects what was actually streamed to the caller.
+                    ai_message.response = full_response
+                    ai_message.output = ai_message.output or full_response
+                    ai_message.finish_reason = "error"
+                    ai_message.stop_reason = "error"
                 yield ai_message
 
         except asyncio.CancelledError:

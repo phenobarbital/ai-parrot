@@ -893,12 +893,17 @@ class AIMessageFactory:
             # Standard Gemini API format
             usage_dict = response.usage.__dict__ if hasattr(response.usage, '__dict__') else {}
 
-        # Sanitize raw response
-        try:
-             raw = response.__dict__ if hasattr(response, '__dict__') else str(response)
-             sanitized_raw = AIMessageFactory._sanitize_for_json(raw)
-        except Exception:
-             sanitized_raw = str(response)
+        # Sanitize raw response — must be Optional[Dict] or None.
+        # Streaming callers pass response=None because the chunks were already
+        # consumed; in that case there is no provider object to serialize.
+        sanitized_raw = None
+        if response is not None:
+            try:
+                raw = response.__dict__ if hasattr(response, '__dict__') else None
+                if raw is not None:
+                    sanitized_raw = AIMessageFactory._sanitize_for_json(raw)
+            except Exception:
+                sanitized_raw = None
 
         # Encode images as base64 for inline rendering
         documents_with_images = []
