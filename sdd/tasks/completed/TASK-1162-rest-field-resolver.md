@@ -292,4 +292,12 @@ async def test_jsonpath_miss_warning():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `rest_field_resolver.py` with full discriminated union + 3-mode resolver:
+- `RestFieldSpec` factory class with `model_validate()` backed by Pydantic `TypeAdapter`.
+- `RemoteRestFieldSpec`, `InternalRestFieldSpec`, `CallbackRestFieldSpec` with `extra="forbid"`.
+- `RestCallbackInput`, `RestCallbackOutput`, `RestFieldResult`, `ConfigurationError`.
+- `RestFieldResolver.resolve()`: mirrors `RemoteResponseResolver` aiohttp pattern, never-raise except `ConfigurationError` and Jinja2 `SecurityError`.
+- SSRF guard via `_check_ssrf` (loopback + `PARROT_INTERNAL_ALLOWED_HOSTS` env).
+- JSONPath extraction (jsonpath-ng), Jinja2 SandboxedEnvironment, jsonschema validation.
+- Note: modern Jinja2 does not raise `SecurityError` for `{{ ''.__class__ }}`; SecurityError propagation verified via mock.
+- 23 unit tests passing; ruff clean.
