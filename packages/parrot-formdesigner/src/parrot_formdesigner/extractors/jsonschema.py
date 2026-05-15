@@ -195,6 +195,13 @@ class JsonSchemaExtractor:
         default = prop.get("default")
         constraints = self._extract_constraints(prop)
 
+        # Handle x-parrot-rest → REST (FEAT-170)
+        meta: dict | None = None
+        x_rest = prop.get("x-parrot-rest")
+        if x_rest is not None:
+            field_type = FieldType.REST
+            meta = {"rest": x_rest} if isinstance(x_rest, dict) else {"rest": {}}
+
         # Handle enum → SELECT
         options: list[FieldOption] | None = None
         if "enum" in prop:
@@ -260,6 +267,7 @@ class JsonSchemaExtractor:
             options_source=options_source,
             children=children if children else None,
             item_template=item_template,
+            meta=meta,
         )
 
     def _map_type(self, prop: dict[str, Any]) -> FieldType:
