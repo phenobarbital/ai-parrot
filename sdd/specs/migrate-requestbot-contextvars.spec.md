@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-175
 **Date**: 2026-05-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -455,12 +455,12 @@ None. `contextvars` is stdlib (Python 3.7+).
 
 ### Unresolved (defer to implementation)
 
-- [ ] **Does `followup()` accept `ctx`?** — If so, it needs the ContextVar
-  fallback. Check the method signature during implementation. *Owner: implementer*
-- [ ] **Should `current_context()` be re-exported from `parrot.utils.__init__.py`?** —
+- [x] **Does `followup()` accept `ctx`?** — If so, it needs the ContextVar
+  fallback. Check the method signature during implementation. *Owner: implementer*: yes, followup accept ctx.
+- [x] **Should `current_context()` be re-exported from `parrot.utils.__init__.py`?** —
   Currently `RequestContext` is NOT exported from `__init__.py`. The new accessor
   could follow the same pattern (import from `helpers` directly) or be promoted.
-  *Owner: implementer*
+  *Owner: implementer*: follow same pattern.
 
 ---
 
