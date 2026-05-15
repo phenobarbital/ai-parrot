@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-170 — FormDesigner `FieldType.REST`
 **Spec**: `sdd/specs/new-formdesigner-field-rest.spec.md` (Module 6)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-1163
@@ -109,4 +109,9 @@ def test_rest_snippet_roundtrips():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `FieldType.REST.value` entry to `_FIELD_SCHEMA_SNIPPETS` in `tools/field_helpers.py`
+using the planogram callback example from spec §1. Added `test_rest_snippet_roundtrips` to
+the existing `tests/unit/test_field_helpers.py` — all 4 tests pass. The snippet validates via
+`FormField.model_validate` and `RestFieldSpec.model_validate` yields a `CallbackRestFieldSpec`
+with `callback_ref="planogram_compliance"`. `ruff` clean. Committed on branch
+`feat-170-new-formdesigner-field-rest`.
