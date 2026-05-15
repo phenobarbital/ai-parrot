@@ -268,3 +268,9 @@ class TestMixin:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: EventEmitterMixin implemented with lazy fallback, forward_to_global default. emit_nowait added to EventRegistry using asyncio.get_running_loop(). 11/11 tests pass. Ruff clean.
+
+**Deviations from spec**: none

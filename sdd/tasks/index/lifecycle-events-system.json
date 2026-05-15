@@ -152,7 +152,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Touches registry.py + new mixin.py; sequential after 1186 + 1187.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1189-event-emitter-mixin.md"
+      "completed_at": "2026-05-15T13:49:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1189-event-emitter-mixin.md"
     },
     {
       "id": "TASK-1190",
