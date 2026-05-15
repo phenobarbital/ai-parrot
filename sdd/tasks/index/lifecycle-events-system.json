@@ -32,7 +32,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Builds on TraceContext from 1182.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1183-lifecycle-event-base.md"
+      "completed_at": "2026-05-15T13:38:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1183-lifecycle-event-base.md"
     },
     {
       "id": "TASK-1184",
