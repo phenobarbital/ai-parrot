@@ -150,7 +150,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -160,7 +160,7 @@
       "parallel": false,
       "parallelism_notes": "Six renderer files share a similar pattern; could split per-renderer but stays as one task since they all consume the same FieldType.REST contract.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-15T02:34:41+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1167-renderer-entries.md"
     },
