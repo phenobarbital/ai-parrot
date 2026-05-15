@@ -255,7 +255,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,8 +266,8 @@
       "parallelism_notes": "Only touches parrot/clients/; no overlap with 1193 (bots/) or 1195 (tools/). Runs in parallel with both.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1194-abstractclient-lifecycle-integration.md"
+      "completed_at": "2026-05-15T14:32:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1194-abstractclient-lifecycle-integration.md"
     },
     {
       "id": "TASK-1195",
