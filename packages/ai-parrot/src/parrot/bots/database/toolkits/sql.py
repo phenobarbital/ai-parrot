@@ -113,10 +113,12 @@ class SQLToolkit(DatabaseToolkit):
         schema_name: Optional[str] = None,
         limit: int = 10,
     ) -> List[TableMetadata]:
-        """Search for tables/columns matching *search_term*.
+        """Search schema identifiers (table/column/comment names) matching *search_term*.
 
-        Checks the cache first; on miss, queries the database's
-        information_schema and populates the cache.
+        Searches identifiers (table/column/comment names), not data values.
+        Merges cache and live DB results, deduplicates by (schema, tablename)
+        preferring the higher-completeness entry on collision, and returns
+        results sorted by relevance score descending.
 
         Args:
             search_term: Keyword or pattern to match.
@@ -124,19 +126,74 @@ class SQLToolkit(DatabaseToolkit):
             limit: Maximum results.
 
         Returns:
-            Matching ``TableMetadata`` list.
+            Matching ``TableMetadata`` list, sorted by relevance descending.
         """
-        # 1. Cache-first
+        target_schemas = [schema_name] if schema_name else self.allowed_schemas
+
+        cache_hits: List[TableMetadata] = []
         if self.cache_partition is not None:
-            target_schemas = [schema_name] if schema_name else self.allowed_schemas
-            cached = await self.cache_partition.search_similar_tables(
-                target_schemas, search_term, limit=limit
+            cache_hits = await self.cache_partition.search(
+                target_schemas, search_term,
+                completeness_min=Completeness.NAME_ONLY, limit=limit,
             )
-            if cached:
+
+        db_hits = await self._search_in_database(search_term, schema_name, limit)
+
+        # Merge, preferring higher completeness on (schema, tablename) collision
+        merged: Dict[Tuple[str, str], TableMetadata] = {}
+        for m in (*cache_hits, *db_hits):
+            key = (m.schema, m.tablename)
+            if key not in merged or m.completeness > merged[key].completeness:
+                merged[key] = m
+
+        if not merged:
+            return []
+
+        if self.cache_partition is not None:
+            keywords = self.cache_partition._extract_search_keywords(search_term)
+            scored = [
+                (
+                    self.cache_partition._calculate_relevance_score(m.tablename, m, keywords),
+                    m,
+                )
+                for m in merged.values()
+            ]
+        else:
+            scored = [(0.0, m) for m in merged.values()]
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [m for _, m in scored[:limit]]
+
+    async def describe_table(
+        self,
+        schema: str,
+        table: str,
+    ) -> Optional[TableMetadata]:
+        """Return full-completeness metadata for *schema.table*.
+
+        Checks the cache first. If the cached entry does not satisfy
+        ``Completeness.FULL``, introspects the table via the DB and stores
+        the result in the cache.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``TableMetadata`` with ``completeness == FULL``, or ``None``
+            if the table does not exist.
+        """
+        if self.cache_partition is not None:
+            cached = await self.cache_partition.get(
+                schema, table, required=Completeness.FULL,
+            )
+            if cached is not None:
                 return cached
 
-        # 2. Query information_schema
-        return await self._search_in_database(search_term, schema_name, limit)
+        meta = await self._introspect_table_full(schema, table)
+        if meta is not None and self.cache_partition is not None:
+            await self.cache_partition.store_table_metadata(meta)
+        return meta
 
     async def generate_query(
         self,
@@ -144,41 +201,68 @@ class SQLToolkit(DatabaseToolkit):
         target_tables: Optional[List[str]] = None,
         query_type: str = "SELECT",
     ) -> str:
-        """Prepare context for SQL generation from natural language.
+        """Prepare a SQL skeleton and schema context for SQL generation.
 
-        This method gathers schema context for the relevant tables so the
-        LLM can generate SQL.  The actual SQL generation happens in the
-        agent's tool-call loop.
+        Ensures every referenced table has FULL completeness metadata before
+        building the context so the LLM never sees ``columns: []`` stubs.
+        Accepts entries as ``"schema.table"`` or bare ``"table"`` names;
+        bare names are resolved across ``allowed_schemas``.
 
         Args:
             natural_language: User's question in plain English.
-            target_tables: Optional list of specific table names.
+            target_tables: Optional list of ``"schema.table"`` or bare
+                ``"table"`` names.  When empty, ``search_schema`` is used
+                to discover candidates (top 3).
             query_type: Hint for query type (SELECT, INSERT, etc.).
 
         Returns:
-            Schema context string for the LLM to generate SQL from.
+            Skeleton SQL string plus per-table YAML metadata context.
         """
-        context_parts: list[str] = []
+        resolved: List[TableMetadata] = []
 
-        if target_tables and self.cache_partition:
-            for table_name in target_tables:
-                for schema in self.allowed_schemas:
-                    meta = await self.cache_partition.get_table_metadata(schema, table_name)
-                    if meta:
-                        context_parts.append(meta.to_yaml_context())
-                        break
+        if target_tables:
+            for entry in target_tables:
+                if "." in entry:
+                    schema, tbl = entry.split(".", 1)
+                    meta = await self.describe_table(schema, tbl)
+                    if meta is not None:
+                        resolved.append(meta)
+                else:
+                    for schema in self.allowed_schemas:
+                        meta = await self.describe_table(schema, entry)
+                        if meta is not None:
+                            resolved.append(meta)
+                            break
+        else:
+            candidates = await self.search_schema(natural_language, limit=5)
+            for meta in candidates[:3]:
+                full = await self.describe_table(meta.schema, meta.tablename)
+                if full is not None:
+                    resolved.append(full)
 
-        if not context_parts:
-            # Search for relevant tables
-            results = await self.search_schema(natural_language, limit=5)
-            for meta in results:
-                context_parts.append(meta.to_yaml_context())
+        if not resolved:
+            return (
+                f"-- Auto-generated {query_type} skeleton (no tables resolved)\n"
+                f"-- Query: {natural_language}\n"
+                "-- TODO: specify target tables\n"
+            )
 
-        schema_context = "\n---\n".join(context_parts) if context_parts else "No schema context available."
-        return (
-            f"Generate a {query_type} SQL query for: {natural_language}\n\n"
-            f"Available schema context:\n{schema_context}"
-        )
+        skeleton_parts = []
+        for meta in resolved:
+            col_list = (
+                ", ".join(col["name"] for col in meta.columns)
+                if meta.columns
+                else "*"
+            )
+            skeleton = (
+                f"-- Auto-generated SELECT skeleton (LLM should refine WHERE/JOIN):\n"
+                f"SELECT {col_list}\n"
+                f"FROM {meta.schema}.{meta.tablename}\n"
+                f'-- TODO: WHERE clause for "{natural_language}"\n'
+            )
+            skeleton_parts.append(f"{skeleton}\n{meta.to_yaml_context()}")
+
+        return "\n---\n".join(skeleton_parts)
 
     async def execute_query(
         self,
