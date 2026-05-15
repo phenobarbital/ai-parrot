@@ -392,12 +392,20 @@ class AbstractTool(EventEmitterMixin, ABC):
         are replaced with a type placeholder.  Private kwargs (``_``-prefixed)
         are skipped.
 
+        This method is designed to be overridden by subclasses that need to
+        customise what appears in ``BeforeToolCallEvent.args_summary`` — for
+        example, to redact sensitive fields, include additional context, or
+        apply domain-specific truncation rules.  When overriding, return a
+        JSON-serialisable dict.
+
         Args:
-            kwargs: The tool keyword arguments (already stripped of ``_permission_context``
-                and ``_resolver`` by ``execute()``).
+            kwargs: The tool keyword arguments (already stripped of
+                ``_permission_context`` and ``_resolver`` by ``execute()``).
 
         Returns:
-            A JSON-serialisable dict suitable for ``BeforeToolCallEvent.args_summary``.
+            A JSON-serialisable dict suitable for
+            ``BeforeToolCallEvent.args_summary``.  Override this method in
+            subclasses to customise the summary for specific tools.
         """
         out: dict = {}
         for k, v in kwargs.items():

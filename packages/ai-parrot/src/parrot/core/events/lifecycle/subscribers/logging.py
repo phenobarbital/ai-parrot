@@ -26,6 +26,14 @@ class LoggingSubscriber:
     ``LifecycleEvent`` (the base class) is enough to capture every concrete
     subclass.
 
+    Warning:
+        Using ``level=logging.INFO`` (the default) on a streaming agent will
+        generate thousands of log records per response — one per
+        ``ClientStreamChunkEvent``.  In production, either set
+        ``level=logging.DEBUG`` so records can be filtered out by the root
+        logger, or use the ``where=`` predicate on your subscription to exclude
+        ``ClientStreamChunkEvent`` before adding the subscriber.
+
     Args:
         level: Python logging level (default ``logging.INFO``).
         logger_name: Name of the logger to write to (default ``"parrot.lifecycle"``).
@@ -34,6 +42,7 @@ class LoggingSubscriber:
 
         from parrot.core.events.lifecycle.subscribers.logging import LoggingSubscriber
 
+        # Recommended for production — set level=DEBUG to avoid stream chunk noise.
         registry.add_provider(LoggingSubscriber(level=logging.DEBUG))
     """
 

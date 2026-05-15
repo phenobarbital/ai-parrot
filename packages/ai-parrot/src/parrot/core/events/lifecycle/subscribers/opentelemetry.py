@@ -16,6 +16,7 @@ with a clear action message.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from parrot.core.events.lifecycle.base import LifecycleEvent
@@ -43,6 +44,13 @@ class OpenTelemetrySubscriber:
     parent span context so spans nest correctly in distributed traces.
 
     Requires the ``otel`` extra:  ``pip install 'ai-parrot[otel]'``
+
+    Note:
+        This subscriber should be registered on only one registry per process
+        to avoid concurrent access across event loops.  The internal
+        ``_active_spans`` dict is protected by an ``asyncio.Lock``; however,
+        sharing the same instance across multiple independently-running event
+        loops is not supported.
 
     Args:
         service_name: Name used to identify the tracer (default ``"parrot"``).
@@ -81,7 +89,9 @@ class OpenTelemetrySubscriber:
             self._tracer = otel_trace.get_tracer(service_name)
 
         # Map span_id (hex string) → live span, for cleanup symmetry.
+        # Protected by _lock to guard concurrent async access.
         self._active_spans: Dict[str, Any] = {}
+        self._lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # EventProvider
@@ -131,8 +141,11 @@ class OpenTelemetrySubscriber:
         )
         return set_span_in_context(NonRecordingSpan(parent_sc))
 
-    def _start_span(self, name: str, event: LifecycleEvent, **attrs: Any) -> None:
+    async def _start_span(self, name: str, event: LifecycleEvent, **attrs: Any) -> None:
         """Open a span and store it in ``_active_spans`` keyed by span_id.
+
+        Protected by ``_lock`` to guard concurrent async access to
+        ``_active_spans``.
 
         Args:
             name: OTel span name.
@@ -146,26 +159,36 @@ class OpenTelemetrySubscriber:
                 span.set_attribute(k, str(v))
         span_key = event.trace_context.span_id if event.trace_context else None
         if span_key:
-            self._active_spans[span_key] = span
+            async with self._lock:
+                self._active_spans[span_key] = span
 
-    def _end_span_ok(self, event: LifecycleEvent) -> None:
+    async def _end_span_ok(self, event: LifecycleEvent) -> None:
         """Close the matching span with OK status.
+
+        Protected by ``_lock`` to guard concurrent async access to
+        ``_active_spans``.
 
         Args:
             event: The lifecycle event whose span_id identifies the span.
         """
         from opentelemetry.trace import Status, StatusCode
         span_key = event.trace_context.span_id if event.trace_context else None
-        span = self._active_spans.pop(span_key, None) if span_key else None
+        if not span_key:
+            return
+        async with self._lock:
+            span = self._active_spans.pop(span_key, None)
         if span is None:
             return
         span.set_status(Status(StatusCode.OK))
         span.end()
 
-    def _end_span_error(
+    async def _end_span_error(
         self, event: LifecycleEvent, error_type: str, error_message: str
     ) -> None:
         """Close the matching span with ERROR status.
+
+        Protected by ``_lock`` to guard concurrent async access to
+        ``_active_spans``.
 
         Args:
             event: The lifecycle event whose span_id identifies the span.
@@ -174,7 +197,10 @@ class OpenTelemetrySubscriber:
         """
         from opentelemetry.trace import Status, StatusCode
         span_key = event.trace_context.span_id if event.trace_context else None
-        span = self._active_spans.pop(span_key, None) if span_key else None
+        if not span_key:
+            return
+        async with self._lock:
+            span = self._active_spans.pop(span_key, None)
         if span is None:
             return
         span.set_attribute("error.type", error_type)
@@ -187,7 +213,7 @@ class OpenTelemetrySubscriber:
     # ------------------------------------------------------------------
 
     async def _on_invoke_start(self, event: BeforeInvokeEvent) -> None:
-        self._start_span(
+        await self._start_span(
             f"agent.{event.agent_name or 'unknown'}.{event.method or 'invoke'}",
             event,
             agent_name=event.agent_name,
@@ -195,41 +221,41 @@ class OpenTelemetrySubscriber:
         )
 
     async def _on_invoke_end(self, event: AfterInvokeEvent) -> None:
-        self._end_span_ok(event)
+        await self._end_span_ok(event)
 
     async def _on_invoke_fail(self, event: InvokeFailedEvent) -> None:
-        self._end_span_error(event, event.error_type, event.error_message)
+        await self._end_span_error(event, event.error_type, event.error_message)
 
     # ------------------------------------------------------------------
     # Client call
     # ------------------------------------------------------------------
 
     async def _on_client_start(self, event: BeforeClientCallEvent) -> None:
-        self._start_span(
+        await self._start_span(
             "client.call",
             event,
             source_name=event.source_name,
         )
 
     async def _on_client_end(self, event: AfterClientCallEvent) -> None:
-        self._end_span_ok(event)
+        await self._end_span_ok(event)
 
     async def _on_client_fail(self, event: ClientCallFailedEvent) -> None:
-        self._end_span_error(event, event.error_type, event.error_message)
+        await self._end_span_error(event, event.error_type, event.error_message)
 
     # ------------------------------------------------------------------
     # Tool call
     # ------------------------------------------------------------------
 
     async def _on_tool_start(self, event: BeforeToolCallEvent) -> None:
-        self._start_span(
+        await self._start_span(
             f"tool.{event.tool_name or 'unknown'}.execute",
             event,
             tool_name=event.tool_name,
         )
 
     async def _on_tool_end(self, event: AfterToolCallEvent) -> None:
-        self._end_span_ok(event)
+        await self._end_span_ok(event)
 
     async def _on_tool_fail(self, event: ToolCallFailedEvent) -> None:
-        self._end_span_error(event, event.error_type, event.error_message)
+        await self._end_span_error(event, event.error_type, event.error_message)

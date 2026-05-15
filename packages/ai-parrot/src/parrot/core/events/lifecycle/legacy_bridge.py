@@ -13,6 +13,7 @@ continues to work unchanged, while new code can subscribe to typed events direct
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,18 @@ class _LegacyEventBridge:
     mixin is initialised.  All existing ``add_event_listener`` users will
     continue to receive notifications with the same ``old=`` / ``new=``
     keyword arguments as before.
+
+    Note:
+        Callbacks are invoked with keyword arguments ``old`` (str, enum name)
+        and ``new`` (str, enum name).  This differs from the legacy
+        ``_trigger_event`` signature which passed ``AgentStatus`` enum
+        instances.  Update any listener that compares e.g.
+        ``new_status == AgentStatus.WORKING`` to
+        ``new_status == AgentStatus.WORKING.name`` or
+        ``new_status == "WORKING"``.
+
+        Both sync and async callbacks are supported.  Async callbacks are
+        awaited directly within the bridge's ``async def _on_status`` handler.
 
     Args:
         bot: The ``AbstractBot`` instance whose ``_listeners`` dict is
@@ -60,9 +73,9 @@ class _LegacyEventBridge:
     async def _on_status(self, event: AgentStatusChangedEvent) -> None:
         """Invoke every legacy ``EVENT_STATUS_CHANGED`` callback.
 
-        Callbacks are invoked with ``old=<old_status>`` and
-        ``new=<new_status>`` keyword arguments, mirroring the old
-        ``_trigger_event`` contract.
+        Callbacks are invoked with ``old=<old_status>`` (str, enum name) and
+        ``new=<new_status>`` (str, enum name) keyword arguments.  Both sync
+        and async callbacks are supported.
 
         Args:
             event: The ``AgentStatusChangedEvent`` that was dispatched.
@@ -71,8 +84,11 @@ class _LegacyEventBridge:
             self._bot.EVENT_STATUS_CHANGED, []
         ):
             try:
-                cb(old=event.old_status, new=event.new_status)
-            except Exception:
-                logger.exception(
-                    "Legacy EVENT_STATUS_CHANGED listener raised an exception"
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(old=event.old_status, new=event.new_status)
+                else:
+                    cb(old=event.old_status, new=event.new_status)
+            except Exception as exc:
+                logger.warning(
+                    "Legacy EVENT_STATUS_CHANGED listener raised: %s", exc
                 )

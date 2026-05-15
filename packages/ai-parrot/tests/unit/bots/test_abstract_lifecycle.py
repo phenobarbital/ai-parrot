@@ -141,22 +141,35 @@ class TestAbstractBotLifecycle:
         with pytest.warns(DeprecationWarning, match="deprecated"):
             minimal_bot.add_event_listener("x", lambda **kw: None)
 
-    def test_legacy_listener_still_fires(self, minimal_bot) -> None:
-        """Callbacks registered via add_event_listener still fire on status change."""
+    @pytest.mark.asyncio
+    async def test_legacy_listener_still_fires(self, minimal_bot) -> None:
+        """Callbacks registered via add_event_listener still fire on status change.
+
+        The legacy bridge routes ``AgentStatusChangedEvent`` (emitted via
+        ``emit_nowait``) back to ``add_event_listener`` callbacks.  Because the
+        bridge is async we must ``await asyncio.sleep(0)`` to drain the task
+        queue before asserting.
+
+        Note: the bridge passes ``old`` / ``new`` as str (enum name), not as
+        ``AgentStatus`` enum instances — this exercises the corrected bridge path.
+        """
         fired = []
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            # _trigger_event calls callback(event_name, **kwargs) — first arg is the event name.
+            # Bridge invokes callback with old=str, new=str (enum names).
             minimal_bot.add_event_listener(
                 minimal_bot.EVENT_STATUS_CHANGED,
-                lambda event_name, **kw: fired.append({"event_name": event_name, **kw}),
+                lambda **kw: fired.append(kw),
             )
 
         minimal_bot.status = AgentStatus.WORKING
-        # _trigger_event is sync; callbacks run synchronously.
+        # emit_nowait schedules a task — drain the event loop before asserting.
+        await asyncio.sleep(0)
         assert len(fired) == 1
-        assert fired[0]["new_status"] == AgentStatus.WORKING
+        # Bridge passes enum names (str), not AgentStatus instances.
+        assert fired[0]["new"] == AgentStatus.WORKING.name
+        assert fired[0]["old"] == AgentStatus.IDLE.name
 
     def test_events_property_is_event_registry(self, minimal_bot) -> None:
         """self.events is an EventRegistry instance."""

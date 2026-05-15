@@ -333,9 +333,17 @@ class EventRegistry:
             traceback=traceback.format_exc(),
         )
         try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug(
+                "No running loop — SubscriberErrorEvent dropped for %s",
+                repr(sub.callback),
+            )
+            return
+        try:
             from parrot.core.events.lifecycle.global_registry import get_global_registry
             global_reg = get_global_registry()
-            asyncio.create_task(
+            loop.create_task(
                 global_reg._emit_meta(err_evt),
                 name=f"lifecycle.meta.{type(original_event).__name__}",
             )
@@ -375,23 +383,35 @@ class EventRegistry:
         """Forward *event* to the global registry as a fire-and-forget task.
 
         Skips forwarding when this registry IS the global registry (avoids
-        re-emit loops).  Catches any exception from ``get_global_registry()``
-        so the source emit is never broken.
+        re-emit loops), when no running event loop is available, or when no
+        subscriber on the global registry would receive this event type (avoids
+        unbounded task creation on hot paths with no global observers).
 
         Args:
             event: The event to forward.
         """
         try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.debug(
+                "No running loop — forward of %s dropped",
+                type(event).__name__,
+            )
+            return
+        try:
             from parrot.core.events.lifecycle.global_registry import get_global_registry
             global_reg = get_global_registry()
             if global_reg is self:
                 return  # don't re-emit to self
-            asyncio.create_task(
+            if not global_reg.has_subscribers(type(event)):
+                return  # skip task creation when nobody is listening globally
+            loop.create_task(
                 global_reg.emit(event),
                 name=f"lifecycle.forward.{type(event).__name__}",
             )
-        except Exception:
-            logger.exception(
-                "Failed to forward event %s to global registry",
+        except Exception as exc:
+            logger.debug(
+                "Failed to forward event %s to global registry: %s",
                 type(event).__name__,
+                exc,
             )

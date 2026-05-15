@@ -71,7 +71,7 @@ to the process-wide global registry (unless `forward_to_global=False`).
 All event classes are in `parrot.core.events.lifecycle` (public API) or
 importable from `parrot.core.events.lifecycle.events`. Every event inherits
 `LifecycleEvent` which provides `trace_context: TraceContext` and
-`emitted_at: float` (Unix timestamp).
+`timestamp: datetime` (UTC datetime of event creation).
 
 ### Agent lifecycle
 
@@ -252,6 +252,34 @@ automatically:
 
 The net result: every event in a chain of agent → tool → sub-agent has the
 same `trace_id`, with `parent_span_id` correctly wired.
+
+### Startup events and TraceContext
+
+Startup events (`AgentInitializedEvent`, `AgentConfiguredEvent`,
+`ToolManagerReadyEvent`, `AgentStatusChangedEvent`) always use a fresh root
+`TraceContext` and cannot be linked to an invocation trace.  To correlate
+startup with the first `ask()` call, store the `trace_id` from
+`AgentInitializedEvent` in agent metadata and pass it explicitly via
+`trace_context=` in the first `ask()` call:
+
+```python
+startup_trace_id = None
+
+async def on_init(evt: AgentInitializedEvent) -> None:
+    global startup_trace_id
+    startup_trace_id = evt.trace_context.trace_id
+
+bot.events.subscribe(AgentInitializedEvent, on_init)
+# ... bot construction happens ...
+
+# First call: link to startup trace by creating a root with the same trace_id.
+from parrot.core.events.lifecycle import TraceContext
+if startup_trace_id:
+    ctx = TraceContext(trace_id=startup_trace_id, span_id=TraceContext._new_span_id())
+else:
+    ctx = TraceContext.new_root()
+response = await bot.ask("hello", trace_context=ctx)
+```
 
 ---
 
@@ -562,7 +590,13 @@ to work and emits `DeprecationWarning`, but will be removed in Phase 3.
 
 The legacy `_trigger_event` call internally routes through the new pipeline
 via a `_LegacyEventBridge` subscriber. Existing `add_event_listener`
-subscribers continue to fire — they receive the same `**kwargs` as before.
+subscribers continue to fire.
+
+**Important — callback signature change**: The bridge invokes callbacks with
+keyword arguments `old` (str, enum name) and `new` (str, enum name).  This
+differs from the old `_trigger_event` path which passed `AgentStatus` enum
+instances.  If your callback compares e.g. `new_status == AgentStatus.WORKING`,
+update it to `new_status == AgentStatus.WORKING.name` or `new_status == "WORKING"`.
 
 To silence the deprecation warning, migrate your listeners:
 

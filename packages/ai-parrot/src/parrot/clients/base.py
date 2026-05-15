@@ -364,6 +364,13 @@ $backstory
     ) -> "TraceContext":
         """Emit ``BeforeClientCallEvent`` and return the child ``TraceContext``.
 
+        Note:
+            ``BeforeClientCallEvent`` is dispatched as a fire-and-forget task
+            via ``emit_nowait()``; it may run after the LLM call begins if the
+            event loop is busy.  This is intentional — do not rely on
+            subscribers to ``BeforeClientCallEvent`` completing before the LLM
+            call starts.
+
         The returned ``TraceContext`` must be stored by the caller and passed
         to :meth:`_emit_after_call` or :meth:`_emit_failed_call`.
 

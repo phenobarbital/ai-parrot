@@ -70,6 +70,12 @@ def scope() -> Iterator[EventRegistry]:
     Yields:
         A fresh, isolated ``EventRegistry`` instance.
 
+    Warning:
+        Tasks scheduled via ``create_task`` inside the scope may still hold a
+        reference to the scoped registry after ``scope()`` exits.  In tests,
+        always ``await asyncio.sleep(0)`` before asserting on events forwarded
+        to the global registry to ensure all scheduled tasks have completed.
+
     Example::
 
         with scope() as reg:

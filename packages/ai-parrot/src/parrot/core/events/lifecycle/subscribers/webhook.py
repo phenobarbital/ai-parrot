@@ -23,6 +23,7 @@ import hmac
 import json
 import logging
 from typing import TYPE_CHECKING, Optional, Sequence
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -58,6 +59,12 @@ class WebhookSubscriber:
         timeout_seconds: float = 5.0,
         forward_to_bus: bool = False,
     ) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            raise ValueError(
+                f"WebhookSubscriber: unsupported URL scheme {parsed.scheme!r}. "
+                "Only 'https' and 'http' are allowed."
+            )
         self._url = url
         self._secret = secret.encode() if secret else None
         self._event_classes = tuple(event_classes) if event_classes else (LifecycleEvent,)
