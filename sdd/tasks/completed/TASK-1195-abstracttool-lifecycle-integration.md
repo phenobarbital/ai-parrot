@@ -331,10 +331,16 @@ class TestToolLifecycle:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-15
 **Notes**:
+- EventEmitterMixin added to AbstractTool MRO
+- _init_events() called at end of AbstractTool.__init__
+- _args_summary(kwargs): truncates strings >200 chars, skips _-prefixed keys, replaces complex types with descriptors
+- _result_size(result): tries .value, .content, .result attrs then falls back to str()
+- execute() modified: derives tool_tc from pctx.trace_context (or new root), emits BeforeToolCallEvent (sync emit_nowait), sets pctx.trace_context=tool_tc for A2A propagation, times the call, emits AfterToolCallEvent on success, emits ToolCallFailedEvent in exception handler before returning ToolResult(status='error')
+- AuthorizationRequired still re-raises (no lifecycle event emitted for it — preserves FEAT-107 behavior)
+- 11 unit tests and 3 A2A integration tests all pass
+- Existing toolkit hook and auth-required tests (20) unchanged and passing
 
-**Deviations from spec**: none
+**Deviations from spec**: ToolCallFailedEvent is emitted but exception is NOT re-raised (AbstractTool.execute() converts all non-AuthorizationRequired exceptions to ToolResult(status='error') — this is pre-existing design intent). Tests adapted accordingly.
