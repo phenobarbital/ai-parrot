@@ -207,3 +207,9 @@ class TestGlobalRegistry:
 **Notes**:
 
 **Deviations from spec**: none
+
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-15
+**Notes**: global_registry.py implemented exactly as specified using ContextVar token/reset pattern. 8/8 tests pass. Ruff clean. No deviations.
+
+**Deviations from spec**: none

@@ -112,7 +112,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Sequential after EventRegistry; shares no files with 1188.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1187-global-registry-and-scope.md"
+      "completed_at": "2026-05-15T13:47:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1187-global-registry-and-scope.md"
     },
     {
       "id": "TASK-1188",
