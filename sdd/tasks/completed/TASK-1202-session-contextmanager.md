@@ -297,4 +297,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added session() context manager with full PBAC block ported verbatim from retrieval(). session() yields self (the real bot, not a proxy). _current_ctx ContextVar set/reset around yield in finally block. semaphore wraps the yield. retrieval() method removed. AbstractBot.register(RequestBot) removed. Import updated to include _current_ctx and current_context. Lint: only pre-existing E402 violations, no new issues.

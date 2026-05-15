@@ -32,7 +32,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1201; modifies abstract.py which TASK-1203 also depends on",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1202-session-contextmanager.md"
+      "completed_at": "2026-05-15T18:40:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1202-session-contextmanager.md"
     },
     {
       "id": "TASK-1203",
