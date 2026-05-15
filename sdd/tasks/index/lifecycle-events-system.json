@@ -14,7 +14,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational, no deps. Touches only new files under parrot/core/events/lifecycle/.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1182-trace-context-dataclass.md"
+      "completed_at": "2026-05-15T13:37:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1182-trace-context-dataclass.md"
     },
     {
       "id": "TASK-1183",
