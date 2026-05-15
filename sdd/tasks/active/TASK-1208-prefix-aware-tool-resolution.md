@@ -116,10 +116,7 @@ import warnings  # ← ADD this import for the DeprecationWarning
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from parrot.bots.database.toolkits._internal import DatabaseAgentToolkit
-from parrot.bots.database.toolkits.base import (
-    AbstractDatabaseToolkit,  # used by isinstance checks if needed
-    DatabaseToolkit,
-)
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 from parrot.bots.database.models import OutputComponent
 ```
 
@@ -133,7 +130,7 @@ class AbstractToolkit:
     def list_tool_names(self) -> List[str]: ...   # not needed here
 
 # packages/ai-parrot/src/parrot/bots/database/toolkits/base.py
-class AbstractDatabaseToolkit(AbstractToolkit):
+class DatabaseToolkit(AbstractToolkit):
     tool_prefix: str = "db"                  # line 93 — concrete default
 
 # packages/ai-parrot/src/parrot/bots/database/toolkits/_internal.py
@@ -265,7 +262,7 @@ _TOOLKIT_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
 ### Pass-2 resolution loop (Q1 + Q2 resolutions)
 ```python
 # pseudo — implement in the rewritten _compute_active_tools
-first_owner: Dict[str, AbstractDatabaseToolkit] = {}
+first_owner: Dict[str, DatabaseToolkit] = {}
 
 for component in OutputComponent:
     if component not in components:
@@ -333,11 +330,11 @@ since prefix namespaces don't overlap until FEAT-173 lands).
 # tests/unit/bots/database/conftest.py
 from typing import List
 import pytest
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 from parrot.tools.toolkit import tool
 
 
-class MockDatabaseToolkit(AbstractDatabaseToolkit):
+class MockDatabaseToolkit(DatabaseToolkit):
     """Minimal stub: declares tool_prefix and exposes one tool."""
 
     database_type: str = "mock"

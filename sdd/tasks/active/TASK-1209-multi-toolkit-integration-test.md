@@ -63,14 +63,14 @@ import pytest
 
 from parrot.bots.database.agent import DatabaseAgent
 from parrot.bots.database.models import OutputComponent
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 # MockDatabaseToolkit imported from conftest created by TASK-1208
 ```
 
 ### Existing Class Signatures (from TASK-1208)
 ```python
 # packages/ai-parrot/tests/unit/bots/database/conftest.py
-class MockDatabaseToolkit(AbstractDatabaseToolkit):
+class MockDatabaseToolkit(DatabaseToolkit):
     database_type: str = "mock"
     primary_schema: str = "public"
     allowed_schemas: List[str] = ["public"]

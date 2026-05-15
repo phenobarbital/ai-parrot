@@ -244,7 +244,7 @@ None. This feature is a refactor behind the existing surface.
       )
   ```
   Track `first_owner` per `full_name` in a local
-  `Dict[str, AbstractDatabaseToolkit]` populated during Pass 2.
+  `Dict[str, DatabaseToolkit]` populated during Pass 2.
 
   **Legacy `tool_prefix=None` (Q2 resolution).** When the toolkit
   declares no prefix:
@@ -299,7 +299,7 @@ None. This feature is a refactor behind the existing surface.
 
 | Test | Description |
 |---|---|
-| `test_databaseagent_multi_toolkit_runtime` | Spin up a `DatabaseAgent` with two toolkits (Postgres + a Mock implementing the `AbstractDatabaseToolkit` interface), drive `_compute_active_tools` with every `OutputComponent` flag combination, assert both toolkits' tools appear in the merged set. |
+| `test_databaseagent_multi_toolkit_runtime` | Spin up a `DatabaseAgent` with two toolkits (Postgres + a Mock implementing the `DatabaseToolkit` interface), drive `_compute_active_tools` with every `OutputComponent` flag combination, assert both toolkits' tools appear in the merged set. |
 
 ### Test Data / Fixtures
 
@@ -307,10 +307,10 @@ None. This feature is a refactor behind the existing surface.
 # tests/unit/bots/database/conftest.py (new or extended)
 import pytest
 from typing import List
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 from parrot.tools.toolkit import tool
 
-class MockDatabaseToolkit(AbstractDatabaseToolkit):
+class MockDatabaseToolkit(DatabaseToolkit):
     """Minimal stub: declares tool_prefix and exposes one tool."""
     tool_prefix: str = "mk"
     database_type: str = "mock"
@@ -374,7 +374,7 @@ This feature is complete when ALL of the following are true:
 # bots/database/agent.py (existing, top of file)
 from typing import Any, Dict, List, Optional, Set
 from parrot.bots.database.toolkits._internal import DatabaseAgentToolkit  # verified
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit   # verified
+from parrot.bots.database.toolkits.base import DatabaseToolkit   # verified
 from parrot.bots.database.models import OutputComponent                  # verified
 ```
 
@@ -393,7 +393,7 @@ class AbstractToolkit:
         ...
 
 # bots/database/toolkits/base.py:93
-class AbstractDatabaseToolkit(AbstractToolkit):
+class DatabaseToolkit(AbstractToolkit):
     tool_prefix: str = "db"                  # line 93 (overrides Optional[str] with the concrete default)
 
 # bots/database/toolkits/_internal.py:45

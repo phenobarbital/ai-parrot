@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-172
 **Date**: 2026-05-14
 **Author**: Juan Francisco Ruffato
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 **Depends on**: FEAT-171 (`databaseagent-prefix-aware-tools`) — must be
@@ -55,7 +55,7 @@ But two underlying weaknesses remain:
 
 ### Goals
 
-- Enforce non-empty `tool_prefix` for every `AbstractDatabaseToolkit`
+- Enforce non-empty `tool_prefix` for every `DatabaseToolkit`
   attached to a `DatabaseAgent`. Validation runs at
   `DatabaseAgent.configure()`, not at toolkit `__init__`, so direct
   toolkit instantiation (tests, scripts) is unaffected.
@@ -70,7 +70,7 @@ But two underlying weaknesses remain:
 ### Non-Goals (explicitly out of scope)
 
 - Making `tool_prefix` mandatory on `AbstractToolkit` globally.
-  This feature only enforces it for `AbstractDatabaseToolkit`
+  This feature only enforces it for `DatabaseToolkit`
   subclasses, since `DatabaseAgent` is the only consumer that
   controls toolkit attachment in a centralized way.
 - Auto-fixing or auto-renaming colliding tools. Collision is a
@@ -145,15 +145,26 @@ None. New errors emitted at existing entry point.
 
 ### Error Messages
 
-Two new `ValueError` cases, with exact text:
+Three new `ValueError` cases, with exact text:
 
 ```python
+# Missing / empty prefix
 raise ValueError(
-    f"AbstractDatabaseToolkit subclasses must declare a non-empty "
+    f"DatabaseToolkit subclasses must declare a non-empty "
     f"tool_prefix; {type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
     f"Set `tool_prefix` on the toolkit class (e.g. \"db\", \"bq\")."
 )
 
+# Identifier-safe prefix (Q2 resolution)
+raise ValueError(
+    f"DatabaseToolkit subclasses must declare an identifier-safe "
+    f"tool_prefix matching {_TOOL_PREFIX_PATTERN.pattern!r}; "
+    f"{type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
+    f"Use only ASCII letters, digits, and underscores, starting "
+    f"with a letter."
+)
+
+# Fully-qualified name collision
 raise ValueError(
     f"Tool name collision while configuring DatabaseAgent: "
     f"{full_name!r} is exposed by both {prior_owner.__name__} and "
@@ -171,11 +182,22 @@ raise ValueError(
 
 - **Path**: `packages/ai-parrot/src/parrot/bots/database/agent.py`
 - **Responsibility**:
+  - Add a module-level compiled regex
+    `_TOOL_PREFIX_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")`
+    (Q2 resolution).
   - Add the two validation loops after the existing
     `for tk in self.toolkits` block but **before**
     `self._internal_toolkit = DatabaseAgentToolkit()`.
-  - The order matters: validate prefix first, then collisions.
-    Both raise `ValueError` with the exact messages above.
+  - The order matters:
+    1. **Prefix presence**: raise `ValueError` if any toolkit's
+       `tool_prefix` is `None` or empty string.
+    2. **Prefix shape**: raise `ValueError` if any toolkit's
+       `tool_prefix` does not match `_TOOL_PREFIX_PATTERN`.
+    3. **Collision detection**: walk `tk.list_tool_names()` for
+       every toolkit, accumulate in a
+       `Dict[str, type[DatabaseToolkit]]`, raise `ValueError`
+       on second insertion (naming both classes).
+  - All three raise with the exact messages above.
   - Pre-empt the internal toolkit instantiation so a malformed
     config never produces a partially-configured agent.
 - **Depends on**: FEAT-171 (the two-map split must already be in
@@ -207,7 +229,9 @@ raise ValueError(
 |---|---|---|
 | `test_configure_rejects_none_prefix` | Module 1 | `DatabaseAgent` configured with a toolkit whose `tool_prefix=None` raises `ValueError` containing the toolkit class name. |
 | `test_configure_rejects_empty_prefix` | Module 1 | Same as above but `tool_prefix=""`. |
+| `test_configure_rejects_non_identifier_prefix` | Module 1 | Toolkit with `tool_prefix="my-db"` / `"db "` / `"123db"` raises `ValueError` mentioning the regex `^[A-Za-z][A-Za-z0-9_]*$`. |
 | `test_configure_accepts_valid_prefix` | Module 1 | `DatabaseAgent` with one `PostgresToolkit(tool_prefix="db")` configures without error. Regression check. |
+| `test_configure_accepts_identifier_prefixes` | Module 1 | Toolkits with `tool_prefix` in `["db", "pg", "bq", "influx", "elastic_v2", "X1"]` all configure successfully. |
 | `test_configure_rejects_collision_same_prefix` | Module 1 | Two `MockToolkit` instances with `tool_prefix="dup"` both exposing `dup_search_schema` — `configure()` raises `ValueError` naming both classes. |
 | `test_configure_rejects_collision_idempotent_naming` | Module 1 | `AbstractToolkit` prefix rewriting is idempotent. Test the edge case where one toolkit's method is named `db_foo` (already prefixed) and another's `foo` (gets `db_` applied) — both resolve to `db_foo` and must collide. |
 | `test_configure_accepts_distinct_prefixes_same_logical_name` | Module 1 | `DatabaseAgent` with `PostgresToolkit(tool_prefix="db")` exposing `db_search_schema` and `MockToolkit(tool_prefix="mk")` exposing `mk_search_schema` — `configure()` succeeds. No collision. |
@@ -228,7 +252,7 @@ Add a parameterized variant:
 @pytest.fixture
 def mock_toolkit_factory():
     def make(tool_prefix=None, methods=None):
-        class _ConfigurableMock(AbstractDatabaseToolkit):
+        class _ConfigurableMock(DatabaseToolkit):
             ...
         _ConfigurableMock.tool_prefix = tool_prefix  # may be None / "" / "any"
         return _ConfigurableMock()
@@ -248,9 +272,12 @@ This feature is complete when ALL of the following are true:
       message format documented in Section 2 when a toolkit lacks a
       prefix.
 - [ ] `DatabaseAgent.configure()` raises `ValueError` with the exact
+      message format documented in Section 2 when a toolkit's
+      `tool_prefix` does not match `^[A-Za-z][A-Za-z0-9_]*$`.
+- [ ] `DatabaseAgent.configure()` raises `ValueError` with the exact
       message format documented in Section 2 when two toolkits
       collide on a fully-qualified name.
-- [ ] No `AbstractDatabaseToolkit` subclass in the repo lacks a
+- [ ] No `DatabaseToolkit` subclass in the repo lacks a
       `tool_prefix` after this feature lands (audit + fix in this
       PR if any are missing). See Open Questions.
 - [ ] The runtime collision warning from FEAT-171 still exists but
@@ -272,7 +299,7 @@ This feature is complete when ALL of the following are true:
 # bots/database/agent.py (existing)
 from typing import Any, Dict, List, Optional, Set
 from parrot.bots.database.toolkits._internal import DatabaseAgentToolkit  # verified
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit   # verified
+from parrot.bots.database.toolkits.base import DatabaseToolkit   # verified
 ```
 
 ### Existing Class Signatures
@@ -314,17 +341,27 @@ class AbstractToolkit:
         self._internal_toolkit = DatabaseAgentToolkit()
 ```
 
-### Existing Subclasses of `AbstractDatabaseToolkit` to audit
+### Existing Subclasses of `DatabaseToolkit` to audit
 
 ```python
-# bots/database/toolkits/base.py:93
-class AbstractDatabaseToolkit(AbstractToolkit):
-    tool_prefix: str = "db"  # already concrete — every subclass inherits "db" unless overridden
+# bots/database/toolkits/base.py:78
+class DatabaseToolkit(AbstractToolkit, ABC):
+    tool_prefix: str = "db"   # line 93 — already concrete; every subclass inherits "db" unless overridden
 
-# Subclasses observed at the time of writing (incomplete — implementer must grep):
-#   - PostgresToolkit          (bots/database/toolkits/postgres.py)
-#   - SQLToolkit (base for the above; bots/database/toolkits/sql.py)
-#   - Plus any plugin-provided subclasses (e.g. inside navigator-plugins/docs/)
+# Subclasses observed at HEAD on dev (2026-05-15 audit):
+#   - SQLToolkit               (bots/database/toolkits/sql.py:61)         tool_prefix="db"
+#   - PostgresToolkit          (bots/database/toolkits/postgres.py:28)    tool_prefix="db" (inherits)
+#   - BigQueryToolkit          (bots/database/toolkits/bigquery.py:19)    tool_prefix="db" (inherits)
+#   - InfluxDBToolkit          (bots/database/toolkits/influx.py:15)      tool_prefix="db" (inherits)
+#   - ElasticToolkit           (bots/database/toolkits/elastic.py:15)     tool_prefix="db" (inherits)
+#   - DocumentDBToolkit        (bots/database/toolkits/documentdb.py:15)  tool_prefix="db" (inherits)
+# None set tool_prefix to None or "". FEAT-172 does NOT break any existing
+# concrete toolkit in the parrot repo. Plugins (navigator-plugins) must be
+# audited in their own repo before merging.
+#
+# IMPORTANT — there is NO class named `AbstractDatabaseToolkit` in the
+# codebase. Earlier draft references to that name were corrected on
+# 2026-05-15. The real base is `DatabaseToolkit`.
 ```
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -352,7 +389,7 @@ class AbstractDatabaseToolkit(AbstractToolkit):
 
 ### Known Risks / Gotchas
 
-- **Plugins outside the parrot repo**. `AbstractDatabaseToolkit`
+- **Plugins outside the parrot repo**. `DatabaseToolkit`
   subclasses in `navigator-plugins` (e.g. inside `docs/sql.py`) may
   rely on the default `tool_prefix="db"` set on the base class. The
   audit step (acceptance criteria) is critical — if any subclass
@@ -377,19 +414,44 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Audit: do any current `AbstractDatabaseToolkit` subclasses
-      (inside parrot OR in `navigator-plugins`) explicitly set
-      `tool_prefix = None`? If yes, this feature breaks them and
-      they must be updated in the same PR or before this PR. —
-      *Owner: implementer*
-- [ ] Should the prefix check accept any non-empty string, or
-      enforce identifier-safe characters
-      (`^[A-Za-z][A-Za-z0-9_]*$`)? Spec currently accepts any
-      non-empty string. — *Owner: Jesús Lara*
-- [ ] On collision, should we ALSO include the
-      `OutputComponent` flags in the error message? Useful for
-      debugging but adds noise. Spec currently omits them. —
-      *Owner: Jesús Lara*
+> All three open questions are resolved. They are kept here with
+> their resolutions as the audit trail.
+
+- [x] **Q1 — Audit of existing subclasses** — *Resolved 2026-05-15*:
+      **Safe inside the parrot repo.** Grep audit at HEAD on `dev`
+      shows every `DatabaseToolkit` subclass
+      (`SQLToolkit`, `PostgresToolkit`, `BigQueryToolkit`,
+      `InfluxDBToolkit`, `ElasticToolkit`, `DocumentDBToolkit`)
+      inherits the default `tool_prefix = "db"` from
+      `DatabaseToolkit` (base.py:93). None set `None` or `""`.
+      Plugin repos (`navigator-plugins`) still need to be audited
+      in their own PRs before this feature merges, but ai-parrot
+      itself is clean. Side note: post-FEAT-172, two `DatabaseToolkit`
+      subclasses with the inherited `"db"` prefix attached to the
+      same agent will collide; the operator must pass distinct
+      `tool_prefix` values explicitly. This is by design — the
+      whole point of FEAT-172 is fail-fast on misconfig.
+- [x] **Q2 — Identifier-safe prefix validation** — *Resolved
+      2026-05-15*: **Enforce `^[A-Za-z][A-Za-z0-9_]*$`.** The
+      prefix is concatenated into the LLM-visible tool name
+      (`{prefix}{separator}{method}`), which most providers
+      (OpenAI / Anthropic) reject if it contains dashes, spaces
+      or non-ASCII. The regex catches `"my-db"`, `"db "`,
+      `"123db"` at `configure()` time. Cheap, real-world bugs
+      caught. Implementation: module-level
+      `_TOOL_PREFIX_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")`
+      checked after the non-empty assertion.
+- [x] **Q3 — `OutputComponent` flags in collision error** —
+      *Resolved 2026-05-15*: **Omit them.** Collision detection
+      runs at `configure()` time, walking
+      `tk.list_tool_names()` — `OutputComponent` flags are not
+      contextually available (they belong to a specific
+      `_compute_active_tools` request). Including them would
+      mean synthesising the cross-product post-hoc, which adds
+      noise without operational value. The runtime warning in
+      FEAT-171 (covered by FEAT-171 Q1) already carries the
+      component flag for the rare cases where the defensive
+      fallback fires.
 
 ---
 
@@ -398,3 +460,4 @@ None.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-14 | Juan Francisco Ruffato | Initial draft. Extracted from the original FEAT-171 spec (Module 2). |
+| 0.2 | 2026-05-15 | Juan Francisco Ruffato | Resolved Q1 (audit clean inside parrot), Q2 (identifier-safe prefix regex), Q3 (omit OutputComponent flags from collision error). Corrected contract drift: `AbstractDatabaseToolkit` → `DatabaseToolkit` (the real class name in base.py:78). Status: draft → approved. |
