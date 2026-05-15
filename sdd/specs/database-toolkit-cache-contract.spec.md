@@ -6,7 +6,7 @@ base_branch: dev
 
 # Feature Specification: Database Toolkit Cache Contract & Tool Semantics
 
-**Feature ID**: FEAT-177
+**Feature ID**: FEAT-178
 **Date**: 2026-05-15
 **Author**: jfrruffato@trocglobal.com
 **Status**: approved
@@ -401,7 +401,7 @@ class SQLToolkit(DatabaseToolkit):
 
 ### Tool Surface Change
 
-| Tool | Before (FEAT-164) | After (FEAT-177) |
+| Tool | Before (FEAT-164) | After (FEAT-178) |
 |---|---|---|
 | `db_search_schema` | cache early-return; no score sort | cache+DB merged; score-sorted; documented as identifier search |
 | `db_generate_query` | cache-only YAML; silently returns empty `columns: []` | calls `db_describe_table` per target; emits real-column SELECT skeleton |
@@ -932,7 +932,7 @@ return yaml.dump(data, ...)
   must explicitly set `completeness`. Reviewers should grep for
   `TableMetadata(` outside the toolkit during code review.
 - **Redis-stored old entries don't have `completeness`/`loaded_at`/`source`.**
-  During the upgrade, Redis may hold pre-FEAT-177 `TableMetadata` dicts
+  During the upgrade, Redis may hold pre-FEAT-178 `TableMetadata` dicts
   without the new fields. Deserialization must default to `FULL`/
   `datetime.utcnow()`/`"unknown"` so existing cached entries are not
   treated as stubs. After max Redis TTL expiry, all entries are re-stored
@@ -945,7 +945,7 @@ return yaml.dump(data, ...)
   to catch regressions.
 - **Coordinated release with navigator-plugins.** The frontend wire-format
   change (Q3 explicit tags) requires:
-  1. ai-parrot FEAT-177 ships first (no wire format dependency)
+  1. ai-parrot FEAT-178 ships first (no wire format dependency)
   2. navigator-plugins parser update (Module 8) ships — accepts both
      legacy and tagged formats
   3. Frontend emitter (Module 9) starts sending tagged form
@@ -1040,8 +1040,8 @@ return yaml.dump(data, ...)
   independent of each other and could be parallelised after Modules
   1–4 land.
 - **Downstream modules** (8 and 9) are separate worktrees on a different
-  repo (`navigator-plugins`). They are blocked by FEAT-177 landing in
-  ai-parrot but do not block FEAT-177 from merging.
+  repo (`navigator-plugins`). They are blocked by FEAT-178 landing in
+  ai-parrot but do not block FEAT-178 from merging.
 - **Cross-feature dependencies**: none in ai-parrot. Downstream
   coordination required with the frontend team for Module 9.
 
@@ -1053,3 +1053,4 @@ return yaml.dump(data, ...)
 |---|---|---|---|
 | 0.1 | 2026-05-15 | jfrruffato | Initial draft after debugging `sql_analyst` failures on `pokemon.stores` and `networkninja.forms` JOINs |
 | 0.2 | 2026-05-15 | jfrruffato | Resolved all 7 open questions; reworked tool surface (in-place rename, repurposed `generate_query`, new `describe_table`); added `pg_catalog` migration module; added frontend wire format change as a downstream module |
+| 0.3 | 2026-05-15 | jfrruffato | Renumbered FEAT-177 → FEAT-178 (collision with FEAT-177 OpenTelemetry brainstorm by Jesus Lara on the same day) |
