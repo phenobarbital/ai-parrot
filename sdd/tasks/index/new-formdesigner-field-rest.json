@@ -71,7 +71,7 @@
       "feature_id": "FEAT-170",
       "feature": "new-formdesigner-field-rest",
       "spec": "sdd/specs/new-formdesigner-field-rest.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -79,8 +79,8 @@
       "parallelism_notes": "One-line enum addition; gating for Phase 2 but itself independent of Phase 1 services.",
       "assigned_to": null,
       "started_at": "2026-05-15T01:53:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1163-field-type-rest-enum.md"
+      "completed_at": "2026-05-15T01:56:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1163-field-type-rest-enum.md"
     },
     {
       "id": "TASK-1164",

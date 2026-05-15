@@ -88,4 +88,4 @@ def test_field_type_rest_present():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `REST = "rest"` to `FieldType` in `core/types.py` after `RANKING`, with `# Phase 3 — FEAT-170` comment. Created `tests/unit/test_core_types.py` with 3 tests (value, str subclass, full round-trip). 3/3 passing, ruff clean.
