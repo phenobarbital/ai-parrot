@@ -180,15 +180,32 @@ class EventRegistry:
 
         Args:
             provider: An object implementing the ``EventProvider`` protocol
-                (i.e., it has a ``register_subscriptions(registry)`` method).
+                (i.e., it has a ``register(registry)`` method).
 
         Returns:
             List of subscription IDs created by the provider.
+
+        Raises:
+            TypeError: If *provider* does not conform to ``EventProvider``
+                (missing ``register(self, registry)`` method).
         """
-        # Lazy import to avoid circularity: EventProvider is defined after
-        # EventRegistry in the dependency graph.
-        from parrot.core.events.lifecycle.provider import EventProvider  # noqa: F401
-        return provider.register_subscriptions(self)
+        # Lazy import to avoid circularity: EventProvider depends on EventRegistry.
+        from parrot.core.events.lifecycle.provider import EventProvider
+
+        if not isinstance(provider, EventProvider):
+            raise TypeError(
+                f"{type(provider).__name__} is not an EventProvider "
+                "(missing register(registry) method)."
+            )
+        # Capture the set of existing subscription IDs before the provider runs.
+        before_ids = {s.subscription_id for s in self._subscriptions}
+        provider.register(self)
+        # Return only the newly added IDs in insertion order.
+        return [
+            s.subscription_id
+            for s in self._subscriptions
+            if s.subscription_id not in before_ids
+        ]
 
     async def emit(self, event: LifecycleEvent) -> None:
         """Dispatch *event* to all matching subscribers.
