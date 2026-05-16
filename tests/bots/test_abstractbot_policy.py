@@ -1,14 +1,14 @@
-"""Unit tests for AbstractBot policy API (TASK-708).
+"""Unit tests for AbstractBot policy API (TASK-708, FEAT-175).
 
 Tests cover:
 - policy_rules class attribute (default and subclass override)
 - get_policy_rules() default and override
-- retrieval() PBAC delegation (allowed, denied, no PDP, evaluator error)
+- session() PBAC delegation (allowed, denied, no PDP, evaluator error)
 - removal of _permissions, default_permissions(), permissions()
 """
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from aiohttp import web
 
 # We need a concrete subclass for testing (AbstractBot is abstract)
@@ -115,8 +115,8 @@ class TestPermissionsRemoved:
         )
 
 
-class TestRetrievalPBAC:
-    """Tests for retrieval() PBAC delegation."""
+class TestSessionPBAC:
+    """Tests for session() PBAC delegation."""
 
     def _make_mock_request(self, session_data=None):
         """Create a minimal mock aiohttp request."""
@@ -152,23 +152,23 @@ class TestRetrievalPBAC:
         bot.name = "test_bot"
         bot._semaphore = asyncio.BoundedSemaphore(1)
         bot.logger = MagicMock()
-        # Bind the retrieval method
-        bot.retrieval = AbstractBot.retrieval.__get__(bot, BotClass)
+        # Bind the session method
+        bot.session = AbstractBot.session.__get__(bot, BotClass)
         return bot
 
     @pytest.mark.asyncio
-    async def test_retrieval_no_pdp_allows_all(self):
-        """retrieval() allows when app has no PDP configured (fail-open)."""
+    async def test_session_no_pdp_allows_all(self):
+        """session() allows when app has no PDP configured (fail-open)."""
         bot = self._make_bot_instance()
         request = self._make_mock_request()
         request.app.get.return_value = None  # No PDP
 
-        async with bot.retrieval(request=request) as wrapper:
-            assert wrapper is not None
+        async with bot.session(request=request) as b:
+            assert b is bot
 
     @pytest.mark.asyncio
-    async def test_retrieval_allowed_by_evaluator(self):
-        """retrieval() yields wrapper when evaluator allows."""
+    async def test_session_allowed_by_evaluator(self):
+        """session() yields the real bot when evaluator allows."""
         bot = self._make_bot_instance()
         request = self._make_mock_request()
 
@@ -179,15 +179,14 @@ class TestRetrievalPBAC:
         with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
              patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
              patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
-            # Patch evaluator to return allowed result
             request.app.get.return_value = pdp
 
-            async with bot.retrieval(request=request) as wrapper:
-                assert wrapper is not None
+            async with bot.session(request=request) as b:
+                assert b is bot
 
     @pytest.mark.asyncio
-    async def test_retrieval_denied_by_evaluator(self):
-        """retrieval() raises HTTPUnauthorized when evaluator denies."""
+    async def test_session_denied_by_evaluator(self):
+        """session() raises HTTPUnauthorized when evaluator denies."""
         bot = self._make_bot_instance()
         request = self._make_mock_request()
 
@@ -199,12 +198,12 @@ class TestRetrievalPBAC:
              patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
              patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
             with pytest.raises(web.HTTPUnauthorized):
-                async with bot.retrieval(request=request) as wrapper:
+                async with bot.session(request=request):
                     pass
 
     @pytest.mark.asyncio
-    async def test_retrieval_evaluator_error_fails_open(self):
-        """retrieval() allows on evaluator exception (fail-open on errors)."""
+    async def test_session_evaluator_error_fails_open(self):
+        """session() allows on evaluator exception (fail-open on errors)."""
         bot = self._make_bot_instance()
         request = self._make_mock_request()
 
@@ -217,15 +216,15 @@ class TestRetrievalPBAC:
              patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
              patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
             # Should NOT raise — fail-open on evaluator errors
-            async with bot.retrieval(request=request) as wrapper:
-                assert wrapper is not None
+            async with bot.session(request=request) as b:
+                assert b is bot
 
     @pytest.mark.asyncio
-    async def test_retrieval_pbac_not_available_allows_all(self):
-        """retrieval() allows all when PBAC module not available."""
+    async def test_session_pbac_not_available_allows_all(self):
+        """session() allows all when PBAC module not available."""
         bot = self._make_bot_instance()
         request = self._make_mock_request()
 
         with patch('parrot.bots.abstract._PBAC_AVAILABLE', False):
-            async with bot.retrieval(request=request) as wrapper:
-                assert wrapper is not None
+            async with bot.session(request=request) as b:
+                assert b is bot
