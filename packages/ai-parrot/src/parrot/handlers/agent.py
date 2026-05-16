@@ -1501,7 +1501,7 @@ class AgentTalk(BaseView):
                 )
 
         try:
-            async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
+            async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
                     return await self._execute_agent_method(
                         bot=bot,
