@@ -12,9 +12,11 @@ from parrot.bots.factory.contracts import (
     ProvisioningRecord,
     RouterDecision,
 )
+from parrot.bots.factory.orchestrator import AgentFactoryOrchestrator
 
 __all__ = [
     "AgentDefinition",
+    "AgentFactoryOrchestrator",
     "BuilderOutput",
     "BuilderType",
     "FactoryRequest",
