@@ -125,3 +125,89 @@ async def test_jsonschema_rest_content_type(form_with_rest: FormSchema) -> None:
     """JSON Schema REST output must use application/schema+json content type."""
     out = await JsonSchemaRenderer().render(form_with_rest)
     assert out.content_type == "application/schema+json"
+
+
+# ---------------------------------------------------------------------------
+# Additional args in x-parrot-rest extension
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def rest_field_with_args() -> FormField:
+    return FormField(
+        field_id="image_analyze",
+        field_type=FieldType.REST,
+        label={"en": "Analyze"},
+        required=True,
+        meta={
+            "rest": {
+                "mode": "callback",
+                "callback_ref": "image_analyze",
+                "additional_args": [
+                    {
+                        "name": "prompt",
+                        "visibility": "private",
+                        "value": "describe-this-image",
+                    },
+                    {
+                        "name": "tenant",
+                        "visibility": "public",
+                        "required": True,
+                        "label": "Tenant",
+                        "description": "Tenant slug",
+                    },
+                    {
+                        "name": "n",
+                        "visibility": "public",
+                        "data_type": "integer",
+                        "value": 3,
+                    },
+                ],
+            }
+        },
+    )
+
+
+@pytest.fixture
+def form_with_args(rest_field_with_args: FormField) -> FormSchema:
+    return FormSchema(
+        form_id="form-args",
+        title={"en": "Args"},
+        sections=[FormSection(section_id="s1", fields=[rest_field_with_args])],
+    )
+
+
+@pytest.mark.asyncio
+async def test_jsonschema_emits_additional_args(form_with_args: FormSchema) -> None:
+    """x-parrot-rest.additional_args reflects spec exactly (round-trippable)."""
+    out = await JsonSchemaRenderer().render(form_with_args)
+    rest_ext = out.content["properties"]["image_analyze"]["x-parrot-rest"]
+
+    assert "additional_args" in rest_ext
+    names = [a["name"] for a in rest_ext["additional_args"]]
+    assert names == ["prompt", "tenant", "n"]
+    # Private arg is preserved in the round-trippable list
+    private = next(a for a in rest_ext["additional_args"] if a["name"] == "prompt")
+    assert private["visibility"] == "private"
+    assert private["value"] == "describe-this-image"
+
+
+@pytest.mark.asyncio
+async def test_jsonschema_public_args_projection(form_with_args: FormSchema) -> None:
+    """x-parrot-rest.public_args lists ONLY the renderable args."""
+    out = await JsonSchemaRenderer().render(form_with_args)
+    rest_ext = out.content["properties"]["image_analyze"]["x-parrot-rest"]
+
+    names = [a["name"] for a in rest_ext["public_args"]]
+    assert names == ["tenant", "n"]  # prompt (private) excluded
+    assert "visibility" not in rest_ext["public_args"][0]  # projection drops it
+
+    tenant = next(a for a in rest_ext["public_args"] if a["name"] == "tenant")
+    assert tenant["required"] is True
+    assert tenant["data_type"] == "string"
+    assert tenant["label"] == "Tenant"
+
+    n = next(a for a in rest_ext["public_args"] if a["name"] == "n")
+    assert n["data_type"] == "integer"
+    assert n["default"] == 3
+    assert n["required"] is False

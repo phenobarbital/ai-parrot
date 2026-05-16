@@ -95,3 +95,19 @@ def test_output_mentions_error_codes(tmp_path: Path) -> None:
     assert "400" in content
     assert "413" in content
     assert "415" in content
+
+
+def test_output_documents_additional_args(tmp_path: Path) -> None:
+    """Generated output must document additional_args (public/private)."""
+    out = tmp_path / "rest-field.md"
+    subprocess.run([sys.executable, str(_SCRIPT), "--out", str(out)], check=True)
+    content = out.read_text(encoding="utf-8")
+    assert "additional_args" in content
+    assert "public_args" in content
+    assert "visibility" in content
+    # Both visibility values are explained
+    assert '"public"' in content or "`public`" in content
+    assert '"private"' in content or "`private`" in content
+    # Each data_type is mentioned somewhere
+    for dtype in ("string", "integer", "number", "boolean", "json"):
+        assert dtype in content
