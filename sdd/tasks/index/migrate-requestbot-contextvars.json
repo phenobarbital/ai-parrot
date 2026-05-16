@@ -52,7 +52,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Must run after session() exists in abstract.py",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1203-handler-migration.md"
+      "completed_at": "2026-05-16T01:57:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1203-handler-migration.md"
     },
     {
       "id": "TASK-1204",
