@@ -14,7 +14,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-05-15T15:09:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1201-contextvar-infrastructure.md"
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1201-contextvar-infrastructure.md"
     },
     {
       "id": "TASK-1202",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1201; modifies abstract.py which TASK-1203 also depends on",
       "assigned_to": null,
       "started_at": "2026-05-15T15:09:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1202-session-contextmanager.md"
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1202-session-contextmanager.md"
     },
     {
       "id": "TASK-1203",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Must run after session() exists in abstract.py",
       "assigned_to": null,
       "started_at": "2026-05-15T15:09:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1203-handler-migration.md"
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1203-handler-migration.md"
     },
     {
       "id": "TASK-1204",
