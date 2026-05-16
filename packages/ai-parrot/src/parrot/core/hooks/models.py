@@ -13,6 +13,7 @@ class HookType(str, Enum):
     POSTGRES_LISTEN = "postgres_listen"
     IMAP_WATCHDOG = "imap_watchdog"
     JIRA_WEBHOOK = "jira_webhook"
+    GITHUB_WEBHOOK = "github_webhook"
     FILE_UPLOAD = "file_upload"
     BROKER_REDIS = "broker_redis"
     BROKER_RABBITMQ = "broker_rabbitmq"
@@ -111,6 +112,23 @@ class JiraWebhookConfig(BaseModel):
     name: str = "jira_webhook"
     enabled: bool = True
     url: str = "/api/v1/hooks/jira"
+    secret_token: Optional[str] = None
+    target_type: str = "agent"
+    target_id: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GitHubWebhookConfig(BaseModel):
+    """Configuration for GitHub webhook receiver.
+
+    Used by :class:`parrot.core.hooks.github_webhook.GitHubWebhookHook` to
+    register an aiohttp route that accepts ``pull_request`` deliveries from
+    GitHub. ``secret_token`` enables HMAC-SHA256 signature verification on
+    the ``X-Hub-Signature-256`` header.
+    """
+    name: str = "github_webhook"
+    enabled: bool = True
+    url: str = "/api/v1/hooks/github"
     secret_token: Optional[str] = None
     target_type: str = "agent"
     target_id: str = ""
