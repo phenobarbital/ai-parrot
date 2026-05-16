@@ -859,10 +859,16 @@ class HTML5Renderer(AbstractFormRenderer):
 
         Emits:
         - A visible ``<input type="file">`` for user-side file picking.
+        - One visible ``<input>`` per **public** ``additional_args`` entry;
+          the frontend component appends these as multipart parts using the
+          arg's ``name`` so the backend can merge them with private args.
         - Hidden ``<input>`` fields for ``answer`` and ``blob_ref`` (populated
           by the frontend ``<RestUploader>`` component after upload).
         - Data attributes for the upload endpoint URL template, spinner, and
           retry hooks consumed by the frontend component.
+
+        Private ``additional_args`` are NEVER rendered — they are injected by
+        the backend at upload time.
 
         Args:
             field: REST FormField.
@@ -881,6 +887,10 @@ class HTML5Renderer(AbstractFormRenderer):
         required_attr = " required" if field.required else ""
         accept_attr = f' accept="{mime_types}"' if mime_types else ""
 
+        # Render visible inputs for public additional_args (private args
+        # are injected server-side).
+        public_args_html = self._render_rest_public_args(field)
+
         return (
             f'<div class="parrot-rest-uploader" '
             f'data-field-id="{field.field_id}" '
@@ -891,6 +901,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'{accept_attr}'
             f'{required_attr}'
             f' class="form-field__rest-file block w-full text-sm">'
+            f'{public_args_html}'
             f'<input type="hidden" name="{field.field_id}.answer" '
             f'id="{field.field_id}_answer">'
             f'<input type="hidden" name="{field.field_id}.blob_ref" '
@@ -899,6 +910,85 @@ class HTML5Renderer(AbstractFormRenderer):
             f'aria-live="polite"></span>'
             f'</div>'
         )
+
+    def _render_rest_public_args(self, field: FormField) -> str:
+        """Render visible inputs for the field's public additional_args.
+
+        Returns an empty string when the field has no public args. Private
+        args are excluded entirely.
+
+        Args:
+            field: REST FormField.
+
+        Returns:
+            HTML fragment with one ``<label><input/></label>`` per public arg.
+        """
+        rest_meta = (field.meta or {}).get("rest", {}) or {}
+        args = rest_meta.get("additional_args") or []
+        if not args:
+            return ""
+
+        type_map = {
+            "string": "text",
+            "integer": "number",
+            "number": "number",
+            "boolean": "checkbox",
+            "json": "text",
+        }
+
+        parts: list[str] = []
+        for arg in args:
+            if not isinstance(arg, dict):
+                continue
+            if arg.get("visibility") != "public":
+                continue
+            name = arg.get("name")
+            if not name:
+                continue
+            input_type = type_map.get(arg.get("data_type", "string"), "text")
+            label_text = html.escape(str(arg.get("label") or name), quote=True)
+            arg_required = " required" if arg.get("required") else ""
+            default = arg.get("value")
+            safe_name = html.escape(str(name), quote=True)
+            input_id = f"{field.field_id}__arg__{safe_name}"
+
+            if input_type == "checkbox":
+                checked = " checked" if default in (True, "true", 1, "1") else ""
+                control = (
+                    f'<input type="checkbox" '
+                    f'name="{safe_name}" '
+                    f'id="{input_id}" '
+                    f'class="parrot-rest-arg" '
+                    f'data-arg-name="{safe_name}" '
+                    f'data-data-type="{html.escape(str(arg.get("data_type", "string")), quote=True)}"'
+                    f'{arg_required}'
+                    f'{checked}>'
+                )
+            else:
+                value_attr = (
+                    f' value="{html.escape(str(default), quote=True)}"'
+                    if default is not None
+                    else ""
+                )
+                control = (
+                    f'<input type="{input_type}" '
+                    f'name="{safe_name}" '
+                    f'id="{input_id}" '
+                    f'class="parrot-rest-arg form-field__rest-arg" '
+                    f'data-arg-name="{safe_name}" '
+                    f'data-data-type="{html.escape(str(arg.get("data_type", "string")), quote=True)}"'
+                    f'{value_attr}'
+                    f'{arg_required}>'
+                )
+
+            parts.append(
+                f'<label class="form-field__rest-arg-label block text-xs '
+                f'text-gray-700 mt-2" for="{input_id}">{label_text}'
+                f'{control}'
+                f'</label>'
+            )
+
+        return "".join(parts)
 
     def _render_subsection_html(
         self,
