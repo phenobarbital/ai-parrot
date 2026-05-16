@@ -180,4 +180,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Replaced agent.retrieval(self.request, ...) with agent.session(request=self.request, ...) in agent.py:1504, chatbot.retrieval(...) with chatbot.session(request=...) in chat.py:455, and agent.retrieval(...) with agent.session(request=...) in test_handler.py:197. Updated the stale comment on test_handler.py:194. No RequestBot references found in any handler. All three modules import cleanly. Lint: only pre-existing violations.

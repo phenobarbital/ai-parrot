@@ -191,11 +191,11 @@ class BotConfigTestHandler(BaseView):
 
         # Use the ask() method
         try:
-            # Patch request with session for AbstractBot.retrieval
+            # Patch request with session for AbstractBot.session
             setattr(self.request, "session", user_session)
-            
-            async with agent.retrieval(
-                self.request, app=self.request.app
+
+            async with agent.session(
+                request=self.request, app=self.request.app
             ) as bot:
                 response = await bot.ask(question=query)
         except Exception as exc:
