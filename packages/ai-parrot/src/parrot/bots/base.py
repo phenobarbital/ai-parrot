@@ -25,6 +25,13 @@ from .prompts import (
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
 from .middleware import PromptPipeline
+# FEAT-176: Lifecycle Events
+from parrot.core.events.lifecycle.trace import TraceContext
+from parrot.core.events.lifecycle.events import (
+    BeforeInvokeEvent,
+    AfterInvokeEvent,
+    InvokeFailedEvent,
+)
 
 
 class BaseBot(AbstractBot):
@@ -131,6 +138,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         system_prompt: Optional[str] = None,
+        trace_context=None,
         **kwargs
     ) -> AIMessage:
         """
@@ -167,7 +175,23 @@ class BaseBot(AbstractBot):
         # Generate session ID if not provided
         if not session_id:
             session_id = str(uuid.uuid4())
+        user_id = user_id or "anonymous"
         turn_id = str(uuid.uuid4())
+
+        # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
+        _trace_ctx_conv = trace_context or TraceContext.new_root()
+        self._current_trace_context = _trace_ctx_conv
+        _conv_started_ms = time.perf_counter()
+        await self.events.emit(BeforeInvokeEvent(
+            trace_context=_trace_ctx_conv,
+            agent_name=self.name,
+            method="conversation",
+            question=question[:512],
+            user_id=user_id,
+            session_id=session_id,
+            source_type="agent",
+            source_name=self.name,
+        ))
 
         limit = kwargs.get(
             'limit',
@@ -403,6 +427,16 @@ class BaseBot(AbstractBot):
                         )
                         await memory.add_turn(user_id, session_id, turn)
 
+                    # FEAT-176: emit AfterInvokeEvent on success.
+                    _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
+                    await self.events.emit(AfterInvokeEvent(
+                        trace_context=_trace_ctx_conv,
+                        agent_name=self.name,
+                        method="conversation",
+                        duration_ms=_conv_duration_ms,
+                        source_type="agent",
+                        source_name=self.name,
+                    ))
                     # return the response Object:
                     return self.get_response(
                         response,
@@ -414,12 +448,38 @@ class BaseBot(AbstractBot):
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
+            # FEAT-176: emit InvokeFailedEvent on cancellation.
+            _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx_conv,
+                agent_name=self.name,
+                method="conversation",
+                duration_ms=_conv_duration_ms,
+                error_type="CancelledError",
+                error_message="Cancelled",
+                source_type="agent",
+                source_name=self.name,
+            ))
             raise
         except Exception as e:
             self.logger.error(
                 f"Error in conversation: {e}"
             )
+            # FEAT-176: emit InvokeFailedEvent on exception.
+            _conv_duration_ms = (time.perf_counter() - _conv_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx_conv,
+                agent_name=self.name,
+                method="conversation",
+                duration_ms=_conv_duration_ms,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                source_type="agent",
+                source_name=self.name,
+            ))
             raise
+        finally:
+            self._current_trace_context = None
 
     # Alias for conversation method
     async def chat(self, *args, **kwargs) -> AIMessage:
@@ -670,6 +730,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         use_tools: bool = True,
+        trace_context=None,
         **kwargs
     ) -> AIMessage:
         """
@@ -736,6 +797,21 @@ class BaseBot(AbstractBot):
                     'method': 'ask',
                 }
             )
+
+        # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
+        _trace_ctx = trace_context or TraceContext.new_root()
+        self._current_trace_context = _trace_ctx
+        _ask_started_ms = time.perf_counter()
+        await self.events.emit(BeforeInvokeEvent(
+            trace_context=_trace_ctx,
+            agent_name=self.name,
+            method="ask",
+            question=question[:512],
+            user_id=user_id,
+            session_id=session_id,
+            source_type="agent",
+            source_name=self.name,
+        ))
 
         # Update status and trigger start event
         self.status = AgentStatus.WORKING
@@ -1129,10 +1205,35 @@ class BaseBot(AbstractBot):
                     self.name,
                     (time.perf_counter() - ask_started) * 1000,
                 )
+                # FEAT-176: emit AfterInvokeEvent on success.
+                _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
+                _usage = getattr(response, 'usage', None)
+                await self.events.emit(AfterInvokeEvent(
+                    trace_context=_trace_ctx,
+                    agent_name=self.name,
+                    method="ask",
+                    duration_ms=_ask_duration_ms,
+                    input_tokens=getattr(_usage, 'prompt_tokens', None) if _usage else None,
+                    output_tokens=getattr(_usage, 'completion_tokens', None) if _usage else None,
+                    source_type="agent",
+                    source_name=self.name,
+                ))
                 return response
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")
+            # FEAT-176: emit InvokeFailedEvent on cancellation.
+            _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx,
+                agent_name=self.name,
+                method="ask",
+                duration_ms=_ask_duration_ms,
+                error_type="CancelledError",
+                error_message="Cancelled",
+                source_type="agent",
+                source_name=self.name,
+            ))
             self.status = AgentStatus.FAILED
             self._trigger_event(
                 self.EVENT_TASK_FAILED,
@@ -1143,6 +1244,18 @@ class BaseBot(AbstractBot):
             raise
         except Exception as e:
             self.logger.error(f"Error in ask: {e}")
+            # FEAT-176: emit InvokeFailedEvent on exception.
+            _ask_duration_ms = (time.perf_counter() - _ask_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx,
+                agent_name=self.name,
+                method="ask",
+                duration_ms=_ask_duration_ms,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                source_type="agent",
+                source_name=self.name,
+            ))
             self.status = AgentStatus.FAILED
             self._trigger_event(
                 self.EVENT_TASK_FAILED,
@@ -1153,6 +1266,7 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
+            self._current_trace_context = None
 
     async def ask_stream(
         self,
@@ -1171,6 +1285,7 @@ class BaseBot(AbstractBot):
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         system_prompt: Optional[str] = None,
+        trace_context=None,
         **kwargs
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
@@ -1180,6 +1295,21 @@ class BaseBot(AbstractBot):
         # Maintain turn identifier generation for parity with ask()
         _turn_id = str(uuid.uuid4())
         _trusted_source = kwargs.pop("_trusted_source", False)
+
+        # FEAT-176: resolve trace context and emit BeforeInvokeEvent.
+        _trace_ctx_stream = trace_context or TraceContext.new_root()
+        self._current_trace_context = _trace_ctx_stream
+        _stream_started_ms = time.perf_counter()
+        await self.events.emit(BeforeInvokeEvent(
+            trace_context=_trace_ctx_stream,
+            agent_name=self.name,
+            method="ask_stream",
+            question=question[:512],
+            user_id=user_id,
+            session_id=session_id,
+            source_type="agent",
+            source_name=self.name,
+        ))
 
         try:
             # The wrap is for the LLM call ONLY; keep ``question`` clean.
@@ -1326,15 +1456,29 @@ class BaseBot(AbstractBot):
 
                 full_response = ""
                 ai_message = None
-                async for chunk in client.ask_stream(**llm_kwargs):
-                    if isinstance(chunk, AIMessage):
-                        ai_message = chunk
-                    else:
-                        full_response += chunk
-                        yield chunk
+                stream_error: Optional[Exception] = None
+                try:
+                    async for chunk in client.ask_stream(**llm_kwargs):
+                        if isinstance(chunk, AIMessage):
+                            ai_message = chunk
+                        else:
+                            full_response += chunk
+                            yield chunk
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # Capture so the partial text already yielded to the caller
+                    # is preserved as a fallback AIMessage instead of being lost.
+                    stream_error = exc
+                    self.logger.error(
+                        "ask_stream: client stream raised after %d chars; "
+                        "synthesizing fallback AIMessage: %s",
+                        len(full_response), exc,
+                    )
 
-                # Save conversation turn
-                if use_conversation_history and memory:
+                # Save conversation turn — also runs on partial/error so the
+                # accumulated text is not lost from memory.
+                if use_conversation_history and memory and full_response:
                     turn = ConversationTurn(
                         turn_id=_turn_id,
                         user_id=user_id,
@@ -1349,10 +1493,12 @@ class BaseBot(AbstractBot):
                     await memory.add_turn(user_id, session_id, turn)
 
                 if ai_message is None:
-                    # Defensive fallback: client did not yield an AIMessage sentinel.
+                    # Defensive fallback: client did not yield an AIMessage sentinel
+                    # (either because it errored mid-stream, or because the client
+                    # implementation forgot to yield the final envelope).
                     # Use prompt_for_llm (the actual text sent to the LLM) so that
-                    # ai_message.input is consistent with what client-yielded AIMessages
-                    # carry (they use the processed prompt, not the raw user question).
+                    # ai_message.input is consistent with what client-yielded
+                    # AIMessages carry.
                     ai_message = AIMessage(
                         input=prompt_for_llm,
                         output=full_response,
@@ -1367,12 +1513,60 @@ class BaseBot(AbstractBot):
                         user_id=user_id,
                         session_id=session_id,
                         turn_id=_turn_id,
+                        finish_reason="error" if stream_error else "completed",
+                        stop_reason="error" if stream_error else "completed",
                     )
+                elif stream_error and not (ai_message.response or '').strip():
+                    # Client yielded an AIMessage but it carries no text (e.g.
+                    # validation built it before the chunks were attached).
+                    # Patch the accumulated text in so the final envelope still
+                    # reflects what was actually streamed to the caller.
+                    ai_message.response = full_response
+                    ai_message.output = ai_message.output or full_response
+                    ai_message.finish_reason = "error"
+                    ai_message.stop_reason = "error"
+
+                # FEAT-176: emit AfterInvokeEvent on success.
+                _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
+                await self.events.emit(AfterInvokeEvent(
+                    trace_context=_trace_ctx_stream,
+                    agent_name=self.name,
+                    method="ask_stream",
+                    duration_ms=_stream_duration_ms,
+                    source_type="agent",
+                    source_name=self.name,
+                ))
                 yield ai_message
 
         except asyncio.CancelledError:
             self.logger.info("Ask stream task was cancelled.")
+            # FEAT-176: emit InvokeFailedEvent on cancellation.
+            _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx_stream,
+                agent_name=self.name,
+                method="ask_stream",
+                duration_ms=_stream_duration_ms,
+                error_type="CancelledError",
+                error_message="Cancelled",
+                source_type="agent",
+                source_name=self.name,
+            ))
             raise
         except Exception as e:
             self.logger.error(f"Error in ask_stream: {e}")
+            # FEAT-176: emit InvokeFailedEvent on exception.
+            _stream_duration_ms = (time.perf_counter() - _stream_started_ms) * 1000
+            await self.events.emit(InvokeFailedEvent(
+                trace_context=_trace_ctx_stream,
+                agent_name=self.name,
+                method="ask_stream",
+                duration_ms=_stream_duration_ms,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                source_type="agent",
+                source_name=self.name,
+            ))
             raise
+        finally:
+            self._current_trace_context = None

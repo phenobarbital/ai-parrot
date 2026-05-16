@@ -702,6 +702,18 @@ class OpenAIClient(AbstractClient):
             prompt, files, user_id, session_id, system_prompt
         )
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        import time as _lc_time_gpt
+        _lc_tc_gpt = self._emit_before_call(
+            client_name="openai",
+            model=model_str,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(_use_tools),
+            parent_trace=None,
+        )
+        _lc_t0_gpt = _lc_time_gpt.perf_counter()
+
         if files:
             for file in files:
                 if isinstance(file, str):
@@ -1028,6 +1040,17 @@ class OpenAIClient(AbstractClient):
             ai_message.metadata['used_fallback_model'] = True
             ai_message.metadata['original_model'] = _original_model
             ai_message.metadata['fallback_model'] = self._fallback_model
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        _lc_gpt_usage = getattr(ai_message, 'usage', None)
+        await self._emit_after_call(
+            _lc_tc_gpt,
+            client_name="openai",
+            model=model_str,
+            duration_ms=(_lc_time_gpt.perf_counter() - _lc_t0_gpt) * 1000,
+            input_tokens=getattr(_lc_gpt_usage, 'prompt_tokens', None) if _lc_gpt_usage else None,
+            output_tokens=getattr(_lc_gpt_usage, 'completion_tokens', None) if _lc_gpt_usage else None,
+            finish_reason=getattr(ai_message, 'stop_reason', None),
+        )
         return ai_message
 
     async def resume(
@@ -1207,6 +1230,21 @@ class OpenAIClient(AbstractClient):
             prompt, files, user_id, session_id, system_prompt
         )
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
+        import time as _lc_time_gpts
+        from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GPTStreamChunkEvent
+        _lc_tc_gpts = self._emit_before_call(
+            client_name="openai",
+            model=model_str,
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=False,
+            parent_trace=None,
+        )
+        _lc_t0_gpts = _lc_time_gpts.perf_counter()
+        _lc_has_chunk_subs_gpt = self.events.has_subscribers(_GPTStreamChunkEvent)
+        _lc_chunk_idx_gpt = 0
+
         # Upload files if they are path-like objects
         if files:
             for file in files:
@@ -1326,6 +1364,15 @@ class OpenAIClient(AbstractClient):
                             delta = event.get("delta")
                         if delta:
                             assistant_content += delta
+                            # FEAT-176: per-chunk event
+                            if _lc_has_chunk_subs_gpt:
+                                await self.events.emit(_GPTStreamChunkEvent(
+                                    trace_context=_lc_tc_gpts, client_name="openai",
+                                    model=model_str, chunk_index=_lc_chunk_idx_gpt,
+                                    chunk_size_bytes=len(delta.encode("utf-8")) if isinstance(delta, str) else 0,
+                                    source_type="client", source_name="openai",
+                                ))
+                                _lc_chunk_idx_gpt += 1
                             yield delta
                     elif event_type == "response.output_text.done":
                         text = getattr(event, "text", None)
@@ -1377,6 +1424,15 @@ class OpenAIClient(AbstractClient):
                 session_id=session_id,
                 turn_id=turn_id,
             )
+            # FEAT-176: lifecycle event — AfterClientCallEvent (Responses API path)
+            _lc_resp_usage = getattr(resp_ai_message, 'usage', None)
+            await self._emit_after_call(
+                _lc_tc_gpts, client_name="openai", model=model_str,
+                duration_ms=(_lc_time_gpts.perf_counter() - _lc_t0_gpts) * 1000,
+                input_tokens=getattr(_lc_resp_usage, 'prompt_tokens', None) if _lc_resp_usage else None,
+                output_tokens=getattr(_lc_resp_usage, 'completion_tokens', None) if _lc_resp_usage else None,
+                finish_reason=None,
+            )
             yield resp_ai_message
         else:
             chat_args = dict(args)
@@ -1413,6 +1469,15 @@ class OpenAIClient(AbstractClient):
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     text_chunk = chunk.choices[0].delta.content
                     assistant_content += text_chunk
+                    # FEAT-176: per-chunk event
+                    if _lc_has_chunk_subs_gpt:
+                        await self.events.emit(_GPTStreamChunkEvent(
+                            trace_context=_lc_tc_gpts, client_name="openai",
+                            model=model_str, chunk_index=_lc_chunk_idx_gpt,
+                            chunk_size_bytes=len(text_chunk.encode("utf-8")),
+                            source_type="client", source_name="openai",
+                        ))
+                        _lc_chunk_idx_gpt += 1
                     yield text_chunk
                 # Capture usage from the final chunk (present when stream_options.include_usage=True)
                 if hasattr(chunk, 'usage') and chunk.usage is not None:
@@ -1435,6 +1500,15 @@ class OpenAIClient(AbstractClient):
                 user_id=user_id,
                 session_id=session_id,
                 turn_id=turn_id,
+            )
+            # FEAT-176: lifecycle event — AfterClientCallEvent (Chat Completions path)
+            _lc_chat_usage = getattr(chat_ai_message, 'usage', None)
+            await self._emit_after_call(
+                _lc_tc_gpts, client_name="openai", model=model_str,
+                duration_ms=(_lc_time_gpts.perf_counter() - _lc_t0_gpts) * 1000,
+                input_tokens=getattr(_lc_chat_usage, 'prompt_tokens', None) if _lc_chat_usage else None,
+                output_tokens=getattr(_lc_chat_usage, 'completion_tokens', None) if _lc_chat_usage else None,
+                finish_reason=None,
             )
             yield chat_ai_message
 

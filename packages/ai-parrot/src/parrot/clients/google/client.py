@@ -1733,6 +1733,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         original_prompt = prompt
         ask_started = time.perf_counter()
 
+        # FEAT-176: lifecycle event — BeforeClientCallEvent
+        _lc_tc_google = self._emit_before_call(
+            client_name="google",
+            model=str(model) if model else "",
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(_use_tools),
+            parent_trace=None,
+        )
+
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
             k: v for k, v in {
@@ -2374,6 +2384,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # not leak into subsequent calls.
         self._request_tools = {}
 
+        # FEAT-176: lifecycle event — AfterClientCallEvent
+        _lc_google_usage = getattr(ai_message, 'usage', None)
+        await self._emit_after_call(
+            _lc_tc_google, client_name="google", model=str(model) if model else "",
+            duration_ms=(time.perf_counter() - ask_started) * 1000,
+            input_tokens=getattr(_lc_google_usage, 'prompt_tokens', None) if _lc_google_usage else None,
+            output_tokens=getattr(_lc_google_usage, 'completion_tokens', None) if _lc_google_usage else None,
+            finish_reason=None,
+        )
         return ai_message
 
     def _create_simple_summary(self, all_tool_calls: List[ToolCall]) -> str:
@@ -2503,6 +2522,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             model = model[0]
 
         turn_id = str(uuid.uuid4())
+
+        # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
+        from parrot.core.events.lifecycle.events import ClientStreamChunkEvent as _GoogleStreamChunkEvent
+        _lc_tc_googles = self._emit_before_call(
+            client_name="google",
+            model=str(model) if model else "",
+            temperature=temperature if temperature is not None else self.temperature,
+            system_prompt=system_prompt,
+            has_tools=bool(use_tools if use_tools is not None else self.enable_tools),
+            parent_trace=None,
+        )
+        _lc_t0_googles = time.perf_counter()
+        _lc_has_chunk_subs_google = self.events.has_subscribers(_GoogleStreamChunkEvent)
+        _lc_chunk_idx_google = 0
 
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {
@@ -2687,6 +2720,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         if chunk.text:
                             assistant_content_chunk += chunk.text
                             all_assistant_text.append(chunk.text)
+                            # FEAT-176: per-chunk event
+                            if _lc_has_chunk_subs_google:
+                                await self.events.emit(_GoogleStreamChunkEvent(
+                                    trace_context=_lc_tc_googles, client_name="google",
+                                    model=str(model) if model else "",
+                                    chunk_index=_lc_chunk_idx_google,
+                                    chunk_size_bytes=len(chunk.text.encode("utf-8")),
+                                    source_type="client", source_name="google",
+                                ))
+                                _lc_chunk_idx_google += 1
                             yield chunk.text
 
                     if max_tokens_reached and on_max_tokens == "retry" and retry_config.auto_retry_on_max_tokens:
@@ -2904,6 +2947,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 code=None
             )
             ai_message.provider = "google_genai"
+            # FEAT-176: lifecycle event — AfterClientCallEvent (stream)
+            _lc_google_s_usage = getattr(ai_message, 'usage', None)
+            await self._emit_after_call(
+                _lc_tc_googles, client_name="google", model=str(model) if model else "",
+                duration_ms=(time.perf_counter() - _lc_t0_googles) * 1000,
+                input_tokens=getattr(_lc_google_s_usage, 'prompt_tokens', None) if _lc_google_s_usage else None,
+                output_tokens=getattr(_lc_google_s_usage, 'completion_tokens', None) if _lc_google_s_usage else None,
+                finish_reason=None,
+            )
             yield ai_message
 
         finally:

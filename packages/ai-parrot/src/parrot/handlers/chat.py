@@ -452,7 +452,7 @@ class ChatHandler(BaseView):
         if isinstance(stream, str):
             stream = stream.lower() == 'true'
         try:
-            async with chatbot.retrieval(self.request, app=app, llm=llm) as bot:
+            async with chatbot.session(request=self.request, app=app, llm=llm) as bot:
                 # Prioritize session_id from request data (conversation-specific)
                 # Generate new UUID if not provided - never use browser session
                 session_id = data.pop('session_id', None) or uuid.uuid4().hex

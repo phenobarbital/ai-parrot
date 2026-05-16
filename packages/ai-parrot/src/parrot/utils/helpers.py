@@ -1,6 +1,8 @@
+from contextvars import ContextVar
 from typing import Any, Optional, Union
-import inspect
+
 from aiohttp import web
+
 
 class RequestContext:
     """RequestContext.
@@ -40,38 +42,18 @@ class RequestContext:
         pass
 
 
-class RequestBot:
-    """RequestBot.
+# Module-level ContextVar for per-asyncio-task RequestContext isolation.
+# Set by AbstractBot.session(); read by current_context() anywhere in the stack.
+_current_ctx: ContextVar[Optional[RequestContext]] = ContextVar(
+    "parrot_request_ctx", default=None
+)
 
-    This class is a wrapper around the AbstractBot to provide request-specific context.
+
+def current_context() -> Optional[RequestContext]:
+    """Return the RequestContext bound to the current asyncio task, if any.
+
+    Returns:
+        The active RequestContext if called within an AbstractBot.session()
+        block, or None if no session is active for the current asyncio task.
     """
-    def __init__(self, delegate: Any, context: RequestContext):
-        self.delegate = delegate
-        self.ctx = context
-
-    def __getattr__(self, name: str):
-        attr = getattr(self.delegate, name)
-        # If the attribute is a callable method (and not just a property)
-        if callable(attr):
-            # Check if the original method is async
-            if inspect.iscoroutinefunction(attr):
-                # Return a new ASYNC function that wraps the original
-                async def async_wrapper(*args, **kwargs):
-                    # Inject the context into the call
-                    if 'ctx' not in kwargs:
-                        kwargs['ctx'] = self.ctx
-                    # Await the original async method with the modified arguments
-                    return await attr(*args, **kwargs)
-                return async_wrapper
-            else:
-                # Return a new SYNC function that wraps the original
-                def sync_wrapper(*args, **kwargs):
-                    # Inject the context into the call
-                    if 'ctx' not in kwargs:
-                        kwargs['ctx'] = self.ctx
-                    # Call the original sync method with the modified arguments
-                    return attr(*args, **kwargs)
-                return sync_wrapper
-        else:
-            # If it's a simple attribute (e.g., self.delegate.name), return it directly
-            return attr
+    return _current_ctx.get()

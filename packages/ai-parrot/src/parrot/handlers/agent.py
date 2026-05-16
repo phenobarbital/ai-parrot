@@ -1501,7 +1501,7 @@ class AgentTalk(BaseView):
                 )
 
         try:
-            async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
+            async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
                     return await self._execute_agent_method(
                         bot=bot,
@@ -1512,7 +1512,7 @@ class AgentTalk(BaseView):
                     )
                 if not query:
                     return await self._handle_attachments(bot, agent, attachments)
-                if use_stream and isinstance(bot, AbstractBot):
+                if use_stream:
                     return await self._handle_stream_response(
                         bot=bot,
                         query=query,
@@ -1530,7 +1530,7 @@ class AgentTalk(BaseView):
                         client_message_id=client_message_id,
                         **data,
                     )
-                if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
+                if followup_turn_id and followup_data is not None:
                     start_time = time.perf_counter()
                     response: AIMessage = await bot.followup(
                         question=query,
@@ -1979,7 +1979,6 @@ class AgentTalk(BaseView):
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
                 'X-Parrot-Stream': 'chunked-aimessage',
-                'Access-Control-Allow-Origin': '*',
                 'X-Accel-Buffering': 'no',
             },
         )
