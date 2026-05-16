@@ -72,7 +72,7 @@
       "feature_id": "FEAT-175",
       "feature": "migrate-requestbot-contextvars",
       "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Could technically parallel with TASK-1202 (different files) but sequential is safer due to shared feature branch",
       "assigned_to": null,
       "started_at": "2026-05-15T15:09:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1204-basebot-fallbacks.md"
+      "completed_at": "2026-05-16T02:12:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1204-basebot-fallbacks.md"
     },
     {
       "id": "TASK-1205",
