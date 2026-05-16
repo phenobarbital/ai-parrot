@@ -199,4 +199,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `if ctx is None: ctx = _current_ctx.get()` at the start of conversation() (line 169), invoke() (line 515), ask() (line 762), and ask_stream() (line 1293). Import updated: `from ..utils.helpers import RequestContext, _current_ctx`. All 4 fallbacks confirmed present. Lint: 5 pre-existing violations only, no new issues.

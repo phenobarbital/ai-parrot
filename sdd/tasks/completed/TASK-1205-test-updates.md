@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-175 — Migrate RequestBot to ContextVar-based RequestContext
 **Spec**: `sdd/specs/migrate-requestbot-contextvars.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1202, TASK-1203, TASK-1204
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -251,4 +251,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-05-16 by sdd-worker (continuation worktree).
+
+- `tests/bots/test_abstractbot_policy.py` — replaced all 5 `bot.retrieval()` calls with
+  `bot.session()`, renamed class `TestRetrievalPBAC` → `TestSessionPBAC`, removed unused
+  `AsyncMock` import, fixed unused `as b` variable in the deny assertion.
+- `tests/auth/test_policy_rules_integration.py` — replaced all 3 `bot.retrieval()` calls
+  with `bot.session()`, updated scenario docstrings and class name
+  (`TestScenario1RetrievalEnforcement`), fixed unused `as b` variable.
+- `tests/bots/test_session_contextvar.py` — created from scratch with 17 tests across
+  three classes:
+  - `TestContextVarInfrastructure` (5 tests): set/get/reset, nested tokens, copy_context
+  - `TestSessionContextManager` (7 tests): yields real bot, sets/resets ContextVar,
+    exception safety, concurrent isolation, pre-built ctx, request fail-open
+  - `TestFallbackSemantics` (5 tests): explicit ctx wins, ambient fallback, no-ambient
+    stays None, session sets ambient, no-session fallback yields None
+
+All 38 tests pass. Ruff clean on all three files.
