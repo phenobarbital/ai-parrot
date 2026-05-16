@@ -14,6 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navigator_auth.abac.context import EvalContext
+    from parrot.core.events.lifecycle.trace import TraceContext
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,10 @@ class PermissionContext:
             scope token storage and authorization callbacks. ``None`` by
             default for backward compatibility with callers that don't yet
             propagate the channel.
+        trace_context: Optional W3C-compatible trace context for lifecycle event
+            propagation across agent → tool and agent → sub-agent boundaries.
+            ``None`` by default; populated by TASK-1193 (AbstractBot) and read
+            by TASK-1195 (AbstractTool) to mint child spans.
         extra: Additional request-scoped metadata (e.g., source IP, API version).
 
     Example:
@@ -117,6 +122,7 @@ class PermissionContext:
     session: UserSession
     request_id: Optional[str] = None
     channel: Optional[str] = None
+    trace_context: "Optional[TraceContext]" = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property

@@ -58,6 +58,7 @@ class BotMetadata:
     dependencies: List[str] = field(default_factory=list)
     startup_config: Dict[str, Any] = field(default_factory=dict)  # Config for startup instantiation
     bot_config: Optional[Any] = None  # Optional[BotConfig] – declarative agent configuration
+    events_block: Optional[Dict[str, Any]] = None  # FEAT-176: parsed 'events:' YAML block
     _instance: Optional[AbstractBot] = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -180,6 +181,20 @@ class BotMetadata:
             # Configure instance if needed:
             if not self.at_startup:
                 await instance.configure()
+
+            # FEAT-176: wire YAML-declared lifecycle subscribers onto the bot's
+            # event registry.  Must run AFTER configure() so all bot attributes
+            # are initialised before the first event may fire.
+            if self.events_block:
+                try:
+                    from parrot.core.events.lifecycle.yaml_loader import wire_events
+                    wire_events(instance, self.events_block)
+                except Exception as _wire_exc:
+                    logging.error(
+                        "Failed to wire lifecycle events for bot '%s': %s",
+                        self.name, _wire_exc,
+                    )
+
             # Store instance if singleton
             if self.singleton:
                 self._instance = instance
@@ -969,6 +984,9 @@ class AgentRegistry:
                 if not config.enabled:
                     continue
 
+                # FEAT-176: parse optional top-level 'events:' block
+                events_block = content.get('events') or None
+
                 # Create Factory
                 factory = self.create_agent_factory(config)
 
@@ -984,6 +1002,7 @@ class AgentRegistry:
                     tags=config.tags,
                     priority=config.priority,
                     bot_config=config,
+                    events_block=events_block,
                 )
 
                 count += 1
