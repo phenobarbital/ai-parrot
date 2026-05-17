@@ -1,7 +1,9 @@
-"""GitHub Pull Request Reviewer agent.
+"""GitHub Code Reviewer agent.
 
-Reviews GitHub pull requests against the acceptance criteria of the linked
-Jira ticket. Designed to be subclassed per repository (mirrors the
+Reviews GitHub artefacts against the acceptance criteria of the linked
+Jira ticket. Today the agent only handles pull requests; future revisions
+are expected to layer additional code-review duties on top of the same
+class. Designed to be subclassed per repository (mirrors the
 :class:`~parrot.bots.jira_specialist.JiraSpecialist` pattern).
 
 Workflow:
@@ -110,10 +112,10 @@ JSON, but the diff only adds a form-data branch") over vague language.
 
 
 # ──────────────────────────────────────────────────────────────
-# GitHubPRReviewer
+# GitHubReviewer
 # ──────────────────────────────────────────────────────────────
 
-class GitHubPRReviewer(Agent):
+class GitHubReviewer(Agent):
     """Reviews GitHub PRs against linked Jira ticket acceptance criteria.
 
     Like :class:`JiraSpecialist`, this class is abstract by convention:
@@ -215,7 +217,7 @@ class GitHubPRReviewer(Agent):
                 tools = self.tool_manager.register_toolkit(self.git_toolkit)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "GitHubPRReviewer: failed to register Git tools: %s",
+                    "GitHubReviewer: failed to register Git tools: %s",
                     exc,
                     exc_info=True,
                 )
@@ -230,7 +232,7 @@ class GitHubPRReviewer(Agent):
                 tools = self.tool_manager.register_toolkit(self.jira_toolkit)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "GitHubPRReviewer: failed to register Jira tools: %s",
+                    "GitHubReviewer: failed to register Jira tools: %s",
                     exc,
                     exc_info=True,
                 )
@@ -245,7 +247,7 @@ class GitHubPRReviewer(Agent):
                 self.sync_tools(self._llm)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "GitHubPRReviewer: failed to sync tools to LLM: %s",
+                    "GitHubReviewer: failed to sync tools to LLM: %s",
                     exc,
                     exc_info=True,
                 )
@@ -256,7 +258,7 @@ class GitHubPRReviewer(Agent):
         token = config.get("GITHUB_TOKEN")
         if not token:
             self.logger.warning(
-                "GitHubPRReviewer: GITHUB_TOKEN is not set; PR operations "
+                "GitHubReviewer: GITHUB_TOKEN is not set; PR operations "
                 "will fail until a token is configured."
             )
         return GitToolkit(
@@ -275,7 +277,7 @@ class GitHubPRReviewer(Agent):
         if use_oauth:
             if oauth_manager is None:
                 self.logger.warning(
-                    "GitHubPRReviewer: JIRA_AUTH_TYPE=oauth2_3lo but "
+                    "GitHubReviewer: JIRA_AUTH_TYPE=oauth2_3lo but "
                     "app['jira_oauth_manager'] is missing; Jira lookups disabled."
                 )
                 return None
@@ -313,7 +315,7 @@ class GitHubPRReviewer(Agent):
             )
         except Exception as exc:  # noqa: BLE001 — never block startup
             self.logger.warning(
-                "GitHubPRReviewer: ensure_webhook raised for %s: %s",
+                "GitHubReviewer: ensure_webhook raised for %s: %s",
                 self.repository,
                 exc,
             )
@@ -322,25 +324,25 @@ class GitHubPRReviewer(Agent):
         status = result.get("status")
         if status == "created":
             self.logger.info(
-                "GitHubPRReviewer: webhook registered on %s -> %s",
+                "GitHubReviewer: webhook registered on %s -> %s",
                 self.repository,
                 self.webhook_public_url,
             )
         elif status == "already_exists":
             self.logger.info(
-                "GitHubPRReviewer: webhook already present on %s",
+                "GitHubReviewer: webhook already present on %s",
                 self.repository,
             )
         elif status == "no_permission":
             self.logger.warning(
-                "GitHubPRReviewer: token lacks admin:repo_hook on %s; "
+                "GitHubReviewer: token lacks admin:repo_hook on %s; "
                 "configure the webhook manually pointing to %s.",
                 self.repository,
                 self.webhook_public_url,
             )
         else:
             self.logger.warning(
-                "GitHubPRReviewer: ensure_webhook returned status=%s for %s: %s",
+                "GitHubReviewer: ensure_webhook returned status=%s for %s: %s",
                 status,
                 self.repository,
                 result.get("message"),
@@ -454,7 +456,7 @@ class GitHubPRReviewer(Agent):
                 outcome["review"] = review_response
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "GitHubPRReviewer: failed to submit review on %s#%s: %s",
+                    "GitHubReviewer: failed to submit review on %s#%s: %s",
                     repo,
                     pr_number,
                     exc,
@@ -471,7 +473,7 @@ class GitHubPRReviewer(Agent):
     async def _fetch_ticket(self, ticket_key: str) -> Optional[Dict[str, Any]]:
         if self.jira_toolkit is None:
             self.logger.warning(
-                "GitHubPRReviewer: jira_toolkit unavailable; cannot fetch %s",
+                "GitHubReviewer: jira_toolkit unavailable; cannot fetch %s",
                 ticket_key,
             )
             return None
@@ -482,7 +484,7 @@ class GitHubPRReviewer(Agent):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "GitHubPRReviewer: jira_get_issue(%s) failed: %s",
+                "GitHubReviewer: jira_get_issue(%s) failed: %s",
                 ticket_key,
                 exc,
                 exc_info=True,
@@ -505,7 +507,7 @@ class GitHubPRReviewer(Agent):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
-                "GitHubPRReviewer: get_pull_request_diff failed for %s#%s: %s",
+                "GitHubReviewer: get_pull_request_diff failed for %s#%s: %s",
                 repo,
                 pr_number,
                 exc,
@@ -552,7 +554,7 @@ class GitHubPRReviewer(Agent):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "GitHubPRReviewer: LLM review failed for PR %s: %s",
+                "GitHubReviewer: LLM review failed for PR %s: %s",
                 payload.get("pr_number"),
                 exc,
                 exc_info=True,
@@ -609,7 +611,7 @@ class GitHubPRReviewer(Agent):
                 "",
                 f"Linked Jira ticket: {ticket_key}",
                 "",
-                "_Posted by the GitHubPRReviewer agent. Push a follow-up "
+                "_Posted by the GitHubReviewer agent. Push a follow-up "
                 "commit and the next webhook delivery will re-trigger this "
                 "review._",
             ]
@@ -646,7 +648,7 @@ class GitHubPRReviewer(Agent):
                 sent += 1
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
-                    "GitHubPRReviewer: failed to alert chat %s: %s",
+                    "GitHubReviewer: failed to alert chat %s: %s",
                     chat_id,
                     exc,
                 )
@@ -703,7 +705,7 @@ class GitHubPRReviewer(Agent):
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
-                "GitHubPRReviewer: list_pull_requests failed for %s: %s",
+                "GitHubReviewer: list_pull_requests failed for %s: %s",
                 self.repository,
                 exc,
                 exc_info=True,
@@ -748,12 +750,12 @@ class GitHubPRReviewer(Agent):
                         sent += 1
                     except Exception as exc:  # noqa: BLE001
                         self.logger.warning(
-                            "GitHubPRReviewer: failed to send stale-PR alert: %s",
+                            "GitHubReviewer: failed to send stale-PR alert: %s",
                             exc,
                         )
 
         self.logger.info(
-            "GitHubPRReviewer: daily report — %d open PR(s), %d stale, %d announced.",
+            "GitHubReviewer: daily report — %d open PR(s), %d stale, %d announced.",
             len(pulls or []),
             len(stale),
             sent,
@@ -780,5 +782,5 @@ class GitHubPRReviewer(Agent):
 __all__ = [
     "Discrepancy",
     "PRReviewResult",
-    "GitHubPRReviewer",
+    "GitHubReviewer",
 ]

@@ -660,42 +660,42 @@ JIRA_DEFAULT_REPORTER: str | None = config.get(
     fallback="jesuslarag@gmail.com",
 )
 
-# ── GitHub PR Reviewer Agent ──
+# ── GitHub Reviewer Agent ──
 # Comma-separated list of Telegram chat IDs notified when a PR review finds
 # discrepancies against the linked Jira ticket. Integers only.
 _raw_pr_chat_ids = config.getlist(
-    "GITHUB_PR_REVIEW_TELEGRAM_CHAT_IDS", fallback=[]
+    "GITHUB_REVIEW_TELEGRAM_CHAT_IDS", fallback=[]
 ) or []
-GITHUB_PR_REVIEW_TELEGRAM_CHAT_IDS: list[int] = []
+GITHUB_REVIEW_TELEGRAM_CHAT_IDS: list[int] = []
 for _chat_id in _raw_pr_chat_ids:
     try:
-        GITHUB_PR_REVIEW_TELEGRAM_CHAT_IDS.append(int(str(_chat_id).strip()))
+        GITHUB_REVIEW_TELEGRAM_CHAT_IDS.append(int(str(_chat_id).strip()))
     except (TypeError, ValueError):
         continue
 # Telegram chat / channel ID receiving the daily stale-PR summary. Accepts
 # either a numeric chat_id (e.g. -1001234567890) or a public @username.
-GITHUB_PR_REVIEW_PUBLIC_CHANNEL_ID: str | None = config.get(
-    "GITHUB_PR_REVIEW_PUBLIC_CHANNEL_ID", fallback=None
+GITHUB_REVIEW_PUBLIC_CHANNEL_ID: str | None = config.get(
+    "GITHUB_REVIEW_PUBLIC_CHANNEL_ID", fallback=None
 )
 # Shared secret used by GitHub to sign webhook deliveries. Required when
 # HMAC verification is enabled on the GitHubWebhookHook.
-GITHUB_PR_REVIEW_WEBHOOK_SECRET: str | None = config.get(
-    "GITHUB_PR_REVIEW_WEBHOOK_SECRET", fallback=None
+GITHUB_REVIEW_WEBHOOK_SECRET: str | None = config.get(
+    "GITHUB_REVIEW_WEBHOOK_SECRET", fallback=None
 )
 # Public HTTPS URL of the GitHubWebhookHook endpoint, used by the agent to
 # auto-subscribe via the GitHub API when the PAT has admin:repo_hook scope.
-GITHUB_PR_REVIEW_WEBHOOK_PUBLIC_URL: str | None = config.get(
-    "GITHUB_PR_REVIEW_WEBHOOK_PUBLIC_URL", fallback=None
+GITHUB_REVIEW_WEBHOOK_PUBLIC_URL: str | None = config.get(
+    "GITHUB_REVIEW_WEBHOOK_PUBLIC_URL", fallback=None
 )
 # Default GitHub repository in 'owner/name' format watched by the default
-# GitHubPRReviewer subclass. Multiple repositories = multiple subclasses.
-GITHUB_PR_REVIEW_REPOSITORY: str | None = config.get(
-    "GITHUB_PR_REVIEW_REPOSITORY", fallback=None
+# GitHubReviewer subclass. Multiple repositories = multiple subclasses.
+GITHUB_REVIEW_REPOSITORY: str | None = config.get(
+    "GITHUB_REVIEW_REPOSITORY", fallback=None
 )
 # Hours an open PR must remain unattended before the daily report announces
 # it to the public Telegram channel.
-GITHUB_PR_REVIEW_STALE_AFTER_HOURS: int = config.getint(
-    "GITHUB_PR_REVIEW_STALE_AFTER_HOURS", fallback=24
+GITHUB_REVIEW_STALE_AFTER_HOURS: int = config.getint(
+    "GITHUB_REVIEW_STALE_AFTER_HOURS", fallback=24
 )
 
 ## Vector Store Handler:

@@ -1,4 +1,4 @@
-"""Unit tests for GitHubPRReviewer pure helpers.
+"""Unit tests for GitHubReviewer pure helpers.
 
 Avoids instantiating the full ``Agent`` MRO (which requires the Cython
 ``parrot.utils.types`` extension at import time) by exercising the pure /
@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from parrot.bots.github_pr_reviewer import (
+from parrot.bots.github_reviewer import (
     Discrepancy,
-    GitHubPRReviewer,
+    GitHubReviewer,
     PRReviewResult,
 )
 
@@ -34,9 +34,9 @@ class _MinimalReviewer:
         )
 
     # Bind the real helpers we want to test.
-    _extract_ticket_key = GitHubPRReviewer._extract_ticket_key
-    _format_review_body = GitHubPRReviewer._format_review_body
-    _format_alert_message = GitHubPRReviewer._format_alert_message
+    _extract_ticket_key = GitHubReviewer._extract_ticket_key
+    _format_review_body = GitHubReviewer._format_review_body
+    _format_alert_message = GitHubReviewer._format_alert_message
 
 
 class TestExtractTicketKey:
@@ -121,13 +121,13 @@ class TestFormatAlertMessage:
 
 class TestParseIso8601:
     def test_parses_zulu(self):
-        dt = GitHubPRReviewer._parse_iso8601("2026-01-01T12:00:00Z")
+        dt = GitHubReviewer._parse_iso8601("2026-01-01T12:00:00Z")
         assert dt == datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
     def test_parses_offset(self):
-        dt = GitHubPRReviewer._parse_iso8601("2026-01-01T12:00:00+00:00")
+        dt = GitHubReviewer._parse_iso8601("2026-01-01T12:00:00+00:00")
         assert dt == datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
     @pytest.mark.parametrize("value", [None, "", "not-a-date"])
     def test_invalid_returns_none(self, value):
-        assert GitHubPRReviewer._parse_iso8601(value) is None
+        assert GitHubReviewer._parse_iso8601(value) is None
