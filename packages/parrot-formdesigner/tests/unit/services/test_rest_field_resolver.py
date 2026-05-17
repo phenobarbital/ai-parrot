@@ -18,6 +18,7 @@ from parrot_formdesigner.services.callback_registry import (
     register_form_callback,
 )
 from parrot_formdesigner.services.rest_field_resolver import (
+    AdditionalArg,
     CallbackRestFieldSpec,
     ConfigurationError,
     InternalRestFieldSpec,
@@ -450,3 +451,139 @@ class TestResolverRemoteMode:
         assert result.success is False
         assert result.error is not None
         assert result.status_code is None
+
+
+# ---------------------------------------------------------------------------
+# AdditionalArg model + spec integration
+# ---------------------------------------------------------------------------
+
+
+class TestAdditionalArg:
+    def test_private_requires_value(self):
+        with pytest.raises(ValidationError):
+            AdditionalArg(name="prompt", visibility="private")
+
+    def test_private_with_value_ok(self):
+        arg = AdditionalArg(name="prompt", visibility="private", value="hello")
+        assert arg.value == "hello"
+
+    def test_public_value_optional(self):
+        arg = AdditionalArg(name="tenant", visibility="public")
+        assert arg.value is None
+        assert arg.data_type == "string"
+        assert arg.required is False
+
+    def test_spec_accepts_additional_args(self):
+        spec = _spec_adapter.validate_python(
+            {
+                "mode": "remote",
+                "endpoint": "https://api.test/x",
+                "additional_args": [
+                    {"name": "prompt", "visibility": "private", "value": "system"},
+                    {"name": "tenant", "visibility": "public", "required": True},
+                ],
+            }
+        )
+        assert isinstance(spec, RemoteRestFieldSpec)
+        assert len(spec.additional_args) == 2
+        assert spec.additional_args[0].visibility == "private"
+        assert spec.additional_args[1].required is True
+
+    def test_spec_rejects_duplicate_arg_names(self):
+        with pytest.raises(ValidationError):
+            RemoteRestFieldSpec(
+                endpoint="https://api.test/x",
+                additional_args=[
+                    AdditionalArg(name="x", visibility="public"),
+                    AdditionalArg(name="x", visibility="private", value=1),
+                ],
+            )
+
+    def test_default_additional_args_empty(self):
+        spec = RemoteRestFieldSpec(endpoint="https://api.test/x")
+        assert spec.additional_args == []
+
+
+# ---------------------------------------------------------------------------
+# Request body shaping (_build_request_kwargs)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRequestKwargs:
+    def test_bytes_no_extras_uses_binary_post(self):
+        payload = _make_payload(content=b"img", extra_fields={})
+        kwargs = RestFieldResolver._build_request_kwargs(payload)
+        assert kwargs == {
+            "data": b"img",
+            "headers": {"Content-Type": "image/jpeg"},
+        }
+
+    def test_bytes_with_extras_uses_multipart(self):
+        payload = _make_payload(
+            content=b"img",
+            extra_fields={"prompt": "describe", "tenant": "acme", "n": 3},
+        )
+        kwargs = RestFieldResolver._build_request_kwargs(payload)
+        assert "data" in kwargs
+        assert isinstance(kwargs["data"], aiohttp.FormData)
+        # Inspect underlying fields
+        fields = kwargs["data"]._fields
+        names = [f[0]["name"] for f in fields]
+        assert "file" in names
+        assert "prompt" in names
+        assert "tenant" in names
+        assert "n" in names
+
+    def test_dict_with_extras_merges_into_json(self):
+        payload = _make_payload(
+            content={"a": 1, "b": 2},
+            content_type="application/json",
+            extra_fields={"b": 99, "tenant": "acme"},
+        )
+        kwargs = RestFieldResolver._build_request_kwargs(payload)
+        assert kwargs == {"json": {"a": 1, "b": 99, "tenant": "acme"}}
+
+    def test_dict_no_extras_passthrough(self):
+        payload = _make_payload(
+            content={"a": 1},
+            content_type="application/json",
+            extra_fields={},
+        )
+        kwargs = RestFieldResolver._build_request_kwargs(payload)
+        assert kwargs == {"json": {"a": 1}}
+
+    def test_bytes_with_json_extra_value_serialized(self):
+        payload = _make_payload(
+            content=b"img",
+            extra_fields={"metadata": {"k": "v"}, "flag": True},
+        )
+        kwargs = RestFieldResolver._build_request_kwargs(payload)
+        form = kwargs["data"]
+        # Bool encoded as "true", dict as JSON string
+        encoded = {f[0]["name"]: f[2] for f in form._fields}
+        assert encoded["flag"] == "true"
+        assert encoded["metadata"] == '{"k": "v"}'
+
+
+# ---------------------------------------------------------------------------
+# Callback receives extra_fields via payload
+# ---------------------------------------------------------------------------
+
+
+class TestCallbackReceivesExtraFields:
+    @pytest.mark.asyncio
+    async def test_callback_sees_extra_fields(self):
+        captured: dict = {}
+
+        @register_form_callback("with_extras")
+        async def fn(payload, auth_context):
+            captured["extras"] = dict(payload.extra_fields)
+            return RestCallbackOutput(success=True, value=payload.extra_fields)
+
+        resolver = RestFieldResolver()
+        spec = CallbackRestFieldSpec(callback_ref="with_extras")
+        payload = _make_payload(extra_fields={"prompt": "p", "tenant": "t"})
+        result = await resolver.resolve(spec, payload)
+
+        assert result.success is True
+        assert captured["extras"] == {"prompt": "p", "tenant": "t"}

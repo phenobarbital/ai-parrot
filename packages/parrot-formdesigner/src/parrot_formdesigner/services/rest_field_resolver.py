@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 from jinja2.sandbox import SandboxedEnvironment
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from parrot_formdesigner.services.auth_context import AuthContext
 from parrot_formdesigner.services.callback_registry import get_form_callback
@@ -48,6 +48,56 @@ class ConfigurationError(Exception):
 
 RestFieldMode = Literal["remote", "internal", "callback"]
 
+AdditionalArgDataType = Literal["string", "number", "integer", "boolean", "json"]
+AdditionalArgVisibility = Literal["public", "private"]
+
+# ---------------------------------------------------------------------------
+# Additional argument (public / private) model
+# ---------------------------------------------------------------------------
+
+
+class AdditionalArg(BaseModel):
+    """Extra argument forwarded alongside the uploaded content.
+
+    Visibility controls who supplies the value at submission time:
+
+    - ``"public"``: provided by the end user via the rendered form. The
+      ``value`` field, if set, acts as a default. ``required=True``
+      enforces a non-empty submission.
+    - ``"private"``: provided by the form designer; ``value`` MUST be set
+      and is injected by the backend before forwarding to the target API.
+      Frontend-supplied values for private args are ignored.
+
+    Attributes:
+        name: Argument name as expected by the target API.
+        visibility: ``"public"`` or ``"private"``.
+        value: Default (public) or fixed (private) value.
+        data_type: How to coerce a user-supplied string value.
+        required: Whether a public arg must be supplied by the user.
+        label: Optional human-readable label (i18n strings live on the field).
+        description: Optional help text.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    visibility: AdditionalArgVisibility
+    value: Any | None = None
+    data_type: AdditionalArgDataType = "string"
+    required: bool = False
+    label: str | None = None
+    description: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_visibility_value(self) -> "AdditionalArg":
+        if self.visibility == "private" and self.value is None:
+            raise ValueError(
+                f"private additional_arg {self.name!r} must declare a non-null "
+                "'value' at design time"
+            )
+        return self
+
+
 # ---------------------------------------------------------------------------
 # Spec models (discriminated union)
 # ---------------------------------------------------------------------------
@@ -62,6 +112,8 @@ class _RestFieldSpecBase(BaseModel):
         display_template: Jinja2 template rendered with ``answer`` in context.
         persist_binary: Whether to write the blob to blob storage. Defaults True.
         response_schema: Optional JSON Schema for informational validation.
+        additional_args: Extra arguments (public / private) merged into the
+            outgoing payload alongside the uploaded content.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -71,6 +123,18 @@ class _RestFieldSpecBase(BaseModel):
     display_template: str | None = None
     persist_binary: bool = True
     response_schema: dict[str, Any] | None = None
+    additional_args: list[AdditionalArg] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_unique_arg_names(self) -> "_RestFieldSpecBase":
+        names: set[str] = set()
+        for arg in self.additional_args:
+            if arg.name in names:
+                raise ValueError(
+                    f"duplicate additional_arg name {arg.name!r} in REST spec"
+                )
+            names.add(arg.name)
+        return self
 
 
 class RemoteRestFieldSpec(_RestFieldSpecBase):
@@ -602,20 +666,20 @@ class RestFieldResolver:
         """Make the HTTP call and return (parsed_response_or_None, status_code).
 
         Returns ``(None, status_code)`` for non-2xx responses.
+
+        Body shape (per spec):
+
+        - Bytes content + no ``extra_fields``: raw POST with content_type header.
+        - Bytes content + ``extra_fields``: ``multipart/form-data`` with a
+          ``file`` part plus a part per extra field (non-scalars JSON-encoded).
+        - Dict content + ``extra_fields``: JSON body with ``extra_fields``
+          merged at the top level (extra wins on collision).
+        - Dict content + no ``extra_fields``: JSON body as-is.
         """
         method_name = method.lower()
         http_method = getattr(session, method_name)
 
-        # Build request body: prefer JSON if content is dict, else bytes
-        if isinstance(payload.content, dict):
-            request_kwargs: dict[str, Any] = {"json": payload.content}
-        elif isinstance(payload.content, bytes):
-            request_kwargs = {
-                "data": payload.content,
-                "headers": {"Content-Type": payload.content_type},
-            }
-        else:
-            request_kwargs = {"data": str(payload.content)}
+        request_kwargs = self._build_request_kwargs(payload)
 
         async with http_method(url, **request_kwargs) as resp:
             status = resp.status
@@ -627,6 +691,54 @@ class RestFieldResolver:
                 return value, status
             else:
                 return None, status
+
+    @staticmethod
+    def _build_request_kwargs(payload: RestCallbackInput) -> dict[str, Any]:
+        """Build aiohttp request kwargs for the given payload.
+
+        See ``_http_call`` for the body-shape selection rules.
+        """
+        extras = payload.extra_fields or {}
+
+        if isinstance(payload.content, dict):
+            if extras:
+                merged = {**payload.content, **extras}
+                return {"json": merged}
+            return {"json": payload.content}
+
+        if isinstance(payload.content, bytes):
+            if extras:
+                form = aiohttp.FormData()
+                form.add_field(
+                    "file",
+                    payload.content,
+                    filename="upload",
+                    content_type=payload.content_type,
+                )
+                for key, value in extras.items():
+                    if isinstance(value, (dict, list)):
+                        import json as _json
+                        form.add_field(
+                            key,
+                            _json.dumps(value),
+                            content_type="application/json",
+                        )
+                    elif isinstance(value, bool):
+                        form.add_field(key, "true" if value else "false")
+                    elif value is None:
+                        form.add_field(key, "")
+                    else:
+                        form.add_field(key, str(value))
+                return {"data": form}
+            return {
+                "data": payload.content,
+                "headers": {"Content-Type": payload.content_type},
+            }
+
+        # Fallback: treat content as text payload
+        if extras:
+            return {"json": {"content": str(payload.content), **extras}}
+        return {"data": str(payload.content)}
 
     def _resolve_internal_base_url(self, *, request_host: str | None = None) -> str:
         """Resolve the internal base URL using the precedence chain.

@@ -430,6 +430,22 @@ class JsonSchemaRenderer(AbstractFormRenderer):
             prop["required"] = ["answer"]
             # Populate x-parrot-rest from meta["rest"]
             rest_meta = (field.meta or {}).get("rest", {})
+            # Public additional_args render as siblings on the form; emit a
+            # public-only projection plus the full list so the frontend can
+            # both render inputs and round-trip the spec.
+            all_args = rest_meta.get("additional_args") or []
+            public_args = [
+                {
+                    "name": a.get("name"),
+                    "data_type": a.get("data_type", "string"),
+                    "required": bool(a.get("required", False)),
+                    "label": a.get("label"),
+                    "description": a.get("description"),
+                    "default": a.get("value"),
+                }
+                for a in all_args
+                if isinstance(a, dict) and a.get("visibility") == "public"
+            ]
             prop["x-parrot-rest"] = {
                 "mode": rest_meta.get("mode"),
                 "response_path": rest_meta.get("response_path"),
@@ -437,6 +453,8 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 "upload_url_template": (
                     "/api/v1/forms/{form_id}/fields/{field_id}/upload"
                 ),
+                "additional_args": all_args,
+                "public_args": public_args,
             }
 
         # Default / pre-filled value

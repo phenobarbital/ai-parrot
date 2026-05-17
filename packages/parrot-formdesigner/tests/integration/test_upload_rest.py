@@ -496,3 +496,210 @@ async def test_e2e_concurrent_uploads_last_write_wins(
 
     # Storage was called exactly twice
     assert mock_blob_storage.put.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Additional args (public / private)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def rest_field_with_args() -> FormField:
+    """REST field with public (tenant, n) and private (prompt) args."""
+    return FormField(
+        field_id="image_analyze",
+        field_type=FieldType.REST,
+        label={"en": "Image Analyze"},
+        required=True,
+        meta={
+            "rest": {
+                "mode": "callback",
+                "callback_ref": "image_analyze",
+                "additional_args": [
+                    {
+                        "name": "prompt",
+                        "visibility": "private",
+                        "value": "describe-this-image",
+                    },
+                    {
+                        "name": "tenant",
+                        "visibility": "public",
+                        "required": True,
+                    },
+                    {
+                        "name": "n",
+                        "visibility": "public",
+                        "data_type": "integer",
+                        "value": 1,
+                    },
+                ],
+            }
+        },
+    )
+
+
+@pytest.fixture
+def form_with_args(rest_field_with_args: FormField) -> FormSchema:
+    return FormSchema(
+        form_id="form-args",
+        title={"en": "Args"},
+        sections=[FormSection(section_id="s1", fields=[rest_field_with_args])],
+    )
+
+
+@pytest.mark.asyncio
+async def test_upload_merges_public_and_private_args(
+    aiohttp_client,
+    form_with_args: FormSchema,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """Resolver receives merged extra_fields: private from spec, public from form."""
+    client = await _make_client(
+        aiohttp_client, form_with_args, mock_blob_storage, mock_resolver
+    )
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"fake image"),
+        filename="photo.jpg",
+        content_type="image/jpeg",
+    )
+    data.add_field("tenant", "acme")
+    data.add_field("n", "5")
+
+    resp = await client.post(
+        "/api/v1/forms/form-args/fields/image_analyze/upload",
+        data=data,
+    )
+    assert resp.status == 200
+
+    # Inspect the payload passed to resolver.resolve
+    call_args = mock_resolver.resolve.call_args
+    payload = call_args.args[1]
+    assert payload.extra_fields == {
+        "prompt": "describe-this-image",  # private from spec
+        "tenant": "acme",                  # public coerced from form
+        "n": 5,                            # public coerced int
+    }
+
+
+@pytest.mark.asyncio
+async def test_upload_private_arg_cannot_be_overridden_by_frontend(
+    aiohttp_client,
+    form_with_args: FormSchema,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """A frontend-supplied value for a private arg is silently ignored."""
+    client = await _make_client(
+        aiohttp_client, form_with_args, mock_blob_storage, mock_resolver
+    )
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"x"),
+        filename="x.jpg",
+        content_type="image/jpeg",
+    )
+    data.add_field("tenant", "acme")
+    data.add_field("prompt", "HACKED")  # attempt to override private arg
+
+    resp = await client.post(
+        "/api/v1/forms/form-args/fields/image_analyze/upload",
+        data=data,
+    )
+    assert resp.status == 200
+
+    payload = mock_resolver.resolve.call_args.args[1]
+    assert payload.extra_fields["prompt"] == "describe-this-image"
+
+
+@pytest.mark.asyncio
+async def test_upload_missing_required_public_arg_returns_400(
+    aiohttp_client,
+    form_with_args: FormSchema,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """Missing required public arg yields 400."""
+    client = await _make_client(
+        aiohttp_client, form_with_args, mock_blob_storage, mock_resolver
+    )
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"x"),
+        filename="x.jpg",
+        content_type="image/jpeg",
+    )
+    # 'tenant' is required but omitted
+
+    resp = await client.post(
+        "/api/v1/forms/form-args/fields/image_analyze/upload",
+        data=data,
+    )
+    assert resp.status == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_public_arg_falls_back_to_default(
+    aiohttp_client,
+    form_with_args: FormSchema,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """Public arg with default 'n' uses the spec default when unsubmitted."""
+    client = await _make_client(
+        aiohttp_client, form_with_args, mock_blob_storage, mock_resolver
+    )
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"x"),
+        filename="x.jpg",
+        content_type="image/jpeg",
+    )
+    data.add_field("tenant", "acme")  # required, but skip 'n'
+
+    resp = await client.post(
+        "/api/v1/forms/form-args/fields/image_analyze/upload",
+        data=data,
+    )
+    assert resp.status == 200
+
+    payload = mock_resolver.resolve.call_args.args[1]
+    assert payload.extra_fields["n"] == 1  # default from spec
+
+
+@pytest.mark.asyncio
+async def test_upload_invalid_data_type_returns_400(
+    aiohttp_client,
+    form_with_args: FormSchema,
+    mock_blob_storage: MagicMock,
+    mock_resolver: MagicMock,
+) -> None:
+    """Non-integer value for an integer-typed public arg yields 400."""
+    client = await _make_client(
+        aiohttp_client, form_with_args, mock_blob_storage, mock_resolver
+    )
+
+    data = FormData()
+    data.add_field(
+        "file",
+        io.BytesIO(b"x"),
+        filename="x.jpg",
+        content_type="image/jpeg",
+    )
+    data.add_field("tenant", "acme")
+    data.add_field("n", "not-a-number")
+
+    resp = await client.post(
+        "/api/v1/forms/form-args/fields/image_analyze/upload",
+        data=data,
+    )
+    assert resp.status == 400

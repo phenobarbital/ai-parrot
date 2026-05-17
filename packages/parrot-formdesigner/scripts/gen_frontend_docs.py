@@ -106,6 +106,205 @@ extension object:
 | `response_path` | string\\|null | JSONPath expression to extract `answer` from API response |
 | `display_template` | string\\|null | Jinja2 template for human-readable display (receives `answer`) |
 | `upload_url_template` | string | URL template for the upload POST endpoint |
+| `additional_args` | array | Full list of additional arguments (public + private). Round-trippable. |
+| `public_args` | array | **Frontend-facing** projection: only `public` args, in render order. Use this to render extra inputs. |
+
+---
+
+## Additional Arguments (`additional_args` / `public_args`)
+
+A REST field can declare extra parameters that travel **alongside** the
+uploaded file when the backend invokes the target API. Each argument has
+a **visibility** that defines *who supplies the value at submission
+time*:
+
+| Visibility | Who provides the value | Sent from frontend? | Use case |
+|---|---|---|---|
+| `public` | The end user (via the rendered form) | YES | Tenant slug, prompt variant, language code, opt-in flags |
+| `private` | The form designer (baked into the spec) | **NO** — backend injects it | API keys for downstream services, fixed prompts, model IDs |
+
+### Anatomy of an `additional_arg`
+
+```json
+{{
+  "name": "tenant",
+  "visibility": "public",
+  "value": null,
+  "data_type": "string",
+  "required": true,
+  "label": "Tenant slug",
+  "description": "Identifies the tenant for routing."
+}}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `name` | string | yes | Used verbatim as the form-part name / payload key |
+| `visibility` | `"public"` \\| `"private"` | yes | See table above |
+| `value` | any | **yes for `private`**, optional for `public` (acts as default) | |
+| `data_type` | `"string"` \\| `"number"` \\| `"integer"` \\| `"boolean"` \\| `"json"` | no — default `"string"` | Frontend uses this to pick the right HTML input |
+| `required` | boolean | no — default `false` | Only meaningful for `public`; backend returns **400** when missing |
+| `label` | string | no | Display label for the rendered input |
+| `description` | string | no | Help text |
+
+### What the frontend MUST do
+
+When rendering a REST field, the frontend reads
+`x-parrot-rest.public_args` and produces **one visible input per entry**.
+Private args are **not** present in `public_args` and **must never** be
+rendered or sent — the backend will reject any submitted value for a
+private arg name (the spec value always wins).
+
+#### `data_type` → input type cheat sheet
+
+| `data_type` | Suggested HTML control | Example |
+|---|---|---|
+| `string` | `<input type="text">` or `<textarea>` | Free-form text |
+| `integer` | `<input type="number" step="1">` | Counts, ranks |
+| `number` | `<input type="number" step="any">` | Floats |
+| `boolean` | `<input type="checkbox">` | Flags |
+| `json` | `<textarea>` containing valid JSON | Complex objects |
+
+### Submitting public args
+
+Public args are **additional multipart parts** in the upload POST,
+each one named by its `name`. They travel in the same `multipart/form-data`
+body as the `file` part:
+
+```http
+POST /api/v1/forms/{{form_id}}/fields/{{field_id}}/upload
+Content-Type: multipart/form-data; boundary=...
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="photo.jpg"
+Content-Type: image/jpeg
+
+<binary>
+--boundary
+Content-Disposition: form-data; name="tenant"
+
+acme
+--boundary
+Content-Disposition: form-data; name="n"
+
+5
+--boundary--
+```
+
+#### Pseudocode
+
+```ts
+async function uploadRestField(field, fileBlob, publicArgValues) {{
+  const fd = new FormData();
+  fd.append("file", fileBlob, fileBlob.name);
+
+  // Append every public arg the user filled in
+  for (const arg of field["x-parrot-rest"].public_args) {{
+    const v = publicArgValues[arg.name];
+    if (v === undefined || v === null || v === "") {{
+      if (arg.required) throw new Error(`Missing required arg ${{arg.name}}`);
+      continue;
+    }}
+    // Booleans → "true"/"false"; JSON → JSON.stringify; otherwise → String(v)
+    if (arg.data_type === "boolean") {{
+      fd.append(arg.name, v ? "true" : "false");
+    }} else if (arg.data_type === "json") {{
+      fd.append(arg.name, typeof v === "string" ? v : JSON.stringify(v));
+    }} else {{
+      fd.append(arg.name, String(v));
+    }}
+  }}
+
+  const r = await fetch(field["x-parrot-rest"].upload_url_template
+                          .replace("{{form_id}}", formId)
+                          .replace("{{field_id}}", fieldId),
+                        {{ method: "POST", body: fd }});
+  return r.json();
+}}
+```
+
+### Backend behaviour (informational)
+
+After the frontend submits the multipart body, the backend:
+
+1. Reads non-`file` parts as candidate **public** values.
+2. Coerces each value to its declared `data_type`. Bad coercion → **400**.
+3. Drops any submitted value whose `name` belongs to a **private** arg.
+4. Returns **400** if a `required` public arg is missing.
+5. Falls back to the spec `value` (default) when a public arg is not
+   supplied and not required.
+6. Builds the outgoing payload by merging:
+   - **all** `private` args (from the spec, authoritative), plus
+   - **all** `public` args (user-supplied or default).
+7. Forwards the combined payload to the target API:
+   - **bytes + extras** → `multipart/form-data` (file + extra parts)
+   - **dict + extras** → JSON body with extras merged at the top level
+   - no extras → unchanged binary or JSON POST
+
+The merged dict is also available to `callback`-mode handlers via
+`RestCallbackInput.extra_fields`.
+
+### Worked example
+
+Field definition in YAML:
+
+```yaml
+field_id: image_analyze
+field_type: rest
+label: "Subir imagen para análisis"
+meta:
+  rest:
+    mode: remote
+    endpoint: "https://api.vendor.example/v1/analyze"
+    additional_args:
+      - name: prompt
+        visibility: private
+        value: "Describe what is in this image."
+      - name: tenant
+        visibility: public
+        required: true
+        label: "Tenant slug"
+      - name: n
+        visibility: public
+        data_type: integer
+        value: 1
+        label: "How many captions"
+```
+
+`x-parrot-rest` emitted to the frontend:
+
+```json
+{{
+  "mode": "remote",
+  "upload_url_template": "/api/v1/forms/{{form_id}}/fields/{{field_id}}/upload",
+  "additional_args": [
+    {{"name": "prompt", "visibility": "private", "value": "Describe what is in this image."}},
+    {{"name": "tenant", "visibility": "public", "required": true, "label": "Tenant slug"}},
+    {{"name": "n", "visibility": "public", "data_type": "integer", "value": 1, "label": "How many captions"}}
+  ],
+  "public_args": [
+    {{"name": "tenant", "data_type": "string", "required": true, "label": "Tenant slug", "description": null, "default": null}},
+    {{"name": "n", "data_type": "integer", "required": false, "label": "How many captions", "description": null, "default": 1}}
+  ]
+}}
+```
+
+The user fills the form with **`tenant = "acme"`** (leaves `n` at its
+default `1`). The frontend posts a multipart body containing:
+
+- `file` = `<image bytes>`
+- `tenant` = `"acme"`
+- `n` = `"1"`
+
+The backend injects the private `prompt` and forwards the following
+multipart body to `https://api.vendor.example/v1/analyze`:
+
+```
+file=<binary>
+prompt=Describe what is in this image.
+tenant=acme
+n=1
+```
 
 ---
 

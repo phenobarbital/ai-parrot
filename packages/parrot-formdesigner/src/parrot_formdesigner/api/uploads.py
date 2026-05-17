@@ -53,7 +53,12 @@ from pydantic import TypeAdapter
 from ..core.schema import FormField
 from ..core.types import FieldType
 from ..services.auth_context import AuthContext
-from ..services.rest_field_resolver import RestCallbackInput, RestFieldResolver, RestFieldSpec
+from ..services.rest_field_resolver import (
+    AdditionalArg,
+    RestCallbackInput,
+    RestFieldResolver,
+    RestFieldSpec,
+)
 
 _rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
@@ -261,13 +266,14 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
 
     file_bytes: bytes | None = None
     detected_mime: str | None = None
+    submitted_args: dict[str, str] = {}
 
     while True:
         part = await reader.next()
         if part is None:
             break
         part_name = part.name or ""
-        if part_name == "file":
+        if part_name == "file" and file_bytes is None:
             detected_mime = part.headers.get("Content-Type", "application/octet-stream")
             # MIME validation
             if allowed_mimes and detected_mime not in allowed_mimes:
@@ -280,7 +286,10 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             async for chunk in _stream_with_limit(part, max_size):
                 chunks.append(chunk)
             file_bytes = b"".join(chunks)
-            break  # only care about the first 'file' part
+        elif part_name and part_name != "file":
+            # Capture non-file parts as candidate public-arg values.
+            # Decoded as text per AdditionalArg.data_type after spec parse.
+            submitted_args[part_name] = (await part.text()) or ""
 
     if file_bytes is None:
         raise web.HTTPBadRequest(reason="No 'file' part found in multipart body")
@@ -344,6 +353,17 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
                 prior_blob_ref, form_id, field_id, exc,
             )
 
+    # --- 7b. Merge additional args (public from submission, private from spec)
+    try:
+        extra_fields = _merge_additional_args(spec.additional_args, submitted_args)
+    except web.HTTPException:
+        raise
+    except Exception as exc:
+        raise web.HTTPBadRequest(
+            reason="Invalid additional_args",
+            text=f"Invalid additional_args for {field_id!r}: {exc}",
+        ) from exc
+
     # --- 8. Resolve -----------------------------------------------------------
     # Derive user_id from JWT claims (sub / user_id), not the raw token string.
     _claims = auth_context.claims
@@ -359,6 +379,7 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
         tenant=tenant,                  # str | None
         content_type=detected_mime or "application/octet-stream",
         content=file_bytes,
+        extra_fields=extra_fields,
     )
 
     resolver = _get_resolver(request.app)
@@ -384,6 +405,106 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
             "error": result.error,
         }
     )
+
+
+def _coerce_arg_value(raw: str, data_type: str, *, name: str) -> Any:
+    """Coerce a string multipart value to the declared ``data_type``.
+
+    Args:
+        raw: Raw multipart text value.
+        data_type: Declared ``AdditionalArg.data_type``.
+        name: Argument name (for error messages).
+
+    Returns:
+        Coerced Python value.
+
+    Raises:
+        web.HTTPBadRequest: When the value cannot be coerced.
+    """
+    if data_type == "string":
+        return raw
+    if data_type == "integer":
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(
+                reason=f"Invalid integer for {name!r}: {raw!r}"
+            ) from exc
+    if data_type == "number":
+        try:
+            return float(raw)
+        except (TypeError, ValueError) as exc:
+            raise web.HTTPBadRequest(
+                reason=f"Invalid number for {name!r}: {raw!r}"
+            ) from exc
+    if data_type == "boolean":
+        lowered = raw.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off", ""}:
+            return False
+        raise web.HTTPBadRequest(
+            reason=f"Invalid boolean for {name!r}: {raw!r}"
+        )
+    if data_type == "json":
+        import json as _json
+        try:
+            return _json.loads(raw)
+        except _json.JSONDecodeError as exc:
+            raise web.HTTPBadRequest(
+                reason=f"Invalid JSON for {name!r}: {exc.msg}"
+            ) from exc
+    return raw
+
+
+def _merge_additional_args(
+    declared: list[AdditionalArg],
+    submitted: dict[str, str],
+) -> dict[str, Any]:
+    """Merge public submissions with private design-time values.
+
+    Public args:
+    - If user supplied a value, coerce it per ``data_type``.
+    - Otherwise fall back to the declared ``value`` default.
+    - If ``required=True`` and neither is set, return 400.
+
+    Private args:
+    - Always taken from the declared ``value`` (frontend value is ignored).
+
+    Undeclared submitted parts are silently dropped.
+
+    Args:
+        declared: Spec-declared ``AdditionalArg`` list.
+        submitted: Map of part-name → raw multipart text from the upload.
+
+    Returns:
+        Map of arg name → coerced value, ready to forward.
+
+    Raises:
+        web.HTTPBadRequest: When a required public arg is missing or a value
+            fails type coercion.
+    """
+    merged: dict[str, Any] = {}
+    for arg in declared:
+        if arg.visibility == "private":
+            merged[arg.name] = arg.value
+            continue
+        # public
+        if arg.name in submitted:
+            raw = submitted[arg.name]
+            if raw == "" and not arg.required and arg.value is not None:
+                merged[arg.name] = arg.value
+            else:
+                merged[arg.name] = _coerce_arg_value(
+                    raw, arg.data_type, name=arg.name
+                )
+        elif arg.value is not None:
+            merged[arg.name] = arg.value
+        elif arg.required:
+            raise web.HTTPBadRequest(
+                reason=f"Missing required public additional_arg: {arg.name!r}"
+            )
+    return merged
 
 
 async def _bytes_iter(data: bytes) -> AsyncGenerator[bytes, None]:
