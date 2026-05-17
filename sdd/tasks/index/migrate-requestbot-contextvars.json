@@ -1,0 +1,111 @@
+{
+  "feature": "migrate-requestbot-contextvars",
+  "feature_id": "FEAT-175",
+  "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-15T00:00:00Z",
+  "completed_at": "2026-05-16T02:25:58+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1201",
+      "slug": "contextvar-infrastructure",
+      "title": "ContextVar Infrastructure in helpers.py",
+      "feature_id": "FEAT-175",
+      "feature": "migrate-requestbot-contextvars",
+      "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-05-15T15:09:13+00:00",
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1201-contextvar-infrastructure.md"
+    },
+    {
+      "id": "TASK-1202",
+      "slug": "session-contextmanager",
+      "title": "AbstractBot.session() Context Manager + Entry Point Fallbacks",
+      "feature_id": "FEAT-175",
+      "feature": "migrate-requestbot-contextvars",
+      "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1201"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1201; modifies abstract.py which TASK-1203 also depends on",
+      "assigned_to": null,
+      "started_at": "2026-05-15T15:09:13+00:00",
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1202-session-contextmanager.md"
+    },
+    {
+      "id": "TASK-1203",
+      "slug": "handler-migration",
+      "title": "Handler Migration from retrieval() to session()",
+      "feature_id": "FEAT-175",
+      "feature": "migrate-requestbot-contextvars",
+      "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1202"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after session() exists in abstract.py",
+      "assigned_to": null,
+      "started_at": "2026-05-15T15:09:13+00:00",
+      "completed_at": "2026-05-16T02:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1203-handler-migration.md"
+    },
+    {
+      "id": "TASK-1204",
+      "slug": "basebot-fallbacks",
+      "title": "BaseBot Concrete ContextVar Fallbacks",
+      "feature_id": "FEAT-175",
+      "feature": "migrate-requestbot-contextvars",
+      "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1201"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could technically parallel with TASK-1202 (different files) but sequential is safer due to shared feature branch",
+      "assigned_to": null,
+      "started_at": "2026-05-15T15:09:13+00:00",
+      "completed_at": "2026-05-16T02:12:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1204-basebot-fallbacks.md"
+    },
+    {
+      "id": "TASK-1205",
+      "slug": "test-updates",
+      "title": "Test Updates — PBAC Migration + ContextVar Isolation Tests",
+      "feature_id": "FEAT-175",
+      "feature": "migrate-requestbot-contextvars",
+      "spec": "sdd/specs/migrate-requestbot-contextvars.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1202",
+        "TASK-1203",
+        "TASK-1204"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after all implementation tasks to validate the full migration",
+      "assigned_to": null,
+      "started_at": "2026-05-15T15:09:13+00:00",
+      "completed_at": "2026-05-16T02:25:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1205-test-updates.md"
+    }
+  ]
+}

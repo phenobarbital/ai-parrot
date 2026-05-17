@@ -17,7 +17,7 @@ from ..memory import (
 )
 from ..models import AIMessage, CompletionUsage, StructuredOutputConfig
 from ..models.outputs import OutputMode
-from ..utils.helpers import RequestContext
+from ..utils.helpers import RequestContext, _current_ctx
 from ..security import PromptInjectionException
 from .prompts import (
     OUTPUT_SYSTEM_PROMPT
@@ -166,6 +166,8 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        if ctx is None:
+            ctx = _current_ctx.get()
         warnings.warn(
             "BaseBot.conversation() is deprecated and will be removed in a "
             "future release. Use BaseBot.ask() instead.",
@@ -511,6 +513,8 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        if ctx is None:
+            ctx = _current_ctx.get()
         # Generate session ID if not provided
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
@@ -758,6 +762,8 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage or formatted output based on output_mode
         """
+        if ctx is None:
+            ctx = _current_ctx.get()
         # Generate session ID if not provided
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
@@ -1289,7 +1295,8 @@ class BaseBot(AbstractBot):
         **kwargs
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`."""
-
+        if ctx is None:
+            ctx = _current_ctx.get()
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
         # Maintain turn identifier generation for parity with ask()

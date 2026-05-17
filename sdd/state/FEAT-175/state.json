@@ -1,0 +1,63 @@
+{
+  "feat_id": "FEAT-175",
+  "title": "Migrate RequestBot to ContextVar-based RequestContext propagation",
+  "started_at": "2026-05-15T00:00:00Z",
+  "updated_at": "2026-05-15T00:00:00Z",
+  "phase": "committed",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 22,
+    "grep_calls": 18,
+    "git_calls": 3,
+    "depth_reached": 2,
+    "wall_seconds": 120
+  },
+  "truncated": false,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary": "Migrate RequestBot proxy wrapper to ContextVar-based RequestContext propagation"
+  },
+  "phases": {
+    "plan": {
+      "approved_by_user": true,
+      "status": "complete"
+    },
+    "research": {
+      "status": "complete",
+      "completed_at": "2026-05-15T00:00:00Z",
+      "findings_count": 11,
+      "files_read": 22,
+      "greps": 18
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "high",
+      "claims_high": 5,
+      "claims_medium": 2,
+      "claims_low": 0,
+      "unknowns_count": 2
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 2,
+      "questions_answered": 2
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/migrate-requestbot-contextvars.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Proposal committed; ready for /sdd-spec"
+  }
+}
