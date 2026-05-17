@@ -21,3 +21,10 @@ agents:
   #     stats: get_statistics       # /stats -> agent.get_statistics()
   #     summary: daily_summary      # /summary -> agent.daily_summary()
   #   allowed_chat_ids: [12345678]
+
+  # Example 3: GitHub Reviewer
+  # The bot exposes the GitHubReviewer agent so the agent can push
+  # discrepancy alerts and the daily stale-PR digest over Telegram.
+  # GitHubReviewerBot:
+  #   chatbot_id: github_reviewer
+  #   welcome_message: "GitHub Reviewer is online."
