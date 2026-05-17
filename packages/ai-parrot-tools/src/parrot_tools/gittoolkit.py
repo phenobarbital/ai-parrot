@@ -172,6 +172,75 @@ class CreatePullRequestInput(BaseModel):
     )
 
 
+class GetPullRequestInput(BaseModel):
+    """Input payload for ``get_pull_request``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
+class ListPullRequestsInput(BaseModel):
+    """Input payload for ``list_pull_requests``."""
+
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    state: Literal["open", "closed", "all"] = Field(
+        default="open",
+        description="Filter pull requests by state.",
+    )
+    per_page: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+        description="Number of pull requests per page (max 100).",
+    )
+
+
+class GetPullRequestDiffInput(BaseModel):
+    """Input payload for ``get_pull_request_diff``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    max_bytes: int = Field(
+        default=50_000,
+        ge=0,
+        description="Truncate the diff to at most this many bytes (0 disables truncation).",
+    )
+
+
+class AddPRCommentInput(BaseModel):
+    """Input payload for ``add_pr_comment``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    body: str = Field(description="Comment body in Markdown.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
+class SubmitPRReviewInput(BaseModel):
+    """Input payload for ``submit_pr_review``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = Field(
+        description="Review event to record on the pull request."
+    )
+    body: str = Field(description="Review body in Markdown (required for REQUEST_CHANGES).")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
 @dataclass
 class _GitHubContext:
     """Simple container with prepared GitHub configuration."""
@@ -495,6 +564,247 @@ class GitToolkit(AbstractToolkit):
             labels=labels,
         )
 
+    # ------------------------------------------------------------------
+    # Pull request read / review helpers (FEAT: github-pr-review-agent)
+    # ------------------------------------------------------------------
+    def _resolve_repository(self, repository: Optional[str]) -> str:
+        repo = repository or self.default_repository
+        if not repo:
+            raise GitToolkitError(
+                "A target repository is required (pass repository or set GIT_DEFAULT_REPOSITORY)."
+            )
+        return repo
+
+    def _resolve_token(self) -> str:
+        if not self.github_token:
+            raise GitToolkitError(
+                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+            )
+        return self.github_token
+
+    def _get_pull_request_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        response = self._request("GET", url, token, expected=200)
+        return response.json()
+
+    @tool_schema(GetPullRequestInput)
+    async def get_pull_request(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch metadata for a GitHub pull request by number."""
+
+        return await asyncio.to_thread(
+            self._get_pull_request_sync, repository, pr_number
+        )
+
+    def _list_pull_requests_sync(
+        self,
+        repository: Optional[str],
+        state: str,
+        per_page: int,
+    ) -> List[Dict[str, Any]]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls"
+        params = {"state": state, "per_page": min(max(per_page, 1), 100)}
+        response = self._request("GET", url, token, expected=200, params=params)
+        data = response.json()
+        return data if isinstance(data, list) else []
+
+    @tool_schema(ListPullRequestsInput)
+    async def list_pull_requests(
+        self,
+        repository: Optional[str] = None,
+        state: Literal["open", "closed", "all"] = "open",
+        per_page: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List pull requests on a repository, defaulting to open ones."""
+
+        return await asyncio.to_thread(
+            self._list_pull_requests_sync, repository, state, per_page
+        )
+
+    def _get_pull_request_diff_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        max_bytes: int,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        response = self._request(
+            "GET",
+            url,
+            token,
+            expected=200,
+            headers={"Accept": "application/vnd.github.v3.diff"},
+        )
+        diff_text = response.text or ""
+        truncated = False
+        if max_bytes and len(diff_text) > max_bytes:
+            diff_text = diff_text[:max_bytes]
+            truncated = True
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "diff": diff_text,
+            "truncated": truncated,
+            "byte_size": len(diff_text),
+        }
+
+    @tool_schema(GetPullRequestDiffInput)
+    async def get_pull_request_diff(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+        max_bytes: int = 50_000,
+    ) -> Dict[str, Any]:
+        """Return the raw unified diff of a pull request, truncated to ``max_bytes``."""
+
+        return await asyncio.to_thread(
+            self._get_pull_request_diff_sync, repository, pr_number, max_bytes
+        )
+
+    def _add_pr_comment_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        body: str,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+        response = self._request(
+            "POST", url, token, expected=201, json={"body": body}
+        )
+        data = response.json()
+        return {"id": data.get("id"), "html_url": data.get("html_url")}
+
+    @tool_schema(AddPRCommentInput)
+    async def add_pr_comment(
+        self,
+        pr_number: int,
+        body: str,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Add an issue-style comment to a pull request."""
+
+        return await asyncio.to_thread(
+            self._add_pr_comment_sync, repository, pr_number, body
+        )
+
+    def _submit_pr_review_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        event: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+        payload = {"event": event, "body": body}
+        response = self._request("POST", url, token, expected=200, json=payload)
+        data = response.json()
+        return {
+            "id": data.get("id"),
+            "state": data.get("state"),
+            "html_url": data.get("html_url"),
+        }
+
+    @tool_schema(SubmitPRReviewInput)
+    async def submit_pr_review(
+        self,
+        pr_number: int,
+        event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        body: str,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit a pull-request review (approve, request-changes or comment)."""
+
+        return await asyncio.to_thread(
+            self._submit_pr_review_sync, repository, pr_number, event, body
+        )
+
+    def _ensure_webhook_sync(
+        self,
+        repository: Optional[str],
+        webhook_url: str,
+        secret: Optional[str],
+        events: List[str],
+    ) -> Dict[str, Any]:
+        """Idempotently register a GitHub webhook for ``webhook_url``.
+
+        Returns a dict with ``status`` in {created, already_exists, no_permission, error}
+        plus the hook payload when available.
+        """
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        list_url = f"https://api.github.com/repos/{repo}/hooks"
+        try:
+            response = self._request("GET", list_url, token, expected=200)
+        except GitToolkitError as exc:
+            message = str(exc)
+            if " 403" in message or " 404" in message:
+                return {"status": "no_permission", "message": message}
+            return {"status": "error", "message": message}
+
+        for hook in response.json() or []:
+            cfg = (hook or {}).get("config") or {}
+            if cfg.get("url") == webhook_url:
+                return {"status": "already_exists", "hook": hook}
+
+        config = {
+            "url": webhook_url,
+            "content_type": "json",
+            "insecure_ssl": "0",
+        }
+        if secret:
+            config["secret"] = secret
+        payload = {
+            "name": "web",
+            "active": True,
+            "events": events or ["pull_request"],
+            "config": config,
+        }
+        try:
+            create = self._request(
+                "POST", list_url, token, expected=201, json=payload
+            )
+        except GitToolkitError as exc:
+            message = str(exc)
+            if " 403" in message or " 404" in message:
+                return {"status": "no_permission", "message": message}
+            return {"status": "error", "message": message}
+        return {"status": "created", "hook": create.json()}
+
+    async def ensure_webhook(
+        self,
+        webhook_url: str,
+        repository: Optional[str] = None,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Ensure a GitHub webhook pointing at ``webhook_url`` exists on the repo.
+
+        Idempotent. Falls back gracefully when the token lacks
+        ``admin:repo_hook`` (status ``"no_permission"``) so callers can run in
+        hybrid mode (auto when allowed, manual otherwise).
+        """
+
+        return await asyncio.to_thread(
+            self._ensure_webhook_sync,
+            repository,
+            webhook_url,
+            secret,
+            list(events or ["pull_request"]),
+        )
+
 
 __all__ = [
     "GitToolkit",
@@ -503,6 +813,11 @@ __all__ = [
     "GitHubFileChange",
     "GeneratePatchInput",
     "CreatePullRequestInput",
+    "GetPullRequestInput",
+    "ListPullRequestsInput",
+    "GetPullRequestDiffInput",
+    "AddPRCommentInput",
+    "SubmitPRReviewInput",
     "GitToolkitError",
 ]
 

@@ -12,6 +12,7 @@ from .models import (
     BrokerHookConfig,
     FileUploadHookConfig,
     FileWatchdogHookConfig,
+    GitHubWebhookConfig,
     HookEvent,
     HookType,
     IMAPHookConfig,
@@ -37,6 +38,7 @@ def __getattr__(name: str):
         "PostgresListenHook": ".postgres",
         "IMAPWatchdogHook": ".imap",
         "JiraWebhookHook": ".jira_webhook",
+        "GitHubWebhookHook": ".github_webhook",
         "FileUploadHook": ".file_upload",
         "SharePointHook": ".sharepoint",
         # Messaging hooks
@@ -71,6 +73,7 @@ __all__ = [
     "PostgresListenHook",
     "IMAPWatchdogHook",
     "JiraWebhookHook",
+    "GitHubWebhookHook",
     "FileUploadHook",
     "SharePointHook",
     # Messaging hooks (lazy)
@@ -91,6 +94,7 @@ __all__ = [
     "PostgresHookConfig",
     "IMAPHookConfig",
     "JiraWebhookConfig",
+    "GitHubWebhookConfig",
     "FileUploadHookConfig",
     "BrokerHookConfig",
     "SharePointHookConfig",
