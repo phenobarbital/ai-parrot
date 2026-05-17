@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import yaml
 
@@ -36,6 +35,7 @@ from parrot.bots.factory.contracts import (
 )
 from parrot.bots.factory.tools.finalize import finalize_agent_registration
 from parrot.bots.factory.tools.introspection import _list_registered_agents_tool
+from parrot.conf import config
 from parrot.human.manager import HumanInteractionManager
 from parrot.human.models import (
     ChoiceOption,
@@ -67,10 +67,10 @@ sentences — it goes to the user verbatim at the pre-delegation gate."""
 def _default_timeouts() -> Dict[HITLCheckpoint, float]:
     return {
         HITLCheckpoint.PRE_DELEGATION: float(
-            os.getenv("FACTORY_HITL_DELEGATION_TIMEOUT", "120")
+            config.get("FACTORY_HITL_DELEGATION_TIMEOUT", fallback="120")
         ),
         HITLCheckpoint.PRE_FINALIZE: float(
-            os.getenv("FACTORY_HITL_FINALIZE_TIMEOUT", "600")
+            config.get("FACTORY_HITL_FINALIZE_TIMEOUT", fallback="600")
         ),
     }
 
@@ -83,14 +83,14 @@ class AgentFactoryOrchestrator:
         *,
         human_manager: HumanInteractionManager,
         human_channel: str = "cli",
-        human_targets: Optional[list] = None,
+        human_targets: Optional[List[str]] = None,
         llm: Optional[str] = None,
         use_llm: str = "google",
         builders: Optional[Mapping[BuilderType, BaseFactoryBuilder]] = None,
         category: str = "general",
         timeouts: Optional[Mapping[HITLCheckpoint, float]] = None,
     ) -> None:
-        self.logger = logging.getLogger("Parrot.Factory.Orchestrator")
+        self.logger = logging.getLogger(__name__)
         self.human_manager = human_manager
         self.human_channel = human_channel
         self.human_targets = human_targets or ["local"]
@@ -193,7 +193,10 @@ class AgentFactoryOrchestrator:
             try:
                 builder_type = BuilderType(hinted)
             except ValueError:
-                pass
+                self.logger.warning(
+                    "Unknown builder hint %r ignored; falling back to LLM routing",
+                    hinted,
+                )
             else:
                 return RouterDecision(
                     builder=builder_type,
@@ -210,19 +213,22 @@ class AgentFactoryOrchestrator:
             system_prompt=_ROUTER_PROMPT,
         )
 
-        result = await router_agent.ask(
-            request.description, response_model=RouterDecision
-        )
-        candidate = getattr(result, "output", result)
-        if isinstance(candidate, RouterDecision):
-            return candidate
-        if isinstance(candidate, dict):
-            return RouterDecision(**candidate)
-        if isinstance(candidate, str):
-            return RouterDecision(**json.loads(candidate))
-        raise TypeError(
-            f"Router returned unsupported type: {type(result).__name__}"
-        )
+        try:
+            result = await router_agent.invoke(
+                request.description, response_model=RouterDecision
+            )
+            candidate = getattr(result, "output", result)
+            if isinstance(candidate, RouterDecision):
+                return candidate
+            if isinstance(candidate, dict):
+                return RouterDecision(**candidate)
+            if isinstance(candidate, str):
+                return RouterDecision(**json.loads(candidate))
+            raise TypeError(
+                f"Router returned unsupported type: {type(result).__name__}"
+            )
+        finally:
+            await router_agent.shutdown()
 
     # ---- HITL helpers -------------------------------------------------------
 
@@ -283,7 +289,7 @@ class AgentFactoryOrchestrator:
             timeout=self.timeouts[checkpoint],
             timeout_action=TimeoutAction.CANCEL,
             target_humans=list(self.human_targets),
-            source_agent="agent_factory",
+            source_agent=self.__class__.__name__.lower(),
             source_node=checkpoint.value,
         )
 
@@ -310,6 +316,8 @@ class _GateResult:
         if status == InteractionStatus.COMPLETED and _is_approval(value):
             return cls(True, FactoryStatus.SUCCESS)
         if status == InteractionStatus.TIMEOUT:
+            return cls(False, FactoryStatus.TIMEOUT)
+        if status == InteractionStatus.ESCALATED:
             return cls(False, FactoryStatus.TIMEOUT)
         return cls(False, FactoryStatus.CANCELLED_BY_USER)
 

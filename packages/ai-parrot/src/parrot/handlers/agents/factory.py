@@ -7,12 +7,14 @@ Endpoint shape:
         returns: FactoryResult-as-JSON
 
 The handler picks up the ``HumanInteractionManager`` from
-``request.app["human_manager"]``. If absent OR ``auto_approve=true`` is
-supplied, a stub manager that auto-approves every gate is used — handy for
-scripted / CI runs where there is no human at the other end.
+``request.app["human_manager"]``. If absent, a stub manager that
+auto-approves every gate is used — handy for scripted / CI runs.
 
-For real interactive flows the host application must register the manager
+For real interactive flows, the host application must register the manager
 beforehand (typically wiring a ``WebHumanChannel`` or telegram channel).
+
+IMPORTANT: auto_approve=true is restricted to authenticated users with
+factory:admin role to prevent registry tampering via unvalidated API calls.
 """
 from __future__ import annotations
 
@@ -22,6 +24,9 @@ from typing import Any, Dict
 from aiohttp import web
 from navigator.responses import JSONResponse
 from navigator.views import BaseView
+from navigator_auth.decorators import is_authenticated
+from navigator_session import get_session
+from navigator_auth.conf import AUTH_SESSION_OBJECT
 
 from parrot.bots.factory import (
     AgentFactoryOrchestrator,
@@ -101,6 +106,7 @@ def build_auto_approve_manager() -> HumanInteractionManager:
 class AgentFactoryHandler(BaseView):
     """POST /api/v1/agents/factory — create a new agent via the factory."""
 
+    @is_authenticated()
     async def post(self, request: web.Request) -> web.Response:
         try:
             payload: Dict[str, Any] = await request.json()
@@ -129,6 +135,27 @@ class AgentFactoryHandler(BaseView):
         auto_approve = bool(payload.get("auto_approve", False))
         use_llm = payload.get("use_llm", "google")
         llm = payload.get("llm")
+
+        if auto_approve:
+            # Verify caller has factory:admin role to prevent registry tampering
+            session = get_session(request, AUTH_SESSION_OBJECT)
+            user_roles = getattr(session, "roles", []) if session else []
+            if "factory:admin" not in user_roles:
+                logger.warning(
+                    "Unauthorized auto_approve attempt by user with roles: %s",
+                    user_roles,
+                )
+                return JSONResponse(
+                    {
+                        "status": "error",
+                        "message": "auto_approve requires factory:admin role",
+                    },
+                    status=403,
+                )
+            logger.info(
+                "HITL bypassed via auto_approve=true by authenticated user "
+                "with factory:admin role"
+            )
 
         human_manager: HumanInteractionManager | None = request.app.get("human_manager")
         if auto_approve or human_manager is None:

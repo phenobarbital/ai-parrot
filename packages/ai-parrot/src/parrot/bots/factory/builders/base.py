@@ -126,8 +126,11 @@ class BaseFactoryBuilder:
         self.logger.info("Building %s agent for: %s",
                          self.builder_type.value, request.description[:80])
 
-        result = await agent.ask(prompt, response_model=BuilderOutput)
-        return self._coerce_output(result)
+        try:
+            result = await agent.invoke(prompt, response_model=BuilderOutput)
+            return self._coerce_output(result)
+        finally:
+            await agent.shutdown()
 
     # ---- result normalisation ----------------------------------------------
 
