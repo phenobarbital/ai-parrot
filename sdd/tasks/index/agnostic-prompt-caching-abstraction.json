@@ -14,7 +14,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation type — all other tasks depend on CacheableSegment or PromptLayer.cacheable",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1217-cacheable-segment-and-layer-cacheable.md"
+      "completed_at": "2026-05-18T13:16:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1217-cacheable-segment-and-layer-cacheable.md"
     },
     {
       "id": "TASK-1218",
