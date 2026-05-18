@@ -550,8 +550,6 @@ class TestGitToolkitAuthMode:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Extended `GitToolkitInput` with 5 new fields. Extended `GitToolkit.__init__` with auth_type discriminator, app_id/installation_id/private_key/private_key_path kwargs, env-var fallbacks, validation, PEM file loading, and `_GitHubAppTokenProvider` construction. Added `_bearer_token()` method. Refactored `_prepare_github_context` and `_resolve_token` to call `_bearer_token()`. Added `_coerce_int` module-level helper. All 18 tests pass, ruff clean. Pre-existing regression `test_resolve_token_raises_without_token` noted (GITHUB_TOKEN env var present in test environment).

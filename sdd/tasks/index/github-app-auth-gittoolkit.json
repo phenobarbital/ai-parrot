@@ -52,7 +52,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Imports `_GitHubAppTokenProvider` from TASK-1207; same file as TASK-1207.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1208-gittoolkit-auth-type-plumbing.md"
+      "completed_at": "2026-05-18T01:23:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1208-gittoolkit-auth-type-plumbing.md"
     },
     {
       "id": "TASK-1209",
