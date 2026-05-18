@@ -23,6 +23,7 @@ import asyncio
 import base64
 import datetime as _dt
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
 
@@ -410,6 +411,59 @@ class GitToolkit(AbstractToolkit):
                 f"GitHub API call to {url} failed with status {response.status_code}: {response.text}"
             )
         return response
+
+    @staticmethod
+    def _get_stats_with_polling(
+        url: str,
+        token: str,
+        *,
+        max_retries: int = 6,
+        initial_delay: float = 1.0,
+        max_delay: float = 60.0,
+    ) -> requests.Response:
+        """Fetch a /stats/* endpoint with GitHub's 202->200 retry protocol.
+
+        GitHub returns 202 while it computes the stats in the background and
+        200 once the data is ready. This helper keeps polling until it sees
+        200, gives up after ``max_retries`` consecutive 202s, and raises
+        immediately on any other non-200 status.
+
+        Args:
+            url: The full GitHub stats API URL to poll.
+            token: GitHub personal access token (Bearer).
+            max_retries: Maximum number of 202 retries before giving up.
+            initial_delay: Initial sleep delay in seconds (doubles each retry).
+            max_delay: Maximum sleep delay cap in seconds.
+
+        Returns:
+            The ``requests.Response`` with status 200.
+
+        Raises:
+            GitToolkitError: If the response is not 200/202, or after
+                exhausting all retries without seeing 200.
+        """
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "parrot-gittoolkit",
+        }
+        for attempt in range(max_retries + 1):
+            response = requests.get(url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                return response
+            if response.status_code != 202:
+                raise GitToolkitError(
+                    f"GitHub stats call to {url} failed with status "
+                    f"{response.status_code}: {response.text}"
+                )
+            if attempt == max_retries:
+                break
+            delay = min(initial_delay * (2 ** attempt), max_delay)
+            time.sleep(delay)
+        raise GitToolkitError(
+            f"GitHub stats call to {url} returned 202 after "
+            f"{max_retries + 1} attempts; giving up."
+        )
 
     @staticmethod
     def _encode_content(change: GitHubFileChange) -> Optional[str]:
