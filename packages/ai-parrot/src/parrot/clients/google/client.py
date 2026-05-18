@@ -106,6 +106,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
+    _min_cache_tokens: int = 4096
+    # Default TTL for CachedContent resources (5 minutes)
+    _cache_ttl: str = "300s"
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
         _require_google_sdk()
@@ -202,6 +206,119 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             an empty dict (matching ``get_client``'s optional ``model`` kwarg).
         """
         return {"model": hints["model"]} if "model" in hints else {}
+
+    # ── FEAT-181: Gemini Prompt Caching ──────────────────────────────────────
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count using a conservative 4-chars-per-token heuristic.
+
+        Args:
+            text: Text to estimate token count for.
+
+        Returns:
+            Estimated number of tokens.
+        """
+        return len(text) // 4
+
+    def _apply_cache_hints(self, payload: dict, segments: list) -> dict:
+        """Gemini cache translator — FEAT-181.
+
+        Gemini requires explicit ``CachedContent`` resource creation when
+        the cacheable token count meets or exceeds ``_min_cache_tokens``
+        (default 4096).  Because resource creation is async, this method
+        performs the threshold check synchronously and stores the cacheable
+        segments on ``self._pending_cache_segments`` for consumption by the
+        actual ``generate_content`` call path via
+        ``_maybe_apply_gemini_cache()``.
+
+        When the threshold is NOT met (or segments is empty), this method is
+        a true no-op — the payload is returned unchanged and no resource is
+        created.
+
+        Args:
+            payload: The request payload dict being assembled.
+            segments: List of ``CacheableSegment`` produced by
+                ``PromptBuilder.build_segments()``.  May be empty.
+
+        Returns:
+            The (potentially annotated) payload dict.
+        """
+        if not segments:
+            return payload
+
+        # Only consider cacheable segments for the token estimate
+        cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+        est_tokens = self._estimate_tokens(cacheable_text)
+
+        if est_tokens < self._min_cache_tokens:
+            self.logger.debug(
+                "Gemini prompt caching skipped: estimated %d tokens < threshold %d",
+                est_tokens,
+                self._min_cache_tokens,
+            )
+            # Store None to signal "skip" to _maybe_apply_gemini_cache
+            self._pending_cache_segments = None
+            return payload
+
+        # Store segments for async CachedContent creation during generate_content
+        self._pending_cache_segments = segments
+        self.logger.debug(
+            "Gemini prompt caching: %d cacheable tokens queued for CachedContent",
+            est_tokens,
+        )
+        return payload
+
+    async def _maybe_apply_gemini_cache(
+        self,
+        client: Any,
+        model: str,
+        payload: dict,
+    ) -> dict:
+        """Create a Gemini ``CachedContent`` resource and inject ``cached_content``.
+
+        Called from ``generate_content`` call sites when
+        ``_pending_cache_segments`` is not None.  On any error the method
+        logs at WARNING level and returns the payload unchanged (fail-open).
+
+        Args:
+            client: The active ``genai.Client`` instance.
+            model: Model name string (e.g. ``"gemini-2.5-flash"``).
+            payload: The ``generate_content`` payload dict to update.
+
+        Returns:
+            The (potentially updated) payload dict.
+        """
+        segments = getattr(self, '_pending_cache_segments', None)
+        if not segments:
+            return payload
+
+        try:
+            from google.genai import types as genai_types
+            cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+            cached = await client.aio.caches.create(
+                model=model,
+                config=genai_types.CreateCachedContentConfig(
+                    system_instruction=cacheable_text,
+                    ttl=self._cache_ttl,
+                    display_name="parrot-prompt-cache",
+                ),
+            )
+            payload["cached_content"] = cached.name
+            self.logger.debug(
+                "Gemini CachedContent created: %s (model=%s)", cached.name, model
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Gemini CachedContent creation failed (proceeding without cache): %s",
+                exc,
+            )
+        finally:
+            # Reset so subsequent calls don't accidentally reuse stale segments
+            self._pending_cache_segments = None
+
+        return payload
+
+    # ── End FEAT-181 ──────────────────────────────────────────────────────────
 
     def _client_invalid_for_current(self, client: Any, **hints: Any) -> bool:
         """Return ``True`` when the cached client was built for a different model class.
