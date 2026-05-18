@@ -444,3 +444,98 @@ class TestFetchTicketFields:
         r = _wire_reviewer()
         r.jira_toolkit = None
         assert asyncio.run(r._fetch_ticket("NAV-1")) is None
+
+
+class TestSetupWebhookRoute:
+    """Sync classmethod that wires the aiohttp route + dispatcher.
+
+    We use a real aiohttp.web.Application here because the contract we
+    care about (route registration + listener fan-out + idempotency) only
+    holds against the real router.
+    """
+
+    def test_registers_route_and_dispatcher(self):
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app, secret="s3cr3t")
+
+        # The hook is stored on the app for post_configure to find.
+        assert app[GitHubReviewer.WEBHOOK_APP_KEY] is hook
+        # Empty listener list seeded.
+        assert app[GitHubReviewer.WEBHOOK_LISTENERS_KEY] == []
+        # Route really registered.
+        paths = [r.resource.canonical for r in app.router.routes()]
+        assert "/api/v1/hooks/github" in paths
+        # The hook has a callback set (the dispatcher).
+        assert hook._callback is not None
+
+    def test_idempotent(self):
+        from aiohttp import web
+
+        app = web.Application()
+        h1 = GitHubReviewer.setup_webhook_route(app)
+        h2 = GitHubReviewer.setup_webhook_route(app)
+        assert h1 is h2
+        # Only one route, not duplicated.
+        routes = [
+            r for r in app.router.routes()
+            if r.resource.canonical == "/api/v1/hooks/github"
+        ]
+        assert len(routes) == 1
+
+    def test_custom_url_is_respected(self):
+        from aiohttp import web
+
+        app = web.Application()
+        GitHubReviewer.setup_webhook_route(app, url="/custom/gh")
+        paths = [r.resource.canonical for r in app.router.routes()]
+        assert "/custom/gh" in paths
+        assert "/api/v1/hooks/github" not in paths
+
+    def test_dispatcher_fans_out(self):
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        received: List[str] = []
+
+        async def listener_a(event):
+            received.append(f"a:{event.event_type}")
+
+        async def listener_b(event):
+            received.append(f"b:{event.event_type}")
+
+        listeners.extend([listener_a, listener_b])
+
+        # Fake event (only event_type is used here).
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        asyncio.run(hook._callback(event))
+
+        assert received == ["a:github.pr_opened", "b:github.pr_opened"]
+
+    def test_dispatcher_isolates_listener_errors(self):
+        from aiohttp import web
+
+        app = web.Application()
+        hook = GitHubReviewer.setup_webhook_route(app)
+        listeners = app[GitHubReviewer.WEBHOOK_LISTENERS_KEY]
+
+        survived: List[str] = []
+
+        async def bad(event):
+            raise RuntimeError("boom")
+
+        async def good(event):
+            survived.append("ok")
+
+        listeners.extend([bad, good])
+
+        event = MagicMock()
+        event.event_type = "github.pr_opened"
+        # Must NOT raise.
+        asyncio.run(hook._callback(event))
+        assert survived == ["ok"]
