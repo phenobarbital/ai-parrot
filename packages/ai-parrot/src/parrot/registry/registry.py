@@ -8,7 +8,7 @@ and registering agents from the agents/ directory.
 from __future__ import annotations
 import sys
 import asyncio
-from typing import Dict, Iterable, List, Type, Set, Union, Optional, Any, Protocol
+from typing import Dict, Iterable, List, Literal, Type, Set, Union, Optional, Any, Protocol
 from pathlib import Path
 import hashlib
 from types import ModuleType
@@ -219,6 +219,9 @@ class BotConfig(BaseModel):
     class_name: str
     module: str
     enabled: bool = True
+    # "repo": curated YAML committed to the repo. "factory": written at runtime
+    # by AgentFactory and deletable via DELETE /api/v1/bots/{id}.
+    origin: Literal["repo", "factory"] = "repo"
     config: Dict[str, Any] = Field(default_factory=dict)
     # New attributes
     tools: Optional[ToolConfig] = Field(default=None)
@@ -611,6 +614,17 @@ class AgentRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._registered_agents
+
+    def get_metadata(self, name: str) -> Optional[BotMetadata]:
+        """Return the :class:`BotMetadata` for ``name`` or ``None`` if absent.
+
+        Public read-only accessor — prefer this over reaching into
+        ``_registered_agents`` directly. Useful for callers that need to
+        inspect non-instance attributes (``bot_config``, ``file_path``,
+        ``tags``, …) without paying the lazy-instantiation cost of
+        :meth:`get_instance`.
+        """
+        return self._registered_agents.get(name)
 
     async def get_instance(
         self,
@@ -1035,6 +1049,7 @@ class AgentRegistry:
                 "module": config.module,
                 "description": config.config.get('description', ''),
                 "enabled": config.enabled,
+                "origin": config.origin,
                 "version": "1.0.0"
             }
         }
@@ -1052,6 +1067,47 @@ class AgentRegistry:
             yaml.dump(data, f)
 
         return file_path
+
+    def delete_factory_agent(self, name: str) -> tuple[bool, str]:
+        """Delete a factory-created agent: remove its YAML file and unregister.
+
+        Refuses to delete agents whose ``origin`` is not ``"factory"`` so that
+        repo-committed YAMLs cannot be wiped via HTTP. The on-disk YAML path
+        is read from the agent's ``BotMetadata.file_path`` to avoid guessing
+        the category subdirectory.
+
+        Args:
+            name: Registered agent name.
+
+        Returns:
+            A ``(deleted, reason)`` tuple. ``deleted`` is True only when both
+            the YAML file was removed and the agent was popped from
+            ``_registered_agents``.
+        """
+        metadata = self.get_metadata(name)
+        if metadata is None:
+            return False, f"Agent '{name}' is not registered"
+
+        bot_config = getattr(metadata, "bot_config", None)
+        origin = getattr(bot_config, "origin", "repo") if bot_config else "repo"
+        if origin != "factory":
+            return False, (
+                f"Agent '{name}' has origin='{origin}'; only factory-created "
+                "agents can be deleted via this API"
+            )
+
+        yaml_path = metadata.file_path
+        try:
+            if yaml_path and Path(yaml_path).exists():
+                Path(yaml_path).unlink()
+        except OSError as exc:
+            return False, f"Failed to remove YAML at {yaml_path}: {exc}"
+
+        self._registered_agents.pop(name, None)
+        self.logger.info(
+            "Deleted factory agent '%s' (yaml=%s)", name, yaml_path
+        )
+        return True, "deleted"
 
     def _import_module_from_path(
         self,
