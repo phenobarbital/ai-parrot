@@ -217,10 +217,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-19
+**Notes**: Refactored `__init__` to keyword-only with `pool: Any | None = None`, added `dsn`, `min_size`, `max_size`, `**pool_kwargs`. Added `_owns_pool` flag (True when pool is None at construction). Updated `initialize()` to create asyncpg pool via lazy `import asyncpg` when no pool is set. Added `close()` method that is idempotent and only closes pool when `_owns_pool is True`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

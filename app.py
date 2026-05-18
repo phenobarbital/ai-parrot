@@ -2,7 +2,6 @@ from pathlib import Path
 from navconfig.logging import logging
 from navconfig import config
 from navigator.handlers.types import AppHandler
-import asyncpg
 # Tasker:
 from navigator.background import BackgroundQueue
 from navigator_auth import AuthHandler
@@ -238,8 +237,15 @@ class Main(AppHandler):
         # parrot-formdesigner: shared FormRegistry + REST API + HTML/Telegram UI.
         # protect_pages=False — page auth is handled client-side via JWT in
         # localStorage (see examples/forms/form_server.py).
-        form_registry = FormRegistry()
-        self.app['form_registry'] = form_registry
+        # FormRegistry self-registers as app['form_registry'] and hooks
+        # on_startup / on_shutdown signals automatically (FEAT-185).
+        storage = PostgresFormStorage(
+            dsn=default_dsn,
+            schema="navigator",
+            table_name="form_schemas",
+            tenant=None,
+        )
+        form_registry = FormRegistry(app=self.app, storage=storage)
         form_llm_client = LLMFactory.create(
             "google"
         )
@@ -287,19 +293,9 @@ class Main(AppHandler):
         description: Signal for customize the response when server is started
         """
         app['websockets'] = []
-        pool = await asyncpg.create_pool(
-            dsn=default_dsn
-        )
-        storage = PostgresFormStorage(
-            pool=pool,
-            schema="navigator",
-            table_name="form_schemas",
-            tenant=None,
-        )
-        await storage.initialize()
-        form_registry = app['form_registry']
-        form_registry.set_storage(storage)
-        app['form_pool'] = pool
+        # FormRegistry lifecycle (pool creation, DDL, cache hydration) is
+        # handled automatically by FormRegistry.on_startup via aiohttp signals
+        # (FEAT-185). No manual form-storage setup needed here.
 
     async def on_shutdown(self, app):
         """
@@ -309,7 +305,5 @@ class Main(AppHandler):
         manager = app.get('o365_auth_manager')
         if manager:
             await manager.shutdown()
-        # Close DB pool if exists:
-        pool = app.get('form_pool')
-        if pool:
-            await pool.close()
+        # FormRegistry pool close is handled automatically by FormRegistry.on_shutdown
+        # via aiohttp signals (FEAT-185). No manual pool close needed here.

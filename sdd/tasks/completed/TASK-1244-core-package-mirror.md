@@ -176,10 +176,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-19
+**Notes**: Mirrored all TASK-1242/1243 changes to core package. Added `close()` no-op to core `FormStorage`. Updated core `FormRegistry.__init__` to accept `app` param, added `on_startup`/`on_shutdown` handlers. Updated core `PostgresFormStorage.__init__` to keyword-only with `pool`/`dsn` params, added `_owns_pool` flag, updated `initialize()` to create pool, added `close()`. Kept class-level SQL constants as per spec.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
