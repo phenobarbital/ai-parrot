@@ -14,7 +14,7 @@
       "feature_id": "FEAT-180",
       "feature": "github-repo-weekly-activity-report",
       "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Per-spec worktree runs all tasks sequentially. This task seeds the helper that TASK-1211 builds on.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1210-gittoolkit-stats-polling-helper.md"
+      "completed_at": "2026-05-18T01:51:42+00:00",
+      "file": "sdd/tasks/completed/TASK-1210-gittoolkit-stats-polling-helper.md"
     },
     {
       "id": "TASK-1211",
