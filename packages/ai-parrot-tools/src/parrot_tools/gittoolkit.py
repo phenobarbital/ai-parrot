@@ -13,8 +13,9 @@ The implementation deliberately mirrors the structure of
 ``AbstractToolkit`` base class—so that it can be dropped into existing agent
 configurations with minimal friction.
 
-Only standard library modules (plus :mod:`requests` and :mod:`pydantic`, which
-are already dependencies of Parrot) are required.
+Only standard library modules (plus :mod:`requests`, :mod:`pydantic`, which
+are already dependencies of Parrot, and ``PyGithub>=2.1`` for GitHub App
+authentication) are required.
 """
 
 from __future__ import annotations
@@ -22,15 +23,15 @@ from __future__ import annotations
 import asyncio
 import base64
 import datetime as _dt
-from datetime import datetime, timezone
 import os
-import time
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
 
 import difflib
 
 import requests
+from github import Auth, GithubIntegration
 from pydantic import BaseModel, Field, model_validator
 
 from .decorators import tool_schema
@@ -54,6 +55,38 @@ class GitToolkitInput(BaseModel):
     github_token: Optional[str] = Field(
         default=None,
         description="Personal access token with repo scope for GitHub calls.",
+    )
+    auth_type: Literal["pat", "github_app"] = Field(
+        default="pat",
+        description=(
+            "Authentication backend. 'pat' uses github_token; "
+            "'github_app' uses app_id + installation_id + private key."
+        ),
+    )
+    app_id: Optional[int] = Field(
+        default=None,
+        description="GitHub App ID (required when auth_type='github_app').",
+    )
+    installation_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Installation ID for the org/account the App is installed in "
+            "(required when auth_type='github_app')."
+        ),
+    )
+    private_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "PEM contents of the App's private key. Mutually exclusive "
+            "with private_key_path."
+        ),
+    )
+    private_key_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filesystem path to the App's private key PEM. Mutually "
+            "exclusive with private_key."
+        ),
     )
 
 
@@ -243,85 +276,6 @@ class SubmitPRReviewInput(BaseModel):
     )
 
 
-# ---------------------------------------------------------------------------
-# Stats data models (FEAT-180 — GitHub Repository Weekly Activity Report)
-# ---------------------------------------------------------------------------
-
-
-class ContributorWeek(BaseModel):
-    """One week's slice of a contributor's activity.
-
-    Mirrors the GitHub ``weeks[]`` entry from
-    ``GET /repos/{owner}/{repo}/stats/contributors``.
-    """
-
-    week_start: datetime
-    """Sunday 00:00 UTC that begins this week (GitHub epoch converted to UTC)."""
-    additions: int
-    """Lines added in the week."""
-    deletions: int
-    """Lines deleted in the week (non-negative)."""
-    commits: int
-    """Commit count for the week."""
-
-
-class ContributorStats(BaseModel):
-    """Aggregated stats for a single contributor across the repository's history."""
-
-    login: Optional[str]
-    """GitHub login, or ``None`` when the commit email is not linked to an account."""
-    avatar_url: Optional[str] = None
-    """Avatar URL from the GitHub user object (``None`` for anonymous)."""
-    total_commits: int
-    """All-time commit count for this contributor."""
-    weeks: List[ContributorWeek]
-    """Per-week breakdown — most recent last (GitHub ordering)."""
-
-
-class WeeklyCodeFrequency(BaseModel):
-    """Repo-wide weekly additions/deletions totals.
-
-    Sourced from ``GET /repos/{owner}/{repo}/stats/code_frequency``.
-    """
-
-    week_start: datetime
-    """Sunday 00:00 UTC that begins this week."""
-    additions: int
-    """Total lines added across the repository in the week."""
-    deletions: int
-    """Total lines deleted (stored as non-negative; GitHub returns negative)."""
-
-
-# Input schemas for the three stats tools
-
-
-class GetContributorStatsInput(BaseModel):
-    """Input payload for ``get_contributor_stats``."""
-
-    repository: Optional[str] = Field(
-        default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
-    )
-
-
-class GetCommitActivityInput(BaseModel):
-    """Input payload for ``get_weekly_commit_activity``."""
-
-    repository: Optional[str] = Field(
-        default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
-    )
-
-
-class GetCodeFrequencyInput(BaseModel):
-    """Input payload for ``get_code_frequency``."""
-
-    repository: Optional[str] = Field(
-        default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
-    )
-
-
 @dataclass
 class _GitHubContext:
     """Simple container with prepared GitHub configuration."""
@@ -329,6 +283,97 @@ class _GitHubContext:
     repository: str
     base_branch: str
     token: str
+
+
+class _GitHubAppTokenProvider:
+    """Mints + caches GitHub App installation access tokens.
+
+    Single explicit installation. Token is cached in-process and refreshed
+    when within 60 seconds of expiry. Safe to call from threads spawned by
+    ``asyncio.to_thread``.
+
+    Args:
+        app_id: GitHub App ID.
+        installation_id: Installation ID for the org/account the App is
+            installed in.
+        private_key_pem: PEM contents of the App's private key (always
+            resolved to a string before construction — file-path handling
+            lives in ``GitToolkit.__init__``).
+    """
+
+    _REFRESH_LEEWAY = _dt.timedelta(seconds=60)
+
+    def __init__(
+        self,
+        app_id: int,
+        installation_id: int,
+        private_key_pem: str,
+    ) -> None:
+        self._app_id = app_id
+        self._installation_id = installation_id
+        self._private_key_pem = private_key_pem
+        self._token: Optional[str] = None
+        self._expires_at: Optional[_dt.datetime] = None
+        self._lock = threading.Lock()
+
+    def get_token(self) -> str:
+        """Return a valid installation access token, refreshing when <=60s from expiry.
+
+        Returns:
+            A valid GitHub App installation access token string.
+
+        Raises:
+            GitToolkitError: If the underlying ``GithubIntegration.get_access_token``
+                call fails.
+        """
+        with self._lock:
+            now = _dt.datetime.now(_dt.timezone.utc)
+            if (
+                self._token is None
+                or self._expires_at is None
+                or self._expires_at - now <= self._REFRESH_LEEWAY
+            ):
+                self._refresh()
+            return self._token  # type: ignore[return-value]
+
+    def _refresh(self) -> None:
+        """Mint a new installation access token from GitHub.
+
+        Raises:
+            GitToolkitError: If token minting fails (wraps the underlying exception).
+        """
+        try:
+            auth = Auth.AppAuth(self._app_id, self._private_key_pem)
+            integration = GithubIntegration(auth=auth)
+            installation_auth = integration.get_access_token(self._installation_id)
+        except Exception as exc:
+            raise GitToolkitError(
+                f"Failed to mint GitHub App installation token: {exc}"
+            ) from exc
+        self._token = installation_auth.token
+        self._expires_at = installation_auth.expires_at
+        if self._expires_at is not None and self._expires_at.tzinfo is None:
+            # Defensive: PyGithub returns tz-aware UTC, but normalise just in case.
+            self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
+
+
+def _coerce_int(value: Optional[str]) -> Optional[int]:
+    """Coerce a string env-var value to int, returning None for empty/missing.
+
+    Args:
+        value: String value to coerce, or None.
+
+    Returns:
+        Integer value, or None if value is None, empty, or non-numeric.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        # Intentionally returns None; caller raises a descriptive GitToolkitError
+        # indicating the value was present but not a valid integer.
+        return None
 
 
 class GitToolkit(AbstractToolkit):
@@ -341,8 +386,34 @@ class GitToolkit(AbstractToolkit):
         default_repository: Optional[str] = None,
         default_branch: str = "main",
         github_token: Optional[str] = None,
+        auth_type: Literal["pat", "github_app"] = "pat",
+        app_id: Optional[int] = None,
+        installation_id: Optional[int] = None,
+        private_key: Optional[str] = None,
+        private_key_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
+        """Initialise the Git/GitHub toolkit.
+
+        Args:
+            default_repository: Default repo in ``owner/name`` format.
+            default_branch: Fallback branch for pull requests.
+            github_token: PAT for GitHub API calls (required in pat mode).
+            auth_type: Authentication backend — ``'pat'`` (default) or
+                ``'github_app'``.
+            app_id: GitHub App ID (required when auth_type='github_app').
+            installation_id: Installation ID for the org/account the App is
+                installed in (required when auth_type='github_app').
+            private_key: PEM contents of the App's private key. Mutually
+                exclusive with ``private_key_path``.
+            private_key_path: Filesystem path to the App's private key PEM.
+                Mutually exclusive with ``private_key``.
+            **kwargs: Forwarded to the base class.
+
+        Raises:
+            GitToolkitError: When ``auth_type`` is invalid or required App-mode
+                fields are missing / mutually exclusive constraints are violated.
+        """
         super().__init__(**kwargs)
 
         self.default_repository = (
@@ -354,6 +425,91 @@ class GitToolkit(AbstractToolkit):
             default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
         )
         self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+
+        self.auth_type: Literal["pat", "github_app"] = auth_type
+        if self.auth_type not in ("pat", "github_app"):
+            raise GitToolkitError(
+                f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'."
+            )
+
+        # Always initialise these attributes; None in PAT mode.
+        self.app_id: Optional[int] = app_id or _coerce_int(os.getenv("GITHUB_APP_ID"))
+        self.installation_id: Optional[int] = (
+            installation_id or _coerce_int(os.getenv("GITHUB_APP_INSTALLATION_ID"))
+        )
+        self._private_key_pem: Optional[str] = None
+        self._token_provider: Optional[_GitHubAppTokenProvider] = None
+
+        if self.auth_type == "github_app":
+            if not self.app_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires app_id (or GITHUB_APP_ID env)."
+                )
+            if not self.installation_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires installation_id (or "
+                    "GITHUB_APP_INSTALLATION_ID env)."
+                )
+
+            inline_pem = private_key or os.getenv("GITHUB_APP_PRIVATE_KEY")
+            pem_path = private_key_path or os.getenv("GITHUB_APP_PRIVATE_KEY_PATH")
+            if inline_pem and pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app': set EITHER private_key OR "
+                    "private_key_path, not both."
+                )
+            if not inline_pem and not pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires private_key or private_key_path "
+                    "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
+                )
+            if pem_path:
+                try:
+                    with open(pem_path, "r", encoding="utf-8") as fh:
+                        inline_pem = fh.read()
+                except OSError as exc:
+                    raise GitToolkitError(
+                        f"Could not read GitHub App private key from {pem_path}: {exc}"
+                    ) from exc
+
+            # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
+            inline_pem = inline_pem.replace("\\n", "\n")  # type: ignore[union-attr]
+
+            self._token_provider = _GitHubAppTokenProvider(
+                app_id=self.app_id,
+                installation_id=self.installation_id,
+                private_key_pem=inline_pem,
+            )
+
+    # ------------------------------------------------------------------
+    # Bearer token resolution
+    # ------------------------------------------------------------------
+    def _bearer_token(self) -> str:
+        """Return the bearer token for the next GitHub API call.
+
+        In ``pat`` mode, returns ``self.github_token`` and raises when it is
+        absent. In ``github_app`` mode, delegates to the token provider which
+        mints / caches installation access tokens transparently.
+
+        Returns:
+            A valid bearer token string.
+
+        Raises:
+            GitToolkitError: When no token is available (PAT mode with no token
+                set) or when the App token provider fails to mint a token.
+        """
+        if self.auth_type == "github_app":
+            if self._token_provider is None:
+                raise GitToolkitError(
+                    "BUG: _token_provider is None in github_app mode; this is an internal error."
+                )
+            return self._token_provider.get_token()
+        # PAT mode
+        if not self.github_token:
+            raise GitToolkitError(
+                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+            )
+        return self.github_token
 
     # ------------------------------------------------------------------
     # Patch generation helpers
@@ -463,11 +619,7 @@ class GitToolkit(AbstractToolkit):
                 "A target repository is required (pass repository or configure default)."
             )
 
-        token = self.github_token
-        if not token:
-            raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
-            )
+        token = self._bearer_token()
 
         branch = base_branch or self.default_branch
         return _GitHubContext(repository=repo, base_branch=branch, token=token)
@@ -493,65 +645,13 @@ class GitToolkit(AbstractToolkit):
         return response
 
     @staticmethod
-    def _get_stats_with_polling(
-        url: str,
-        token: str,
-        *,
-        max_retries: int = 6,
-        initial_delay: float = 1.0,
-        max_delay: float = 60.0,
-    ) -> requests.Response:
-        """Fetch a /stats/* endpoint with GitHub's 202->200 retry protocol.
-
-        GitHub returns 202 while it computes the stats in the background and
-        200 once the data is ready. This helper keeps polling until it sees
-        200, gives up after ``max_retries`` consecutive 202s, and raises
-        immediately on any other non-200 status.
-
-        Args:
-            url: The full GitHub stats API URL to poll.
-            token: GitHub personal access token (Bearer).
-            max_retries: Maximum number of 202 retries before giving up.
-            initial_delay: Initial sleep delay in seconds (doubles each retry).
-            max_delay: Maximum sleep delay cap in seconds.
-
-        Returns:
-            The ``requests.Response`` with status 200.
-
-        Raises:
-            GitToolkitError: If the response is not 200/202, or after
-                exhausting all retries without seeing 200.
-        """
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "parrot-gittoolkit",
-        }
-        for attempt in range(max_retries + 1):
-            response = requests.get(url, headers=headers, timeout=30)
-            if response.status_code == 200:
-                return response
-            if response.status_code != 202:
-                raise GitToolkitError(
-                    f"GitHub stats call to {url} failed with status "
-                    f"{response.status_code}: {response.text}"
-                )
-            if attempt == max_retries:
-                break
-            delay = min(initial_delay * (2 ** attempt), max_delay)
-            time.sleep(delay)
-        raise GitToolkitError(
-            f"GitHub stats call to {url} returned 202 after "
-            f"{max_retries + 1} attempts; giving up."
-        )
-
-    @staticmethod
     def _encode_content(change: GitHubFileChange) -> Optional[str]:
         if change.change_type == "delete":
             return None
         if change.encoding == "base64":
             return change.content or ""
-        assert change.encoding == "utf-8"
+        if change.encoding != "utf-8":
+            raise GitToolkitError(f"Unsupported encoding {change.encoding!r}")
         data = (change.content or "").encode("utf-8")
         return base64.b64encode(data).decode("ascii")
 
@@ -599,7 +699,7 @@ class GitToolkit(AbstractToolkit):
         token = ctx.token
         base_branch_name = ctx.base_branch
 
-        branch_name = head_branch or f"parrot/{_dt.datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        branch_name = head_branch or f"parrot/{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
         commit_message = commit_message or title
 
         base_ref_url = f"https://api.github.com/repos/{ctx.repository}/git/ref/heads/{base_branch_name}"
@@ -710,11 +810,7 @@ class GitToolkit(AbstractToolkit):
         return repo
 
     def _resolve_token(self) -> str:
-        if not self.github_token:
-            raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
-            )
-        return self.github_token
+        return self._bearer_token()
 
     def _get_pull_request_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
         repo = self._resolve_repository(repository)
@@ -939,164 +1035,6 @@ class GitToolkit(AbstractToolkit):
             list(events or ["pull_request"]),
         )
 
-    # ------------------------------------------------------------------
-    # GitHub stats endpoints (FEAT-180 — Weekly Activity Report)
-    # ------------------------------------------------------------------
-
-    def _get_contributor_stats_sync(
-        self, repository: Optional[str]
-    ) -> List[ContributorStats]:
-        """Fetch and parse contributor stats via the 202->200 polling helper.
-
-        Args:
-            repository: Repository in ``owner/name`` format, or ``None`` for default.
-
-        Returns:
-            List of :class:`ContributorStats` models, one per contributor.
-        """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
-        url = f"https://api.github.com/repos/{repo}/stats/contributors"
-        response = self._get_stats_with_polling(url, token)
-        raw = response.json() or []
-        result: List[ContributorStats] = []
-        for entry in raw:
-            author = entry.get("author") or {}
-            weeks = [
-                ContributorWeek(
-                    week_start=datetime.fromtimestamp(w["w"], tz=timezone.utc),
-                    additions=int(w.get("a", 0)),
-                    deletions=int(w.get("d", 0)),
-                    commits=int(w.get("c", 0)),
-                )
-                for w in entry.get("weeks", [])
-            ]
-            result.append(
-                ContributorStats(
-                    login=author.get("login"),
-                    avatar_url=author.get("avatar_url"),
-                    total_commits=int(entry.get("total", 0)),
-                    weeks=weeks,
-                )
-            )
-        return result
-
-    @tool_schema(GetContributorStatsInput)
-    async def get_contributor_stats(
-        self,
-        repository: Optional[str] = None,
-    ) -> List[ContributorStats]:
-        """Return per-contributor weekly stats for the repository.
-
-        Calls ``GET /repos/{owner}/{repo}/stats/contributors``. The endpoint is
-        asynchronous on GitHub's side: the first call after a cold cache returns
-        202 with an empty body. This method retries with exponential backoff until
-        it receives 200 (or gives up after ``max_retries``), so callers always see
-        a populated list.
-
-        Args:
-            repository: Target repository in ``owner/name`` format. Uses default when omitted.
-
-        Returns:
-            List of :class:`ContributorStats` models with per-week breakdowns.
-        """
-        return await asyncio.to_thread(
-            self._get_contributor_stats_sync, repository
-        )
-
-    def _get_weekly_commit_activity_sync(
-        self, repository: Optional[str]
-    ) -> List[Dict[str, Any]]:
-        """Fetch weekly commit activity (raw dicts) via the polling helper.
-
-        Args:
-            repository: Repository in ``owner/name`` format, or ``None`` for default.
-
-        Returns:
-            Last 52 weeks of commit counts broken down by day-of-week.
-        """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
-        url = f"https://api.github.com/repos/{repo}/stats/commit_activity"
-        response = self._get_stats_with_polling(url, token)
-        raw = response.json() or []
-        return raw if isinstance(raw, list) else []
-
-    @tool_schema(GetCommitActivityInput)
-    async def get_weekly_commit_activity(
-        self,
-        repository: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Return the last 52 weeks of repo-wide commits broken down by day-of-week.
-
-        Calls ``GET /repos/{owner}/{repo}/stats/commit_activity``. Handles the
-        GitHub 202 async-compute pattern transparently.
-
-        Args:
-            repository: Target repository in ``owner/name`` format. Uses default when omitted.
-
-        Returns:
-            List of dicts, each with ``week`` (Unix epoch Sunday), ``total``, and
-            ``days`` (list of 7 day counts, Sun-Sat).
-        """
-        return await asyncio.to_thread(
-            self._get_weekly_commit_activity_sync, repository
-        )
-
-    def _get_code_frequency_sync(
-        self, repository: Optional[str]
-    ) -> List[WeeklyCodeFrequency]:
-        """Fetch per-week additions/deletions and parse into typed models.
-
-        GitHub returns a list of 3-element lists ``[week_epoch, additions, deletions]``
-        where deletions is negative. This method normalises deletions to non-negative.
-
-        Args:
-            repository: Repository in ``owner/name`` format, or ``None`` for default.
-
-        Returns:
-            List of :class:`WeeklyCodeFrequency` models.
-        """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
-        url = f"https://api.github.com/repos/{repo}/stats/code_frequency"
-        response = self._get_stats_with_polling(url, token)
-        raw = response.json() or []
-        result: List[WeeklyCodeFrequency] = []
-        for entry in raw:
-            if not isinstance(entry, (list, tuple)) or len(entry) < 3:
-                continue
-            week_epoch, additions, deletions = int(entry[0]), int(entry[1]), int(entry[2])
-            result.append(
-                WeeklyCodeFrequency(
-                    week_start=datetime.fromtimestamp(week_epoch, tz=timezone.utc),
-                    additions=additions,
-                    deletions=abs(deletions),  # GitHub returns negative; store as absolute
-                )
-            )
-        return result
-
-    @tool_schema(GetCodeFrequencyInput)
-    async def get_code_frequency(
-        self,
-        repository: Optional[str] = None,
-    ) -> List[WeeklyCodeFrequency]:
-        """Return per-week additions/deletions for the whole repository since inception.
-
-        Calls ``GET /repos/{owner}/{repo}/stats/code_frequency``. Handles the GitHub
-        202 async-compute pattern transparently. Deletion counts are stored as
-        non-negative integers (GitHub returns them as negative in the raw payload).
-
-        Args:
-            repository: Target repository in ``owner/name`` format. Uses default when omitted.
-
-        Returns:
-            List of :class:`WeeklyCodeFrequency` models, oldest first.
-        """
-        return await asyncio.to_thread(
-            self._get_code_frequency_sync, repository
-        )
-
 
 __all__ = [
     "GitToolkit",
@@ -1111,12 +1049,5 @@ __all__ = [
     "AddPRCommentInput",
     "SubmitPRReviewInput",
     "GitToolkitError",
-    # FEAT-180 stats models
-    "ContributorWeek",
-    "ContributorStats",
-    "WeeklyCodeFrequency",
-    "GetContributorStatsInput",
-    "GetCommitActivityInput",
-    "GetCodeFrequencyInput",
 ]
 
