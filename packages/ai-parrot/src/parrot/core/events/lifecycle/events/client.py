@@ -101,3 +101,54 @@ class ClientStreamChunkEvent(LifecycleEvent):
     model: str = ""
     chunk_index: int = 0
     chunk_size_bytes: int = 0
+
+
+# ── FEAT-181: Prompt Caching Lifecycle Events ─────────────────────────────
+
+@dataclass(frozen=True)
+class PromptCacheAppliedEvent(LifecycleEvent):
+    """Emitted when prompt caching is applied to an LLM call.
+
+    FEAT-181 — Provider-Agnostic Prompt Caching.
+
+    Attributes:
+        client_name: Provider identifier (``"anthropic"``, ``"openai"``, etc.).
+        model: Model name/identifier being called.
+        blocks_marked: Number of ``cache_control`` blocks applied to the
+            system prompt. For Anthropic: number of cacheable blocks (≤4).
+            For OpenAI/Gemini: 0 (caching is implicit or resource-based).
+        est_tokens: Estimated cacheable token count (rough 4-chars-per-token
+            estimate). Used for observability only.
+        segment_hashes: SHA-256 hashes of each cacheable segment text.
+            NEVER the raw segment content — privacy-safe.
+            Uses ``tuple`` for immutability; ``to_dict()`` converts to list.
+    """
+
+    client_name: str = ""
+    model: str = ""
+    blocks_marked: int = 0
+    est_tokens: int = 0
+    # tuple is immutable and JSON-serializable (to_dict converts to list)
+    segment_hashes: tuple = ()
+
+
+@dataclass(frozen=True)
+class PromptCacheSkippedEvent(LifecycleEvent):
+    """Emitted when prompt caching is skipped.
+
+    FEAT-181 — Provider-Agnostic Prompt Caching.
+
+    Attributes:
+        client_name: Provider identifier.
+        model: Model name/identifier.
+        reason: Why caching was skipped. One of:
+
+            - ``"below_threshold"`` — cacheable token count < ``_min_cache_tokens``.
+            - ``"provider_unsupported"`` — provider does not support caching.
+            - ``"feature_off"`` — ``prompt_caching=False`` at the bot level.
+            - ``"no_segments"`` — no segments were passed to ``_apply_cache_hints``.
+    """
+
+    client_name: str = ""
+    model: str = ""
+    reason: str = ""  # "below_threshold"|"provider_unsupported"|"feature_off"|"no_segments"
