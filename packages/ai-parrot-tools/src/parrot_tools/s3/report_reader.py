@@ -56,7 +56,7 @@ class S3ReportReaderToolkit(AbstractToolkit):
         **kwargs: Forwarded to ``AbstractToolkit.__init__``.
     """
 
-    tool_prefix: str = "s3_"
+    tool_prefix: str = "s3"
     DEFAULT_VISIBILITY_DAYS: int = 30
 
     def __init__(
