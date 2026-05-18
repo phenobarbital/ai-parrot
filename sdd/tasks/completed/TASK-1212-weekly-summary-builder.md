@@ -333,13 +333,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: claude-sonnet-4-6 (sdd-worker)
-**Date**: 2026-05-18
-**Notes**: Added WeeklyActivitySummary, _ContributorWindowSummary, WeeklyLLMSummarizationError
-models to github_reviewer.py. Implemented _build_weekly_summary as a method on GitHubReviewer.
-Fixed the silent-week counter to stop at week boundaries rather than continuing past available
-data. All 8 unit tests pass; no regressions in original 42 tests.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: Silent counter stops when no data is available for a prior week
-(rather than continuing to count past the known data range). This is more conservative and
-avoids false positives.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**:

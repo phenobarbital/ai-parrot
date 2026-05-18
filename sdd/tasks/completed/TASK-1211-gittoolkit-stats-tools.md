@@ -383,11 +383,10 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**: claude-sonnet-4-6 (sdd-worker)
-**Date**: 2026-05-18
-**Notes**: Added ContributorWeek, ContributorStats, WeeklyCodeFrequency Pydantic models
-and corresponding Input schemas. Implemented three @tool_schema methods with sync workers
-via asyncio.to_thread. All use _get_stats_with_polling from TASK-1210. Deletions in
-WeeklyCodeFrequency stored as abs() per spec. All 15 tests pass.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: None.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**:

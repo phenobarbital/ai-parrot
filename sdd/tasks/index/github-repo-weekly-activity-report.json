@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-18T02:45:00Z",
-  "completed_at": "2026-05-18T02:09:19+00:00",
+  "completed_at": "2026-05-18T11:58:25.103305+00:00",
   "tasks": [
     {
       "id": "TASK-1210",
@@ -22,8 +22,9 @@
       "parallelism_notes": "Per-spec worktree runs all tasks sequentially. This task seeds the helper that TASK-1211 builds on.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T01:51:42+00:00",
-      "file": "sdd/tasks/completed/TASK-1210-gittoolkit-stats-polling-helper.md"
+      "completed_at": "2026-05-18T11:58:25.103277+00:00",
+      "file": "sdd/tasks/completed/TASK-1210-gittoolkit-stats-polling-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1211",
@@ -42,8 +43,9 @@
       "parallelism_notes": "Imports the helper added by TASK-1210; shares the same module file.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T01:53:28+00:00",
-      "file": "sdd/tasks/completed/TASK-1211-gittoolkit-stats-tools.md"
+      "completed_at": "2026-05-18T11:58:25.103294+00:00",
+      "file": "sdd/tasks/completed/TASK-1211-gittoolkit-stats-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1212",
@@ -62,8 +64,9 @@
       "parallelism_notes": "Imports the Pydantic return types added by TASK-1211; shares github_reviewer.py with the renderer/orchestrator tasks.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T01:57:23+00:00",
-      "file": "sdd/tasks/completed/TASK-1212-weekly-summary-builder.md"
+      "completed_at": "2026-05-18T11:58:25.103296+00:00",
+      "file": "sdd/tasks/completed/TASK-1212-weekly-summary-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1213",
@@ -82,8 +85,9 @@
       "parallelism_notes": "Consumes WeeklyActivitySummary from TASK-1212; same file as 1212/1214/1215.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T02:06:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1213-weekly-html-renderer.md"
+      "completed_at": "2026-05-18T11:58:25.103298+00:00",
+      "file": "sdd/tasks/completed/TASK-1213-weekly-html-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1214",
@@ -102,8 +106,9 @@
       "parallelism_notes": "Independent of TASK-1213 conceptually, but edits the same file (github_reviewer.py); per-spec worktree runs them sequentially.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T02:06:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1214-weekly-llm-summarizer.md"
+      "completed_at": "2026-05-18T11:58:25.103300+00:00",
+      "file": "sdd/tasks/completed/TASK-1214-weekly-llm-summarizer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1215",
@@ -125,8 +130,9 @@
       "parallelism_notes": "Composes everything from the prior modules; must run last among the implementation tasks.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T02:06:58+00:00",
-      "file": "sdd/tasks/completed/TASK-1215-report-weekly-activity-orchestrator.md"
+      "completed_at": "2026-05-18T11:58:25.103301+00:00",
+      "file": "sdd/tasks/completed/TASK-1215-report-weekly-activity-orchestrator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1216",
@@ -142,11 +148,12 @@
         "TASK-1215"
       ],
       "parallel": false,
-      "parallelism_notes": "Last task: env vars, ParrotReviewer kwargs forwarding, docs. Edits parrot/conf.py and agents/git.py — different files from the previous tasks but logically depends on the orchestrator's constructor changes (TASK-1215).",
+      "parallelism_notes": "Last task: env vars, ParrotReviewer kwargs forwarding, docs. Edits parrot/conf.py and agents/git.py \u2014 different files from the previous tasks but logically depends on the orchestrator's constructor changes (TASK-1215).",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": "2026-05-18T02:09:19+00:00",
-      "file": "sdd/tasks/completed/TASK-1216-config-wiring-and-docs.md"
+      "completed_at": "2026-05-18T11:58:25.103303+00:00",
+      "file": "sdd/tasks/completed/TASK-1216-config-wiring-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
