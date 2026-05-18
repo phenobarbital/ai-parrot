@@ -32,7 +32,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1217 (CacheableSegment); modifies builder.py which TASK-1220 also reads",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1218-promptbuilder-build-segments.md"
+      "completed_at": "2026-05-18T13:18:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1218-promptbuilder-build-segments.md"
     },
     {
       "id": "TASK-1219",
