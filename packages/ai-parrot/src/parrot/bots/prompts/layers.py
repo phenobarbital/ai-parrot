@@ -58,6 +58,10 @@ class PromptLayer:
         phase: When to resolve variables (CONFIGURE or REQUEST).
         condition: Optional callable; layer is skipped if it returns False.
         required_vars: Set of variable names that must be present.
+        cacheable: Whether this layer is eligible for provider-side prompt
+            caching (FEAT-181). Defaults to ``True`` for CONFIGURE-phase
+            layers and ``False`` for REQUEST-phase layers. Can be explicitly
+            overridden per-layer by passing ``cacheable=False`` (or ``True``).
     """
     name: str
     priority: LayerPriority | int
@@ -65,6 +69,15 @@ class PromptLayer:
     phase: RenderPhase = RenderPhase.REQUEST
     condition: Optional[Callable[[Dict[str, Any]], bool]] = None
     required_vars: frozenset[str] = field(default_factory=frozenset)
+    # FEAT-181: None sentinel triggers __post_init__ to derive from phase.
+    cacheable: Optional[bool] = field(default=None)
+
+    def __post_init__(self) -> None:
+        """Derive cacheable default from phase when not explicitly set."""
+        if self.cacheable is None:
+            object.__setattr__(
+                self, "cacheable", self.phase == RenderPhase.CONFIGURE
+            )
 
     def render(self, context: Dict[str, Any]) -> Optional[str]:
         """Render this layer with the given context.
@@ -107,6 +120,8 @@ class PromptLayer:
             phase=RenderPhase.REQUEST,
             condition=None,
             required_vars=frozenset(),
+            # FEAT-181: propagate cacheable so build_segments() sees the right flag.
+            cacheable=self.cacheable,
         )
 
 

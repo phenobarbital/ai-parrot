@@ -27,6 +27,8 @@ from .layers import (
 )
 from .builder import PromptBuilder
 from .presets import get_preset, register_preset, list_presets
+# ── FEAT-181: Provider-Agnostic Prompt Caching ───────────────────
+from .segments import CacheableSegment
 from .domain_layers import (
     DATAFRAME_CONTEXT_LAYER,
     SQL_DIALECT_LAYER,
