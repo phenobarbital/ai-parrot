@@ -146,6 +146,25 @@ class FormAPIHandler:
         userinfo = session.get("session", {})
         return userinfo.get("programs", [])
 
+    def _get_tenant(self, request: web.Request) -> str | None:
+        """Extract the effective tenant for this request.
+
+        Returns the first program slug from the navigator-auth session (as set
+        by :meth:`_get_programs`). When no programs are present, returns ``None``
+        so that :class:`~parrot_formdesigner.services.registry.FormRegistry`
+        falls back to its configured ``default_tenant``.
+
+        Args:
+            request: Incoming HTTP request with ``session`` attribute attached
+                by the navigator-auth ``user_session`` decorator.
+
+        Returns:
+            The first program slug string, or ``None`` when the session carries
+            no programs.
+        """
+        programs = self._get_programs(request)
+        return programs[0] if programs else None
+
     def _build_auth_context(self, request: web.Request) -> AuthContext:
         """Build AuthContext from the inbound aiohttp request.
 
@@ -201,7 +220,8 @@ class FormAPIHandler:
         Returns:
             JSON response ``{"forms": [<descriptor>, ...]}`` sorted by form_id.
         """
-        in_memory = await self.registry.list_forms()
+        tenant = self._get_tenant(request)
+        in_memory = await self.registry.list_forms(tenant=tenant)
         descriptors: dict[str, dict] = {}
 
         for form in in_memory:
@@ -250,7 +270,8 @@ class FormAPIHandler:
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
         return web.json_response(form.model_dump())
@@ -258,7 +279,8 @@ class FormAPIHandler:
     async def get_schema(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
         rendered: RenderedForm = await self.schema_renderer.render(form)
@@ -267,7 +289,8 @@ class FormAPIHandler:
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/style — Get style schema."""
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
         style = form.meta.get("style") if form.meta else None
@@ -276,7 +299,8 @@ class FormAPIHandler:
     async def validate(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
         try:
@@ -347,7 +371,8 @@ class FormAPIHandler:
             )
 
         form_id = request.match_info["form_id"]
-        existing = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
@@ -398,7 +423,8 @@ class FormAPIHandler:
         the form version.
         """
         form_id = request.match_info["form_id"]
-        existing = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
@@ -426,7 +452,7 @@ class FormAPIHandler:
             return web.json_response({"errors": schema_errors}, status=422)
 
         persist = self.registry.has_storage
-        await self.registry.register(form, persist=persist, overwrite=True)
+        await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
         return web.json_response(form.model_dump())
 
@@ -439,7 +465,8 @@ class FormAPIHandler:
         Runs structural validation after merging. Automatically bumps version.
         """
         form_id = request.match_info["form_id"]
-        existing = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
@@ -471,7 +498,7 @@ class FormAPIHandler:
             return web.json_response({"errors": schema_errors}, status=422)
 
         persist = self.registry.has_storage
-        await self.registry.register(form, persist=persist, overwrite=True)
+        await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
         return web.json_response(form.model_dump())
 
@@ -485,13 +512,14 @@ class FormAPIHandler:
         when no form with the given id exists.
         """
         form_id = request.match_info["form_id"]
-        existing = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
-        await self.registry.unregister(form_id)
+        await self.registry.unregister(form_id, tenant=tenant)
 
         storage = self.registry.storage
         if storage is not None:
@@ -523,7 +551,8 @@ class FormAPIHandler:
         from ..services.submissions import FormSubmission
 
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404

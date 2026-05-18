@@ -21,7 +21,6 @@ from aiogram.types import (
     WebAppInfo,
 )
 
-from ...core.schema import FormSchema
 from ...services.registry import FormRegistry
 from ...services.validators import FormValidator
 from .models import (
@@ -86,6 +85,8 @@ class TelegramFormRouter(Router):
         bot: Bot,
         state: FSMContext,
         mode: TelegramRenderMode = TelegramRenderMode.AUTO,
+        *,
+        tenant: str | None = None,
     ) -> None:
         """Initiate a form conversation in the given chat.
 
@@ -95,8 +96,10 @@ class TelegramFormRouter(Router):
             bot: aiogram Bot instance.
             state: FSMContext for this chat.
             mode: Rendering mode override.
+            tenant: Optional tenant slug. When ``None``, the registry falls
+                back to its configured ``default_tenant``.
         """
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             await bot.send_message(chat_id, f"Form '{form_id}' not found.")
             return
@@ -371,7 +374,7 @@ class TelegramFormRouter(Router):
             answers: Collected answers dict.
             state: FSMContext to clear on completion.
         """
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=None)
         if form is None:
             await message.edit_text("Form not found. Submission failed.")
             await state.clear()
@@ -419,7 +422,7 @@ class TelegramFormRouter(Router):
             await message.answer("Missing form identifier in submission.")
             return
 
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=None)
         if form is None:
             await message.answer(f"Form '{form_id}' not found.")
             return

@@ -80,7 +80,7 @@ class FormPageHandler:
             HTML page response with the form gallery.
         """
         p = _prefix(request)
-        forms = await self.registry.list_forms()
+        forms = await self.registry.list_forms(tenant=None)
 
         if not forms:
             items_html = f"<p>No forms created yet. <a href='{p}/'>Create one!</a></p>"
@@ -119,7 +119,7 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
@@ -165,7 +165,7 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
@@ -203,7 +203,7 @@ class FormPageHandler:
         """
         p = _prefix(request)
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        form = await self.registry.get(form_id, tenant=None)
         if form is None:
             return web.Response(
                 text=page_shell(
