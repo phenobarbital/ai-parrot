@@ -209,10 +209,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-18
+**Notes**: Added `FormAPIHandler.clone_form` handler to `handlers.py` following
+the `edit_form`/`patch_form` pattern. Returns 201 with full FormSchema body on
+success. Error paths: 400 (missing/empty new_form_id or invalid JSON), 404
+(source not found), 409 (new_form_id exists), 422 (validation failure).
+Registered `POST {bp}/forms/{form_id}/clone` route in `routes.py` wrapped with
+`_wrap_auth`, placed after the edit_form route. All acceptance criteria met.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

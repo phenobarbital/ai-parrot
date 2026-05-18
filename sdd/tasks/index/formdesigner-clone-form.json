@@ -32,7 +32,7 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1227 — calls FormRegistry.clone_form.",
       "assigned_to": null,
       "started_at": "2026-05-18T18:13:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1228-clone-rest-endpoint.md"
+      "completed_at": "2026-05-18T18:16:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1228-clone-rest-endpoint.md"
     },
     {
       "id": "TASK-1229",
