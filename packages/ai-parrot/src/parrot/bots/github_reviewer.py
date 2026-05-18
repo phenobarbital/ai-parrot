@@ -30,6 +30,7 @@ subclass per watched repository.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging as _stdlib_logging
@@ -213,6 +214,22 @@ Rules:
 Be concise. Prefer concrete pointers ("AC #2 says the endpoint must accept
 JSON, but the diff only adds a form-data branch") over vague language.
 """
+
+
+# ──────────────────────────────────────────────────────────────
+# LLM weekly report system prompt (module-level — not class attr,
+# so it remains accessible when methods are bound to test stubs)
+# ──────────────────────────────────────────────────────────────
+
+_WEEKLY_LLM_SYSTEM_PROMPT = (
+    "You write concise, factual weekly engineering activity reports for a "
+    "software team. Given a structured JSON summary of last week's GitHub "
+    "activity, output a short English digest (3-5 short paragraphs total, "
+    "~150 words max). Lead with totals, highlight 1-2 notable contributors, "
+    "and call out anyone who has gone silent. Do not invent numbers; only "
+    "use values present in the input JSON. Do not include HTML tags or "
+    "markdown bullets. Plain prose only."
+)
 
 
 # ──────────────────────────────────────────────────────────────

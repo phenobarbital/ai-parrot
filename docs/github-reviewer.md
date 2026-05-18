@@ -278,3 +278,72 @@ share one endpoint and let the `repository` guard inside
   `scheduler_manager.register_bot_schedules(agent)` was called for this
   agent at startup, and inspect the scheduler logs for the job named
   `github_reviewer.report_stale_pull_requests`.
+
+---
+
+## Weekly activity report
+
+Every Monday at 09:00 UTC (configurable), the agent posts a contributor
+activity digest to the same Telegram channel used for the daily stale-PR
+report (`GITHUB_REVIEW_PUBLIC_CHANNEL_ID`).
+
+The digest is produced by `report_weekly_activity()`, decorated with
+`@schedule_weekly_report`.
+
+### Schedule override
+
+```bash
+export PARROT_REVIEWER_WEEKLY_REPORT="MON 09:00"
+```
+
+Format is `DDD HH:MM` (UTC). Day abbreviations: `MON`, `TUE`, `WED`, `THU`,
+`FRI`, `SAT`, `SUN`.
+
+### Knobs
+
+| Env var | Default | Notes |
+|---|---|---|
+| `GITHUB_REVIEW_SILENT_WEEKS_THRESHOLD` | `3` | Consecutive zero-commit weeks before a contributor is flagged silent |
+| `GITHUB_REVIEW_USE_LLM_SUMMARY` | `false` | Re-phrase numbers as prose via the agent's LLM (templated output is always the source of truth; LLM failures fall back automatically) |
+| `GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS` | `4` | Reserved — not yet wired in v1; planned for future per-threshold window control |
+
+### Sample output (templated)
+
+```
+Weekly activity — owner/repo
+Period: 2026-05-10 → 2026-05-16
+
+20 commits (▼ -26%)
+2,446 added / 510 removed (▼ -38%)
+
+Top contributors
+1. alice — 12 commits, 1,834 / 421
+2. bob — 8 commits, 612 / 89
+
+Silent contributors
+charlie — silent 3 weeks
+
+Posted by the GitHubReviewer agent.
+```
+
+### Architecture note
+
+```
+APScheduler tick (DDD HH:MM UTC)
+       │
+       ▼
+GitHubReviewer.report_weekly_activity()
+       │
+       ├─ git_toolkit.get_contributor_stats(repository)
+       ├─ git_toolkit.get_code_frequency(repository)
+       ├─ _build_weekly_summary(contributors, code_freq, ...)
+       ├─ [optional] _llm_summarize_weekly(summary)  ← only if use_llm_summary=True
+       └─ bot.send_message(public_channel_id, html, parse_mode="HTML")
+```
+
+### Privacy note
+
+The report names individual contributors by their GitHub login. Operators
+are responsible for informing contributors that their activity is being
+aggregated and broadcast, and for ensuring that access to the destination
+Telegram channel is appropriately restricted.

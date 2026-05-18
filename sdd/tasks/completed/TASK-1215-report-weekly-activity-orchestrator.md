@@ -396,10 +396,13 @@ class TestReportWeeklyActivity:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-18
+**Notes**: Added report_weekly_activity decorated with @schedule_weekly_report. Handles all
+branches: no toolkit, stats fetch failure, no-data ValueError, LLM summarization with fallback,
+Telegram failure. Added import asyncio (was missing — caused asyncio.gather NameError in tests).
+All 6 tests in TestReportWeeklyActivity pass; all 68 github_reviewer tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Deviations from spec**: None.
 
 **Deviations from spec**:
