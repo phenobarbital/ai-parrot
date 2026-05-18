@@ -444,7 +444,8 @@
         "AGENT_CONTEXT_DIR with per-agent files: scales to multiple agents/repos in one deployment, matches the existing AGENTS_DIR convention.",
         "Per-agent inside AGENTS_DIR/<agent_id>/: zero new top-level config, leverages an existing path."
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "AGENT_CONTEXT_DIR (per-agent files) — AGENT_CONTEXT_DIR = config.get('AGENT_CONTEXT_DIR', fallback=BASE_DIR.joinpath('agent_context')) with one file per agent (<dir>/<agent_id>.md)."
     },
     {
       "id": "U2",
@@ -454,7 +455,8 @@
         "Boolean True/False — simplest; provider degrades silently when unsupported or below threshold.",
         "Enum 'auto'/'force'/'off' — 'force' raises if a provider can't satisfy, 'auto' degrades silently. More expressive but heavier API surface."
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "Boolean True/False — silent degradation via PromptCacheSkippedEvent; an enum can be added later if a 'force' semantic is needed."
     },
     {
       "id": "U3",
@@ -465,7 +467,8 @@
         "Part of default — set-and-forget; layer renders empty when doc is missing.",
         "Auto-include when prompt_caching=True — couples the layer to the cache flag, which has clean ergonomics for the GitHubReviewer case."
       ],
-      "ask_user": true
+      "ask_user": true,
+      "user_answer": "Auto-include when prompt_caching=True — single switch activates both cache plumbing and the AGENT_CONTEXT layer. If the per-agent file doesn't exist, the layer renders empty (with a one-time INFO log on configure())."
     }
   ],
 
