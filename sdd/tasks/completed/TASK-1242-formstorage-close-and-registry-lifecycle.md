@@ -205,10 +205,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-19
+**Notes**: Added TYPE_CHECKING guard for `aiohttp.web`, added `close()` no-op to `FormStorage` ABC, updated `FormRegistry.__init__` to accept optional `app: web.Application | None = None`, added `on_startup` and `on_shutdown` signal handlers. Both signals registered via `app.on_startup.append()` / `app.on_shutdown.append()`. `on_startup` calls `initialize()` (if present via hasattr) then `load_from_storage()`. `on_shutdown` calls `storage.close()`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

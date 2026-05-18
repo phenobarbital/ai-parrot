@@ -14,7 +14,7 @@
       "feature_id": "FEAT-185",
       "feature": "refactor-formregistry",
       "spec": "sdd/specs/refactor-formregistry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1242-formstorage-close-and-registry-lifecycle.md"
+      "completed_at": "2026-05-18T22:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1242-formstorage-close-and-registry-lifecycle.md"
     },
     {
       "id": "TASK-1243",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1242"],
+      "depends_on": [
+        "TASK-1242"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1242 — needs close() on FormStorage ABC.",
       "assigned_to": null,
@@ -53,7 +55,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1242", "TASK-1243"],
+      "depends_on": [
+        "TASK-1242",
+        "TASK-1243"
+      ],
       "parallel": false,
       "parallelism_notes": "Mirrors both TASK-1242 and TASK-1243 changes into the core package.",
       "assigned_to": null,
@@ -71,7 +76,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1242", "TASK-1243"],
+      "depends_on": [
+        "TASK-1242",
+        "TASK-1243"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on new FormRegistry(app=...) and PostgresFormStorage(dsn=...) constructors.",
       "assigned_to": null,
@@ -89,7 +97,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1242", "TASK-1243", "TASK-1244", "TASK-1245"],
+      "depends_on": [
+        "TASK-1242",
+        "TASK-1243",
+        "TASK-1244",
+        "TASK-1245"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests all implementation tasks — must run last.",
       "assigned_to": null,
