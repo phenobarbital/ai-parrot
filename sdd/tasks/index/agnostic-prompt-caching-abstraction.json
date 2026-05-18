@@ -153,7 +153,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Depends on TASK-1221 only. Touches google/ files — no overlap with TASK-1222 (claude.py) or TASK-1223 (gpt.py)",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1224-gemini-client-cache-translator.md"
+      "completed_at": "2026-05-18T13:31:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1224-gemini-client-cache-translator.md"
     },
     {
       "id": "TASK-1225",
