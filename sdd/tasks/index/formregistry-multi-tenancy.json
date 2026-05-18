@@ -72,7 +72,7 @@
       "feature_id": "FEAT-183",
       "feature": "formregistry-multi-tenancy",
       "spec": "sdd/specs/formregistry-multi-tenancy.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "One-shot data step; must run after the tagger script exists.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1242-apply-bulk-tagger-to-fixtures.md"
+      "completed_at": "2026-05-18T23:44:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1242-apply-bulk-tagger-to-fixtures.md"
     },
     {
       "id": "TASK-1243",
