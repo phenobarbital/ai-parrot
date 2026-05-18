@@ -145,6 +145,11 @@ def setup_form_api(
         f"{bp}/forms/{{form_id}}/edit", _wrap_auth(handler.edit_form)
     )
 
+    # Clone endpoint
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/clone", _wrap_auth(handler.clone_form)
+    )
+
     # Contract endpoints (schema, style)
     app.router.add_get(
         f"{bp}/forms/{{form_id}}/schema", _wrap_auth(handler.get_schema)
