@@ -14,7 +14,7 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation method — TASK-1228 and TASK-1229 depend on this.",
       "assigned_to": null,
       "started_at": "2026-05-18T18:13:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1227-registry-clone-form.md"
+      "completed_at": "2026-05-18T18:15:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1227-registry-clone-form.md"
     },
     {
       "id": "TASK-1228",
