@@ -341,12 +341,24 @@ class TelegramBotManager:
         """Run polling for a single bot."""
         try:
             self.logger.info(f"Starting polling for bot: {name}")
-            
+
+            # Clear any stale webhook registration before polling. If a webhook
+            # is set on the same token, getUpdates returns 409/flood errors in
+            # a tight loop. drop_pending_updates=False preserves messages that
+            # arrived while the bot was down.
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+            except Exception as e:
+                self.logger.warning(
+                    "delete_webhook failed for bot '%s' (continuing): %s",
+                    name, e,
+                )
+
             # Build allowed_updates list
             allowed_updates = ["message", "callback_query"]
             if enable_channel_posts:
                 allowed_updates.append("channel_post")
-            
+
             await dp.start_polling(
                 bot,
                 allowed_updates=allowed_updates
