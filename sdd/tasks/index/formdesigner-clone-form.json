@@ -14,14 +14,14 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation method — TASK-1228 and TASK-1229 depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1227-registry-clone-form.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1227"],
+      "depends_on": [
+        "TASK-1227"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1227 — calls FormRegistry.clone_form.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1228-clone-rest-endpoint.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1227", "TASK-1228"],
+      "depends_on": [
+        "TASK-1227",
+        "TASK-1228"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on both TASK-1227 and TASK-1228 — tests exercise both layers.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1229-clone-form-tests.md"
     }
