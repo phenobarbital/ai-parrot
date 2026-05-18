@@ -859,6 +859,16 @@ class AgentRegistry:
                      # Pass other keys as prompt vars?
                      merged_args.update(config.system_prompt)
 
+                # When no explicit `prompt:` block is declared, route the
+                # YAML system_prompt through PromptBuilder.from_system_prompt
+                # so the agent picks up the security/knowledge/tools/output/
+                # behavior layers without colliding with IDENTITY_LAYER.
+                if not config.prompt:
+                    from ..bots.prompts.builder import PromptBuilder
+                    merged_args['prompt_builder'] = PromptBuilder.from_system_prompt(
+                        merged_args['system_prompt']
+                    )
+
             # 2. Handle ModelConfig
             if config.model:
                 # Convert ModelConfig to llm args
