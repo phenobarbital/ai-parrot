@@ -173,7 +173,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -181,8 +181,8 @@
       "parallelism_notes": "No dependencies — standalone event dataclasses. Touches only events/client.py — no file overlap with any other task",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1225-lifecycle-events-prompt-cache.md"
+      "completed_at": "2026-05-18T13:22:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1225-lifecycle-events-prompt-cache.md"
     },
     {
       "id": "TASK-1226",
