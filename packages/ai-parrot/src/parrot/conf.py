@@ -164,6 +164,19 @@ if isinstance(MCP_SERVER_DIR, str):
 if not MCP_SERVER_DIR.exists():
     MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
 
+# Agent Context Directory (FEAT-181: per-agent context files for prompt caching)
+# Each agent can have a Markdown context file at <AGENT_CONTEXT_DIR>/<agent_id>.md.
+# AgentContextLoader reads and mtime-caches these files for injection into the
+# CONFIGURE-phase prompt layer when prompt_caching=True.
+AGENT_CONTEXT_DIR = config.get(
+    'AGENT_CONTEXT_DIR',
+    fallback=BASE_DIR.joinpath('agent_context')
+)
+if isinstance(AGENT_CONTEXT_DIR, str):
+    AGENT_CONTEXT_DIR = Path(AGENT_CONTEXT_DIR).resolve()
+if not AGENT_CONTEXT_DIR.exists():
+    AGENT_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
+
 # Docker file location (for generated docker-compose files, Dockerfiles, etc.)
 DOCKER_FILE_LOCATION = config.get(
     'DOCKER_FILE_LOCATION',
