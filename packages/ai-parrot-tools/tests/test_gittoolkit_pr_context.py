@@ -525,7 +525,8 @@ class TestSearchRepoCode:
     def test_search_scopes_to_repo(self, git_toolkit_pat):
         called_with = {}
 
-        def _fake_get(url, headers=None, params=None, timeout=30):
+        def _fake_request(method, url, headers=None, params=None, timeout=30):
+            called_with["method"] = method
             called_with["url"] = url
             called_with["params"] = params
             return _make_response(
@@ -533,25 +534,26 @@ class TestSearchRepoCode:
                 json_data={"total_count": 1, "items": [{"path": "src/x.py", "name": "x.py"}]},
             )
 
-        with patch("parrot_tools.gittoolkit.requests.get", side_effect=_fake_get):
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
             result = asyncio.run(
                 git_toolkit_pat.search_repo_code(query="def my_function", repository="owner/repo")
             )
 
         assert result.total_count == 1
+        assert called_with["method"] == "GET"
         q_param = called_with["params"]["q"]
         assert "repo:owner/repo" in q_param
         assert "def my_function" in q_param
 
     def test_search_rate_limited(self, git_toolkit_pat):
-        def _fake_get(url, headers=None, params=None, timeout=30):
+        def _fake_request(method, url, headers=None, params=None, timeout=30):
             return _make_response(
                 403,
                 json_data={"message": "API rate limit exceeded"},
                 headers={"X-RateLimit-Remaining": "0"},
             )
 
-        with patch("parrot_tools.gittoolkit.requests.get", side_effect=_fake_get):
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
             result = asyncio.run(
                 git_toolkit_pat.search_repo_code(query="def x", repository="owner/repo")
             )
@@ -563,14 +565,14 @@ class TestSearchRepoCode:
     def test_search_respects_max_results(self, git_toolkit_pat):
         called_with = {}
 
-        def _fake_get(url, headers=None, params=None, timeout=30):
+        def _fake_request(method, url, headers=None, params=None, timeout=30):
             called_with["params"] = params
             return _make_response(
                 200,
                 json_data={"total_count": 0, "items": []},
             )
 
-        with patch("parrot_tools.gittoolkit.requests.get", side_effect=_fake_get):
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
             asyncio.run(
                 git_toolkit_pat.search_repo_code(
                     query="def x", repository="owner/repo", max_results=50
@@ -582,11 +584,11 @@ class TestSearchRepoCode:
     def test_search_default_max_results(self, git_toolkit_pat):
         called_with = {}
 
-        def _fake_get(url, headers=None, params=None, timeout=30):
+        def _fake_request(method, url, headers=None, params=None, timeout=30):
             called_with["params"] = params
             return _make_response(200, json_data={"total_count": 0, "items": []})
 
-        with patch("parrot_tools.gittoolkit.requests.get", side_effect=_fake_get):
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
             asyncio.run(
                 git_toolkit_pat.search_repo_code(query="foo", repository="owner/repo")
             )

@@ -1853,12 +1853,19 @@ class GitToolkit(AbstractToolkit):
         q = f"{query} repo:{repo}"
         url = "https://api.github.com/search/code"
         params = {"q": q, "per_page": min(max_results, 100)}
+
+        # Use requests.request() with the same auth headers that _request()
+        # injects, so that token rotation (PAT or GitHub App) is respected.
+        # We cannot call _request() here because it raises on any non-200
+        # response, but the Code Search API legitimately returns 403 when the
+        # rate limit is exceeded — and we need to inspect the response headers
+        # before deciding whether to raise or return ``error='rate_limited'``.
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
             "User-Agent": "parrot-gittoolkit",
         }
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response = requests.request("GET", url, headers=headers, params=params, timeout=30)
 
         if (
             response.status_code == 403
