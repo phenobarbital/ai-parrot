@@ -9,7 +9,7 @@ EventBus by default. It must be explicitly opted in via forward_to_bus=True
 on the subscription.
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 
 from parrot.core.events.lifecycle.base import LifecycleEvent
 
@@ -151,4 +151,6 @@ class PromptCacheSkippedEvent(LifecycleEvent):
 
     client_name: str = ""
     model: str = ""
-    reason: str = ""  # "below_threshold"|"provider_unsupported"|"feature_off"|"no_segments"
+    reason: Literal[
+        "below_threshold", "provider_unsupported", "feature_off", "no_segments", ""
+    ] = ""

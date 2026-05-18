@@ -35,7 +35,7 @@ except ImportError:
 
 # ── Mtime-keyed LRU cache ──────────────────────────────────────────────────
 
-@functools.lru_cache(maxsize=None)
+@functools.lru_cache(maxsize=256)
 def _read_cached(path: str, mtime: float) -> str:
     """Read file content, cached by (path, mtime).
 
@@ -64,15 +64,27 @@ def load_agent_context(agent_id: str) -> str:
     Missing files return an empty string (no error raised). This allows
     agents without a dedicated context file to work silently.
 
+    The agent context directory is created lazily on first call to avoid
+    side effects at import time (read-only container filesystems, tests).
+
     Args:
         agent_id: The agent's unique identifier (used as the filename stem).
 
     Returns:
         File content as a string, or ``""`` if the file does not exist.
     """
-    import parrot.bots.prompts.agent_context as _self_module
-    context_dir = getattr(_self_module, "AGENT_CONTEXT_DIR", AGENT_CONTEXT_DIR)
-    file_path = Path(context_dir) / f"{agent_id}.md"
+    context_dir = Path(AGENT_CONTEXT_DIR)
+    # Lazy directory creation: only attempt when the directory is absent.
+    if not context_dir.exists():
+        try:
+            context_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            _logger.debug(
+                "Could not create agent context directory %s: %s",
+                context_dir,
+                exc,
+            )
+    file_path = context_dir / f"{agent_id}.md"
     if not file_path.exists():
         return ""
     mtime = file_path.stat().st_mtime

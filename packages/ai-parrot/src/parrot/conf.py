@@ -4,7 +4,7 @@ import base64
 from pathlib import Path
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
-from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
+from navigator.conf import default_dsn
 
 
 # # disable debug on some libraries:
@@ -168,14 +168,15 @@ if not MCP_SERVER_DIR.exists():
 # Each agent can have a Markdown context file at <AGENT_CONTEXT_DIR>/<agent_id>.md.
 # AgentContextLoader reads and mtime-caches these files for injection into the
 # CONFIGURE-phase prompt layer when prompt_caching=True.
+# NOTE: The directory is NOT created here at import time to avoid side effects in
+# read-only container filesystems and test environments. Creation is deferred to
+# load_agent_context() in parrot/bots/prompts/agent_context.py.
 AGENT_CONTEXT_DIR = config.get(
     'AGENT_CONTEXT_DIR',
     fallback=BASE_DIR.joinpath('agent_context')
 )
 if isinstance(AGENT_CONTEXT_DIR, str):
     AGENT_CONTEXT_DIR = Path(AGENT_CONTEXT_DIR).resolve()
-if not AGENT_CONTEXT_DIR.exists():
-    AGENT_CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Docker file location (for generated docker-compose files, Dockerfiles, etc.)
 DOCKER_FILE_LOCATION = config.get(

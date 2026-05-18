@@ -31,4 +31,7 @@ class CacheableSegment:
 
     text: str
     cacheable: bool
+    # ttl_hint is reserved for forward-compatibility only.
+    # No provider translates this field in v1 — it has NO effect on caching behaviour.
+    # Future TTL-aware strategies may use "short" (minutes) or "long" (hours) as hints.
     ttl_hint: Optional[Literal["short", "long"]] = None

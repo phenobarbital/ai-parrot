@@ -1140,7 +1140,7 @@ class AbstractBot(
         pageindex_context: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
-    ) -> str:
+    ) -> "Union[str, List]":
         """Phase 2: Resolve REQUEST-phase variables per call.
 
         Only dynamic variables (context, user_data, chat_history)
@@ -2570,7 +2570,7 @@ class AbstractBot(
         metadata: Optional[Dict[str, Any]] = None,
         memory_context: Optional[str] = None,
         **kwargs
-    ) -> str:
+    ) -> "Union[str, List]":
         """
         Create the complete system prompt for the LLM with user context support.
 
@@ -2617,7 +2617,12 @@ class AbstractBot(
                 self._active_skill = None
 
             if memory_context:
-                result += f"\n\n{memory_context}"
+                # FEAT-181: result may be List[CacheableSegment] when prompt_caching=True
+                if isinstance(result, list):
+                    from parrot.bots.prompts.segments import CacheableSegment
+                    result.append(CacheableSegment(text=f"\n\n{memory_context}", cacheable=False))
+                else:
+                    result += f"\n\n{memory_context}"
             return result
         # Legacy path: existing Template-based logic (unchanged)
         # Process conversation and vector contexts

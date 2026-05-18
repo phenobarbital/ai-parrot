@@ -255,7 +255,8 @@ class AbstractClient(EventEmitterMixin, ABC):
 
     # FEAT-181: minimum token count for provider-side prompt caching.
     # Subclasses override this (e.g., AnthropicClient sets 1024, GoogleGenAIClient 4096).
-    # 0 means the base no-op applies caching unconditionally (i.e. never actually caches).
+    # 0 means "provider does not support explicit caching" (the base AbstractClient no-op);
+    # the value is not a real threshold but a sentinel indicating caching is unsupported here.
     _min_cache_tokens: int = 0
 
     # Default system prompt template used when no system_prompt is passed to invoke().
@@ -342,20 +343,24 @@ $backstory
     # FEAT-176: Lifecycle emission helpers
     # ------------------------------------------------------------------
 
-    def _system_prompt_hash(self, system_prompt: "Optional[str]") -> str:
+    def _system_prompt_hash(self, system_prompt: "Optional[Union[str, list]]") -> str:
         """Return SHA-256 hex of *system_prompt*, or empty string.
 
         Privacy-safe: the raw prompt is never stored or emitted.
+        Accepts both plain strings and lists of CacheableSegment objects.
 
         Args:
-            system_prompt: The system prompt string, or ``None``.
+            system_prompt: The system prompt string, list of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects,
+                or ``None``.
 
         Returns:
             SHA-256 hex digest string, or ``""`` if *system_prompt* is falsy.
         """
-        if not system_prompt:
+        resolved = self._resolve_system_prompt(system_prompt)
+        if not resolved:
             return ""
-        return hashlib.sha256(system_prompt.encode()).hexdigest()
+        return hashlib.sha256(resolved.encode()).hexdigest()
 
     # ------------------------------------------------------------------
     # FEAT-181: Provider-Agnostic Prompt Caching
@@ -389,6 +394,7 @@ $backstory
         self,
         payload: "Dict[str, Any]",
         segments: "list",
+        trace_context: "Optional[TraceContext]" = None,
     ) -> "Dict[str, Any]":
         """Translate CacheableSegments to provider-native cache hints.
 
@@ -402,6 +408,9 @@ $backstory
             segments: List of
                 :class:`~parrot.bots.prompts.segments.CacheableSegment` objects
                 produced by :meth:`~parrot.bots.prompts.builder.PromptBuilder.build_segments`.
+            trace_context: Optional W3C trace context for event correlation.
+                When provided it is forwarded to cache lifecycle events.
+                If ``None``, a new root trace is created internally.
 
         Returns:
             The ``payload`` dict, unchanged in the base implementation.

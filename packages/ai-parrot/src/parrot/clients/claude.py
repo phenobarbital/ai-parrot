@@ -16,7 +16,11 @@ from navconfig import config
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from .base import AbstractClient, BatchRequest, StreamingRetryConfig
 # FEAT-176: lifecycle events
-from parrot.core.events.lifecycle.events import ClientStreamChunkEvent
+from parrot.core.events.lifecycle.events import (
+    ClientStreamChunkEvent,
+    PromptCacheAppliedEvent,
+    PromptCacheSkippedEvent,
+)
 
 if TYPE_CHECKING:
     # Type-check-only imports — keep IDE/mypy support without forcing the
@@ -128,7 +132,12 @@ class AnthropicClient(AbstractClient):
             blocks.append(block)
         return blocks
 
-    def _apply_cache_hints(self, payload: dict, segments: list) -> dict:
+    def _apply_cache_hints(
+        self,
+        payload: dict,
+        segments: list,
+        trace_context=None,
+    ) -> dict:
         """Apply Anthropic cache_control blocks to the payload system prompt.
 
         FEAT-181 — overrides AbstractClient no-op.
@@ -137,14 +146,46 @@ class AnthropicClient(AbstractClient):
             payload: The request payload dict.
             segments: List of
                 :class:`~parrot.bots.prompts.segments.CacheableSegment` objects.
+            trace_context: Optional W3C trace context for event correlation.
+                When ``None``, a new root trace is created for the event.
 
         Returns:
             The payload with ``system`` replaced by a list of content blocks
             when segments are present; unchanged otherwise.
         """
+        import hashlib as _hashlib
+        from parrot.core.events.lifecycle.trace import TraceContext as _TC
+        tc = trace_context if trace_context is not None else _TC.new_root()
         if not segments:
+            self.events.emit_nowait(PromptCacheSkippedEvent(
+                trace_context=tc,
+                client_name="anthropic",
+                model=payload.get("model", ""),
+                reason="no_segments",
+                source_type="client",
+                source_name="anthropic",
+            ))
             return payload
-        payload["system"] = self._segments_to_anthropic_blocks(segments)
+        blocks = self._segments_to_anthropic_blocks(segments)
+        payload["system"] = blocks
+        # Emit cache-applied event (fire-and-forget)
+        cacheable_segs = [s for s in segments if s.cacheable]
+        seg_hashes = tuple(
+            _hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs
+        )
+        est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
+        self.events.emit_nowait(PromptCacheAppliedEvent(
+            trace_context=tc,
+            client_name="anthropic",
+            model=payload.get("model", ""),
+            blocks_marked=sum(
+                1 for b in blocks if isinstance(b, dict) and "cache_control" in b
+            ),
+            est_tokens=est_tokens,
+            segment_hashes=seg_hashes,
+            source_type="client",
+            source_name="anthropic",
+        ))
         return payload
 
     async def ask(
@@ -198,7 +239,7 @@ class AnthropicClient(AbstractClient):
             client_name="anthropic",
             model=model,
             temperature=temperature if temperature is not None else self.temperature,
-            system_prompt=system_prompt,
+            system_prompt=self._resolve_system_prompt(system_prompt),
             has_tools=bool(_use_tools),
             parent_trace=None,
         )
@@ -207,20 +248,16 @@ class AnthropicClient(AbstractClient):
         # Enhance system prompt for deep research mode
         if deep_research:
             research_prompt = self._get_deep_research_system_prompt()
-            system_prompt = (
-                f"{system_prompt}\n\n{research_prompt}"
-                if system_prompt
-                else research_prompt
-            )
+            # FEAT-181: guard against List[CacheableSegment] + string concatenation
+            _sp = self._resolve_system_prompt(system_prompt) if isinstance(system_prompt, list) else system_prompt
+            system_prompt = f"{_sp}\n\n{research_prompt}" if _sp else research_prompt
 
         # Lazy loading system prompt
         if lazy_loading:
-             search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
-             system_prompt = (
-                 f"{system_prompt}\n\n{search_prompt}"
-                 if system_prompt
-                 else search_prompt
-             )
+            search_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
+            # FEAT-181: guard against List[CacheableSegment] + string concatenation
+            _sp = self._resolve_system_prompt(system_prompt) if isinstance(system_prompt, list) else system_prompt
+            system_prompt = f"{_sp}\n\n{search_prompt}" if _sp else search_prompt
 
         output_config = self._get_structured_config(
             structured_output
@@ -228,11 +265,9 @@ class AnthropicClient(AbstractClient):
 
         if structured_output:
             schema_instruction = output_config.format_schema_instruction()
-            system_prompt = (
-                f"{system_prompt}\n\n{schema_instruction}"
-                if system_prompt
-                else schema_instruction
-            )
+            # FEAT-181: guard against List[CacheableSegment] + string concatenation
+            _sp = self._resolve_system_prompt(system_prompt) if isinstance(system_prompt, list) else system_prompt
+            system_prompt = f"{_sp}\n\n{schema_instruction}" if _sp else schema_instruction
 
         # Anthropic SDK requires max_tokens to be a non-None int;
         # _calculate_nonstreaming_timeout() does `int * max_tokens`.
@@ -593,11 +628,9 @@ class AnthropicClient(AbstractClient):
         # Enhance system prompt for deep research mode
         if deep_research:
             research_prompt = self._get_deep_research_system_prompt()
-            system_prompt = (
-                f"{system_prompt}\n\n{research_prompt}"
-                if system_prompt
-                else research_prompt
-            )
+            # FEAT-181: guard against List[CacheableSegment] + string concatenation
+            _sp = self._resolve_system_prompt(system_prompt) if isinstance(system_prompt, list) else system_prompt
+            system_prompt = f"{_sp}\n\n{research_prompt}" if _sp else research_prompt
             self.logger.info("Deep research mode enabled for streaming")
 
         # FEAT-176: lifecycle event — BeforeClientCallEvent for stream
@@ -607,7 +640,7 @@ class AnthropicClient(AbstractClient):
             client_name="anthropic",
             model=_lc_model_s or "",
             temperature=temperature if temperature is not None else self.temperature,
-            system_prompt=system_prompt,
+            system_prompt=self._resolve_system_prompt(system_prompt),
             has_tools=False,
             parent_trace=None,
         )

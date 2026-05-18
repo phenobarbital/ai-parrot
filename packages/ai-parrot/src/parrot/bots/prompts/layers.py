@@ -100,6 +100,13 @@ class PromptLayer:
         This is the key to two-phase rendering: CONFIGURE phase resolves
         static vars, leaving REQUEST vars as $placeholders.
 
+        Invariant (FEAT-181): after ``configure()`` calls this method,
+        ``cacheable`` is the **authoritative** cache-eligibility flag for the
+        returned layer and ``phase`` is always ``REQUEST`` (since the returned
+        layer will be rendered at request time).  The original ``cacheable``
+        value is propagated unchanged so ``build_segments()`` can correctly
+        mark CONFIGURE-phase layers as cacheable even after phase normalisation.
+
         Args:
             context: Dictionary of variable values for partial substitution.
 
