@@ -52,7 +52,7 @@
       "feature_id": "FEAT-183",
       "feature": "formdesigner-clone-form",
       "spec": "sdd/specs/formdesigner-clone-form.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on both TASK-1227 and TASK-1228 — tests exercise both layers.",
       "assigned_to": null,
       "started_at": "2026-05-18T18:13:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1229-clone-form-tests.md"
+      "completed_at": "2026-05-18T18:18:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1229-clone-form-tests.md"
     }
   ]
 }

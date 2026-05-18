@@ -316,10 +316,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-18
+**Notes**: Created 14 unit tests in `tests/unit/test_clone_form.py` and 7
+integration tests in `tests/integration/test_clone_rest.py`. All 21 tests
+pass. Unit tests cover: basic clone, version reset, created_at reset,
+cloned_from meta, section preservation, deep copy isolation, patch
+application, patch cannot override form_id, source not found, duplicate
+form_id, validation error, tenant forwarding, registry state. Integration
+tests cover: success 201, patch body, missing new_form_id, empty
+new_form_id, invalid JSON, source not found 404, duplicate id 409. Auth
+is bypassed in integration tests by registering the handler directly
+without _wrap_auth, matching the existing test_operations_e2e.py pattern.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
