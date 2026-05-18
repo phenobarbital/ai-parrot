@@ -116,6 +116,12 @@ def setup_form_api(
     # provided — avoids overwriting with a different reference).
     if "form_registry" not in app:
         app["form_registry"] = registry
+    elif app["form_registry"] is not registry:
+        logger.warning(
+            "setup_form_api: app['form_registry'] is already set to a different "
+            "registry instance. The passed registry will be ignored. Pass the same "
+            "instance, or let FormRegistry(app=app) manage the assignment."
+        )
 
     # Stash REST-field services (FEAT-170). Both may be None; the upload
     # handler resolves defaults lazily on first request.

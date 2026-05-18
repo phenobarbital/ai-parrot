@@ -211,6 +211,22 @@ class PostgresFormStorage(FormStorage):
         """
 
     # ------------------------------------------------------------------
+    # Internal guards
+    # ------------------------------------------------------------------
+
+    def _require_pool(self) -> None:
+        """Raise RuntimeError if the pool is not initialized.
+
+        Raises:
+            RuntimeError: If initialize() has not been called yet.
+        """
+        if self._pool is None:
+            raise RuntimeError(
+                "PostgresFormStorage is not initialized. "
+                "Call initialize() before performing storage operations."
+            )
+
+    # ------------------------------------------------------------------
     # FormStorage implementation
     # ------------------------------------------------------------------
 
@@ -258,6 +274,7 @@ class PostgresFormStorage(FormStorage):
             await self._pool.close()
             self.logger.info("PostgresFormStorage: pool closed")
         self._pool = None
+        self._owns_pool = False
 
     async def save(
         self,
@@ -280,6 +297,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             The form_id of the saved form.
         """
+        self._require_pool()
         effective_tenant = tenant if tenant is not None else form.tenant
         version = getattr(form, "version", "1.0") or "1.0"
         schema_json = form.model_dump_json()
@@ -322,6 +340,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             FormSchema if found, None otherwise.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(
@@ -375,6 +394,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             True if at least one row was deleted, False if not found.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             result = await conn.execute(self._delete_sql(tenant), form_id)
 
@@ -402,6 +422,7 @@ class PostgresFormStorage(FormStorage):
             description; ``created_at`` is an ISO-8601 string or
             ``None``.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(self._list_sql(tenant))
 

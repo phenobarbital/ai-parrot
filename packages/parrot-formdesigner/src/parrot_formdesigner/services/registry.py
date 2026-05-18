@@ -250,6 +250,7 @@ class FormRegistry:
                 self.logger.info("FormRegistry: storage initialized")
             except Exception as exc:
                 self.logger.error("FormRegistry: storage initialize() failed: %s", exc)
+                return
 
         try:
             count = await self.load_from_storage()

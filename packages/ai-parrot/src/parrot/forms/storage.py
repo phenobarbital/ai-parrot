@@ -140,6 +140,18 @@ class PostgresFormStorage(FormStorage):
         self._owns_pool: bool = pool is None
         self.logger = logging.getLogger(__name__)
 
+    def _require_pool(self) -> None:
+        """Raise RuntimeError if the pool is not initialized.
+
+        Raises:
+            RuntimeError: If initialize() has not been called yet.
+        """
+        if self._pool is None:
+            raise RuntimeError(
+                "PostgresFormStorage is not initialized. "
+                "Call initialize() before performing storage operations."
+            )
+
     async def initialize(self) -> None:
         """Create the form_schemas table if it does not exist.
 
@@ -174,6 +186,7 @@ class PostgresFormStorage(FormStorage):
             await self._pool.close()
             self.logger.info("PostgresFormStorage: pool closed")
         self._pool = None
+        self._owns_pool = False
 
     async def save(
         self,
@@ -192,6 +205,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             The form_id of the saved form.
         """
+        self._require_pool()
         version = getattr(form, "version", "1.0") or "1.0"
         schema_json = json.dumps(form.model_dump())
         style_json = json.dumps(style.model_dump()) if style else None
@@ -223,6 +237,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             FormSchema if found, None otherwise.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(self.LOAD_VERSION_SQL, form_id, version)
@@ -254,6 +269,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             True if at least one row was deleted, False if not found.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             result = await conn.execute(self.DELETE_SQL, form_id)
 
@@ -270,6 +286,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             List of dicts with form_id, version, and title (if available).
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(self.LIST_SQL)
 
