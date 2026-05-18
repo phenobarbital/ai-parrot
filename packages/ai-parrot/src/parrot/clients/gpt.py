@@ -101,6 +101,8 @@ class OpenAIClient(AbstractClient):
     _default_model: str = "gpt-5-mini"
     _fallback_model: str = 'gpt-4.1-nano'
     _lightweight_model: str = "gpt-4.1"
+    # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
+    _min_cache_tokens: int = 1024
 
     def __init__(
         self,
@@ -137,6 +139,74 @@ class OpenAIClient(AbstractClient):
             )
             _warned.add(s)
         return s
+
+    def _apply_cache_hints(
+        self,
+        payload: dict,
+        segments: list,
+        trace_context=None,
+    ) -> dict:
+        """OpenAI cache translator — FEAT-181.
+
+        OpenAI caches prompt prefixes ≥ 1024 tokens automatically; no API
+        shape change is required.  When segments are provided, this method
+        concatenates them back into a single string and stores it under
+        ``payload["system"]`` so the existing message-build path can use it
+        directly.
+
+        Note: the caller (``ask()`` / ``ask_stream()``) already guards against
+        ``List[CacheableSegment]`` being inserted into messages directly — this
+        method is the canonical place for the collapse, but the inline guards
+        remain as a defence-in-depth measure.
+
+        Args:
+            payload: The request payload dict being assembled.
+            segments: List of ``CacheableSegment`` produced by
+                ``PromptBuilder.build_segments()``.  May be empty.
+            trace_context: Optional W3C trace context for event correlation.
+                When ``None``, a new root trace is created for the event.
+
+        Returns:
+            The (potentially updated) payload dict.
+        """
+        import hashlib as _hashlib
+        from parrot.core.events.lifecycle.events import (
+            PromptCacheAppliedEvent as _PCApplied,
+            PromptCacheSkippedEvent as _PCSkipped,
+        )
+        from parrot.core.events.lifecycle.trace import TraceContext as _TC
+        tc = trace_context if trace_context is not None else _TC.new_root()
+        if not segments:
+            self.events.emit_nowait(_PCSkipped(
+                trace_context=tc,
+                client_name="openai",
+                model=payload.get("model", ""),
+                reason="no_segments",
+                source_type="client",
+                source_name="openai",
+            ))
+            return payload
+        # OpenAI prefix caching is automatic — just reconstruct the string.
+        combined = "\n\n".join(s.text for s in segments)
+        # Store under "system" so the caller can read it back as a plain string.
+        payload["system"] = combined
+        # Emit cache-applied event (fire-and-forget; OpenAI caching is implicit)
+        cacheable_segs = [s for s in segments if s.cacheable]
+        seg_hashes = tuple(
+            _hashlib.sha256(s.text.encode()).hexdigest() for s in cacheable_segs
+        )
+        est_tokens = sum(len(s.text) // 4 for s in cacheable_segs)
+        self.events.emit_nowait(_PCApplied(
+            trace_context=tc,
+            client_name="openai",
+            model=payload.get("model", ""),
+            blocks_marked=0,  # OpenAI caching is implicit; no explicit blocks
+            est_tokens=est_tokens,
+            segment_hashes=seg_hashes,
+            source_type="client",
+            source_name="openai",
+        ))
+        return payload
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect OpenAI capacity errors.
@@ -728,6 +798,9 @@ class OpenAIClient(AbstractClient):
              system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
 
         if system_prompt:
+            # FEAT-181: collapse List[CacheableSegment] → string before inserting
+            if isinstance(system_prompt, list):
+                system_prompt = "\n\n".join(s.text for s in system_prompt)
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         messages.append({"role": "user", "content": prompt})
@@ -1259,6 +1332,9 @@ class OpenAIClient(AbstractClient):
              system_prompt = "You have access to a library of tools. Use the 'search_tools' function to find relevant tools."
 
         if system_prompt:
+            # FEAT-181: collapse List[CacheableSegment] → string before inserting
+            if isinstance(system_prompt, list):
+                system_prompt = "\n\n".join(s.text for s in system_prompt)
             messages.insert(0, {"role": "system", "content": system_prompt})
 
         # Build research tools if needed

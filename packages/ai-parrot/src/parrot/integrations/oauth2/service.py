@@ -290,21 +290,21 @@ class IntegrationsService:
         self,
         user_id: str,
         provider_id: str,
-        token_set: "JiraTokenSet",
+        token_set: Any,
     ) -> UsersIntegrationRow:
-        """Upsert a ``users_integrations`` row from a provider token set.
+        """Upsert a ``users_integrations`` row from any provider's token set.
 
-        Called from the web-channel branch of
-        :func:`~parrot.auth.routes.jira_oauth_callback` after a successful
-        authorization code exchange.
+        Called from the web-channel branch of both Jira and the generic
+        OAuth2 callback after a successful authorization code exchange.
 
         Args:
             user_id: Navigator user identifier.
-            provider_id: Provider identifier, e.g. ``"jira"``.
-            token_set: The :class:`~parrot.auth.jira_oauth.JiraTokenSet`
-                returned by ``JiraOAuthManager.handle_callback()``.  Exposes
-                ``account_id``, ``display_name``, ``email``, ``scopes``,
-                ``cloud_id``, and ``site_url``.
+            provider_id: Provider identifier (``"jira"``, ``"o365"``, …).
+            token_set: Provider-specific token set (duck-typed). Must
+                expose ``account_id``, ``display_name``, ``email``,
+                ``scopes``. Optional Jira-only fields (``cloud_id``,
+                ``site_url``) are read with ``getattr`` and forwarded
+                when present.
 
         Returns:
             The :class:`~parrot.integrations.oauth2.models.UsersIntegrationRow`
@@ -315,12 +315,12 @@ class IntegrationsService:
             provider=provider_id,
             channel=_WEB_CHANNEL,
             status="active",
-            account_id=token_set.account_id or "",
-            display_name=token_set.display_name or "",
-            email=token_set.email,
-            scopes=list(token_set.scopes or []),
-            cloud_id=token_set.cloud_id,
-            site_url=token_set.site_url,
+            account_id=getattr(token_set, "account_id", "") or "",
+            display_name=getattr(token_set, "display_name", "") or "",
+            email=getattr(token_set, "email", None),
+            scopes=list(getattr(token_set, "scopes", []) or []),
+            cloud_id=getattr(token_set, "cloud_id", None),
+            site_url=getattr(token_set, "site_url", None),
             connected_at=datetime.now(tz=timezone.utc),
         )
         await upsert_users_integration(row)

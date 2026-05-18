@@ -281,6 +281,15 @@ class GitHubReviewer(Agent):
         head_sha)``. Pushing eight commits to a still-failing PR will not
         produce eight reviews or eight Telegram alerts; the dedup cache
         resets when the process restarts.
+
+        Note on prompt caching: This agent enables ``prompt_caching=True`` by
+        default (FEAT-181). Prompt caching activates provider-side caching of
+        the static system prompt prefix. The default model
+        (``GEMINI_3_FLASH_PREVIEW``) requires ≥4096 tokens in the cacheable
+        prefix for caching to take effect. If the system prompt + agent context
+        document are below this threshold, caching silently skips with a
+        ``PromptCacheSkippedEvent``. For guaranteed caching, use an Anthropic
+        or OpenAI model.
     """
 
     model = GoogleModel.GEMINI_3_FLASH_PREVIEW
@@ -400,6 +409,7 @@ class GitHubReviewer(Agent):
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
         kwargs.setdefault("system_prompt", _SYSTEM_PROMPT)
+        kwargs.setdefault("prompt_caching", True)  # FEAT-181
 
         super().__init__(**kwargs)
 

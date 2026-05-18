@@ -174,6 +174,20 @@ if isinstance(MCP_SERVER_DIR, str):
 if not MCP_SERVER_DIR.exists():
     MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
 
+# Agent Context Directory (FEAT-181: per-agent context files for prompt caching)
+# Each agent can have a Markdown context file at <AGENT_CONTEXT_DIR>/<agent_id>.md.
+# AgentContextLoader reads and mtime-caches these files for injection into the
+# CONFIGURE-phase prompt layer when prompt_caching=True.
+# NOTE: The directory is NOT created here at import time to avoid side effects in
+# read-only container filesystems and test environments. Creation is deferred to
+# load_agent_context() in parrot/bots/prompts/agent_context.py.
+AGENT_CONTEXT_DIR = config.get(
+    'AGENT_CONTEXT_DIR',
+    fallback=BASE_DIR.joinpath('agent_context')
+)
+if isinstance(AGENT_CONTEXT_DIR, str):
+    AGENT_CONTEXT_DIR = Path(AGENT_CONTEXT_DIR).resolve()
+
 # Docker file location (for generated docker-compose files, Dockerfiles, etc.)
 DOCKER_FILE_LOCATION = config.get(
     'DOCKER_FILE_LOCATION',
@@ -539,6 +553,15 @@ MS_TEAMS_PASSWORD = config.get('TEAMS_NOTIFY_PASSWORD')
 O365_CLIENT_ID = config.get('O365_CLIENT_ID')
 O365_CLIENT_SECRET = config.get('O365_CLIENT_SECRET')
 O365_TENANT_ID = config.get('O365_TENANT_ID')
+# Delegated OAuth2 (3LO) for the Office365Toolkit / OperatorAgent flow.
+O365_REDIRECT_URI = config.get(
+    'O365_REDIRECT_URI',
+    fallback='http://localhost:5000/api/auth/oauth2/o365/callback',
+)
+OAUTH2_REDIS_URL = config.get(
+    'OAUTH2_REDIS_URL',
+    fallback='redis://localhost:6379/4',
+)
 
 # Sharepoint:
 SHAREPOINT_APP_ID = config.get('SHAREPOINT_APP_ID')
