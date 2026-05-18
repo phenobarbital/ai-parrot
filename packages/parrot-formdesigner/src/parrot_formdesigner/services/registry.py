@@ -413,3 +413,91 @@ class FormRegistry:
     def __contains__(self, form_id: str) -> bool:
         """Check if form_id is registered (non-async snapshot)."""
         return form_id in self._forms
+
+    async def clone_form(
+        self,
+        source_form_id: str,
+        new_form_id: str,
+        patch: "dict[str, Any] | None" = None,
+        *,
+        persist: bool = True,
+        tenant: str | None = None,
+    ) -> "FormSchema":
+        """Clone an existing form under a new form_id.
+
+        Creates a deep copy of the source form, assigns ``new_form_id``,
+        resets ``version`` to ``"1.0"`` and ``created_at`` to ``None``,
+        records ``meta["cloned_from"]`` for provenance, optionally applies an
+        RFC 7396 merge-patch, validates the result, and registers it.
+
+        Args:
+            source_form_id: ``form_id`` of the form to clone.
+            new_form_id: ``form_id`` to assign to the cloned form.
+            patch: Optional RFC 7396 merge-patch dict to apply on top of the
+                cloned form before validation.  ``form_id`` and ``created_at``
+                in the patch are ignored.
+            persist: If ``True`` (default), persist the cloned form via the
+                configured storage backend.
+            tenant: Optional tenant slug applied to the cloned form.  When
+                provided it overrides whatever the source form carried.
+
+        Returns:
+            The newly cloned and registered ``FormSchema``.
+
+        Raises:
+            KeyError: When ``source_form_id`` is not found in the registry.
+            ValueError: When ``new_form_id`` already exists in the registry.
+            ValueError: When ``FormValidator.check_schema`` reports structural
+                errors on the cloned (and optionally patched) form.
+        """
+        from ..api._utils import _deep_merge
+        from .validators import FormValidator
+
+        source = await self.get(source_form_id)
+        if source is None:
+            raise KeyError(f"Form '{source_form_id}' not found")
+
+        if await self.contains(new_form_id):
+            raise ValueError(f"Form '{new_form_id}' already exists")
+
+        # Deep-clone via Pydantic v2
+        clone = source.model_copy(deep=True)
+
+        # Apply mandatory field resets
+        clone.form_id = new_form_id
+        clone.version = "1.0"
+        clone.created_at = None
+
+        # Apply tenant override when provided
+        if tenant is not None:
+            clone.tenant = tenant
+
+        # Record provenance in meta
+        if clone.meta is None:
+            clone.meta = {}
+        clone.meta["cloned_from"] = source_form_id
+
+        # Apply optional RFC 7396 merge-patch
+        if patch:
+            clone_dict = clone.model_dump()
+            merged = _deep_merge(clone_dict, patch)
+            # Patch cannot override form_id or created_at
+            merged["form_id"] = new_form_id
+            merged.pop("created_at", None)
+            clone = FormSchema.model_validate(merged)
+            # Ensure created_at remains None after re-validation
+            clone.created_at = None
+
+        # Structural validation
+        errors = FormValidator().check_schema(clone)
+        if errors:
+            raise ValueError(f"Cloned form failed validation: {errors}")
+
+        self.logger.info(
+            "Cloning form '%s' -> '%s' (persist=%s)",
+            source_form_id,
+            new_form_id,
+            persist,
+        )
+        await self.register(clone, persist=persist, overwrite=False)
+        return clone
