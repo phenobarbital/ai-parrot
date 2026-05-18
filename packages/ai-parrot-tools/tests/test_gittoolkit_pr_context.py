@@ -152,7 +152,6 @@ class TestPydanticModels:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_blob_cache_miss_returns_none(monkeypatch):
     monkeypatch.delenv("REDIS_URL", raising=False)
     cache = _FileBlobCache()
@@ -160,7 +159,6 @@ async def test_blob_cache_miss_returns_none(monkeypatch):
     assert result is None
 
 
-@pytest.mark.asyncio
 async def test_blob_cache_miss_then_hit(monkeypatch):
     monkeypatch.delenv("REDIS_URL", raising=False)
     cache = _FileBlobCache()
@@ -169,7 +167,6 @@ async def test_blob_cache_miss_then_hit(monkeypatch):
     assert await cache.get("owner/repo", "deadbeef") == b"hello world"
 
 
-@pytest.mark.asyncio
 async def test_blob_cache_lru_fallback(monkeypatch):
     """LRU is per-instance; a new instance starts empty."""
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -180,7 +177,6 @@ async def test_blob_cache_lru_fallback(monkeypatch):
     assert await cache2.get("o/r", "s1") is None
 
 
-@pytest.mark.asyncio
 async def test_blob_cache_case_insensitive_key(monkeypatch):
     """Cache key normalises repository to lowercase."""
     monkeypatch.delenv("REDIS_URL", raising=False)
@@ -214,7 +210,7 @@ class TestGetFileContentAtRef:
             json_data=[{"commit": {}, "author": {"login": login}}],
         )
 
-    def test_get_file_content_full_file(self, git_toolkit_pat):
+    async def test_get_file_content_full_file(self, git_toolkit_pat):
         import base64
         content = base64.b64encode(b"hello\n").decode("ascii")
 
@@ -230,10 +226,8 @@ class TestGetFileContentAtRef:
             return resp
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            result = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="path/to/file.py", ref="main", repository="owner/repo"
-                )
+            result = await git_toolkit_pat.get_file_content_at_ref(
+                path="path/to/file.py", ref="main", repository="owner/repo"
             )
 
         assert result.exists is True
@@ -243,7 +237,7 @@ class TestGetFileContentAtRef:
         assert result.truncated is False
         assert result.error is None
 
-    def test_get_file_content_line_slice(self, git_toolkit_pat):
+    async def test_get_file_content_line_slice(self, git_toolkit_pat):
         import base64
         lines = "\n".join(f"line{i}" for i in range(1, 31)) + "\n"
         content = base64.b64encode(lines.encode()).decode("ascii")
@@ -260,14 +254,12 @@ class TestGetFileContentAtRef:
             return resp
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            result = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="file.py",
-                    ref="main",
-                    repository="owner/repo",
-                    start_line=10,
-                    end_line=20,
-                )
+            result = await git_toolkit_pat.get_file_content_at_ref(
+                path="file.py",
+                ref="main",
+                repository="owner/repo",
+                start_line=10,
+                end_line=20,
             )
 
         assert result.exists is True
@@ -276,22 +268,20 @@ class TestGetFileContentAtRef:
         assert result.content is not None
         assert len(result.content.splitlines()) == 11
 
-    def test_get_file_content_404(self, git_toolkit_pat):
+    async def test_get_file_content_404(self, git_toolkit_pat):
         with patch(
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(404, json_data={"message": "Not Found"}),
         ):
-            result = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="missing.py", ref="main", repository="owner/repo"
-                )
+            result = await git_toolkit_pat.get_file_content_at_ref(
+                path="missing.py", ref="main", repository="owner/repo"
             )
 
         assert result.exists is False
         assert result.content is None
         assert result.error is None
 
-    def test_get_file_content_large_file(self, git_toolkit_pat):
+    async def test_get_file_content_large_file(self, git_toolkit_pat):
         """When file is too large, return error='file_too_large'."""
         big_size = 2 * 1024 * 1024  # 2 MB
         with patch(
@@ -306,10 +296,8 @@ class TestGetFileContentAtRef:
                 },
             ),
         ):
-            result = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="big.bin", ref="main", repository="owner/repo"
-                )
+            result = await git_toolkit_pat.get_file_content_at_ref(
+                path="big.bin", ref="main", repository="owner/repo"
             )
 
         assert result.exists is True
@@ -317,7 +305,7 @@ class TestGetFileContentAtRef:
         assert result.content is None
         assert result.size_bytes == big_size
 
-    def test_get_file_content_cache_populated_by_first_call(self, git_toolkit_pat, monkeypatch):
+    async def test_get_file_content_cache_populated_by_first_call(self, git_toolkit_pat, monkeypatch):
         """After the first HTTP call, the blob is stored in the in-process cache."""
         import base64
         monkeypatch.delenv("REDIS_URL", raising=False)
@@ -338,10 +326,8 @@ class TestGetFileContentAtRef:
             return resp
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            r1 = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="a.py", ref="main", repository="owner/repo"
-                )
+            r1 = await git_toolkit_pat.get_file_content_at_ref(
+                path="a.py", ref="main", repository="owner/repo"
             )
 
         assert r1.content == "cached\n"
@@ -349,10 +335,10 @@ class TestGetFileContentAtRef:
         assert r1.commit_author == "bob"
 
         # Verify that the blob is now in the in-process cache
-        cached = asyncio.run(git_toolkit_pat._blob_cache.get("owner/repo", "cachehit"))
+        cached = await git_toolkit_pat._blob_cache.get("owner/repo", "cachehit")
         assert cached == b"cached\n"
 
-    def test_compare_pr_versions_uses_cache(self, git_toolkit_pat, monkeypatch):
+    async def test_compare_pr_versions_uses_cache(self, git_toolkit_pat, monkeypatch):
         """A second call for the same (repo, ref, path) must not decode again.
 
         After the first call populates the LRU cache, the second call still
@@ -390,10 +376,8 @@ class TestGetFileContentAtRef:
 
         # First call — populates cache
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            r1 = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="a.py", ref="abc", repository="owner/repo"
-                )
+            r1 = await git_toolkit_pat.get_file_content_at_ref(
+                path="a.py", ref="abc", repository="owner/repo"
             )
         assert r1.content == "hello\n"
         assert r1.sha == "lruhit"
@@ -404,10 +388,8 @@ class TestGetFileContentAtRef:
         call_count[0] = 0
         call_urls.clear()
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            r2 = asyncio.run(
-                git_toolkit_pat.get_file_content_at_ref(
-                    path="a.py", ref="abc", repository="owner/repo"
-                )
+            r2 = await git_toolkit_pat.get_file_content_at_ref(
+                path="a.py", ref="abc", repository="owner/repo"
             )
 
         assert r2.content == "hello\n"
@@ -442,7 +424,7 @@ class TestComparePRVersions:
 
         return _fake
 
-    def test_compare_pr_versions_happy(self, git_toolkit_pat, monkeypatch):
+    async def test_compare_pr_versions_happy(self, git_toolkit_pat, monkeypatch):
         import base64
         monkeypatch.delenv("REDIS_URL", raising=False)
 
@@ -464,10 +446,8 @@ class TestComparePRVersions:
             "parrot_tools.gittoolkit.requests.request",
             side_effect=self._setup_mocks(pr_json, base_json, head_json),
         ):
-            result = asyncio.run(
-                git_toolkit_pat.compare_pr_versions(
-                    pr_number=42, path="x.py", repository="owner/repo"
-                )
+            result = await git_toolkit_pat.compare_pr_versions(
+                pr_number=42, path="x.py", repository="owner/repo"
             )
 
         assert result.base.content == "foo\n"
@@ -476,7 +456,7 @@ class TestComparePRVersions:
         assert result.head_sha == "head-sha"
         assert result.pr_number == 42
 
-    def test_compare_pr_versions_added_file(self, git_toolkit_pat, monkeypatch):
+    async def test_compare_pr_versions_added_file(self, git_toolkit_pat, monkeypatch):
         """When file is new in head, base.exists=False."""
         import base64
         monkeypatch.delenv("REDIS_URL", raising=False)
@@ -505,10 +485,8 @@ class TestComparePRVersions:
             return resp
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake):
-            result = asyncio.run(
-                git_toolkit_pat.compare_pr_versions(
-                    pr_number=1, path="new_file.py", repository="owner/repo"
-                )
+            result = await git_toolkit_pat.compare_pr_versions(
+                pr_number=1, path="new_file.py", repository="owner/repo"
             )
 
         assert result.base.exists is False
@@ -522,7 +500,7 @@ class TestComparePRVersions:
 
 
 class TestSearchRepoCode:
-    def test_search_scopes_to_repo(self, git_toolkit_pat):
+    async def test_search_scopes_to_repo(self, git_toolkit_pat):
         called_with = {}
 
         def _fake_request(method, url, headers=None, params=None, timeout=30):
@@ -535,8 +513,8 @@ class TestSearchRepoCode:
             )
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            result = asyncio.run(
-                git_toolkit_pat.search_repo_code(query="def my_function", repository="owner/repo")
+            result = await git_toolkit_pat.search_repo_code(
+                query="def my_function", repository="owner/repo"
             )
 
         assert result.total_count == 1
@@ -545,7 +523,7 @@ class TestSearchRepoCode:
         assert "repo:owner/repo" in q_param
         assert "def my_function" in q_param
 
-    def test_search_rate_limited(self, git_toolkit_pat):
+    async def test_search_rate_limited(self, git_toolkit_pat):
         def _fake_request(method, url, headers=None, params=None, timeout=30):
             return _make_response(
                 403,
@@ -554,15 +532,15 @@ class TestSearchRepoCode:
             )
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            result = asyncio.run(
-                git_toolkit_pat.search_repo_code(query="def x", repository="owner/repo")
+            result = await git_toolkit_pat.search_repo_code(
+                query="def x", repository="owner/repo"
             )
 
         assert result.error == "rate_limited"
         assert result.items == []
         assert result.total_count == 0
 
-    def test_search_respects_max_results(self, git_toolkit_pat):
+    async def test_search_respects_max_results(self, git_toolkit_pat):
         called_with = {}
 
         def _fake_request(method, url, headers=None, params=None, timeout=30):
@@ -573,15 +551,13 @@ class TestSearchRepoCode:
             )
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            asyncio.run(
-                git_toolkit_pat.search_repo_code(
-                    query="def x", repository="owner/repo", max_results=50
-                )
+            await git_toolkit_pat.search_repo_code(
+                query="def x", repository="owner/repo", max_results=50
             )
 
         assert called_with["params"]["per_page"] == 50
 
-    def test_search_default_max_results(self, git_toolkit_pat):
+    async def test_search_default_max_results(self, git_toolkit_pat):
         called_with = {}
 
         def _fake_request(method, url, headers=None, params=None, timeout=30):
@@ -589,8 +565,6 @@ class TestSearchRepoCode:
             return _make_response(200, json_data={"total_count": 0, "items": []})
 
         with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
-            asyncio.run(
-                git_toolkit_pat.search_repo_code(query="foo", repository="owner/repo")
-            )
+            await git_toolkit_pat.search_repo_code(query="foo", repository="owner/repo")
 
         assert called_with["params"]["per_page"] == 20
