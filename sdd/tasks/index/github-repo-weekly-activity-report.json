@@ -52,7 +52,7 @@
       "feature_id": "FEAT-180",
       "feature": "github-repo-weekly-activity-report",
       "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Imports the Pydantic return types added by TASK-1211; shares github_reviewer.py with the renderer/orchestrator tasks.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1212-weekly-summary-builder.md"
+      "completed_at": "2026-05-18T01:57:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1212-weekly-summary-builder.md"
     },
     {
       "id": "TASK-1213",
