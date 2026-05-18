@@ -30,6 +30,7 @@ subclass per watched repository.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import json
 import logging as _stdlib_logging
@@ -216,6 +217,22 @@ JSON, but the diff only adds a form-data branch") over vague language.
 
 
 # ──────────────────────────────────────────────────────────────
+# LLM weekly report system prompt (module-level — not class attr,
+# so it remains accessible when methods are bound to test stubs)
+# ──────────────────────────────────────────────────────────────
+
+_WEEKLY_LLM_SYSTEM_PROMPT = (
+    "You write concise, factual weekly engineering activity reports for a "
+    "software team. Given a structured JSON summary of last week's GitHub "
+    "activity, output a short English digest (3-5 short paragraphs total, "
+    "~150 words max). Lead with totals, highlight 1-2 notable contributors, "
+    "and call out anyone who has gone silent. Do not invent numbers; only "
+    "use values present in the input JSON. Do not include HTML tags or "
+    "markdown bullets. Plain prose only."
+)
+
+
+# ──────────────────────────────────────────────────────────────
 # GitHubReviewer
 # ──────────────────────────────────────────────────────────────
 
@@ -376,6 +393,9 @@ class GitHubReviewer(Agent):
         stale_after_hours: int = 24,
         max_diff_bytes: int = 50_000,
         max_ticket_bytes: int = 20_000,
+        silent_weeks_threshold: int = 3,
+        top_n_contributors: int = 10,
+        use_llm_summary: bool = False,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
@@ -393,6 +413,9 @@ class GitHubReviewer(Agent):
         self.stale_after_hours = int(stale_after_hours)
         self.max_diff_bytes = int(max_diff_bytes)
         self.max_ticket_bytes = int(max_ticket_bytes)
+        self.silent_weeks_threshold = int(silent_weeks_threshold)
+        self.top_n_contributors = int(top_n_contributors)
+        self.use_llm_summary = bool(use_llm_summary)
 
         self._ac_field_id: str = config.get(
             "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
@@ -1386,6 +1409,270 @@ class GitHubReviewer(Agent):
             prev_total_additions=prev_total_additions,
             prev_total_deletions=prev_total_deletions,
         )
+
+    def _format_weekly_activity_html(
+        self,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Build the Telegram HTML body for the weekly activity digest.
+
+        All user-data interpolations are ``html.escape``-d to avoid malformed
+        Telegram HTML entities. Uses only the Telegram-whitelisted HTML tag subset:
+        ``<b>``, ``<i>``, ``<code>``, ``<a>``, ``<pre>``.
+
+        Args:
+            summary: The :class:`WeeklyActivitySummary` to render.
+
+        Returns:
+            A Telegram-ready HTML string, under 4096 characters when
+            ``summary.contributors_active`` is at most ``top_n`` (default 10).
+        """
+        repo = html.escape(summary.repository)
+        # Display period as Sun → Sat (period_end is the following Sunday, so -1 day)
+        period = (
+            f"{summary.period_start:%Y-%m-%d} → "
+            f"{(summary.period_end - timedelta(days=1)):%Y-%m-%d}"
+        )
+
+        def pct(curr: int, prev: int) -> str:
+            """Format a percentage delta string with direction arrow."""
+            if prev == 0:
+                return "n/a" if curr == 0 else "▲ new"
+            delta = (curr - prev) / prev * 100
+            if abs(delta) < 0.5:
+                return "flat 0%"
+            arrow = "▲" if delta > 0 else "▼"
+            return f"{arrow} {delta:+.0f}%"
+
+        lines: List[str] = [
+            f"<b>Weekly activity — <code>{repo}</code></b>",
+            f"Period: {period}",
+            "",
+            (
+                f"<b>{summary.total_commits}</b> commits "
+                f"({pct(summary.total_commits, summary.prev_total_commits)})"
+            ),
+            (
+                f"{summary.total_additions:,} added / "
+                f"{summary.total_deletions:,} removed "
+                f"({pct(summary.total_additions + summary.total_deletions, summary.prev_total_additions + summary.prev_total_deletions)})"
+            ),
+        ]
+
+        if summary.contributors_active:
+            lines.append("")
+            lines.append("<b>Top contributors</b>")
+            for i, c in enumerate(summary.contributors_active, start=1):
+                login = html.escape(c.login)
+                lines.append(
+                    f"{i}. <code>{login}</code> — {c.commits_this_week} commits, "
+                    f"{c.additions:,} / {c.deletions:,}"
+                )
+
+        if summary.contributors_silent:
+            lines.append("")
+            lines.append("<b>Silent contributors</b>")
+            for c in summary.contributors_silent:
+                login = html.escape(c.login)
+                lines.append(
+                    f"<code>{login}</code> — silent {c.weeks_silent} weeks"
+                )
+
+        lines.append("")
+        lines.append("<i>Posted by the GitHubReviewer agent.</i>")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # LLM prose summarizer (FEAT-180, TASK-1214)
+    # ------------------------------------------------------------------
+
+    async def _llm_summarize_weekly(
+        self,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Build a prose digest via the agent's LLM.
+
+        Serialises ``summary`` as JSON and calls :meth:`ask` with a tight system
+        prompt. On any failure raises :class:`WeeklyLLMSummarizationError` so the
+        caller can fall back to the templated output.
+
+        Args:
+            summary: The structured summary to rephrase.
+
+        Returns:
+            A plain-prose string (no HTML) suitable for wrapping in
+            :meth:`_wrap_llm_prose_in_html_envelope`.
+
+        Raises:
+            WeeklyLLMSummarizationError: On any exception from :meth:`ask`.
+        """
+        payload = summary.model_dump(mode="json")
+        question = (
+            "Summarize this week's GitHub activity. Output prose only.\n\n"
+            f"```json\n{json.dumps(payload, indent=2, default=str)}\n```"
+        )
+        try:
+            response = await self.ask(
+                question=question,
+                system_prompt=_WEEKLY_LLM_SYSTEM_PROMPT,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise WeeklyLLMSummarizationError(
+                f"LLM weekly summarization failed: {exc}"
+            ) from exc
+
+        output = getattr(response, "output", response)
+        if isinstance(output, str):
+            return output.strip()
+        return str(output).strip()
+
+    def _wrap_llm_prose_in_html_envelope(
+        self,
+        prose: str,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Wrap plain LLM prose in a minimal HTML envelope for Telegram.
+
+        Args:
+            prose: Plain prose text from the LLM summariser.
+            summary: Used to build the header line.
+
+        Returns:
+            Telegram-safe HTML with a header, the escaped prose body, and a footer.
+        """
+        repo = html.escape(summary.repository)
+        body = html.escape(prose)
+        return (
+            f"<b>Weekly activity — <code>{repo}</code></b>\n\n"
+            f"{body}\n\n"
+            f"<i>Posted by the GitHubReviewer agent.</i>"
+        )
+
+    # ------------------------------------------------------------------
+    # Weekly activity report orchestrator (FEAT-180, TASK-1215)
+    # ------------------------------------------------------------------
+
+    @schedule_weekly_report
+    async def report_weekly_activity(self) -> Dict[str, Any]:
+        """Compose and send the weekly contributor-activity digest.
+
+        Scheduled by :func:`schedule_weekly_report`. Override the firing
+        day/time per deployment via ``{AGENT_ID}_WEEKLY_REPORT=DDD HH:MM``
+        (UTC, default ``MON 09:00``).
+
+        Returns:
+            A status dict with keys: ``status``, ``repository``,
+            ``period_start``, ``period_end``, ``active``, ``silent``,
+            ``rendered_via``, ``telegram_sent``.
+        """
+        if self.git_toolkit is None:
+            self.logger.warning(
+                "GitHubReviewer: weekly activity report skipped — "
+                "git_toolkit not configured."
+            )
+            return {"status": "error", "reason": "git_toolkit not configured"}
+
+        try:
+            contributors, code_freq = await asyncio.gather(
+                self.git_toolkit.get_contributor_stats(repository=self.repository),
+                self.git_toolkit.get_code_frequency(repository=self.repository),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: weekly stats fetch failed for %s: %s",
+                self.repository,
+                exc,
+                exc_info=True,
+            )
+            return {"status": "error", "reason": str(exc)}
+
+        try:
+            summary = self._build_weekly_summary(
+                contributors,
+                code_freq,
+                threshold_weeks=self.silent_weeks_threshold,
+                top_n=self.top_n_contributors,
+            )
+        except ValueError as exc:
+            # Empty repo or no historical data.
+            self.logger.error(
+                "GitHubReviewer: weekly summary build failed for %s: %s",
+                self.repository,
+                exc,
+            )
+            # Post a "no data" message to Telegram if available.
+            bot = self._get_telegram_bot()
+            if bot is not None and self.public_channel_id:
+                no_data_msg = (
+                    f"<b>Weekly activity — <code>{html.escape(self.repository)}</code></b>\n\n"
+                    "No GitHub stats data is available for this week. GitHub may still be "
+                    "computing the statistics (202 Accepted). The report will be retried "
+                    "next week.\n\n"
+                    "<i>Posted by the GitHubReviewer agent.</i>"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=self.public_channel_id,
+                        text=no_data_msg,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            return {"status": "error", "reason": str(exc)}
+
+        rendered_via = "templated"
+        if self.use_llm_summary:
+            try:
+                llm_body = await self._llm_summarize_weekly(summary)
+                text = self._wrap_llm_prose_in_html_envelope(llm_body, summary)
+                rendered_via = "llm"
+            except WeeklyLLMSummarizationError as exc:
+                self.logger.warning(
+                    "GitHubReviewer: LLM summary failed (%s); falling back to "
+                    "templated output.",
+                    exc,
+                )
+                text = self._format_weekly_activity_html(summary)
+        else:
+            text = self._format_weekly_activity_html(summary)
+
+        telegram_sent = 0
+        bot = self._get_telegram_bot()
+        if bot is not None and self.public_channel_id:
+            try:
+                await bot.send_message(
+                    chat_id=self.public_channel_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                telegram_sent = 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send weekly report: %s", exc,
+                )
+
+        self.logger.info(
+            "GitHubReviewer: weekly activity report — repo=%s, active=%d, "
+            "silent=%d, rendered_via=%s, telegram_sent=%d.",
+            self.repository,
+            len(summary.contributors_active),
+            len(summary.contributors_silent),
+            rendered_via,
+            telegram_sent,
+        )
+
+        return {
+            "status": "ok",
+            "repository": self.repository,
+            "period_start": summary.period_start.isoformat(),
+            "period_end": summary.period_end.isoformat(),
+            "active": len(summary.contributors_active),
+            "silent": len(summary.contributors_silent),
+            "rendered_via": rendered_via,
+            "telegram_sent": telegram_sent,
+        }
 
 
 __all__ = [
