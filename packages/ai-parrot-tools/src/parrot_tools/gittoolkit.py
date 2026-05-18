@@ -279,6 +279,176 @@ class SubmitPRReviewInput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# PR context retrieval models (FEAT-182 — On-Demand Code Retrieval)
+# ---------------------------------------------------------------------------
+
+
+class GetFileContentInput(BaseModel):
+    """Input payload for ``get_file_content_at_ref``."""
+
+    path: str = Field(
+        description="File path inside the repository, e.g. 'src/parrot/bots/agent.py'."
+    )
+    ref: str = Field(
+        description="Branch name, tag, or commit SHA at which to retrieve the file."
+    )
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    start_line: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "First line to return (1-indexed). When provided together with end_line, "
+            "only that slice is returned and truncated=True is set on the result."
+        ),
+    )
+    end_line: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Last line to return (1-indexed, inclusive). Must be >= start_line when both are set."
+        ),
+    )
+
+
+class ComparePRVersionsInput(BaseModel):
+    """Input payload for ``compare_pr_versions``."""
+
+    pr_number: int = Field(
+        ge=1,
+        description="Pull request number on the repository.",
+    )
+    path: str = Field(
+        description="File path to compare between the PR base and head refs.",
+    )
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
+class SearchRepoCodeInput(BaseModel):
+    """Input payload for ``search_repo_code``."""
+
+    query: str = Field(
+        description=(
+            "Code Search query text without the 'repo:' qualifier — that qualifier "
+            "is injected automatically to scope the search to the PR's repository."
+        )
+    )
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    max_results: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Maximum number of results to return (1-100). GitHub caps this at 100 per request.",
+    )
+
+
+class FileContentResult(BaseModel):
+    """Return payload for ``get_file_content_at_ref``."""
+
+    exists: bool = Field(
+        description="True when the file was found at the given ref; False on 404."
+    )
+    path: str = Field(
+        description="File path as requested."
+    )
+    ref: str = Field(
+        description="Ref (branch, tag, or SHA) that was used to resolve the file."
+    )
+    repository: str = Field(
+        description="Repository in 'owner/name' format."
+    )
+    content: Optional[str] = Field(
+        default=None,
+        description="Decoded UTF-8 text content of the file, or None when exists=False or error is set.",
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="Content encoding: 'utf-8' for text files or 'base64' for binary blobs.",
+    )
+    size_bytes: Optional[int] = Field(
+        default=None,
+        description="Raw file size in bytes as reported by the GitHub Contents API.",
+    )
+    sha: Optional[str] = Field(
+        default=None,
+        description="Git blob SHA — used as the cache key for _FileBlobCache.",
+    )
+    commit_author: Optional[str] = Field(
+        default=None,
+        description="GitHub login of the author of the most recent commit that touched this file at ref.",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="True when start_line/end_line slicing was applied to the content.",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description=(
+            "Error indicator. 'file_too_large' when the blob exceeds GitHub's 1 MB limit; "
+            "'rate_limited' when the API quota is exhausted; None on success."
+        ),
+    )
+
+
+class CompareVersionsResult(BaseModel):
+    """Return payload for ``compare_pr_versions``."""
+
+    repository: str = Field(
+        description="Repository in 'owner/name' format."
+    )
+    pr_number: int = Field(
+        description="Pull request number."
+    )
+    path: str = Field(
+        description="File path that was compared."
+    )
+    base_sha: str = Field(
+        description="Full commit SHA of the PR base ref."
+    )
+    head_sha: str = Field(
+        description="Full commit SHA of the PR head ref."
+    )
+    base: FileContentResult = Field(
+        description="File content at the base ref (before the PR's changes)."
+    )
+    head: FileContentResult = Field(
+        description="File content at the head ref (after the PR's changes)."
+    )
+
+
+class SearchCodeResult(BaseModel):
+    """Return payload for ``search_repo_code``."""
+
+    repository: str = Field(
+        description="Repository in 'owner/name' format that was searched."
+    )
+    query: str = Field(
+        description="The original query string (without the auto-injected repo: qualifier)."
+    )
+    total_count: int = Field(
+        description="Total number of matching results as reported by GitHub Code Search."
+    )
+    items: List[Dict[str, Any]] = Field(
+        description=(
+            "Raw GitHub Code Search item list. Each item contains at minimum: "
+            "'path', 'name', 'sha', 'html_url', and 'score'."
+        )
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Error indicator. 'rate_limited' when the search API quota is exhausted; None on success.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Stats data models (FEAT-180 — GitHub Repository Weekly Activity Report)
 # ---------------------------------------------------------------------------
 
@@ -438,6 +608,140 @@ class _GitHubAppTokenProvider:
             self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
 
 
+class _FileBlobCache:
+    """SHA-keyed blob cache that fronts GitHub file-content fetches.
+
+    Stores raw content bytes keyed by ``(repository, blob_sha)`` — because git
+    blob SHAs are content-addressed and immutable, the cache never needs
+    invalidation; a TTL is applied only as a hygiene measure.
+
+    Storage backend:
+    * **Redis** when ``REDIS_URL`` is set in navconfig. A shared async pool is
+      created once on the first access and reused for the process lifetime.
+    * **In-memory LRU** (via :class:`cachetools.TTLCache`) as a transparent
+      fallback when Redis is absent or unreachable.
+
+    The cache is safe to call from multiple concurrent coroutines in the same
+    process because initialisation is guarded by an :class:`asyncio.Lock`.
+
+    Example::
+
+        cache = _FileBlobCache()
+        data = await cache.get("owner/repo", "deadbeef")
+        if data is None:
+            data = fetch_from_github(...)
+            await cache.set("owner/repo", "deadbeef", data)
+    """
+
+    _NAMESPACE = "gittoolkit_blob"
+    _LRU_MAXSIZE = 1024
+
+    def __init__(self) -> None:
+        self._lru: Optional[Any] = None  # cachetools.TTLCache, created lazily
+        self._redis_pool: Optional[Any] = None
+        self._ttl: int = 604800
+        self._lock = asyncio.Lock()
+        self._lru_initialised = False
+        self._redis_initialised = False
+
+    def _cache_key(self, repository: str, sha: str) -> str:
+        """Build a normalised cache key."""
+        return f"{self._NAMESPACE}:{repository.lower()}:{sha}"
+
+    def _ensure_lru(self) -> None:
+        """Initialise the LRU synchronously (safe to call from sync code)."""
+        if self._lru_initialised:
+            return
+        try:
+            from navconfig import config as _cfg
+            ttl_raw = _cfg.get("GITHUB_REVIEWER_BLOB_CACHE_TTL", fallback=604800)
+            self._ttl = int(ttl_raw)
+        except Exception:  # noqa: BLE001
+            self._ttl = 604800
+        try:
+            from cachetools import TTLCache
+            self._lru = TTLCache(maxsize=self._LRU_MAXSIZE, ttl=self._ttl)
+        except Exception:  # noqa: BLE001
+            self._lru = {}
+        self._lru_initialised = True
+
+    async def _ensure_redis(self) -> None:
+        """Initialise the Redis pool asynchronously (once)."""
+        if self._redis_initialised:
+            return
+        async with self._lock:
+            if self._redis_initialised:
+                return
+            try:
+                from navconfig import config as _cfg
+                redis_url = _cfg.get("REDIS_URL")
+                if redis_url:
+                    import redis.asyncio as aioredis
+                    self._redis_pool = aioredis.from_url(redis_url, decode_responses=False)
+            except Exception as exc:  # noqa: BLE001
+                import logging
+                logging.getLogger(__name__).warning(
+                    "_FileBlobCache: Redis unavailable (%s) — LRU-only mode", exc
+                )
+                self._redis_pool = None
+            self._redis_initialised = True
+
+    async def get(self, repository: str, sha: str) -> Optional[bytes]:
+        """Return cached blob bytes, or ``None`` on a cache miss.
+
+        Args:
+            repository: Repository in ``"owner/name"`` format (case-insensitive).
+            sha: Git blob SHA (used as part of the cache key).
+
+        Returns:
+            Raw content bytes if cached, ``None`` otherwise.
+        """
+        self._ensure_lru()
+        await self._ensure_redis()
+        key = self._cache_key(repository, sha)
+
+        # Tier 1: LRU
+        if self._lru is not None and key in self._lru:
+            return self._lru[key]  # type: ignore[return-value]
+
+        # Tier 2: Redis
+        if self._redis_pool is not None:
+            try:
+                value = await self._redis_pool.get(key)
+                if value is not None:
+                    # Populate LRU for subsequent hits in the same process.
+                    if self._lru is not None:
+                        self._lru[key] = value
+                    return value  # type: ignore[return-value]
+            except Exception:  # noqa: BLE001
+                pass
+
+        return None
+
+    async def set(self, repository: str, sha: str, content: bytes) -> None:
+        """Store blob bytes in the cache.
+
+        Args:
+            repository: Repository in ``"owner/name"`` format (case-insensitive).
+            sha: Git blob SHA.
+            content: Raw content bytes to store.
+        """
+        self._ensure_lru()
+        await self._ensure_redis()
+        key = self._cache_key(repository, sha)
+
+        # Tier 1: LRU
+        if self._lru is not None:
+            self._lru[key] = content
+
+        # Tier 2: Redis
+        if self._redis_pool is not None:
+            try:
+                await self._redis_pool.set(key, content, ex=self._ttl)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _coerce_int(value: Optional[str]) -> Optional[int]:
     """Coerce a string env-var value to int, returning None for empty/missing.
 
@@ -461,6 +765,9 @@ class GitToolkit(AbstractToolkit):
     """Toolkit dedicated to Git patch generation and GitHub pull requests."""
 
     input_class = GitToolkitInput
+
+    # Shared blob cache — one instance per process; safe for concurrent coroutines.
+    _blob_cache: _FileBlobCache = _FileBlobCache()
 
     def __init__(
         self,
@@ -1170,6 +1477,382 @@ class GitToolkit(AbstractToolkit):
         )
 
     # ------------------------------------------------------------------
+    # On-demand code retrieval tools (FEAT-182)
+    # ------------------------------------------------------------------
+
+    def _get_file_content_sync(
+        self,
+        repository: Optional[str],
+        path: str,
+        ref: str,
+        start_line: Optional[int],
+        end_line: Optional[int],
+    ) -> "FileContentResult":
+        """Synchronous implementation of ``get_file_content_at_ref``.
+
+        Fetches the file at ``ref`` via the GitHub Contents API, decodes it,
+        stores the blob in :attr:`_blob_cache`, and returns a
+        :class:`FileContentResult`. Cache hits avoid the GitHub HTTP round-trip.
+
+        Args:
+            repository: Repository in ``owner/name`` format, or ``None`` for default.
+            path: File path inside the repository.
+            ref: Branch name, tag, or commit SHA.
+            start_line: First line to return (1-indexed), or ``None`` for the full file.
+            end_line: Last line to return (1-indexed, inclusive), or ``None``.
+
+        Returns:
+            A populated :class:`FileContentResult`. ``exists=False`` on 404;
+            ``error='file_too_large'`` when the blob exceeds GitHub's 1 MB limit.
+        """
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+
+        url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+        try:
+            response = self._request(
+                "GET", url, token, expected=200, params={"ref": ref}
+            )
+        except GitToolkitError as exc:
+            # 404 → file does not exist at this ref
+            msg = str(exc)
+            if " 404" in msg or "404" in msg:
+                return FileContentResult(
+                    exists=False,
+                    path=path,
+                    ref=ref,
+                    repository=repo,
+                )
+            raise
+
+        payload = response.json()
+
+        # GitHub omits 'content' for blobs > ~1 MB; detect via size field.
+        size_bytes = payload.get("size")
+        if "content" not in payload or payload.get("content") is None:
+            return FileContentResult(
+                exists=True,
+                path=path,
+                ref=ref,
+                repository=repo,
+                sha=payload.get("sha"),
+                size_bytes=size_bytes,
+                error="file_too_large",
+            )
+
+        blob_sha: Optional[str] = payload.get("sha")
+        raw_content_b64: str = payload.get("content", "")
+        # GitHub base64-encodes with newlines; strip them before decoding.
+        raw_bytes = base64.b64decode(raw_content_b64.replace("\n", ""))
+
+        # Decode to UTF-8; fall back to 'base64' for binary blobs.
+        try:
+            text_content: Optional[str] = raw_bytes.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            text_content = None
+            encoding = "base64"
+
+        # Populate the LRU tier of the cache synchronously (no await needed).
+        # Redis write happens asynchronously in the async wrapper (get_file_content_at_ref).
+        if blob_sha:
+            try:
+                self._blob_cache._ensure_lru()
+                cache_key = self._blob_cache._cache_key(repo, blob_sha)
+                if self._blob_cache._lru is not None:
+                    self._blob_cache._lru[cache_key] = raw_bytes
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Fetch commit_author via /commits endpoint (best-effort, cache miss path).
+        commit_author: Optional[str] = None
+        try:
+            commits_url = f"https://api.github.com/repos/{repo}/commits"
+            commits_resp = self._request(
+                "GET",
+                commits_url,
+                token,
+                expected=200,
+                params={"path": path, "sha": ref, "per_page": 1},
+            )
+            commits = commits_resp.json()
+            if isinstance(commits, list) and commits:
+                commit_author = (commits[0].get("author") or {}).get("login")
+        except Exception:  # noqa: BLE001
+            pass  # author is best-effort; leave None on any error
+
+        # Apply line slicing if requested.
+        truncated = False
+        if text_content is not None and (start_line is not None or end_line is not None):
+            lines = text_content.splitlines(keepends=True)
+            total = len(lines)
+            sl = max(0, (start_line or 1) - 1)  # 0-indexed, clamped
+            el = min(total, end_line or total)    # exclusive upper bound
+            text_content = "".join(lines[sl:el])
+            truncated = True
+
+        return FileContentResult(
+            exists=True,
+            path=path,
+            ref=ref,
+            repository=repo,
+            content=text_content,
+            encoding=encoding,
+            size_bytes=size_bytes,
+            sha=blob_sha,
+            commit_author=commit_author,
+            truncated=truncated,
+        )
+
+    @tool_schema(GetFileContentInput)
+    async def get_file_content_at_ref(
+        self,
+        path: str,
+        ref: str,
+        repository: Optional[str] = None,
+        start_line: Optional[int] = None,
+        end_line: Optional[int] = None,
+    ) -> "FileContentResult":
+        """Return the full or sliced contents of a file at a given git ref.
+
+        Fetches the file at the specified ``ref`` (branch name, tag, or full
+        commit SHA) from the GitHub Contents API. The blob is stored in an
+        in-process SHA-keyed cache so that repeated requests for the same ref
+        do not incur extra HTTP round-trips within a single review session.
+
+        Use this tool when the PR diff shows a change to a function or class
+        but the hunk is too small to judge correctness without seeing the full
+        file body. Prefer ``start_line`` / ``end_line`` on large files to stay
+        within the LLM context budget.
+
+        Args:
+            path: File path inside the repository (e.g. ``"src/parrot/bots/agent.py"``).
+            ref: Branch name, tag, or commit SHA at which to retrieve the file.
+            repository: Repository in ``owner/name`` format. Uses the toolkit
+                default when omitted.
+            start_line: First line to return (1-indexed). When provided without
+                ``end_line``, returns from this line to end-of-file.
+            end_line: Last line to return (1-indexed, inclusive). When provided
+                without ``start_line``, returns from line 1 to this line.
+
+        Returns:
+            A :class:`FileContentResult` with ``exists=True`` and ``content``
+            set on success; ``exists=False`` when the file is not found;
+            ``error='file_too_large'`` when the blob exceeds GitHub's 1 MB limit.
+
+        Example::
+
+            result = await toolkit.get_file_content_at_ref(
+                path="parrot/bots/agent.py",
+                ref="main",
+                start_line=100,
+                end_line=150,
+            )
+            if result.exists and result.content:
+                print(result.content)
+        """
+        result = await asyncio.to_thread(
+            self._get_file_content_sync,
+            repository,
+            path,
+            ref,
+            start_line,
+            end_line,
+        )
+        # Write to Redis asynchronously (best-effort; LRU was already written in sync helper).
+        if result.sha and result.content is not None:
+            repo = self._resolve_repository(repository)
+            raw_bytes = result.content.encode("utf-8")
+            try:
+                await self._blob_cache.set(repo, result.sha, raw_bytes)
+            except Exception:  # noqa: BLE001
+                pass
+        return result
+
+    def _compare_pr_versions_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        path: str,
+    ) -> "CompareVersionsResult":
+        """Synchronous implementation of ``compare_pr_versions``.
+
+        Args:
+            repository: Repository in ``owner/name`` format, or ``None`` for default.
+            pr_number: Pull request number.
+            path: File path to compare between base and head.
+
+        Returns:
+            A :class:`CompareVersionsResult` containing both base and head
+            :class:`FileContentResult` objects.
+        """
+        repo = self._resolve_repository(repository)
+        pr = self._get_pull_request_sync(repository, pr_number)
+        base_sha: str = pr["base"]["sha"]
+        head_sha: str = pr["head"]["sha"]
+
+        base = self._get_file_content_sync(repository, path, base_sha, None, None)
+        head = self._get_file_content_sync(repository, path, head_sha, None, None)
+
+        return CompareVersionsResult(
+            repository=repo,
+            pr_number=pr_number,
+            path=path,
+            base_sha=base_sha,
+            head_sha=head_sha,
+            base=base,
+            head=head,
+        )
+
+    @tool_schema(ComparePRVersionsInput)
+    async def compare_pr_versions(
+        self,
+        pr_number: int,
+        path: str,
+        repository: Optional[str] = None,
+    ) -> "CompareVersionsResult":
+        """Return the base and head versions of a single file in a pull request.
+
+        Fetches the full content of ``path`` at both the PR's base commit SHA
+        and its head commit SHA. Both calls route through :meth:`_FileBlobCache`
+        so that multiple reviews of the same PR only hit GitHub once per
+        (repository, blob SHA) pair.
+
+        Use this tool when the PR diff hunk is too small to judge whether a
+        refactored function or class is correct; viewing the full before/after
+        bodies often reveals intent that a small hunk obscures.
+
+        Args:
+            pr_number: Pull request number (must be >= 1).
+            path: File path to compare (e.g. ``"src/utils.py"``).
+            repository: Repository in ``owner/name`` format. Uses the toolkit
+                default when omitted.
+
+        Returns:
+            A :class:`CompareVersionsResult` with ``base`` and ``head``
+            :class:`FileContentResult` objects. When the file was added in the
+            PR, ``base.exists`` is ``False``. When deleted, ``head.exists``
+            is ``False``.
+
+        Example::
+
+            diff = await toolkit.compare_pr_versions(pr_number=42, path="utils.py")
+            print("Before:", diff.base.content)
+            print("After:", diff.head.content)
+        """
+        return await asyncio.to_thread(
+            self._compare_pr_versions_sync,
+            repository,
+            pr_number,
+            path,
+        )
+
+    def _search_repo_code_sync(
+        self,
+        repository: Optional[str],
+        query: str,
+        max_results: int,
+    ) -> "SearchCodeResult":
+        """Synchronous implementation of ``search_repo_code``.
+
+        Args:
+            repository: Repository in ``owner/name`` format, or ``None`` for default.
+            query: Code Search query text (without the ``repo:`` qualifier).
+            max_results: Maximum number of results (1-100).
+
+        Returns:
+            A :class:`SearchCodeResult`. When the search API is rate-limited,
+            returns with ``error='rate_limited'`` rather than raising.
+        """
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        q = f"{query} repo:{repo}"
+        url = "https://api.github.com/search/code"
+        params = {"q": q, "per_page": min(max_results, 100)}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "parrot-gittoolkit",
+        }
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+
+        if (
+            response.status_code == 403
+            and response.headers.get("X-RateLimit-Remaining") == "0"
+        ):
+            return SearchCodeResult(
+                repository=repo,
+                query=query,
+                total_count=0,
+                items=[],
+                error="rate_limited",
+            )
+
+        if response.status_code != 200:
+            raise GitToolkitError(
+                f"GitHub Code Search failed: {response.status_code} {response.text}"
+            )
+
+        payload = response.json()
+        return SearchCodeResult(
+            repository=repo,
+            query=query,
+            total_count=int(payload.get("total_count", 0)),
+            items=list(payload.get("items", [])),
+        )
+
+    @tool_schema(SearchRepoCodeInput)
+    async def search_repo_code(
+        self,
+        query: str,
+        repository: Optional[str] = None,
+        max_results: int = 20,
+    ) -> "SearchCodeResult":
+        """Search code in the PR's repository via the GitHub Code Search API.
+
+        The ``repo:<owner>/<name>`` qualifier is automatically injected so the
+        search is scoped to the PR's own repository only — it never exposes
+        code from other repositories. Only the default branch is indexed by
+        GitHub's Code Search.
+
+        Use this tool when you suspect a changed function has callers or
+        related code in other files that are not shown in the PR diff. For
+        example: searching for usages of a renamed function, finding all
+        implementations of an interface, or locating a constant that was
+        moved.
+
+        Note: the Code Search API is rate-limited separately from the REST
+        API (30 requests/minute). When the quota is exceeded the tool returns
+        ``SearchCodeResult(error='rate_limited', items=[])`` without raising.
+
+        Args:
+            query: Code Search query (e.g. ``"def my_function"`` or
+                ``"class MyModel language:python"``). Do not include a
+                ``repo:`` qualifier — it is added automatically.
+            repository: Repository in ``owner/name`` format. Uses the toolkit
+                default when omitted.
+            max_results: Maximum number of results to return (1-100, default 20).
+
+        Returns:
+            A :class:`SearchCodeResult` with ``items`` containing raw GitHub
+            Code Search item dicts (``path``, ``name``, ``sha``, ``html_url``,
+            ``score``).
+
+        Example::
+
+            results = await toolkit.search_repo_code("class PRReviewResult")
+            for item in results.items:
+                print(item["path"], item["html_url"])
+        """
+        return await asyncio.to_thread(
+            self._search_repo_code_sync,
+            repository,
+            query,
+            max_results,
+        )
+
+    # ------------------------------------------------------------------
     # GitHub stats endpoints (FEAT-180 — Weekly Activity Report)
     # ------------------------------------------------------------------
 
@@ -1348,5 +2031,13 @@ __all__ = [
     "GetContributorStatsInput",
     "GetCommitActivityInput",
     "GetCodeFrequencyInput",
+    # FEAT-182 PR context retrieval models
+    "GetFileContentInput",
+    "ComparePRVersionsInput",
+    "SearchRepoCodeInput",
+    "FileContentResult",
+    "CompareVersionsResult",
+    "SearchCodeResult",
+    "_FileBlobCache",
 ]
 
