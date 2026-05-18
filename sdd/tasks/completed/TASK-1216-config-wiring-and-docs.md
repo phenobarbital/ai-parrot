@@ -279,10 +279,15 @@ time; if reloading is awkward, skip it.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-18
+**Notes**: Added three GITHUB_REVIEW_* constants to parrot/conf.py with correct types and
+safe defaults (getint/getboolean with fallback=, never default=). Updated docs/github-reviewer.md
+with the full "Weekly activity report" section covering schedule override, tunables table, sample
+output, architecture note, and privacy notice. Updated agents/git.py locally with new
+kwargs.setdefault lines for silent_weeks_threshold and use_llm_summary.
+Import sanity check passes; all 68 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: agents/git.py is gitignored (deployment-specific, not tracked in git).
+The file was updated locally for operators to copy but cannot be committed. GITHUB_REVIEW_WEEKLY_LOOKBACK_WEEKS
+is not forwarded to __init__ in v1 as documented in the task — reserved for future use.
