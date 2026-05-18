@@ -52,7 +52,7 @@
       "feature_id": "FEAT-183",
       "feature": "formregistry-multi-tenancy",
       "spec": "sdd/specs/formregistry-multi-tenancy.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "New script under scripts/; touches different files than core refactor but per-spec strategy keeps sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1241-bulk-yaml-fixture-tagger-script.md"
+      "completed_at": "2026-05-18T23:43:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1241-bulk-yaml-fixture-tagger-script.md"
     },
     {
       "id": "TASK-1242",
