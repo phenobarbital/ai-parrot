@@ -27,6 +27,7 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot>=0.24.51",
+    "PyGithub>=2.1",
 ]
 
 [project.optional-dependencies]
