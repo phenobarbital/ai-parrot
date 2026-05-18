@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,15 @@ class GenericReportComparator:
         if scanner == "cloudsploit":
             raw_baseline = baseline_bytes or json.dumps(baseline).encode()
             raw_current = current_bytes or json.dumps(current).encode()
-            dispatch_result = self._dispatch_to_parser(raw_baseline, raw_current, scanner)
+            try:
+                dispatch_result = self._dispatch_to_parser(raw_baseline, raw_current, scanner)
+            except Exception as exc:  # noqa: BLE001 — dispatch failure is non-fatal; fall back to generic diff
+                logger.warning(
+                    "Parser dispatch raised unexpectedly for scanner %r — falling back to generic diff: %s",
+                    scanner,
+                    exc,
+                )
+                dispatch_result = None
             if dispatch_result is not None:
                 return dispatch_result
 
@@ -133,13 +142,11 @@ class GenericReportComparator:
         """
         changes: list[dict] = []
         self._walk(baseline, current, path="", changes=changes)
-        added = sum(1 for c in changes if c["change_type"] == "added")
-        removed = sum(1 for c in changes if c["change_type"] == "removed")
-        changed = sum(1 for c in changes if c["change_type"] == "changed")
+        counter = Counter(c["change_type"] for c in changes)
         return {
-            "keys_added": added,
-            "keys_removed": removed,
-            "keys_changed": changed,
+            "keys_added": counter["added"],
+            "keys_removed": counter["removed"],
+            "keys_changed": counter["changed"],
             "changes": changes,
         }
 
@@ -279,7 +286,7 @@ class GenericReportComparator:
                 "changes": changes[: self._max_changes],
                 "truncated": truncated,
             }
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — dispatch failure is non-fatal; fall back to generic diff
             logger.warning(
                 "Parser dispatch failed for scanner %r — falling back to generic diff: %s",
                 scanner,

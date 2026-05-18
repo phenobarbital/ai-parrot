@@ -94,7 +94,7 @@ class S3ReportReaderToolkit(AbstractToolkit):
         pattern: str = "*.json",
         limit: int = 50,
     ) -> list[dict]:
-        """Works without catalog. List S3 objects under the given prefix.
+        """List S3 objects under the given prefix. Works without catalog.
 
         Browses raw S3 objects without using the catalog.  Useful for
         discovering reports that may not be indexed.
@@ -194,7 +194,11 @@ class S3ReportReaderToolkit(AbstractToolkit):
         Returns:
             Content dict.  Returns ``{"error": "..."}`` if UUID not found.
         """
-        content, scanner, ref = await self._fetch_content(report_id_or_path)
+        try:
+            content, scanner, ref = await self._fetch_content(report_id_or_path)
+        except Exception as exc:  # noqa: BLE001 — surface fetch errors as structured error dict
+            self.logger.warning("get_report_content fetch failed: %s", exc)
+            return {"error": str(exc), "hint": "Verify the report path or UUID exists."}
 
         # HTML content returned as-is
         content_type = ref.content_type if ref else None
@@ -219,7 +223,7 @@ class S3ReportReaderToolkit(AbstractToolkit):
             try:
                 parser = get_report_parser(scanner)
                 return parser.extract_section(content, section)
-            except (ValueError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "Parser section extraction failed for scanner %r section %r: %s",
                     scanner,
@@ -309,8 +313,12 @@ class S3ReportReaderToolkit(AbstractToolkit):
         Returns:
             Structured diff dict from ``GenericReportComparator.compare``.
         """
-        content_a, scanner_a, _ = await self._fetch_content(report_a)
-        content_b, scanner_b, _ = await self._fetch_content(report_b)
+        try:
+            content_a, scanner_a, _ = await self._fetch_content(report_a)
+            content_b, scanner_b, _ = await self._fetch_content(report_b)
+        except Exception as exc:  # noqa: BLE001 — surface fetch errors as structured error dict
+            self.logger.warning("compare_reports fetch failed: %s", exc)
+            return {"error": str(exc), "hint": "Verify both report paths or UUIDs exist."}
         # Prefer scanner from report_a; fall back to report_b
         scanner = scanner_a or scanner_b
         return self._comparator.compare(content_a, content_b, scanner=scanner)
@@ -333,7 +341,11 @@ class S3ReportReaderToolkit(AbstractToolkit):
         Returns:
             Structured metrics dict.
         """
-        content, scanner, ref = await self._fetch_content(report_id_or_path)
+        try:
+            content, scanner, ref = await self._fetch_content(report_id_or_path)
+        except Exception as exc:  # noqa: BLE001 — surface fetch errors as structured error dict
+            self.logger.warning("summarize_report fetch failed: %s", exc)
+            return {"error": str(exc), "hint": "Verify the report path or UUID exists."}
 
         # Catalog-backed summary
         if ref is not None:
@@ -361,43 +373,16 @@ class S3ReportReaderToolkit(AbstractToolkit):
                 "framework": None,
             }
 
-        # Detect findings arrays and severity fields
-        severity_breakdown: dict[str, int] = {}
-        total_findings = 0
-        categories: list[str] = []
-
-        def _detect_metrics(obj: object, depth: int = 0) -> None:
-            """Walk JSON to extract findings/severity metrics."""
-            if depth > 3:
-                return
-            nonlocal total_findings
-            if isinstance(obj, dict):
-                for key, val in obj.items():
-                    key_lower = key.lower()
-                    if key_lower in {"critical", "high", "medium", "low", "informational"}:
-                        if isinstance(val, int):
-                            severity_breakdown[key_lower] = val
-                    if key_lower in {"findings", "results", "checks", "issues"}:
-                        if isinstance(val, list):
-                            total_findings += len(val)
-                            if key_lower not in categories:
-                                categories.append(key_lower)
-                    if isinstance(val, (dict, list)):
-                        _detect_metrics(val, depth + 1)
-            elif isinstance(obj, list):
-                for item in obj[:5]:  # sample only
-                    _detect_metrics(item, depth + 1)
-
-        _detect_metrics(data)
+        metrics = self._extract_json_metrics(data)
 
         return {
             "content_type": content_type,
             "size_bytes": len(content),
             "scanner": scanner,
             "framework": None,
-            "severity_breakdown": severity_breakdown,
-            "total_findings": total_findings,
-            "categories": categories,
+            "severity_breakdown": metrics["severity_breakdown"],
+            "total_findings": metrics["total_findings"],
+            "categories": metrics["categories"],
         }
 
     async def get_report_url(
@@ -430,7 +415,11 @@ class S3ReportReaderToolkit(AbstractToolkit):
         except ValueError:
             path = report_id_or_path
 
-        url = await self._fm.get_file_url(path, expiry)
+        try:
+            url = await self._fm.get_file_url(path, expiry)
+        except Exception as exc:  # noqa: BLE001 — surface URL generation errors as structured error dict
+            self.logger.warning("get_report_url failed for path %r: %s", path, exc)
+            return {"error": str(exc), "hint": "Verify the report path exists and file manager is configured."}
         return {"url": url, "path": path, "expiry_seconds": expiry}
 
     async def list_report_categories(self) -> dict:
@@ -518,9 +507,72 @@ class S3ReportReaderToolkit(AbstractToolkit):
         # Path-based download
         buf = BytesIO()
         await self._fm.download_file(path, buf)
+        buf.seek(0)  # defensive: reset position before reading
         content = buf.getvalue()
         scanner = self._infer_scanner(path)
         return content, scanner, None
+
+    def _extract_json_metrics(
+        self,
+        data: dict,
+        max_depth: int = 3,
+        sample_size: int = 5,
+    ) -> dict:
+        """Walk a parsed JSON dict to extract findings and severity metrics.
+
+        Recursively traverses ``data`` up to ``max_depth`` levels deep,
+        collecting severity counts and findings array lengths.  To keep
+        runtime bounded, only the first ``sample_size`` items of any list
+        are sampled.
+
+        Args:
+            data: Parsed JSON document to inspect.
+            max_depth: Maximum recursion depth (default 3 — avoids deeply
+                nested documents blowing the call stack).
+            sample_size: Number of list elements sampled at each level
+                (default 5 — trades completeness for performance on large
+                reports).
+
+        Returns:
+            Dict with three keys:
+            - ``severity_breakdown``: mapping of severity level name
+              (``"critical"``, ``"high"``, etc.) to integer count.
+            - ``total_findings``: total number of finding entries found
+              across all known container keys.
+            - ``categories``: list of distinct container key names that
+              held findings arrays (e.g., ``["findings", "results"]``).
+        """
+        severity_breakdown: dict[str, int] = {}
+        total_findings = 0
+        categories: list[str] = []
+
+        def _walk(obj: object, depth: int) -> None:
+            nonlocal total_findings
+            if depth > max_depth:
+                return
+            if isinstance(obj, dict):
+                for key, val in obj.items():
+                    key_lower = key.lower()
+                    if key_lower in {"critical", "high", "medium", "low", "informational"}:
+                        if isinstance(val, int):
+                            severity_breakdown[key_lower] = val
+                    if key_lower in {"findings", "results", "checks", "issues"}:
+                        if isinstance(val, list):
+                            total_findings += len(val)
+                            if key_lower not in categories:
+                                categories.append(key_lower)
+                    if isinstance(val, (dict, list)):
+                        _walk(val, depth + 1)
+            elif isinstance(obj, list):
+                for item in obj[:sample_size]:
+                    _walk(item, depth + 1)
+
+        _walk(data, 0)
+        return {
+            "severity_breakdown": severity_breakdown,
+            "total_findings": total_findings,
+            "categories": categories,
+        }
 
     def _infer_scanner(self, path: str) -> str | None:
         """Infer scanner name from S3 key path convention.

@@ -205,14 +205,13 @@ class TestParserDispatch:
         assert result["comparison_mode"] == "generic"
 
     def test_dispatch_failure_fallback(self, comparator: GenericReportComparator) -> None:
-        """When parser dispatch raises an exception, falls back to generic diff."""
-        with patch(
-            "parrot_tools.s3.comparator.GenericReportComparator._dispatch_to_parser",
-            side_effect=RuntimeError("simulated failure"),
-        ):
-            # Even if we patch the method to raise, compare() handles it gracefully
-            # by not calling _dispatch_to_parser at all in non-cloudsploit mode
-            result = comparator.compare({"a": 1}, {"a": 2}, scanner="trivy")
+        """When _dispatch_to_parser raises, compare() falls back to generic diff."""
+        with patch.object(comparator, "_dispatch_to_parser", side_effect=RuntimeError("simulated failure")):
+            result = comparator.compare(
+                b'{"a": 1}',
+                b'{"a": 2}',
+                scanner="cloudsploit",
+            )
         assert result["comparison_mode"] == "generic"
 
     def test_dispatch_to_parser_returns_none_for_unknown(

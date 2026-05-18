@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-184 — Agnostic S3 Report Reader Toolkit
 **Spec**: `sdd/specs/agenttool-s3-readreports.spec.md`
-**Status**: pending
+**Status**: [x] done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-1239, TASK-1240

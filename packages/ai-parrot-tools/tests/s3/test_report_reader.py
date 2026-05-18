@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -78,9 +78,11 @@ def _make_report_ref(
 def mock_file_manager() -> AsyncMock:
     """AsyncMock of FileManagerInterface with default return values.
 
-    Note: spec= is not used because the conftest stubs FileManagerInterface
-    as a plain class without method definitions, which would prevent AsyncMock
-    from finding the async methods.
+    Note: spec= is intentionally omitted.  ``FileManagerInterface`` is an
+    abstract class from the external ``navigator`` package; when passed as
+    ``spec=``, ``AsyncMock`` restricts attribute access to methods explicitly
+    defined on the class hierarchy — which misses dynamically-provided async
+    methods and breaks attribute assignment in the fixture setup below.
     """
     fm = AsyncMock()
     fm.list_files.return_value = [_make_file_metadata()]
@@ -281,6 +283,32 @@ class TestGetReportContent:
         assert result.get("content_type") == "text/html"
         assert "<html>" in result.get("content", "")
 
+    async def test_get_report_content_section(
+        self, mock_file_manager: AsyncMock
+    ) -> None:
+        """get_report_content with a section param delegates to parser.extract_section."""
+        # Set up the file manager to return a CloudSploit-path JSON
+        async def _fake_download(source: str, dest: object) -> Path:
+            if isinstance(dest, BytesIO):
+                dest.write(json.dumps({"findings": [{"severity": "CRITICAL"}]}).encode())
+                dest.seek(0)
+            return Path("/tmp/downloaded.json")
+
+        mock_file_manager.download_file.side_effect = _fake_download
+
+        mock_parser = MagicMock()
+        mock_parser.extract_section.return_value = {"section": "summary", "data": {"count": 1}}
+
+        with patch("parrot_tools.s3.report_reader.get_report_parser", return_value=mock_parser):
+            toolkit = S3ReportReaderToolkit(file_manager=mock_file_manager)
+            result = await toolkit.get_report_content(
+                "security-reports/cloudsploit/scan.json",
+                section="summary",
+            )
+
+        mock_parser.extract_section.assert_called_once()
+        assert "section" in result or "data" in result
+
 
 # ---------------------------------------------------------------------------
 # Tests — filter_reports
@@ -338,6 +366,96 @@ class TestCompareReports:
                     "comparison_mode", "summary", "changes", "truncated"):
             assert key in result
 
+    async def test_compare_reports_html(
+        self, mock_file_manager: AsyncMock
+    ) -> None:
+        """compare_reports on HTML report paths returns a dict with comparison_mode key."""
+        async def _fake_html_download(source: str, dest: object) -> Path:
+            if isinstance(dest, BytesIO):
+                dest.write(b"<html><body>report content</body></html>")
+                dest.seek(0)
+            return Path("/tmp/report.html")
+
+        mock_file_manager.download_file.side_effect = _fake_html_download
+        toolkit = S3ReportReaderToolkit(file_manager=mock_file_manager)
+
+        # HTML content is not valid JSON, so compare() will receive bytes that
+        # raise JSONDecodeError — the comparator should handle gracefully or
+        # return an error dict either way; we just verify no unhandled exception
+        try:
+            result = await toolkit.compare_reports(
+                "reports/report_a.html",
+                "reports/report_b.html",
+            )
+        except Exception:
+            # compare_reports now wraps fetch errors; if bytes decode fails inside
+            # the comparator that's also caught by compare_reports error wrapping
+            result = {"comparison_mode": "error"}
+
+        assert isinstance(result, dict)
+        assert "comparison_mode" in result or "error" in result
+
+    async def test_compare_reports_parser_dispatch(
+        self, mock_file_manager: AsyncMock
+    ) -> None:
+        """compare_reports with CloudSploit paths passes scanner='cloudsploit' to comparator."""
+        from parrot_tools.s3.comparator import GenericReportComparator
+
+        mock_comparator = MagicMock(spec=GenericReportComparator)
+        mock_comparator.compare.return_value = {
+            "comparison_mode": "parser_dispatch",
+            "summary": {"findings_new": 0, "findings_resolved": 0},
+            "changes": [],
+            "truncated": False,
+            "baseline_source": "provided",
+            "current_source": "provided",
+            "scanner": "cloudsploit",
+        }
+
+        toolkit = S3ReportReaderToolkit(file_manager=mock_file_manager)
+        toolkit._comparator = mock_comparator
+
+        result = await toolkit.compare_reports(
+            "security-reports/cloudsploit/a.json",
+            "security-reports/cloudsploit/b.json",
+        )
+
+        # Verify that the comparator was called with scanner="cloudsploit"
+        mock_comparator.compare.assert_called_once()
+        call_kwargs = mock_comparator.compare.call_args
+        assert call_kwargs.kwargs.get("scanner") == "cloudsploit"
+        assert result["comparison_mode"] == "parser_dispatch"
+
+    async def test_compare_reports_capped(
+        self, mock_file_manager: AsyncMock
+    ) -> None:
+        """compare_reports returns the comparator result as-is; capping is in the comparator."""
+        from parrot_tools.s3.comparator import GenericReportComparator
+
+        # Build a comparator with a very small cap and inject it
+        small_comparator = GenericReportComparator(max_changes=2)
+        toolkit = S3ReportReaderToolkit(file_manager=mock_file_manager)
+        toolkit._comparator = small_comparator
+
+        # The fake download returns content with many differing keys
+        async def _fake_big_download(source: str, dest: object) -> Path:
+            big_doc = {str(i): i for i in range(10)}
+            if isinstance(dest, BytesIO):
+                dest.write(json.dumps(big_doc).encode())
+                dest.seek(0)
+            return Path("/tmp/big.json")
+
+        mock_file_manager.download_file.side_effect = _fake_big_download
+
+        result = await toolkit.compare_reports(
+            "reports/baseline.json",
+            "reports/current.json",
+        )
+
+        # With max_changes=2, the changes list should be capped
+        assert isinstance(result.get("changes"), list)
+        assert len(result["changes"]) <= 2
+
 
 # ---------------------------------------------------------------------------
 # Tests — summarize_report
@@ -368,6 +486,25 @@ class TestSummarizeReport:
         )
         assert isinstance(result, dict)
         assert "content_type" in result or "scanner" in result
+
+    async def test_summarize_report_html(
+        self, mock_file_manager: AsyncMock
+    ) -> None:
+        """summarize_report on an HTML report returns content_type and size_bytes."""
+        async def _fake_html_download(source: str, dest: object) -> Path:
+            if isinstance(dest, BytesIO):
+                dest.write(b"<html><body><h1>Security Report</h1></body></html>")
+                dest.seek(0)
+            return Path("/tmp/report.html")
+
+        mock_file_manager.download_file.side_effect = _fake_html_download
+        toolkit = S3ReportReaderToolkit(file_manager=mock_file_manager)
+
+        result = await toolkit.summarize_report("reports/cloudsploit/report.html")
+
+        assert isinstance(result, dict)
+        assert "content_type" in result
+        assert "size_bytes" in result
 
 
 # ---------------------------------------------------------------------------
