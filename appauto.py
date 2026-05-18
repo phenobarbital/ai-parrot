@@ -59,8 +59,13 @@ class Main(AppHandler):
         # the aiohttp router is still mutable. post_configure() runs on
         # the on_startup signal (router already frozen) so it can't add
         # routes itself; it just appends its listener to the dispatcher.
-        GitHubReviewer.setup_webhook_route(self.app)
+        github_hook = GitHubReviewer.setup_webhook_route(self.app)
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()
         auth.setup(self.app)  # configure this Auth system into App.
+        # GitHub signs its webhook deliveries with HMAC-SHA256, not Bearer
+        # tokens, so navigator-auth must let them through. The hook itself
+        # verifies the X-Hub-Signature-256 header (see
+        # parrot.core.hooks.github_webhook.GitHubWebhookHook).
+        auth.add_exclude_list(github_hook.url)

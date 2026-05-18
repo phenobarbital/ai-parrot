@@ -35,6 +35,10 @@ class GitHubWebhookHook(BaseHook):
             **kwargs,
         )
         self._config = config
+        # Public mirror of the route path. Operators wiring auth-exclusion
+        # lists (e.g. navigator-auth `add_exclude_list`) should read this
+        # instead of touching `_config`.
+        self.url: str = config.url
 
     async def start(self) -> None:
         self.logger.info(

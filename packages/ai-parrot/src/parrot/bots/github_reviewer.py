@@ -239,6 +239,16 @@ class GitHubReviewer(Agent):
         out to all listeners. ``handle_hook_event`` already filters by
         ``payload.repository``, so cross-repo noise is dropped per agent.
 
+        **Auth integration**: GitHub signs deliveries with HMAC-SHA256
+        (verified by :class:`GitHubWebhookHook`), not with Bearer tokens.
+        If your app uses an auth middleware (e.g. navigator-auth) you
+        must whitelist the returned hook's ``url`` so deliveries are not
+        rejected with a 401::
+
+            github_hook = GitHubReviewer.setup_webhook_route(app)
+            auth.setup(app)
+            auth.add_exclude_list(github_hook.url)
+
         Args:
             app: The aiohttp ``web.Application``.
             url: The route path. Must match what GitHub points its
