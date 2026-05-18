@@ -200,10 +200,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-19
+**Notes**: Simplified app.py to use `PostgresFormStorage(dsn=default_dsn, ...)` and `FormRegistry(app=self.app, storage=storage)`. Removed manual `app['form_registry']` assignment, pool creation/init in on_startup, and pool close in on_shutdown. Removed now-unused `import asyncpg`. Updated `setup_form_api()` in routes.py with `if "form_registry" not in app` guard.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
