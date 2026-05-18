@@ -92,7 +92,7 @@
       "feature_id": "FEAT-183",
       "feature": "formregistry-multi-tenancy",
       "spec": "sdd/specs/formregistry-multi-tenancy.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Depends on new signatures from TASK-1239; per-spec strategy keeps sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1243-caller-updates-api-ui-telegram.md"
+      "completed_at": "2026-05-18T23:50:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1243-caller-updates-api-ui-telegram.md"
     },
     {
       "id": "TASK-1244",
