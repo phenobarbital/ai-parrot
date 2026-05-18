@@ -52,7 +52,7 @@
       "feature_id": "FEAT-185",
       "feature": "refactor-formregistry",
       "spec": "sdd/specs/refactor-formregistry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Mirrors both TASK-1242 and TASK-1243 changes into the core package.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1244-core-package-mirror.md"
+      "completed_at": "2026-05-18T22:42:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1244-core-package-mirror.md"
     },
     {
       "id": "TASK-1245",
