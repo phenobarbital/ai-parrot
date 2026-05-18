@@ -45,13 +45,16 @@ class _MinimalReviewer:
             rf"\b{re.escape(jira_project)}-\d+\b"
         )
         self._reviewed_shas: Dict[Any, str] = {}
+        self._no_ticket_notified: set = set()
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
     _format_review_body = GitHubReviewer._format_review_body
     _format_alert_message = GitHubReviewer._format_alert_message
+    _format_no_ticket_comment = GitHubReviewer._format_no_ticket_comment
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
+    _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
 
@@ -444,6 +447,124 @@ class TestFetchTicketFields:
         r = _wire_reviewer()
         r.jira_toolkit = None
         assert asyncio.run(r._fetch_ticket("NAV-1")) is None
+
+
+class TestNoTicketComment:
+    def test_format_includes_project_and_author(self):
+        r = _MinimalReviewer(jira_project="NAV")
+        body = r._format_no_ticket_comment(
+            {"author": "octocat", "pr_title": "x", "pr_body": ""}
+        )
+        assert "@octocat" in body
+        assert "NAV-<number>" in body
+        assert "NAV-123" in body
+        assert "title or description" in body
+
+    def test_format_handles_missing_author(self):
+        r = _MinimalReviewer(jira_project="PARROT")
+        body = r._format_no_ticket_comment({"pr_title": "x", "pr_body": ""})
+        # No salutation prefix when author is missing.
+        assert "@" not in body.split("\n")[2]
+        assert "PARROT-<number>" in body
+
+    def test_review_posts_comment_when_no_ticket(self):
+        r = _wire_reviewer()
+        captured: Dict[str, Any] = {}
+
+        async def fake_add(**kwargs):
+            captured.update(kwargs)
+            return {"id": 42, "html_url": "https://github.com/x/y/issues/1#issuecomment-42"}
+
+        r.git_toolkit.add_pr_comment = fake_add
+
+        out = asyncio.run(
+            r.review_pull_request(
+                {
+                    "repository": "owner/repo",
+                    "pr_number": 17,
+                    "head_sha": "deadbeef",
+                    "pr_body": "no jira reference here",
+                    "pr_title": "drive-by fix",
+                    "author": "octocat",
+                }
+            )
+        )
+        assert out["status"] == "no_ticket"
+        assert out["comment"]["id"] == 42
+        assert captured["pr_number"] == 17
+        assert captured["repository"] == "owner/repo"
+        assert "NAV-<number>" in captured["body"]
+        assert "@octocat" in captured["body"]
+        # PR is now in the dedup set.
+        assert ("owner/repo", 17) in r._no_ticket_notified
+
+    def test_second_delivery_does_not_repost(self):
+        r = _wire_reviewer()
+        calls = 0
+
+        async def fake_add(**kwargs):
+            nonlocal calls
+            calls += 1
+            return {"id": calls}
+
+        r.git_toolkit.add_pr_comment = fake_add
+
+        payload = {
+            "repository": "owner/repo",
+            "pr_number": 17,
+            "head_sha": "sha-a",
+            "pr_body": "no ticket",
+            "pr_title": "",
+        }
+        asyncio.run(r.review_pull_request(payload))
+        # Different SHA but same PR — must still skip.
+        payload["head_sha"] = "sha-b"
+        out2 = asyncio.run(r.review_pull_request(payload))
+        assert calls == 1
+        # Second response has no `comment` key because we didn't post.
+        assert "comment" not in out2
+        assert out2["status"] == "no_ticket"
+
+    def test_skips_silently_when_git_toolkit_missing(self):
+        r = _wire_reviewer()
+        r.git_toolkit = None
+
+        out = asyncio.run(
+            r.review_pull_request(
+                {
+                    "repository": "owner/repo",
+                    "pr_number": 1,
+                    "pr_body": "",
+                    "pr_title": "no ticket",
+                }
+            )
+        )
+        assert out["status"] == "no_ticket"
+        assert "comment" not in out
+        # Did not mark as notified — a later config fix can still produce
+        # the comment on the next delivery.
+        assert r._no_ticket_notified == set()
+
+    def test_does_not_mark_when_post_fails(self):
+        r = _wire_reviewer()
+
+        async def fake_add(**kwargs):
+            raise RuntimeError("boom")
+
+        r.git_toolkit.add_pr_comment = fake_add
+
+        asyncio.run(
+            r.review_pull_request(
+                {
+                    "repository": "owner/repo",
+                    "pr_number": 99,
+                    "pr_body": "",
+                    "pr_title": "no ticket",
+                }
+            )
+        )
+        # Failure must NOT poison the dedup set; the next delivery retries.
+        assert r._no_ticket_notified == set()
 
 
 class TestSetupWebhookRoute:

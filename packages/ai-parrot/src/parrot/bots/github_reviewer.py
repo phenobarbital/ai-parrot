@@ -351,6 +351,10 @@ class GitHubReviewer(Agent):
         # Cheap and process-local; restart resets it (acceptable tradeoff —
         # GitHub will simply re-fire the latest synchronize event).
         self._reviewed_shas: Dict[Tuple[str, int], str] = {}
+        # PRs we already pinged about a missing Jira key. Dedup is per-PR
+        # (not per-SHA) — pushing more commits without adding the ticket
+        # must not spam the conversation. Cleared on process restart.
+        self._no_ticket_notified: set[Tuple[str, int]] = set()
 
     # ------------------------------------------------------------------
     # Wiring
@@ -637,7 +641,16 @@ class GitHubReviewer(Agent):
                 pr_number,
                 self.jira_project,
             )
-            return {"status": "no_ticket", "pr_number": pr_number}
+            outcome: Dict[str, Any] = {
+                "status": "no_ticket",
+                "pr_number": pr_number,
+            }
+            comment = await self._notify_missing_ticket(
+                repo=repo, pr_number=pr_number, payload=payload
+            )
+            if comment is not None:
+                outcome["comment"] = comment
+            return outcome
 
         ticket = await self._fetch_ticket(ticket_key)
         if ticket is None:
@@ -703,6 +716,71 @@ class GitHubReviewer(Agent):
             self._reviewed_shas[repo_key] = head_sha
 
         return outcome
+
+    async def _notify_missing_ticket(
+        self,
+        *,
+        repo: str,
+        pr_number: int,
+        payload: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Leave a single PR comment when no Jira ticket key is referenced.
+
+        Dedup is per-PR (not per-SHA): subsequent pushes without a ticket
+        do not produce more comments. The deduplication set lives in
+        memory and resets on process restart — that is intentional, so a
+        new deploy can re-ping a stale PR if needed.
+
+        Returns the API response from GitHub when a comment is posted,
+        ``None`` when posting was skipped (already commented, no toolkit,
+        post failed).
+        """
+        key = (repo.lower(), int(pr_number))
+        if key in self._no_ticket_notified:
+            return None
+        if self.git_toolkit is None:
+            self.logger.warning(
+                "GitHubReviewer: cannot comment about missing %s ticket on "
+                "%s#%s — git_toolkit is not configured.",
+                self.jira_project, repo, pr_number,
+            )
+            return None
+
+        body = self._format_no_ticket_comment(payload)
+        try:
+            response = await self.git_toolkit.add_pr_comment(
+                pr_number=pr_number,
+                body=body,
+                repository=repo,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: failed to post no-ticket comment on %s#%s: %s",
+                repo, pr_number, exc, exc_info=True,
+            )
+            return None
+
+        # Mark only on success so a transient API failure can be retried
+        # by the next delivery.
+        self._no_ticket_notified.add(key)
+        return response
+
+    def _format_no_ticket_comment(self, payload: Dict[str, Any]) -> str:
+        """Render the comment posted when the PR references no Jira ticket."""
+        author = payload.get("author")
+        salutation = f"@{author} " if author else ""
+        return (
+            f"### Automated review skipped — no Jira ticket referenced\n\n"
+            f"{salutation}This pull request does not reference a "
+            f"`{self.jira_project}-<number>` Jira ticket in its title or "
+            f"description, so the automated reviewer cannot compare the "
+            f"changes against the acceptance criteria.\n\n"
+            f"**To unblock review**, edit the PR title or description to "
+            f"include a key from the `{self.jira_project}` project — for "
+            f"example `{self.jira_project}-123` — and push a new commit "
+            f"to re-trigger the reviewer.\n\n"
+            f"_Posted by the GitHubReviewer agent._"
+        )
 
     async def _fetch_ticket(self, ticket_key: str) -> Optional[Dict[str, Any]]:
         if self.jira_toolkit is None:
