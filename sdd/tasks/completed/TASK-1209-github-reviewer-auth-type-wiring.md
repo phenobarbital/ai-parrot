@@ -439,8 +439,6 @@ class TestBuildGitToolkitAuthType:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Rewrote `_build_git_toolkit` in `github_reviewer.py` to read `GITHUB_AUTH_TYPE` (default `"pat"`). PAT path is bit-identical to original. App path reads GITHUB_APP_ID/INSTALLATION_ID/PRIVATE_KEY or PRIVATE_KEY_PATH, fails closed with error log if any missing. Unknown auth_type fails closed. All exceptions from `GitToolkit.__init__` are caught and logged. Created `packages/ai-parrot/tests/test_github_reviewer_auth.py` with 9 tests. All pass, ruff clean.

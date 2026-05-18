@@ -72,7 +72,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on the new `GitToolkit` constructor signature delivered in TASK-1208. Different file (`github_reviewer.py`) but the contract is the toolkit's kwargs.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1209-github-reviewer-auth-type-wiring.md"
+      "completed_at": "2026-05-18T01:24:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1209-github-reviewer-auth-type-wiring.md"
     }
   ]
 }
