@@ -101,6 +101,8 @@ class OpenAIClient(AbstractClient):
     _default_model: str = "gpt-5-mini"
     _fallback_model: str = 'gpt-4.1-nano'
     _lightweight_model: str = "gpt-4.1"
+    # FEAT-181: OpenAI caches prefixes ≥1024 tokens automatically
+    _min_cache_tokens: int = 1024
 
     def __init__(
         self,
@@ -137,6 +139,30 @@ class OpenAIClient(AbstractClient):
             )
             _warned.add(s)
         return s
+
+    def _apply_cache_hints(self, payload: dict, segments: list) -> dict:
+        """OpenAI cache translator — FEAT-181.
+
+        OpenAI caches prompt prefixes ≥ 1024 tokens automatically; no API
+        shape change is required.  When segments are provided, this method
+        concatenates them back into a single string so that the existing
+        ``system_prompt`` key in the payload carries exactly what the caller
+        expects (a plain string).
+
+        Args:
+            payload: The request payload dict being assembled.
+            segments: List of ``CacheableSegment`` produced by
+                ``PromptBuilder.build_segments()``.  May be empty.
+
+        Returns:
+            The (potentially updated) payload dict.
+        """
+        if not segments:
+            return payload
+        # OpenAI prefix caching is automatic — just reconstruct the string.
+        combined = "\n\n".join(s.text for s in segments)
+        payload["system_prompt"] = combined
+        return payload
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Detect OpenAI capacity errors.
