@@ -283,10 +283,10 @@ class TestFormatWeeklyActivityHtml:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-18
+**Notes**: Added _format_weekly_activity_html to GitHubReviewer. Uses html.escape on all
+interpolations, respects Telegram HTML whitelist, stays under 4096 chars with default top_n=10.
+All 8 tests in TestFormatWeeklyActivityHtml pass; no regressions.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: None.

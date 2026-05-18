@@ -72,7 +72,7 @@
       "feature_id": "FEAT-180",
       "feature": "github-repo-weekly-activity-report",
       "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Consumes WeeklyActivitySummary from TASK-1212; same file as 1212/1214/1215.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1213-weekly-html-renderer.md"
+      "completed_at": "2026-05-18T02:06:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1213-weekly-html-renderer.md"
     },
     {
       "id": "TASK-1214",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-180",
       "feature": "github-repo-weekly-activity-report",
       "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Independent of TASK-1213 conceptually, but edits the same file (github_reviewer.py); per-spec worktree runs them sequentially.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1214-weekly-llm-summarizer.md"
+      "completed_at": "2026-05-18T02:06:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1214-weekly-llm-summarizer.md"
     },
     {
       "id": "TASK-1215",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-180",
       "feature": "github-repo-weekly-activity-report",
       "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,8 @@
       "parallelism_notes": "Composes everything from the prior modules; must run last among the implementation tasks.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:47:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1215-report-weekly-activity-orchestrator.md"
+      "completed_at": "2026-05-18T02:06:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1215-report-weekly-activity-orchestrator.md"
     },
     {
       "id": "TASK-1216",

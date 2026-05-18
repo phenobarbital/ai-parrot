@@ -236,10 +236,12 @@ class TestLLMSummarizeWeekly:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-18
+**Notes**: Added _WEEKLY_LLM_SYSTEM_PROMPT as a module-level constant (not a class attribute)
+so that methods bound to test stubs work correctly. Added _llm_summarize_weekly async method
+that calls self.ask() with the system prompt and raises WeeklyLLMSummarizationError on failure.
+Added _wrap_llm_prose_in_html_envelope helper. All 4 tests in TestLLMSummarizeWeekly pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**:
+**Deviations from spec**: _WEEKLY_LLM_SYSTEM_PROMPT placed at module level rather than as a
+class attribute for testability — functionally equivalent.
