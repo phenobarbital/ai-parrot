@@ -515,7 +515,7 @@ from pydantic import BaseModel, Field, model_validator   # line 37
   reduces tool-call count toward the cap but widens the schema. —
   *Owner: spec phase*
 - [ ] Do we need a metric/log line every time a review hits the
-  iteration cap, so we can tune it post-deployment? — *Owner: spec phase*
+  iteration cap, so we can tune it post-deployment? — *Owner: spec phase*: yes
 - [ ] Should the new tools surface `last_modified` / `commit_author` /
   `commit_message` of the file at the ref for additional review signal,
-  or keep the payload minimal? — *Owner: spec phase*
+  or keep the payload minimal? — *Owner: spec phase*: extract commit_author for additional review info
