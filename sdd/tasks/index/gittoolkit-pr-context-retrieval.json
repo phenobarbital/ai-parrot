@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-18T18:35:15+00:00",
   "tasks": [
     {
       "id": "TASK-1217",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "All FEAT-182 tasks edit gittoolkit.py or github_reviewer.py; per-spec isolation per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1217-pydantic-models.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1217-pydantic-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1218",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Same-file edits with TASK-1217; per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1218-file-blob-cache.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1218-file-blob-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1219",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Depends on models + cache; same file.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1219-get-file-content-tool.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1219-get-file-content-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1220",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Depends on get_file_content_at_ref; same file.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1220-compare-pr-versions-tool.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1220-compare-pr-versions-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1221",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Same file as 1219/1220; could parallel against 1220 but per-spec isolation keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1221-search-repo-code-tool.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1221-search-repo-code-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1222",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +129,9 @@
       "parallelism_notes": "Edits github_reviewer.py once the 3 tools land.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1222-reviewer-tool-calling-loop.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1222-reviewer-tool-calling-loop.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1223",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Final closing task.",
       "assigned_to": null,
       "started_at": "2026-05-18T14:17:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1223-integration-tests-and-docs.md"
+      "completed_at": "2026-05-18T18:35:15+00:00",
+      "file": "sdd/tasks/active/TASK-1223-integration-tests-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
