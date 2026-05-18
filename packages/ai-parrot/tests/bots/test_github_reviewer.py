@@ -63,6 +63,7 @@ class _MinimalReviewer:
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
 
@@ -420,6 +421,69 @@ class TestReviewPullRequestDedup:
         assert out["status"] == "reviewed"
         assert out["approve"] is True
         assert r._reviewed_shas[("owner/repo", 9)] == "deadbeef"
+
+    def test_tool_call_cap_warning_logged(self):
+        """When tool_calls >= max_review_tool_calls, a WARNING is emitted.
+
+        This test verifies the cap-enforcement detection path: even if the
+        underlying LLM client does not honour max_iterations, the post-call
+        count check catches it and logs a WARNING so operators know the cap was
+        hit.
+
+        It also verifies that max_iterations is passed to self.ask() as
+        max_review_tool_calls + 1 (per the FEAT-182 spec).
+        """
+        r = _wire_reviewer()
+        r.max_review_tool_calls = 2
+        # Bind the real _ask_llm_for_review so we exercise the actual logic.
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+
+        # Fake tool-call objects — each has a 'name' attribute.
+        class _FakeTC:
+            def __init__(self, name):
+                self.name = name
+
+        # Simulate an ask() that returns a response with exactly max_review_tool_calls
+        # tool calls (triggering the warning).
+        class _FakeResponse:
+            tool_calls = [_FakeTC("get_file_content_at_ref"), _FakeTC("search_repo_code")]
+            output = PRReviewResult(
+                jira_key="NAV-1",
+                discrepancies=[],
+                summary="looks good",
+                approve=True,
+            )
+
+        captured_max_iterations: List[int] = []
+
+        async def fake_ask(question, structured_output, max_iterations, **kw):
+            captured_max_iterations.append(max_iterations)
+            return _FakeResponse()
+
+        r.ask = fake_ask  # type: ignore[assignment]
+        r._ac_field_id = "customfield_10100"
+        r._fetch_ticket = AsyncMock(
+            return_value={"fields": {"summary": "S", "description": "D"}}
+        )
+        r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
+
+        out = asyncio.run(
+            r.review_pull_request(
+                {
+                    "repository": "owner/repo",
+                    "pr_number": 5,
+                    "head_sha": "cap-sha",
+                    "pr_body": "Fixes NAV-5",
+                    "pr_title": "",
+                }
+            )
+        )
+        # max_iterations must be max_review_tool_calls + 1 as specified.
+        assert captured_max_iterations == [r.max_review_tool_calls + 1]
+        # Review completed; warning about cap was logged.
+        r.logger.warning.assert_called_once()
+        warning_args = r.logger.warning.call_args[0]
+        assert "cap" in warning_args[0].lower() or "cap" in str(warning_args).lower()
 
 
 class TestFetchTicketFields:

@@ -1065,6 +1065,12 @@ class GitHubReviewer(Agent):
             "Compare them and return a PRReviewResult JSON object."
         )
 
+        # FEAT-182: pass max_iterations to the LLM client to enforce the cap.
+        # base.py's ask() now forwards max_iterations to any client whose
+        # ask() signature declares the parameter (currently Google/Gemini only).
+        # For other backends the cap is not enforced at the client level, but
+        # the post-call tool-count check below will emit a WARNING when
+        # self.max_review_tool_calls is reached.
         try:
             response = await self.ask(
                 question=question,
