@@ -94,11 +94,20 @@ class DatabaseFormTool(AbstractTool):
     )
     args_schema = DatabaseFormInput
 
-    def __init__(self, registry: FormRegistry, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        registry: FormRegistry,
+        *,
+        tenant: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         """Initialize DatabaseFormTool.
 
         Args:
             registry: FormRegistry where the generated FormSchema will be registered.
+            tenant: Optional tenant slug to use when registering the loaded form.
+                When ``None``, :class:`FormRegistry` falls back to its configured
+                ``default_tenant``.
             **kwargs: Additional keyword arguments forwarded to AbstractTool.
 
         Raises:
@@ -119,6 +128,7 @@ class DatabaseFormTool(AbstractTool):
             )
         super().__init__(**kwargs)
         self._registry = registry
+        self._tenant = tenant
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -210,7 +220,7 @@ class DatabaseFormTool(AbstractTool):
             )
 
         # 5. Register
-        await self._registry.register(form, persist=persist)
+        await self._registry.register(form, persist=persist, tenant=self._tenant)
 
         self.logger.info(
             "Loaded form %s via service=%s (formid=%s, orgid=%s) — %d sections",
