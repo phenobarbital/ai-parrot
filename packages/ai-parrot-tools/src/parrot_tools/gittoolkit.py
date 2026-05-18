@@ -55,6 +55,38 @@ class GitToolkitInput(BaseModel):
         default=None,
         description="Personal access token with repo scope for GitHub calls.",
     )
+    auth_type: Literal["pat", "github_app"] = Field(
+        default="pat",
+        description=(
+            "Authentication backend. 'pat' uses github_token; "
+            "'github_app' uses app_id + installation_id + private key."
+        ),
+    )
+    app_id: Optional[int] = Field(
+        default=None,
+        description="GitHub App ID (required when auth_type='github_app').",
+    )
+    installation_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Installation ID for the org/account the App is installed in "
+            "(required when auth_type='github_app')."
+        ),
+    )
+    private_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "PEM contents of the App's private key. Mutually exclusive "
+            "with private_key_path."
+        ),
+    )
+    private_key_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filesystem path to the App's private key PEM. Mutually "
+            "exclusive with private_key."
+        ),
+    )
 
 
 class GitPatchFile(BaseModel):
@@ -324,6 +356,23 @@ class _GitHubAppTokenProvider:
             self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
 
 
+def _coerce_int(value: Optional[str]) -> Optional[int]:
+    """Coerce a string env-var value to int, returning None for empty/missing.
+
+    Args:
+        value: String value to coerce, or None.
+
+    Returns:
+        Integer value, or None if value is None, empty, or non-numeric.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class GitToolkit(AbstractToolkit):
     """Toolkit dedicated to Git patch generation and GitHub pull requests."""
 
@@ -334,8 +383,34 @@ class GitToolkit(AbstractToolkit):
         default_repository: Optional[str] = None,
         default_branch: str = "main",
         github_token: Optional[str] = None,
+        auth_type: Literal["pat", "github_app"] = "pat",
+        app_id: Optional[int] = None,
+        installation_id: Optional[int] = None,
+        private_key: Optional[str] = None,
+        private_key_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
+        """Initialise the Git/GitHub toolkit.
+
+        Args:
+            default_repository: Default repo in ``owner/name`` format.
+            default_branch: Fallback branch for pull requests.
+            github_token: PAT for GitHub API calls (required in pat mode).
+            auth_type: Authentication backend — ``'pat'`` (default) or
+                ``'github_app'``.
+            app_id: GitHub App ID (required when auth_type='github_app').
+            installation_id: Installation ID for the org/account the App is
+                installed in (required when auth_type='github_app').
+            private_key: PEM contents of the App's private key. Mutually
+                exclusive with ``private_key_path``.
+            private_key_path: Filesystem path to the App's private key PEM.
+                Mutually exclusive with ``private_key``.
+            **kwargs: Forwarded to the base class.
+
+        Raises:
+            GitToolkitError: When ``auth_type`` is invalid or required App-mode
+                fields are missing / mutually exclusive constraints are violated.
+        """
         super().__init__(**kwargs)
 
         self.default_repository = (
@@ -347,6 +422,89 @@ class GitToolkit(AbstractToolkit):
             default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
         )
         self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+
+        self.auth_type: Literal["pat", "github_app"] = auth_type
+        if self.auth_type not in ("pat", "github_app"):
+            raise GitToolkitError(
+                f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'."
+            )
+
+        # Always initialise these attributes; None in PAT mode.
+        self.app_id: Optional[int] = app_id or _coerce_int(os.getenv("GITHUB_APP_ID"))
+        self.installation_id: Optional[int] = (
+            installation_id or _coerce_int(os.getenv("GITHUB_APP_INSTALLATION_ID"))
+        )
+        self._private_key_pem: Optional[str] = None
+        self._token_provider: Optional[_GitHubAppTokenProvider] = None
+
+        if self.auth_type == "github_app":
+            if not self.app_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires app_id (or GITHUB_APP_ID env)."
+                )
+            if not self.installation_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires installation_id (or "
+                    "GITHUB_APP_INSTALLATION_ID env)."
+                )
+
+            inline_pem = private_key or os.getenv("GITHUB_APP_PRIVATE_KEY")
+            pem_path = private_key_path or os.getenv("GITHUB_APP_PRIVATE_KEY_PATH")
+            if inline_pem and pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app': set EITHER private_key OR "
+                    "private_key_path, not both."
+                )
+            if not inline_pem and not pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires private_key or private_key_path "
+                    "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
+                )
+            if pem_path:
+                try:
+                    with open(pem_path, "r", encoding="utf-8") as fh:
+                        inline_pem = fh.read()
+                except OSError as exc:
+                    raise GitToolkitError(
+                        f"Could not read GitHub App private key from {pem_path}: {exc}"
+                    ) from exc
+
+            # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
+            inline_pem = inline_pem.replace("\\n", "\n")  # type: ignore[union-attr]
+            self._private_key_pem = inline_pem
+
+            self._token_provider = _GitHubAppTokenProvider(
+                app_id=self.app_id,
+                installation_id=self.installation_id,
+                private_key_pem=inline_pem,
+            )
+
+    # ------------------------------------------------------------------
+    # Bearer token resolution
+    # ------------------------------------------------------------------
+    def _bearer_token(self) -> str:
+        """Return the bearer token for the next GitHub API call.
+
+        In ``pat`` mode, returns ``self.github_token`` and raises when it is
+        absent. In ``github_app`` mode, delegates to the token provider which
+        mints / caches installation access tokens transparently.
+
+        Returns:
+            A valid bearer token string.
+
+        Raises:
+            GitToolkitError: When no token is available (PAT mode with no token
+                set) or when the App token provider fails to mint a token.
+        """
+        if self.auth_type == "github_app":
+            assert self._token_provider is not None
+            return self._token_provider.get_token()
+        # PAT mode
+        if not self.github_token:
+            raise GitToolkitError(
+                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+            )
+        return self.github_token
 
     # ------------------------------------------------------------------
     # Patch generation helpers
@@ -456,11 +614,7 @@ class GitToolkit(AbstractToolkit):
                 "A target repository is required (pass repository or configure default)."
             )
 
-        token = self.github_token
-        if not token:
-            raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
-            )
+        token = self._bearer_token()
 
         branch = base_branch or self.default_branch
         return _GitHubContext(repository=repo, base_branch=branch, token=token)
@@ -650,11 +804,7 @@ class GitToolkit(AbstractToolkit):
         return repo
 
     def _resolve_token(self) -> str:
-        if not self.github_token:
-            raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
-            )
-        return self.github_token
+        return self._bearer_token()
 
     def _get_pull_request_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
         repo = self._resolve_repository(repository)

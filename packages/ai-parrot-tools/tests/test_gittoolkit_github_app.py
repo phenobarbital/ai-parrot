@@ -1,15 +1,24 @@
-"""Unit tests for _GitHubAppTokenProvider (FEAT-179, TASK-1207)."""
+"""Unit tests for _GitHubAppTokenProvider and GitToolkit auth modes (FEAT-179).
+
+TASK-1207: TestGitHubAppTokenProvider
+TASK-1208: TestGitToolkitAuthMode
+"""
 from __future__ import annotations
 
+import asyncio
 import datetime as _dt
-from unittest.mock import patch, MagicMock
+import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from parrot_tools.gittoolkit import GitToolkitError
-# _GitHubAppTokenProvider is private — import via attribute access on the module:
 from parrot_tools import gittoolkit as gt
+from parrot_tools.gittoolkit import GitToolkit, GitToolkitError
 
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def fake_pem() -> str:
@@ -30,6 +39,16 @@ def _mock_installation_auth(token: str, expires_in_seconds: int) -> MagicMock:
     )
     return inst
 
+
+# Sentinel PEM used across TASK-1208 tests.
+PEM_SENTINEL = (
+    "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n"
+)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1207: _GitHubAppTokenProvider
+# ---------------------------------------------------------------------------
 
 class TestGitHubAppTokenProvider:
 
@@ -94,3 +113,173 @@ class TestGitHubAppTokenProvider:
             provider.get_token()
         auth_mod.AppAuth.assert_called_once_with(12345, fake_pem)
         gi_cls.assert_called_once_with(auth=auth_mod.AppAuth.return_value)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1208: GitToolkit auth_type plumbing
+# ---------------------------------------------------------------------------
+
+class TestGitToolkitAuthMode:
+
+    # --- PAT mode regression -----------------------------------------
+
+    def test_pat_mode_default(self):
+        """auth_type defaults to 'pat' and existing usage works."""
+        tk = GitToolkit(default_repository="o/r", github_token="pat_xxx")
+        assert tk.auth_type == "pat"
+        assert tk._token_provider is None
+        assert tk._bearer_token() == "pat_xxx"
+
+    def test_pat_mode_missing_token_raises_on_demand(self):
+        """PAT mode does NOT raise at construction; raises on first call."""
+        env = {k: v for k, v in os.environ.items() if k != "GITHUB_TOKEN"}
+        with patch.dict(os.environ, env, clear=True):
+            tk = GitToolkit(default_repository="o/r")
+            # Construction succeeds
+            assert tk.auth_type == "pat"
+            with pytest.raises(GitToolkitError, match="personal access token"):
+                tk._bearer_token()
+
+    def test_pat_mode_ignores_app_kwargs(self):
+        """auth_type='pat' silently accepts (ignores) App-mode kwargs."""
+        tk = GitToolkit(
+            default_repository="o/r",
+            github_token="pat_xxx",
+            app_id=12345,
+            installation_id=67890,
+            private_key=PEM_SENTINEL,
+        )
+        assert tk.auth_type == "pat"
+        assert tk._token_provider is None
+
+    # --- auth_type validation ----------------------------------------
+
+    def test_invalid_auth_type_raises(self):
+        with pytest.raises(GitToolkitError, match="Unsupported auth_type"):
+            GitToolkit(default_repository="o/r", auth_type="oauth")  # type: ignore[arg-type]
+
+    # --- App-mode required fields ------------------------------------
+
+    def test_app_mode_missing_app_id_raises(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID",
+                            "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH")}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(GitToolkitError, match="app_id"):
+                GitToolkit(
+                    default_repository="o/r",
+                    auth_type="github_app",
+                    installation_id=67890,
+                    private_key=PEM_SENTINEL,
+                )
+
+    def test_app_mode_missing_installation_id_raises(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID",
+                            "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH")}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(GitToolkitError, match="installation_id"):
+                GitToolkit(
+                    default_repository="o/r",
+                    auth_type="github_app",
+                    app_id=12345,
+                    private_key=PEM_SENTINEL,
+                )
+
+    def test_app_mode_missing_key_raises(self):
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID",
+                            "GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH")}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(GitToolkitError, match="private_key"):
+                GitToolkit(
+                    default_repository="o/r",
+                    auth_type="github_app",
+                    app_id=12345,
+                    installation_id=67890,
+                )
+
+    def test_app_mode_rejects_both_keys(self, tmp_path):
+        key_file = tmp_path / "key.pem"
+        key_file.write_text(PEM_SENTINEL)
+        with pytest.raises(GitToolkitError, match="EITHER"):
+            GitToolkit(
+                default_repository="o/r",
+                auth_type="github_app",
+                app_id=12345,
+                installation_id=67890,
+                private_key=PEM_SENTINEL,
+                private_key_path=str(key_file),
+            )
+
+    # --- App-mode happy path -----------------------------------------
+
+    def test_app_mode_builds_token_provider(self):
+        tk = GitToolkit(
+            default_repository="o/r",
+            auth_type="github_app",
+            app_id=12345,
+            installation_id=67890,
+            private_key=PEM_SENTINEL,
+        )
+        assert tk.auth_type == "github_app"
+        assert isinstance(tk._token_provider, gt._GitHubAppTokenProvider)
+
+    def test_app_mode_loads_pem_from_path(self, tmp_path):
+        key_file = tmp_path / "key.pem"
+        key_file.write_text(PEM_SENTINEL)
+        tk = GitToolkit(
+            default_repository="o/r",
+            auth_type="github_app",
+            app_id=12345,
+            installation_id=67890,
+            private_key_path=str(key_file),
+        )
+        assert tk._private_key_pem == PEM_SENTINEL
+
+    def test_app_mode_replaces_literal_backslash_n(self):
+        """Env-injected PEMs with literal '\\n' are normalised to real newlines."""
+        pem_with_escapes = (
+            "-----BEGIN PRIVATE KEY-----\\nFAKE\\n-----END PRIVATE KEY-----\\n"
+        )
+        tk = GitToolkit(
+            default_repository="o/r",
+            auth_type="github_app",
+            app_id=12345,
+            installation_id=67890,
+            private_key=pem_with_escapes,
+        )
+        assert "\\n" not in tk._private_key_pem
+        assert "\n" in tk._private_key_pem
+
+    # --- _bearer_token routing ---------------------------------------
+
+    def test_bearer_token_app_mode_delegates_to_provider(self):
+        tk = GitToolkit(
+            default_repository="o/r",
+            auth_type="github_app",
+            app_id=12345,
+            installation_id=67890,
+            private_key=PEM_SENTINEL,
+        )
+        with patch.object(tk._token_provider, "get_token", return_value="ghs_xxx"):
+            assert tk._bearer_token() == "ghs_xxx"
+
+    def test_request_uses_app_bearer(self):
+        """End-to-end: an HTTP method emits Authorization: Bearer <app-token>."""
+        tk = GitToolkit(
+            default_repository="o/r",
+            auth_type="github_app",
+            app_id=12345,
+            installation_id=67890,
+            private_key=PEM_SENTINEL,
+        )
+        with patch.object(tk._token_provider, "get_token", return_value="ghs_xxx"):
+            with patch("parrot_tools.gittoolkit.requests.request") as req:
+                mock_resp = MagicMock()
+                mock_resp.status_code = 200
+                mock_resp.json.return_value = {}
+                req.return_value = mock_resp
+                asyncio.run(tk.get_pull_request(pr_number=42))
+        call = req.call_args
+        assert call.kwargs["headers"]["Authorization"] == "Bearer ghs_xxx"
