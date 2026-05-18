@@ -112,7 +112,10 @@ def setup_form_api(
             upload handler will create a default instance on first use.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
-    app["form_registry"] = registry
+    # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
+    # provided — avoids overwriting with a different reference).
+    if "form_registry" not in app:
+        app["form_registry"] = registry
 
     # Stash REST-field services (FEAT-170). Both may be None; the upload
     # handler resolves defaults lazily on first request.
