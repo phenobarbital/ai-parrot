@@ -52,7 +52,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on TASK-1217 only (for PromptLayer.cacheable). Touches conf.py and a new file — no file overlap with TASK-1218",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1219-agent-context-loader-and-layer.md"
+      "completed_at": "2026-05-18T13:19:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1219-agent-context-loader-and-layer.md"
     },
     {
       "id": "TASK-1220",
