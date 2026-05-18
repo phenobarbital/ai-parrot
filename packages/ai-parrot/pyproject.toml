@@ -71,7 +71,7 @@ dependencies = [
     "aiohttp-sse-client==0.2.1",
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
-    "urllib3==2.6.3",
+    "urllib3==2.7.0",
     "aioquic==1.3.0",
     "pylsqpack==0.3.23",
     # API / OpenAPI tools
@@ -452,6 +452,20 @@ filesystem-transport-full = [
 matrix = [
     "mautrix>=0.20",
     "python-olm>=3.2.16",
+]
+
+# OpenTelemetry distributed tracing (FEAT-176 — lifecycle events)
+otel = [
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+]
+
+# Developer / CI tooling (not shipped to end users)
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-benchmark>=4.0",
+    "ruff>=0.4",
 ]
 
 # Convenience groups

@@ -26,7 +26,8 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.50",
+    "ai-parrot>=0.24.51",
+    "PyGithub>=2.1",
 ]
 
 [project.optional-dependencies]

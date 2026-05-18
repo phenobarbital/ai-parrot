@@ -351,22 +351,39 @@ class PdfRenderer(AbstractFormRenderer):
                 checked=bool(prefilled_value),
             )
         elif field.field_type == FieldType.SELECT:
-            options = self._make_options(field)
+            # ReportLab's _textfield only initializes `lbextras` inside the
+            # `if value:` branch — passing an empty value crashes with
+            # UnboundLocalError. Seed with a real option value, and ensure
+            # the empty-options fallback also carries a non-empty value.
+            options = self._make_options(field) or [("(none)", "none")]
+            default_value = prefilled_value or options[0][1]
             form.choice(
                 name=field.field_id,
                 tooltip=label,
-                options=options or [("(none)", "")],
+                options=options,
                 x=x, y=y, width=width, height=height, fontSize=10,
-                value=prefilled_value or (options[0][1] if options else ""),
+                value=default_value,
             )
         elif field.field_type == FieldType.MULTI_SELECT:
-            options = self._make_options(field)
+            options = self._make_options(field) or [("(none)", "none")]
+            # Prefill can arrive as a list of values; reportlab accepts
+            # list-or-str and reconciles it against `options`. Fall back to
+            # the first option value when nothing is prefilled to dodge the
+            # same `lbextras` UnboundLocalError as SELECT above.
+            raw_prefill = (
+                prefilled.get(field.field_id) if prefilled else None
+            )
+            if isinstance(raw_prefill, (list, tuple)) and raw_prefill:
+                default_value: Any = [str(v) for v in raw_prefill]
+            else:
+                default_value = prefilled_value or options[0][1]
             form.listbox(
                 name=field.field_id,
                 tooltip=label,
-                options=options or [("(none)", "")],
+                options=options,
                 x=x, y=y, width=width, height=height * 3, fontSize=10,
                 fieldFlags="multiSelect",
+                value=default_value,
             )
             cursor_y -= height * 2  # listbox takes 3x vertical space
         elif field.field_type == FieldType.TEXT_AREA:

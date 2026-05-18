@@ -169,6 +169,9 @@ if "parrot.utils.parsers.toml" not in sys.modules:
 for _mod_name in (
     "parrot.models.responses",
     "parrot.clients.base",
+    # FEAT-176: ensure the real parrot.bots.abstract (with EventEmitterMixin)
+    # is loaded before the test conftest installs its lightweight stub.
+    "parrot.bots.abstract",
 ):
     if _mod_name not in sys.modules:
         try:

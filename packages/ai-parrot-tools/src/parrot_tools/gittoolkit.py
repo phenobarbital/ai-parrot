@@ -13,8 +13,9 @@ The implementation deliberately mirrors the structure of
 ``AbstractToolkit`` base class—so that it can be dropped into existing agent
 configurations with minimal friction.
 
-Only standard library modules (plus :mod:`requests` and :mod:`pydantic`, which
-are already dependencies of Parrot) are required.
+Only standard library modules (plus :mod:`requests`, :mod:`pydantic`, which
+are already dependencies of Parrot, and ``PyGithub>=2.1`` for GitHub App
+authentication) are required.
 """
 
 from __future__ import annotations
@@ -23,12 +24,14 @@ import asyncio
 import base64
 import datetime as _dt
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
 
 import difflib
 
 import requests
+from github import Auth, GithubIntegration
 from pydantic import BaseModel, Field, model_validator
 
 from .decorators import tool_schema
@@ -52,6 +55,38 @@ class GitToolkitInput(BaseModel):
     github_token: Optional[str] = Field(
         default=None,
         description="Personal access token with repo scope for GitHub calls.",
+    )
+    auth_type: Literal["pat", "github_app"] = Field(
+        default="pat",
+        description=(
+            "Authentication backend. 'pat' uses github_token; "
+            "'github_app' uses app_id + installation_id + private key."
+        ),
+    )
+    app_id: Optional[int] = Field(
+        default=None,
+        description="GitHub App ID (required when auth_type='github_app').",
+    )
+    installation_id: Optional[int] = Field(
+        default=None,
+        description=(
+            "Installation ID for the org/account the App is installed in "
+            "(required when auth_type='github_app')."
+        ),
+    )
+    private_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "PEM contents of the App's private key. Mutually exclusive "
+            "with private_key_path."
+        ),
+    )
+    private_key_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filesystem path to the App's private key PEM. Mutually "
+            "exclusive with private_key."
+        ),
     )
 
 
@@ -172,6 +207,75 @@ class CreatePullRequestInput(BaseModel):
     )
 
 
+class GetPullRequestInput(BaseModel):
+    """Input payload for ``get_pull_request``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
+class ListPullRequestsInput(BaseModel):
+    """Input payload for ``list_pull_requests``."""
+
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    state: Literal["open", "closed", "all"] = Field(
+        default="open",
+        description="Filter pull requests by state.",
+    )
+    per_page: int = Field(
+        default=100,
+        ge=1,
+        le=100,
+        description="Number of pull requests per page (max 100).",
+    )
+
+
+class GetPullRequestDiffInput(BaseModel):
+    """Input payload for ``get_pull_request_diff``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+    max_bytes: int = Field(
+        default=50_000,
+        ge=0,
+        description="Truncate the diff to at most this many bytes (0 disables truncation).",
+    )
+
+
+class AddPRCommentInput(BaseModel):
+    """Input payload for ``add_pr_comment``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    body: str = Field(description="Comment body in Markdown.")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
+class SubmitPRReviewInput(BaseModel):
+    """Input payload for ``submit_pr_review``."""
+
+    pr_number: int = Field(description="Pull request number on the repository.")
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = Field(
+        description="Review event to record on the pull request."
+    )
+    body: str = Field(description="Review body in Markdown (required for REQUEST_CHANGES).")
+    repository: Optional[str] = Field(
+        default=None,
+        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+    )
+
+
 @dataclass
 class _GitHubContext:
     """Simple container with prepared GitHub configuration."""
@@ -179,6 +283,97 @@ class _GitHubContext:
     repository: str
     base_branch: str
     token: str
+
+
+class _GitHubAppTokenProvider:
+    """Mints + caches GitHub App installation access tokens.
+
+    Single explicit installation. Token is cached in-process and refreshed
+    when within 60 seconds of expiry. Safe to call from threads spawned by
+    ``asyncio.to_thread``.
+
+    Args:
+        app_id: GitHub App ID.
+        installation_id: Installation ID for the org/account the App is
+            installed in.
+        private_key_pem: PEM contents of the App's private key (always
+            resolved to a string before construction — file-path handling
+            lives in ``GitToolkit.__init__``).
+    """
+
+    _REFRESH_LEEWAY = _dt.timedelta(seconds=60)
+
+    def __init__(
+        self,
+        app_id: int,
+        installation_id: int,
+        private_key_pem: str,
+    ) -> None:
+        self._app_id = app_id
+        self._installation_id = installation_id
+        self._private_key_pem = private_key_pem
+        self._token: Optional[str] = None
+        self._expires_at: Optional[_dt.datetime] = None
+        self._lock = threading.Lock()
+
+    def get_token(self) -> str:
+        """Return a valid installation access token, refreshing when <=60s from expiry.
+
+        Returns:
+            A valid GitHub App installation access token string.
+
+        Raises:
+            GitToolkitError: If the underlying ``GithubIntegration.get_access_token``
+                call fails.
+        """
+        with self._lock:
+            now = _dt.datetime.now(_dt.timezone.utc)
+            if (
+                self._token is None
+                or self._expires_at is None
+                or self._expires_at - now <= self._REFRESH_LEEWAY
+            ):
+                self._refresh()
+            return self._token  # type: ignore[return-value]
+
+    def _refresh(self) -> None:
+        """Mint a new installation access token from GitHub.
+
+        Raises:
+            GitToolkitError: If token minting fails (wraps the underlying exception).
+        """
+        try:
+            auth = Auth.AppAuth(self._app_id, self._private_key_pem)
+            integration = GithubIntegration(auth=auth)
+            installation_auth = integration.get_access_token(self._installation_id)
+        except Exception as exc:
+            raise GitToolkitError(
+                f"Failed to mint GitHub App installation token: {exc}"
+            ) from exc
+        self._token = installation_auth.token
+        self._expires_at = installation_auth.expires_at
+        if self._expires_at is not None and self._expires_at.tzinfo is None:
+            # Defensive: PyGithub returns tz-aware UTC, but normalise just in case.
+            self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
+
+
+def _coerce_int(value: Optional[str]) -> Optional[int]:
+    """Coerce a string env-var value to int, returning None for empty/missing.
+
+    Args:
+        value: String value to coerce, or None.
+
+    Returns:
+        Integer value, or None if value is None, empty, or non-numeric.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        # Intentionally returns None; caller raises a descriptive GitToolkitError
+        # indicating the value was present but not a valid integer.
+        return None
 
 
 class GitToolkit(AbstractToolkit):
@@ -191,8 +386,34 @@ class GitToolkit(AbstractToolkit):
         default_repository: Optional[str] = None,
         default_branch: str = "main",
         github_token: Optional[str] = None,
+        auth_type: Literal["pat", "github_app"] = "pat",
+        app_id: Optional[int] = None,
+        installation_id: Optional[int] = None,
+        private_key: Optional[str] = None,
+        private_key_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
+        """Initialise the Git/GitHub toolkit.
+
+        Args:
+            default_repository: Default repo in ``owner/name`` format.
+            default_branch: Fallback branch for pull requests.
+            github_token: PAT for GitHub API calls (required in pat mode).
+            auth_type: Authentication backend — ``'pat'`` (default) or
+                ``'github_app'``.
+            app_id: GitHub App ID (required when auth_type='github_app').
+            installation_id: Installation ID for the org/account the App is
+                installed in (required when auth_type='github_app').
+            private_key: PEM contents of the App's private key. Mutually
+                exclusive with ``private_key_path``.
+            private_key_path: Filesystem path to the App's private key PEM.
+                Mutually exclusive with ``private_key``.
+            **kwargs: Forwarded to the base class.
+
+        Raises:
+            GitToolkitError: When ``auth_type`` is invalid or required App-mode
+                fields are missing / mutually exclusive constraints are violated.
+        """
         super().__init__(**kwargs)
 
         self.default_repository = (
@@ -204,6 +425,91 @@ class GitToolkit(AbstractToolkit):
             default_branch or os.getenv("GIT_DEFAULT_BRANCH") or "main"
         )
         self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+
+        self.auth_type: Literal["pat", "github_app"] = auth_type
+        if self.auth_type not in ("pat", "github_app"):
+            raise GitToolkitError(
+                f"Unsupported auth_type {self.auth_type!r}; expected 'pat' or 'github_app'."
+            )
+
+        # Always initialise these attributes; None in PAT mode.
+        self.app_id: Optional[int] = app_id or _coerce_int(os.getenv("GITHUB_APP_ID"))
+        self.installation_id: Optional[int] = (
+            installation_id or _coerce_int(os.getenv("GITHUB_APP_INSTALLATION_ID"))
+        )
+        self._private_key_pem: Optional[str] = None
+        self._token_provider: Optional[_GitHubAppTokenProvider] = None
+
+        if self.auth_type == "github_app":
+            if not self.app_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires app_id (or GITHUB_APP_ID env)."
+                )
+            if not self.installation_id:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires installation_id (or "
+                    "GITHUB_APP_INSTALLATION_ID env)."
+                )
+
+            inline_pem = private_key or os.getenv("GITHUB_APP_PRIVATE_KEY")
+            pem_path = private_key_path or os.getenv("GITHUB_APP_PRIVATE_KEY_PATH")
+            if inline_pem and pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app': set EITHER private_key OR "
+                    "private_key_path, not both."
+                )
+            if not inline_pem and not pem_path:
+                raise GitToolkitError(
+                    "auth_type='github_app' requires private_key or private_key_path "
+                    "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
+                )
+            if pem_path:
+                try:
+                    with open(pem_path, "r", encoding="utf-8") as fh:
+                        inline_pem = fh.read()
+                except OSError as exc:
+                    raise GitToolkitError(
+                        f"Could not read GitHub App private key from {pem_path}: {exc}"
+                    ) from exc
+
+            # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
+            inline_pem = inline_pem.replace("\\n", "\n")  # type: ignore[union-attr]
+
+            self._token_provider = _GitHubAppTokenProvider(
+                app_id=self.app_id,
+                installation_id=self.installation_id,
+                private_key_pem=inline_pem,
+            )
+
+    # ------------------------------------------------------------------
+    # Bearer token resolution
+    # ------------------------------------------------------------------
+    def _bearer_token(self) -> str:
+        """Return the bearer token for the next GitHub API call.
+
+        In ``pat`` mode, returns ``self.github_token`` and raises when it is
+        absent. In ``github_app`` mode, delegates to the token provider which
+        mints / caches installation access tokens transparently.
+
+        Returns:
+            A valid bearer token string.
+
+        Raises:
+            GitToolkitError: When no token is available (PAT mode with no token
+                set) or when the App token provider fails to mint a token.
+        """
+        if self.auth_type == "github_app":
+            if self._token_provider is None:
+                raise GitToolkitError(
+                    "BUG: _token_provider is None in github_app mode; this is an internal error."
+                )
+            return self._token_provider.get_token()
+        # PAT mode
+        if not self.github_token:
+            raise GitToolkitError(
+                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+            )
+        return self.github_token
 
     # ------------------------------------------------------------------
     # Patch generation helpers
@@ -313,11 +619,7 @@ class GitToolkit(AbstractToolkit):
                 "A target repository is required (pass repository or configure default)."
             )
 
-        token = self.github_token
-        if not token:
-            raise GitToolkitError(
-                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
-            )
+        token = self._bearer_token()
 
         branch = base_branch or self.default_branch
         return _GitHubContext(repository=repo, base_branch=branch, token=token)
@@ -348,7 +650,8 @@ class GitToolkit(AbstractToolkit):
             return None
         if change.encoding == "base64":
             return change.content or ""
-        assert change.encoding == "utf-8"
+        if change.encoding != "utf-8":
+            raise GitToolkitError(f"Unsupported encoding {change.encoding!r}")
         data = (change.content or "").encode("utf-8")
         return base64.b64encode(data).decode("ascii")
 
@@ -396,7 +699,7 @@ class GitToolkit(AbstractToolkit):
         token = ctx.token
         base_branch_name = ctx.base_branch
 
-        branch_name = head_branch or f"parrot/{_dt.datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        branch_name = head_branch or f"parrot/{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
         commit_message = commit_message or title
 
         base_ref_url = f"https://api.github.com/repos/{ctx.repository}/git/ref/heads/{base_branch_name}"
@@ -495,6 +798,243 @@ class GitToolkit(AbstractToolkit):
             labels=labels,
         )
 
+    # ------------------------------------------------------------------
+    # Pull request read / review helpers (FEAT: github-pr-review-agent)
+    # ------------------------------------------------------------------
+    def _resolve_repository(self, repository: Optional[str]) -> str:
+        repo = repository or self.default_repository
+        if not repo:
+            raise GitToolkitError(
+                "A target repository is required (pass repository or set GIT_DEFAULT_REPOSITORY)."
+            )
+        return repo
+
+    def _resolve_token(self) -> str:
+        return self._bearer_token()
+
+    def _get_pull_request_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        response = self._request("GET", url, token, expected=200)
+        return response.json()
+
+    @tool_schema(GetPullRequestInput)
+    async def get_pull_request(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fetch metadata for a GitHub pull request by number."""
+
+        return await asyncio.to_thread(
+            self._get_pull_request_sync, repository, pr_number
+        )
+
+    def _list_pull_requests_sync(
+        self,
+        repository: Optional[str],
+        state: str,
+        per_page: int,
+    ) -> List[Dict[str, Any]]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls"
+        params = {"state": state, "per_page": min(max(per_page, 1), 100)}
+        response = self._request("GET", url, token, expected=200, params=params)
+        data = response.json()
+        return data if isinstance(data, list) else []
+
+    @tool_schema(ListPullRequestsInput)
+    async def list_pull_requests(
+        self,
+        repository: Optional[str] = None,
+        state: Literal["open", "closed", "all"] = "open",
+        per_page: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List pull requests on a repository, defaulting to open ones."""
+
+        return await asyncio.to_thread(
+            self._list_pull_requests_sync, repository, state, per_page
+        )
+
+    def _get_pull_request_diff_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        max_bytes: int,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+        response = self._request(
+            "GET",
+            url,
+            token,
+            expected=200,
+            headers={"Accept": "application/vnd.github.v3.diff"},
+        )
+        diff_text = response.text or ""
+        truncated = False
+        if max_bytes and len(diff_text) > max_bytes:
+            diff_text = diff_text[:max_bytes]
+            truncated = True
+        return {
+            "repository": repo,
+            "pr_number": pr_number,
+            "diff": diff_text,
+            "truncated": truncated,
+            "byte_size": len(diff_text),
+        }
+
+    @tool_schema(GetPullRequestDiffInput)
+    async def get_pull_request_diff(
+        self,
+        pr_number: int,
+        repository: Optional[str] = None,
+        max_bytes: int = 50_000,
+    ) -> Dict[str, Any]:
+        """Return the raw unified diff of a pull request, truncated to ``max_bytes``."""
+
+        return await asyncio.to_thread(
+            self._get_pull_request_diff_sync, repository, pr_number, max_bytes
+        )
+
+    def _add_pr_comment_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        body: str,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+        response = self._request(
+            "POST", url, token, expected=201, json={"body": body}
+        )
+        data = response.json()
+        return {"id": data.get("id"), "html_url": data.get("html_url")}
+
+    @tool_schema(AddPRCommentInput)
+    async def add_pr_comment(
+        self,
+        pr_number: int,
+        body: str,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Add an issue-style comment to a pull request."""
+
+        return await asyncio.to_thread(
+            self._add_pr_comment_sync, repository, pr_number, body
+        )
+
+    def _submit_pr_review_sync(
+        self,
+        repository: Optional[str],
+        pr_number: int,
+        event: str,
+        body: str,
+    ) -> Dict[str, Any]:
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+        payload = {"event": event, "body": body}
+        response = self._request("POST", url, token, expected=200, json=payload)
+        data = response.json()
+        return {
+            "id": data.get("id"),
+            "state": data.get("state"),
+            "html_url": data.get("html_url"),
+        }
+
+    @tool_schema(SubmitPRReviewInput)
+    async def submit_pr_review(
+        self,
+        pr_number: int,
+        event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"],
+        body: str,
+        repository: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit a pull-request review (approve, request-changes or comment)."""
+
+        return await asyncio.to_thread(
+            self._submit_pr_review_sync, repository, pr_number, event, body
+        )
+
+    def _ensure_webhook_sync(
+        self,
+        repository: Optional[str],
+        webhook_url: str,
+        secret: Optional[str],
+        events: List[str],
+    ) -> Dict[str, Any]:
+        """Idempotently register a GitHub webhook for ``webhook_url``.
+
+        Returns a dict with ``status`` in {created, already_exists, no_permission, error}
+        plus the hook payload when available.
+        """
+        repo = self._resolve_repository(repository)
+        token = self._resolve_token()
+        list_url = f"https://api.github.com/repos/{repo}/hooks"
+        try:
+            response = self._request("GET", list_url, token, expected=200)
+        except GitToolkitError as exc:
+            message = str(exc)
+            if " 403" in message or " 404" in message:
+                return {"status": "no_permission", "message": message}
+            return {"status": "error", "message": message}
+
+        for hook in response.json() or []:
+            cfg = (hook or {}).get("config") or {}
+            if cfg.get("url") == webhook_url:
+                return {"status": "already_exists", "hook": hook}
+
+        config = {
+            "url": webhook_url,
+            "content_type": "json",
+            "insecure_ssl": "0",
+        }
+        if secret:
+            config["secret"] = secret
+        payload = {
+            "name": "web",
+            "active": True,
+            "events": events or ["pull_request"],
+            "config": config,
+        }
+        try:
+            create = self._request(
+                "POST", list_url, token, expected=201, json=payload
+            )
+        except GitToolkitError as exc:
+            message = str(exc)
+            if " 403" in message or " 404" in message:
+                return {"status": "no_permission", "message": message}
+            return {"status": "error", "message": message}
+        return {"status": "created", "hook": create.json()}
+
+    async def ensure_webhook(
+        self,
+        webhook_url: str,
+        repository: Optional[str] = None,
+        secret: Optional[str] = None,
+        events: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Ensure a GitHub webhook pointing at ``webhook_url`` exists on the repo.
+
+        Idempotent. Falls back gracefully when the token lacks
+        ``admin:repo_hook`` (status ``"no_permission"``) so callers can run in
+        hybrid mode (auto when allowed, manual otherwise).
+        """
+
+        return await asyncio.to_thread(
+            self._ensure_webhook_sync,
+            repository,
+            webhook_url,
+            secret,
+            list(events or ["pull_request"]),
+        )
+
 
 __all__ = [
     "GitToolkit",
@@ -503,6 +1043,11 @@ __all__ = [
     "GitHubFileChange",
     "GeneratePatchInput",
     "CreatePullRequestInput",
+    "GetPullRequestInput",
+    "ListPullRequestsInput",
+    "GetPullRequestDiffInput",
+    "AddPRCommentInput",
+    "SubmitPRReviewInput",
     "GitToolkitError",
 ]
 

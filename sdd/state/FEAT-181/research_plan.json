@@ -1,0 +1,277 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source has feature-shaped verbs ('add', 'implement', 'integrate') and asks to extend existing infrastructure (AbstractClient subclasses + Agent + a possibly-existing PromptBuilder). No bug symptoms. Plan emphasises locating existing prompt-construction helpers, current per-client system-prompt shapes, and similar provider-agnostic flags already in place.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Detect whether a PromptBuilder (or equivalent prompt-construction helper) already exists anywhere in the parrot package.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "class\\s+\\w*PromptBuilder|PromptBuilder|PromptTemplate|class\\s+\\w*Prompt\\b",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": true,
+        "max_results": 80,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "List files in parrot/template and parrot/generators — likely homes for an existing PromptBuilder.",
+      "type": "glob",
+      "priority": 1,
+      "params": {
+        "pattern": "packages/ai-parrot/src/parrot/{template,generators}/**/*.py",
+        "max_results": 80
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Read AbstractClient to learn its system-prompt API, completion/stream signatures, and any existing options-pass-through.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/clients/abstract.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Confirm AbstractClient path if Q003 misses; locate the file via grep.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "class\\s+AbstractClient\\b",
+        "path": "packages/ai-parrot/src/parrot/clients",
+        "case_sensitive": true,
+        "max_results": 10,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "List concrete client implementations to know which providers exist today and which need cache plumbing.",
+      "type": "glob",
+      "priority": 1,
+      "params": {
+        "pattern": "packages/ai-parrot/src/parrot/clients/*.py",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Inspect the Anthropic client — find the messages.create call site to know where cache_control blocks must be injected.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "messages\\.create|client\\.messages|anthropic\\.|cache_control",
+        "path": "packages/ai-parrot/src/parrot/clients",
+        "case_sensitive": false,
+        "max_results": 50,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Inspect the OpenAI client — find the responses/chat.completions call site (system prompt sent how?).",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "chat\\.completions|responses\\.create|openai\\.|prompt_cache_key",
+        "path": "packages/ai-parrot/src/parrot/clients",
+        "case_sensitive": false,
+        "max_results": 50,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Inspect the Google/Gemini client — find generate_content / cached_content call sites.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "generate_content|GenerativeModel|CachedContent|cached_content|genai\\.|google\\.generativeai",
+        "path": "packages/ai-parrot/src/parrot/clients",
+        "case_sensitive": false,
+        "max_results": 50,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Locate Agent and Chatbot base classes to learn init signature where prompt_caching flag would land.",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "class\\s+(Agent|Chatbot|AbstractBot)\\b",
+        "path": "packages/ai-parrot/src/parrot/bots",
+        "case_sensitive": true,
+        "max_results": 30,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Read GithubReviewer — the consumer driving this work — to ground how the cached context would be injected per-review.",
+      "type": "read",
+      "priority": 1,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots/github_reviewer.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Search for existing system-prompt assembly logic (where the agent constructs the final system message it sends to the LLM).",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "system_prompt|system_message|build_system|_build_prompt|prepare_prompt",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": false,
+        "max_results": 80,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Search for existing prompt-caching attempts to avoid duplicate work or conflicting designs.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "prompt_cache|prompt_caching|cache_control|CachedContent|cached_content|cache_prompt",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": false,
+        "max_results": 60,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "Find an existing AGENT_CONTEXT-like loader pattern (per-repo or per-agent context doc) anywhere.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "AGENT_CONTEXT|CONTEXT\\.md|context_file|context_path|load_context",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": false,
+        "max_results": 40,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "Identify provider-agnostic flags already on Agent/Client (e.g. temperature, max_tokens) — pattern to mirror for prompt_caching.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "def __init__\\(.*self.*\\):|self\\.temperature|self\\.max_tokens|self\\.model_name",
+        "path": "packages/ai-parrot/src/parrot/bots",
+        "case_sensitive": false,
+        "max_results": 50,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Discover config-directory conventions (navconfig / Kardex / config-dir) used elsewhere to pick where AGENT_CONTEXT.md lives.",
+      "type": "grep",
+      "priority": 2,
+      "params": {
+        "pattern": "navconfig|Kardex|CONFIG_DIR|config_dir|BASE_DIR|RESOURCES_DIR",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": false,
+        "max_results": 50,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "Find existing in-memory file-cache patterns (mtime-based or lru_cache) to mirror for AGENT_CONTEXT.md caching.",
+      "type": "grep",
+      "priority": 3,
+      "params": {
+        "pattern": "lru_cache|@cache|mtime|os\\.stat|st_mtime|_cache\\s*=\\s*\\{",
+        "path": "packages/ai-parrot/src/parrot",
+        "case_sensitive": true,
+        "max_results": 60,
+        "include": "*.py"
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Recent commits on parrot/clients — surfaces any in-flight refactor of the client API.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/clients",
+        "since": "60.days.ago",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Recent commits on parrot/bots — confirms current shape of Agent/Chatbot and surfaces refactors.",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/bots",
+        "since": "60.days.ago",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "Existing tests for clients — pattern for testing per-provider behavior (helps shape test plan in the proposal).",
+      "type": "glob",
+      "priority": 4,
+      "params": {
+        "pattern": "packages/ai-parrot/tests/test_*client*.py",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "List parrot/template directory contents — sanity check on a likely PromptBuilder home.",
+      "type": "tree",
+      "priority": 4,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/template",
+        "max_depth": 2
+      }
+    }
+  ],
+  "expected_findings": [
+    "Whether a PromptBuilder/PromptTemplate class already exists and its API surface",
+    "Exact file path and class signature of AbstractClient + system-prompt parameter shape",
+    "Per-provider call site (Anthropic messages.create / OpenAI chat.completions / Gemini generate_content) where the cache hint must be injected",
+    "Agent / Chatbot __init__ signature — where prompt_caching flag would attach",
+    "Whether any prior prompt-caching work exists (avoid stepping on it)",
+    "Current shape of GithubReviewer's prompt construction (the consumer)",
+    "Config-directory conventions for locating AGENT_CONTEXT.md",
+    "Existing mtime/in-memory cache patterns to mirror",
+    "Recent refactors on clients/bots that would affect the design"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "PromptBuilder",
+        "AbstractClient",
+        "Agent",
+        "Anthropic",
+        "OpenAI",
+        "Gemini",
+        "AGENT_CONTEXT.md",
+        "GithubReviewer"
+      ],
+      "verbs": ["implement", "add", "integrate", "negotiate", "cache"],
+      "polarity": "positive"
+    },
+    "estimated_budget_use": {
+      "files_read": 2,
+      "grep_calls": 14,
+      "git_calls": 2
+    }
+  }
+}

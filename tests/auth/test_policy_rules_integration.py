@@ -1,7 +1,7 @@
 """Integration tests for PBAC Policy Rules (TASK-716).
 
 End-to-end tests verifying the full policy flow:
-  1. Bot declares policy_rules → retrieval() enforces
+  1. Bot declares policy_rules → session() enforces
   2. Two bots with different policies → listing returns only allowed
   3. Per-agent YAML → evaluator uses it for filtering
   4. ToolList.get() filters tools based on policy
@@ -105,15 +105,15 @@ def _make_mock_request(app, username="testuser", groups=None):
 
 
 # ---------------------------------------------------------------------------
-# Scenario 1: Bot with policy_rules → retrieval() enforces
+# Scenario 1: Bot with policy_rules → session() enforces
 # ---------------------------------------------------------------------------
 
 class TestScenario1RetrievalEnforcement:
-    """Bot declares policy_rules → retrieval() denies unauthorized user."""
+    """Bot declares policy_rules → session() denies unauthorized user."""
 
     @pytest.mark.asyncio
-    async def test_retrieval_denies_when_evaluator_denies(self):
-        """Bot with policy_rules → retrieval() raises HTTPUnauthorized."""
+    async def test_session_denies_when_evaluator_denies(self):
+        """Bot with policy_rules → session() raises HTTPUnauthorized."""
         BotClass = _make_concrete_bot(
             "finance_bot",
             policy_rules=[{"action": "agent:chat", "groups": ["finance"]}]
@@ -128,18 +128,18 @@ class TestScenario1RetrievalEnforcement:
         bot.name = "finance_bot"
         bot._semaphore = asyncio.BoundedSemaphore(1)
         bot.logger = MagicMock()
-        bot.retrieval = AbstractBot.retrieval.__get__(bot, BotClass)
+        bot.session = AbstractBot.session.__get__(bot, BotClass)
 
         with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
              patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
              patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
             with pytest.raises(web.HTTPUnauthorized):
-                async with bot.retrieval(request=request) as wrapper:
+                async with bot.session(request=request):
                     pass
 
     @pytest.mark.asyncio
-    async def test_retrieval_allows_when_evaluator_allows(self):
-        """Bot with policy_rules → retrieval() yields wrapper when allowed."""
+    async def test_session_allows_when_evaluator_allows(self):
+        """Bot with policy_rules → session() yields the real bot when allowed."""
         BotClass = _make_concrete_bot(
             "public_bot",
             policy_rules=[{"action": "agent:chat", "groups": ["*"]}]
@@ -152,13 +152,13 @@ class TestScenario1RetrievalEnforcement:
         bot.name = "public_bot"
         bot._semaphore = asyncio.BoundedSemaphore(1)
         bot.logger = MagicMock()
-        bot.retrieval = AbstractBot.retrieval.__get__(bot, BotClass)
+        bot.session = AbstractBot.session.__get__(bot, BotClass)
 
         with patch('parrot.bots.abstract._PBAC_AVAILABLE', True), \
              patch('parrot.bots.abstract._EvalContext', MagicMock(return_value=MagicMock())), \
              patch('parrot.bots.abstract._ResourceType', MagicMock(AGENT='AGENT')):
-            async with bot.retrieval(request=request) as wrapper:
-                assert wrapper is not None
+            async with bot.session(request=request) as b:
+                assert b is not None
 
 
 # ---------------------------------------------------------------------------
@@ -355,11 +355,11 @@ class TestScenario5NoPolicyRulesFailOpen:
         bot.name = "open_bot"
         bot._semaphore = asyncio.BoundedSemaphore(1)
         bot.logger = MagicMock()
-        bot.retrieval = AbstractBot.retrieval.__get__(bot, BotClass)
+        bot.session = AbstractBot.session.__get__(bot, BotClass)
 
         # No PDP → should allow (fail-open)
-        async with bot.retrieval(request=request) as wrapper:
-            assert wrapper is not None
+        async with bot.session(request=request) as b:
+            assert b is not None
 
     def test_policy_rule_config_to_resource_policy(self):
         """PolicyRuleConfig.to_resource_policy() produces correct dict."""

@@ -14,7 +14,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundational, no deps. Touches only new files under parrot/core/events/lifecycle/.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1182-trace-context-dataclass.md"
+      "completed_at": "2026-05-15T13:37:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1182-trace-context-dataclass.md"
     },
     {
       "id": "TASK-1183",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Builds on TraceContext from 1182.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1183-lifecycle-event-base.md"
+      "completed_at": "2026-05-15T13:38:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1183-lifecycle-event-base.md"
     },
     {
       "id": "TASK-1184",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "All 15 concrete events + SubscriberErrorEvent inherit from LifecycleEvent.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1184-concrete-lifecycle-events.md"
+      "completed_at": "2026-05-15T13:40:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1184-concrete-lifecycle-events.md"
     },
     {
       "id": "TASK-1185",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Only touches parrot/auth/permission.py; depends only on TraceContext from 1182. Can run alongside 1183/1184.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1185-permission-context-trace-field.md"
+      "completed_at": "2026-05-15T13:43:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1185-permission-context-trace-field.md"
     },
     {
       "id": "TASK-1186",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Core dispatcher; many downstream tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1186-event-registry-dispatch.md"
+      "completed_at": "2026-05-15T13:46:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1186-event-registry-dispatch.md"
     },
     {
       "id": "TASK-1187",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Sequential after EventRegistry; shares no files with 1188.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1187-global-registry-and-scope.md"
+      "completed_at": "2026-05-15T13:47:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1187-global-registry-and-scope.md"
     },
     {
       "id": "TASK-1188",
@@ -132,7 +132,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -142,8 +142,8 @@
       "parallelism_notes": "Different file from 1187 (provider.py vs global_registry.py); can run in parallel after 1186.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1188-event-provider-protocol.md"
+      "completed_at": "2026-05-15T13:48:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1188-event-provider-protocol.md"
     },
     {
       "id": "TASK-1189",
@@ -152,7 +152,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Touches registry.py + new mixin.py; sequential after 1186 + 1187.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1189-event-emitter-mixin.md"
+      "completed_at": "2026-05-15T13:49:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1189-event-emitter-mixin.md"
     },
     {
       "id": "TASK-1190",
@@ -173,7 +173,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -183,8 +183,8 @@
       "parallelism_notes": "Subscribers don't share files with each other or with the registry. Can run alongside 1186/1187/1188/1189/1191/1192.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1190-logging-subscriber.md"
+      "completed_at": "2026-05-15T13:50:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1190-logging-subscriber.md"
     },
     {
       "id": "TASK-1191",
@@ -193,7 +193,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -203,8 +203,8 @@
       "parallelism_notes": "Touches subscribers/opentelemetry.py and pyproject.toml; runs in parallel with 1190/1192.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1191-opentelemetry-subscriber.md"
+      "completed_at": "2026-05-15T13:53:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1191-opentelemetry-subscriber.md"
     },
     {
       "id": "TASK-1192",
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "Touches subscribers/webhook.py only; runs in parallel with 1190/1191.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1192-webhook-subscriber.md"
+      "completed_at": "2026-05-15T13:55:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1192-webhook-subscriber.md"
     },
     {
       "id": "TASK-1193",
@@ -233,7 +233,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -245,8 +245,8 @@
       "parallelism_notes": "Edits parrot/bots/abstract.py; intentionally NOT marked parallel because AbstractBot ties together many of the other modules.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1193-abstractbot-lifecycle-integration.md"
+      "completed_at": "2026-05-15T14:17:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1193-abstractbot-lifecycle-integration.md"
     },
     {
       "id": "TASK-1194",
@@ -255,7 +255,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -266,8 +266,8 @@
       "parallelism_notes": "Only touches parrot/clients/; no overlap with 1193 (bots/) or 1195 (tools/). Runs in parallel with both.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1194-abstractclient-lifecycle-integration.md"
+      "completed_at": "2026-05-15T14:32:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1194-abstractclient-lifecycle-integration.md"
     },
     {
       "id": "TASK-1195",
@@ -276,7 +276,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -288,8 +288,8 @@
       "parallelism_notes": "Only touches parrot/tools/abstract.py; runs in parallel with 1193 and 1194. Also depends on 1185 for PermissionContext.trace_context.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1195-abstracttool-lifecycle-integration.md"
+      "completed_at": "2026-05-15T14:39:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1195-abstracttool-lifecycle-integration.md"
     },
     {
       "id": "TASK-1196",
@@ -298,7 +298,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -314,8 +314,8 @@
       "parallelism_notes": "Wires every subscriber/provider into the bot registry at construction time; requires the full subscriber catalog to exist.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1196-botmanager-yaml-events-loader.md"
+      "completed_at": "2026-05-15T14:44:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1196-botmanager-yaml-events-loader.md"
     },
     {
       "id": "TASK-1197",
@@ -324,7 +324,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -342,8 +342,8 @@
       "parallelism_notes": "Re-exports require every other module's public symbols to exist first.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1197-lifecycle-public-exports.md"
+      "completed_at": "2026-05-15T14:41:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1197-lifecycle-public-exports.md"
     },
     {
       "id": "TASK-1198",
@@ -352,7 +352,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -363,8 +363,8 @@
       "parallelism_notes": "Exercises the full pipeline end-to-end; runs last.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1198-lifecycle-poc-script.md"
+      "completed_at": "2026-05-15T14:51:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1198-lifecycle-poc-script.md"
     },
     {
       "id": "TASK-1199",
@@ -373,7 +373,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -383,8 +383,8 @@
       "parallelism_notes": "Only edits docs/lifecycle_events.md; can run alongside 1198 (PoC) and 1200 (benchmarks).",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1199-lifecycle-events-docs.md"
+      "completed_at": "2026-05-15T14:53:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1199-lifecycle-events-docs.md"
     },
     {
       "id": "TASK-1200",
@@ -393,7 +393,7 @@
       "feature_id": "FEAT-176",
       "feature": "lifecycle-events-system",
       "spec": "sdd/specs/FEAT-176-lifecycle-events-system.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -404,8 +404,8 @@
       "parallelism_notes": "Touches only tests/benchmarks/ + pyproject extras; parallel with 1198/1199.",
       "assigned_to": null,
       "started_at": "2026-05-15T13:34:14+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1200-lifecycle-performance-benchmarks.md"
+      "completed_at": "2026-05-15T14:56:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1200-lifecycle-performance-benchmarks.md"
     }
   ]
 }

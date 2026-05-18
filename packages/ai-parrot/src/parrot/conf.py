@@ -660,6 +660,60 @@ JIRA_DEFAULT_REPORTER: str | None = config.get(
     fallback="jesuslarag@gmail.com",
 )
 
+# ── GitHub Reviewer Agent ──
+# Comma-separated list of Telegram chat IDs notified when a PR review finds
+# discrepancies against the linked Jira ticket. Integers only.
+_raw_pr_chat_ids = config.getlist(
+    "GITHUB_REVIEW_TELEGRAM_CHAT_IDS", fallback=[]
+) or []
+GITHUB_REVIEW_TELEGRAM_CHAT_IDS: list[int] = []
+for _chat_id in _raw_pr_chat_ids:
+    try:
+        GITHUB_REVIEW_TELEGRAM_CHAT_IDS.append(int(str(_chat_id).strip()))
+    except (TypeError, ValueError):
+        continue
+# Telegram chat / channel ID receiving the daily stale-PR summary. Accepts
+# either a numeric chat_id (e.g. -1001234567890) or a public @username.
+GITHUB_REVIEW_PUBLIC_CHANNEL_ID: str | None = config.get(
+    "GITHUB_REVIEW_PUBLIC_CHANNEL_ID", fallback=None
+)
+# Shared secret used by GitHub to sign webhook deliveries. Required when
+# HMAC verification is enabled on the GitHubWebhookHook.
+GITHUB_REVIEW_WEBHOOK_SECRET: str | None = config.get(
+    "GITHUB_REVIEW_WEBHOOK_SECRET", fallback=None
+)
+# Public HTTPS URL of the GitHubWebhookHook endpoint, used by the agent to
+# auto-subscribe via the GitHub API when the PAT has admin:repo_hook scope.
+GITHUB_REVIEW_WEBHOOK_PUBLIC_URL: str | None = config.get(
+    "GITHUB_REVIEW_WEBHOOK_PUBLIC_URL", fallback=None
+)
+# Default GitHub repository in 'owner/name' format watched by the default
+# GitHubReviewer subclass. Multiple repositories = multiple subclasses.
+GITHUB_REVIEW_REPOSITORY: str | None = config.get(
+    "GITHUB_REVIEW_REPOSITORY", fallback=None
+)
+# Hours an open PR must remain unattended before the daily report announces
+# it to the public Telegram channel.
+GITHUB_REVIEW_STALE_AFTER_HOURS: int = config.getint(
+    "GITHUB_REVIEW_STALE_AFTER_HOURS", fallback=24
+)
+# Jira project key whose tickets the watched repository references. Drives
+# the `<PROJECT>-\d+` regex that extracts ticket keys from PR titles/bodies.
+GITHUB_REVIEW_JIRA_PROJECT: str = config.get(
+    "GITHUB_REVIEW_JIRA_PROJECT", fallback="NAV"
+)
+# Per-prompt clamp on the diff fed to the reviewer LLM. Larger diffs are
+# truncated and the prompt notes the truncation so the model accounts for it.
+GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint(
+    "GITHUB_REVIEW_MAX_DIFF_BYTES", fallback=50_000
+)
+# Per-field clamp on the Jira description and acceptance-criteria text
+# spliced into the LLM prompt. Prevents a single oversized ticket from
+# blowing the model's context window.
+GITHUB_REVIEW_MAX_TICKET_BYTES: int = config.getint(
+    "GITHUB_REVIEW_MAX_TICKET_BYTES", fallback=20_000
+)
+
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
     'VECTOR_HANDLER_MAX_FILE_SIZE',

@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-181",
+  "started_at": "2026-05-18T00:00:00Z",
+  "updated_at": "2026-05-18T00:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-181/source.md",
+    "fetched_at": "2026-05-18T00:00:00Z",
+    "summary_oneline": "Agnostic prompt-caching abstraction across LLM providers"
+  },
+  "mode": "auto",
+  "phase": "source_resolved",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-05-18T00:00:00Z",
+      "completed_at": "2026-05-18T00:00:00Z"
+    },
+    "plan": {"status": "pending"},
+    "research": {"status": "pending"},
+    "synthesis": {"status": "pending"},
+    "qa": {"status": "pending"},
+    "output": {"status": "pending"}
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 0,
+    "grep_calls": 0,
+    "git_calls": 0,
+    "wall_seconds": 0
+  }
+}

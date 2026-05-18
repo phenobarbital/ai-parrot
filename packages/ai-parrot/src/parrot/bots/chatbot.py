@@ -9,7 +9,7 @@ import importlib
 import asyncio
 from contextlib import asynccontextmanager
 # Navconfig
-from datamodel.exceptions import ValidationError # pylint: disable=E0611
+from datamodel.exceptions import ValidationError  # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
 from asyncdb.exceptions import NoDataFound, UninitializedError
