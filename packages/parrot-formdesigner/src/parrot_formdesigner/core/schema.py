@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from datetime import datetime
 from typing import Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints
@@ -150,6 +150,94 @@ class SubmitAction(BaseModel):
     auth: AuthConfig | None = None
 
 
+MetadataSource = Literal[
+    "user_id",
+    "username",
+    "org_id",
+    "submitted_at",
+    "submission_id",
+    "tenant",
+    "programs",
+    "ip",
+    "user_agent",
+    "locale",
+    "callback",
+    "constant",
+]
+
+
+BUILTIN_METADATA_SOURCE_NAMES: frozenset[str] = frozenset(
+    {
+        "user_id",
+        "username",
+        "org_id",
+        "submitted_at",
+        "submission_id",
+        "tenant",
+        "programs",
+        "ip",
+        "user_agent",
+        "locale",
+    }
+)
+
+
+class FormMetadataField(BaseModel):
+    """Declared contextual metadata captured on every form submission.
+
+    Metadata fields are computed in a before-save enrichment step on the
+    submit handler. Each declaration produces one or more ``key`` / value
+    pairs that are either promoted to a real ``form_data`` column (for
+    reserved core keys) or flat-merged into the submission ``data`` JSONB
+    alongside the user's answers (no ``"metadata"`` sub-object).
+
+    Attributes:
+        key: Identifier under which the value is stored. Must be a valid
+            Postgres identifier (``[A-Za-z_][A-Za-z0-9_]{0,62}``) so it
+            is safe to promote to a column name and stable as a JSONB
+            key. Validated at FormSchema construction.
+        source: Where the value comes from. Built-in sources resolve
+            against the inbound request / session; ``"callback"`` invokes
+            a coroutine registered with ``register_form_callback``;
+            ``"constant"`` returns ``default`` verbatim.
+        label: Optional human-readable label (i18n supported).
+        callback_ref: Required when ``source == "callback"``. Logical
+            callback name looked up in the shared tenant-scoped form
+            callback registry.
+        default: Value substituted when the resolver returns ``None`` or
+            a non-required callback fails. Also the source of truth for
+            ``source == "constant"``.
+        required: When ``True``, an unresolved value (resolver returns
+            ``None`` after ``default`` substitution) fails the
+            submission with HTTP 422.
+        options: Free-form per-source options bag (e.g.
+            ``{"header": "Accept-Language"}`` for ``locale``). Kept loose
+            on purpose to avoid a discriminated union per built-in.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    source: MetadataSource
+    label: LocalizedString | None = None
+    callback_ref: str | None = None
+    default: Any = None
+    required: bool = False
+    options: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _validate_callback_ref(self) -> "FormMetadataField":
+        if self.source == "callback" and not self.callback_ref:
+            raise ValueError(
+                "callback_ref is required when source='callback'"
+            )
+        if self.source != "callback" and self.callback_ref:
+            raise ValueError(
+                "callback_ref is only valid when source='callback'"
+            )
+        return self
+
+
 class FormSchema(BaseModel):
     """The canonical representation of a complete form.
 
@@ -185,6 +273,58 @@ class FormSchema(BaseModel):
     meta: dict[str, Any] | None = None
     created_at: datetime | None = None
     tenant: str | None = None
+    metadata: list[FormMetadataField] | None = None
+
+    def iter_all_fields(self) -> Iterator[FormField]:
+        """Yield every ``FormField`` across all sections, flattening subsections."""
+        for section in self.sections:
+            yield from section.iter_fields()
+
+    @model_validator(mode="after")
+    def _validate_metadata(self) -> "FormSchema":
+        if not self.metadata:
+            return self
+
+        # Lazy import to avoid a hard dependency from core/ to services/.
+        from ..services._identifiers import validate_identifier
+
+        seen_keys: set[str] = set()
+        field_ids = {f.field_id for f in self.iter_all_fields()}
+
+        for entry in self.metadata:
+            try:
+                validate_identifier(entry.key, kind="metadata key")
+            except ValueError as exc:
+                raise ValueError(
+                    f"FormMetadataField.key {entry.key!r} is not a valid "
+                    f"identifier: {exc}"
+                ) from exc
+
+            if entry.key in seen_keys:
+                raise ValueError(
+                    f"Duplicate metadata key {entry.key!r} in FormSchema "
+                    f"{self.form_id!r}."
+                )
+            seen_keys.add(entry.key)
+
+            if entry.key in field_ids:
+                raise ValueError(
+                    f"Metadata key {entry.key!r} collides with a form "
+                    f"field_id in FormSchema {self.form_id!r}."
+                )
+
+            if (
+                entry.source == "callback"
+                and entry.key in BUILTIN_METADATA_SOURCE_NAMES
+            ):
+                raise ValueError(
+                    f"Metadata key {entry.key!r} is a reserved built-in "
+                    "source name and cannot be overridden with "
+                    "source='callback'. Use a different key (e.g. "
+                    f"'{entry.key}_ext')."
+                )
+
+        return self
 
 
 class RenderWarning(BaseModel):
