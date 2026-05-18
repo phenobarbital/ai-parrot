@@ -92,6 +92,29 @@ class TestPydanticModels:
         assert m.start_line == 10
         assert m.end_line == 20
 
+    def test_get_file_content_end_line_lt_start_line_raises(self):
+        """end_line < start_line must raise ValidationError (model_validator)."""
+        with pytest.raises(ValidationError, match="end_line.*must be.*start_line"):
+            GetFileContentInput(path="a.py", ref="main", start_line=20, end_line=10)
+
+    def test_get_file_content_end_line_equal_start_line_valid(self):
+        """end_line == start_line is valid (returns a single line)."""
+        m = GetFileContentInput(path="a.py", ref="main", start_line=5, end_line=5)
+        assert m.start_line == 5
+        assert m.end_line == 5
+
+    def test_get_file_content_only_start_line_valid(self):
+        """Providing only start_line (without end_line) is valid."""
+        m = GetFileContentInput(path="a.py", ref="main", start_line=3)
+        assert m.start_line == 3
+        assert m.end_line is None
+
+    def test_get_file_content_only_end_line_valid(self):
+        """Providing only end_line (without start_line) is valid."""
+        m = GetFileContentInput(path="a.py", ref="main", end_line=10)
+        assert m.start_line is None
+        assert m.end_line == 10
+
     def test_compare_pr_versions_requires_pr_number(self):
         with pytest.raises(ValidationError):
             ComparePRVersionsInput(path="x.py")

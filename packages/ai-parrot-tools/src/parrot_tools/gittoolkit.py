@@ -312,6 +312,23 @@ class GetFileContentInput(BaseModel):
         ),
     )
 
+    @model_validator(mode="after")
+    def _validate_line_range(self) -> "GetFileContentInput":
+        """Ensure end_line is not less than start_line when both are provided.
+
+        Returns:
+            The validated model instance.
+
+        Raises:
+            ValueError: When ``end_line < start_line`` and both are set.
+        """
+        if self.start_line is not None and self.end_line is not None:
+            if self.end_line < self.start_line:
+                raise ValueError(
+                    f"end_line ({self.end_line}) must be >= start_line ({self.start_line})"
+                )
+        return self
+
 
 class ComparePRVersionsInput(BaseModel):
     """Input payload for ``compare_pr_versions``."""
