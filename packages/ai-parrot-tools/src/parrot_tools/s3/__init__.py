@@ -7,5 +7,6 @@ Public exports:
 Module implements Spec §3 Modules 1–3 (FEAT-184).
 """
 from .comparator import GenericReportComparator
+from .report_reader import S3ReportReaderToolkit
 
-__all__ = ("GenericReportComparator",)
+__all__ = ("GenericReportComparator", "S3ReportReaderToolkit")
