@@ -131,6 +131,19 @@ class SQLToolkit(DatabaseToolkit):
         Returns:
             Matching ``TableMetadata`` list, sorted by relevance descending.
         """
+        # Auto-detect "schema table" pattern when schema_name is not explicit.
+        # If the first word of search_term matches a known allowed schema,
+        # scope the search to that schema and use the remainder as the term.
+        if schema_name is None and " " in search_term.strip():
+            parts = search_term.strip().split(None, 1)
+            if parts[0].lower() in {s.lower() for s in self.allowed_schemas}:
+                schema_name = parts[0]
+                search_term = parts[1]
+                self.logger.debug(
+                    "search_schema: auto-split '%s %s' → schema_name=%r search_term=%r",
+                    schema_name, search_term, schema_name, search_term,
+                )
+
         target_schemas = [schema_name] if schema_name else self.allowed_schemas
 
         cache_hits: List[TableMetadata] = []
