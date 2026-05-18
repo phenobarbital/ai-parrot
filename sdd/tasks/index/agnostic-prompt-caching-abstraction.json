@@ -191,7 +191,7 @@
       "feature_id": "FEAT-181",
       "feature": "agnostic-prompt-caching-abstraction",
       "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -201,8 +201,8 @@
       "parallelism_notes": "Depends on TASK-1220 (AbstractBot integration); last in the chain",
       "assigned_to": null,
       "started_at": "2026-05-18T13:12:49+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1226-github-reviewer-opt-in.md"
+      "completed_at": "2026-05-18T13:33:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1226-github-reviewer-opt-in.md"
     }
   ]
 }
