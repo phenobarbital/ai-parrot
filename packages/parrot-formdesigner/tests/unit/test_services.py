@@ -10,6 +10,8 @@ def sample_schema() -> FormSchema:
     return FormSchema(
         form_id="test-form",
         title="Test Form",
+        # FEAT-183: tenant is required by default (require_tenant=True).
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="main",
@@ -27,19 +29,21 @@ class TestFormRegistry:
     async def test_register_and_retrieve(self, sample_schema):
         registry = FormRegistry()
         await registry.register(sample_schema)
-        retrieved = await registry.get("test-form")
+        # FEAT-183: get() now requires tenant= kwarg (None resolves to "navigator").
+        retrieved = await registry.get("test-form", tenant="navigator")
         assert retrieved is not None
         assert retrieved.form_id == "test-form"
 
     async def test_list_forms(self, sample_schema):
         registry = FormRegistry()
         await registry.register(sample_schema)
-        forms = await registry.list_forms()
+        # FEAT-183: list_forms() now scoped to a single tenant.
+        forms = await registry.list_forms(tenant="navigator")
         assert len(forms) >= 1
 
     async def test_get_nonexistent_form(self):
         registry = FormRegistry()
-        result = await registry.get("nonexistent")
+        result = await registry.get("nonexistent", tenant="navigator")
         assert result is None
 
 

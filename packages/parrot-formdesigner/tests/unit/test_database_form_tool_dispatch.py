@@ -34,7 +34,8 @@ class _StubService(AbstractFormService):
 
     def to_form_schema(self, raw: dict[str, Any]) -> FormSchema:  # type: ignore[override]
         """Return a stub FormSchema."""
-        form = FormSchema(form_id="stub-1", title="Stub", sections=[])
+        # FEAT-183: tenant required by FormRegistry (require_tenant=True default).
+        form = FormSchema(form_id="stub-1", title="Stub", sections=[], tenant="navigator")
         self.last_form = form
         return form
 
@@ -142,7 +143,8 @@ async def test_dispatcher_registers_form_in_registry(
     """After successful dispatch, FormSchema is in the registry."""
     tool = DatabaseFormTool(registry=registry)
     await tool._execute(service="__stub__", formid=1, orgid=1)
-    assert await registry.get("stub-1") is not None
+    # FEAT-183: get() requires tenant= kwarg.
+    assert await registry.get("stub-1", tenant="navigator") is not None
 
 
 @pytest.mark.asyncio
