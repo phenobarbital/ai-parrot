@@ -1410,3 +1410,176 @@ class TestReviewToolCallingLoop:
             assert expected_name in registered_names, (
                 f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
             )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-182 TASK-1223: Integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestIntegrationToolAssistedReview:
+    """Integration tests for the FEAT-182 tool-assisted review flow.
+
+    These tests exercise review_pull_request end-to-end with fully mocked
+    dependencies (no network calls) to verify the tool-calling path works
+    correctly from the top-level entry point.
+    """
+
+    _FIXTURE_PAYLOAD: Dict[str, Any] = {
+        "repository": "owner/repo",
+        "pr_number": 99,
+        "pr_title": "feat: refactor login handler",
+        "pr_body": "Implements NAV-200",
+        "pr_url": "https://github.com/owner/repo/pull/99",
+        "head_sha": "feedcafe",
+    }
+
+    _FIXTURE_TICKET: Dict[str, Any] = {
+        "fields": {
+            "summary": "Refactor login handler",
+            "description": "The login handler must validate email format.",
+            "status": {"name": "In Progress"},
+            "customfield_10100": (
+                "AC #1: validate email format\n"
+                "AC #2: return 400 on invalid email"
+            ),
+        }
+    }
+
+    def _build_integration_reviewer(
+        self, max_tool_calls: int = 3
+    ) -> Any:
+        """Build a reviewer stub wired for integration-style tests."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=max_tool_calls)
+        r._reviewed_shas = {}
+        r._no_ticket_notified = set()
+        # Bind review_pull_request and _ask_llm_for_review onto stub.
+        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(
+            r, type(r)
+        )
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(
+            r, type(r)
+        )
+        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(
+            r, type(r)
+        )
+        r._clamp = GitHubReviewer._clamp.__get__(r, type(r))
+        r._format_review_body = GitHubReviewer._format_review_body.__get__(
+            r, type(r)
+        )
+        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(
+            r, type(r)
+        )
+        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(
+            r, type(r)
+        )
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(
+            r, type(r)
+        )
+        r._fetch_ticket = GitHubReviewer._fetch_ticket.__get__(r, type(r))
+        r._fetch_diff = GitHubReviewer._fetch_diff.__get__(r, type(r))
+        r._ac_field_id = "customfield_10100"
+        r.jira_project = "NAV"
+        r.max_diff_bytes = 50_000
+        return r
+
+    def test_full_review_with_real_diff_fixture(self):
+        """End-to-end review: LLM makes one tool call then produces a
+        PRReviewResult discrepancy. The outcome dict must reflect this."""
+        r = self._build_integration_reviewer(max_tool_calls=3)
+
+        # Mock Jira fetch.
+        async def fake_fetch_ticket(key):
+            return self._FIXTURE_TICKET
+
+        # Mock diff fetch.
+        async def fake_fetch_diff(repo, pr_number):
+            return (
+                "diff --git a/login.py b/login.py\n"
+                "+def login(email):\n"
+                "+    return 200\n",
+                False,
+                True,
+            )
+
+        # Mock one tool call in the response (within cap of 3).
+        tool_call = MagicMock()
+        tool_call.name = "get_file_content_at_ref"
+
+        expected_result = PRReviewResult(
+            jira_key="NAV-200",
+            discrepancies=[
+                Discrepancy(
+                    criterion="AC #2: return 400 on invalid email",
+                    issue="login() always returns 200; no email validation present",
+                    severity="blocker",
+                )
+            ],
+            summary="The login handler does not validate email format.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(
+            expected_result, tool_calls=[tool_call]
+        )
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        # Mock git_toolkit.submit_pr_review.
+        async def fake_submit(**kwargs):
+            return {"id": 77, "state": "REQUEST_CHANGES"}
+
+        r._fetch_ticket = fake_fetch_ticket
+        r._fetch_diff = fake_fetch_diff
+        r.ask = fake_ask
+        r.git_toolkit.submit_pr_review = fake_submit
+
+        outcome = asyncio.run(r.review_pull_request(self._FIXTURE_PAYLOAD))
+
+        assert outcome["status"] == "reviewed"
+        assert outcome["approve"] is False
+        assert len(outcome["discrepancies"]) == 1
+        assert outcome["discrepancies"][0]["severity"] == "blocker"
+        assert "NAV-200" in outcome["jira_key"]
+
+    def test_full_review_falls_back_when_tools_disabled(self):
+        """max_review_tool_calls=0 causes self.ask() to be called with
+        max_iterations=1 (= 0 + 1), effectively disabling the tool loop."""
+        r = self._build_integration_reviewer(max_tool_calls=0)
+
+        # Record kwargs passed to ask().
+        ask_kwargs: Dict[str, Any] = {}
+
+        async def fake_fetch_ticket(key):
+            return self._FIXTURE_TICKET
+
+        async def fake_fetch_diff(repo, pr_number):
+            return ("diff ...", False, True)
+
+        async def fake_ask(**kwargs):
+            ask_kwargs.update(kwargs)
+            result = PRReviewResult(
+                jira_key="NAV-200",
+                discrepancies=[],
+                summary="All criteria met.",
+                approve=True,
+            )
+            return _make_fake_response(result, tool_calls=[])
+
+        async def fake_submit(**kwargs):
+            return {"id": 1, "state": "APPROVED"}
+
+        r._fetch_ticket = fake_fetch_ticket
+        r._fetch_diff = fake_fetch_diff
+        r.ask = fake_ask
+        r.git_toolkit.submit_pr_review = fake_submit
+
+        outcome = asyncio.run(r.review_pull_request(self._FIXTURE_PAYLOAD))
+
+        assert outcome["status"] == "reviewed"
+        # max_iterations must have been passed as 0+1=1, indicating one-shot.
+        assert ask_kwargs.get("max_iterations") == 1
+        # No warning should have been logged (count=0 < max_review_tool_calls=0
+        # comparison: 0 >= 0 is True but max_review_tool_calls == 0 so the
+        # guard `and self.max_review_tool_calls > 0` prevents the log).
+        r.logger.warning.assert_not_called()
