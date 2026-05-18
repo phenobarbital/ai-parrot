@@ -32,7 +32,7 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports GenericReportComparator from TASK-1239. Must run after it.",
       "assigned_to": null,
       "started_at": "2026-05-18T22:29:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1240-s3-report-reader-toolkit.md"
+      "completed_at": "2026-05-18T22:33:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1240-s3-report-reader-toolkit.md"
     },
     {
       "id": "TASK-1241",
