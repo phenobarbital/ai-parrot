@@ -50,8 +50,10 @@ stored in S3.
   richer, scanner-aware comparison.
 - Return structured data (not LLM narratives) for summarization — the
   calling agent's LLM generates the narrative.
-- Namespace all tools with `tool_prefix="s3_"` to prevent collision when
+- Namespace all tools with `tool_prefix="s3"` to prevent collision when
   mounted alongside `SecurityReportToolkit`.
+  (Note: `AbstractToolkit` appends `prefix_separator="_"` automatically, so
+  `tool_prefix = "s3"` produces the `s3_` prefix on all tool names.)
 
 ### Non-Goals (explicitly out of scope)
 
@@ -172,7 +174,7 @@ stay agnostic:
 # parrot_tools/s3/report_reader.py
 
 class S3ReportReaderToolkit(AbstractToolkit):
-    tool_prefix: str = "s3_"
+    tool_prefix: str = "s3"  # AbstractToolkit appends separator "_" automatically
 
     def __init__(
         self,
@@ -421,7 +423,7 @@ def toolkit_no_catalog(mock_file_manager):
 ## 5. Acceptance Criteria
 
 - [ ] `S3ReportReaderToolkit` inherits from `AbstractToolkit` with
-      `tool_prefix = "s3_"`.
+      `tool_prefix = "s3"` (separator appended automatically by `AbstractToolkit`).
 - [ ] Constructor accepts `file_manager: FileManagerInterface` (required) and
       `report_store: SecurityReportStore | None = None` (optional).
 - [ ] All 8 public async methods auto-discover as tools with `s3_` prefix.
@@ -591,8 +593,10 @@ class SecurityReportToolkit(AbstractToolkit):             # line 27
 - **`AbstractToolkit` auto-discovery**: every public async method is a tool.
   Docstrings become tool descriptions for the LLM — write them clearly.
   *Ref*: `toolkit.py:368-403`.
-- **`tool_prefix` namespacing**: set `tool_prefix = "s3_"` on the class to
+- **`tool_prefix` namespacing**: set `tool_prefix = "s3"` on the class to
   namespace all tools (e.g., `s3_list_reports`, `s3_compare_reports`).
+  `AbstractToolkit` appends `prefix_separator="_"` automatically, so the
+  resulting tool names carry the correct `s3_` prefix.
   *Ref*: `toolkit.py:242, 347-366`.
 - **Constructor composition**: compose deps via `__init__` injection, same
   pattern as `SecurityReportToolkit.__init__()`.

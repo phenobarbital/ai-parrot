@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-184 — Agnostic S3 Report Reader Toolkit
 **Spec**: `sdd/specs/agenttool-s3-readreports.spec.md`
-**Status**: pending
+**Status**: [x] done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -213,8 +213,8 @@ class GenericReportComparator:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-19
+**Notes**: Implemented GenericReportComparator with full structural diff (_structural_diff/_walk) and CloudSploit parser dispatch (_dispatch_to_parser). caps changes at max_changes with truncated flag. All acceptance criteria met.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
