@@ -23,12 +23,14 @@ import asyncio
 import base64
 import datetime as _dt
 import os
+import threading
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
 
 import difflib
 
 import requests
+from github import Auth, GithubIntegration
 from pydantic import BaseModel, Field, model_validator
 
 from .decorators import tool_schema
@@ -248,6 +250,78 @@ class _GitHubContext:
     repository: str
     base_branch: str
     token: str
+
+
+class _GitHubAppTokenProvider:
+    """Mints + caches GitHub App installation access tokens.
+
+    Single explicit installation. Token is cached in-process and refreshed
+    when within 60 seconds of expiry. Safe to call from threads spawned by
+    ``asyncio.to_thread``.
+
+    Args:
+        app_id: GitHub App ID.
+        installation_id: Installation ID for the org/account the App is
+            installed in.
+        private_key_pem: PEM contents of the App's private key (always
+            resolved to a string before construction — file-path handling
+            lives in ``GitToolkit.__init__``).
+    """
+
+    _REFRESH_LEEWAY = _dt.timedelta(seconds=60)
+
+    def __init__(
+        self,
+        app_id: int,
+        installation_id: int,
+        private_key_pem: str,
+    ) -> None:
+        self._app_id = app_id
+        self._installation_id = installation_id
+        self._private_key_pem = private_key_pem
+        self._token: Optional[str] = None
+        self._expires_at: Optional[_dt.datetime] = None
+        self._lock = threading.Lock()
+
+    def get_token(self) -> str:
+        """Return a valid installation access token, refreshing when <=60s from expiry.
+
+        Returns:
+            A valid GitHub App installation access token string.
+
+        Raises:
+            GitToolkitError: If the underlying ``GithubIntegration.get_access_token``
+                call fails.
+        """
+        with self._lock:
+            now = _dt.datetime.now(_dt.timezone.utc)
+            if (
+                self._token is None
+                or self._expires_at is None
+                or self._expires_at - now <= self._REFRESH_LEEWAY
+            ):
+                self._refresh()
+            return self._token  # type: ignore[return-value]
+
+    def _refresh(self) -> None:
+        """Mint a new installation access token from GitHub.
+
+        Raises:
+            GitToolkitError: If token minting fails (wraps the underlying exception).
+        """
+        try:
+            auth = Auth.AppAuth(self._app_id, self._private_key_pem)
+            integration = GithubIntegration(auth=auth)
+            installation_auth = integration.get_access_token(self._installation_id)
+        except Exception as exc:
+            raise GitToolkitError(
+                f"Failed to mint GitHub App installation token: {exc}"
+            ) from exc
+        self._token = installation_auth.token
+        self._expires_at = installation_auth.expires_at
+        if self._expires_at is not None and self._expires_at.tzinfo is None:
+            # Defensive: PyGithub returns tz-aware UTC, but normalise just in case.
+            self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
 
 
 class GitToolkit(AbstractToolkit):
