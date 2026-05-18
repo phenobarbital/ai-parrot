@@ -14,14 +14,14 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Creates the parrot_tools/s3/ package — must land before TASK-1240 imports from it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1239-generic-report-comparator.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1239"],
+      "depends_on": [
+        "TASK-1239"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports GenericReportComparator from TASK-1239. Must run after it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1240-s3-report-reader-toolkit.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1239", "TASK-1240"],
+      "depends_on": [
+        "TASK-1239",
+        "TASK-1240"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests both TASK-1239 and TASK-1240 implementations. Must run last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1241-s3-report-reader-tests.md"
     }
