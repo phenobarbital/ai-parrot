@@ -52,6 +52,8 @@ class AnthropicClient(AbstractClient):
     _default_model: str = 'claude-sonnet-4-5'
     _fallback_model: str = 'claude-sonnet-4.5'
     _lightweight_model: str = "claude-haiku-4-5-20251001"
+    # FEAT-181: Anthropic caches system prefixes ≥ 1024 tokens.
+    _min_cache_tokens: int = 1024
 
     def __init__(
         self,
@@ -91,6 +93,59 @@ class AnthropicClient(AbstractClient):
         if isinstance(error, APIStatusError) and error.status_code in (429, 503, 529):
             return True
         return super()._is_capacity_error(error)
+
+    # ── FEAT-181: Prompt Caching ───────────────────────────────────────────
+
+    def _segments_to_anthropic_blocks(self, segments: list) -> list:
+        """Convert CacheableSegments to Anthropic system content blocks.
+
+        Anthropic requires the ``system`` field to be a list of content blocks
+        when using ``cache_control``. This method translates segments into
+        that format, respecting the 4-block hard limit.
+
+        Args:
+            segments: List of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects.
+
+        Returns:
+            List of ``{"type": "text", "text": ...}`` dicts, with
+            ``"cache_control": {"type": "ephemeral"}`` on cacheable blocks
+            up to the 4-block limit.
+        """
+        MAX_CACHE_BLOCKS = 4
+        blocks = []
+        cacheable_count = 0
+        for seg in segments:
+            block: dict = {"type": "text", "text": seg.text}
+            if seg.cacheable and cacheable_count < MAX_CACHE_BLOCKS:
+                block["cache_control"] = {"type": "ephemeral"}
+                cacheable_count += 1
+            elif seg.cacheable and cacheable_count >= MAX_CACHE_BLOCKS:
+                self.logger.debug(
+                    "AnthropicClient: max 4 cache_control blocks reached; "
+                    "segment dropped from cache: %.40s...", seg.text
+                )
+            blocks.append(block)
+        return blocks
+
+    def _apply_cache_hints(self, payload: dict, segments: list) -> dict:
+        """Apply Anthropic cache_control blocks to the payload system prompt.
+
+        FEAT-181 — overrides AbstractClient no-op.
+
+        Args:
+            payload: The request payload dict.
+            segments: List of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects.
+
+        Returns:
+            The payload with ``system`` replaced by a list of content blocks
+            when segments are present; unchanged otherwise.
+        """
+        if not segments:
+            return payload
+        payload["system"] = self._segments_to_anthropic_blocks(segments)
+        return payload
 
     async def ask(
         self,
@@ -190,7 +245,11 @@ class AnthropicClient(AbstractClient):
         }
 
         if system_prompt:
-            payload["system"] = system_prompt
+            if isinstance(system_prompt, list):
+                # FEAT-181: List of CacheableSegments — translate to cache blocks.
+                payload = self._apply_cache_hints(payload, system_prompt)
+            else:
+                payload["system"] = system_prompt
 
         if context_1m:
             payload["betas"] = ["context-1m-2025-08-07"]
@@ -578,7 +637,11 @@ class AnthropicClient(AbstractClient):
                 }
 
                 if system_prompt:
-                    payload["system"] = system_prompt
+                    if isinstance(system_prompt, list):
+                        # FEAT-181: List of CacheableSegments — translate to cache blocks.
+                        payload = self._apply_cache_hints(payload, system_prompt)
+                    else:
+                        payload["system"] = system_prompt
 
                 if context_1m:
                     payload["betas"] = ["context-1m-2025-08-07"]
@@ -979,11 +1042,22 @@ class AnthropicClient(AbstractClient):
         if structured_output:
             structured_system_prompt = "You are a precise assistant that responds only with valid JSON when requested. When asked for structured output, respond with ONLY the JSON object, no additional text, explanations, or markdown formatting."
             if system_prompt:
-                payload["system"] = f"{system_prompt}\n\n{structured_system_prompt}"
+                if isinstance(system_prompt, list):
+                    # FEAT-181: Segments + structured output — append structured hint as non-cacheable block.
+                    extra_block = {"type": "text", "text": structured_system_prompt}
+                    blocks = self._segments_to_anthropic_blocks(system_prompt)
+                    blocks.append(extra_block)
+                    payload["system"] = blocks
+                else:
+                    payload["system"] = f"{system_prompt}\n\n{structured_system_prompt}"
             else:
                 payload["system"] = structured_system_prompt
         elif system_prompt:
-            payload["system"] = system_prompt
+            if isinstance(system_prompt, list):
+                # FEAT-181: List of CacheableSegments — translate to cache blocks.
+                payload = self._apply_cache_hints(payload, system_prompt)
+            else:
+                payload["system"] = system_prompt
 
         if count_objects and not structured_output:
             # Import ObjectDetectionResult from models
