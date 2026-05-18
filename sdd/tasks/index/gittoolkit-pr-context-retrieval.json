@@ -112,7 +112,7 @@
       "feature_id": "FEAT-182",
       "feature": "gittoolkit-pr-context-retrieval",
       "spec": "sdd/specs/gittoolkit-pr-context-retrieval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Edits github_reviewer.py once the 3 tools land.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1222-reviewer-tool-calling-loop.md"
+      "completed_at": "2026-05-18T14:36:31+00:00",
+      "file": "sdd/tasks/completed/TASK-1222-reviewer-tool-calling-loop.md"
     },
     {
       "id": "TASK-1223",
