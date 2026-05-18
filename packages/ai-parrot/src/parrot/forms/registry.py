@@ -18,10 +18,13 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from .schema import FormSchema
 from .style import StyleSchema
+
+if TYPE_CHECKING:
+    from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +93,15 @@ class FormStorage(ABC):
         """
         ...
 
+    async def close(self) -> None:
+        """Release any resources held by this storage backend.
+
+        Default implementation is a no-op. Subclasses that hold resources
+        (e.g. asyncpg pools, file handles) should override this method.
+        Called automatically by ``FormRegistry.on_shutdown`` when the
+        aiohttp application shuts down.
+        """
+
 
 class FormRegistry:
     """Thread-safe registry for FormSchema objects.
@@ -108,18 +120,33 @@ class FormRegistry:
         await registry.load_from_storage()
     """
 
-    def __init__(self, storage: FormStorage | None = None) -> None:
+    def __init__(
+        self,
+        app: "web.Application | None" = None,
+        storage: "FormStorage | None" = None,
+    ) -> None:
         """Initialize FormRegistry.
 
         Args:
+            app: Optional aiohttp ``web.Application`` instance. When provided,
+                the registry self-registers as ``app['form_registry']`` and
+                hooks ``on_startup`` / ``on_shutdown`` into the application's
+                lifecycle signals automatically.
             storage: Optional FormStorage backend for persistence.
         """
         self._forms: dict[str, FormSchema] = {}
         self._lock = asyncio.Lock()
         self._storage = storage
+        self._app: "web.Application | None" = None
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
         self._on_unregister: list[Callable[[str], Awaitable[None]]] = []
         self.logger = logging.getLogger(__name__)
+
+        if app is not None:
+            self._app = app
+            app["form_registry"] = self
+            app.on_startup.append(self.on_startup)
+            app.on_shutdown.append(self.on_shutdown)
 
     async def register(
         self,
@@ -165,6 +192,54 @@ class FormRegistry:
                 await callback(form)
             except Exception as exc:
                 self.logger.warning("Register callback failed: %s", exc)
+
+    async def on_startup(self, app: "web.Application") -> None:
+        """aiohttp startup signal handler.
+
+        Calls ``storage.initialize()`` (if the storage has the method) and
+        then ``load_from_storage()`` to hydrate the in-memory cache on startup.
+        This method is registered automatically when a ``web.Application`` is
+        passed to ``__init__``.
+
+        Args:
+            app: The aiohttp application (provided by aiohttp's signal machinery).
+        """
+        if self._storage is None:
+            self.logger.debug("on_startup: no storage configured — skipping")
+            return
+
+        if hasattr(self._storage, "initialize"):
+            try:
+                await self._storage.initialize()  # type: ignore[attr-defined]
+                self.logger.info("FormRegistry: storage initialized")
+            except Exception as exc:
+                self.logger.error("FormRegistry: storage initialize() failed: %s", exc)
+
+        try:
+            count = await self.load_from_storage()
+            self.logger.info("FormRegistry: loaded %d forms from storage on startup", count)
+        except Exception as exc:
+            self.logger.error("FormRegistry: load_from_storage() failed: %s", exc)
+
+    async def on_shutdown(self, app: "web.Application") -> None:
+        """aiohttp shutdown signal handler.
+
+        Calls ``storage.close()`` to release resources (e.g. close asyncpg
+        pool). This method is registered automatically when a
+        ``web.Application`` is passed to ``__init__``.
+
+        Args:
+            app: The aiohttp application (provided by aiohttp's signal machinery).
+        """
+        if self._storage is None:
+            self.logger.debug("on_shutdown: no storage configured — skipping")
+            return
+
+        try:
+            await self._storage.close()
+            self.logger.info("FormRegistry: storage closed")
+        except Exception as exc:
+            self.logger.error("FormRegistry: storage close() failed: %s", exc)
 
     async def unregister(self, form_id: str) -> bool:
         """Unregister a form schema.

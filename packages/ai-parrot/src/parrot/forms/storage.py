@@ -12,7 +12,13 @@ Table: form_schemas
 - created_at, updated_at: TIMESTAMPTZ
 - created_by: VARCHAR (optional metadata)
 
-Usage:
+Usage (self-managed pool — recommended):
+    storage = PostgresFormStorage(dsn="postgresql://user:pw@host/db")
+    await storage.initialize()   # creates pool + DDL
+    await storage.save(form_schema)
+    await storage.close()        # closes pool
+
+Usage (externally-managed pool — backward compatible):
     pool = await asyncpg.create_pool(dsn="postgresql://...")
     storage = PostgresFormStorage(pool=pool)
     await storage.initialize()
@@ -103,23 +109,71 @@ class PostgresFormStorage(FormStorage):
     ORDER BY form_id, updated_at DESC
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(
+        self,
+        *,
+        pool: Any | None = None,
+        dsn: str | None = None,
+        min_size: int = 2,
+        max_size: int = 10,
+        **pool_kwargs: Any,
+    ) -> None:
         """Initialize PostgresFormStorage.
 
         Args:
-            pool: asyncpg connection pool (asyncpg.Pool).
+            pool: An existing asyncpg connection pool. When provided,
+                ``_owns_pool`` is False and ``close()`` will not close it.
+            dsn: asyncpg DSN string. Used by ``initialize()`` to create the
+                pool when ``pool`` is None.
+            min_size: Minimum pool size (default 2). Ignored when pool is
+                provided externally.
+            max_size: Maximum pool size (default 10). Ignored when pool is
+                provided externally.
+            **pool_kwargs: Additional kwargs forwarded to ``asyncpg.create_pool()``.
         """
-        self._pool = pool
+        self._pool: Any | None = pool
+        self._dsn: str | None = dsn
+        self._min_size = min_size
+        self._max_size = max_size
+        self._pool_kwargs = pool_kwargs
+        # Track ownership: False when pool is provided externally.
+        self._owns_pool: bool = pool is None
         self.logger = logging.getLogger(__name__)
 
     async def initialize(self) -> None:
         """Create the form_schemas table if it does not exist.
 
+        When no pool was provided at construction time, creates a new
+        ``asyncpg`` pool using the stored DSN and pool sizing parameters.
         This method is idempotent — safe to call on every startup.
         """
+        if self._pool is None:
+            import asyncpg  # lazy runtime import
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=self._min_size,
+                max_size=self._max_size,
+                **self._pool_kwargs,
+            )
+            self.logger.info("PostgresFormStorage: created asyncpg pool")
+
         async with self._pool.acquire() as conn:
             await conn.execute(self.CREATE_TABLE_SQL)
         self.logger.info("form_schemas table ensured")
+
+    async def close(self) -> None:
+        """Close the asyncpg pool if this storage owns it.
+
+        When the pool was provided externally (``pool=...`` kwarg at
+        construction), this method is a no-op — the caller retains pool
+        ownership.
+
+        Idempotent: calling ``close()`` multiple times does not raise.
+        """
+        if self._owns_pool and self._pool is not None:
+            await self._pool.close()
+            self.logger.info("PostgresFormStorage: pool closed")
+        self._pool = None
 
     async def save(
         self,
