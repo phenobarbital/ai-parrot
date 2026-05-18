@@ -226,8 +226,8 @@ def toolkit_no_catalog(mock_file_manager):
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-19
+**Notes**: 17 comparator tests + 29 toolkit tests = 46 total. All pass. Used MagicMock for FileMetadata (conftest stubs it). Also fixed tool_prefix from "s3_" to "s3" (prefix_separator="_" adds underscore automatically). No real S3/Postgres connections.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: tool_prefix set to "s3" (not "s3_") because AbstractToolkit adds the separator automatically; net result is correct "s3_" prefix on all tool names.

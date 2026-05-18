@@ -52,7 +52,7 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Tests both TASK-1239 and TASK-1240 implementations. Must run last.",
       "assigned_to": null,
       "started_at": "2026-05-18T22:29:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1241-s3-report-reader-tests.md"
+      "completed_at": "2026-05-18T22:38:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1241-s3-report-reader-tests.md"
     }
   ]
 }
