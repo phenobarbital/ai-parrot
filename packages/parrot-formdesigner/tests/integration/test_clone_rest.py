@@ -75,7 +75,6 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> None:
     """POST /clone returns 201 with full FormSchema body."""
     registry = FormRegistry()
@@ -94,7 +93,6 @@ async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> No
     assert "sections" in data
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_with_patch(aiohttp_client, source_form: FormSchema) -> None:
     """POST /clone with patch body applies overrides and returns 201."""
     registry = FormRegistry()
@@ -119,7 +117,6 @@ async def test_clone_rest_with_patch(aiohttp_client, source_form: FormSchema) ->
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_missing_new_form_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:
@@ -137,7 +134,6 @@ async def test_clone_rest_missing_new_form_id(
     assert "error" in data
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_empty_new_form_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:
@@ -155,7 +151,6 @@ async def test_clone_rest_empty_new_form_id(
     assert "error" in data
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_invalid_json(
     aiohttp_client, source_form: FormSchema
 ) -> None:
@@ -177,7 +172,6 @@ async def test_clone_rest_invalid_json(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_source_not_found(aiohttp_client) -> None:
     """POST /clone returns 404 when the source form does not exist."""
     registry = FormRegistry()
@@ -192,7 +186,6 @@ async def test_clone_rest_source_not_found(aiohttp_client) -> None:
     assert "error" in data
 
 
-@pytest.mark.asyncio
 async def test_clone_rest_duplicate_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:

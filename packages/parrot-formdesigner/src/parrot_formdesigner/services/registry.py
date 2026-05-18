@@ -22,8 +22,14 @@ from typing import Any, Awaitable, Callable
 
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
+from .validators import FormValidator
 
 logger = logging.getLogger(__name__)
+
+
+class FormAlreadyExistsError(ValueError):
+    """Raised when attempting to register a form with an ID that already exists."""
+    pass
 
 
 class FormStorage(ABC):
@@ -446,19 +452,17 @@ class FormRegistry:
 
         Raises:
             KeyError: When ``source_form_id`` is not found in the registry.
-            ValueError: When ``new_form_id`` already exists in the registry.
+            FormAlreadyExistsError: When ``new_form_id`` already exists in the
+                registry.
             ValueError: When ``FormValidator.check_schema`` reports structural
                 errors on the cloned (and optionally patched) form.
         """
-        from ..api._utils import _deep_merge
-        from .validators import FormValidator
-
         source = await self.get(source_form_id)
         if source is None:
             raise KeyError(f"Form '{source_form_id}' not found")
 
         if await self.contains(new_form_id):
-            raise ValueError(f"Form '{new_form_id}' already exists")
+            raise FormAlreadyExistsError(f"Form '{new_form_id}' already exists")
 
         # Deep-clone via Pydantic v2
         clone = source.model_copy(deep=True)
@@ -479,11 +483,16 @@ class FormRegistry:
 
         # Apply optional RFC 7396 merge-patch
         if patch:
+            from ..api._utils import _deep_merge  # deferred to avoid circular import
             clone_dict = clone.model_dump()
             merged = _deep_merge(clone_dict, patch)
             # Patch cannot override form_id or created_at
             merged["form_id"] = new_form_id
             merged.pop("created_at", None)
+            # Ensure provenance survives the patch (RFC 7396 null removal)
+            meta = merged.get("meta") or {}
+            meta["cloned_from"] = source_form_id
+            merged["meta"] = meta
             clone = FormSchema.model_validate(merged)
             # Ensure created_at remains None after re-validation
             clone.created_at = None
@@ -493,11 +502,18 @@ class FormRegistry:
         if errors:
             raise ValueError(f"Cloned form failed validation: {errors}")
 
+        await self.register(clone, persist=persist, overwrite=False)
+
+        # TOCTOU race condition guard
+        if not await self.contains(new_form_id):
+            raise ValueError(
+                f"Form '{new_form_id}' could not be registered — concurrent conflict"
+            )
+
         self.logger.info(
-            "Cloning form '%s' -> '%s' (persist=%s)",
+            "Cloned form '%s' -> '%s' (persist=%s)",
             source_form_id,
             new_form_id,
             persist,
         )
-        await self.register(clone, persist=persist, overwrite=False)
         return clone

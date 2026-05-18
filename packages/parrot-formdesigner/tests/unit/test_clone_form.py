@@ -184,7 +184,7 @@ async def test_clone_validation_error(registry: FormRegistry) -> None:
     # Patch 'sections' to an invalid value — FormSchema.sections must be a list
     # of FormSection dicts; providing a string triggers a ValidationError
     # inside clone_form which is caught and re-raised as ValueError.
-    with pytest.raises((ValueError, Exception)):
+    with pytest.raises(ValueError):
         await registry.clone_form(
             "source-form",
             "broken-clone",

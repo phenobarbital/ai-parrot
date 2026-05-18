@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from ..core.schema import FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
-from ..services.registry import FormRegistry
+from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 
@@ -415,13 +415,15 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
-        new_form_id = body.get("new_form_id")
+        new_form_id = (body.get("new_form_id") or "").strip()
         if not new_form_id:
-            return web.json_response(
-                {"error": "new_form_id is required"}, status=400
-            )
+            return web.json_response({"error": "new_form_id is required"}, status=400)
 
         patch = body.get("patch") or None
+        if patch is not None and not isinstance(patch, dict):
+            return web.json_response(
+                {"error": "patch must be a JSON object"}, status=400
+            )
         tenant = body.get("tenant") or None
 
         try:
@@ -435,16 +437,15 @@ class FormAPIHandler:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
+        except FormAlreadyExistsError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
         except ValueError as exc:
-            msg = str(exc)
-            if "already exists" in msg:
-                return web.json_response({"error": msg}, status=409)
-            return web.json_response({"error": msg}, status=422)
+            return web.json_response({"error": str(exc)}, status=422)
 
         self.logger.info(
             "Cloned form '%s' -> '%s'", form_id, clone.form_id
         )
-        return web.json_response(clone.model_dump(), status=201)
+        return web.json_response(clone.model_dump(mode="json"), status=201)
 
     async def update_form(self, request: web.Request) -> web.Response:
         """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
