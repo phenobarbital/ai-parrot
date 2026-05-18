@@ -369,13 +369,14 @@ class SQLToolkit(DatabaseToolkit):
             )
 
     async def explain_query(self, query: str) -> str:
-        """Run an EXPLAIN on the given query and return the plan.
+        """Run EXPLAIN ANALYZE on the given query and return the execution plan.
 
-        Safety: ``EXPLAIN ANALYZE`` actually **executes** the statement —
-        for ``DELETE``/``UPDATE``/``INSERT``/``MERGE`` this would mutate
-        data, which the read-only DBA-helper use case must never do. When
-        the query is not provably read-only we strip ``ANALYZE`` (and any
-        execution-time options) and run the planner-only variant.
+        Always safe to call: for read-only queries (SELECT, WITH, …) the tool
+        runs ``EXPLAIN ANALYZE`` and returns the full execution plan including
+        actual rows and timing.  For non-read-only statements the tool
+        automatically downgrades to ``EXPLAIN`` (planner-only, no execution)
+        so data is never mutated.  Callers do not need to check read-only
+        status before invoking this tool.
 
         Args:
             query: SQL query to explain.

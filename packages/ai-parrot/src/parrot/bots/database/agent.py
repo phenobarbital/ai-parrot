@@ -105,7 +105,7 @@ _INTERNAL_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
 # a ``PostgresToolkit(tool_prefix="db")`` exposes ``db_search_schema``,
 # and both are surfaced correctly without any change here.
 _TOOLKIT_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
-    OutputComponent.SQL_QUERY: {"generate_query", "validate_query"},
+    OutputComponent.SQL_QUERY: {"generate_query", "validate_query", "explain_query"},
     OutputComponent.EXECUTION_PLAN: {"explain_query"},
     OutputComponent.SCHEMA_CONTEXT: {"search_schema", "describe_table"},
 }

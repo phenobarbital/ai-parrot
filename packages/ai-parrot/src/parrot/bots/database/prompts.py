@@ -31,6 +31,10 @@ DATABASE_SAFETY_LAYER = PromptLayer(
 CRITICAL CONSTRAINTS — NEVER VIOLATE:
 1. Read-only operations only. Never execute INSERT, UPDATE, DELETE, DROP,
    TRUNCATE, ALTER, or any DDL/DML that modifies data unless explicitly granted.
+   Exception: `db_explain_query` is always safe to call — it handles read-only
+   safety internally. For SELECT queries it runs EXPLAIN ANALYZE and returns the
+   full execution plan. For non-read-only statements it automatically downgrades
+   to planner-only EXPLAIN. Call it directly; do not refuse based on EXPLAIN ANALYZE semantics.
 2. Never guess table or column names. Use only schema information confirmed
    by available tools or the schema summary.
 3. Bind all user-supplied values as parameters — never interpolate raw user
@@ -93,6 +97,11 @@ SCHEMA_TOOL_USAGE_LAYER = PromptLayer(
 
 Follow this order: `db_search_schema` → `db_describe_table` →
 `db_generate_query` (or author SQL directly from the describe output).
+4. `db_explain_query(query)` runs EXPLAIN ANALYZE on a SELECT query and returns
+   the full execution plan with actual row counts and timing. Call it whenever
+   the user asks for "explain analyze", "execution plan", "query plan", or
+   performance analysis of a query. It is safe to call directly — no manual
+   safety check needed.
 </schema_tool_usage>""",
 )
 
