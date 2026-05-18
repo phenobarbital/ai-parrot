@@ -213,6 +213,32 @@ Rules:
 
 Be concise. Prefer concrete pointers ("AC #2 says the endpoint must accept
 JSON, but the diff only adds a form-data branch") over vague language.
+
+## Tool Use Guide
+
+When reviewing the PR diff, you have three tools to pull additional
+context from the repository. Use them sparingly — the cap is 5 calls
+per review.
+
+- ``get_file_content_at_ref(path, ref, start_line?, end_line?)`` —
+  fetch the full body of a file at a given commit, branch, or tag.
+  Use when the diff hunk shows a small change to a function whose
+  full body or class context is needed to judge whether the change
+  is correct. Prefer ``start_line``/``end_line`` slicing on large files.
+
+- ``compare_pr_versions(pr_number, path)`` — fetch both the base and
+  head versions of a single file in the PR. Use when the diff hunk
+  is too small to see the full before/after of a refactored function
+  or class.
+
+- ``search_repo_code(query)`` — search the PR's repository for a
+  string or symbol on the default branch only. Use when you suspect
+  a change has callers or related code elsewhere that the diff does
+  not show. Note: this only indexes the default branch and is
+  rate-limited.
+
+If you are confident in your verdict from the diff alone, do not call
+any tools — return the PRReviewResult directly.
 """
 
 
@@ -396,6 +422,7 @@ class GitHubReviewer(Agent):
         silent_weeks_threshold: int = 3,
         top_n_contributors: int = 10,
         use_llm_summary: bool = False,
+        max_review_tool_calls: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
@@ -416,6 +443,14 @@ class GitHubReviewer(Agent):
         self.silent_weeks_threshold = int(silent_weeks_threshold)
         self.top_n_contributors = int(top_n_contributors)
         self.use_llm_summary = bool(use_llm_summary)
+
+        # FEAT-182: tool-call cap per review session.
+        # Priority: explicit kwarg > GITHUB_REVIEWER_MAX_TOOL_CALLS env var > 5.
+        if max_review_tool_calls is not None:
+            self.max_review_tool_calls = int(max_review_tool_calls)
+        else:
+            env_cap = config.get("GITHUB_REVIEWER_MAX_TOOL_CALLS", fallback=5)
+            self.max_review_tool_calls = int(env_cap)
 
         self._ac_field_id: str = config.get(
             "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
@@ -1032,7 +1067,9 @@ class GitHubReviewer(Agent):
 
         try:
             response = await self.ask(
-                question=question, structured_output=PRReviewResult
+                question=question,
+                structured_output=PRReviewResult,
+                max_iterations=self.max_review_tool_calls + 1,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
@@ -1046,6 +1083,19 @@ class GitHubReviewer(Agent):
                 discrepancies=[],
                 summary=f"LLM review failed: {exc}",
                 approve=False,
+            )
+
+        # FEAT-182: detect tool-call cap hit and emit a WARNING log.
+        tool_calls = getattr(response, "tool_calls", None) or []
+        tool_call_count = len(tool_calls)
+        if tool_call_count >= self.max_review_tool_calls and self.max_review_tool_calls > 0:
+            tool_names = [getattr(tc, "name", str(tc)) for tc in tool_calls]
+            self.logger.warning(
+                "GitHubReviewer: PR %s#%s hit tool-call cap (count=%d, tools=%s)",
+                payload.get("repository"),
+                payload.get("pr_number"),
+                tool_call_count,
+                tool_names,
             )
 
         output = getattr(response, "output", response)
@@ -1368,8 +1418,7 @@ class GitHubReviewer(Agent):
             if cs.login is None:
                 continue
 
-            # Sort weeks by week_start descending for easy look-back.
-            sorted_weeks = sorted(cs.weeks, key=lambda w: w.week_start, reverse=True)
+            # Build a lookup from week_start to week slice.
             week_by_start: Dict[datetime, ContributorWeek] = {
                 w.week_start: w for w in cs.weeks
             }

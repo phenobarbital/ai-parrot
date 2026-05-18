@@ -1187,3 +1187,226 @@ class TestReportWeeklyActivity:
         out = asyncio.run(r.report_weekly_activity())
         assert out["status"] == "ok"
         assert out["telegram_sent"] == 0
+
+
+# ---------------------------------------------------------------------------
+# FEAT-182 TASK-1222: Tool-calling loop tests
+# ---------------------------------------------------------------------------
+
+
+def _wire_reviewer_with_tool_cap(max_tool_calls: int = 5, **overrides: Any) -> Any:
+    """Build a reviewer stub with max_review_tool_calls set, for tool-loop tests."""
+    r = _wire_reviewer(**overrides)
+    r.max_review_tool_calls = max_tool_calls
+    # Bind _ask_llm_for_review so we can call it directly.
+    r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+    return r
+
+
+def _make_fake_response(
+    result: PRReviewResult,
+    tool_calls: Optional[List[Any]] = None,
+) -> MagicMock:
+    """Build a mock agent response object as returned by self.ask()."""
+    response = MagicMock()
+    response.output = result
+    response.tool_calls = tool_calls or []
+    return response
+
+
+class TestReviewToolCallingLoop:
+    """Unit tests for the FEAT-182 tool-calling loop in _ask_llm_for_review."""
+
+    _FIXTURE_PAYLOAD: Dict[str, Any] = {
+        "repository": "owner/repo",
+        "pr_number": 42,
+        "pr_title": "feat: add logging",
+        "pr_body": "Fixes NAV-100",
+        "pr_url": "https://github.com/owner/repo/pull/42",
+        "head_sha": "abc123",
+    }
+
+    _TICKET: Dict[str, Any] = {
+        "fields": {
+            "summary": "Add logging",
+            "description": "Log all requests.",
+            "status": {"name": "In Progress"},
+            "customfield_10100": "AC #1: logging added",
+        }
+    }
+
+    def test_review_no_tool_calls_unchanged_behavior(self):
+        """When the LLM emits PRReviewResult with no tool calls, the review
+        output is identical to the structured-output path (no-regression)."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[],
+            summary="All criteria met.",
+            approve=True,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=[])
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        result = asyncio.run(
+            r._ask_llm_for_review(
+                payload=self._FIXTURE_PAYLOAD,
+                ticket_key="NAV-100",
+                ticket=self._TICKET,
+                diff_text="diff --git a/logging.py ...",
+                diff_truncated=False,
+                diff_available=True,
+            )
+        )
+
+        assert isinstance(result, PRReviewResult)
+        assert result.approve is True
+        assert result.jira_key == "NAV-100"
+        assert result.summary == "All criteria met."
+        assert result.discrepancies == []
+        # No warning should have been emitted (0 tool calls < cap of 5).
+        r.logger.warning.assert_not_called()
+
+    def test_review_with_tool_calls_within_cap(self):
+        """When LLM makes 2 tool calls (below cap of 5), result is returned
+        correctly and no warning is emitted."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        # Simulate 2 tool calls in the response.
+        tc1 = MagicMock()
+        tc1.name = "get_file_content_at_ref"
+        tc2 = MagicMock()
+        tc2.name = "search_repo_code"
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[
+                Discrepancy(
+                    criterion="AC #1: logging added",
+                    issue="Logger not imported in new module",
+                    severity="major",
+                )
+            ],
+            summary="One AC gap found.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=[tc1, tc2])
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        result = asyncio.run(
+            r._ask_llm_for_review(
+                payload=self._FIXTURE_PAYLOAD,
+                ticket_key="NAV-100",
+                ticket=self._TICKET,
+                diff_text="diff --git a/logging.py ...",
+                diff_truncated=False,
+                diff_available=True,
+            )
+        )
+
+        assert isinstance(result, PRReviewResult)
+        assert result.approve is False
+        assert len(result.discrepancies) == 1
+        # 2 calls < cap of 5 — no warning.
+        r.logger.warning.assert_not_called()
+
+    def test_review_cap_hit_logs_warning(self):
+        """When the LLM exhausts the tool-call budget (count >= cap), a WARNING
+        is logged containing pr_number, count=, and tools=."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        # Simulate exactly 5 tool calls (== cap, triggers warning).
+        tool_calls = []
+        for name in [
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+            "search_repo_code",
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+        ]:
+            tc = MagicMock()
+            tc.name = name
+            tool_calls.append(tc)
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[],
+            summary="Budget exhausted; partial review.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=tool_calls)
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        asyncio.run(
+            r._ask_llm_for_review(
+                payload=self._FIXTURE_PAYLOAD,
+                ticket_key="NAV-100",
+                ticket=self._TICKET,
+                diff_text="diff --git a/logging.py ...",
+                diff_truncated=False,
+                diff_available=True,
+            )
+        )
+
+        # WARNING must have been called at least once.
+        assert r.logger.warning.called, "expected logger.warning to be called"
+        call_args = r.logger.warning.call_args
+        # The format string and args are the first positional argument.
+        fmt = call_args[0][0]
+        args = call_args[0][1:]
+        message = fmt % args
+        assert "hit tool-call cap" in message
+        assert "42" in message           # pr_number
+        assert "count=5" in message      # count
+        # tool names must appear somewhere in the message
+        assert "get_file_content_at_ref" in message or "compare_pr_versions" in message
+
+    def test_attach_toolkit_registers_new_tools(self):
+        """_attach_toolkit(git_toolkit, 'Git') extends self.tools with the
+        3 new tool names: get_file_content_at_ref, compare_pr_versions,
+        search_repo_code."""
+        r = _wire_reviewer()
+        r.tools = []
+
+        # Build three fake AbstractTool objects with the expected names.
+        new_tool_names = [
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+            "search_repo_code",
+        ]
+        fake_tools = []
+        for name in new_tool_names:
+            t = MagicMock()
+            t.name = name
+            fake_tools.append(t)
+
+        # Mock tool_manager.register_toolkit to return the fake tools.
+        mock_tool_manager = MagicMock()
+        mock_tool_manager.register_toolkit.return_value = fake_tools
+        r.tool_manager = mock_tool_manager
+
+        # Mock git_toolkit instance.
+        mock_git_toolkit = MagicMock()
+
+        # Call the real _attach_toolkit.
+        GitHubReviewer._attach_toolkit(r, mock_git_toolkit, "Git")
+
+        # Verify tools were extended.
+        registered_names = [getattr(t, "name", None) for t in r.tools]
+        for expected_name in new_tool_names:
+            assert expected_name in registered_names, (
+                f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
+            )
