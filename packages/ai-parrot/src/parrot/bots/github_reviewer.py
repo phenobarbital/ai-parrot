@@ -449,18 +449,79 @@ class GitHubReviewer(Agent):
         self.tools.extend(tools)
 
     def _build_git_toolkit(self) -> Optional[GitToolkit]:
-        token = config.get("GITHUB_TOKEN")
-        if not token:
-            self.logger.error(
-                "GitHubReviewer: GITHUB_TOKEN is not set; the agent will "
-                "disable itself (no PR fetch/review/webhook calls)."
+        """Build a :class:`GitToolkit` for this reviewer.
+
+        Reads ``GITHUB_AUTH_TYPE`` (default ``"pat"``) from configuration and
+        routes to the appropriate constructor kwargs. Fails closed — returns
+        ``None`` and emits an error log — when required configuration for the
+        selected mode is absent or when ``GitToolkit.__init__`` raises.
+
+        Returns:
+            A configured :class:`GitToolkit`, or ``None`` when the reviewer
+            should disable itself.
+        """
+        auth_type = (config.get("GITHUB_AUTH_TYPE") or "pat").lower()
+        default_branch = config.get("GIT_DEFAULT_BRANCH", fallback="main")
+
+        if auth_type == "pat":
+            token = config.get("GITHUB_TOKEN")
+            if not token:
+                self.logger.error(
+                    "GitHubReviewer: GITHUB_TOKEN is not set; the agent will "
+                    "disable itself (no PR fetch/review/webhook calls)."
+                )
+                return None
+            return GitToolkit(
+                default_repository=self.repository,
+                default_branch=default_branch,
+                github_token=token,
             )
-            return None
-        return GitToolkit(
-            default_repository=self.repository,
-            default_branch=config.get("GIT_DEFAULT_BRANCH", fallback="main"),
-            github_token=token,
+
+        if auth_type == "github_app":
+            app_id_raw = config.get("GITHUB_APP_ID")
+            installation_id_raw = config.get("GITHUB_APP_INSTALLATION_ID")
+            private_key = config.get("GITHUB_APP_PRIVATE_KEY")
+            private_key_path = config.get("GITHUB_APP_PRIVATE_KEY_PATH")
+
+            missing = []
+            if not app_id_raw:
+                missing.append("GITHUB_APP_ID")
+            if not installation_id_raw:
+                missing.append("GITHUB_APP_INSTALLATION_ID")
+            if not (private_key or private_key_path):
+                missing.append("GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH")
+            if missing:
+                self.logger.error(
+                    "GitHubReviewer: GITHUB_AUTH_TYPE=github_app but missing %s; "
+                    "the agent will disable itself (no PR fetch/review/webhook calls).",
+                    ", ".join(missing),
+                )
+                return None
+
+            try:
+                return GitToolkit(
+                    default_repository=self.repository,
+                    default_branch=default_branch,
+                    auth_type="github_app",
+                    app_id=int(app_id_raw),
+                    installation_id=int(installation_id_raw),
+                    private_key=private_key,
+                    private_key_path=private_key_path,
+                )
+            except Exception as exc:  # noqa: BLE001 — fail closed
+                self.logger.error(
+                    "GitHubReviewer: failed to build GitHub App toolkit: %s. "
+                    "The agent will disable itself.",
+                    exc,
+                )
+                return None
+
+        self.logger.error(
+            "GitHubReviewer: unknown GITHUB_AUTH_TYPE=%r (expected 'pat' or "
+            "'github_app'); the agent will disable itself.",
+            auth_type,
         )
+        return None
 
     def _build_jira_toolkit(self) -> Optional[JiraToolkit]:
         """Build a service-account JiraToolkit.
