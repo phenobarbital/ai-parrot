@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-180
 **Date**: 2026-05-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -657,12 +657,12 @@ GITHUB_REVIEW_USE_LLM_SUMMARY: bool = config.getboolean(
       inherit the chosen auth mode automatically.
 
 - [ ] Should the top-N contributor cap (default 10) be configurable, or
-      fixed in code? — *Owner: implementer*
+      fixed in code? — *Owner: implementer*: be configurable to default=10
 - [ ] When `use_llm_summary=True`, what's the right prompt: English only,
-      or follow the bot's existing system prompt locale? — *Owner: implementer*
+      or follow the bot's existing system prompt locale? — *Owner: implementer*=english only.
 - [ ] If GitHub returns 202 for the full retry budget, should we still
       post a "no data this week, will retry next week" message to
-      Telegram, or silently skip? — *Owner: implementer*
+      Telegram, or silently skip? — *Owner: implementer*: a "no data this week" with an explanation about why there is no data.
 
 ---
 

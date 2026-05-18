@@ -31,10 +31,11 @@ subclass per watched repository.
 from __future__ import annotations
 
 import html
+import json
 import logging as _stdlib_logging
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import (
     Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union,
 )
@@ -46,8 +47,13 @@ from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
 from parrot.core.hooks.models import GitHubWebhookConfig, HookEvent
 from parrot.models.google import GoogleModel
-from parrot.scheduler import schedule_daily_report
-from parrot_tools.gittoolkit import GitToolkit
+from parrot.scheduler import schedule_daily_report, schedule_weekly_report
+from parrot_tools.gittoolkit import (
+    ContributorStats,
+    ContributorWeek,
+    GitToolkit,
+    WeeklyCodeFrequency,
+)
 from parrot_tools.jiratoolkit import JiraToolkit
 
 
@@ -123,6 +129,61 @@ class PRReviewResult(BaseModel):
     approve: bool = Field(
         description="True if the PR satisfies every acceptance criterion.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Weekly activity report models (FEAT-180)
+# ---------------------------------------------------------------------------
+
+
+class _ContributorWindowSummary(BaseModel):
+    """One contributor's activity inside the reporting window."""
+
+    login: str
+    """GitHub login of the contributor."""
+    commits_this_week: int
+    """Number of commits in the current (most recent completed) week."""
+    additions: int
+    """Lines added in the current week."""
+    deletions: int
+    """Lines deleted in the current week (non-negative)."""
+    weeks_silent: int
+    """Consecutive weeks with zero commits up to and including the last completed
+    week. Zero when the contributor was active in the last completed week."""
+
+
+class WeeklyActivitySummary(BaseModel):
+    """Structured input to the templated/LLM renderer for the weekly digest."""
+
+    repository: str
+    """Repository name in ``owner/name`` format."""
+    period_start: datetime
+    """Sunday 00:00 UTC that begins the reporting week."""
+    period_end: datetime
+    """Sunday 00:00 UTC that begins the FOLLOWING week (exclusive upper bound)."""
+    contributors_active: List[_ContributorWindowSummary]
+    """Contributors with at least one commit in the reporting week, sorted by
+    commits desc then additions+deletions desc then login."""
+    contributors_silent: List[_ContributorWindowSummary]
+    """Contributors whose last ``weeks_silent >= threshold`` consecutive weeks
+    all had zero commits. Sorted by weeks_silent desc then login. Uncapped."""
+    total_commits: int
+    """Sum of commits across all contributors in the current week."""
+    total_additions: int
+    """Sum of additions across all contributors in the current week."""
+    total_deletions: int
+    """Sum of deletions across all contributors in the current week."""
+    prev_total_commits: int
+    """Total commits in the week immediately before the reporting window
+    (from code_frequency data, 0 if not available)."""
+    prev_total_additions: int
+    """Total additions in the previous week (from code_frequency, 0 if missing)."""
+    prev_total_deletions: int
+    """Total deletions in the previous week (from code_frequency, 0 if missing)."""
+
+
+class WeeklyLLMSummarizationError(RuntimeError):
+    """Raised when the LLM summarizer fails; caller falls back to templated output."""
 
 
 # ──────────────────────────────────────────────────────────────
@@ -315,6 +376,9 @@ class GitHubReviewer(Agent):
         stale_after_hours: int = 24,
         max_diff_bytes: int = 50_000,
         max_ticket_bytes: int = 20_000,
+        silent_weeks_threshold: int = 3,
+        top_n_contributors: int = 10,
+        use_llm_summary: bool = False,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
@@ -332,6 +396,9 @@ class GitHubReviewer(Agent):
         self.stale_after_hours = int(stale_after_hours)
         self.max_diff_bytes = int(max_diff_bytes)
         self.max_ticket_bytes = int(max_ticket_bytes)
+        self.silent_weeks_threshold = int(silent_weeks_threshold)
+        self.top_n_contributors = int(top_n_contributors)
+        self.use_llm_summary = bool(use_llm_summary)
 
         self._ac_field_id: str = config.get(
             "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
@@ -1148,9 +1215,464 @@ class GitHubReviewer(Agent):
         except ValueError:
             return None
 
+    # ------------------------------------------------------------------
+    # Weekly activity report helpers (FEAT-180)
+    # ------------------------------------------------------------------
+
+    def _build_weekly_summary(
+        self,
+        contributors: List[ContributorStats],
+        code_freq: List[WeeklyCodeFrequency],
+        *,
+        threshold_weeks: int,
+        top_n: int = 10,
+        now: Optional[datetime] = None,
+    ) -> WeeklyActivitySummary:
+        """Reshape raw stats into a WeeklyActivitySummary for rendering.
+
+        Pure function — no I/O, no LLM calls, no Telegram. Deterministic given
+        the same inputs and ``now`` value.
+
+        Args:
+            contributors: Per-contributor weekly stats from :meth:`GitToolkit.get_contributor_stats`.
+            code_freq: Repo-wide weekly code frequency from :meth:`GitToolkit.get_code_frequency`.
+            threshold_weeks: Number of consecutive zero-commit weeks to flag a
+                contributor as silent.
+            top_n: Maximum number of active contributors in the output (silent list
+                is uncapped).
+            now: Reference point for "current" week (defaults to
+                ``datetime.now(timezone.utc)``).
+
+        Returns:
+            A :class:`WeeklyActivitySummary` covering the most recently completed
+            GitHub-aligned (Sunday 00:00 UTC) week strictly before ``now``.
+
+        Raises:
+            ValueError: When both ``contributors`` and ``code_freq`` are empty
+                (cannot determine the reporting window).
+        """
+        now = now or datetime.now(timezone.utc)
+
+        # 1. Find the most recent completed week's period_start.
+        #    Gather all week_start values from contributors and code_freq,
+        #    pick the latest one that is strictly before `now`.
+        week_starts: List[datetime] = []
+        for cs in contributors:
+            for w in cs.weeks:
+                if w.week_start < now:
+                    week_starts.append(w.week_start)
+        if not week_starts:
+            for cf in code_freq:
+                if cf.week_start < now:
+                    week_starts.append(cf.week_start)
+
+        if not week_starts:
+            raise ValueError(
+                "Cannot determine reporting window: no week data before "
+                f"{now.isoformat()} found in contributors or code_freq."
+            )
+
+        period_start = max(week_starts)
+        period_end = period_start + timedelta(days=7)
+        prev_period_start = period_start - timedelta(days=7)
+
+        # 2. Build lookup for code_freq by week_start (for totals).
+        cf_by_week: Dict[datetime, WeeklyCodeFrequency] = {
+            cf.week_start: cf for cf in code_freq
+        }
+
+        # 3. Per-contributor processing.
+        active: List[_ContributorWindowSummary] = []
+        silent: List[_ContributorWindowSummary] = []
+
+        for cs in contributors:
+            # Skip anonymous (login is None).
+            if cs.login is None:
+                continue
+
+            # Sort weeks by week_start descending for easy look-back.
+            sorted_weeks = sorted(cs.weeks, key=lambda w: w.week_start, reverse=True)
+            week_by_start: Dict[datetime, ContributorWeek] = {
+                w.week_start: w for w in cs.weeks
+            }
+
+            # Current week slice.
+            current_slice = week_by_start.get(period_start)
+            commits_this_week = current_slice.commits if current_slice else 0
+            additions = current_slice.additions if current_slice else 0
+            deletions = current_slice.deletions if current_slice else 0
+
+            # Count consecutive silent weeks going backwards from period_start.
+            # Only count weeks where we have data AND commits == 0.
+            # Stop as soon as we hit a week with commits > 0 OR a week with no data.
+            weeks_silent = 0
+            check_date = period_start
+            while True:
+                slice_ = week_by_start.get(check_date)
+                if slice_ is None:
+                    # No data for this week — treat as a missing slice (not silent).
+                    # Count it silent only if it's the current week (no current data
+                    # means the contributor was not present this week).
+                    if check_date == period_start:
+                        weeks_silent += 1
+                        check_date = check_date - timedelta(days=7)
+                        continue
+                    break
+                if slice_.commits == 0:
+                    weeks_silent += 1
+                else:
+                    break
+                check_date = check_date - timedelta(days=7)
+
+            summary_entry = _ContributorWindowSummary(
+                login=cs.login,
+                commits_this_week=commits_this_week,
+                additions=additions,
+                deletions=deletions,
+                weeks_silent=weeks_silent,
+            )
+
+            if commits_this_week > 0:
+                active.append(summary_entry)
+            if weeks_silent >= threshold_weeks:
+                silent.append(summary_entry)
+
+        # 4. Sort active: commits desc, then additions+deletions desc, then login.
+        active.sort(
+            key=lambda c: (-c.commits_this_week, -(c.additions + c.deletions), c.login)
+        )
+        active = active[:top_n]
+
+        # 5. Sort silent: weeks_silent desc, then login.
+        silent.sort(key=lambda c: (-c.weeks_silent, c.login))
+
+        # 6. Totals from contributors (current week).
+        total_commits = sum(c.commits_this_week for c in active) + sum(
+            c.commits_this_week for c in silent if c.commits_this_week > 0
+        )
+        # Re-sum from all contributors (active list is truncated).
+        all_this_week = [
+            cs for cs in contributors
+            if cs.login is not None
+        ]
+        total_commits = 0
+        total_additions = 0
+        total_deletions = 0
+        for cs in all_this_week:
+            week_by_start = {w.week_start: w for w in cs.weeks}
+            current_slice = week_by_start.get(period_start)
+            if current_slice:
+                total_commits += current_slice.commits
+                total_additions += current_slice.additions
+                total_deletions += current_slice.deletions
+
+        # 7. Previous week totals from code_freq.
+        prev_cf = cf_by_week.get(prev_period_start)
+        prev_total_commits = 0  # code_freq doesn't have per-week commit count
+        prev_total_additions = prev_cf.additions if prev_cf else 0
+        prev_total_deletions = prev_cf.deletions if prev_cf else 0
+
+        # For prev_total_commits: sum from all contributors' prev-week slices.
+        for cs in all_this_week:
+            week_by_start = {w.week_start: w for w in cs.weeks}
+            prev_slice = week_by_start.get(prev_period_start)
+            if prev_slice:
+                prev_total_commits += prev_slice.commits
+
+        return WeeklyActivitySummary(
+            repository=self.repository,
+            period_start=period_start,
+            period_end=period_end,
+            contributors_active=active,
+            contributors_silent=silent,
+            total_commits=total_commits,
+            total_additions=total_additions,
+            total_deletions=total_deletions,
+            prev_total_commits=prev_total_commits,
+            prev_total_additions=prev_total_additions,
+            prev_total_deletions=prev_total_deletions,
+        )
+
+    def _format_weekly_activity_html(
+        self,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Build the Telegram HTML body for the weekly activity digest.
+
+        All user-data interpolations are ``html.escape``-d to avoid malformed
+        Telegram HTML entities. Uses only the Telegram-whitelisted HTML tag subset:
+        ``<b>``, ``<i>``, ``<code>``, ``<a>``, ``<pre>``.
+
+        Args:
+            summary: The :class:`WeeklyActivitySummary` to render.
+
+        Returns:
+            A Telegram-ready HTML string, under 4096 characters when
+            ``summary.contributors_active`` is at most ``top_n`` (default 10).
+        """
+        repo = html.escape(summary.repository)
+        # Display period as Sun → Sat (period_end is the following Sunday, so -1 day)
+        period = (
+            f"{summary.period_start:%Y-%m-%d} → "
+            f"{(summary.period_end - timedelta(days=1)):%Y-%m-%d}"
+        )
+
+        def pct(curr: int, prev: int) -> str:
+            """Format a percentage delta string with direction arrow."""
+            if prev == 0:
+                return "n/a" if curr == 0 else "▲ new"
+            delta = (curr - prev) / prev * 100
+            if abs(delta) < 0.5:
+                return "flat 0%"
+            arrow = "▲" if delta > 0 else "▼"
+            return f"{arrow} {delta:+.0f}%"
+
+        lines: List[str] = [
+            f"<b>Weekly activity — <code>{repo}</code></b>",
+            f"Period: {period}",
+            "",
+            (
+                f"<b>{summary.total_commits}</b> commits "
+                f"({pct(summary.total_commits, summary.prev_total_commits)})"
+            ),
+            (
+                f"{summary.total_additions:,} added / "
+                f"{summary.total_deletions:,} removed "
+                f"({pct(summary.total_additions + summary.total_deletions, summary.prev_total_additions + summary.prev_total_deletions)})"
+            ),
+        ]
+
+        if summary.contributors_active:
+            lines.append("")
+            lines.append("<b>Top contributors</b>")
+            for i, c in enumerate(summary.contributors_active, start=1):
+                login = html.escape(c.login)
+                lines.append(
+                    f"{i}. <code>{login}</code> — {c.commits_this_week} commits, "
+                    f"{c.additions:,} / {c.deletions:,}"
+                )
+
+        if summary.contributors_silent:
+            lines.append("")
+            lines.append("<b>Silent contributors</b>")
+            for c in summary.contributors_silent:
+                login = html.escape(c.login)
+                lines.append(
+                    f"<code>{login}</code> — silent {c.weeks_silent} weeks"
+                )
+
+        lines.append("")
+        lines.append("<i>Posted by the GitHubReviewer agent.</i>")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # LLM prose summarizer (FEAT-180, TASK-1214)
+    # ------------------------------------------------------------------
+
+    _WEEKLY_LLM_SYSTEM_PROMPT = (
+        "You write concise, factual weekly engineering activity reports for a "
+        "software team. Given a structured JSON summary of last week's GitHub "
+        "activity, output a short English digest (3-5 short paragraphs total, "
+        "~150 words max). Lead with totals, highlight 1-2 notable contributors, "
+        "and call out anyone who has gone silent. Do not invent numbers; only "
+        "use values present in the input JSON. Do not include HTML tags or "
+        "markdown bullets. Plain prose only."
+    )
+
+    async def _llm_summarize_weekly(
+        self,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Build a prose digest via the agent's LLM.
+
+        Serialises ``summary`` as JSON and calls :meth:`ask` with a tight system
+        prompt. On any failure raises :class:`WeeklyLLMSummarizationError` so the
+        caller can fall back to the templated output.
+
+        Args:
+            summary: The structured summary to rephrase.
+
+        Returns:
+            A plain-prose string (no HTML) suitable for wrapping in
+            :meth:`_wrap_llm_prose_in_html_envelope`.
+
+        Raises:
+            WeeklyLLMSummarizationError: On any exception from :meth:`ask`.
+        """
+        payload = summary.model_dump(mode="json")
+        question = (
+            "Summarize this week's GitHub activity. Output prose only.\n\n"
+            f"```json\n{json.dumps(payload, indent=2, default=str)}\n```"
+        )
+        try:
+            response = await self.ask(
+                question=question,
+                system_prompt=self._WEEKLY_LLM_SYSTEM_PROMPT,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise WeeklyLLMSummarizationError(
+                f"LLM weekly summarization failed: {exc}"
+            ) from exc
+
+        output = getattr(response, "output", response)
+        if isinstance(output, str):
+            return output.strip()
+        return str(output).strip()
+
+    def _wrap_llm_prose_in_html_envelope(
+        self,
+        prose: str,
+        summary: WeeklyActivitySummary,
+    ) -> str:
+        """Wrap plain LLM prose in a minimal HTML envelope for Telegram.
+
+        Args:
+            prose: Plain prose text from the LLM summariser.
+            summary: Used to build the header line.
+
+        Returns:
+            Telegram-safe HTML with a header, the escaped prose body, and a footer.
+        """
+        repo = html.escape(summary.repository)
+        body = html.escape(prose)
+        return (
+            f"<b>Weekly activity — <code>{repo}</code></b>\n\n"
+            f"{body}\n\n"
+            f"<i>Posted by the GitHubReviewer agent.</i>"
+        )
+
+    # ------------------------------------------------------------------
+    # Weekly activity report orchestrator (FEAT-180, TASK-1215)
+    # ------------------------------------------------------------------
+
+    @schedule_weekly_report
+    async def report_weekly_activity(self) -> Dict[str, Any]:
+        """Compose and send the weekly contributor-activity digest.
+
+        Scheduled by :func:`schedule_weekly_report`. Override the firing
+        day/time per deployment via ``{AGENT_ID}_WEEKLY_REPORT=DDD HH:MM``
+        (UTC, default ``MON 09:00``).
+
+        Returns:
+            A status dict with keys: ``status``, ``repository``,
+            ``period_start``, ``period_end``, ``active``, ``silent``,
+            ``rendered_via``, ``telegram_sent``.
+        """
+        if self.git_toolkit is None:
+            self.logger.warning(
+                "GitHubReviewer: weekly activity report skipped — "
+                "git_toolkit not configured."
+            )
+            return {"status": "error", "reason": "git_toolkit not configured"}
+
+        try:
+            contributors, code_freq = await asyncio.gather(
+                self.git_toolkit.get_contributor_stats(repository=self.repository),
+                self.git_toolkit.get_code_frequency(repository=self.repository),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: weekly stats fetch failed for %s: %s",
+                self.repository,
+                exc,
+                exc_info=True,
+            )
+            return {"status": "error", "reason": str(exc)}
+
+        try:
+            summary = self._build_weekly_summary(
+                contributors,
+                code_freq,
+                threshold_weeks=self.silent_weeks_threshold,
+                top_n=self.top_n_contributors,
+            )
+        except ValueError as exc:
+            # Empty repo or no historical data.
+            self.logger.error(
+                "GitHubReviewer: weekly summary build failed for %s: %s",
+                self.repository,
+                exc,
+            )
+            # Post a "no data" message to Telegram if available.
+            bot = self._get_telegram_bot()
+            if bot is not None and self.public_channel_id:
+                no_data_msg = (
+                    f"<b>Weekly activity — <code>{html.escape(self.repository)}</code></b>\n\n"
+                    "No GitHub stats data is available for this week. GitHub may still be "
+                    "computing the statistics (202 Accepted). The report will be retried "
+                    "next week.\n\n"
+                    "<i>Posted by the GitHubReviewer agent.</i>"
+                )
+                try:
+                    await bot.send_message(
+                        chat_id=self.public_channel_id,
+                        text=no_data_msg,
+                        parse_mode="HTML",
+                        disable_web_page_preview=True,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            return {"status": "error", "reason": str(exc)}
+
+        rendered_via = "templated"
+        if self.use_llm_summary:
+            try:
+                llm_body = await self._llm_summarize_weekly(summary)
+                text = self._wrap_llm_prose_in_html_envelope(llm_body, summary)
+                rendered_via = "llm"
+            except WeeklyLLMSummarizationError as exc:
+                self.logger.warning(
+                    "GitHubReviewer: LLM summary failed (%s); falling back to "
+                    "templated output.",
+                    exc,
+                )
+                text = self._format_weekly_activity_html(summary)
+        else:
+            text = self._format_weekly_activity_html(summary)
+
+        telegram_sent = 0
+        bot = self._get_telegram_bot()
+        if bot is not None and self.public_channel_id:
+            try:
+                await bot.send_message(
+                    chat_id=self.public_channel_id,
+                    text=text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
+                telegram_sent = 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: failed to send weekly report: %s", exc,
+                )
+
+        self.logger.info(
+            "GitHubReviewer: weekly activity report — repo=%s, active=%d, "
+            "silent=%d, rendered_via=%s, telegram_sent=%d.",
+            self.repository,
+            len(summary.contributors_active),
+            len(summary.contributors_silent),
+            rendered_via,
+            telegram_sent,
+        )
+
+        return {
+            "status": "ok",
+            "repository": self.repository,
+            "period_start": summary.period_start.isoformat(),
+            "period_end": summary.period_end.isoformat(),
+            "active": len(summary.contributors_active),
+            "silent": len(summary.contributors_silent),
+            "rendered_via": rendered_via,
+            "telegram_sent": telegram_sent,
+        }
+
 
 __all__ = [
     "Discrepancy",
     "PRReviewResult",
+    "WeeklyActivitySummary",
+    "_ContributorWindowSummary",
+    "WeeklyLLMSummarizationError",
     "GitHubReviewer",
 ]

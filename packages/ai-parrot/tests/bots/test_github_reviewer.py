@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -19,7 +19,15 @@ from parrot.bots.github_reviewer import (
     Discrepancy,
     GitHubReviewer,
     PRReviewResult,
+    WeeklyActivitySummary,
+    WeeklyLLMSummarizationError,
+    _ContributorWindowSummary,
     _flatten_adf,
+)
+from parrot_tools.gittoolkit import (
+    ContributorStats,
+    ContributorWeek,
+    WeeklyCodeFrequency,
 )
 
 
@@ -660,3 +668,522 @@ class TestSetupWebhookRoute:
         # Must NOT raise.
         asyncio.run(hook._callback(event))
         assert survived == ["ok"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-180: Shared test fixtures and helpers
+# ---------------------------------------------------------------------------
+
+# Sunday 2026-05-10 00:00 UTC (prev) and 2026-05-17 00:00 UTC (current)
+W_PREV = datetime(2026, 5, 10, tzinfo=timezone.utc)
+W_CURR = datetime(2026, 5, 17, tzinfo=timezone.utc)
+NOW = datetime(2026, 5, 18, 9, 0, tzinfo=timezone.utc)  # Monday after W_CURR
+
+
+def _cs(login, weeks_data):
+    """Build a ContributorStats from a list of (week_start, commits, adds, dels)."""
+    weeks = [
+        ContributorWeek(
+            week_start=ws,
+            commits=c,
+            additions=a,
+            deletions=d,
+        )
+        for ws, c, a, d in weeks_data
+    ]
+    return ContributorStats(
+        login=login,
+        total_commits=sum(w.commits for w in weeks),
+        weeks=weeks,
+    )
+
+
+def _cf(week_start, additions, deletions):
+    """Build a WeeklyCodeFrequency."""
+    return WeeklyCodeFrequency(
+        week_start=week_start,
+        additions=additions,
+        deletions=deletions,
+    )
+
+
+def _minimal_reviewer(repository="owner/repo"):
+    """Return a _MinimalReviewer-style object with the weekly helpers bound."""
+    r = _MinimalReviewer(repository=repository)
+    r.logger = MagicMock()
+    r._wrapper = None
+    r.git_toolkit = None
+    r.public_channel_id = None
+    r.silent_weeks_threshold = 3
+    r.top_n_contributors = 10
+    r.use_llm_summary = False
+    # Bind the weekly helpers that are available
+    r._build_weekly_summary = GitHubReviewer._build_weekly_summary.__get__(r, type(r))
+    if hasattr(GitHubReviewer, "_format_weekly_activity_html"):
+        r._format_weekly_activity_html = GitHubReviewer._format_weekly_activity_html.__get__(r, type(r))
+    return r
+
+
+def _base_summary(**overrides):
+    """Return a minimal WeeklyActivitySummary for renderer tests."""
+    defaults = dict(
+        repository="owner/repo",
+        period_start=W_CURR,
+        period_end=W_CURR + timedelta(days=7),
+        contributors_active=[
+            _ContributorWindowSummary(
+                login="alice",
+                commits_this_week=12,
+                additions=1834,
+                deletions=421,
+                weeks_silent=0,
+            )
+        ],
+        contributors_silent=[],
+        total_commits=12,
+        total_additions=1834,
+        total_deletions=421,
+        prev_total_commits=10,
+        prev_total_additions=2000,
+        prev_total_deletions=500,
+    )
+    defaults.update(overrides)
+    return WeeklyActivitySummary(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1212: TestBuildWeeklySummary
+# ---------------------------------------------------------------------------
+
+
+class TestBuildWeeklySummary:
+    """Tests for GitHubReviewer._build_weekly_summary."""
+
+    def test_picks_completed_week_before_now(self):
+        """Given NOW on Monday after W_CURR, picks W_CURR as period_start."""
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20)])]
+        code_freq = [_cf(W_CURR, 100, 20)]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, now=NOW
+        )
+        assert summary.period_start == W_CURR
+        assert summary.period_end == W_CURR + timedelta(days=7)
+        assert summary.total_commits == 5
+
+    def test_flags_silent_at_threshold(self):
+        """Contributor with 3 consecutive zero weeks is in contributors_silent."""
+        r = _minimal_reviewer()
+        # charlie has 0 commits in W_CURR, W_PREV, and W_PREV-7
+        weeks_data = [
+            (W_CURR, 0, 0, 0),
+            (W_PREV, 0, 0, 0),
+            (W_PREV - timedelta(days=7), 0, 0, 0),
+        ]
+        contributors = [_cs("charlie", weeks_data)]
+        code_freq = [_cf(W_CURR, 0, 0)]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, now=NOW
+        )
+        assert len(summary.contributors_silent) == 1
+        assert summary.contributors_silent[0].login == "charlie"
+        assert summary.contributors_silent[0].weeks_silent >= 3
+
+    def test_does_not_flag_below_threshold(self):
+        """Contributor with only 2 silent weeks is NOT in contributors_silent
+        when threshold is 3."""
+        r = _minimal_reviewer()
+        weeks_data = [
+            (W_CURR, 0, 0, 0),
+            (W_PREV, 0, 0, 0),
+            # 2 silent weeks only
+        ]
+        contributors = [_cs("bob", weeks_data)]
+        code_freq = [_cf(W_CURR, 0, 0)]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, now=NOW
+        )
+        assert len(summary.contributors_silent) == 0
+
+    def test_excludes_anonymous_contributors(self):
+        """Contributors with login=None are excluded from both lists."""
+        r = _minimal_reviewer()
+        anon = ContributorStats(
+            login=None,
+            total_commits=5,
+            weeks=[
+                ContributorWeek(
+                    week_start=W_CURR, commits=5, additions=100, deletions=10
+                )
+            ],
+        )
+        code_freq = [_cf(W_CURR, 100, 10)]
+        summary = r._build_weekly_summary(
+            [anon], code_freq, threshold_weeks=3, now=NOW
+        )
+        assert summary.contributors_active == []
+        assert summary.contributors_silent == []
+
+    def test_top_n_truncates_active_list(self):
+        """Active list is capped at top_n; silent list is uncapped."""
+        r = _minimal_reviewer()
+        contributors = [
+            _cs(f"u{i}", [(W_CURR, 30 - i, 100, 10)])
+            for i in range(15)
+        ]
+        code_freq = [_cf(W_CURR, 500, 100)]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, top_n=10, now=NOW
+        )
+        assert len(summary.contributors_active) == 10
+
+    def test_delta_from_code_freq(self):
+        """prev_total_additions comes from code_freq at W_PREV."""
+        r = _minimal_reviewer()
+        contributors = [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 7, 200, 50)])]
+        code_freq = [
+            _cf(W_CURR, 100, 20),
+            _cf(W_PREV, 300, 80),
+        ]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, now=NOW
+        )
+        assert summary.prev_total_additions == 300
+        assert summary.prev_total_deletions == 80
+
+    def test_active_sorted_by_commits_desc(self):
+        """Active contributors sorted by commits desc."""
+        r = _minimal_reviewer()
+        contributors = [
+            _cs("alice", [(W_CURR, 3, 50, 10)]),
+            _cs("bob", [(W_CURR, 10, 200, 50)]),
+            _cs("charlie", [(W_CURR, 7, 100, 20)]),
+        ]
+        code_freq = [_cf(W_CURR, 350, 80)]
+        summary = r._build_weekly_summary(
+            contributors, code_freq, threshold_weeks=3, now=NOW
+        )
+        logins = [c.login for c in summary.contributors_active]
+        assert logins == ["bob", "charlie", "alice"]
+
+    def test_empty_contributors_raises(self):
+        """Raises ValueError when both contributors and code_freq are empty."""
+        r = _minimal_reviewer()
+        with pytest.raises(ValueError, match="Cannot determine reporting window"):
+            r._build_weekly_summary([], [], threshold_weeks=3, now=NOW)
+
+
+# ---------------------------------------------------------------------------
+# TASK-1213: TestFormatWeeklyActivityHtml
+# ---------------------------------------------------------------------------
+
+
+class TestFormatWeeklyActivityHtml:
+    """Tests for GitHubReviewer._format_weekly_activity_html."""
+
+    def test_escapes_special_chars_in_login(self):
+        """Logins with <, >, & are HTML-escaped in the output."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            contributors_active=[
+                _ContributorWindowSummary(
+                    login="<bad>&you",
+                    commits_this_week=1,
+                    additions=0,
+                    deletions=0,
+                    weeks_silent=0,
+                )
+            ]
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "&lt;bad&gt;&amp;you" in body
+        assert "<bad>" not in body
+
+    def test_skips_empty_silent_section(self):
+        """When contributors_silent is empty, 'Silent contributors' is absent."""
+        r = _minimal_reviewer()
+        s = _base_summary(contributors_silent=[])
+        body = r._format_weekly_activity_html(s)
+        assert "Silent contributors" not in body
+
+    def test_includes_silent_section_when_present(self):
+        """When contributors_silent is non-empty, the section appears."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            contributors_silent=[
+                _ContributorWindowSummary(
+                    login="charlie",
+                    commits_this_week=0,
+                    additions=0,
+                    deletions=0,
+                    weeks_silent=4,
+                )
+            ]
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "Silent" in body
+        assert "charlie" in body
+
+    def test_pct_handles_zero_prev_commits(self):
+        """When prev_total_commits == 0, pct shows 'n/a' or '▲ new'."""
+        r = _minimal_reviewer()
+        s = _base_summary(prev_total_commits=0, prev_total_additions=0, prev_total_deletions=0)
+        body = r._format_weekly_activity_html(s)
+        # Should not raise; pct output is either "n/a" or "▲ new"
+        assert "n/a" in body or "▲ new" in body or "▲" in body
+
+    def test_pct_positive_delta(self):
+        """A positive delta shows an upward arrow."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            total_commits=20,
+            prev_total_commits=10,
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "▲" in body
+
+    def test_pct_negative_delta(self):
+        """A negative delta shows a downward arrow."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            total_commits=5,
+            prev_total_commits=20,
+        )
+        body = r._format_weekly_activity_html(s)
+        assert "▼" in body
+
+    def test_message_length_under_4096(self):
+        """Output stays under Telegram's 4096-char limit with default top_n=10."""
+        r = _minimal_reviewer()
+        s = _base_summary(
+            contributors_active=[
+                _ContributorWindowSummary(
+                    login=f"user{i}",
+                    commits_this_week=10 - i,
+                    additions=100,
+                    deletions=50,
+                    weeks_silent=0,
+                )
+                for i in range(10)
+            ],
+            contributors_silent=[
+                _ContributorWindowSummary(
+                    login=f"silent{i}",
+                    commits_this_week=0,
+                    additions=0,
+                    deletions=0,
+                    weeks_silent=3,
+                )
+                for i in range(5)
+            ],
+        )
+        body = r._format_weekly_activity_html(s)
+        assert len(body) < 4096
+
+    def test_escapes_repository_name(self):
+        """Repository name is also HTML-escaped."""
+        r = _minimal_reviewer(repository="owner/<repo>")
+        s = _base_summary(repository="owner/<repo>")
+        body = r._format_weekly_activity_html(s)
+        assert "&lt;repo&gt;" in body
+        assert "<repo>" not in body
+
+
+# ---------------------------------------------------------------------------
+# TASK-1214: TestLLMSummarizeWeekly
+# ---------------------------------------------------------------------------
+
+
+class TestLLMSummarizeWeekly:
+    """Tests for GitHubReviewer._llm_summarize_weekly."""
+
+    def test_success_returns_llm_string(self):
+        """When ask() succeeds, returns the LLM output string."""
+        r = _minimal_reviewer()
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+
+        async def fake_ask(question, **kwargs):
+            result = MagicMock()
+            result.output = "Alice led the team with 12 commits this week."
+            return result
+
+        r.ask = fake_ask
+        summary = _base_summary()
+        out = asyncio.run(r._llm_summarize_weekly(summary))
+        assert "Alice" in out
+
+    def test_raises_wrapped_error_on_failure(self):
+        """When ask() raises, re-raises as WeeklyLLMSummarizationError."""
+        r = _minimal_reviewer()
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+
+        async def fake_ask(question, **kwargs):
+            raise RuntimeError("LLM is down")
+
+        r.ask = fake_ask
+        summary = _base_summary()
+        with pytest.raises(WeeklyLLMSummarizationError, match="LLM is down"):
+            asyncio.run(r._llm_summarize_weekly(summary))
+
+    def test_coerces_non_string_output(self):
+        """A non-string response is coerced to str."""
+        r = _minimal_reviewer()
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+
+        async def fake_ask(question, **kwargs):
+            # Return something without .output attribute
+            return {"some": "dict"}
+
+        r.ask = fake_ask
+        summary = _base_summary()
+        out = asyncio.run(r._llm_summarize_weekly(summary))
+        assert isinstance(out, str)
+
+    def test_prompt_contains_json_summary(self):
+        """The prompt sent to ask() contains the JSON-serialized summary."""
+        r = _minimal_reviewer()
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+
+        captured_question = []
+
+        async def fake_ask(question, **kwargs):
+            captured_question.append(question)
+            result = MagicMock()
+            result.output = "Summary text"
+            return result
+
+        r.ask = fake_ask
+        summary = _base_summary()
+        asyncio.run(r._llm_summarize_weekly(summary))
+        assert captured_question
+        assert "alice" in captured_question[0].lower() or "owner/repo" in captured_question[0]
+
+
+# ---------------------------------------------------------------------------
+# TASK-1215: TestReportWeeklyActivity
+# ---------------------------------------------------------------------------
+
+
+class TestReportWeeklyActivity:
+    """Tests for GitHubReviewer.report_weekly_activity."""
+
+    def _build_reviewer(self, **overrides):
+        """Build a reviewer stub for orchestrator tests."""
+        r = _minimal_reviewer()
+        r.git_toolkit = MagicMock()
+        r.public_channel_id = "@test_channel"
+        r.silent_weeks_threshold = 3
+        r.top_n_contributors = 10
+        r.use_llm_summary = False
+        # Wire report_weekly_activity through the decorator
+        r.report_weekly_activity = GitHubReviewer.report_weekly_activity.__get__(r, type(r))
+        r._build_weekly_summary = GitHubReviewer._build_weekly_summary.__get__(r, type(r))
+        r._format_weekly_activity_html = GitHubReviewer._format_weekly_activity_html.__get__(r, type(r))
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+        r._wrap_llm_prose_in_html_envelope = GitHubReviewer._wrap_llm_prose_in_html_envelope.__get__(r, type(r))
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(r, type(r))
+
+        # Stub toolkit calls with minimal data
+        async def fake_get_contributor_stats(**kwargs):
+            return [_cs("alice", [(W_CURR, 5, 100, 20), (W_PREV, 3, 50, 10)])]
+
+        async def fake_get_code_frequency(**kwargs):
+            return [_cf(W_CURR, 100, 20), _cf(W_PREV, 50, 10)]
+
+        r.git_toolkit.get_contributor_stats = fake_get_contributor_stats
+        r.git_toolkit.get_code_frequency = fake_get_code_frequency
+
+        # Bot that records sends
+        sent_messages = []
+
+        async def fake_send(**kwargs):
+            sent_messages.append(kwargs)
+
+        fake_bot = MagicMock()
+        fake_bot.send_message = AsyncMock(side_effect=fake_send)
+        r._wrapper = MagicMock(bot=fake_bot)
+        r._sent_messages = sent_messages
+
+        for key, val in overrides.items():
+            setattr(r, key, val)
+        return r
+
+    def test_no_toolkit_returns_error(self):
+        """When git_toolkit is None, returns error dict without raising."""
+        r = _minimal_reviewer()
+        r.git_toolkit = None
+        r.report_weekly_activity = GitHubReviewer.report_weekly_activity.__get__(r, type(r))
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "error"
+        assert "git_toolkit" in out["reason"]
+
+    def test_templated_success_path(self):
+        """Happy path with templated rendering returns documented keys."""
+        r = self._build_reviewer()
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "ok"
+        assert out["repository"] == "owner/repo"
+        assert "period_start" in out
+        assert "period_end" in out
+        assert "active" in out
+        assert "silent" in out
+        assert out["rendered_via"] == "templated"
+        assert out["telegram_sent"] == 1
+
+    def test_no_telegram_wrapper_returns_zero_sent(self):
+        """When _wrapper is None, returns telegram_sent=0 without raising."""
+        r = self._build_reviewer()
+        r._wrapper = None
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "ok"
+        assert out["telegram_sent"] == 0
+
+    def test_stats_fetch_failure_returns_error(self):
+        """When get_contributor_stats raises, returns status=error."""
+        r = _minimal_reviewer()
+        r.git_toolkit = MagicMock()
+        r.report_weekly_activity = GitHubReviewer.report_weekly_activity.__get__(r, type(r))
+        r._build_weekly_summary = GitHubReviewer._build_weekly_summary.__get__(r, type(r))
+        r._format_weekly_activity_html = GitHubReviewer._format_weekly_activity_html.__get__(r, type(r))
+        r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
+        r._wrap_llm_prose_in_html_envelope = GitHubReviewer._wrap_llm_prose_in_html_envelope.__get__(r, type(r))
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(r, type(r))
+        r.public_channel_id = "@channel"
+        r.silent_weeks_threshold = 3
+        r.top_n_contributors = 10
+        r.use_llm_summary = False
+        r._wrapper = None
+
+        async def fail(**kwargs):
+            raise RuntimeError("stats unavailable")
+
+        r.git_toolkit.get_contributor_stats = fail
+        r.git_toolkit.get_code_frequency = fail
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "error"
+        assert "stats unavailable" in out["reason"]
+
+    def test_llm_failure_falls_back_to_templated(self):
+        """When LLM summarization fails, falls back to templated rendering."""
+        r = self._build_reviewer(use_llm_summary=True)
+
+        async def llm_boom(summary):
+            raise WeeklyLLMSummarizationError("LLM exploded")
+
+        r._llm_summarize_weekly = llm_boom
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "ok"
+        assert out["rendered_via"] == "templated"
+        assert out["telegram_sent"] == 1
+
+    def test_telegram_failure_does_not_raise(self):
+        """When Telegram bot.send_message raises, returns telegram_sent=0."""
+        r = self._build_reviewer()
+
+        async def fail_send(**kwargs):
+            raise RuntimeError("telegram 500")
+
+        r._wrapper.bot.send_message = fail_send
+        out = asyncio.run(r.report_weekly_activity())
+        assert out["status"] == "ok"
+        assert out["telegram_sent"] == 0
