@@ -107,7 +107,7 @@ _INTERNAL_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
 _TOOLKIT_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
     OutputComponent.SQL_QUERY: {"generate_query", "validate_query"},
     OutputComponent.EXECUTION_PLAN: {"explain_query"},
-    OutputComponent.SCHEMA_CONTEXT: {"search_schema"},
+    OutputComponent.SCHEMA_CONTEXT: {"search_schema", "describe_table"},
 }
 
 

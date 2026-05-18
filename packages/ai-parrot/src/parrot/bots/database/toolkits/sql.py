@@ -978,7 +978,13 @@ class SQLToolkit(DatabaseToolkit):
             return None
 
         try:
-            col_data, _ = col_result if not isinstance(col_result, Exception) else (None, str(col_result))
+            if isinstance(col_result, Exception):
+                self.logger.warning(
+                    "Column introspection failed for %s.%s: %s", schema, table, col_result
+                )
+                col_data = None
+            else:
+                col_data, _ = col_result
             columns = []
             if col_data:
                 for col in col_data:
