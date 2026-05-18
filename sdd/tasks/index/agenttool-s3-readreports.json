@@ -14,7 +14,7 @@
       "feature_id": "FEAT-184",
       "feature": "agenttool-s3-readreports",
       "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates the parrot_tools/s3/ package — must land before TASK-1240 imports from it.",
       "assigned_to": null,
       "started_at": "2026-05-18T22:29:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1239-generic-report-comparator.md"
+      "completed_at": "2026-05-18T22:31:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1239-generic-report-comparator.md"
     },
     {
       "id": "TASK-1240",

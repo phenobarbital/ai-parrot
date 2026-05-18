@@ -213,8 +213,8 @@ class GenericReportComparator:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-19
+**Notes**: Implemented GenericReportComparator with full structural diff (_structural_diff/_walk) and CloudSploit parser dispatch (_dispatch_to_parser). caps changes at max_changes with truncated flag. All acceptance criteria met.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
