@@ -697,6 +697,22 @@ GITHUB_REVIEW_REPOSITORY: str | None = config.get(
 GITHUB_REVIEW_STALE_AFTER_HOURS: int = config.getint(
     "GITHUB_REVIEW_STALE_AFTER_HOURS", fallback=24
 )
+# Jira project key whose tickets the watched repository references. Drives
+# the `<PROJECT>-\d+` regex that extracts ticket keys from PR titles/bodies.
+GITHUB_REVIEW_JIRA_PROJECT: str = config.get(
+    "GITHUB_REVIEW_JIRA_PROJECT", fallback="NAV"
+)
+# Per-prompt clamp on the diff fed to the reviewer LLM. Larger diffs are
+# truncated and the prompt notes the truncation so the model accounts for it.
+GITHUB_REVIEW_MAX_DIFF_BYTES: int = config.getint(
+    "GITHUB_REVIEW_MAX_DIFF_BYTES", fallback=50_000
+)
+# Per-field clamp on the Jira description and acceptance-criteria text
+# spliced into the LLM prompt. Prevents a single oversized ticket from
+# blowing the model's context window.
+GITHUB_REVIEW_MAX_TICKET_BYTES: int = config.getint(
+    "GITHUB_REVIEW_MAX_TICKET_BYTES", fallback=20_000
+)
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(

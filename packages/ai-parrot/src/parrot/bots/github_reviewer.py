@@ -13,8 +13,12 @@ Workflow:
   :meth:`handle_hook_event` is invoked by the orchestrator. It extracts the
   ``NAV-xxx`` (or any configured project prefix) key from the PR body /
   title, pulls the ticket from Jira, fetches the PR diff, asks the LLM for a
-  structured comparison and — when discrepancies are found — submits a
-  ``REQUEST_CHANGES`` review and alerts the configured Telegram chats.
+  structured comparison and either submits a ``REQUEST_CHANGES`` review
+  with Telegram alerts (when discrepancies are found) or posts an
+  ``APPROVE`` review (when all acceptance criteria are satisfied).
+  Re-deliveries with the same ``head_sha`` are deduplicated in-memory so
+  pushing multiple commits to a still-failing PR does not produce a
+  storm of reviews and alerts.
 * :meth:`report_stale_pull_requests` is decorated with
   :func:`schedule_daily_report` so it runs once a day and reports every open
   PR older than 24h to a public Telegram channel.
@@ -26,20 +30,55 @@ subclass per watched repository.
 """
 from __future__ import annotations
 
+import html
 import re
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from navconfig import config
 from pydantic import BaseModel, Field
 
-from parrot.auth.credentials import OAuthCredentialResolver
 from parrot.bots import Agent
 from parrot.core.hooks.models import HookEvent
 from parrot.models.google import GoogleModel
 from parrot.scheduler import schedule_daily_report
 from parrot_tools.gittoolkit import GitToolkit
 from parrot_tools.jiratoolkit import JiraToolkit
+
+
+ChatId = Union[int, str]
+
+
+def _flatten_adf(node: Any) -> str:
+    """Flatten an Atlassian Document Format (ADF) tree into plain text.
+
+    Returns ``node`` unchanged when it is already a string; for any non-dict /
+    non-list input returns ``str(node)`` (or empty). Walks ``content`` arrays
+    recursively and concatenates every ``text`` leaf, inserting newlines
+    around block-level nodes so paragraphs and bullets remain readable.
+    """
+    if node is None:
+        return ""
+    if isinstance(node, str):
+        return node
+    if isinstance(node, list):
+        return "\n".join(filter(None, (_flatten_adf(n) for n in node)))
+    if not isinstance(node, dict):
+        return str(node)
+
+    text = node.get("text")
+    if isinstance(text, str):
+        return text
+
+    inner = _flatten_adf(node.get("content"))
+    block_types = {
+        "paragraph", "heading", "bulletList", "orderedList",
+        "listItem", "codeBlock", "blockquote", "rule",
+    }
+    if node.get("type") in block_types and inner:
+        return f"{inner}\n"
+    return inner
 
 
 # ──────────────────────────────────────────────────────────────
@@ -142,6 +181,24 @@ class GitHubReviewer(Agent):
             Defaults to ``24``.
         max_diff_bytes: How much of the diff to feed the LLM. Larger diffs
             are truncated; the prompt instructs the LLM to acknowledge it.
+        max_ticket_bytes: Per-field clamp applied to the Jira description
+            and acceptance criteria text before they are spliced into the
+            LLM prompt. Prevents one oversized ticket from blowing the
+            context window. Defaults to ``20_000``.
+
+    Notes:
+        Jira **per-user OAuth2 3LO** is unsupported by this agent: webhook
+        deliveries arrive without a caller identity, so the resolver has
+        no user whose tokens it could load. When ``JIRA_AUTH_TYPE`` is
+        ``oauth2_3lo`` the agent falls back to service-account
+        ``basic_auth`` using ``JIRA_USERNAME`` + ``JIRA_API_TOKEN``; if
+        those are missing, ``self.jira_toolkit`` stays ``None`` and the
+        reviewer disables itself with a clear error in the logs.
+
+        Reviews are de-duplicated **in-memory** by ``(repo, pr_number,
+        head_sha)``. Pushing eight commits to a still-failing PR will not
+        produce eight reviews or eight Telegram alerts; the dedup cache
+        resets when the process restarts.
     """
 
     model = GoogleModel.GEMINI_3_FLASH_PREVIEW
@@ -151,39 +208,37 @@ class GitHubReviewer(Agent):
         repository: str,
         *,
         jira_project: str = "NAV",
-        alert_chat_ids: Optional[List[int]] = None,
-        public_channel_id: Optional[Any] = None,
+        alert_chat_ids: Optional[List[ChatId]] = None,
+        public_channel_id: Optional[ChatId] = None,
         webhook_public_url: Optional[str] = None,
         webhook_secret: Optional[str] = None,
         stale_after_hours: int = 24,
         max_diff_bytes: int = 50_000,
+        max_ticket_bytes: int = 20_000,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("injection_probability_threshold", 0.995)
         kwargs.setdefault("system_prompt", _SYSTEM_PROMPT)
 
-        self._init_kwargs: Dict[str, Any] = dict(
-            kwargs,
-            repository=repository,
-            jira_project=jira_project,
-            alert_chat_ids=list(alert_chat_ids or []),
-            public_channel_id=public_channel_id,
-            webhook_public_url=webhook_public_url,
-            webhook_secret=webhook_secret,
-            stale_after_hours=stale_after_hours,
-            max_diff_bytes=max_diff_bytes,
-        )
-
         super().__init__(**kwargs)
 
         self.repository = repository
+        self._repository_lc = repository.lower()
         self.jira_project = jira_project
-        self.alert_chat_ids: List[int] = [int(c) for c in (alert_chat_ids or [])]
+        self.alert_chat_ids: List[ChatId] = list(alert_chat_ids or [])
         self.public_channel_id = public_channel_id
         self.webhook_public_url = webhook_public_url
         self.webhook_secret = webhook_secret
         self.stale_after_hours = int(stale_after_hours)
         self.max_diff_bytes = int(max_diff_bytes)
+        self.max_ticket_bytes = int(max_ticket_bytes)
+
+        self._ac_field_id: str = config.get(
+            "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
+        )
+        self._jira_fields: str = ",".join(
+            sorted({"summary", "description", "status", self._ac_field_id})
+        )
 
         self._ticket_key_regex = re.compile(
             rf"\b{re.escape(self.jira_project)}-\d+\b"
@@ -192,6 +247,10 @@ class GitHubReviewer(Agent):
         self.git_toolkit: Optional[GitToolkit] = None
         self.jira_toolkit: Optional[JiraToolkit] = None
         self._wrapper = None  # Set by TelegramAgentWrapper after init
+        # In-memory dedup: (repo_lc, pr_number) -> last reviewed head_sha.
+        # Cheap and process-local; restart resets it (acceptable tradeoff —
+        # GitHub will simply re-fire the latest synchronize event).
+        self._reviewed_shas: Dict[Tuple[str, int], str] = {}
 
     # ------------------------------------------------------------------
     # Wiring
@@ -205,42 +264,16 @@ class GitHubReviewer(Agent):
 
     async def post_configure(self) -> None:
         """Wire :class:`GitToolkit` and :class:`JiraToolkit` once ``self.app``
-        is attached. Auth selection mirrors :class:`JiraSpecialist`.
+        is attached. Auth selection mirrors :class:`JiraSpecialist`, with the
+        important difference that per-user OAuth is rejected (no caller).
         """
         await super().post_configure()
 
         self.git_toolkit = self._build_git_toolkit()
         self.jira_toolkit = self._build_jira_toolkit()
 
-        if self.git_toolkit is not None:
-            try:
-                tools = self.tool_manager.register_toolkit(self.git_toolkit)
-            except Exception as exc:  # noqa: BLE001
-                self.logger.error(
-                    "GitHubReviewer: failed to register Git tools: %s",
-                    exc,
-                    exc_info=True,
-                )
-            else:
-                if tools:
-                    if not hasattr(self, "tools") or self.tools is None:
-                        self.tools = []
-                    self.tools.extend(tools)
-
-        if self.jira_toolkit is not None:
-            try:
-                tools = self.tool_manager.register_toolkit(self.jira_toolkit)
-            except Exception as exc:  # noqa: BLE001
-                self.logger.error(
-                    "GitHubReviewer: failed to register Jira tools: %s",
-                    exc,
-                    exc_info=True,
-                )
-            else:
-                if tools:
-                    if not hasattr(self, "tools") or self.tools is None:
-                        self.tools = []
-                    self.tools.extend(tools)
+        self._attach_toolkit(self.git_toolkit, "Git")
+        self._attach_toolkit(self.jira_toolkit, "Jira")
 
         if self._llm is not None and hasattr(self._llm, "tool_manager"):
             try:
@@ -254,13 +287,32 @@ class GitHubReviewer(Agent):
 
         await self._ensure_webhook_subscription()
 
+    def _attach_toolkit(self, toolkit: Any, name: str) -> None:
+        """Register ``toolkit`` and extend ``self.tools`` with its exports."""
+        if toolkit is None:
+            return
+        try:
+            tools = self.tool_manager.register_toolkit(toolkit)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error(
+                "GitHubReviewer: failed to register %s tools: %s",
+                name, exc, exc_info=True,
+            )
+            return
+        if not tools:
+            return
+        if not hasattr(self, "tools") or self.tools is None:
+            self.tools = []
+        self.tools.extend(tools)
+
     def _build_git_toolkit(self) -> Optional[GitToolkit]:
         token = config.get("GITHUB_TOKEN")
         if not token:
-            self.logger.warning(
-                "GitHubReviewer: GITHUB_TOKEN is not set; PR operations "
-                "will fail until a token is configured."
+            self.logger.error(
+                "GitHubReviewer: GITHUB_TOKEN is not set; the agent will "
+                "disable itself (no PR fetch/review/webhook calls)."
             )
+            return None
         return GitToolkit(
             default_repository=self.repository,
             default_branch=config.get("GIT_DEFAULT_BRANCH", fallback="main"),
@@ -268,24 +320,24 @@ class GitHubReviewer(Agent):
         )
 
     def _build_jira_toolkit(self) -> Optional[JiraToolkit]:
-        auth_type = (config.get("JIRA_AUTH_TYPE") or "").lower()
-        oauth_manager = self.app.get("jira_oauth_manager") if self.app else None
-        use_oauth = auth_type == "oauth2_3lo" or (
-            not auth_type and oauth_manager is not None
-        )
+        """Build a service-account JiraToolkit.
 
-        if use_oauth:
-            if oauth_manager is None:
-                self.logger.warning(
-                    "GitHubReviewer: JIRA_AUTH_TYPE=oauth2_3lo but "
-                    "app['jira_oauth_manager'] is missing; Jira lookups disabled."
-                )
-                return None
-            return JiraToolkit(
-                auth_type="oauth2_3lo",
-                credential_resolver=OAuthCredentialResolver(oauth_manager),
-                default_project=self.jira_project,
+        Per-user OAuth2 3LO is rejected: webhook events carry no caller, so
+        :class:`OAuthCredentialResolver` would have no identity to resolve.
+        When ``JIRA_AUTH_TYPE=oauth2_3lo`` is set globally for sibling
+        agents, this method falls back to ``basic_auth`` using
+        ``JIRA_USERNAME`` + ``JIRA_API_TOKEN``. If those credentials are
+        absent, the toolkit is disabled (``None``) and the reviewer logs
+        a clear error.
+        """
+        auth_type = (config.get("JIRA_AUTH_TYPE") or "").lower()
+        if auth_type == "oauth2_3lo":
+            self.logger.error(
+                "GitHubReviewer: per-user OAuth2 3LO is not supported "
+                "(webhook events have no caller identity). Falling back to "
+                "service-account basic_auth via JIRA_USERNAME/JIRA_API_TOKEN."
             )
+            auth_type = ""  # force the basic_auth fallback below
 
         effective = auth_type or "basic_auth"
         toolkit_kwargs: Dict[str, Any] = {
@@ -294,12 +346,27 @@ class GitHubReviewer(Agent):
             "default_project": self.jira_project,
         }
         if effective == "basic_auth":
-            toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
-            toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
+            username = config.get("JIRA_USERNAME")
+            password = config.get("JIRA_API_TOKEN")
+            if not (username and password):
+                self.logger.error(
+                    "GitHubReviewer: basic_auth requires JIRA_USERNAME and "
+                    "JIRA_API_TOKEN; Jira lookups disabled."
+                )
+                return None
+            toolkit_kwargs["username"] = username
+            toolkit_kwargs["password"] = password
         elif effective == "token_auth":
-            toolkit_kwargs["token"] = (
+            token = (
                 config.get("JIRA_SECRET_TOKEN") or config.get("JIRA_API_TOKEN")
             )
+            if not token:
+                self.logger.error(
+                    "GitHubReviewer: token_auth requires JIRA_SECRET_TOKEN or "
+                    "JIRA_API_TOKEN; Jira lookups disabled."
+                )
+                return None
+            toolkit_kwargs["token"] = token
         return JiraToolkit(**toolkit_kwargs)
 
     async def _ensure_webhook_subscription(self) -> None:
@@ -364,8 +431,11 @@ class GitHubReviewer(Agent):
             return None
 
         payload = event.payload or {}
-        if payload.get("repository") and payload["repository"] != self.repository:
-            return None  # multi-tenant guard
+        # Multi-tenant guard. GitHub's full_name is canonical, but operator
+        # config may differ in case; compare lower-cased.
+        repo = payload.get("repository")
+        if repo and repo.lower() != self._repository_lc:
+            return None
 
         return await self.review_pull_request(payload)
 
@@ -392,18 +462,32 @@ class GitHubReviewer(Agent):
 
         Args:
             payload: Mapping with at least ``pr_number``, ``pr_body``,
-                ``pr_title``, ``pr_url`` and ``repository``.
+                ``pr_title``, ``pr_url``, ``repository`` and ``head_sha``.
 
         Returns:
             A dict with ``status`` and the relevant artifacts (jira key,
-            review id, alert results). On the unhappy path ``status`` is one
-            of ``"no_ticket"``, ``"ticket_not_found"`` or ``"error"``.
+            review id, alert results). On the unhappy path ``status`` is
+            one of ``"no_ticket"``, ``"ticket_not_found"``,
+            ``"already_reviewed"`` or ``"error"``.
         """
         pr_number = payload.get("pr_number")
         if pr_number is None:
             return {"status": "error", "reason": "missing pr_number"}
 
         repo = payload.get("repository") or self.repository
+        repo_key = (repo.lower(), int(pr_number))
+        head_sha = payload.get("head_sha")
+        if head_sha and self._reviewed_shas.get(repo_key) == head_sha:
+            self.logger.info(
+                "PR %s#%s already reviewed at SHA %s; skipping.",
+                repo, pr_number, head_sha,
+            )
+            return {
+                "status": "already_reviewed",
+                "pr_number": pr_number,
+                "head_sha": head_sha,
+            }
+
         ticket_key = self._extract_ticket_key(
             payload.get("pr_body") or "", payload.get("pr_title") or ""
         )
@@ -424,7 +508,9 @@ class GitHubReviewer(Agent):
                 "pr_number": pr_number,
             }
 
-        diff_text, diff_truncated = await self._fetch_diff(repo, pr_number)
+        diff_text, diff_truncated, diff_available = await self._fetch_diff(
+            repo, pr_number
+        )
 
         result = await self._ask_llm_for_review(
             payload=payload,
@@ -432,6 +518,7 @@ class GitHubReviewer(Agent):
             ticket=ticket,
             diff_text=diff_text,
             diff_truncated=diff_truncated,
+            diff_available=diff_available,
         )
 
         outcome: Dict[str, Any] = {
@@ -444,29 +531,37 @@ class GitHubReviewer(Agent):
             "summary": result.summary,
         }
 
-        if not result.approve and result.discrepancies:
-            review_body = self._format_review_body(payload, ticket_key, result)
+        review_body = self._format_review_body(payload, ticket_key, result)
+        event = "APPROVE" if result.approve else "REQUEST_CHANGES"
+        # APPROVE has no actionable findings to alert about; only ping
+        # Telegram when discrepancies were raised.
+        should_post_review = (
+            self.git_toolkit is not None
+            and (result.approve or result.discrepancies)
+        )
+        if should_post_review:
             try:
                 review_response = await self.git_toolkit.submit_pr_review(
                     pr_number=pr_number,
-                    event="REQUEST_CHANGES",
+                    event=event,
                     body=review_body,
                     repository=repo,
                 )
                 outcome["review"] = review_response
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "GitHubReviewer: failed to submit review on %s#%s: %s",
-                    repo,
-                    pr_number,
-                    exc,
-                    exc_info=True,
+                    "GitHubReviewer: failed to submit %s review on %s#%s: %s",
+                    event, repo, pr_number, exc, exc_info=True,
                 )
                 outcome["review_error"] = str(exc)
 
-            outcome["alerts"] = await self._notify_telegram_alert(
-                payload, ticket_key, result
-            )
+            if not result.approve and result.discrepancies:
+                outcome["alerts"] = await self._notify_telegram_alert(
+                    payload, ticket_key, result
+                )
+
+        if head_sha:
+            self._reviewed_shas[repo_key] = head_sha
 
         return outcome
 
@@ -480,7 +575,7 @@ class GitHubReviewer(Agent):
         try:
             envelope = await self.jira_toolkit.jira_get_issue(
                 issue=ticket_key,
-                fields="summary,description,status,customfield_10100",
+                fields=self._jira_fields,
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
@@ -491,14 +586,22 @@ class GitHubReviewer(Agent):
             )
             return None
 
-        status = (envelope or {}).get("status")
-        if status not in ("ok",):
+        envelope = envelope or {}
+        if envelope.get("status") != "ok":
             return None
-        return (envelope or {}).get("data")
+        return envelope.get("data")
 
-    async def _fetch_diff(self, repo: str, pr_number: int) -> tuple[str, bool]:
+    async def _fetch_diff(
+        self, repo: str, pr_number: int
+    ) -> Tuple[str, bool, bool]:
+        """Return ``(diff_text, truncated, available)``.
+
+        ``available`` is ``False`` when the diff could not be retrieved
+        (no toolkit or an HTTP error) so the LLM can distinguish a real
+        empty diff from "we just don't know."
+        """
         if self.git_toolkit is None:
-            return ("", False)
+            return ("", False, False)
         try:
             data = await self.git_toolkit.get_pull_request_diff(
                 pr_number=pr_number,
@@ -508,12 +611,18 @@ class GitHubReviewer(Agent):
         except Exception as exc:  # noqa: BLE001
             self.logger.warning(
                 "GitHubReviewer: get_pull_request_diff failed for %s#%s: %s",
-                repo,
-                pr_number,
-                exc,
+                repo, pr_number, exc,
             )
-            return ("", False)
-        return (data.get("diff", ""), bool(data.get("truncated")))
+            return ("", False, False)
+        return (data.get("diff", ""), bool(data.get("truncated")), True)
+
+    def _clamp(self, value: str) -> str:
+        """Clamp a ticket field to :attr:`max_ticket_bytes`."""
+        if not value:
+            return ""
+        if len(value) <= self.max_ticket_bytes:
+            return value
+        return value[: self.max_ticket_bytes] + "\n[... truncated ...]"
 
     async def _ask_llm_for_review(
         self,
@@ -523,16 +632,27 @@ class GitHubReviewer(Agent):
         ticket: Dict[str, Any],
         diff_text: str,
         diff_truncated: bool,
+        diff_available: bool,
     ) -> PRReviewResult:
         fields = (ticket or {}).get("fields") or {}
-        summary = fields.get("summary") or ""
-        description = fields.get("description") or ""
-        # Jira's "Acceptance Criteria" custom field default id; teams override
-        # via JIRA_ACCEPTANCE_CRITERIA_FIELD.
-        ac_field_id = config.get(
-            "JIRA_ACCEPTANCE_CRITERIA_FIELD", fallback="customfield_10100"
-        )
-        acceptance_criteria = fields.get(ac_field_id) or "(not provided)"
+        summary = _flatten_adf(fields.get("summary")) or ""
+        description = self._clamp(_flatten_adf(fields.get("description")))
+        # The acceptance-criteria custom field id was resolved in __init__
+        # from JIRA_ACCEPTANCE_CRITERIA_FIELD (fallback: customfield_10100)
+        # and is included in the Jira ``fields=`` request.
+        acceptance_criteria = self._clamp(
+            _flatten_adf(fields.get(self._ac_field_id))
+        ) or "(not provided)"
+
+        if diff_available:
+            diff_block = diff_text or "(empty diff — PR adds/removes nothing)"
+            header = f"=== PR diff (truncated={diff_truncated}) ==="
+        else:
+            diff_block = (
+                "(diff unavailable — could not be retrieved from GitHub. "
+                "Do NOT conclude that the PR is empty.)"
+            )
+            header = "=== PR diff (unavailable) ==="
 
         question = (
             f"Review pull request {payload.get('repository')}#"
@@ -543,8 +663,8 @@ class GitHubReviewer(Agent):
             f"Summary: {summary}\n\n"
             f"Description:\n{description}\n\n"
             f"Acceptance Criteria:\n{acceptance_criteria}\n\n"
-            f"=== PR diff (truncated={diff_truncated}) ===\n"
-            f"{diff_text or '(empty diff)'}\n\n"
+            f"{header}\n"
+            f"{diff_block}\n\n"
             "Compare them and return a PRReviewResult JSON object."
         )
 
@@ -595,20 +715,36 @@ class GitHubReviewer(Agent):
         ticket_key: str,
         result: PRReviewResult,
     ) -> str:
-        lines: List[str] = [
-            f"## Automated review — discrepancies vs. {ticket_key}",
-            "",
-            result.summary or "Discrepancies detected against the linked ticket.",
-            "",
-            "### Findings",
-        ]
-        for d in result.discrepancies:
-            lines.append(
-                f"- **[{d.severity.upper()}] {d.criterion}** — {d.issue}"
+        """Render the GitHub review body in GitHub-flavored Markdown.
+
+        Note: this targets GitHub, *not* Telegram, so Markdown is fine —
+        only the Telegram messages need entity escaping.
+        """
+        if result.approve:
+            header = f"## Automated review — acceptance criteria satisfied ({ticket_key})"
+            default_summary = (
+                "All acceptance criteria are addressed by this PR."
             )
+        else:
+            header = f"## Automated review — discrepancies vs. {ticket_key}"
+            default_summary = (
+                "Discrepancies detected against the linked ticket."
+            )
+        lines: List[str] = [
+            header,
+            "",
+            result.summary or default_summary,
+            "",
+        ]
+        if result.discrepancies:
+            lines.append("### Findings")
+            for d in result.discrepancies:
+                lines.append(
+                    f"- **[{d.severity.upper()}] {d.criterion}** — {d.issue}"
+                )
+            lines.append("")
         lines.extend(
             [
-                "",
                 f"Linked Jira ticket: {ticket_key}",
                 "",
                 "_Posted by the GitHubReviewer agent. Push a follow-up "
@@ -642,7 +778,7 @@ class GitHubReviewer(Agent):
                 await bot.send_message(
                     chat_id=chat_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     disable_web_page_preview=True,
                 )
                 sent += 1
@@ -666,17 +802,28 @@ class GitHubReviewer(Agent):
         ticket_key: str,
         result: PRReviewResult,
     ) -> str:
-        blockers = sum(1 for d in result.discrepancies if d.severity == "blocker")
-        majors = sum(1 for d in result.discrepancies if d.severity == "major")
-        minors = sum(1 for d in result.discrepancies if d.severity == "minor")
+        """Build a Telegram HTML message — all user-data interpolations
+        are ``html.escape``-d so a PR title like ``feat: X_y <z>`` does not
+        break parsing (Telegram returns 400 on malformed entities).
+        """
+        counts = Counter(d.severity for d in result.discrepancies)
+        repo = html.escape(str(payload.get("repository") or ""))
+        title = html.escape(str(payload.get("pr_title") or ""))
+        url = html.escape(str(payload.get("pr_url") or ""), quote=True)
+        ticket = html.escape(ticket_key)
+        summary = html.escape(result.summary or "(no summary)")
         lines = [
-            "*PR review — discrepancies*",
-            f"Repo: `{payload.get('repository')}`",
-            f"PR: [{payload.get('pr_title', '')}]({payload.get('pr_url', '')})",
-            f"Ticket: `{ticket_key}`",
-            f"Severity: blocker={blockers}, major={majors}, minor={minors}",
+            "<b>PR review — discrepancies</b>",
+            f"Repo: <code>{repo}</code>",
+            f'PR: <a href="{url}">{title}</a>',
+            f"Ticket: <code>{ticket}</code>",
+            (
+                f"Severity: blocker={counts.get('blocker', 0)}, "
+                f"major={counts.get('major', 0)}, "
+                f"minor={counts.get('minor', 0)}"
+            ),
             "",
-            result.summary or "(no summary)",
+            summary,
         ]
         return "\n".join(lines)
 
@@ -734,17 +881,23 @@ class GitHubReviewer(Agent):
         if stale:
             bot = self._get_telegram_bot()
             if bot is not None and self.public_channel_id:
+                repo_html = html.escape(self.repository)
                 for pr in stale:
+                    title = html.escape(str(pr.get("title") or ""))
+                    url = html.escape(
+                        str(pr.get("html_url") or ""), quote=True
+                    )
+                    user = html.escape(str(pr.get("user") or "unknown"))
                     text = (
-                        f"*Stale PR* on `{self.repository}`\n"
-                        f"[{pr['title']}]({pr['html_url']}) — "
-                        f"by {pr['user']}, open for {pr['age_hours']}h"
+                        f"<b>Stale PR</b> on <code>{repo_html}</code>\n"
+                        f'<a href="{url}">{title}</a> — '
+                        f"by {user}, open for {pr['age_hours']}h"
                     )
                     try:
                         await bot.send_message(
                             chat_id=self.public_channel_id,
                             text=text,
-                            parse_mode="Markdown",
+                            parse_mode="HTML",
                             disable_web_page_preview=True,
                         )
                         sent += 1
