@@ -5,7 +5,6 @@ TASK-1208: TestGitToolkitAuthMode
 """
 from __future__ import annotations
 
-import asyncio
 import datetime as _dt
 import os
 from unittest.mock import MagicMock, patch
@@ -113,6 +112,26 @@ class TestGitHubAppTokenProvider:
             provider.get_token()
         auth_mod.AppAuth.assert_called_once_with(12345, fake_pem)
         gi_cls.assert_called_once_with(auth=auth_mod.AppAuth.return_value)
+
+    def test_concurrent_calls_mint_once(self, fake_pem):
+        """Concurrent get_token() calls from multiple threads do not double-mint."""
+        import concurrent.futures
+        from unittest.mock import MagicMock, patch
+
+        provider = gt._GitHubAppTokenProvider(12345, 67890, fake_pem)
+
+        mock_auth = MagicMock()
+        mock_auth.token = "ghs_concurrent"
+        import datetime as _dt
+        mock_auth.expires_at = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=1)
+
+        with patch.object(gt, "GithubIntegration") as gi_cls:
+            gi_cls.return_value.get_access_token.return_value = mock_auth
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                tokens = list(pool.map(lambda _: provider.get_token(), range(8)))
+
+        assert all(t == "ghs_concurrent" for t in tokens)
+        assert gi_cls.return_value.get_access_token.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +254,8 @@ class TestGitToolkitAuthMode:
             installation_id=67890,
             private_key_path=str(key_file),
         )
-        assert tk._private_key_pem == PEM_SENTINEL
+        # PEM lives inside _token_provider; GitToolkit no longer keeps a copy.
+        assert tk._token_provider._private_key_pem == PEM_SENTINEL
 
     def test_app_mode_replaces_literal_backslash_n(self):
         """Env-injected PEMs with literal '\\n' are normalised to real newlines."""
@@ -249,8 +269,9 @@ class TestGitToolkitAuthMode:
             installation_id=67890,
             private_key=pem_with_escapes,
         )
-        assert "\\n" not in tk._private_key_pem
-        assert "\n" in tk._private_key_pem
+        # PEM lives inside _token_provider; GitToolkit no longer keeps a copy.
+        assert "\\n" not in tk._token_provider._private_key_pem
+        assert "\n" in tk._token_provider._private_key_pem
 
     # --- _bearer_token routing ---------------------------------------
 
@@ -265,7 +286,8 @@ class TestGitToolkitAuthMode:
         with patch.object(tk._token_provider, "get_token", return_value="ghs_xxx"):
             assert tk._bearer_token() == "ghs_xxx"
 
-    def test_request_uses_app_bearer(self):
+    @pytest.mark.asyncio
+    async def test_request_uses_app_bearer(self):
         """End-to-end: an HTTP method emits Authorization: Bearer <app-token>."""
         tk = GitToolkit(
             default_repository="o/r",
@@ -280,6 +302,6 @@ class TestGitToolkitAuthMode:
                 mock_resp.status_code = 200
                 mock_resp.json.return_value = {}
                 req.return_value = mock_resp
-                asyncio.run(tk.get_pull_request(pr_number=42))
+                await tk.get_pull_request(pr_number=42)
         call = req.call_args
         assert call.kwargs["headers"]["Authorization"] == "Bearer ghs_xxx"

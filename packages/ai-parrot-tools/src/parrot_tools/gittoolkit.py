@@ -13,8 +13,9 @@ The implementation deliberately mirrors the structure of
 ``AbstractToolkit`` base class—so that it can be dropped into existing agent
 configurations with minimal friction.
 
-Only standard library modules (plus :mod:`requests` and :mod:`pydantic`, which
-are already dependencies of Parrot) are required.
+Only standard library modules (plus :mod:`requests`, :mod:`pydantic`, which
+are already dependencies of Parrot, and ``PyGithub>=2.1`` for GitHub App
+authentication) are required.
 """
 
 from __future__ import annotations
@@ -370,6 +371,8 @@ def _coerce_int(value: Optional[str]) -> Optional[int]:
     try:
         return int(value)
     except (TypeError, ValueError):
+        # Intentionally returns None; caller raises a descriptive GitToolkitError
+        # indicating the value was present but not a valid integer.
         return None
 
 
@@ -471,7 +474,6 @@ class GitToolkit(AbstractToolkit):
 
             # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
             inline_pem = inline_pem.replace("\\n", "\n")  # type: ignore[union-attr]
-            self._private_key_pem = inline_pem
 
             self._token_provider = _GitHubAppTokenProvider(
                 app_id=self.app_id,
@@ -497,7 +499,10 @@ class GitToolkit(AbstractToolkit):
                 set) or when the App token provider fails to mint a token.
         """
         if self.auth_type == "github_app":
-            assert self._token_provider is not None
+            if self._token_provider is None:
+                raise GitToolkitError(
+                    "BUG: _token_provider is None in github_app mode; this is an internal error."
+                )
             return self._token_provider.get_token()
         # PAT mode
         if not self.github_token:
@@ -645,7 +650,8 @@ class GitToolkit(AbstractToolkit):
             return None
         if change.encoding == "base64":
             return change.content or ""
-        assert change.encoding == "utf-8"
+        if change.encoding != "utf-8":
+            raise GitToolkitError(f"Unsupported encoding {change.encoding!r}")
         data = (change.content or "").encode("utf-8")
         return base64.b64encode(data).decode("ascii")
 
@@ -693,7 +699,7 @@ class GitToolkit(AbstractToolkit):
         token = ctx.token
         base_branch_name = ctx.base_branch
 
-        branch_name = head_branch or f"parrot/{_dt.datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        branch_name = head_branch or f"parrot/{_dt.datetime.now(_dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
         commit_message = commit_message or title
 
         base_ref_url = f"https://api.github.com/repos/{ctx.repository}/git/ref/heads/{base_branch_name}"
