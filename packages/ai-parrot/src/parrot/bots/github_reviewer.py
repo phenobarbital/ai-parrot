@@ -31,16 +31,20 @@ subclass per watched repository.
 from __future__ import annotations
 
 import html
+import logging as _stdlib_logging
 import re
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union,
+)
 
 from navconfig import config
 from pydantic import BaseModel, Field
 
 from parrot.bots import Agent
-from parrot.core.hooks.models import HookEvent
+from parrot.core.hooks.github_webhook import GitHubWebhookHook
+from parrot.core.hooks.models import GitHubWebhookConfig, HookEvent
 from parrot.models.google import GoogleModel
 from parrot.scheduler import schedule_daily_report
 from parrot_tools.gittoolkit import GitToolkit
@@ -203,6 +207,92 @@ class GitHubReviewer(Agent):
 
     model = GoogleModel.GEMINI_3_FLASH_PREVIEW
 
+    # aiohttp app keys. The dispatcher fans out to every listener so multiple
+    # GitHubReviewer subclasses (one per repo) can share a single endpoint;
+    # the multi-tenant guard in handle_hook_event keeps deliveries on-topic.
+    WEBHOOK_APP_KEY: str = "github_review_hook"
+    WEBHOOK_LISTENERS_KEY: str = "github_review_hook_listeners"
+    _WEBHOOK_STARTED_KEY: str = "github_review_hook_started"
+
+    @classmethod
+    def setup_webhook_route(
+        cls,
+        app: Any,
+        *,
+        url: str = "/api/v1/hooks/github",
+        secret: Optional[str] = None,
+        name: str = "github_review_hook",
+    ) -> GitHubWebhookHook:
+        """Register the aiohttp route that receives GitHub webhook deliveries.
+
+        Call this from the **synchronous** application setup phase
+        (e.g. ``Main.configure()`` in a Navigator app) — *before* aiohttp
+        freezes its router on ``on_startup``. Adding routes from
+        :meth:`post_configure` is too late and will raise
+        ``RuntimeError: Cannot register a resource into frozen router``.
+
+        Idempotent: subsequent calls return the existing hook stored in
+        ``app[WEBHOOK_APP_KEY]``. Multiple agent instances share one hook
+        and one route; each agent appends its
+        :meth:`handle_hook_event` as a listener during
+        :meth:`post_configure`, and the dispatcher fans every delivery
+        out to all listeners. ``handle_hook_event`` already filters by
+        ``payload.repository``, so cross-repo noise is dropped per agent.
+
+        Args:
+            app: The aiohttp ``web.Application``.
+            url: The route path. Must match what GitHub points its
+                webhook at; default ``"/api/v1/hooks/github"``.
+            secret: HMAC-SHA256 shared secret used to verify deliveries.
+                Falls back to
+                :data:`parrot.conf.GITHUB_REVIEW_WEBHOOK_SECRET` when
+                ``None``. Pass an explicit empty string to disable
+                verification (not recommended).
+            name: Logical name of the hook instance, surfaced in logs.
+
+        Returns:
+            The shared :class:`GitHubWebhookHook` instance.
+        """
+        existing = app.get(cls.WEBHOOK_APP_KEY)
+        if existing is not None:
+            return existing
+
+        if secret is None:
+            secret = config.get("GITHUB_REVIEW_WEBHOOK_SECRET")
+
+        listeners: List[Callable[[HookEvent], Awaitable[None]]] = []
+        dispatch_logger = _stdlib_logging.getLogger(
+            f"parrot.hooks.{name}.dispatch"
+        )
+
+        async def _dispatch(event: HookEvent) -> None:
+            # Fan out to every registered listener; one listener raising
+            # must not block the others from getting the event.
+            for listener in list(listeners):
+                try:
+                    await listener(event)
+                except Exception as exc:  # noqa: BLE001
+                    dispatch_logger.error(
+                        "Listener %r raised on %s: %s",
+                        listener, event.event_type, exc,
+                        exc_info=True,
+                    )
+
+        hook = GitHubWebhookHook(
+            config=GitHubWebhookConfig(
+                name=name,
+                url=url,
+                secret_token=secret or None,
+            ),
+        )
+        hook.setup_routes(app)
+        hook.set_callback(_dispatch)
+
+        app[cls.WEBHOOK_APP_KEY] = hook
+        app[cls.WEBHOOK_LISTENERS_KEY] = listeners
+        app[cls._WEBHOOK_STARTED_KEY] = False
+        return hook
+
     def __init__(
         self,
         repository: str,
@@ -266,6 +356,14 @@ class GitHubReviewer(Agent):
         """Wire :class:`GitToolkit` and :class:`JiraToolkit` once ``self.app``
         is attached. Auth selection mirrors :class:`JiraSpecialist`, with the
         important difference that per-user OAuth is rejected (no caller).
+
+        Also attaches :meth:`handle_hook_event` to the shared
+        :class:`GitHubWebhookHook` that
+        :meth:`setup_webhook_route` registered during sync setup. If
+        ``setup_webhook_route`` was never called the agent logs a clear
+        warning — the bot still works for manually-triggered reviews, but
+        GitHub deliveries land on a 404 until the route is registered
+        before the aiohttp router freezes.
         """
         await super().post_configure()
 
@@ -285,7 +383,38 @@ class GitHubReviewer(Agent):
                     exc_info=True,
                 )
 
+        await self._attach_webhook_listener()
         await self._ensure_webhook_subscription()
+
+    async def _attach_webhook_listener(self) -> None:
+        """Hook ``self.handle_hook_event`` into the shared dispatcher."""
+        if self.app is None:
+            return
+        hook = self.app.get(self.WEBHOOK_APP_KEY)
+        if hook is None:
+            self.logger.warning(
+                "GitHubReviewer: aiohttp route for GitHub deliveries is "
+                "not registered. Call "
+                "GitHubReviewer.setup_webhook_route(app) from your sync "
+                "app setup so deliveries can reach %s.",
+                self.repository,
+            )
+            return
+
+        listeners = self.app.setdefault(self.WEBHOOK_LISTENERS_KEY, [])
+        if self.handle_hook_event not in listeners:
+            listeners.append(self.handle_hook_event)
+
+        # Start the hook exactly once per process, even when several
+        # GitHubReviewer instances share the same route.
+        if not self.app.get(self._WEBHOOK_STARTED_KEY, False):
+            try:
+                await hook.start()
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "GitHubReviewer: hook.start() raised: %s", exc,
+                )
+            self.app[self._WEBHOOK_STARTED_KEY] = True
 
     def _attach_toolkit(self, toolkit: Any, name: str) -> None:
         """Register ``toolkit`` and extend ``self.tools`` with its exports."""
