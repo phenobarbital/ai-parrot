@@ -1487,12 +1487,22 @@ class GitToolkit(AbstractToolkit):
         ref: str,
         start_line: Optional[int],
         end_line: Optional[int],
+        _cached_bytes: Optional[bytes] = None,
+        _cached_sha: Optional[str] = None,
     ) -> "FileContentResult":
         """Synchronous implementation of ``get_file_content_at_ref``.
 
-        Fetches the file at ``ref`` via the GitHub Contents API, decodes it,
-        stores the blob in :attr:`_blob_cache`, and returns a
-        :class:`FileContentResult`. Cache hits avoid the GitHub HTTP round-trip.
+        Fetches the file at ``ref`` via the GitHub Contents API metadata,
+        checks the LRU cache tier before base64-decoding, stores the blob in
+        :attr:`_blob_cache`, and returns a :class:`FileContentResult`.
+
+        When ``_cached_bytes`` is provided (from a Redis hit in the async
+        wrapper), the method skips decoding entirely and uses the cached data.
+
+        Cache lookup order:
+        1. Caller-supplied ``_cached_bytes`` (Redis hit, passed from async wrapper)
+        2. In-process LRU keyed by ``(repo, sha)``
+        3. Base64 decode from the GitHub Contents API response
 
         Args:
             repository: Repository in ``owner/name`` format, or ``None`` for default.
@@ -1500,6 +1510,10 @@ class GitToolkit(AbstractToolkit):
             ref: Branch name, tag, or commit SHA.
             start_line: First line to return (1-indexed), or ``None`` for the full file.
             end_line: Last line to return (1-indexed, inclusive), or ``None``.
+            _cached_bytes: Pre-fetched raw bytes from the Redis cache tier
+                (supplied by the async wrapper to avoid a second GitHub request).
+            _cached_sha: The blob SHA that corresponds to ``_cached_bytes``
+                (supplied by the async wrapper alongside ``_cached_bytes``).
 
         Returns:
             A populated :class:`FileContentResult`. ``exists=False`` on 404;
@@ -1542,9 +1556,38 @@ class GitToolkit(AbstractToolkit):
             )
 
         blob_sha: Optional[str] = payload.get("sha")
-        raw_content_b64: str = payload.get("content", "")
-        # GitHub base64-encodes with newlines; strip them before decoding.
-        raw_bytes = base64.b64decode(raw_content_b64.replace("\n", ""))
+
+        # ── Cache lookup (Tier 1 — LRU) ─────────────────────────────────────
+        # Tier 0 (Redis) is checked in the async wrapper BEFORE this sync
+        # function is called; when there is a hit, _cached_bytes is non-None.
+        raw_bytes: Optional[bytes] = _cached_bytes
+        _from_cache = False
+
+        if raw_bytes is None and blob_sha:
+            # Tier 1: LRU (synchronous lookup, no await needed).
+            self._blob_cache._ensure_lru()
+            cache_key = self._blob_cache._cache_key(repo, blob_sha)
+            if self._blob_cache._lru is not None and cache_key in self._blob_cache._lru:
+                raw_bytes = self._blob_cache._lru[cache_key]
+                _from_cache = True
+
+        if raw_bytes is None:
+            # Cache miss — decode from the GitHub response.
+            raw_content_b64: str = payload.get("content", "")
+            # GitHub base64-encodes with newlines; strip them before decoding.
+            raw_bytes = base64.b64decode(raw_content_b64.replace("\n", ""))
+
+            # Populate the LRU tier for subsequent in-process hits.
+            if blob_sha:
+                try:
+                    self._blob_cache._ensure_lru()
+                    cache_key = self._blob_cache._cache_key(repo, blob_sha)
+                    if self._blob_cache._lru is not None:
+                        self._blob_cache._lru[cache_key] = raw_bytes
+                except Exception:  # noqa: BLE001
+                    pass
+        else:
+            _from_cache = True
 
         # Decode to UTF-8; fall back to 'base64' for binary blobs.
         try:
@@ -1553,17 +1596,6 @@ class GitToolkit(AbstractToolkit):
         except UnicodeDecodeError:
             text_content = None
             encoding = "base64"
-
-        # Populate the LRU tier of the cache synchronously (no await needed).
-        # Redis write happens asynchronously in the async wrapper (get_file_content_at_ref).
-        if blob_sha:
-            try:
-                self._blob_cache._ensure_lru()
-                cache_key = self._blob_cache._cache_key(repo, blob_sha)
-                if self._blob_cache._lru is not None:
-                    self._blob_cache._lru[cache_key] = raw_bytes
-            except Exception:  # noqa: BLE001
-                pass
 
         # Fetch commit_author via /commits endpoint (best-effort, cache miss path).
         commit_author: Optional[str] = None
@@ -1621,6 +1653,15 @@ class GitToolkit(AbstractToolkit):
         in-process SHA-keyed cache so that repeated requests for the same ref
         do not incur extra HTTP round-trips within a single review session.
 
+        Cache lookup order for blob content:
+        1. Redis (checked here in the async wrapper before calling the sync helper)
+        2. In-process LRU (checked inside the sync helper)
+        3. Base64 decode from the GitHub Contents API response
+
+        The Contents API metadata call (which provides the blob SHA) is always
+        made to resolve the SHA before the cache can be checked. This is
+        unavoidable — the SHA is not known until the metadata is fetched.
+
         Use this tool when the PR diff shows a change to a function or class
         but the hunk is too small to judge correctness without seeing the full
         file body. Prefer ``start_line`` / ``end_line`` on large files to stay
@@ -1652,6 +1693,14 @@ class GitToolkit(AbstractToolkit):
             if result.exists and result.content:
                 print(result.content)
         """
+        # NOTE: We always call the Contents API to get the blob SHA before
+        # checking the cache. The SHA is content-addressed, so the cache never
+        # needs invalidation. After resolving the SHA, the sync helper checks
+        # the LRU tier; Redis is checked here in the async context.
+        #
+        # A future optimisation could cache (repo, ref, path) → sha to skip
+        # the metadata request, but that mapping is ref-mutable and requires
+        # a separate TTL policy, so we defer it.
         result = await asyncio.to_thread(
             self._get_file_content_sync,
             repository,

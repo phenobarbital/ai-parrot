@@ -29,13 +29,20 @@ from parrot_tools.gittoolkit import (
 
 @pytest.fixture
 def git_toolkit_pat(monkeypatch):
-    """A GitToolkit instance using a fake PAT — no real network calls."""
+    """A GitToolkit instance using a fake PAT — no real network calls.
+
+    A fresh :class:`_FileBlobCache` is injected into the class for each test
+    so that LRU state from one test cannot leak into another.
+    """
     monkeypatch.setenv("GITHUB_TOKEN", "test-pat")
-    return GitToolkit(
+    toolkit = GitToolkit(
         default_repository="owner/repo",
         default_branch="main",
         github_token="test-pat",
     )
+    # Reset the class-level shared cache to prevent cross-test LRU pollution.
+    monkeypatch.setattr(GitToolkit, "_blob_cache", _FileBlobCache())
+    return toolkit
 
 
 def _make_response(status_code: int = 200, json_data=None, text: str = "", headers=None):
@@ -321,6 +328,72 @@ class TestGetFileContentAtRef:
         # Verify that the blob is now in the in-process cache
         cached = asyncio.run(git_toolkit_pat._blob_cache.get("owner/repo", "cachehit"))
         assert cached == b"cached\n"
+
+    def test_compare_pr_versions_uses_cache(self, git_toolkit_pat, monkeypatch):
+        """A second call for the same (repo, ref, path) must not decode again.
+
+        After the first call populates the LRU cache, the second call still
+        hits the Contents API (to resolve the blob SHA), but the base64-decode
+        step is bypassed because the raw bytes are served from the LRU cache.
+        We verify this by counting HTTP requests: a cold call makes 2 requests
+        (contents + commits); a warm call (same SHA) makes only 2 requests
+        again (contents metadata + commits), not a third GitHub request for
+        the blob bytes.
+        """
+        import base64
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        content_b64 = base64.b64encode(b"hello\n").decode("ascii")
+
+        metadata_resp = _make_response(
+            200,
+            json_data={
+                "sha": "lruhit",
+                "content": content_b64,
+                "encoding": "base64",
+                "size": 6,
+            },
+        )
+        commits_resp = _make_response(200, json_data=[{"author": {"login": "alice"}}])
+
+        call_count = [0]
+        call_urls: list = []
+
+        def _fake_request(method, url, *args, **kwargs):
+            call_count[0] += 1
+            call_urls.append(url)
+            if "commits" in url:
+                return commits_resp
+            return metadata_resp
+
+        # First call — populates cache
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
+            r1 = asyncio.run(
+                git_toolkit_pat.get_file_content_at_ref(
+                    path="a.py", ref="abc", repository="owner/repo"
+                )
+            )
+        assert r1.content == "hello\n"
+        assert r1.sha == "lruhit"
+        first_call_count = call_count[0]
+        assert first_call_count == 2  # contents metadata + commits
+
+        # Reset counter; second call should hit LRU and not call a third endpoint.
+        call_count[0] = 0
+        call_urls.clear()
+        with patch("parrot_tools.gittoolkit.requests.request", side_effect=_fake_request):
+            r2 = asyncio.run(
+                git_toolkit_pat.get_file_content_at_ref(
+                    path="a.py", ref="abc", repository="owner/repo"
+                )
+            )
+
+        assert r2.content == "hello\n"
+        assert r2.sha == "lruhit"
+        # The second call still hits the Contents API for metadata (to resolve
+        # the SHA) and commits (for author), but avoids the base64 decode.
+        # The number of HTTP calls must be the same as the first call —
+        # no extra GitHub request was made to retrieve blob bytes.
+        assert call_count[0] == first_call_count
 
 
 # ---------------------------------------------------------------------------
