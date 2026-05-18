@@ -72,6 +72,30 @@ summary before falling back to tool calls.
 </database_instructions>""",
 )
 
+SCHEMA_TOOL_USAGE_LAYER = PromptLayer(
+    name="schema_tool_usage",
+    priority=LayerPriority.PRE_INSTRUCTIONS + 2,
+    phase=RenderPhase.CONFIGURE,
+    template="""<schema_tool_usage>
+## Schema discovery workflow
+1. `db_search_schema(term)` finds tables whose NAME, COLUMN NAME, or COMMENT
+   matches `term`. It searches *identifiers, not data values*.
+   - `db_search_schema('alaska')` will NOT find rows where `state_code = 'AK'`.
+     To filter by a data value, find the table first, describe it, then write
+     SQL with a WHERE clause.
+2. `db_describe_table(schema, table)` returns the full column list, primary
+   key, indexes, and foreign keys for a single table. Always call this before
+   generating SQL that references a table — never reference a column you have
+   not seen in a `db_describe_table` result.
+3. `db_generate_query(natural_language, target_tables=[...])` produces a
+   SELECT skeleton grounded in the real columns of `target_tables`. Refine
+   the WHERE / JOIN clauses before executing.
+
+Follow this order: `db_search_schema` → `db_describe_table` →
+`db_generate_query` (or author SQL directly from the describe output).
+</schema_tool_usage>""",
+)
+
 
 def _build_database_prompt_builder() -> PromptBuilder:
     """Create a PromptBuilder for DatabaseAgent with domain-specific layers."""
@@ -80,6 +104,7 @@ def _build_database_prompt_builder() -> PromptBuilder:
     builder.add(DATABASE_SAFETY_LAYER)
     builder.add(SCHEMA_GROUNDING_LAYER)
     builder.add(DATABASE_INSTRUCTIONS_LAYER)
+    builder.add(SCHEMA_TOOL_USAGE_LAYER)
     builder.add(SQL_DIALECT_LAYER)
     builder.add(STRICT_GROUNDING_LAYER)
     return builder

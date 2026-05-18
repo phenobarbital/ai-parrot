@@ -4,6 +4,7 @@ from parrot.bots.database.prompts import (
     DATABASE_SAFETY_LAYER,
     SCHEMA_GROUNDING_LAYER,
     DATABASE_INSTRUCTIONS_LAYER,
+    SCHEMA_TOOL_USAGE_LAYER,
     _build_database_prompt_builder,
 )
 
@@ -38,6 +39,44 @@ def test_database_prompt_layers_render_with_minimal_context():
     builder.configure(static_ctx)
     rendered = builder.build(dynamic_ctx)
     assert rendered  # smoke: non-empty string
+
+
+def test_schema_tool_usage_layer_is_unconditional():
+    assert SCHEMA_TOOL_USAGE_LAYER.condition is None
+
+
+def test_schema_tool_usage_layer_mentions_all_three_tools():
+    text = SCHEMA_TOOL_USAGE_LAYER.template
+    assert "db_search_schema" in text
+    assert "db_describe_table" in text
+    assert "db_generate_query" in text
+
+
+def test_schema_tool_usage_layer_states_identifier_only():
+    text = SCHEMA_TOOL_USAGE_LAYER.template.lower()
+    assert "identifier" in text
+    assert "data value" in text
+
+
+def test_schema_tool_usage_layer_warns_against_unknown_columns():
+    text = SCHEMA_TOOL_USAGE_LAYER.template
+    assert "db_describe_table" in text
+    # Warn about referencing unseen columns
+    assert "never" in text.lower() or "not seen" in text.lower()
+
+
+def test_schema_tool_usage_layer_renders_in_builder():
+    builder = _build_database_prompt_builder()
+    rendered = builder.build({})
+    assert "Schema discovery workflow" in rendered
+    assert "db_search_schema" in rendered
+    assert "db_describe_table" in rendered
+    assert "db_generate_query" in rendered
+
+
+def test_builder_registers_schema_tool_usage_layer():
+    builder = _build_database_prompt_builder()
+    assert "schema_tool_usage" in builder.layer_names
 
 
 def test_no_legacy_placeholder_constants_remain():

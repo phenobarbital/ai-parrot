@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-171
 **Date**: 2026-05-14
 **Author**: Juan Francisco Ruffato
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -100,6 +100,24 @@ separate the two naming regimes:
 attached toolkit and asks each one whether it owns that tool.
 Collisions across toolkits log a warning and keep first-wins
 behaviour.
+
+**Collision-log deduplication (Q1 resolution).** Repeated calls to
+`_compute_active_tools` (one per LLM turn) must not re-emit the
+same collision warning. A per-agent `self._logged_collisions:
+Set[Tuple[str, FrozenSet[str]]]` tracks already-reported
+collisions keyed by `(full_name, frozenset(toolkit-class-names))`.
+The warning message includes the current `OutputComponent` flag
+to aid multi-component debugging.
+
+**Legacy `tool_prefix=None` (Q2 resolution).** When a toolkit's
+`tool_prefix` is `None`, Pass 2 falls back to looking up the
+logical name directly (`tk.get_tool(logical_name)`) — graceful
+degradation. The first time this fallback fires for a given
+toolkit, a `DeprecationWarning` is emitted via
+`warnings.warn(..., DeprecationWarning, stacklevel=2)` with a
+message pointing at FEAT-172. A per-agent
+`self._warned_none_prefix: Set[int]` (keyed by `id(tk)`) ensures
+the deprecation fires once per toolkit instance.
 
 ### Component Diagram
 
@@ -198,13 +216,54 @@ None. This feature is a refactor behind the existing surface.
   - Rewrite `_compute_active_tools` so Pass 2 builds the
     fully-qualified name per toolkit and calls
     `tk.get_tool(full_name)`.
-  - When `full_name` is already in `seen`, log
-    `logger.warning("Toolkit tool name collision: %r already exposed; "
-                     "skipping duplicate from %s",
-                     full_name, type(tk).__name__)`
-    and continue (first-wins).
+  - When `full_name` is already in `seen`, log a deduped warning
+    (see "Collision logging" below) and continue (first-wins).
+  - When a toolkit's `tool_prefix` is `None`, fall back to
+    `tk.get_tool(logical_name)` and emit a one-time
+    `DeprecationWarning` per toolkit instance.
   - Preserve the current return shape: a `list` of tool objects
     accepted by `ToolManager.register_tool`.
+  - Initialise two per-agent sets in `DatabaseAgent.__init__`
+    (or first-use lazy init):
+    `self._logged_collisions: Set[Tuple[str, FrozenSet[str]]]`
+    and `self._warned_none_prefix: Set[int]`.
+
+  **Collision logging (Q1 resolution).** Inside Pass 2:
+  ```python
+  key = (full_name, frozenset({type(first_owner).__name__,
+                               type(tk).__name__}))
+  if key not in self._logged_collisions:
+      self._logged_collisions.add(key)
+      logger.warning(
+          "Toolkit tool name collision: %r already exposed by %s; "
+          "skipping duplicate from %s (component=%s). "
+          "Toolkit order in self.toolkits determines first-wins; "
+          "reorder if needed.",
+          full_name, type(first_owner).__name__,
+          type(tk).__name__, component.name,
+      )
+  ```
+  Track `first_owner` per `full_name` in a local
+  `Dict[str, DatabaseToolkit]` populated during Pass 2.
+
+  **Legacy `tool_prefix=None` (Q2 resolution).** When the toolkit
+  declares no prefix:
+  ```python
+  if tk.tool_prefix is None:
+      if id(tk) not in self._warned_none_prefix:
+          self._warned_none_prefix.add(id(tk))
+          warnings.warn(
+              f"{type(tk).__name__} has tool_prefix=None; resolving "
+              f"tools by logical name. This is a transitional escape "
+              f"hatch and will be rejected at configure() time once "
+              f"FEAT-172 ships.",
+              DeprecationWarning, stacklevel=2,
+          )
+      full_name = logical_name
+  else:
+      full_name = f"{tk.tool_prefix}{tk.prefix_separator}{logical_name}"
+  tool = tk.get_tool(full_name)
+  ```
 
 ### Module 2: Update docstrings and inline comments
 
@@ -230,14 +289,17 @@ None. This feature is a refactor behind the existing surface.
 | `test_compute_active_tools_default_prefix` | Module 1 | `DatabaseAgent` with a single `PostgresToolkit(tool_prefix="db")` exposes `db_search_schema`, `db_explain_query`, etc. for the relevant components. Regression test pinning current behaviour. |
 | `test_compute_active_tools_custom_prefix` | Module 1 | `DatabaseAgent` with a `MockToolkit(tool_prefix="mk")` exposing `mk_search_schema` is correctly surfaced when `OutputComponent.SCHEMA_CONTEXT` is active. Today this returns no tools — would catch the bug. |
 | `test_compute_active_tools_two_toolkits_distinct_prefixes` | Module 1 | A `DatabaseAgent` with both `PostgresToolkit(tool_prefix="db")` and `MockToolkit(tool_prefix="mk")` exposes both `db_search_schema` AND `mk_search_schema` simultaneously. |
-| `test_compute_active_tools_logs_collision` | Module 1 | Two toolkits with the same `tool_prefix` that both expose `search_schema` — `_compute_active_tools` logs a warning containing both class names; first toolkit's tool is kept. |
+| `test_compute_active_tools_logs_collision` | Module 1 | Two toolkits with the same `tool_prefix` that both expose `search_schema` — `_compute_active_tools` logs a warning containing both class names AND the current `OutputComponent` flag; first toolkit's tool is kept. |
+| `test_collision_warning_deduplicated_across_turns` | Module 1 | Call `_compute_active_tools` three times with the same colliding setup — the warning is logged exactly once. The set `_logged_collisions` grows by one entry, not three. |
+| `test_none_prefix_graceful_resolution` | Module 1 | A toolkit with `tool_prefix=None` exposing `search_schema` is resolved via `tk.get_tool("search_schema")` and surfaces correctly when `OutputComponent.SCHEMA_CONTEXT` is active. |
+| `test_none_prefix_emits_deprecation_warning_once` | Module 1 | First call to `_compute_active_tools` with a `tool_prefix=None` toolkit emits `DeprecationWarning` mentioning FEAT-172; the second call for the same toolkit emits nothing. |
 | `test_no_regression_sql_analyst_path` | Module 1 | End-to-end: `sql_analyst` plugin's exact runtime config (one `PostgresToolkit` with `tool_prefix="db"`) yields the same tool surface before and after this feature. Pin the surface in the test. |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_databaseagent_multi_toolkit_runtime` | Spin up a `DatabaseAgent` with two toolkits (Postgres + a Mock implementing the `AbstractDatabaseToolkit` interface), drive `_compute_active_tools` with every `OutputComponent` flag combination, assert both toolkits' tools appear in the merged set. |
+| `test_databaseagent_multi_toolkit_runtime` | Spin up a `DatabaseAgent` with two toolkits (Postgres + a Mock implementing the `DatabaseToolkit` interface), drive `_compute_active_tools` with every `OutputComponent` flag combination, assert both toolkits' tools appear in the merged set. |
 
 ### Test Data / Fixtures
 
@@ -245,10 +307,10 @@ None. This feature is a refactor behind the existing surface.
 # tests/unit/bots/database/conftest.py (new or extended)
 import pytest
 from typing import List
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit
+from parrot.bots.database.toolkits.base import DatabaseToolkit
 from parrot.tools.toolkit import tool
 
-class MockDatabaseToolkit(AbstractDatabaseToolkit):
+class MockDatabaseToolkit(DatabaseToolkit):
     """Minimal stub: declares tool_prefix and exposes one tool."""
     tool_prefix: str = "mk"
     database_type: str = "mock"
@@ -283,6 +345,14 @@ This feature is complete when ALL of the following are true:
 - [ ] No silent collision branches remain — every collision logs a
       warning. (Fail-fast at configure-time is **FEAT-172**, not
       this feature.)
+- [ ] Collision warnings are deduplicated across `_compute_active_tools`
+      calls via `self._logged_collisions`; the same `(full_name,
+      toolkits)` pair logs once per agent lifetime.
+- [ ] Collision warning message includes the current
+      `OutputComponent` flag.
+- [ ] Toolkits with `tool_prefix=None` resolve via
+      `tk.get_tool(logical_name)` (graceful) and emit a one-time
+      `DeprecationWarning` mentioning FEAT-172.
 - [ ] `_compute_active_tools` no longer references the literal
       string `"db_"` anywhere. `grep '"db_' packages/ai-parrot/src/parrot/bots/database/agent.py`
       after the change matches **zero lines**.
@@ -304,7 +374,7 @@ This feature is complete when ALL of the following are true:
 # bots/database/agent.py (existing, top of file)
 from typing import Any, Dict, List, Optional, Set
 from parrot.bots.database.toolkits._internal import DatabaseAgentToolkit  # verified
-from parrot.bots.database.toolkits.base import AbstractDatabaseToolkit   # verified
+from parrot.bots.database.toolkits.base import DatabaseToolkit   # verified
 from parrot.bots.database.models import OutputComponent                  # verified
 ```
 
@@ -323,7 +393,7 @@ class AbstractToolkit:
         ...
 
 # bots/database/toolkits/base.py:93
-class AbstractDatabaseToolkit(AbstractToolkit):
+class DatabaseToolkit(AbstractToolkit):
     tool_prefix: str = "db"                  # line 93 (overrides Optional[str] with the concrete default)
 
 # bots/database/toolkits/_internal.py:45
@@ -433,15 +503,27 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Should the collision warning also include the list of
-      `OutputComponent` flags that triggered the collision? Useful
-      for debugging multi-component setups. Adds noise to the log
-      otherwise. — *Owner: Jesús Lara*
-- [ ] When a toolkit's `tool_prefix` is `None` (legacy), should
-      Module 1 treat the logical name as the full name (i.e. call
-      `tk.get_tool("search_schema")`) or skip the toolkit
-      entirely with a warning? Spec currently implements the
-      former (graceful degradation). — *Owner: Jesús Lara*
+> Both open questions are resolved. Kept here with the resolutions
+> as the audit trail.
+
+- [x] **Q1 — Collision warning content** — *Resolved 2026-05-15*:
+      **Include the current `OutputComponent` flag in the warning**
+      and dedupe via `self._logged_collisions:
+      Set[Tuple[str, FrozenSet[str]]]` keyed by `(full_name,
+      frozenset(toolkit-class-names))`. The same `(full_name,
+      toolkits)` pair logs at most once per agent lifetime. The
+      colliding toolkit's class name (`type(tk).__name__`) and the
+      first-owner class name are both included so operators can
+      reorder `self.toolkits` if needed.
+- [x] **Q2 — `tool_prefix=None` handling** — *Resolved 2026-05-15*:
+      **Graceful degradation + one-time `DeprecationWarning` per
+      toolkit instance**. When `tk.tool_prefix is None`, fall back
+      to `tk.get_tool(logical_name)`. The first time the fallback
+      fires for a given toolkit (tracked via
+      `self._warned_none_prefix: Set[int]` keyed by `id(tk)`),
+      emit a `DeprecationWarning` pointing at FEAT-172. This
+      keeps existing legacy setups working through the FEAT-171
+      → FEAT-172 bridge without silent breakage.
 
 ---
 
@@ -451,3 +533,4 @@ None.
 |---|---|---|---|
 | 0.1 | 2026-05-14 | Juan Francisco Ruffato | Initial draft after PR #866 review feedback from Jesús Lara. |
 | 0.2 | 2026-05-14 | Juan Francisco Ruffato | Slimmed scope to Module 1 only. Modules 2 & 3 extracted to FEAT-172 and FEAT-173. |
+| 0.3 | 2026-05-15 | Juan Francisco Ruffato | Resolved Q1 (collision warning dedupe + component flag) and Q2 (graceful `tool_prefix=None` + one-time DeprecationWarning). Status: draft → approved. |

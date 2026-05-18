@@ -8,13 +8,8 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from typing import Any, Dict, List, Optional, Set, Union
-
-# Matches the schema part of a ``schema.table`` reference. Conservative:
-# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
-# we don't want flowing into identifier checks); ASCII identifiers cover
-# every Postgres schema we've seen in practice.
-_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
+import warnings
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
 from ...models import AIMessage, CompletionUsage
 from ...models.outputs import OutputMode, StructuredOutputConfig
@@ -36,19 +31,39 @@ from .toolkits import DatabaseAgentToolkit
 from .toolkits.base import DatabaseToolkit
 
 
+# Matches the schema part of a ``schema.table`` reference. Conservative:
+# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
+# we don't want flowing into identifier checks); ASCII identifiers cover
+# every Postgres schema we've seen in practice.
+_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
+
 # ---------------------------------------------------------------------------
-# Component → internal toolkit tool name mapping
+# Module-level compiled patterns
 # ---------------------------------------------------------------------------
 
-_COMPONENT_TO_TOOL_NAMES: Dict[OutputComponent, Set[str]] = {
+# Matches the schema part of a ``schema.table`` reference. Conservative:
+# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
+# we don't want flowing into identifier checks); ASCII identifiers cover
+# every Postgres schema we've seen in practice.
+_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
+
+# FEAT-172: Pattern for a valid, identifier-safe tool_prefix.
+# Must start with an ASCII letter; may contain letters, digits, and underscores.
+# Checked at configure() time before any toolkit tool-name is resolved.
+_TOOL_PREFIX_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+# ---------------------------------------------------------------------------
+# Component → tool name mappings (FEAT-171: prefix-aware two-map split)
+# ---------------------------------------------------------------------------
+
+# Internal helper tools that live in DatabaseAgentToolkit.
+# Resolved via getattr(self._internal_toolkit, name) — no prefix logic.
+# These names do NOT carry any toolkit prefix.
+_INTERNAL_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
     OutputComponent.SQL_QUERY: {
-        # Internal helpers
         "extract_sql_from_response",
         "extract_table_name_from_query",
-        # Toolkit tools (auto-prefixed by tool_prefix on the toolkit; e.g.
-        # ``PostgresToolkit`` uses prefix ``db``)
-        "db_generate_query",
-        "db_validate_query",
     },
     OutputComponent.OPTIMIZATION_TIPS: {
         "generate_optimization_tips",
@@ -59,14 +74,12 @@ _COMPONENT_TO_TOOL_NAMES: Dict[OutputComponent, Set[str]] = {
     OutputComponent.EXECUTION_PLAN: {
         "format_explain_plan",
         "extract_performance_metrics",
-        "db_explain_query",
     },
     OutputComponent.SCHEMA_CONTEXT: {
         "generate_create_table_statement",
         "simplify_column_type",
         "extract_table_names_from_metadata",
         "get_schema_counts_direct",
-        "db_search_schema",
     },
     OutputComponent.EXAMPLES: {
         "generate_examples",
@@ -79,6 +92,22 @@ _COMPONENT_TO_TOOL_NAMES: Dict[OutputComponent, Set[str]] = {
         "is_explanatory_response",
         "parse_tips",
     },
+}
+
+# External database-toolkit tools.  Names here are LOGICAL — they carry
+# no hardcoded prefix.  At resolution time each attached toolkit applies
+# its own ``tool_prefix`` via
+#   full_name = f"{tk.tool_prefix}{tk.prefix_separator}{logical_name}"
+# and the tool is fetched with ``tk.get_tool(full_name)``.
+#
+# This decouples ``DatabaseAgent`` from any hardcoded toolkit prefix:
+# a ``BigQueryToolkit(tool_prefix="bq")`` exposes ``bq_search_schema``,
+# a ``PostgresToolkit(tool_prefix="db")`` exposes ``db_search_schema``,
+# and both are surfaced correctly without any change here.
+_TOOLKIT_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
+    OutputComponent.SQL_QUERY: {"generate_query", "validate_query"},
+    OutputComponent.EXECUTION_PLAN: {"explain_query"},
+    OutputComponent.SCHEMA_CONTEXT: {"search_schema", "describe_table"},
 }
 
 
@@ -111,6 +140,7 @@ class DatabaseAgent(BasicAgent):
         vector_store: Optional[AbstractStore] = None,
         redis_url: Optional[str] = None,
         retry_config: Optional[QueryRetryConfig] = None,
+        cache_ttl_by_completeness: Optional[Dict[int, int]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(name=name, **kwargs)
@@ -120,12 +150,20 @@ class DatabaseAgent(BasicAgent):
         self.toolkits: List[DatabaseToolkit] = toolkits or []
         self.default_user_role = default_user_role
         self.retry_config = retry_config
+        self._cache_ttl_by_completeness = cache_ttl_by_completeness
         self.cache_manager = CacheManager(
             redis_url=redis_url, vector_store=vector_store
         )
         self.query_router: Optional[SchemaQueryRouter] = None
         self._toolkit_map: Dict[str, DatabaseToolkit] = {}
         self._internal_toolkit: Optional[DatabaseAgentToolkit] = None
+        # Collision deduplication: each entry is (full_name, frozenset of
+        # toolkit class names) so the same collision is logged at most once
+        # per agent lifetime (FEAT-171).
+        self._logged_collisions: Set[Tuple[str, FrozenSet[str]]] = set()
+        # Deprecation deduplication: tracks id(tk) for toolkits whose
+        # tool_prefix=None fallback has already fired a DeprecationWarning.
+        self._warned_none_prefix: Set[int] = set()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -135,8 +173,32 @@ class DatabaseAgent(BasicAgent):
         """Configure the agent: create cache partitions, start toolkits,
         register tools with the router, and instantiate the internal toolkit.
 
+        Validation steps (FEAT-172) run after all toolkits are started but
+        before ``self._internal_toolkit`` is assigned:
+
+        1. **Prefix presence** — raises ``ValueError`` if any toolkit's
+           ``tool_prefix`` is ``None`` or ``""``; every database toolkit
+           must declare a non-empty prefix.
+        2. **Prefix shape** — raises ``ValueError`` if any toolkit's
+           ``tool_prefix`` does not match ``^[A-Za-z][A-Za-z0-9_]*$``;
+           a non-identifier-safe prefix would produce tool names rejected
+           by LLM providers.
+        3. **Collision detection** — raises ``ValueError`` if two toolkits
+           expose the same fully-qualified tool name (detected via
+           ``list_tool_names()``); the error names both conflicting classes.
+
+        On any validation failure ``self._internal_toolkit`` remains ``None``.
+        Callers must construct a fresh ``DatabaseAgent`` instance after a
+        ``ValueError`` — a failed agent must not be re-used.
+
         Args:
             app: Optional application context (unused, for API compatibility).
+
+        Raises:
+            ValueError: If a toolkit's ``tool_prefix`` is empty or ``None``.
+            ValueError: If a toolkit's ``tool_prefix`` is not identifier-safe.
+            ValueError: If two toolkits register the same fully-qualified tool
+                name.
         """
         primary_schema = "public"
         allowed_schemas: List[str] = []
@@ -160,12 +222,15 @@ class DatabaseAgent(BasicAgent):
                 tk.retry_config = self.retry_config
 
             if tk.cache_partition is None:
+                config_kwargs: Dict[str, Any] = {
+                    "namespace": tk_id,
+                    "lru_maxsize": 500,
+                    "lru_ttl": 1800,
+                }
+                if self._cache_ttl_by_completeness is not None:
+                    config_kwargs["ttl_by_completeness"] = self._cache_ttl_by_completeness
                 partition = self.cache_manager.create_partition(
-                    CachePartitionConfig(
-                        namespace=tk_id,
-                        lru_maxsize=500,
-                        lru_ttl=1800,
-                    )
+                    CachePartitionConfig(**config_kwargs)
                 )
                 tk.cache_partition = partition
 
@@ -176,6 +241,48 @@ class DatabaseAgent(BasicAgent):
                 self.logger.info("Started toolkit: %s", tk_id)
             except Exception as exc:
                 self.logger.warning("Failed to start toolkit %s: %s", tk_id, exc)
+
+        # --- FEAT-172 Pass A: prefix presence ---
+        # Every database toolkit must declare a non-empty tool_prefix.
+        for tk in self.toolkits:
+            if not tk.tool_prefix:
+                raise ValueError(
+                    f"DatabaseToolkit subclasses must declare a non-empty "
+                    f"tool_prefix; {type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
+                    f"Set `tool_prefix` on the toolkit class (e.g. \"db\", \"bq\")."
+                )
+
+        # --- FEAT-172 Pass B: identifier-safe prefix shape ---
+        # The prefix is embedded in LLM-visible tool names; providers
+        # (OpenAI / Anthropic) reject names containing dashes, spaces, or
+        # non-ASCII characters.
+        for tk in self.toolkits:
+            if not _TOOL_PREFIX_PATTERN.fullmatch(tk.tool_prefix):
+                raise ValueError(
+                    f"DatabaseToolkit subclasses must declare an identifier-safe "
+                    f"tool_prefix matching {_TOOL_PREFIX_PATTERN.pattern!r}; "
+                    f"{type(tk).__name__} has tool_prefix={tk.tool_prefix!r}. "
+                    f"Use only ASCII letters, digits, and underscores, starting "
+                    f"with a letter."
+                )
+
+        # --- FEAT-172 Pass C: collision detection ---
+        # Walk every toolkit's fully-qualified tool names; raise on first
+        # duplicate.  list_tool_names() triggers _generate_tools() lazily
+        # here — the warm cache benefits _compute_active_tools later.
+        fully_qualified_owners: Dict[str, type] = {}
+        for tk in self.toolkits:
+            for full_name in tk.list_tool_names():
+                if full_name in fully_qualified_owners:
+                    prior_owner = fully_qualified_owners[full_name]
+                    raise ValueError(
+                        f"Tool name collision while configuring DatabaseAgent: "
+                        f"{full_name!r} is exposed by both {prior_owner.__name__} and "
+                        f"{type(tk).__name__}. Two toolkits must not register the same "
+                        f"fully-qualified tool name. Change one toolkit's tool_prefix or "
+                        f"remove the duplicate from one of the toolkits."
+                    )
+                fully_qualified_owners[full_name] = type(tk)
 
         self._internal_toolkit = DatabaseAgentToolkit()
 
@@ -628,18 +735,38 @@ class DatabaseAgent(BasicAgent):
     def _compute_active_tools(self, components: OutputComponent) -> List[Any]:
         """Return the subset of tools relevant to ``components``.
 
-        Collects two kinds of tools, both gated by the same component map:
+        Collects two kinds of tools, both gated by component maps:
 
-        1. Internal helper tools from ``_internal_toolkit`` (string
+        1. **Pass 1 — Internal helpers** from ``_internal_toolkit`` (string
            manipulation, formatting) — returned as bound methods carrying
-           ``_is_tool=True``.
-        2. Database toolkit tools from every registered ``self.toolkits[i]``
-           (``db_*`` after ``tool_prefix`` is applied) — returned as
-           ``ToolkitTool`` instances. Toolkits filter out anything in
-           ``exclude_tools`` automatically.
+           ``_is_tool=True``.  Resolved via ``getattr`` against the internal
+           toolkit; no prefix logic applies here (FEAT-173 will migrate
+           the internal toolkit to a prefix when ready).
 
-        Without (2) the LLM has no way to introspect the database, even
-        though the backstory references tools like ``db_search_schema``.
+        2. **Pass 2 — External toolkit tools** from every registered
+           ``self.toolkits[i]``.  Names in
+           ``_TOOLKIT_TOOLS_BY_COMPONENT`` are *logical* (no prefix).
+           Each toolkit applies its own ``tool_prefix`` at resolution time::
+
+               full_name = f"{tk.tool_prefix}{tk.prefix_separator}{logical_name}"
+               tool = tk.get_tool(full_name)
+
+           This means a ``PostgresToolkit(tool_prefix="db")`` exposes
+           ``db_search_schema``, a ``BigQueryToolkit(tool_prefix="bq")``
+           exposes ``bq_search_schema``, and both surface correctly.
+
+        **Collision handling**: when two toolkits would expose the same
+        fully-qualified name, the first one wins.  A ``WARNING`` is logged
+        once per ``(full_name, toolkit-pair)`` combination per agent
+        lifetime (de-duplicated via ``self._logged_collisions``).  The
+        message includes the current ``OutputComponent`` flag so operators
+        can diagnose which component triggered the collision.
+
+        **Legacy ``tool_prefix=None``**: toolkits that have not yet
+        declared a prefix fall back to resolving by the logical name
+        directly.  A one-time ``DeprecationWarning`` is emitted (tracked
+        via ``self._warned_none_prefix``), pointing at FEAT-172 where the
+        escape-hatch will be removed.
 
         Args:
             components: Active output component flags for the current request.
@@ -651,30 +778,92 @@ class DatabaseAgent(BasicAgent):
         if self._internal_toolkit is None:
             return []
 
-        exposed_names: Set[str] = set()
-        for flag, tool_names in _COMPONENT_TO_TOOL_NAMES.items():
-            if flag in components:
-                exposed_names |= tool_names
-
         tools: List[Any] = []
         seen: Set[str] = set()
 
-        for name in exposed_names:
-            attr = getattr(self._internal_toolkit, name, None)
-            if attr is not None and getattr(attr, "_is_tool", False):
-                tools.append(attr)
-                seen.add(name)
-
-        for tk in self.toolkits:
-            get_tool = getattr(tk, "get_tool", None)
-            if get_tool is None:
+        # ------------------------------------------------------------------
+        # Pass 1 — internal helper tools (no prefix, getattr path)
+        # ------------------------------------------------------------------
+        for flag, tool_names in _INTERNAL_TOOLS_BY_COMPONENT.items():
+            if flag not in components:
                 continue
-            for name in exposed_names:
+            for name in tool_names:
                 if name in seen:
                     continue
-                tk_tool = get_tool(name)
-                if tk_tool is not None:
-                    tools.append(tk_tool)
+                attr = getattr(self._internal_toolkit, name, None)
+                if attr is not None and getattr(attr, "_is_tool", False):
+                    tools.append(attr)
                     seen.add(name)
+
+        # ------------------------------------------------------------------
+        # Pass 2 — external toolkit tools (prefix-aware resolution)
+        # ------------------------------------------------------------------
+        # first_owner tracks which toolkit first exposed a given full_name,
+        # used to construct informative collision-warning messages.
+        first_owner: Dict[str, Any] = {}
+
+        for component in OutputComponent:
+            if component not in components:
+                continue
+            logical_names = _TOOLKIT_TOOLS_BY_COMPONENT.get(component, set())
+            for logical_name in logical_names:
+                for tk in self.toolkits:
+                    get_tool = getattr(tk, "get_tool", None)
+                    if get_tool is None:
+                        continue
+
+                    # Build the fully-qualified tool name, honouring each
+                    # toolkit's declared prefix and separator.
+                    if tk.tool_prefix is None:
+                        if id(tk) not in self._warned_none_prefix:
+                            self._warned_none_prefix.add(id(tk))
+                            warnings.warn(
+                                f"{type(tk).__name__} has tool_prefix=None; "
+                                f"resolving tools by logical name. This is a "
+                                f"transitional escape hatch and will be "
+                                f"rejected at configure() time once "
+                                f"FEAT-172 ships.",
+                                DeprecationWarning,
+                                stacklevel=2,
+                            )
+                        full_name = logical_name
+                    else:
+                        full_name = (
+                            f"{tk.tool_prefix}"
+                            f"{tk.prefix_separator}"
+                            f"{logical_name}"
+                        )
+
+                    tk_tool = get_tool(full_name)
+                    if tk_tool is None:
+                        continue
+
+                    if full_name in seen:
+                        owner_cls = type(first_owner[full_name]).__name__
+                        this_cls = type(tk).__name__
+                        key: Tuple[str, FrozenSet[str]] = (
+                            full_name,
+                            frozenset({owner_cls, this_cls}),
+                        )
+                        if key not in self._logged_collisions:
+                            self._logged_collisions.add(key)
+                            self.logger.warning(
+                                "Toolkit tool name collision: %r already "
+                                "exposed by %s; skipping duplicate from %s "
+                                "(component=%s). Toolkit order in "
+                                "self.toolkits determines first-wins; "
+                                "reorder if needed. "
+                                "This should have been caught at configure() time "
+                                "— please file a bug.",
+                                full_name,
+                                owner_cls,
+                                this_cls,
+                                component.name,
+                            )
+                        continue
+
+                    tools.append(tk_tool)
+                    seen.add(full_name)
+                    first_owner[full_name] = tk
 
         return tools

@@ -12,12 +12,14 @@ from __future__ import annotations
 
 import json as _json
 import re
+import warnings
 from dataclasses import asdict as _asdict
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from cachetools import TTLCache
 from navconfig.logging import logging
 from pydantic import BaseModel, Field
-from .models import SchemaMetadata, TableMetadata
+from .models import Completeness, SchemaMetadata, TableMetadata
 
 if TYPE_CHECKING:
     from ...stores.abstract import AbstractStore
@@ -34,6 +36,14 @@ class CachePartitionConfig(BaseModel):
     lru_maxsize: int = Field(default=500, ge=1, description="Max items in LRU cache")
     lru_ttl: int = Field(default=1800, ge=1, description="LRU TTL in seconds")
     redis_ttl: int = Field(default=3600, ge=1, description="Redis TTL in seconds")
+    ttl_by_completeness: Dict[int, int] = Field(
+        default_factory=lambda: {
+            int(Completeness.NAME_ONLY): 86400,
+            int(Completeness.WITH_COLUMNS): 21600,
+            int(Completeness.FULL): 3600,
+        },
+        description="Per-completeness TTL cap in seconds (keyed by Completeness int value)",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -60,9 +70,15 @@ class CachePartition:
         redis_ttl: int = 3600,
         redis_pool: Any = None,
         vector_store: Optional["AbstractStore"] = None,
+        ttl_by_completeness: Optional[Dict[int, int]] = None,
     ):
         self.namespace = namespace
         self.redis_ttl = redis_ttl
+        self.ttl_by_completeness: Dict[int, int] = ttl_by_completeness or {
+            int(Completeness.NAME_ONLY): 86400,
+            int(Completeness.WITH_COLUMNS): 21600,
+            int(Completeness.FULL): 3600,
+        }
 
         # Tier 1: LRU
         self.hot_cache: TTLCache = TTLCache(maxsize=lru_maxsize, ttl=lru_ttl)
@@ -90,50 +106,80 @@ class CachePartition:
         """Generate namespace-prefixed Redis key."""
         return f"{self.namespace}:table:{schema_name}:{table_name}"
 
-    # -- Public API (mirrors SchemaMetadataCache) ---------------------------
+    # -- Public API ---------------------------------------------------------
+
+    async def get(
+        self,
+        schema_name: str,
+        table_name: str,
+        *,
+        required: Completeness = Completeness.NAME_ONLY,
+        max_age: Optional[timedelta] = None,
+    ) -> Optional[TableMetadata]:
+        """Return metadata only when completeness and freshness requirements are met.
+
+        Resolution order: LRU → schema cache → Redis → vector store.
+        Returns None when:
+          * entry not found in any tier
+          * entry.completeness < required
+          * now - entry.loaded_at > effective_max_age
+            (effective_max_age = max_age if provided else ttl_by_completeness[completeness])
+        """
+        cache_key = self._table_cache_key(schema_name, table_name)
+        metadata: Optional[TableMetadata] = None
+
+        # Tier 1: LRU
+        if cache_key in self.hot_cache:
+            metadata = self.hot_cache[cache_key]
+
+        # Tier 1b: schema cache
+        if metadata is None and schema_name in self.schema_cache:
+            all_objects = self.schema_cache[schema_name].get_all_objects()
+            if table_name in all_objects:
+                metadata = all_objects[table_name]
+                self.hot_cache[cache_key] = metadata
+
+        # Tier 2: Redis
+        if metadata is None:
+            metadata = await self._get_from_redis(schema_name, table_name)
+            if metadata is not None:
+                self.hot_cache[cache_key] = metadata
+
+        # Tier 3: Vector store (point lookup)
+        if metadata is None and self.vector_enabled:
+            metadata = await self._search_vector_store(schema_name, table_name)
+            if metadata is not None:
+                self.hot_cache[cache_key] = metadata
+
+        if metadata is None:
+            return None
+
+        # Completeness gate
+        if not metadata.satisfies(required):
+            return None
+
+        # Age gate
+        effective_max_age = max_age if max_age is not None else timedelta(
+            seconds=self.ttl_by_completeness.get(int(metadata.completeness), self.redis_ttl)
+        )
+        if datetime.utcnow() - metadata.loaded_at > effective_max_age:
+            return None
+
+        self._track_access(cache_key)
+        return metadata
 
     async def get_table_metadata(
         self,
         schema_name: str,
         table_name: str,
     ) -> Optional[TableMetadata]:
-        """Get table metadata with access tracking.
-
-        Resolution order: LRU → schema cache → Redis → vector store.
-        """
-        cache_key = self._table_cache_key(schema_name, table_name)
-
-        # Tier 1: LRU
-        if cache_key in self.hot_cache:
-            self._track_access(cache_key)
-            return self.hot_cache[cache_key]
-
-        # Tier 1b: schema cache
-        if schema_name in self.schema_cache:
-            schema_meta = self.schema_cache[schema_name]
-            all_objects = schema_meta.get_all_objects()
-            if table_name in all_objects:
-                metadata = all_objects[table_name]
-                self.hot_cache[cache_key] = metadata
-                self._track_access(cache_key)
-                return metadata
-
-        # Tier 2: Redis
-        metadata = await self._get_from_redis(schema_name, table_name)
-        if metadata is not None:
-            self.hot_cache[cache_key] = metadata
-            self._track_access(cache_key)
-            return metadata
-
-        # Tier 3: Vector store
-        if self.vector_enabled:
-            metadata = await self._search_vector_store(schema_name, table_name)
-            if metadata is not None:
-                self.hot_cache[cache_key] = metadata
-                self._track_access(cache_key)
-                return metadata
-
-        return None
+        """Deprecated — use get() instead."""
+        warnings.warn(
+            "get_table_metadata is deprecated; use get() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get(schema_name, table_name)
 
     async def store_table_metadata(self, metadata: TableMetadata) -> None:
         """Store table metadata across all available tiers."""
@@ -156,12 +202,94 @@ class CachePartition:
         else:
             schema_meta.views[metadata.tablename] = metadata
 
-        # Tier 2: Redis
-        await self._store_in_redis(metadata)
+        # Tier 2: Redis — cap TTL by completeness level
+        tier_cap = self.ttl_by_completeness.get(int(metadata.completeness), self.redis_ttl)
+        effective_ttl = min(self.redis_ttl, tier_cap)
+        await self._store_in_redis(metadata, ttl=effective_ttl)
 
         # Tier 3: Vector store
         if self.vector_enabled:
             await self._store_in_vector_store(metadata)
+
+    async def list(
+        self,
+        schema_names: List[str],
+        *,
+        completeness_min: Completeness = Completeness.NAME_ONLY,
+        max_age: Optional[timedelta] = None,
+        limit: Optional[int] = None,
+    ) -> List[TableMetadata]:
+        """Return all cached tables in *schema_names* filtered by completeness and age."""
+        results: List[TableMetadata] = []
+        now = datetime.utcnow()
+        for schema_name in schema_names:
+            if schema_name not in self.schema_cache:
+                continue
+            for meta in self.schema_cache[schema_name].get_all_objects().values():
+                if not meta.satisfies(completeness_min):
+                    continue
+                effective_max_age = max_age if max_age is not None else timedelta(
+                    seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl)
+                )
+                if now - meta.loaded_at > effective_max_age:
+                    continue
+                results.append(meta)
+                if limit is not None and len(results) >= limit:
+                    return results
+        return results
+
+    async def search(
+        self,
+        schema_names: List[str],
+        search_term: str,
+        *,
+        completeness_min: Completeness = Completeness.NAME_ONLY,
+        max_age: Optional[timedelta] = None,
+        limit: int = 20,
+    ) -> List[TableMetadata]:
+        """Search for tables within *schema_names* filtered by completeness and age.
+
+        Vector candidates are filtered post-hoc via get().  Cache-only path
+        applies the same gates directly from schema_cache to avoid Redis RTTs.
+        """
+        if self.vector_enabled:
+            search_query = f"schemas:{','.join(schema_names)} {search_term}"
+            try:
+                raw = await self.vector_store.similarity_search(
+                    search_query,
+                    k=limit,
+                    filter={"schema_name": {"$in": schema_names}},
+                )
+                converted = await self._convert_vector_results(raw)
+                filtered: List[TableMetadata] = []
+                for meta in converted:
+                    validated = await self.get(
+                        meta.schema, meta.tablename,
+                        required=completeness_min, max_age=max_age,
+                    )
+                    if validated is not None:
+                        filtered.append(validated)
+                if filtered:
+                    return filtered[:limit]
+            except Exception as exc:
+                self.logger.debug("Vector similarity search failed: %s", exc)
+
+        # Cache-only fallback — fetch a larger pool then filter
+        candidates = self._search_cache_only(schema_names, search_term, limit * 3)
+        now = datetime.utcnow()
+        results: List[TableMetadata] = []
+        for meta in candidates:
+            if not meta.satisfies(completeness_min):
+                continue
+            effective_max_age = max_age if max_age is not None else timedelta(
+                seconds=self.ttl_by_completeness.get(int(meta.completeness), self.redis_ttl)
+            )
+            if now - meta.loaded_at > effective_max_age:
+                continue
+            results.append(meta)
+            if len(results) >= limit:
+                break
+        return results
 
     async def search_similar_tables(
         self,
@@ -169,21 +297,13 @@ class CachePartition:
         query: str,
         limit: int = 5,
     ) -> List[TableMetadata]:
-        """Search for similar tables within allowed schemas."""
-        if self.vector_enabled:
-            search_query = f"schemas:{','.join(schema_names)} {query}"
-            try:
-                results = await self.vector_store.similarity_search(
-                    search_query,
-                    k=limit,
-                    filter={"schema_name": {"$in": schema_names}},
-                )
-                converted = await self._convert_vector_results(results)
-                if converted:
-                    return converted
-            except Exception as exc:
-                self.logger.debug("Vector similarity search failed: %s", exc)
-        return self._search_cache_only(schema_names, query, limit)
+        """Deprecated — use search() instead."""
+        warnings.warn(
+            "search_similar_tables is deprecated; use search() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.search(schema_names, query, limit=limit)
 
     def get_schema_overview(self, schema_name: str) -> Optional[SchemaMetadata]:
         """Get complete schema overview."""
@@ -347,9 +467,9 @@ class CachePartition:
         Returns up to ``remaining`` matches in iteration order; the
         caller controls dedup via ``seen``.
         """
-        out: List[TableMetadata] = []
         if remaining <= 0 or not keywords:
-            return out
+            return []
+        scored: list[tuple[float, TableMetadata]] = []
         for schema_name in schema_names:
             if schema_name not in self.schema_cache:
                 continue
@@ -360,10 +480,9 @@ class CachePartition:
                     continue
                 score = self._calculate_relevance_score(table_name, table_meta, keywords)
                 if score > 0:
-                    out.append(table_meta)
-                    if len(out) >= remaining:
-                        return out
-        return out
+                    scored.append((score, table_meta))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [meta for _, meta in scored[:remaining]]
 
     @staticmethod
     def _stem_keywords(keywords: List[str]) -> List[str]:
@@ -406,14 +525,15 @@ class CachePartition:
             self.logger.debug("Redis get failed for %s.%s: %s", schema_name, table_name, exc)
             return None
 
-    async def _store_in_redis(self, metadata: TableMetadata) -> None:
+    async def _store_in_redis(self, metadata: TableMetadata, ttl: Optional[int] = None) -> None:
         """Store metadata in Redis if available."""
         if self._redis is None:
             return
         try:
             key = self._redis_key(metadata.schema, metadata.tablename)
             data = _json.dumps(_asdict(metadata), default=str)
-            await self._redis.set(key, data, ex=self.redis_ttl)
+            effective_ttl = ttl if ttl is not None else self.redis_ttl
+            await self._redis.set(key, data, ex=effective_ttl)
         except Exception as exc:
             self.logger.debug("Redis store failed for %s: %s", metadata.full_name, exc)
 
@@ -549,6 +669,7 @@ class CacheManager:
             redis_ttl=config.redis_ttl,
             redis_pool=self._redis_pool,
             vector_store=self.vector_store,
+            ttl_by_completeness=config.ttl_by_completeness,
         )
         self._partitions[config.namespace] = partition
         self.logger.info(
