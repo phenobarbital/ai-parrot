@@ -226,10 +226,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: SDD Worker (claude-sonnet-4-6)
+**Date**: 2026-05-18
+**Notes**: Added `clone_form` async method to `FormRegistry`. Deep-copies the
+source form using `model_copy(deep=True)`, assigns `new_form_id`, resets
+`version` to "1.0", sets `created_at=None`, records `meta["cloned_from"]`
+for provenance, applies optional RFC 7396 merge-patch via `_deep_merge`,
+validates with `FormValidator.check_schema`, and calls
+`register(persist=persist, overwrite=False)`. All acceptance criteria met.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
