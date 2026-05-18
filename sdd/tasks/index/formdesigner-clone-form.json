@@ -1,0 +1,73 @@
+{
+  "feature": "formdesigner-clone-form",
+  "feature_id": "FEAT-183",
+  "spec": "sdd/specs/formdesigner-clone-form.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-18T00:00:00Z",
+  "completed_at": "2026-05-18T21:52:56+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1227",
+      "slug": "registry-clone-form",
+      "title": "FormRegistry.clone_form",
+      "feature_id": "FEAT-183",
+      "feature": "formdesigner-clone-form",
+      "spec": "sdd/specs/formdesigner-clone-form.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation method \u2014 TASK-1228 and TASK-1229 depend on this.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
+      "completed_at": "2026-05-18T21:52:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1227-registry-clone-form.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1228",
+      "slug": "clone-rest-endpoint",
+      "title": "REST Endpoint \u2014 clone_form handler + route",
+      "feature_id": "FEAT-183",
+      "feature": "formdesigner-clone-form",
+      "spec": "sdd/specs/formdesigner-clone-form.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1227"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1227 \u2014 calls FormRegistry.clone_form.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
+      "completed_at": "2026-05-18T21:52:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1228-clone-rest-endpoint.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1229",
+      "slug": "clone-form-tests",
+      "title": "Unit + Integration Tests for clone_form",
+      "feature_id": "FEAT-183",
+      "feature": "formdesigner-clone-form",
+      "spec": "sdd/specs/formdesigner-clone-form.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1227",
+        "TASK-1228"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both TASK-1227 and TASK-1228 \u2014 tests exercise both layers.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T18:13:53+00:00",
+      "completed_at": "2026-05-18T21:52:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1229-clone-form-tests.md",
+      "verification": "verified"
+    }
+  ]
+}

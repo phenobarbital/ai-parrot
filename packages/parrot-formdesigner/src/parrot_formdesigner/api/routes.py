@@ -112,7 +112,16 @@ def setup_form_api(
             upload handler will create a default instance on first use.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
-    app["form_registry"] = registry
+    # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
+    # provided — avoids overwriting with a different reference).
+    if "form_registry" not in app:
+        app["form_registry"] = registry
+    elif app["form_registry"] is not registry:
+        logger.warning(
+            "setup_form_api: app['form_registry'] is already set to a different "
+            "registry instance. The passed registry will be ignored. Pass the same "
+            "instance, or let FormRegistry(app=app) manage the assignment."
+        )
 
     # Stash REST-field services (FEAT-170). Both may be None; the upload
     # handler resolves defaults lazily on first request.
@@ -143,6 +152,11 @@ def setup_form_api(
     # Natural language editing
     app.router.add_post(
         f"{bp}/forms/{{form_id}}/edit", _wrap_auth(handler.edit_form)
+    )
+
+    # Clone endpoint
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/clone", _wrap_auth(handler.clone_form)
     )
 
     # Contract endpoints (schema, style)

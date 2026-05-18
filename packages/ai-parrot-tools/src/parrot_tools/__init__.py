@@ -83,6 +83,8 @@ TOOL_REGISTRY: dict[str, str] = {
     "aws_route53": "parrot_tools.aws.route53.Route53Toolkit",
     "aws_s3": "parrot_tools.aws.s3.S3Toolkit",
     "aws_securityhub": "parrot_tools.aws.securityhub.SecurityHubToolkit",
+    # S3 report reader (FEAT-184)
+    "s3_report_reader": "parrot_tools.s3.report_reader.S3ReportReaderToolkit",
 
     # --- Individual Tools (Batch 2) ---
     "google_search": "parrot_tools.google.tools.GoogleSearchTool",
