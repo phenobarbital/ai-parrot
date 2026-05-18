@@ -158,3 +158,17 @@ async def delete_vault_credential(user_id: str, vault_name: str) -> None:
             VAULT_CRED_COLLECTION,
             {"user_id": user_id, "name": vault_name},
         )
+
+
+# ---------------------------------------------------------------------------
+# OAuth2 helpers
+# ---------------------------------------------------------------------------
+
+
+def oauth2_vault_name(provider_id: str, channel: str, user_id: str) -> str:
+    """Build the deterministic Vault credential name for an OAuth2 token.
+
+    Mirrors :data:`parrot.auth.oauth2_base._VAULT_NAME_TEMPLATE` so the
+    namespace stays consistent across writers and readers.
+    """
+    return f"oauth2_{provider_id}_{channel}_{user_id}"
