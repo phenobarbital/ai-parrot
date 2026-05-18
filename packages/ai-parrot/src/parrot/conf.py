@@ -4,7 +4,6 @@ import base64
 from pathlib import Path
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
-from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 
 
 # # disable debug on some libraries:
@@ -67,6 +66,17 @@ else:
     default_dsn = None
     async_default_dsn = None
     sqlalchemy_url = None
+
+# Redis:
+CACHE_HOST = config.get('CACHE_HOST', fallback='localhost')
+CACHE_PORT = config.get('CACHE_PORT', fallback=6379)
+CACHE_DB = config.get('CACHEDB', fallback=2)
+CACHE_URL = f"redis://{CACHE_HOST}:{CACHE_PORT}/{CACHE_DB}"
+
+REDIS_HOST = config.get('REDIS_HOST', fallback='localhost')
+REDIS_PORT = config.get('REDIS_PORT', fallback=6379)
+REDIS_DB = config.get('REDIS_DB', fallback=1)
+REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 
 
 # Environment
