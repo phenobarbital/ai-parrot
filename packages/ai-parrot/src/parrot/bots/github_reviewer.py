@@ -31,10 +31,11 @@ subclass per watched repository.
 from __future__ import annotations
 
 import html
+import json
 import logging as _stdlib_logging
 import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import (
     Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union,
 )
@@ -46,8 +47,13 @@ from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
 from parrot.core.hooks.models import GitHubWebhookConfig, HookEvent
 from parrot.models.google import GoogleModel
-from parrot.scheduler import schedule_daily_report
-from parrot_tools.gittoolkit import GitToolkit
+from parrot.scheduler import schedule_daily_report, schedule_weekly_report
+from parrot_tools.gittoolkit import (
+    ContributorStats,
+    ContributorWeek,
+    GitToolkit,
+    WeeklyCodeFrequency,
+)
 from parrot_tools.jiratoolkit import JiraToolkit
 
 
@@ -123,6 +129,61 @@ class PRReviewResult(BaseModel):
     approve: bool = Field(
         description="True if the PR satisfies every acceptance criterion.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Weekly activity report models (FEAT-180)
+# ---------------------------------------------------------------------------
+
+
+class _ContributorWindowSummary(BaseModel):
+    """One contributor's activity inside the reporting window."""
+
+    login: str
+    """GitHub login of the contributor."""
+    commits_this_week: int
+    """Number of commits in the current (most recent completed) week."""
+    additions: int
+    """Lines added in the current week."""
+    deletions: int
+    """Lines deleted in the current week (non-negative)."""
+    weeks_silent: int
+    """Consecutive weeks with zero commits up to and including the last completed
+    week. Zero when the contributor was active in the last completed week."""
+
+
+class WeeklyActivitySummary(BaseModel):
+    """Structured input to the templated/LLM renderer for the weekly digest."""
+
+    repository: str
+    """Repository name in ``owner/name`` format."""
+    period_start: datetime
+    """Sunday 00:00 UTC that begins the reporting week."""
+    period_end: datetime
+    """Sunday 00:00 UTC that begins the FOLLOWING week (exclusive upper bound)."""
+    contributors_active: List[_ContributorWindowSummary]
+    """Contributors with at least one commit in the reporting week, sorted by
+    commits desc then additions+deletions desc then login."""
+    contributors_silent: List[_ContributorWindowSummary]
+    """Contributors whose last ``weeks_silent >= threshold`` consecutive weeks
+    all had zero commits. Sorted by weeks_silent desc then login. Uncapped."""
+    total_commits: int
+    """Sum of commits across all contributors in the current week."""
+    total_additions: int
+    """Sum of additions across all contributors in the current week."""
+    total_deletions: int
+    """Sum of deletions across all contributors in the current week."""
+    prev_total_commits: int
+    """Total commits in the week immediately before the reporting window
+    (from code_frequency data, 0 if not available)."""
+    prev_total_additions: int
+    """Total additions in the previous week (from code_frequency, 0 if missing)."""
+    prev_total_deletions: int
+    """Total deletions in the previous week (from code_frequency, 0 if missing)."""
+
+
+class WeeklyLLMSummarizationError(RuntimeError):
+    """Raised when the LLM summarizer fails; caller falls back to templated output."""
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1148,9 +1209,190 @@ class GitHubReviewer(Agent):
         except ValueError:
             return None
 
+    # ------------------------------------------------------------------
+    # Weekly activity report helpers (FEAT-180)
+    # ------------------------------------------------------------------
+
+    def _build_weekly_summary(
+        self,
+        contributors: List[ContributorStats],
+        code_freq: List[WeeklyCodeFrequency],
+        *,
+        threshold_weeks: int,
+        top_n: int = 10,
+        now: Optional[datetime] = None,
+    ) -> WeeklyActivitySummary:
+        """Reshape raw stats into a WeeklyActivitySummary for rendering.
+
+        Pure function — no I/O, no LLM calls, no Telegram. Deterministic given
+        the same inputs and ``now`` value.
+
+        Args:
+            contributors: Per-contributor weekly stats from :meth:`GitToolkit.get_contributor_stats`.
+            code_freq: Repo-wide weekly code frequency from :meth:`GitToolkit.get_code_frequency`.
+            threshold_weeks: Number of consecutive zero-commit weeks to flag a
+                contributor as silent.
+            top_n: Maximum number of active contributors in the output (silent list
+                is uncapped).
+            now: Reference point for "current" week (defaults to
+                ``datetime.now(timezone.utc)``).
+
+        Returns:
+            A :class:`WeeklyActivitySummary` covering the most recently completed
+            GitHub-aligned (Sunday 00:00 UTC) week strictly before ``now``.
+
+        Raises:
+            ValueError: When both ``contributors`` and ``code_freq`` are empty
+                (cannot determine the reporting window).
+        """
+        now = now or datetime.now(timezone.utc)
+
+        # 1. Find the most recent completed week's period_start.
+        #    Gather all week_start values from contributors and code_freq,
+        #    pick the latest one that is strictly before `now`.
+        week_starts: List[datetime] = []
+        for cs in contributors:
+            for w in cs.weeks:
+                if w.week_start < now:
+                    week_starts.append(w.week_start)
+        if not week_starts:
+            for cf in code_freq:
+                if cf.week_start < now:
+                    week_starts.append(cf.week_start)
+
+        if not week_starts:
+            raise ValueError(
+                "Cannot determine reporting window: no week data before "
+                f"{now.isoformat()} found in contributors or code_freq."
+            )
+
+        period_start = max(week_starts)
+        period_end = period_start + timedelta(days=7)
+        prev_period_start = period_start - timedelta(days=7)
+
+        # 2. Build lookup for code_freq by week_start (for totals).
+        cf_by_week: Dict[datetime, WeeklyCodeFrequency] = {
+            cf.week_start: cf for cf in code_freq
+        }
+
+        # 3. Per-contributor processing.
+        active: List[_ContributorWindowSummary] = []
+        silent: List[_ContributorWindowSummary] = []
+
+        for cs in contributors:
+            # Skip anonymous (login is None).
+            if cs.login is None:
+                continue
+
+            # Sort weeks by week_start descending for easy look-back.
+            sorted_weeks = sorted(cs.weeks, key=lambda w: w.week_start, reverse=True)
+            week_by_start: Dict[datetime, ContributorWeek] = {
+                w.week_start: w for w in cs.weeks
+            }
+
+            # Current week slice.
+            current_slice = week_by_start.get(period_start)
+            commits_this_week = current_slice.commits if current_slice else 0
+            additions = current_slice.additions if current_slice else 0
+            deletions = current_slice.deletions if current_slice else 0
+
+            # Count consecutive silent weeks going backwards from period_start.
+            # Only count weeks where we have data AND commits == 0.
+            # Stop as soon as we hit a week with commits > 0 OR a week with no data.
+            weeks_silent = 0
+            check_date = period_start
+            while True:
+                slice_ = week_by_start.get(check_date)
+                if slice_ is None:
+                    # No data for this week — treat as a missing slice (not silent).
+                    # Count it silent only if it's the current week (no current data
+                    # means the contributor was not present this week).
+                    if check_date == period_start:
+                        weeks_silent += 1
+                        check_date = check_date - timedelta(days=7)
+                        continue
+                    break
+                if slice_.commits == 0:
+                    weeks_silent += 1
+                else:
+                    break
+                check_date = check_date - timedelta(days=7)
+
+            summary_entry = _ContributorWindowSummary(
+                login=cs.login,
+                commits_this_week=commits_this_week,
+                additions=additions,
+                deletions=deletions,
+                weeks_silent=weeks_silent,
+            )
+
+            if commits_this_week > 0:
+                active.append(summary_entry)
+            if weeks_silent >= threshold_weeks:
+                silent.append(summary_entry)
+
+        # 4. Sort active: commits desc, then additions+deletions desc, then login.
+        active.sort(
+            key=lambda c: (-c.commits_this_week, -(c.additions + c.deletions), c.login)
+        )
+        active = active[:top_n]
+
+        # 5. Sort silent: weeks_silent desc, then login.
+        silent.sort(key=lambda c: (-c.weeks_silent, c.login))
+
+        # 6. Totals from contributors (current week).
+        total_commits = sum(c.commits_this_week for c in active) + sum(
+            c.commits_this_week for c in silent if c.commits_this_week > 0
+        )
+        # Re-sum from all contributors (active list is truncated).
+        all_this_week = [
+            cs for cs in contributors
+            if cs.login is not None
+        ]
+        total_commits = 0
+        total_additions = 0
+        total_deletions = 0
+        for cs in all_this_week:
+            week_by_start = {w.week_start: w for w in cs.weeks}
+            current_slice = week_by_start.get(period_start)
+            if current_slice:
+                total_commits += current_slice.commits
+                total_additions += current_slice.additions
+                total_deletions += current_slice.deletions
+
+        # 7. Previous week totals from code_freq.
+        prev_cf = cf_by_week.get(prev_period_start)
+        prev_total_commits = 0  # code_freq doesn't have per-week commit count
+        prev_total_additions = prev_cf.additions if prev_cf else 0
+        prev_total_deletions = prev_cf.deletions if prev_cf else 0
+
+        # For prev_total_commits: sum from all contributors' prev-week slices.
+        for cs in all_this_week:
+            week_by_start = {w.week_start: w for w in cs.weeks}
+            prev_slice = week_by_start.get(prev_period_start)
+            if prev_slice:
+                prev_total_commits += prev_slice.commits
+
+        return WeeklyActivitySummary(
+            repository=self.repository,
+            period_start=period_start,
+            period_end=period_end,
+            contributors_active=active,
+            contributors_silent=silent,
+            total_commits=total_commits,
+            total_additions=total_additions,
+            total_deletions=total_deletions,
+            prev_total_commits=prev_total_commits,
+            prev_total_additions=prev_total_additions,
+            prev_total_deletions=prev_total_deletions,
+        )
+
 
 __all__ = [
     "Discrepancy",
     "PRReviewResult",
+    "WeeklyActivitySummary",
+    "_ContributorWindowSummary",
+    "WeeklyLLMSummarizationError",
     "GitHubReviewer",
 ]
