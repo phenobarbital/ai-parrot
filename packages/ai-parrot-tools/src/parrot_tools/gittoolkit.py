@@ -641,6 +641,23 @@ class _FileBlobCache:
     The cache is safe to call from multiple concurrent coroutines in the same
     process because initialisation is guarded by an :class:`asyncio.Lock`.
 
+    .. note::
+        **Deviation from spec (CRITICAL-3)**: The spec requests using
+        ``CachePartition`` from ``parrot.bots.database.cache`` for Redis
+        access. However, ``CachePartition`` is designed for schema/table
+        metadata (it caches :class:`~parrot.bots.database.cache.TableMetadata`
+        objects keyed by schema+table name) and is not importable from
+        ``parrot_tools`` without introducing a cross-package dependency on the
+        ``ai-parrot`` package (``parrot_tools`` is intentionally a lighter
+        package that does not depend on the core ``parrot`` runtime).
+
+        TODO(FEAT-182): If ``parrot_tools`` ever gains an explicit dependency
+        on ``ai-parrot``, replace the inline ``redis.asyncio.from_url()`` pool
+        with a shared ``CachePartition`` / ``CacheManager`` instance so that
+        the Redis connection pool is managed centrally by the Parrot runtime.
+        The cache key schema (``gittoolkit_blob:<repo>:<sha>``) must be
+        preserved during the migration.
+
     Example::
 
         cache = _FileBlobCache()
