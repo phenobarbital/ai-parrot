@@ -20,17 +20,25 @@ Table columns:
 - created_by: VARCHAR (optional metadata)
 - UNIQUE(form_id, version)
 
-Usage:
+Usage (self-managed pool — recommended):
+    storage = PostgresFormStorage(
+        dsn="postgresql://user:pw@host/db",
+        schema="navigator",
+        table_name="form_schemas",
+    )
+    await storage.initialize()   # creates pool + DDL
+    await storage.save(form_schema)
+    await storage.close()        # closes pool
+
+Usage (externally-managed pool — backward compatible):
     pool = await asyncpg.create_pool(dsn="postgresql://...")
     storage = PostgresFormStorage(
         pool=pool,
-        schema="navigator",          # default
-        table_name="form_schemas",   # default
-        tenant=None,                 # default; set for single-tenant deploy
+        schema="navigator",
+        table_name="form_schemas",
     )
-    await storage.initialize()
-    await storage.save(form_schema)
-    await storage.save(form_schema, tenant="epson")  # → epson.form_schemas
+    await storage.initialize()   # DDL only, pool not closed on close()
+    await storage.save(form_schema, tenant="epson")
     form = await storage.load("my-form", tenant="epson")
 """
 
@@ -55,39 +63,63 @@ DEFAULT_TABLE = "form_schemas"
 class PostgresFormStorage(FormStorage):
     """Persist FormSchema objects in a PostgreSQL table using asyncpg.
 
-    Requires ``asyncpg`` to be installed. The database pool is passed in
-    at construction time (no internal connection management). The target
-    schema is assumed to exist — it is NOT auto-created. Configure
+    Supports two construction modes:
+
+    1. **Self-managed pool** (recommended): pass ``dsn`` (or connection kwargs).
+       ``initialize()`` creates the pool; ``close()`` closes it.
+
+    2. **External pool** (backward compatible): pass an existing ``pool``.
+       ``close()`` will NOT close an externally-provided pool.
+
+    The target schema is assumed to exist — it is NOT auto-created. Configure
     per-tenant schemas at the DBA level before using a tenant override.
 
     Args:
-        pool: An active ``asyncpg`` connection pool.
+        pool: An existing ``asyncpg`` connection pool. When provided,
+            ``_owns_pool`` is False and ``close()`` will not close it.
+        dsn: asyncpg DSN string (e.g. ``"postgresql://user:pw@host/db"``).
+            Used by ``initialize()`` to create the pool when ``pool`` is None.
         schema: Postgres schema where the table lives. Default
             ``"navigator"``. Used when no per-call tenant overrides it.
-        table_name: Table name within ``schema``. Default
-            ``"form_schemas"``.
+        table_name: Table name within ``schema``. Default ``"form_schemas"``.
         tenant: Optional default tenant slug. When set, every operation
             without an explicit ``tenant=`` kwarg targets
             ``<tenant>.<table_name>`` instead of ``<schema>.<table_name>``.
+        min_size: Minimum asyncpg pool size (default 2). Ignored when pool
+            is provided externally.
+        max_size: Maximum asyncpg pool size (default 10). Ignored when pool
+            is provided externally.
+        **pool_kwargs: Additional keyword arguments forwarded to
+            ``asyncpg.create_pool()`` when creating a self-managed pool.
     """
 
     def __init__(
         self,
-        pool: Any,
         *,
+        pool: Any | None = None,
+        dsn: str | None = None,
         schema: str = DEFAULT_SCHEMA,
         table_name: str = DEFAULT_TABLE,
         tenant: str | None = None,
+        min_size: int = 2,
+        max_size: int = 10,
+        **pool_kwargs: Any,
     ) -> None:
         validate_identifier(schema, kind="schema")
         validate_identifier(table_name, kind="table")
         if tenant is not None:
             validate_identifier(tenant, kind="tenant")
 
-        self._pool = pool
+        self._pool: Any | None = pool
+        self._dsn: str | None = dsn
         self._schema = schema
         self._table = table_name
         self._tenant = tenant
+        self._min_size = min_size
+        self._max_size = max_size
+        self._pool_kwargs = pool_kwargs
+        # Track pool ownership: False when pool is provided externally.
+        self._owns_pool: bool = pool is None
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -185,21 +217,47 @@ class PostgresFormStorage(FormStorage):
     async def initialize(self, *, tenant: str | None = None) -> None:
         """Create the configured table if it does not exist.
 
-        Idempotent. Targets the default schema unless a ``tenant`` is
-        provided (or the instance has a default tenant configured). The
-        schema itself MUST already exist — initialize() will not create
-        it.
+        When no pool was provided at construction time, creates a new
+        ``asyncpg`` pool using the stored DSN and pool sizing parameters.
+        This is idempotent — safe to call on every startup.
+
+        The target schema must already exist; ``initialize()`` will NOT
+        create it.
 
         Args:
             tenant: Optional tenant override; resolves the schema for
                 this single call.
         """
+        if self._pool is None:
+            import asyncpg  # lazy runtime import
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=self._min_size,
+                max_size=self._max_size,
+                **self._pool_kwargs,
+            )
+            self.logger.info("PostgresFormStorage: created asyncpg pool")
+
         sql = self._create_table_sql(tenant)
         async with self._pool.acquire() as conn:
             await conn.execute(sql)
         self.logger.info(
             "%s ensured", self._qualified(tenant)
         )
+
+    async def close(self) -> None:
+        """Close the asyncpg pool if this storage owns it.
+
+        When the pool was provided externally (``pool=...`` kwarg at
+        construction), this method is a no-op — the caller retains pool
+        ownership.
+
+        Idempotent: calling ``close()`` multiple times does not raise.
+        """
+        if self._owns_pool and self._pool is not None:
+            await self._pool.close()
+            self.logger.info("PostgresFormStorage: pool closed")
+        self._pool = None
 
     async def save(
         self,
