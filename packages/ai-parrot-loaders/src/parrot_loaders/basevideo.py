@@ -6,6 +6,7 @@ import gc
 import os
 import logging
 import math
+import threading
 from pathlib import Path
 import numpy as np
 from parrot.conf import HUGGINGFACEHUB_API_TOKEN
@@ -92,13 +93,20 @@ class BaseVideoLoader(AbstractLoader):
 
         # Cached WhisperX pipelines — loaded on first use, reused across files.
         # Keyed by (model_id, device, compute_type) so a config change forces reload.
+        # Per-cache locks serialize concurrent load+swap on the same loader
+        # instance (the methods are sync but typically dispatched through
+        # asyncio.to_thread / run_in_executor, so the real contention is
+        # cross-thread).
         self._whisperx_model = None
         self._whisperx_model_key: tuple = ()   # (model_id, device, compute_type)
+        self._whisperx_model_lock = threading.Lock()
         self._align_model = None
         self._align_meta = None
         self._align_model_key: tuple = ()      # (language_code, device)
+        self._align_model_lock = threading.Lock()
         self._diarizer = None
         self._diarizer_key: tuple = ()         # (token, device)
+        self._diarizer_lock = threading.Lock()
 
         # Store device info for lazy loading
         device, _, dtype = self._get_device()
@@ -455,27 +463,30 @@ class BaseVideoLoader(AbstractLoader):
                 "Missing PYANNOTE token. Set PYANNOTE_AUDIO_AUTH or pass pyannote_token=..."
             )
 
-        # 1) Run WhisperX diarization on the file — reuse cached pipeline when possible
+        # 1) Run WhisperX diarization on the file — reuse cached pipeline when possible.
+        # Capture a local reference under the lock so a concurrent clear_cuda()
+        # cannot drop the pipeline while we're still using it below.
         diarizer_key = (token, device)
-        if self._diarizer is None or self._diarizer_key != diarizer_key:
-            try:
-                self._diarizer = whisperx.diarize.DiarizationPipeline(
-                    token=token,
-                    device=device,
-                )
-                self._diarizer_key = diarizer_key
-            except Exception as e:
-                if "mps" in str(e).lower() and device == "mps":
-                    print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
-                    device = "cpu"
+        with self._diarizer_lock:
+            if self._diarizer is None or self._diarizer_key != diarizer_key:
+                try:
                     self._diarizer = whisperx.diarize.DiarizationPipeline(
                         token=token,
                         device=device,
                     )
-                    self._diarizer_key = (token, device)
-                else:
-                    raise
-        diarizer = self._diarizer
+                    self._diarizer_key = diarizer_key
+                except Exception as e:
+                    if "mps" in str(e).lower() and device == "mps":
+                        print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
+                        device = "cpu"
+                        self._diarizer = whisperx.diarize.DiarizationPipeline(
+                            token=token,
+                            device=device,
+                        )
+                        self._diarizer_key = (token, device)
+                    else:
+                        raise
+            diarizer = self._diarizer
 
         if speaker_names and len(speaker_names) > 1:
             min_speakers = max(2, len(speaker_names) - 1)
@@ -1056,33 +1067,42 @@ class BaseVideoLoader(AbstractLoader):
         else:
             model_id = self._get_whisperx_name(lang, self._model_size)
 
-        # 1) ASR — reuse cached model when config matches
+        # 1) ASR — reuse cached model when config matches.
+        # The lock serializes the load+swap so two threads can't each pay the
+        # cold-load cost. We capture a local reference under the lock so a
+        # concurrent clear_cuda() can't drop the model mid-transcribe.
         asr_key = (model_id, device, compute_type)
-        if self._whisperx_model is None or self._whisperx_model_key != asr_key:
-            self._whisperx_model = whisperx.load_model(
-                model_id,
-                device=device,
-                compute_type=compute_type,
-                language=language,
-            )
-            self._whisperx_model_key = asr_key
+        with self._whisperx_model_lock:
+            if self._whisperx_model is None or self._whisperx_model_key != asr_key:
+                self._whisperx_model = whisperx.load_model(
+                    model_id,
+                    device=device,
+                    compute_type=compute_type,
+                    language=language,
+                )
+                self._whisperx_model_key = asr_key
+            asr_model = self._whisperx_model
         audio = whisperx.load_audio(str(audio_path))
-        asr_result = self._whisperx_model.transcribe(audio, batch_size=batch_size)
+        asr_result = asr_model.transcribe(audio, batch_size=batch_size)
         lang = asr_result.get("language", language)
         segs = asr_result.get("segments", []) or []
 
-        # 2) Alignment — reuse cached align model when language+device match
+        # 2) Alignment — reuse cached align model when language+device match.
+        # Same lock-and-capture pattern as ASR above.
         detected_lang = asr_result.get("language", language)
         align_key = (detected_lang, device)
-        if self._align_model is None or self._align_model_key != align_key:
-            self._align_model, self._align_meta = whisperx.load_align_model(
-                language_code=detected_lang, device=device
-            )
-            self._align_model_key = align_key
+        with self._align_model_lock:
+            if self._align_model is None or self._align_model_key != align_key:
+                self._align_model, self._align_meta = whisperx.load_align_model(
+                    language_code=detected_lang, device=device
+                )
+                self._align_model_key = align_key
+            align_model_ref = self._align_model
+            align_meta_ref = self._align_meta
         aligned = whisperx.align(
             segs,
-            self._align_model,
-            self._align_meta,
+            align_model_ref,
+            align_meta_ref,
             audio,
             device=device,
             return_char_alignments=False,
@@ -1631,23 +1651,28 @@ class BaseVideoLoader(AbstractLoader):
         """
         freed_items = []
 
-        # Free cached WhisperX pipelines
-        if self._whisperx_model is not None:
-            del self._whisperx_model
-            self._whisperx_model = None
-            self._whisperx_model_key = ()
-            freed_items.append("whisperx_model")
-        if self._align_model is not None:
-            del self._align_model
-            self._align_model = None
-            self._align_meta = None
-            self._align_model_key = ()
-            freed_items.append("align_model")
-        if self._diarizer is not None:
-            del self._diarizer
-            self._diarizer = None
-            self._diarizer_key = ()
-            freed_items.append("diarizer")
+        # Free cached WhisperX pipelines under their locks so in-flight
+        # transcribes that captured a local ref before this call still finish,
+        # while no new caller can pick up a stale pipeline mid-clear.
+        with self._whisperx_model_lock:
+            if self._whisperx_model is not None:
+                del self._whisperx_model
+                self._whisperx_model = None
+                self._whisperx_model_key = ()
+                freed_items.append("whisperx_model")
+        with self._align_model_lock:
+            if self._align_model is not None:
+                del self._align_model
+                self._align_model = None
+                self._align_meta = None
+                self._align_model_key = ()
+                freed_items.append("align_model")
+        with self._diarizer_lock:
+            if self._diarizer is not None:
+                del self._diarizer
+                self._diarizer = None
+                self._diarizer_key = ()
+                freed_items.append("diarizer")
 
         # Free summarizer if it was loaded
         if self._summarizer is not None:
