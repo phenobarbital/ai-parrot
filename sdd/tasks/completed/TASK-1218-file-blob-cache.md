@@ -237,8 +237,8 @@ async def test_blob_cache_lru_fallback(monkeypatch):
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-18
 **Notes**:
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

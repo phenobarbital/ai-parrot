@@ -63,8 +63,11 @@ class _MinimalReviewer:
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
+    # Class-level constants needed by some helpers.
+    _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
 
 
 class _StubEvent:
@@ -317,7 +320,7 @@ class TestFormatAlertMessageEscaping:
 
 
 class TestRepoCaseInsensitive:
-    def test_handle_hook_event_matches_lowercased_repo(self):
+    async def test_handle_hook_event_matches_lowercased_repo(self):
         r = _wire_reviewer(repository="Owner/Repo")
         captured: List[Dict[str, Any]] = []
 
@@ -331,32 +334,30 @@ class TestRepoCaseInsensitive:
             "github.pr_opened",
             {"repository": "owner/repo", "pr_number": 1},
         )
-        out = asyncio.run(r.handle_hook_event(event))
+        out = await r.handle_hook_event(event)
         assert out == {"status": "stub"}
         assert captured and captured[0]["pr_number"] == 1
 
-    def test_handle_hook_event_rejects_other_repo(self):
+    async def test_handle_hook_event_rejects_other_repo(self):
         r = _wire_reviewer(repository="owner/repo")
         r.review_pull_request = MagicMock()  # type: ignore[assignment]
         event = _StubEvent(
             "github.pr_opened",
             {"repository": "someone/else", "pr_number": 1},
         )
-        out = asyncio.run(r.handle_hook_event(event))
+        out = await r.handle_hook_event(event)
         assert out is None
         r.review_pull_request.assert_not_called()
 
-    def test_handle_hook_event_ignores_unrelated_events(self):
+    async def test_handle_hook_event_ignores_unrelated_events(self):
         r = _wire_reviewer()
         r.review_pull_request = MagicMock()  # type: ignore[assignment]
-        out = asyncio.run(
-            r.handle_hook_event(_StubEvent("github.pr_closed", {}))
-        )
+        out = await r.handle_hook_event(_StubEvent("github.pr_closed", {}))
         assert out is None
 
 
 class TestReviewPullRequestDedup:
-    def test_already_reviewed_short_circuits(self):
+    async def test_already_reviewed_short_circuits(self):
         r = _wire_reviewer()
         r._reviewed_shas[("owner/repo", 42)] = "abc123"
 
@@ -364,23 +365,21 @@ class TestReviewPullRequestDedup:
         r._fetch_ticket = MagicMock()  # type: ignore[assignment]
         r._fetch_diff = MagicMock()  # type: ignore[assignment]
 
-        out = asyncio.run(
-            r.review_pull_request(
-                {
-                    "repository": "owner/repo",
-                    "pr_number": 42,
-                    "head_sha": "abc123",
-                    "pr_body": "Implements NAV-1",
-                    "pr_title": "",
-                }
-            )
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 42,
+                "head_sha": "abc123",
+                "pr_body": "Implements NAV-1",
+                "pr_title": "",
+            }
         )
         assert out["status"] == "already_reviewed"
         assert out["head_sha"] == "abc123"
         r._fetch_ticket.assert_not_called()
         r._fetch_diff.assert_not_called()
 
-    def test_new_sha_records_after_review(self):
+    async def test_new_sha_records_after_review(self):
         r = _wire_reviewer()
 
         async def fake_fetch_ticket(key):
@@ -406,24 +405,83 @@ class TestReviewPullRequestDedup:
         r._ask_llm_for_review = fake_ask  # type: ignore[assignment]
         r.git_toolkit.submit_pr_review = fake_submit
 
-        out = asyncio.run(
-            r.review_pull_request(
-                {
-                    "repository": "Owner/Repo",
-                    "pr_number": 9,
-                    "head_sha": "deadbeef",
-                    "pr_body": "Fixes NAV-9",
-                    "pr_title": "",
-                }
-            )
+        out = await r.review_pull_request(
+            {
+                "repository": "Owner/Repo",
+                "pr_number": 9,
+                "head_sha": "deadbeef",
+                "pr_body": "Fixes NAV-9",
+                "pr_title": "",
+            }
         )
         assert out["status"] == "reviewed"
         assert out["approve"] is True
         assert r._reviewed_shas[("owner/repo", 9)] == "deadbeef"
 
+    async def test_tool_call_cap_warning_logged(self):
+        """When tool_calls >= max_review_tool_calls, a WARNING is emitted.
+
+        This test verifies the cap-enforcement detection path: even if the
+        underlying LLM client does not honour max_iterations, the post-call
+        count check catches it and logs a WARNING so operators know the cap was
+        hit.
+
+        It also verifies that max_iterations is passed to self.ask() as
+        max_review_tool_calls + 1 (per the FEAT-182 spec).
+        """
+        r = _wire_reviewer()
+        r.max_review_tool_calls = 2
+        # Bind the real _ask_llm_for_review so we exercise the actual logic.
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+
+        # Fake tool-call objects — each has a 'name' attribute.
+        class _FakeTC:
+            def __init__(self, name):
+                self.name = name
+
+        # Simulate an ask() that returns a response with exactly max_review_tool_calls
+        # tool calls (triggering the warning).
+        class _FakeResponse:
+            tool_calls = [_FakeTC("get_file_content_at_ref"), _FakeTC("search_repo_code")]
+            output = PRReviewResult(
+                jira_key="NAV-1",
+                discrepancies=[],
+                summary="looks good",
+                approve=True,
+            )
+
+        captured_max_iterations: List[int] = []
+
+        async def fake_ask(question, structured_output, max_iterations, **kw):
+            captured_max_iterations.append(max_iterations)
+            return _FakeResponse()
+
+        r.ask = fake_ask  # type: ignore[assignment]
+        r._ac_field_id = "customfield_10100"
+        r._fetch_ticket = AsyncMock(
+            return_value={"fields": {"summary": "S", "description": "D"}}
+        )
+        r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
+
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 5,
+                "head_sha": "cap-sha",
+                "pr_body": "Fixes NAV-5",
+                "pr_title": "",
+            }
+        )
+        # max_iterations must be max_review_tool_calls + 1 as specified.
+        assert captured_max_iterations == [r.max_review_tool_calls + 1]
+        # Review completed; warning about cap was logged.
+        r.logger.warning.assert_called_once()
+        warning_args = r.logger.warning.call_args[0]
+        assert "cap" in warning_args[0].lower() or "cap" in str(warning_args).lower()
+
 
 class TestFetchTicketFields:
-    def test_passes_configured_ac_field(self):
+    async def test_passes_configured_ac_field(self):
         """Override JIRA_ACCEPTANCE_CRITERIA_FIELD must be reflected in
         the fields= argument sent to Jira."""
         r = _wire_reviewer(ac_field_id="customfield_99999")
@@ -436,25 +494,25 @@ class TestFetchTicketFields:
 
         r.jira_toolkit.jira_get_issue = fake_get
 
-        asyncio.run(r._fetch_ticket("NAV-1"))
+        await r._fetch_ticket("NAV-1")
         assert "customfield_99999" in captured["fields"]
         # Stable field list is sorted, so summary/description/status remain.
         for f in ("summary", "description", "status"):
             assert f in captured["fields"]
 
-    def test_returns_none_when_envelope_not_ok(self):
+    async def test_returns_none_when_envelope_not_ok(self):
         r = _wire_reviewer()
 
         async def fake_get(**kwargs):
             return {"status": "error", "data": None}
 
         r.jira_toolkit.jira_get_issue = fake_get
-        assert asyncio.run(r._fetch_ticket("NAV-1")) is None
+        assert await r._fetch_ticket("NAV-1") is None
 
-    def test_returns_none_when_toolkit_missing(self):
+    async def test_returns_none_when_toolkit_missing(self):
         r = _wire_reviewer()
         r.jira_toolkit = None
-        assert asyncio.run(r._fetch_ticket("NAV-1")) is None
+        assert await r._fetch_ticket("NAV-1") is None
 
 
 class TestNoTicketComment:
@@ -475,7 +533,7 @@ class TestNoTicketComment:
         assert "@" not in body.split("\n")[2]
         assert "PARROT-<number>" in body
 
-    def test_review_posts_comment_when_no_ticket(self):
+    async def test_review_posts_comment_when_no_ticket(self):
         r = _wire_reviewer()
         captured: Dict[str, Any] = {}
 
@@ -485,17 +543,15 @@ class TestNoTicketComment:
 
         r.git_toolkit.add_pr_comment = fake_add
 
-        out = asyncio.run(
-            r.review_pull_request(
-                {
-                    "repository": "owner/repo",
-                    "pr_number": 17,
-                    "head_sha": "deadbeef",
-                    "pr_body": "no jira reference here",
-                    "pr_title": "drive-by fix",
-                    "author": "octocat",
-                }
-            )
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 17,
+                "head_sha": "deadbeef",
+                "pr_body": "no jira reference here",
+                "pr_title": "drive-by fix",
+                "author": "octocat",
+            }
         )
         assert out["status"] == "no_ticket"
         assert out["comment"]["id"] == 42
@@ -506,7 +562,7 @@ class TestNoTicketComment:
         # PR is now in the dedup set.
         assert ("owner/repo", 17) in r._no_ticket_notified
 
-    def test_second_delivery_does_not_repost(self):
+    async def test_second_delivery_does_not_repost(self):
         r = _wire_reviewer()
         calls = 0
 
@@ -524,28 +580,26 @@ class TestNoTicketComment:
             "pr_body": "no ticket",
             "pr_title": "",
         }
-        asyncio.run(r.review_pull_request(payload))
+        await r.review_pull_request(payload)
         # Different SHA but same PR — must still skip.
         payload["head_sha"] = "sha-b"
-        out2 = asyncio.run(r.review_pull_request(payload))
+        out2 = await r.review_pull_request(payload)
         assert calls == 1
         # Second response has no `comment` key because we didn't post.
         assert "comment" not in out2
         assert out2["status"] == "no_ticket"
 
-    def test_skips_silently_when_git_toolkit_missing(self):
+    async def test_skips_silently_when_git_toolkit_missing(self):
         r = _wire_reviewer()
         r.git_toolkit = None
 
-        out = asyncio.run(
-            r.review_pull_request(
-                {
-                    "repository": "owner/repo",
-                    "pr_number": 1,
-                    "pr_body": "",
-                    "pr_title": "no ticket",
-                }
-            )
+        out = await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 1,
+                "pr_body": "",
+                "pr_title": "no ticket",
+            }
         )
         assert out["status"] == "no_ticket"
         assert "comment" not in out
@@ -553,7 +607,7 @@ class TestNoTicketComment:
         # the comment on the next delivery.
         assert r._no_ticket_notified == set()
 
-    def test_does_not_mark_when_post_fails(self):
+    async def test_does_not_mark_when_post_fails(self):
         r = _wire_reviewer()
 
         async def fake_add(**kwargs):
@@ -561,15 +615,13 @@ class TestNoTicketComment:
 
         r.git_toolkit.add_pr_comment = fake_add
 
-        asyncio.run(
-            r.review_pull_request(
-                {
-                    "repository": "owner/repo",
-                    "pr_number": 99,
-                    "pr_body": "",
-                    "pr_title": "no ticket",
-                }
-            )
+        await r.review_pull_request(
+            {
+                "repository": "owner/repo",
+                "pr_number": 99,
+                "pr_body": "",
+                "pr_title": "no ticket",
+            }
         )
         # Failure must NOT poison the dedup set; the next delivery retries.
         assert r._no_ticket_notified == set()
@@ -622,7 +674,7 @@ class TestSetupWebhookRoute:
         assert "/custom/gh" in paths
         assert "/api/v1/hooks/github" not in paths
 
-    def test_dispatcher_fans_out(self):
+    async def test_dispatcher_fans_out(self):
         from aiohttp import web
 
         app = web.Application()
@@ -642,11 +694,11 @@ class TestSetupWebhookRoute:
         # Fake event (only event_type is used here).
         event = MagicMock()
         event.event_type = "github.pr_opened"
-        asyncio.run(hook._callback(event))
+        await hook._callback(event)
 
         assert received == ["a:github.pr_opened", "b:github.pr_opened"]
 
-    def test_dispatcher_isolates_listener_errors(self):
+    async def test_dispatcher_isolates_listener_errors(self):
         from aiohttp import web
 
         app = web.Application()
@@ -666,7 +718,7 @@ class TestSetupWebhookRoute:
         event = MagicMock()
         event.event_type = "github.pr_opened"
         # Must NOT raise.
-        asyncio.run(hook._callback(event))
+        await hook._callback(event)
         assert survived == ["ok"]
 
 
@@ -997,7 +1049,7 @@ class TestFormatWeeklyActivityHtml:
 class TestLLMSummarizeWeekly:
     """Tests for GitHubReviewer._llm_summarize_weekly."""
 
-    def test_success_returns_llm_string(self):
+    async def test_success_returns_llm_string(self):
         """When ask() succeeds, returns the LLM output string."""
         r = _minimal_reviewer()
         r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
@@ -1009,10 +1061,10 @@ class TestLLMSummarizeWeekly:
 
         r.ask = fake_ask
         summary = _base_summary()
-        out = asyncio.run(r._llm_summarize_weekly(summary))
+        out = await r._llm_summarize_weekly(summary)
         assert "Alice" in out
 
-    def test_raises_wrapped_error_on_failure(self):
+    async def test_raises_wrapped_error_on_failure(self):
         """When ask() raises, re-raises as WeeklyLLMSummarizationError."""
         r = _minimal_reviewer()
         r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
@@ -1023,9 +1075,9 @@ class TestLLMSummarizeWeekly:
         r.ask = fake_ask
         summary = _base_summary()
         with pytest.raises(WeeklyLLMSummarizationError, match="LLM is down"):
-            asyncio.run(r._llm_summarize_weekly(summary))
+            await r._llm_summarize_weekly(summary)
 
-    def test_coerces_non_string_output(self):
+    async def test_coerces_non_string_output(self):
         """A non-string response is coerced to str."""
         r = _minimal_reviewer()
         r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
@@ -1036,10 +1088,10 @@ class TestLLMSummarizeWeekly:
 
         r.ask = fake_ask
         summary = _base_summary()
-        out = asyncio.run(r._llm_summarize_weekly(summary))
+        out = await r._llm_summarize_weekly(summary)
         assert isinstance(out, str)
 
-    def test_prompt_contains_json_summary(self):
+    async def test_prompt_contains_json_summary(self):
         """The prompt sent to ask() contains the JSON-serialized summary."""
         r = _minimal_reviewer()
         r._llm_summarize_weekly = GitHubReviewer._llm_summarize_weekly.__get__(r, type(r))
@@ -1054,7 +1106,7 @@ class TestLLMSummarizeWeekly:
 
         r.ask = fake_ask
         summary = _base_summary()
-        asyncio.run(r._llm_summarize_weekly(summary))
+        await r._llm_summarize_weekly(summary)
         assert captured_question
         assert "alice" in captured_question[0].lower() or "owner/repo" in captured_question[0]
 
@@ -1108,19 +1160,19 @@ class TestReportWeeklyActivity:
             setattr(r, key, val)
         return r
 
-    def test_no_toolkit_returns_error(self):
+    async def test_no_toolkit_returns_error(self):
         """When git_toolkit is None, returns error dict without raising."""
         r = _minimal_reviewer()
         r.git_toolkit = None
         r.report_weekly_activity = GitHubReviewer.report_weekly_activity.__get__(r, type(r))
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "error"
         assert "git_toolkit" in out["reason"]
 
-    def test_templated_success_path(self):
+    async def test_templated_success_path(self):
         """Happy path with templated rendering returns documented keys."""
         r = self._build_reviewer()
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "ok"
         assert out["repository"] == "owner/repo"
         assert "period_start" in out
@@ -1130,15 +1182,15 @@ class TestReportWeeklyActivity:
         assert out["rendered_via"] == "templated"
         assert out["telegram_sent"] == 1
 
-    def test_no_telegram_wrapper_returns_zero_sent(self):
+    async def test_no_telegram_wrapper_returns_zero_sent(self):
         """When _wrapper is None, returns telegram_sent=0 without raising."""
         r = self._build_reviewer()
         r._wrapper = None
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "ok"
         assert out["telegram_sent"] == 0
 
-    def test_stats_fetch_failure_returns_error(self):
+    async def test_stats_fetch_failure_returns_error(self):
         """When get_contributor_stats raises, returns status=error."""
         r = _minimal_reviewer()
         r.git_toolkit = MagicMock()
@@ -1159,11 +1211,11 @@ class TestReportWeeklyActivity:
 
         r.git_toolkit.get_contributor_stats = fail
         r.git_toolkit.get_code_frequency = fail
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "error"
         assert "stats unavailable" in out["reason"]
 
-    def test_llm_failure_falls_back_to_templated(self):
+    async def test_llm_failure_falls_back_to_templated(self):
         """When LLM summarization fails, falls back to templated rendering."""
         r = self._build_reviewer(use_llm_summary=True)
 
@@ -1171,12 +1223,12 @@ class TestReportWeeklyActivity:
             raise WeeklyLLMSummarizationError("LLM exploded")
 
         r._llm_summarize_weekly = llm_boom
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "ok"
         assert out["rendered_via"] == "templated"
         assert out["telegram_sent"] == 1
 
-    def test_telegram_failure_does_not_raise(self):
+    async def test_telegram_failure_does_not_raise(self):
         """When Telegram bot.send_message raises, returns telegram_sent=0."""
         r = self._build_reviewer()
 
@@ -1184,6 +1236,396 @@ class TestReportWeeklyActivity:
             raise RuntimeError("telegram 500")
 
         r._wrapper.bot.send_message = fail_send
-        out = asyncio.run(r.report_weekly_activity())
+        out = await r.report_weekly_activity()
         assert out["status"] == "ok"
         assert out["telegram_sent"] == 0
+
+
+# ---------------------------------------------------------------------------
+# FEAT-182 TASK-1222: Tool-calling loop tests
+# ---------------------------------------------------------------------------
+
+
+def _wire_reviewer_with_tool_cap(max_tool_calls: int = 5, **overrides: Any) -> Any:
+    """Build a reviewer stub with max_review_tool_calls set, for tool-loop tests."""
+    r = _wire_reviewer(**overrides)
+    r.max_review_tool_calls = max_tool_calls
+    # Bind _ask_llm_for_review so we can call it directly.
+    r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+    return r
+
+
+def _make_fake_response(
+    result: PRReviewResult,
+    tool_calls: Optional[List[Any]] = None,
+) -> MagicMock:
+    """Build a mock agent response object as returned by self.ask()."""
+    response = MagicMock()
+    response.output = result
+    response.tool_calls = tool_calls or []
+    return response
+
+
+class TestReviewToolCallingLoop:
+    """Unit tests for the FEAT-182 tool-calling loop in _ask_llm_for_review."""
+
+    _FIXTURE_PAYLOAD: Dict[str, Any] = {
+        "repository": "owner/repo",
+        "pr_number": 42,
+        "pr_title": "feat: add logging",
+        "pr_body": "Fixes NAV-100",
+        "pr_url": "https://github.com/owner/repo/pull/42",
+        "head_sha": "abc123",
+    }
+
+    _TICKET: Dict[str, Any] = {
+        "fields": {
+            "summary": "Add logging",
+            "description": "Log all requests.",
+            "status": {"name": "In Progress"},
+            "customfield_10100": "AC #1: logging added",
+        }
+    }
+
+    async def test_review_no_tool_calls_unchanged_behavior(self):
+        """When the LLM emits PRReviewResult with no tool calls, the review
+        output is identical to the structured-output path (no-regression)."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[],
+            summary="All criteria met.",
+            approve=True,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=[])
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        result = await r._ask_llm_for_review(
+            payload=self._FIXTURE_PAYLOAD,
+            ticket_key="NAV-100",
+            ticket=self._TICKET,
+            diff_text="diff --git a/logging.py ...",
+            diff_truncated=False,
+            diff_available=True,
+        )
+
+        assert isinstance(result, PRReviewResult)
+        assert result.approve is True
+        assert result.jira_key == "NAV-100"
+        assert result.summary == "All criteria met."
+        assert result.discrepancies == []
+        # No warning should have been emitted (0 tool calls < cap of 5).
+        r.logger.warning.assert_not_called()
+
+    async def test_review_with_tool_calls_within_cap(self):
+        """When LLM makes 2 tool calls (below cap of 5), result is returned
+        correctly and no warning is emitted."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        # Simulate 2 tool calls in the response.
+        tc1 = MagicMock()
+        tc1.name = "get_file_content_at_ref"
+        tc2 = MagicMock()
+        tc2.name = "search_repo_code"
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[
+                Discrepancy(
+                    criterion="AC #1: logging added",
+                    issue="Logger not imported in new module",
+                    severity="major",
+                )
+            ],
+            summary="One AC gap found.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=[tc1, tc2])
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        result = await r._ask_llm_for_review(
+            payload=self._FIXTURE_PAYLOAD,
+            ticket_key="NAV-100",
+            ticket=self._TICKET,
+            diff_text="diff --git a/logging.py ...",
+            diff_truncated=False,
+            diff_available=True,
+        )
+
+        assert isinstance(result, PRReviewResult)
+        assert result.approve is False
+        assert len(result.discrepancies) == 1
+        # 2 calls < cap of 5 — no warning.
+        r.logger.warning.assert_not_called()
+
+    async def test_review_cap_hit_logs_warning(self):
+        """When the LLM exhausts the tool-call budget (count >= cap), a WARNING
+        is logged containing pr_number, count=, and tools=."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=5)
+
+        # Simulate exactly 5 tool calls (== cap, triggers warning).
+        tool_calls = []
+        for name in [
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+            "search_repo_code",
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+        ]:
+            tc = MagicMock()
+            tc.name = name
+            tool_calls.append(tc)
+
+        expected = PRReviewResult(
+            jira_key="NAV-100",
+            discrepancies=[],
+            summary="Budget exhausted; partial review.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(expected, tool_calls=tool_calls)
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        r.ask = fake_ask
+
+        await r._ask_llm_for_review(
+            payload=self._FIXTURE_PAYLOAD,
+            ticket_key="NAV-100",
+            ticket=self._TICKET,
+            diff_text="diff --git a/logging.py ...",
+            diff_truncated=False,
+            diff_available=True,
+        )
+
+        # WARNING must have been called at least once.
+        assert r.logger.warning.called, "expected logger.warning to be called"
+        call_args = r.logger.warning.call_args
+        # The format string and args are the first positional argument.
+        fmt = call_args[0][0]
+        args = call_args[0][1:]
+        message = fmt % args
+        assert "hit tool-call cap" in message
+        assert "42" in message           # pr_number
+        assert "count=5" in message      # count
+        # tool names must appear somewhere in the message
+        assert "get_file_content_at_ref" in message or "compare_pr_versions" in message
+
+    def test_attach_toolkit_registers_new_tools(self):
+        """_attach_toolkit(git_toolkit, 'Git') extends self.tools with the
+        3 new tool names: get_file_content_at_ref, compare_pr_versions,
+        search_repo_code."""
+        r = _wire_reviewer()
+        r.tools = []
+
+        # Build three fake AbstractTool objects with the expected names.
+        new_tool_names = [
+            "get_file_content_at_ref",
+            "compare_pr_versions",
+            "search_repo_code",
+        ]
+        fake_tools = []
+        for name in new_tool_names:
+            t = MagicMock()
+            t.name = name
+            fake_tools.append(t)
+
+        # Mock tool_manager.register_toolkit to return the fake tools.
+        mock_tool_manager = MagicMock()
+        mock_tool_manager.register_toolkit.return_value = fake_tools
+        r.tool_manager = mock_tool_manager
+
+        # Mock git_toolkit instance.
+        mock_git_toolkit = MagicMock()
+
+        # Call the real _attach_toolkit.
+        GitHubReviewer._attach_toolkit(r, mock_git_toolkit, "Git")
+
+        # Verify tools were extended.
+        registered_names = [getattr(t, "name", None) for t in r.tools]
+        for expected_name in new_tool_names:
+            assert expected_name in registered_names, (
+                f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# FEAT-182 TASK-1223: Integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestIntegrationToolAssistedReview:
+    """Integration tests for the FEAT-182 tool-assisted review flow.
+
+    These tests exercise review_pull_request end-to-end with fully mocked
+    dependencies (no network calls) to verify the tool-calling path works
+    correctly from the top-level entry point.
+    """
+
+    _FIXTURE_PAYLOAD: Dict[str, Any] = {
+        "repository": "owner/repo",
+        "pr_number": 99,
+        "pr_title": "feat: refactor login handler",
+        "pr_body": "Implements NAV-200",
+        "pr_url": "https://github.com/owner/repo/pull/99",
+        "head_sha": "feedcafe",
+    }
+
+    _FIXTURE_TICKET: Dict[str, Any] = {
+        "fields": {
+            "summary": "Refactor login handler",
+            "description": "The login handler must validate email format.",
+            "status": {"name": "In Progress"},
+            "customfield_10100": (
+                "AC #1: validate email format\n"
+                "AC #2: return 400 on invalid email"
+            ),
+        }
+    }
+
+    def _build_integration_reviewer(
+        self, max_tool_calls: int = 3
+    ) -> Any:
+        """Build a reviewer stub wired for integration-style tests."""
+        r = _wire_reviewer_with_tool_cap(max_tool_calls=max_tool_calls)
+        r._reviewed_shas = {}
+        r._no_ticket_notified = set()
+        # Bind review_pull_request and _ask_llm_for_review onto stub.
+        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(
+            r, type(r)
+        )
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(
+            r, type(r)
+        )
+        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(
+            r, type(r)
+        )
+        r._clamp = GitHubReviewer._clamp.__get__(r, type(r))
+        r._format_review_body = GitHubReviewer._format_review_body.__get__(
+            r, type(r)
+        )
+        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(
+            r, type(r)
+        )
+        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(
+            r, type(r)
+        )
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(
+            r, type(r)
+        )
+        r._fetch_ticket = GitHubReviewer._fetch_ticket.__get__(r, type(r))
+        r._fetch_diff = GitHubReviewer._fetch_diff.__get__(r, type(r))
+        r._ac_field_id = "customfield_10100"
+        r.jira_project = "NAV"
+        r.max_diff_bytes = 50_000
+        return r
+
+    async def test_full_review_with_real_diff_fixture(self):
+        """End-to-end review: LLM makes one tool call then produces a
+        PRReviewResult discrepancy. The outcome dict must reflect this."""
+        r = self._build_integration_reviewer(max_tool_calls=3)
+
+        # Mock Jira fetch.
+        async def fake_fetch_ticket(key):
+            return self._FIXTURE_TICKET
+
+        # Mock diff fetch.
+        async def fake_fetch_diff(repo, pr_number):
+            return (
+                "diff --git a/login.py b/login.py\n"
+                "+def login(email):\n"
+                "+    return 200\n",
+                False,
+                True,
+            )
+
+        # Mock one tool call in the response (within cap of 3).
+        tool_call = MagicMock()
+        tool_call.name = "get_file_content_at_ref"
+
+        expected_result = PRReviewResult(
+            jira_key="NAV-200",
+            discrepancies=[
+                Discrepancy(
+                    criterion="AC #2: return 400 on invalid email",
+                    issue="login() always returns 200; no email validation present",
+                    severity="blocker",
+                )
+            ],
+            summary="The login handler does not validate email format.",
+            approve=False,
+        )
+        fake_response = _make_fake_response(
+            expected_result, tool_calls=[tool_call]
+        )
+
+        async def fake_ask(**kwargs):
+            return fake_response
+
+        # Mock git_toolkit.submit_pr_review.
+        async def fake_submit(**kwargs):
+            return {"id": 77, "state": "REQUEST_CHANGES"}
+
+        r._fetch_ticket = fake_fetch_ticket
+        r._fetch_diff = fake_fetch_diff
+        r.ask = fake_ask
+        r.git_toolkit.submit_pr_review = fake_submit
+
+        outcome = await r.review_pull_request(self._FIXTURE_PAYLOAD)
+
+        assert outcome["status"] == "reviewed"
+        assert outcome["approve"] is False
+        assert len(outcome["discrepancies"]) == 1
+        assert outcome["discrepancies"][0]["severity"] == "blocker"
+        assert "NAV-200" in outcome["jira_key"]
+
+    async def test_full_review_falls_back_when_tools_disabled(self):
+        """max_review_tool_calls=0 causes self.ask() to be called with
+        max_iterations=1 (= 0 + 1), effectively disabling the tool loop."""
+        r = self._build_integration_reviewer(max_tool_calls=0)
+
+        # Record kwargs passed to ask().
+        ask_kwargs: Dict[str, Any] = {}
+
+        async def fake_fetch_ticket(key):
+            return self._FIXTURE_TICKET
+
+        async def fake_fetch_diff(repo, pr_number):
+            return ("diff ...", False, True)
+
+        async def fake_ask(**kwargs):
+            ask_kwargs.update(kwargs)
+            result = PRReviewResult(
+                jira_key="NAV-200",
+                discrepancies=[],
+                summary="All criteria met.",
+                approve=True,
+            )
+            return _make_fake_response(result, tool_calls=[])
+
+        async def fake_submit(**kwargs):
+            return {"id": 1, "state": "APPROVED"}
+
+        r._fetch_ticket = fake_fetch_ticket
+        r._fetch_diff = fake_fetch_diff
+        r.ask = fake_ask
+        r.git_toolkit.submit_pr_review = fake_submit
+
+        outcome = await r.review_pull_request(self._FIXTURE_PAYLOAD)
+
+        assert outcome["status"] == "reviewed"
+        # max_iterations must have been passed as 0+1=1, indicating one-shot.
+        assert ask_kwargs.get("max_iterations") == 1
+        # No warning should have been logged (count=0 < max_review_tool_calls=0
+        # comparison: 0 >= 0 is True but max_review_tool_calls == 0 so the
+        # guard `and self.max_review_tool_calls > 0` prevents the log).
+        r.logger.warning.assert_not_called()

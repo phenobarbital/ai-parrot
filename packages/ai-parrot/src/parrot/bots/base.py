@@ -6,6 +6,7 @@ abstract base class. It implements all required abstract methods.
 """
 from typing import Optional, Union, Type, AsyncIterator, Any
 from collections.abc import Callable
+import inspect
 import logging
 import uuid
 import asyncio
@@ -1057,6 +1058,20 @@ class BaseBot(AbstractBot):
 
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
+
+                # Forward max_iterations only when the active LLM client
+                # advertises it (currently only the Google client). Other
+                # backends (OpenAI, Groq, etc.) have no max_iterations param
+                # on ask(), so blindly forwarding would raise TypeError.
+                # FEAT-182: this is the primary enforcement path for the
+                # GitHubReviewer tool-call cap (max_review_tool_calls).
+                if 'max_iterations' in kwargs:
+                    try:
+                        ask_params = inspect.signature(client.ask).parameters
+                    except (TypeError, ValueError):
+                        ask_params = {}
+                    if 'max_iterations' in ask_params:
+                        llm_kwargs["max_iterations"] = kwargs['max_iterations']
 
                 if structured_output:
                     if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
