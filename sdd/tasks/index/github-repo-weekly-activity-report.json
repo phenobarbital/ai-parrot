@@ -1,0 +1,159 @@
+{
+  "feature": "github-repo-weekly-activity-report",
+  "feature_id": "FEAT-180",
+  "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-18T02:45:00Z",
+  "completed_at": "2026-05-18T11:59:50.029368+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1210",
+      "slug": "gittoolkit-stats-polling-helper",
+      "title": "Implement _get_stats_with_polling helper in GitToolkit",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Per-spec worktree runs all tasks sequentially. This task seeds the helper that TASK-1211 builds on.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029341+00:00",
+      "file": "sdd/tasks/completed/TASK-1210-gittoolkit-stats-polling-helper.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1211",
+      "slug": "gittoolkit-stats-tools",
+      "title": "Add three stats tools to GitToolkit with typed Pydantic returns",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1210"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports the helper added by TASK-1210; shares the same module file.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029356+00:00",
+      "file": "sdd/tasks/completed/TASK-1211-gittoolkit-stats-tools.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1212",
+      "slug": "weekly-summary-builder",
+      "title": "Implement _build_weekly_summary pure function",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1211"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports the Pydantic return types added by TASK-1211; shares github_reviewer.py with the renderer/orchestrator tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029359+00:00",
+      "file": "sdd/tasks/completed/TASK-1212-weekly-summary-builder.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1213",
+      "slug": "weekly-html-renderer",
+      "title": "Implement templated HTML renderer for the weekly digest",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1212"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes WeeklyActivitySummary from TASK-1212; same file as 1212/1214/1215.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029361+00:00",
+      "file": "sdd/tasks/completed/TASK-1213-weekly-html-renderer.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1214",
+      "slug": "weekly-llm-summarizer",
+      "title": "Implement optional _llm_summarize_weekly with safe fallback",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1212"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Independent of TASK-1213 conceptually, but edits the same file (github_reviewer.py); per-spec worktree runs them sequentially.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029363+00:00",
+      "file": "sdd/tasks/completed/TASK-1214-weekly-llm-summarizer.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1215",
+      "slug": "report-weekly-activity-orchestrator",
+      "title": "Implement report_weekly_activity orchestrator + Telegram sender",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1211",
+        "TASK-1212",
+        "TASK-1213",
+        "TASK-1214"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Composes everything from the prior modules; must run last among the implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029364+00:00",
+      "file": "sdd/tasks/completed/TASK-1215-report-weekly-activity-orchestrator.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1216",
+      "slug": "config-wiring-and-docs",
+      "title": "Wire env config into ParrotReviewer + update docs",
+      "feature_id": "FEAT-180",
+      "feature": "github-repo-weekly-activity-report",
+      "spec": "sdd/specs/github-repo-weekly-activity-report.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1215"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Last task: env vars, ParrotReviewer kwargs forwarding, docs. Edits parrot/conf.py and agents/git.py \u2014 different files from the previous tasks but logically depends on the orchestrator's constructor changes (TASK-1215).",
+      "assigned_to": null,
+      "started_at": "2026-05-18T01:47:43+00:00",
+      "completed_at": "2026-05-18T11:59:50.029366+00:00",
+      "file": "sdd/tasks/completed/TASK-1216-config-wiring-and-docs.md",
+      "verification": "verified"
+    }
+  ]
+}

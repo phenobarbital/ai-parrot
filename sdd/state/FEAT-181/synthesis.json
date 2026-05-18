@@ -1,0 +1,487 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-181",
+  "mode": "enrichment",
+  "summary_oneline": "Add provider-agnostic prompt caching: extend PromptBuilder with cacheable segments, teach each AbstractClient subclass to translate them to native cache primitives, and ship an AGENT_CONTEXT.md loader with mtime invalidation for repo-level context injection.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+      "symbol": "PromptBuilder",
+      "lines": "20-241",
+      "role": "Composable system-prompt builder with CONFIGURE/REQUEST two-phase render — the natural home for cacheable-segment output and the `prompt_caching` flag.",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/__init__.py",
+      "symbol": "presets re-exports",
+      "lines": "8-49",
+      "role": "Public API surface where any new PromptBuilder methods/presets must be re-exported.",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/presets.py",
+      "symbol": "_PRESETS / register_preset / get_preset",
+      "lines": "15-41",
+      "role": "Preset registry that may grow a `agent_with_context` preset if AGENT_CONTEXT_LAYER ships as built-in.",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/base.py",
+      "symbol": "AbstractClient",
+      "lines": "242-353, 775-830, 1432, 1470",
+      "role": "Base class with complete/ask/ask_stream; system_prompt is `Optional[str]` today. Receives a new optional cache-hint plumbing.",
+      "evidence": ["F002", "F009"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/claude.py",
+      "symbol": "messages.create payload assembly",
+      "lines": "188-235, 222, 231, 431, 594, 982-986, 1015, 1127, 1214, 1284, 1359, 1460, 1531, 1546",
+      "role": "13+ call sites that build `payload['system'] = system_prompt`. Targets for cache_control block injection via a single helper.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/gpt.py",
+      "symbol": "chat.completions.create / responses.create",
+      "lines": "274, 470-495, 1444-1460, 1653, 2167, 2452",
+      "role": "OpenAI call sites; auto-caches on ≥1024-token prefixes. Optional `prompt_cache_key` for cache-routing improvements.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "generate_content (async/aio)",
+      "lines": "2273, 2890, 3453, 3713, 3739, 3770",
+      "role": "Primary Gemini call sites; requires explicit `CachedContent` resource creation before reuse — asymmetric with Anthropic.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/analysis.py",
+      "symbol": "generate_content sync/async wrappers",
+      "lines": "96, 173, 411, 580, 764, 773, 958, 1018, 1076, 1145",
+      "role": "Additional Gemini call sites used by analysis flows; cache hooks must cover them too.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/generation.py",
+      "symbol": "generate_content partials",
+      "lines": "362, 506, 1592, 1798, 2104",
+      "role": "Generation-side Gemini call sites; same translation surface.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/groq.py",
+      "symbol": "chat.completions.create",
+      "lines": "399, 498, 541, 687, 804, 883, 952, 1067, 1184, 1297, 1322, 1345",
+      "role": "OpenAI-compatible API; Groq does not document prompt caching as of this proposal — degrades to no-op.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/grok.py",
+      "symbol": "chat.completions.create",
+      "lines": "789",
+      "role": "xAI Grok via OpenAI-compatible shape; same no-op stance as Groq for v1.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "AbstractBot.__init__",
+      "lines": "155-186, 247-309, 1042-1118, 2543-2650",
+      "role": "Already accepts `prompt_builder` and legacy `system_prompt`. Receives a new `prompt_caching: bool = False` kwarg and propagates to client at call time.",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/agent.py",
+      "symbol": "Agent default builder wiring",
+      "lines": "14, 110-117, 1256",
+      "role": "Constructs PromptBuilder.agent() by default; benefits from the new flag with zero subclass changes.",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/github_reviewer.py",
+      "symbol": "GitHubReviewer (system_prompt + ask)",
+      "lines": "193-215, 269, 383-387, 941-958, 1472-1511",
+      "role": "Canonical consumer that motivates this work. Today on the legacy `system_prompt=` path; will opt in via `prompt_caching=True` and an AGENT_CONTEXT layer for the repo doc.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/conf.py",
+      "symbol": "BASE_DIR-based directory declarations",
+      "lines": "5-160",
+      "role": "Home for a new `AGENT_CONTEXT_DIR = config.get('AGENT_CONTEXT_DIR', fallback=BASE_DIR.joinpath('agent_context'))` following the established pattern.",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/kb/local.py",
+      "symbol": "mtime change detection",
+      "lines": "180, 195, 248, 481",
+      "role": "Reference pattern for the AGENT_CONTEXT.md mtime-based in-memory cache.",
+      "evidence": ["F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/routing/cache.py",
+      "symbol": "async-safe LRU",
+      "lines": "3, 59",
+      "role": "Reference pattern when/if the AGENT_CONTEXT loader is called from async context (the codebase explicitly forbids `functools.lru_cache` on async methods).",
+      "evidence": ["F008"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "PromptBuilder.build() returns a single string today; the rest of the codebase relies on that signature.",
+      "evidence": ["F001"],
+      "implication": "Add a new method (e.g. `build_segments() -> List[CacheableSegment]`) instead of changing the existing return type. Default unchanged paths produce a single non-cacheable segment so legacy callers see no behavior change."
+    },
+    {
+      "statement": "AbstractClient.complete()/ask()/ask_stream() accept `system_prompt: Optional[str]` and the contract was just stabilized via the homologate-llm-clients-askstream initiative.",
+      "evidence": ["F002", "F009"],
+      "implication": "Do NOT change the existing signature. Add a sibling optional parameter (e.g. `system_prompt_segments`) or accept `Union[str, List[CacheableSegment]]` so legacy callers keep passing strings. The cache plumbing must compose with the lifecycle events emitted by `_emit_before_call` / `_emit_after_call`."
+    },
+    {
+      "statement": "Anthropic's `messages.create` requires the system field to switch from a string to a list of content blocks to attach `cache_control`. Limit of 4 cache_control blocks per request.",
+      "evidence": ["F003"],
+      "implication": "Per-call translation must aggregate cacheable segments into ≤4 blocks; the first cacheable block(s) get `cache_control={'type':'ephemeral'}`, the rest stay un-marked rather than spilling over the limit."
+    },
+    {
+      "statement": "Gemini's `CachedContent` is a separate API resource created BEFORE `generate_content` and has a minimum token threshold (≥4096 for most models, ≥32k for newer Flash variants).",
+      "evidence": ["F003"],
+      "implication": "Translation must be conditional: estimate token count, skip the cache and log at debug level when the threshold is not met. The feature must be 'best-effort' per provider — never raise."
+    },
+    {
+      "statement": "GitHubReviewer's default model is Gemini-3-Flash, the provider with the highest cache-minimum threshold.",
+      "evidence": ["F005"],
+      "implication": "The consumer that motivated this feature may not actually cache on its default model unless AGENT_CONTEXT.md (+ static system prompt) exceeds the threshold. Document this honestly; consider Anthropic/OpenAI for the canonical demo."
+    },
+    {
+      "statement": "navconfig + BASE_DIR + `config.get('X_DIR', fallback=BASE_DIR.joinpath('x'))` is the established convention for project paths.",
+      "evidence": ["F007"],
+      "implication": "Declare `AGENT_CONTEXT_DIR` (or chosen name) in `parrot/conf.py` and use `fallback=` (NOT `default=`) per the navconfig Kardex convention recorded in memory."
+    },
+    {
+      "statement": "`functools.lru_cache` silently misbehaves on async methods (registry/routing/cache.py:3).",
+      "evidence": ["F008"],
+      "implication": "If the AGENT_CONTEXT loader is ever called from async code, use the module-level sync `@functools.lru_cache` on the inner read function and wrap with `asyncio.to_thread(...)`, or use the async-safe LRU pattern."
+    },
+    {
+      "statement": "The lifecycle events system (FEAT-176) is now integrated into AbstractClient with privacy-safe `_system_prompt_hash`.",
+      "evidence": ["F002", "F009"],
+      "implication": "Emit new `PromptCacheAppliedEvent` / `PromptCacheSkippedEvent` (reason: 'below_threshold' | 'provider_unsupported' | 'feature_off') inside the same emit-before/after lifecycle so subscribers can attribute cache cost/benefit per call."
+    },
+    {
+      "statement": "Zero prior prompt-caching code exists in `parrot/` (green field) — no migration constraints.",
+      "evidence": ["F006"],
+      "implication": "The proposal can design the cleanest API surface. The flip side: there is no prior art in-repo to course-correct against; the spec must be precise."
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new": [
+      {
+        "item": "CacheableSegment dataclass — `(text: str, cacheable: bool, ttl_hint: Optional[Literal['short','long']] = None)` representing a chunk of the system prompt with a cache-eligibility flag.",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/segments.py (new file) or in builder.py"
+      },
+      {
+        "item": "PromptBuilder.build_segments(context) → List[CacheableSegment] that derives cache boundaries from layer.phase (RenderPhase.CONFIGURE = cacheable, REQUEST = not).",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/builder.py"
+      },
+      {
+        "item": "PromptLayer.cacheable: bool attribute (default True for CONFIGURE-phase, False for REQUEST-phase) — overridable per layer for fine control.",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/layers.py"
+      },
+      {
+        "item": "`prompt_caching: bool` flag on PromptBuilder + on AbstractBot.__init__ (default False to keep existing behavior identical).",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/builder.py + parrot/bots/abstract.py"
+      },
+      {
+        "item": "PromptCachingMixin (or abstract method) on AbstractClient: `_translate_cache_hints(payload, segments) -> payload` that each subclass overrides for its native primitive.",
+        "location_hint": "packages/ai-parrot/src/parrot/clients/base.py"
+      },
+      {
+        "item": "Anthropic translator: aggregates cacheable segments into ≤4 system blocks with `cache_control={'type': 'ephemeral'}`; preserves the single-string payload contract when feature is off.",
+        "location_hint": "packages/ai-parrot/src/parrot/clients/claude.py"
+      },
+      {
+        "item": "OpenAI translator: emits a deterministic `prompt_cache_key` derived from a SHA-256 of the cacheable segments (mirrors the pattern of `_system_prompt_hash`); leaves the messages list shape unchanged.",
+        "location_hint": "packages/ai-parrot/src/parrot/clients/gpt.py"
+      },
+      {
+        "item": "Gemini translator: estimates token count, calls `client.caches.create(...)` when ≥ provider threshold, passes `cached_content=<name>` to generate_content; skips with debug log when below threshold.",
+        "location_hint": "packages/ai-parrot/src/parrot/clients/google/client.py (+ analysis.py + generation.py)"
+      },
+      {
+        "item": "AGENT_CONTEXT_DIR constant in parrot/conf.py following the BASE_DIR `fallback=` pattern.",
+        "location_hint": "packages/ai-parrot/src/parrot/conf.py"
+      },
+      {
+        "item": "AgentContextLoader: sync file read with mtime-based @lru_cache invalidation (one cache entry per path). Loads `AGENT_CONTEXT.md` from `AGENT_CONTEXT_DIR` (or per-agent override).",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/agent_context.py (new file)"
+      },
+      {
+        "item": "AGENT_CONTEXT_LAYER: a CONFIGURE-phase, cacheable PromptLayer that lazily reads the doc on configure(). Available as opt-in, not in `default` preset.",
+        "location_hint": "packages/ai-parrot/src/parrot/bots/prompts/layers.py (or domain_layers.py)"
+      },
+      {
+        "item": "Lifecycle events: `PromptCacheAppliedEvent(provider, blocks, est_tokens)` and `PromptCacheSkippedEvent(provider, reason)` emitted by AbstractClient before the SDK call.",
+        "location_hint": "packages/ai-parrot/src/parrot/telemetry or wherever existing events live"
+      },
+      {
+        "item": "Tests: per-provider unit tests assert (a) feature-off path produces identical payload to today, (b) feature-on path produces the correct native primitive, (c) below-threshold case for Gemini emits a debug log + no crash.",
+        "location_hint": "packages/ai-parrot/tests/test_prompt_caching_<provider>.py"
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+        "change": "Add `prompt_caching: bool` constructor arg, `build_segments()` method, and a `is_caching_enabled` property; existing `build()` unchanged.",
+        "evidence": ["F001"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+        "change": "Add `cacheable: bool` attribute to PromptLayer; default derives from phase.",
+        "evidence": ["F001"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+        "change": "Accept `prompt_caching: bool = False` kwarg; forward to builder; thread segments through to client via `ask()/ask_stream()`.",
+        "evidence": ["F004"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/base.py",
+        "change": "Add optional `system_prompt_segments` parameter (or accept Union[str, List[CacheableSegment]]) on complete/ask/ask_stream; default behavior unchanged for str inputs.",
+        "evidence": ["F002", "F009"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/claude.py",
+        "change": "Wrap the 13+ `payload['system'] = system_prompt` sites behind a `_apply_system_prompt(payload, system_prompt, segments)` helper that conditionally produces the cache_control list form.",
+        "evidence": ["F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/gpt.py",
+        "change": "Compute and pass `prompt_cache_key` when segments are provided; no shape change to messages list.",
+        "evidence": ["F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+        "change": "Add a Gemini CachedContent helper invoked from generate_content paths; conditional on segment-token estimate ≥ provider threshold.",
+        "evidence": ["F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/google/analysis.py",
+        "change": "Route generate_content call sites through the same helper.",
+        "evidence": ["F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/google/generation.py",
+        "change": "Route generate_content call sites through the same helper.",
+        "evidence": ["F003"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/bots/github_reviewer.py",
+        "change": "Opt in: `prompt_caching=True` + add AGENT_CONTEXT_LAYER to the per-repo subclass. Document the Gemini-threshold caveat in the class docstring.",
+        "evidence": ["F005"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/conf.py",
+        "change": "Add `AGENT_CONTEXT_DIR` constant.",
+        "evidence": ["F007"]
+      }
+    ],
+    "untouched_non_goals": [
+      "Loaders, vectorstores, integrations (Telegram/Slack/MS Teams/MCP) — out of scope.",
+      "Client-side caching of response bodies (only provider-side cache hints in v1).",
+      "Multi-tenant per-user cache-key segmentation in v1 (single global key is fine).",
+      "Adding cache support to providers that do not document it (Groq, Grok, HuggingFace, NVIDIA, LocalLLM, vLLM, OpenRouter) — these degrade to no-op.",
+      "Migrating GithubReviewer off the legacy `system_prompt=` path to a full PromptBuilder; the AGENT_CONTEXT layer is added on top of the existing approach.",
+      "Caching tool definitions (Anthropic supports cache_control on tools but v1 caches only the system block)."
+    ],
+    "patterns_to_follow": [
+      "PromptBuilder two-phase render (CONFIGURE/REQUEST) maps naturally to cacheable/non-cacheable boundaries — F001.",
+      "AbstractClient `_system_prompt_hash` privacy pattern for emitting events without leaking content — F002.",
+      "navconfig + BASE_DIR + `fallback=` for the AGENT_CONTEXT_DIR — F007.",
+      "kb/local.py mtime-based file invalidation for AgentContextLoader — F008.",
+      "registry/routing/cache.py async-safe LRU when the loader is called from async — F008.",
+      "EventEmitterMixin + lifecycle events (FEAT-176) for cache telemetry — F009."
+    ],
+    "integration_risks": [
+      "Anthropic's 4-block cache_control limit: if AGENT_CONTEXT + system_prompt + tool defs each get marked, v1 may overshoot. Mitigation: v1 caches at most 1-2 blocks (AGENT_CONTEXT + identity-section).",
+      "Gemini's high cache threshold (4096/32k) means GithubReviewer (the consumer) may not actually cache on its default model. Mitigation: document honestly; emit PromptCacheSkippedEvent so cost/benefit is observable.",
+      "Recent client homologation just stabilized — adding parameter to ask_stream must not regress the AIMessage final-yield contract (F009).",
+      "PromptBuilder is used by Voice/Agent/RAG presets and downstream agents (jira_specialist, database/agent.py, data.py); the new `build_segments()` must coexist with `build()` to avoid touching ~10 callers."
+    ]
+  },
+
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "A fully-featured PromptBuilder exists at parrot/bots/prompts/builder.py with two-phase CONFIGURE/REQUEST rendering.",
+      "evidence": ["F001"],
+      "confidence": "high",
+      "reasoning": "Direct read of the file; class definition and presets verified."
+    },
+    {
+      "id": "C2",
+      "statement": "AbstractClient.complete/ask/ask_stream accept `system_prompt: Optional[str]`.",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "Direct read of base.py signatures (lines 775, 1432, 1470)."
+    },
+    {
+      "id": "C3",
+      "statement": "Anthropic's payload assigns `payload['system'] = system_prompt` as a plain string at 13+ call sites in claude.py.",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Direct grep yielded explicit line numbers; payload assembly verified for the primary call site (188-235)."
+    },
+    {
+      "id": "C4",
+      "statement": "OpenAI/Groq/Grok use chat.completions.create / responses.create with the system prompt inside the messages list.",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Grep returned all the call sites; payload shape is OpenAI-standard."
+    },
+    {
+      "id": "C5",
+      "statement": "Gemini uses self.client.aio.models.generate_content without any caching today.",
+      "evidence": ["F003", "F006"],
+      "confidence": "high",
+      "reasoning": "Grep across google/*.py covers all call sites; second grep for cached_content/CachedContent returned nothing."
+    },
+    {
+      "id": "C6",
+      "statement": "AbstractBot already accepts both `system_prompt` and `prompt_builder` kwargs; the builder takes precedence when set.",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Direct read of __init__ signature and body (lines 247-309)."
+    },
+    {
+      "id": "C7",
+      "statement": "GitHubReviewer uses the legacy `system_prompt=` path with a static _SYSTEM_PROMPT and does not load any repo-level context document.",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Direct read of github_reviewer.py:383-387 (kwargs.setdefault) and 941-958 (per-review question assembly)."
+    },
+    {
+      "id": "C8",
+      "statement": "GitHubReviewer's default model is Gemini-3-Flash-Preview, the provider with the highest cache-minimum threshold.",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Direct read of `model = GoogleModel.GEMINI_3_FLASH_PREVIEW` at line 269."
+    },
+    {
+      "id": "C9",
+      "statement": "No prior prompt-caching code exists in packages/ai-parrot/src/parrot/.",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "Repo-wide grep for the canonical caching identifiers returned zero matches."
+    },
+    {
+      "id": "C10",
+      "statement": "No AGENT_CONTEXT.md-like loader exists in the codebase today.",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "Grep for AGENT_CONTEXT/context_file/context_path returned no relevant loader."
+    },
+    {
+      "id": "C11",
+      "statement": "navconfig + BASE_DIR + `config.get(..., fallback=BASE_DIR.joinpath(...))` is the established convention for project directories.",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "parrot/conf.py contains 8+ such declarations following this exact pattern."
+    },
+    {
+      "id": "C12",
+      "statement": "Mtime-based file invalidation is a precedent in the codebase (stores/kb/local.py).",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Four explicit uses of `stat().st_mtime` verified."
+    },
+    {
+      "id": "C13",
+      "statement": "`functools.lru_cache` silently misbehaves on async methods; the project has a custom async-safe LRU.",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Module docstring of registry/routing/cache.py states this explicitly."
+    },
+    {
+      "id": "C14",
+      "statement": "The AbstractClient API surface has just been homologated and is currently in its cleanest state in months.",
+      "evidence": ["F009"],
+      "confidence": "medium",
+      "reasoning": "Recent commits show 8+ tasks completing the ask_stream homologation; 'stable' is inferred from the absence of in-flight refactors in the last 60 days, not from explicit announcement."
+    },
+    {
+      "id": "C15",
+      "statement": "Lifecycle events from FEAT-176 are the right substrate for cache-applied / cache-skipped telemetry.",
+      "evidence": ["F009"],
+      "confidence": "medium",
+      "reasoning": "EventEmitterMixin is integrated into AbstractClient; emitting two new event types should compose, but we have not read the EventBus to confirm subscription semantics for new event classes."
+    },
+    {
+      "id": "C16",
+      "statement": "Anthropic enables prompt caching via system: [{type:'text', text:'...', cache_control:{type:'ephemeral'}}] with a limit of 4 cache_control blocks per request.",
+      "evidence": [],
+      "confidence": "medium",
+      "reasoning": "Well-documented externally by Anthropic; no in-repo evidence (zero prior caching code per F006). User input may refine the exact constants."
+    },
+    {
+      "id": "C17",
+      "statement": "Gemini's CachedContent has a minimum token threshold of 4096 (or higher for some Flash variants).",
+      "evidence": [],
+      "confidence": "medium",
+      "reasoning": "Well-documented externally; no in-repo evidence. The exact threshold per model is documented by Google and may shift; v1 must be resilient to a configurable threshold."
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Where should AGENT_CONTEXT.md live by default — repo root (BASE_DIR/AGENT_CONTEXT.md), a dedicated dir (BASE_DIR/agent_context/AGENT_CONTEXT.md, configurable via AGENT_CONTEXT_DIR), or per-agent (agents/<agent_id>/AGENT_CONTEXT.md)?",
+      "blocks_claims": ["C11"],
+      "plausible_answers": [
+        "Repo root: simplest, one doc per deployment, matches the GitHubReviewer 'one doc per reviewed repo' mental model.",
+        "AGENT_CONTEXT_DIR with per-agent files: scales to multiple agents/repos in one deployment, matches the existing AGENTS_DIR convention.",
+        "Per-agent inside AGENTS_DIR/<agent_id>/: zero new top-level config, leverages an existing path."
+      ],
+      "ask_user": true,
+      "user_answer": "AGENT_CONTEXT_DIR (per-agent files) — AGENT_CONTEXT_DIR = config.get('AGENT_CONTEXT_DIR', fallback=BASE_DIR.joinpath('agent_context')) with one file per agent (<dir>/<agent_id>.md)."
+    },
+    {
+      "id": "U2",
+      "question": "Should `prompt_caching` be a boolean flag or a richer enum like `'auto' | 'force' | 'off'`?",
+      "blocks_claims": ["C16", "C17"],
+      "plausible_answers": [
+        "Boolean True/False — simplest; provider degrades silently when unsupported or below threshold.",
+        "Enum 'auto'/'force'/'off' — 'force' raises if a provider can't satisfy, 'auto' degrades silently. More expressive but heavier API surface."
+      ],
+      "ask_user": true,
+      "user_answer": "Boolean True/False — silent degradation via PromptCacheSkippedEvent; an enum can be added later if a 'force' semantic is needed."
+    },
+    {
+      "id": "U3",
+      "question": "Should the AGENT_CONTEXT_LAYER ship as part of the `default` preset (everyone gets it for free, doc may not exist → empty layer) or only as an opt-in preset (`agent_with_context`)?",
+      "blocks_claims": ["C1"],
+      "plausible_answers": [
+        "Opt-in preset only — explicit; no surprise overhead for agents that don't want it.",
+        "Part of default — set-and-forget; layer renders empty when doc is missing.",
+        "Auto-include when prompt_caching=True — couples the layer to the cache flag, which has clean ergonomics for the GitHubReviewer case."
+      ],
+      "ask_user": true,
+      "user_answer": "Auto-include when prompt_caching=True — single switch activates both cache plumbing and the AGENT_CONTEXT layer. If the per-agent file doesn't exist, the layer renders empty (with a one-time INFO log on configure())."
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence (17 verified paths), the patterns to follow are explicit, and there is no architectural fork — only tactical decisions (default doc location, flag shape, preset policy) that can be locked in by the spec author. No prior art to migrate, but a clear seam in PromptBuilder and AbstractClient to extend."
+  },
+
+  "overall_confidence": "medium",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009"],
+    "findings_unused": [],
+    "notes": "Two medium-confidence claims (C16, C17) rest on external Anthropic/Google documentation rather than in-repo evidence — explicit by design since F006 confirmed no prior caching code. The spec phase should pin the exact constants per provider as named constants in a single module so they can be updated independently."
+  }
+}

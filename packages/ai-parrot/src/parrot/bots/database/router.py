@@ -12,6 +12,16 @@ from .models import (
     INTENT_COMPONENT_MAPPING
 )
 
+# Compound optimization phrases that must take priority over the generic
+# r'\banalyze\b' pattern in 'analyze_data' to avoid intent masking.
+_OPTIMIZE_PRIORITY_RE = re.compile(
+    r'\bexplain\s+analyze\b'
+    r'|\bquery\s+plan\b'
+    r'|\bexecution\s+plan\b'
+    r'|\bplan\s+de\s+ejecuci[oó]n\b'
+    r'|\bexplain\s+anal[ií]za(r|me)?\b'
+)
+
 # Intent → suggested UserRole mapping (FEAT-082)
 INTENT_ROLE_MAPPING: Dict[QueryIntent, UserRole] = {
     QueryIntent.OPTIMIZE_QUERY: UserRole.DATABASE_ADMIN,
@@ -278,6 +288,9 @@ class SchemaQueryRouter:
         # Check if query contains raw SQL
         if self._is_raw_sql(query):
             return QueryIntent.VALIDATE_QUERY
+
+        if _OPTIMIZE_PRIORITY_RE.search(query_lower):
+            return QueryIntent.OPTIMIZE_QUERY
 
         # Pattern matching for different intents
         for intent_name, patterns in self.patterns.items():

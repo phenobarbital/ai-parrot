@@ -1,10 +1,13 @@
-from typing import Any, Type, Dict
+from typing import Any, Type, Dict, Union, List
 from pydantic import BaseModel, Field
 from parrot.tools.abstract import AbstractTool, ToolResult
 from datamodel.parsers.json import JSONContent
 
 class ToJsonArgs(BaseModel):
-    data: str = Field(..., description="The data content to convert to JSON (string, dict, or list)")
+    data: Union[str, Dict[str, Any], List[Any]] = Field(
+        ...,
+        description="The data content to convert to JSON (string, dict, or list)",
+    )
 
 class ToJsonTool(AbstractTool):
     """

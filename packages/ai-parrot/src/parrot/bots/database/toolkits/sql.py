@@ -13,7 +13,17 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from ..cache import CachePartition
+from ..models import (
+    Completeness,
+    QueryExecutionResponse,
+    TableMetadata,
+)
+from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
+from .base import DatabaseToolkit
+
 
 # Matches leading SQL/PL-pgSQL comments and whitespace so we can identify the
 # first significant keyword. Used by ``explain_query`` safety guard to decide
@@ -30,15 +40,6 @@ _CTE_DML_RE = re.compile(
     r"\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke)\b",
     re.IGNORECASE,
 )
-
-from ..cache import CachePartition
-from ..models import (
-    QueryExecutionResponse,
-    TableMetadata,
-)
-from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
-from .base import DatabaseToolkit
-
 
 #: Map ``DatabaseToolkit.database_type`` values to sqlglot dialect names.
 _SQLGLOT_DIALECT_MAP: Dict[str, str] = {
@@ -75,6 +76,9 @@ class SQLToolkit(DatabaseToolkit):
         "health_check",
     )
 
+    # Subclasses that migrate to pg_catalog override this to "pg_catalog".
+    _metadata_source: str = "information_schema"
+
     def __init__(
         self,
         dsn: str,
@@ -98,6 +102,9 @@ class SQLToolkit(DatabaseToolkit):
             database_type=database_type,
             **kwargs,
         )
+        # Coalescing map for concurrent introspection calls (Module 3, FEAT-178)
+        self._inflight: Dict[Tuple[str, str], asyncio.Future] = {}
+        self._inflight_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # LLM-callable tool methods
@@ -109,10 +116,12 @@ class SQLToolkit(DatabaseToolkit):
         schema_name: Optional[str] = None,
         limit: int = 10,
     ) -> List[TableMetadata]:
-        """Search for tables/columns matching *search_term*.
+        """Search schema identifiers (table/column/comment names) matching *search_term*.
 
-        Checks the cache first; on miss, queries the database's
-        information_schema and populates the cache.
+        Searches identifiers (table/column/comment names), not data values.
+        Merges cache and live DB results, deduplicates by (schema, tablename)
+        preferring the higher-completeness entry on collision, and returns
+        results sorted by relevance score descending.
 
         Args:
             search_term: Keyword or pattern to match.
@@ -120,19 +129,87 @@ class SQLToolkit(DatabaseToolkit):
             limit: Maximum results.
 
         Returns:
-            Matching ``TableMetadata`` list.
+            Matching ``TableMetadata`` list, sorted by relevance descending.
         """
-        # 1. Cache-first
+        # Auto-detect "schema table" pattern when schema_name is not explicit.
+        # If the first word of search_term matches a known allowed schema,
+        # scope the search to that schema and use the remainder as the term.
+        if schema_name is None and " " in search_term.strip():
+            parts = search_term.strip().split(None, 1)
+            if parts[0].lower() in {s.lower() for s in self.allowed_schemas}:
+                schema_name = parts[0]
+                search_term = parts[1]
+                self.logger.debug(
+                    "search_schema: auto-split '%s %s' → schema_name=%r search_term=%r",
+                    schema_name, search_term, schema_name, search_term,
+                )
+
+        target_schemas = [schema_name] if schema_name else self.allowed_schemas
+
+        cache_hits: List[TableMetadata] = []
         if self.cache_partition is not None:
-            target_schemas = [schema_name] if schema_name else self.allowed_schemas
-            cached = await self.cache_partition.search_similar_tables(
-                target_schemas, search_term, limit=limit
+            cache_hits = await self.cache_partition.search(
+                target_schemas, search_term,
+                completeness_min=Completeness.NAME_ONLY, limit=limit,
             )
-            if cached:
+
+        db_hits = await self._search_in_database(search_term, schema_name, limit)
+
+        # Merge, preferring higher completeness on (schema, tablename) collision
+        merged: Dict[Tuple[str, str], TableMetadata] = {}
+        for m in (*cache_hits, *db_hits):
+            key = (m.schema, m.tablename)
+            if key not in merged or m.completeness > merged[key].completeness:
+                merged[key] = m
+
+        if not merged:
+            return []
+
+        if self.cache_partition is not None:
+            keywords = self.cache_partition._extract_search_keywords(search_term)
+            scored = [
+                (
+                    self.cache_partition._calculate_relevance_score(m.tablename, m, keywords),
+                    m,
+                )
+                for m in merged.values()
+            ]
+        else:
+            scored = [(0.0, m) for m in merged.values()]
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [m for _, m in scored[:limit]]
+
+    async def describe_table(
+        self,
+        schema: str,
+        table: str,
+    ) -> Optional[TableMetadata]:
+        """Return full-completeness metadata for *schema.table*.
+
+        Checks the cache first. If the cached entry does not satisfy
+        ``Completeness.FULL``, introspects the table via the DB and stores
+        the result in the cache.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            ``TableMetadata`` with ``completeness == FULL``, or ``None``
+            if the table does not exist.
+        """
+        if self.cache_partition is not None:
+            cached = await self.cache_partition.get(
+                schema, table, required=Completeness.FULL,
+            )
+            if cached is not None:
                 return cached
 
-        # 2. Query information_schema
-        return await self._search_in_database(search_term, schema_name, limit)
+        meta = await self._introspect_table_full(schema, table)
+        if meta is not None and self.cache_partition is not None:
+            await self.cache_partition.store_table_metadata(meta)
+        return meta
 
     async def generate_query(
         self,
@@ -140,41 +217,68 @@ class SQLToolkit(DatabaseToolkit):
         target_tables: Optional[List[str]] = None,
         query_type: str = "SELECT",
     ) -> str:
-        """Prepare context for SQL generation from natural language.
+        """Prepare a SQL skeleton and schema context for SQL generation.
 
-        This method gathers schema context for the relevant tables so the
-        LLM can generate SQL.  The actual SQL generation happens in the
-        agent's tool-call loop.
+        Ensures every referenced table has FULL completeness metadata before
+        building the context so the LLM never sees ``columns: []`` stubs.
+        Accepts entries as ``"schema.table"`` or bare ``"table"`` names;
+        bare names are resolved across ``allowed_schemas``.
 
         Args:
             natural_language: User's question in plain English.
-            target_tables: Optional list of specific table names.
+            target_tables: Optional list of ``"schema.table"`` or bare
+                ``"table"`` names.  When empty, ``search_schema`` is used
+                to discover candidates (top 3).
             query_type: Hint for query type (SELECT, INSERT, etc.).
 
         Returns:
-            Schema context string for the LLM to generate SQL from.
+            Skeleton SQL string plus per-table YAML metadata context.
         """
-        context_parts: list[str] = []
+        resolved: List[TableMetadata] = []
 
-        if target_tables and self.cache_partition:
-            for table_name in target_tables:
-                for schema in self.allowed_schemas:
-                    meta = await self.cache_partition.get_table_metadata(schema, table_name)
-                    if meta:
-                        context_parts.append(meta.to_yaml_context())
-                        break
+        if target_tables:
+            for entry in target_tables:
+                if "." in entry:
+                    schema, tbl = entry.split(".", 1)
+                    meta = await self.describe_table(schema, tbl)
+                    if meta is not None:
+                        resolved.append(meta)
+                else:
+                    for schema in self.allowed_schemas:
+                        meta = await self.describe_table(schema, entry)
+                        if meta is not None:
+                            resolved.append(meta)
+                            break
+        else:
+            candidates = await self.search_schema(natural_language, limit=5)
+            for meta in candidates[:3]:
+                full = await self.describe_table(meta.schema, meta.tablename)
+                if full is not None:
+                    resolved.append(full)
 
-        if not context_parts:
-            # Search for relevant tables
-            results = await self.search_schema(natural_language, limit=5)
-            for meta in results:
-                context_parts.append(meta.to_yaml_context())
+        if not resolved:
+            return (
+                f"-- Auto-generated {query_type} skeleton (no tables resolved)\n"
+                f"-- Query: {natural_language}\n"
+                "-- TODO: specify target tables\n"
+            )
 
-        schema_context = "\n---\n".join(context_parts) if context_parts else "No schema context available."
-        return (
-            f"Generate a {query_type} SQL query for: {natural_language}\n\n"
-            f"Available schema context:\n{schema_context}"
-        )
+        skeleton_parts = []
+        for meta in resolved:
+            col_list = (
+                ", ".join(col["name"] for col in meta.columns)
+                if meta.columns
+                else "*"
+            )
+            skeleton = (
+                f"-- Auto-generated SELECT skeleton (LLM should refine WHERE/JOIN):\n"
+                f"SELECT {col_list}\n"
+                f"FROM {meta.schema}.{meta.tablename}\n"
+                f'-- TODO: WHERE clause for "{natural_language}"\n'
+            )
+            skeleton_parts.append(f"{skeleton}\n{meta.to_yaml_context()}")
+
+        return "\n---\n".join(skeleton_parts)
 
     async def execute_query(
         self,
@@ -265,13 +369,14 @@ class SQLToolkit(DatabaseToolkit):
             )
 
     async def explain_query(self, query: str) -> str:
-        """Run an EXPLAIN on the given query and return the plan.
+        """Run EXPLAIN ANALYZE on the given query and return the execution plan.
 
-        Safety: ``EXPLAIN ANALYZE`` actually **executes** the statement —
-        for ``DELETE``/``UPDATE``/``INSERT``/``MERGE`` this would mutate
-        data, which the read-only DBA-helper use case must never do. When
-        the query is not provably read-only we strip ``ANALYZE`` (and any
-        execution-time options) and run the planner-only variant.
+        Always safe to call: for read-only queries (SELECT, WITH, …) the tool
+        runs ``EXPLAIN ANALYZE`` and returns the full execution plan including
+        actual rows and timing.  For non-read-only statements the tool
+        automatically downgrades to ``EXPLAIN`` (planner-only, no execution)
+        so data is never mutated.  Callers do not need to check read-only
+        status before invoking this tool.
 
         Args:
             query: SQL query to explain.
@@ -532,6 +637,7 @@ class SQLToolkit(DatabaseToolkit):
         self,
         search_term: str,
         schemas: List[str],
+        limit: int = 20,
     ) -> tuple[str, tuple]:
         """Return ``(sql, params)`` for table discovery via information_schema.
 
@@ -541,6 +647,7 @@ class SQLToolkit(DatabaseToolkit):
         Args:
             search_term: Term to match against table names.
             schemas: List of schema names to search.
+            limit: Maximum rows to return (bound as ``$3``).
 
         Returns:
             ``(sql, params_tuple)`` ready for :meth:`_execute_asyncdb`.
@@ -560,7 +667,7 @@ class SQLToolkit(DatabaseToolkit):
             ORDER BY table_name
             LIMIT $3
         """
-        return sql, (schemas, f"%{search_term}%", 20)
+        return sql, (schemas, f"%{search_term}%", limit)
 
     def _get_columns_query(self, schema: str, table: str) -> tuple[str, tuple]:
         """Return ``(sql, params)`` for column metadata.
@@ -742,7 +849,7 @@ class SQLToolkit(DatabaseToolkit):
         target_schemas = [schema_name] if schema_name else self.allowed_schemas
 
         async def _run(pattern: str) -> tuple[Optional[list], Optional[str]]:
-            info_sql, params = self._get_information_schema_query(pattern, target_schemas)
+            info_sql, params = self._get_information_schema_query(pattern, target_schemas, limit)
             try:
                 return await self._execute_asyncdb(info_sql, params=params, limit=limit, timeout=30)
             except Exception as exc:
@@ -808,6 +915,51 @@ class SQLToolkit(DatabaseToolkit):
 
         return results[:limit]
 
+    async def _introspect_table_full(
+        self,
+        schema: str,
+        table: str,
+    ) -> Optional[TableMetadata]:
+        """Fully introspect *schema.table* with concurrency coalescing.
+
+        Concurrent calls for the same key share a single DB round-trip —
+        the first caller performs the query and the rest await its Future.
+        """
+        key = (schema, table)
+
+        async with self._inflight_lock:
+            existing = self._inflight.get(key)
+            if existing is not None:
+                future = existing
+                owner = False
+            else:
+                future = asyncio.get_running_loop().create_future()
+                # Prevent "Future exception was never retrieved" when no waiters exist
+                future.add_done_callback(
+                    lambda f: f.exception() if not f.cancelled() and f.exception() is not None else None
+                )
+                self._inflight[key] = future
+                owner = True
+
+        if not owner:
+            return await future
+
+        try:
+            meta = await self._build_table_metadata(
+                schema, table, table_type="BASE TABLE",
+            )
+            if meta is not None:
+                meta.completeness = Completeness.FULL
+                meta.source = self._metadata_source
+            future.set_result(meta)
+            return meta
+        except Exception as exc:  # noqa: BLE001
+            future.set_exception(exc)
+            raise
+        finally:
+            async with self._inflight_lock:
+                self._inflight.pop(key, None)
+
     async def _build_table_metadata(
         self,
         schema: str,
@@ -840,7 +992,13 @@ class SQLToolkit(DatabaseToolkit):
             return None
 
         try:
-            col_data, _ = col_result if not isinstance(col_result, Exception) else (None, str(col_result))
+            if isinstance(col_result, Exception):
+                self.logger.warning(
+                    "Column introspection failed for %s.%s: %s", schema, table, col_result
+                )
+                col_data = None
+            else:
+                col_data, _ = col_result
             columns = []
             if col_data:
                 for col in col_data:
@@ -891,6 +1049,7 @@ class SQLToolkit(DatabaseToolkit):
                 indexes=[],
                 comment=comment,
                 unique_constraints=unique_constraints,
+                source=self._metadata_source,
             )
         except Exception as exc:
             self.logger.warning("Failed to build metadata for %s.%s: %s", schema, table, exc)

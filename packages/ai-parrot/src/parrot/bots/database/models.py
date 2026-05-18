@@ -2,8 +2,8 @@
 # SCHEMA-CENTRIC DATA MODELS
 # ============================================================================
 from __future__ import annotations
-from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
-from enum import Enum, Flag, auto
+from typing import Dict, Any, List, Literal, Optional, Union, TYPE_CHECKING
+from enum import Enum, Flag, IntEnum, auto
 from datetime import datetime
 from dataclasses import dataclass, field
 import re
@@ -19,7 +19,7 @@ _SQL_FENCE_RE = re.compile(
     r"```(?:sql|postgres(?:ql)?|plpgsql|sqlite|tsql|mysql)?\s*\n?.*?```",
     re.IGNORECASE | re.DOTALL,
 )
-from parrot.bots.data import PandasTable  # noqa: F401 — used by QueryDataset
+from parrot.bots.data import PandasTable  # noqa: F401, E402 — used by QueryDataset
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -94,6 +94,20 @@ class QueryIntent(str, Enum):
     CREATE_EXAMPLES = "create_examples"        # Generate usage examples
     GENERATE_REPORT = "generate_report"        # Create a report from the query results
 
+class Completeness(IntEnum):
+    """Completeness level of a cached TableMetadata entry.
+
+    Ordered so ``meta.completeness >= required`` is the canonical check
+    (higher value = strictly subsumes lower levels).
+    """
+    NAME_ONLY = 1     # Only schema + table name; no columns introspected
+    WITH_COLUMNS = 2  # Columns present; indexes/FK/stats may be missing
+    FULL = 3          # Fully introspected entry (columns, PKs, FKs, indexes)
+
+
+MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "unknown"]
+
+
 @dataclass
 class SchemaMetadata:
     """Metadata for a single schema (client)."""
@@ -135,32 +149,49 @@ class TableMetadata:
     access_frequency: int = 0
     avg_query_time: Optional[float] = None
 
+    # Cache completeness tracking (FEAT-178)
+    completeness: Completeness = field(default=Completeness.FULL)
+    loaded_at: datetime = field(default_factory=datetime.utcnow)
+    source: MetadataSource = field(default="unknown")
+
     def __post_init__(self):
         if not self.full_name:
             self.full_name = f'"{self.schema}"."{self.tablename}"'
 
+    def satisfies(self, required: Completeness) -> bool:
+        """Return True if this entry meets or exceeds *required* completeness."""
+        return self.completeness >= required
+
     def to_yaml_context(self) -> str:
         """Convert to YAML context optimized for LLM consumption."""
-        # Include only essential information to avoid token bloat
         essential_columns = self.columns[:20]  # Limit to first 20 columns
 
-        data = {
+        data: Dict[str, Any] = {
             'table': self.full_name,
             'type': self.table_type,
-            'description': self.comment or f"{self.table_type.lower()} in {self.schema} schema",
-            'columns': [
-                {
-                    'name': col['name'],
-                    'type': col['type'],
-                    'nullable': col.get('nullable', True),
-                    'description': col.get('comment')
-                }
-                for col in essential_columns
-            ],
-            'primary_keys': self.primary_keys,
-            'row_count': self.row_count,
-            'sample_values': self._get_sample_column_values()
+            'completeness': self.completeness.name,
+            'loaded_at': self.loaded_at.strftime('%Y-%m-%dT%H:%M:%S'),
         }
+
+        if self.completeness < Completeness.FULL:
+            data['_warning'] = (
+                f"{self.completeness.name} stub — call db_describe_table to load columns "
+                "before generating SQL."
+            )
+
+        data['description'] = self.comment or f"{self.table_type.lower()} in {self.schema} schema"
+        data['columns'] = [
+            {
+                'name': col['name'],
+                'type': col['type'],
+                'nullable': col.get('nullable', True),
+                'description': col.get('comment')
+            }
+            for col in essential_columns
+        ]
+        data['primary_keys'] = self.primary_keys
+        data['row_count'] = self.row_count
+        data['sample_values'] = self._get_sample_column_values()
 
         if len(self.columns) > 20:
             data['note'] = f"Showing 20 of {len(self.columns)} columns. Use schema search tools for complete structure."

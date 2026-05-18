@@ -376,4 +376,21 @@ class TelegramBotsConfig:
                         name,
                         action.provider,
                     )
+
+        # Reject duplicate bot tokens across agents. Telegram allows only one
+        # active getUpdates consumer per token; two pollers on the same token
+        # produce continuous "Flood control exceeded on method 'GetUpdates'"
+        # errors because both compete for the same long-poll slot.
+        token_to_agents: Dict[str, List[str]] = {}
+        for name, agent_config in self.agents.items():
+            if agent_config.bot_token:
+                token_to_agents.setdefault(agent_config.bot_token, []).append(name)
+        for _, names in token_to_agents.items():
+            if len(names) > 1:
+                errors.append(
+                    f"Duplicate bot_token shared by agents {sorted(names)!r}. "
+                    f"Each Telegram bot token may only have one poller; "
+                    f"consolidate the entries or assign distinct tokens."
+                )
+
         return errors

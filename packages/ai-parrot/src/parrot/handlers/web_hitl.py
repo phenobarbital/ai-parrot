@@ -246,6 +246,7 @@ except ImportError:
     )
 
 
+@is_authenticated()
 class HITLResponseHandler(BaseView):
     """HTTP handler for ``POST /api/v1/agents/hitl/respond``.
 
@@ -259,7 +260,6 @@ class HITLResponseHandler(BaseView):
         Respondent identity is taken from ``request.session.get('user_id')``.
     """
 
-    @is_authenticated()
     async def post(self) -> web.Response:
         """Handle a human response submission.
 

@@ -1,0 +1,104 @@
+# AI-Parrot PBAC — QuerySource Slug Policies (TEMPORARY)
+# =======================================================
+# TEMPORARY permissive policy: allow any authenticated user to execute and
+# list QuerySource slugs / datasources / drivers. Added to unblock callers
+# while proper per-slug policies (FEAT-091) are still being authored.
+#
+# REMOVE OR TIGHTEN this file once fine-grained slug policies exist.
+#
+# Resource types covered (navigator_auth.abac.policies.resources.ResourceType):
+#   - slug         → QuerySource slugs (forms_organizations, etc.)
+#   - datasource   → QuerySource datasources
+#   - driver       → QuerySource drivers
+#   - raw_query    → Raw SQL execution (kept restricted — superuser only below)
+
+version: "1.0"
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # TEMP: allow any authenticated user to execute and list slugs.
+  # Scope: every slug name. Action: slug:execute, slug:list.
+  # -----------------------------------------------------------------------
+  - name: temp_allow_slug_authenticated
+    effect: allow
+    description: >
+      TEMPORARY — any authenticated user may execute and list QuerySource
+      slugs. Replace with fine-grained per-slug policies before production.
+    resources:
+      - "slug:*"
+    actions:
+      - "slug:execute"
+      - "slug:list"
+    subjects:
+      groups:
+        - "*"   # wildcard = any authenticated user
+    priority: 5
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # TEMP: allow any authenticated user to use and list datasources.
+  # -----------------------------------------------------------------------
+  - name: temp_allow_datasource_authenticated
+    effect: allow
+    description: >
+      TEMPORARY — any authenticated user may use and list QuerySource
+      datasources. Replace with explicit datasource policies before production.
+    resources:
+      - "datasource:*"
+    actions:
+      - "datasource:use"
+      - "datasource:list"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # TEMP: allow any authenticated user to use and list drivers.
+  # -----------------------------------------------------------------------
+  - name: temp_allow_driver_authenticated
+    effect: allow
+    description: >
+      TEMPORARY — any authenticated user may use and list QuerySource
+      drivers. Replace with explicit driver policies before production.
+    resources:
+      - "driver:*"
+    actions:
+      - "driver:use"
+      - "driver:list"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Superuser/admin: full access including raw_query (kept restricted on
+  # purpose — raw SQL is NOT covered by the wildcard allows above).
+  # -----------------------------------------------------------------------
+  - name: allow_superuser_querysource
+    effect: allow
+    description: >
+      Superusers and admins have unrestricted access to all QuerySource
+      resources, including raw_query execution.
+    resources:
+      - "slug:*"
+      - "datasource:*"
+      - "driver:*"
+      - "raw_query:*"
+    actions:
+      - "slug:execute"
+      - "slug:list"
+      - "datasource:use"
+      - "datasource:list"
+      - "driver:use"
+      - "driver:list"
+      - "raw_query:execute"
+    subjects:
+      groups:
+        - superuser
+        - admin
+    priority: 100
+    enforcing: false

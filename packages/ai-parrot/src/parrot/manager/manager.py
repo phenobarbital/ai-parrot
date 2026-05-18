@@ -29,6 +29,7 @@ from ..handlers.agent import AgentTalk
 from ..handlers.integrations import IntegrationsHandler
 from ..handlers.infographic import InfographicTalk
 from ..handlers.agents.data import DataAnalystHandler
+from ..handlers.agents.factory import AgentFactoryHandler
 from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.database import (
@@ -1436,6 +1437,12 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/analyst',
             DataAnalystHandler
+        )
+        # AgentFactory: meta-agent that drafts and registers new agents
+        # from a natural-language description (RAG / tool-agent / clone).
+        router.add_view(
+            '/api/v1/agents/factory',
+            AgentFactoryHandler
         )
         # InfographicTalk routes (FEAT-095) — literal resource routes MUST
         # come before the {agent_id} catch-all so aiohttp resolves

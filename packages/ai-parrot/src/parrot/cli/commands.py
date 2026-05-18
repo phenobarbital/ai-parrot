@@ -151,6 +151,13 @@ class SlashCommandDispatcher:
                 _cmd_export,
             ),
             SlashCommand("stream", "Toggle streaming mode on/off.", _cmd_stream),
+            SlashCommand(
+                "create_agent",
+                "Run the AgentFactory to create a new agent. "
+                "Usage: /create_agent <natural-language description> "
+                "[--clone-from <name>] [--category <dir>]",
+                _cmd_create_agent,
+            ),
             SlashCommand("help", "List all available slash commands.", _cmd_help),
             SlashCommand("quit", "Exit the REPL.", _cmd_quit),
         ]
@@ -310,3 +317,92 @@ async def _cmd_quit(repl: "AgentREPL", args: str) -> None:  # noqa: ARG001
     """
     repl.renderer.print("[dim]Goodbye.[/dim]")
     raise SystemExit(0)
+
+
+def _parse_create_agent_args(args: str) -> Dict[str, Any]:
+    """Parse ``--clone-from X`` and ``--category Y`` flags out of ``args``.
+
+    The remaining text is the natural-language description.
+    """
+    tokens = args.strip().split()
+    parsed: Dict[str, Any] = {"description": "", "clone_from": None, "category": "general"}
+    description: List[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok == "--clone-from" and i + 1 < len(tokens):
+            parsed["clone_from"] = tokens[i + 1]
+            i += 2
+            continue
+        if tok == "--category" and i + 1 < len(tokens):
+            parsed["category"] = tokens[i + 1]
+            i += 2
+            continue
+        description.append(tok)
+        i += 1
+    parsed["description"] = " ".join(description)
+    return parsed
+
+
+async def _cmd_create_agent(repl: "AgentREPL", args: str) -> None:
+    """Handle /create_agent — drive the AgentFactoryOrchestrator from the REPL.
+
+    Builds a CLI-channel HumanInteractionManager on the fly, runs the
+    orchestrator, and prints the FactoryResult. Both HITL checkpoints are
+    delivered through the same CLI prompt the REPL already uses.
+    """
+    parsed = _parse_create_agent_args(args)
+    if not parsed["description"]:
+        repl.renderer.print(
+            "[yellow]Usage:[/yellow] /create_agent <description> "
+            "[--clone-from <name>] [--category <dir>]"
+        )
+        return
+
+    # Local imports keep REPL startup snappy — factory pulls in pydantic +
+    # the registry graph, which we do not want to pay for unless the user
+    # actually invokes this command.
+    from parrot.bots.factory import (
+        AgentFactoryOrchestrator,
+        FactoryRequest,
+        FactoryStatus,
+    )
+    from parrot.human.channels import CLIHumanChannel
+    from parrot.human.manager import HumanInteractionManager
+
+    channel = CLIHumanChannel(console=getattr(repl.renderer, "console", None))
+    manager = HumanInteractionManager(channels={"cli": channel})
+    await manager.startup()
+
+    use_llm = getattr(repl.bot, "_use_llm", None) or "google"
+    orchestrator = AgentFactoryOrchestrator(
+        human_manager=manager,
+        human_channel="cli",
+        human_targets=[repl.config.user_id or "cli_user"],
+        use_llm=use_llm,
+        category=parsed["category"],
+    )
+
+    request = FactoryRequest(
+        description=parsed["description"],
+        clone_from=parsed["clone_from"],
+    )
+
+    repl.renderer.print("[cyan]Routing your request to the factory…[/cyan]")
+    result = await orchestrator.run(request)
+
+    if result.status == FactoryStatus.SUCCESS:
+        repl.renderer.print(
+            f"[green]Agent created:[/green] "
+            f"[bold]{result.definition.name}[/bold] → {result.yaml_path}"
+        )
+    elif result.status == FactoryStatus.CANCELLED_BY_USER:
+        repl.renderer.print(
+            f"[yellow]Cancelled at {result.cancelled_at.value}.[/yellow]"
+        )
+    elif result.status == FactoryStatus.TIMEOUT:
+        repl.renderer.print(
+            f"[yellow]Timed out at {result.cancelled_at.value}.[/yellow]"
+        )
+    else:
+        repl.renderer.print(f"[red]Factory failed:[/red] {result.error or 'unknown'}")

@@ -1,0 +1,208 @@
+{
+  "feature": "agnostic-prompt-caching-abstraction",
+  "feature_id": "FEAT-181",
+  "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-18T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1217",
+      "slug": "cacheable-segment-and-layer-cacheable",
+      "title": "CacheableSegment dataclass + PromptLayer.cacheable attribute",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation type — all other tasks depend on CacheableSegment or PromptLayer.cacheable",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:16:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1217-cacheable-segment-and-layer-cacheable.md"
+    },
+    {
+      "id": "TASK-1218",
+      "slug": "promptbuilder-build-segments",
+      "title": "PromptBuilder.build_segments() method",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1217"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1217 (CacheableSegment); modifies builder.py which TASK-1220 also reads",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:18:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1218-promptbuilder-build-segments.md"
+    },
+    {
+      "id": "TASK-1219",
+      "slug": "agent-context-loader-and-layer",
+      "title": "AgentContextLoader + AGENT_CONTEXT_LAYER + AGENT_CONTEXT_DIR",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1217"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-1217 only (for PromptLayer.cacheable). Touches conf.py and a new file — no file overlap with TASK-1218",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:19:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1219-agent-context-loader-and-layer.md"
+    },
+    {
+      "id": "TASK-1220",
+      "slug": "abstractbot-prompt-caching-integration",
+      "title": "AbstractBot prompt_caching kwarg + auto-injection",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1218",
+        "TASK-1219"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both builder and loader tasks; modifies abstract.py",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:28:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1220-abstractbot-prompt-caching-integration.md"
+    },
+    {
+      "id": "TASK-1221",
+      "slug": "abstractclient-apply-cache-hints",
+      "title": "AbstractClient._apply_cache_hints() base + system_prompt Union widening",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1217"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends only on TASK-1217 (CacheableSegment type). Touches base.py only — no file overlap with TASK-1218/1219",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:20:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1221-abstractclient-apply-cache-hints.md"
+    },
+    {
+      "id": "TASK-1222",
+      "slug": "claude-client-cache-translator",
+      "title": "ClaudeClient (AnthropicClient) cache translator",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1221"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-1221 only. Touches claude.py — no overlap with TASK-1223 (gpt.py) or TASK-1224 (google/)",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:26:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1222-claude-client-cache-translator.md"
+    },
+    {
+      "id": "TASK-1223",
+      "slug": "openai-client-cache-translator",
+      "title": "OpenAI client cache translator",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1221"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-1221 only. Touches gpt.py — no overlap with TASK-1222 (claude.py) or TASK-1224 (google/)",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:29:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1223-openai-client-cache-translator.md"
+    },
+    {
+      "id": "TASK-1224",
+      "slug": "gemini-client-cache-translator",
+      "title": "Google/Gemini client cache translator",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1221"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-1221 only. Touches google/ files — no overlap with TASK-1222 (claude.py) or TASK-1223 (gpt.py)",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:31:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1224-gemini-client-cache-translator.md"
+    },
+    {
+      "id": "TASK-1225",
+      "slug": "lifecycle-events-prompt-cache",
+      "title": "PromptCacheAppliedEvent + PromptCacheSkippedEvent lifecycle events",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies — standalone event dataclasses. Touches only events/client.py — no file overlap with any other task",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:22:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1225-lifecycle-events-prompt-cache.md"
+    },
+    {
+      "id": "TASK-1226",
+      "slug": "github-reviewer-opt-in",
+      "title": "GitHubReviewer prompt_caching opt-in",
+      "feature_id": "FEAT-181",
+      "feature": "agnostic-prompt-caching-abstraction",
+      "spec": "sdd/specs/agnostic-prompt-caching-abstraction.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1220"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1220 (AbstractBot integration); last in the chain",
+      "assigned_to": null,
+      "started_at": "2026-05-18T13:12:49+00:00",
+      "completed_at": "2026-05-18T13:33:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1226-github-reviewer-opt-in.md"
+    }
+  ]
+}

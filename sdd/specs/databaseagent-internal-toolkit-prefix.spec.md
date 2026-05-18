@@ -38,7 +38,7 @@ This asymmetry has three concrete costs:
    exposed" require checking which path applies.
 2. **The internal toolkit is the only `AbstractToolkit` subclass in
    `bots/database/` that does not declare a `tool_prefix`**. After
-   FEAT-172 makes prefixes mandatory for `AbstractDatabaseToolkit`,
+   FEAT-172 makes prefixes mandatory for `DatabaseToolkit`,
    the internal toolkit becomes the lone hold-out — it inherits
    directly from `AbstractToolkit`, so FEAT-172's check does not
    force it. But the inconsistency is bad signal.
