@@ -253,6 +253,12 @@ class AbstractClient(EventEmitterMixin, ABC):
     # None means fall back to self.model.
     _lightweight_model: Optional[str] = None
 
+    # FEAT-181: minimum token count for provider-side prompt caching.
+    # Subclasses override this (e.g., AnthropicClient sets 1024, GoogleGenAIClient 4096).
+    # 0 means "provider does not support explicit caching" (the base AbstractClient no-op);
+    # the value is not a real threshold but a sentinel indicating caching is unsupported here.
+    _min_cache_tokens: int = 0
+
     # Default system prompt template used when no system_prompt is passed to invoke().
     BASIC_SYSTEM_PROMPT: str = """Your name is $name Agent.
 <system_instructions>
@@ -337,20 +343,79 @@ $backstory
     # FEAT-176: Lifecycle emission helpers
     # ------------------------------------------------------------------
 
-    def _system_prompt_hash(self, system_prompt: "Optional[str]") -> str:
+    def _system_prompt_hash(self, system_prompt: "Optional[Union[str, list]]") -> str:
         """Return SHA-256 hex of *system_prompt*, or empty string.
 
         Privacy-safe: the raw prompt is never stored or emitted.
+        Accepts both plain strings and lists of CacheableSegment objects.
 
         Args:
-            system_prompt: The system prompt string, or ``None``.
+            system_prompt: The system prompt string, list of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects,
+                or ``None``.
 
         Returns:
             SHA-256 hex digest string, or ``""`` if *system_prompt* is falsy.
         """
-        if not system_prompt:
+        resolved = self._resolve_system_prompt(system_prompt)
+        if not resolved:
             return ""
-        return hashlib.sha256(system_prompt.encode()).hexdigest()
+        return hashlib.sha256(resolved.encode()).hexdigest()
+
+    # ------------------------------------------------------------------
+    # FEAT-181: Provider-Agnostic Prompt Caching
+    # ------------------------------------------------------------------
+
+    def _resolve_system_prompt(
+        self,
+        system_prompt: "Optional[Union[str, list]]",
+    ) -> "Optional[str]":
+        """Collapse a list of CacheableSegment objects to a plain string.
+
+        Used internally to produce a string suitable for hashing or logging
+        when ``system_prompt`` may be a list of segments.
+
+        Args:
+            system_prompt: Either a plain string, a list of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects,
+                or ``None``.
+
+        Returns:
+            Plain string (segments joined by ``"\\n\\n"``), the original
+            string, or ``None`` if the input is ``None``.
+        """
+        if system_prompt is None:
+            return None
+        if isinstance(system_prompt, list):
+            return "\n\n".join(s.text for s in system_prompt)
+        return system_prompt
+
+    def _apply_cache_hints(
+        self,
+        payload: "Dict[str, Any]",
+        segments: "list",
+        trace_context: "Optional[TraceContext]" = None,
+    ) -> "Dict[str, Any]":
+        """Translate CacheableSegments to provider-native cache hints.
+
+        FEAT-181 — default no-op. Subclasses override for their provider:
+        - :class:`~parrot.clients.claude.AnthropicClient` — ``cache_control`` blocks.
+        - :class:`~parrot.clients.gpt.OpenAIClient` — automatic (pass-through).
+        - :class:`~parrot.clients.google.client.GoogleGenAIClient` — ``CachedContent``.
+
+        Args:
+            payload: The request payload dict to mutate or replace.
+            segments: List of
+                :class:`~parrot.bots.prompts.segments.CacheableSegment` objects
+                produced by :meth:`~parrot.bots.prompts.builder.PromptBuilder.build_segments`.
+            trace_context: Optional W3C trace context for event correlation.
+                When provided it is forwarded to cache lifecycle events.
+                If ``None``, a new root trace is created internally.
+
+        Returns:
+            The ``payload`` dict, unchanged in the base implementation.
+        """
+        return payload
 
     def _emit_before_call(
         self,

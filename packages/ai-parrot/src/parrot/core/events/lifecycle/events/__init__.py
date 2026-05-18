@@ -25,6 +25,9 @@ from parrot.core.events.lifecycle.events.client import (
     AfterClientCallEvent,
     ClientCallFailedEvent,
     ClientStreamChunkEvent,
+    # FEAT-181: Prompt Caching Lifecycle Events
+    PromptCacheAppliedEvent,
+    PromptCacheSkippedEvent,
 )
 from parrot.core.events.lifecycle.events.tool import (
     BeforeToolCallEvent,
@@ -48,6 +51,9 @@ __all__ = [
     "AfterClientCallEvent",
     "ClientCallFailedEvent",
     "ClientStreamChunkEvent",
+    # FEAT-181: Prompt caching domain
+    "PromptCacheAppliedEvent",
+    "PromptCacheSkippedEvent",
     # Tool domain
     "BeforeToolCallEvent",
     "AfterToolCallEvent",

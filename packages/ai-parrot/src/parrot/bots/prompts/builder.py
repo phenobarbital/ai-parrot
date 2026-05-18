@@ -15,6 +15,7 @@ from copy import deepcopy
 from typing import Optional, Dict, Any, List
 
 from .layers import PromptLayer, LayerPriority, RenderPhase
+from .segments import CacheableSegment
 
 
 class PromptBuilder:
@@ -32,9 +33,16 @@ class PromptBuilder:
         prompt = builder.build({"knowledge_content": "...", ...})
     """
 
-    def __init__(self, layers: Optional[List[PromptLayer]] = None):
+    def __init__(
+        self,
+        layers: Optional[List[PromptLayer]] = None,
+        *,
+        prompt_caching: bool = False,
+    ):
         self._layers: Dict[str, PromptLayer] = {}
         self._configured: bool = False
+        # FEAT-181: store prompt_caching flag for AbstractBot to inspect.
+        self.prompt_caching: bool = prompt_caching
         if layers:
             for layer in layers:
                 self._layers[layer.name] = layer
@@ -175,7 +183,10 @@ $rationale
         Returns:
             A new independent PromptBuilder with the same layers.
         """
-        new_builder = PromptBuilder(list(deepcopy(self._layers).values()))
+        new_builder = PromptBuilder(
+            list(deepcopy(self._layers).values()),
+            prompt_caching=self.prompt_caching,
+        )
         new_builder._configured = self._configured
         return new_builder
 
@@ -229,6 +240,43 @@ $rationale
                     parts.append(stripped)
 
         return "\n\n".join(parts)
+
+    def build_segments(self, context: Dict[str, Any]) -> List[CacheableSegment]:
+        """Phase 2 (caching): Produce a list of CacheableSegment objects.
+
+        FEAT-181 — Provider-Agnostic Prompt Caching.
+
+        Mirrors the iteration in :meth:`build` but produces
+        :class:`~parrot.bots.prompts.segments.CacheableSegment` objects tagged
+        with ``layer.cacheable`` instead of joining strings. Empty rendered
+        layers are excluded (same behaviour as :meth:`build`).
+
+        This method can be called regardless of the ``prompt_caching`` flag
+        value. The flag is inspected by ``AbstractBot`` to decide whether to
+        call ``build()`` or ``build_segments()``.
+
+        Args:
+            context: Dictionary of dynamic variable values (same as
+                :meth:`build`).
+
+        Returns:
+            Ordered list of :class:`CacheableSegment` objects corresponding
+            to non-empty rendered layers, preserving priority order.
+        """
+        sorted_layers = sorted(self._layers.values(), key=lambda lyr: lyr.priority)
+        segments: List[CacheableSegment] = []
+        for layer in sorted_layers:
+            rendered = layer.render(context)
+            if rendered is not None:
+                stripped = rendered.strip()
+                if stripped:
+                    segments.append(
+                        CacheableSegment(
+                            text=stripped,
+                            cacheable=bool(layer.cacheable),
+                        )
+                    )
+        return segments
 
     @property
     def is_configured(self) -> bool:

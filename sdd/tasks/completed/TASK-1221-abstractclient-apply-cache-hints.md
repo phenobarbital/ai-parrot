@@ -230,3 +230,10 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+
+**Completed by**: SDD Worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Added _min_cache_tokens=0 class attribute, _resolve_system_prompt() helper, and _apply_cache_hints() no-op. All 10 tests pass.
+**Deviations from spec**: none

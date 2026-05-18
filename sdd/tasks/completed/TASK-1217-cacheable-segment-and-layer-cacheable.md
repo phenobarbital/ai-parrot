@@ -239,3 +239,10 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+
+**Completed by**: SDD Worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Created segments.py with frozen CacheableSegment dataclass. Added cacheable field to PromptLayer using __post_init__ with object.__setattr__ to derive default from phase. partial_render() propagates cacheable. All 15 tests pass.
+**Deviations from spec**: none

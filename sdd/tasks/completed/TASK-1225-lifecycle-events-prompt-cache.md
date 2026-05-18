@@ -244,3 +244,10 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+
+**Completed by**: SDD Worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Added PromptCacheAppliedEvent (blocks_marked, est_tokens, segment_hashes tuple) and PromptCacheSkippedEvent (reason) to client.py. Both exported from __init__.py. All 13 tests pass.
+**Deviations from spec**: none

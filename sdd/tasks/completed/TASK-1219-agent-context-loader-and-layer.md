@@ -263,3 +263,10 @@ When you pick up this task:
 **Notes**: 
 
 **Deviations from spec**: none | describe if any
+
+---
+
+**Completed by**: SDD Worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Added AGENT_CONTEXT_DIR to conf.py. Created agent_context.py with _read_cached (lru_cache on path+mtime) and load_agent_context() using module-level AGENT_CONTEXT_DIR for testability. Created AGENT_CONTEXT_LAYER (priority=12, CONFIGURE, cacheable=True). All 17 tests pass.
+**Deviations from spec**: Used module-level AGENT_CONTEXT_DIR import with self-module lookup in load_agent_context() to enable patching in tests, rather than pure late import.

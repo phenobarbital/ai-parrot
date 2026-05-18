@@ -106,6 +106,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
+    _min_cache_tokens: int = 4096
+    # Default TTL for CachedContent resources (5 minutes)
+    _cache_ttl: str = "300s"
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
         _require_google_sdk()
@@ -202,6 +206,124 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             an empty dict (matching ``get_client``'s optional ``model`` kwarg).
         """
         return {"model": hints["model"]} if "model" in hints else {}
+
+    # ── FEAT-181: Gemini Prompt Caching ──────────────────────────────────────
+
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count using a conservative 4-chars-per-token heuristic.
+
+        Args:
+            text: Text to estimate token count for.
+
+        Returns:
+            Estimated number of tokens.
+        """
+        return len(text) // 4
+
+    def _apply_cache_hints(self, payload: dict, segments: list) -> tuple:
+        """Gemini cache translator — FEAT-181.
+
+        Gemini requires explicit ``CachedContent`` resource creation when
+        the cacheable token count meets or exceeds ``_min_cache_tokens``
+        (default 4096).  Because resource creation is async, this method
+        performs the threshold check synchronously and returns the cacheable
+        segments as a local value so callers can pass them to
+        ``_maybe_apply_gemini_cache()`` without concurrency hazards.
+
+        CONCURRENCY NOTE: This method no longer uses ``self._pending_cache_segments``
+        (which was a shared mutable instance attribute susceptible to race conditions
+        when multiple coroutines share the same client instance). The segments are
+        returned as the second element of a tuple and passed explicitly through the
+        call chain.
+
+        When the threshold is NOT met (or segments is empty), this method is
+        a true no-op — the payload is returned unchanged and ``None`` is returned
+        as the segments value.
+
+        Args:
+            payload: The request payload dict being assembled.
+            segments: List of ``CacheableSegment`` produced by
+                ``PromptBuilder.build_segments()``.  May be empty.
+
+        Returns:
+            Tuple of ``(payload, pending_segments)`` where ``pending_segments`` is
+            the list of cacheable segments to pass to ``_maybe_apply_gemini_cache()``,
+            or ``None`` when caching should be skipped.
+        """
+        if not segments:
+            return payload, None
+
+        # Only consider cacheable segments for the token estimate
+        cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+        est_tokens = self._estimate_tokens(cacheable_text)
+
+        if est_tokens < self._min_cache_tokens:
+            self.logger.debug(
+                "Gemini prompt caching skipped: estimated %d tokens < threshold %d",
+                est_tokens,
+                self._min_cache_tokens,
+            )
+            return payload, None
+
+        self.logger.debug(
+            "Gemini prompt caching: %d cacheable tokens queued for CachedContent",
+            est_tokens,
+        )
+        return payload, segments
+
+    async def _maybe_apply_gemini_cache(
+        self,
+        client: Any,
+        model: str,
+        payload: dict,
+        segments: list,
+    ) -> dict:
+        """Create a Gemini ``CachedContent`` resource and inject ``cached_content``.
+
+        Called from ``generate_content`` call sites when segments is not None/empty.
+        On any error the method logs at WARNING level and returns the payload unchanged
+        (fail-open).
+
+        CONCURRENCY NOTE: ``segments`` is now passed explicitly as a parameter instead
+        of being read from ``self._pending_cache_segments``, eliminating the concurrency
+        hazard when two coroutines share the same client instance.
+
+        Args:
+            client: The active ``genai.Client`` instance.
+            model: Model name string (e.g. ``"gemini-2.5-flash"``).
+            payload: The ``generate_content`` payload dict to update.
+            segments: The cacheable segments returned by ``_apply_cache_hints()``.
+
+        Returns:
+            The (potentially updated) payload dict.
+        """
+        if not segments:
+            return payload
+
+        try:
+            from google.genai import types as genai_types
+            cacheable_text = "\n\n".join(s.text for s in segments if s.cacheable)
+            cached = await client.aio.caches.create(
+                model=model,
+                config=genai_types.CreateCachedContentConfig(
+                    system_instruction=cacheable_text,
+                    ttl=self._cache_ttl,
+                    display_name="parrot-prompt-cache",
+                ),
+            )
+            payload["cached_content"] = cached.name
+            self.logger.debug(
+                "Gemini CachedContent created: %s (model=%s)", cached.name, model
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Gemini CachedContent creation failed (proceeding without cache): %s",
+                exc,
+            )
+
+        return payload
+
+    # ── End FEAT-181 ──────────────────────────────────────────────────────────
 
     def _client_invalid_for_current(self, client: Any, **hints: Any) -> bool:
         """Return ``True`` when the cached client was built for a different model class.
@@ -1199,14 +1321,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         if finish_reason:
                             if finish_reason.name == "MAX_TOKENS" and current_config.max_output_tokens < 8192:
                                 self.logger.warning(
-                                    f"Hit MAX_TOKENS limit. Retrying with increased token limit."
+                                    "Hit MAX_TOKENS limit. Retrying with increased token limit."
                                 )
                                 retry_count += 1
                                 current_config.max_output_tokens = 8192
                                 continue
                             elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
                                 self.logger.warning(
-                                    f"Malformed function call detected. Retrying..."
+                                    "Malformed function call detected. Retrying..."
                                 )
                                 retry_count += 1
                                 await asyncio.sleep(2 ** retry_count)
@@ -1974,6 +2096,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 function_calling_config=types.FunctionCallingConfig(mode=mode)
             )
 
+        # FEAT-181: resolve List[CacheableSegment] → string before passing to
+        # GenerateContentConfig, which does not accept segment lists.
+        # Also handle prompt caching: if segments were provided, attempt to create
+        # a CachedContent resource (fail-open on error).
+        _pending_cache_segs = None
+        if isinstance(system_prompt, list):
+            # This is a List[CacheableSegment] from PromptBuilder.build_segments()
+            _payload_tmp, _pending_cache_segs = self._apply_cache_hints({}, system_prompt)
+            system_prompt = self._resolve_system_prompt(system_prompt)
+
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[
@@ -1991,6 +2123,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             thinking_config=thinking_config,
             **generation_config
         )
+        # FEAT-181: if we have pending cache segments, attempt to create
+        # a Gemini CachedContent resource (fail-open on any error).
+        if _pending_cache_segs:
+            _cache_payload = {}
+            _cache_payload = await self._maybe_apply_gemini_cache(
+                self.client, model, _cache_payload, _pending_cache_segs
+            )
+            if _cache_payload.get("cached_content"):
+                try:
+                    final_config.cached_content = _cache_payload["cached_content"]
+                except (AttributeError, TypeError):
+                    self.logger.debug(
+                        "GenerateContentConfig does not support cached_content assignment; "
+                        "continuing without cache."
+                    )
+
         # Single execution path for both stateless and stateful modes.
         # ``stateless`` only controls whether conversation history is loaded
         # earlier (see _prepare_conversation_context above) — it does NOT
@@ -2659,6 +2807,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             current_message_content = prompt
             keep_looping = True
 
+            # FEAT-181: resolve List[CacheableSegment] → string before passing to
+            # GenerateContentConfig, which does not accept segment lists.
+            if isinstance(system_prompt, list):
+                system_prompt = self._resolve_system_prompt(system_prompt)
+
             generation_config_args = {
                 "temperature": temperature or getattr(self, "temperature", 0.0),
                 "max_output_tokens": current_max_tokens,
@@ -2742,7 +2895,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             keep_looping = True
                             continue
                         else:
-                            yield f"\n\n❌ **Maximum retries reached.**\n"
+                            yield "\n\n❌ **Maximum retries reached.**\n"
 
                     if collected_function_calls:
                         self.logger.info(f"Streaming detected {len(collected_function_calls)} tool calls.")
@@ -3416,7 +3569,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if use_internal_tools:
             tools = self._build_tools("builtin_tools") # Only built-in tools
             self.logger.debug(
-                f"Enabled internal tool usage."
+                "Enabled internal tool usage."
             )
 
         # Build contents for the stateless call

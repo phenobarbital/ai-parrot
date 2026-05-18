@@ -466,6 +466,11 @@ class AbstractBot(
         elif prompt_preset:
             from .prompts.presets import get_preset
             self._prompt_builder = get_preset(prompt_preset)
+        # FEAT-181: Provider-Agnostic Prompt Caching
+        self._prompt_caching: bool = kwargs.get('prompt_caching', False)
+        if self._prompt_caching and self._prompt_builder is not None:
+            from .prompts.agent_context import AGENT_CONTEXT_LAYER
+            self._prompt_builder.add(AGENT_CONTEXT_LAYER)
         # Operational Mode:
         self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Output Mode:
@@ -1113,6 +1118,17 @@ class AbstractBot(
             **dynamic_context,
         }
 
+        # FEAT-181: inject agent context file content when prompt_caching is on
+        if self._prompt_caching:
+            from .prompts.agent_context import load_agent_context
+            agent_ctx = load_agent_context(self.name)
+            if not agent_ctx:
+                self.logger.info(
+                    "prompt_caching is on but no context file found for agent '%s'",
+                    self.name,
+                )
+            configure_context["agent_context_content"] = agent_ctx
+
         self._prompt_builder.configure(configure_context)
 
     def _build_prompt(
@@ -1124,7 +1140,7 @@ class AbstractBot(
         pageindex_context: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
-    ) -> str:
+    ) -> "Union[str, List]":
         """Phase 2: Resolve REQUEST-phase variables per call.
 
         Only dynamic variables (context, user_data, chat_history)
@@ -1180,6 +1196,10 @@ class AbstractBot(
             **kwargs,
         }
 
+        # FEAT-181: when prompt_caching is on, return List[CacheableSegment]
+        # so the client can apply provider-specific cache_control markers.
+        if self._prompt_caching:
+            return self._prompt_builder.build_segments(request_context)
         return self._prompt_builder.build(request_context)
 
     async def configure_kb(self):
@@ -2550,7 +2570,7 @@ class AbstractBot(
         metadata: Optional[Dict[str, Any]] = None,
         memory_context: Optional[str] = None,
         **kwargs
-    ) -> str:
+    ) -> "Union[str, List]":
         """
         Create the complete system prompt for the LLM with user context support.
 
@@ -2597,7 +2617,12 @@ class AbstractBot(
                 self._active_skill = None
 
             if memory_context:
-                result += f"\n\n{memory_context}"
+                # FEAT-181: result may be List[CacheableSegment] when prompt_caching=True
+                if isinstance(result, list):
+                    from parrot.bots.prompts.segments import CacheableSegment
+                    result.append(CacheableSegment(text=f"\n\n{memory_context}", cacheable=False))
+                else:
+                    result += f"\n\n{memory_context}"
             return result
         # Legacy path: existing Template-based logic (unchanged)
         # Process conversation and vector contexts
