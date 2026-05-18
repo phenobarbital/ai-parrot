@@ -197,10 +197,16 @@ HTTP mock setup.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
 **Notes**:
+- Added 2 integration tests in `TestIntegrationToolAssistedReview` — both pass.
+- Updated `docs/github-reviewer.md` with "Tool-Assisted Review" section covering
+  tools, configuration table (env vars + constructor kwarg), and cap-hit telemetry.
+- Tool docstrings on the 3 new `GitToolkit` methods were already thorough — no
+  changes needed.
+- No `.env.example` files exist in the repo; env vars documented in the markdown.
+- Updated per-spec index `completed_at` for TASK-1223 and `completed_at` in
+  the feature header.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
