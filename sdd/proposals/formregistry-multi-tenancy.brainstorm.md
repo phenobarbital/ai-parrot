@@ -548,32 +548,32 @@ from parrot_formdesigner.core.schema import FormSchema                # core/sch
 
 ## Open Questions
 
-- [ ] What is the name of the implicit default tenant? `"default"` is
+- [x] What is the name of the implicit default tenant? `"default"` is
       neutral; `"navigator"` matches `PostgresFormStorage.DEFAULT_SCHEMA`
       (`storage.py:51`) — picking the same word reduces cognitive load but
       conflates the Postgres-schema-default with the registry-tenant-default.
-      — *Owner: Jesus Lara*
-- [ ] Should `load_from_directory` **skip with warning** or **fail hard**
+      — *Owner: Jesus Lara*: navigator.
+- [x] Should `load_from_directory` **skip with warning** or **fail hard**
       when a YAML lacks `tenant:` AND the kwarg is `None` AND
       `require_tenant=True`? Today the loader is best-effort per-file
-      (`registry.py:312-315`). — *Owner: Jesus Lara*
-- [ ] Migration script ownership: does `scripts/sdd/migrate_form_tenants.py`
+      (`registry.py:312-315`). — *Owner: Jesus Lara*: skip with warning
+- [x] Migration script ownership: does `scripts/sdd/migrate_form_tenants.py`
       live in this feature or in a separate ops/runbook task? Recommend
       keeping it in this feature so the upgrade is self-contained.
-      — *Owner: Jesus Lara*
-- [ ] How are existing YAML fixtures under `tests/forms/` and any
+      — *Owner: Jesus Lara*: no forms are currently on productions, migration is not required.
+- [x] How are existing YAML fixtures under `tests/forms/` and any
       `examples/forms/` shipped form definitions updated — bulk script or
       manual? Count first via `grep -L "^tenant:" tests/**/*.yaml` before
-      deciding. — *Owner: Jesus Lara*
-- [ ] Should `register(form, *, tenant=None, ...)` accept an explicit
+      deciding. — *Owner: Jesus Lara*: bulk script
+- [x] Should `register(form, *, tenant=None, ...)` accept an explicit
       `tenant=` kwarg that overrides `form.tenant`? Useful for tests and
       admin tooling, but adds a precedence rule to document. Lean **yes**
-      with a warning log on mismatch. — *Owner: Jesus Lara*
-- [ ] Deprecation path for `__contains__(form_id)` (sync, line 413): mark
+      with a warning log on mismatch. — *Owner: Jesus Lara*: accept.
+- [x] Deprecation path for `__contains__(form_id)` (sync, line 413): mark
       as deprecated and remove next release, or replace immediately with
       a `__contains__((tenant, form_id))` tuple-aware version? Tuple-aware
-      preserves the magic-method ergonomics. — *Owner: Jesus Lara*
-- [ ] Naming: `list_tenants()` returns `list[str]` — should it return the
+      preserves the magic-method ergonomics. — *Owner: Jesus Lara*: replace immediately
+- [x] Naming: `list_tenants()` returns `list[str]` — should it return the
       keys sorted, by insertion order, or unsorted? Sorted is stable for
       tests and admin UIs; insertion-order matches dict iteration semantics
-      since Python 3.7. — *Owner: Jesus Lara*
+      since Python 3.7. — *Owner: Jesus Lara*: yes
