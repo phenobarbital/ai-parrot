@@ -106,7 +106,7 @@ _INTERNAL_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
 # and both are surfaced correctly without any change here.
 _TOOLKIT_TOOLS_BY_COMPONENT: Dict[OutputComponent, Set[str]] = {
     OutputComponent.SQL_QUERY: {"generate_query", "validate_query", "explain_query"},
-    OutputComponent.EXECUTION_PLAN: {"explain_query"},
+    OutputComponent.EXECUTION_PLAN: set(),
     OutputComponent.SCHEMA_CONTEXT: {"search_schema", "describe_table"},
 }
 
