@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-18T02:29:55+00:00",
   "tasks": [
     {
       "id": "TASK-1206",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Blocks every later task (they import from `github`). Cheap and isolated to pyproject.toml — must run first.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1206-pygithub-dependency.md"
+      "completed_at": "2026-05-18T02:29:55+00:00",
+      "file": "sdd/tasks/active/TASK-1206-pygithub-dependency.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1207",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Shares `gittoolkit.py` with TASK-1208; sequential to avoid merge conflicts on the same file.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1207-github-app-token-provider.md"
+      "completed_at": "2026-05-18T02:29:55+00:00",
+      "file": "sdd/tasks/active/TASK-1207-github-app-token-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1208",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Imports `_GitHubAppTokenProvider` from TASK-1207; same file as TASK-1207.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1208-gittoolkit-auth-type-plumbing.md"
+      "completed_at": "2026-05-18T02:29:55+00:00",
+      "file": "sdd/tasks/active/TASK-1208-gittoolkit-auth-type-plumbing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1209",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Depends on the new `GitToolkit` constructor signature delivered in TASK-1208. Different file (`github_reviewer.py`) but the contract is the toolkit's kwargs.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1209-github-reviewer-auth-type-wiring.md"
+      "completed_at": "2026-05-18T02:29:55+00:00",
+      "file": "sdd/tasks/active/TASK-1209-github-reviewer-auth-type-wiring.md",
+      "verification": "verified"
     }
   ]
 }
