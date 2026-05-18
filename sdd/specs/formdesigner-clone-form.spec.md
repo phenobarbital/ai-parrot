@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-183
 **Date**: 2026-05-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -372,9 +372,9 @@ No new external dependencies required.
 ## 8. Open Questions
 
 - [ ] Should the clone endpoint return the full FormSchema body or just the
-  summary (`form_id`, `title`, `url`)? — *Owner: Jesus*
+  summary (`form_id`, `title`, `url`)? — *Owner: Jesus*: return the full FormSchema
 - [ ] Should we add a `cloned_from` field to `FormSchema.meta` for
-  provenance tracking? — *Owner: Jesus*
+  provenance tracking? — *Owner: Jesus*: yes
 
 ---
 
