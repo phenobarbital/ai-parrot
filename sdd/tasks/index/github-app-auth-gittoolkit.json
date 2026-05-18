@@ -14,7 +14,7 @@
       "feature_id": "FEAT-179",
       "feature": "github-app-auth-gittoolkit",
       "spec": "sdd/specs/github-app-auth-gittoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Blocks every later task (they import from `github`). Cheap and isolated to pyproject.toml — must run first.",
       "assigned_to": null,
       "started_at": "2026-05-18T01:17:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1206-pygithub-dependency.md"
+      "completed_at": "2026-05-18T01:18:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1206-pygithub-dependency.md"
     },
     {
       "id": "TASK-1207",

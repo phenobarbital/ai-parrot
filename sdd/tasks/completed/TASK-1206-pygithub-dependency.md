@@ -130,8 +130,6 @@ manual via the acceptance-criteria commands above. No new pytest tests.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
+**Notes**: Added `"PyGithub>=2.1"` to `packages/ai-parrot-tools/pyproject.toml` dependencies. Verified `from github import Auth, GithubIntegration` works after install. PyGithub 2.9.1 installed.
