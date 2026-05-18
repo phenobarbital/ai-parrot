@@ -188,6 +188,14 @@ class FormRegistry:
             except Exception as exc:
                 self.logger.warning("Register callback failed: %s", exc)
 
+    def set_storage(self, storage: FormStorage) -> None:
+        """Set the FormStorage backend for this registry.
+
+        Args:
+            storage: FormStorage instance to use for persistence.
+        """
+        self._storage = storage
+
     async def unregister(self, form_id: str) -> bool:
         """Unregister a form schema.
 
