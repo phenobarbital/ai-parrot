@@ -27,7 +27,7 @@ Usage
 =====
 
     source .venv/bin/activate
-    python scripts/demo_operator.py
+    python examples/agents/oauth/demo_operator.py
 
 The script prints curl commands to walk through the manual validation
 sequence. It does NOT auto-open a browser — the user must visit the
@@ -44,7 +44,9 @@ from pathlib import Path
 from aiohttp import web
 
 # Make the local agents/ package importable so OperatorAgent registers.
-ROOT = Path(__file__).resolve().parents[1]
+# This file lives at examples/agents/oauth/demo_operator.py, so the repo
+# root is three levels up.
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 from parrot.auth.credentials import OAuthCredentialResolver  # noqa: E402
