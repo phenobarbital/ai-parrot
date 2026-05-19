@@ -292,6 +292,15 @@ class DatabaseAgent(BasicAgent):
             list(self._toolkit_map.keys()),
         )
 
+        # Delegate to BasicAgent/Chatbot/AbstractBot.configure() so LLM,
+        # prompt builder, vector store, KB selector, post_configure, and
+        # the ``_configured = True`` flag all run. Without this chain
+        # ``self._configured`` stays False forever, and any host that
+        # gates on ``is_configured`` (e.g. ``BotManager.get_bot()``)
+        # re-enters configure() on the next request — re-registering
+        # toolkits and raising ``ToolNameCollisionError``.
+        await super().configure(app=app)
+
     async def cleanup(self) -> None:
         """Stop all toolkits and close the cache manager."""
         for tk in self.toolkits:
