@@ -103,11 +103,12 @@ def build_auto_approve_manager() -> HumanInteractionManager:
     return manager
 
 
+@is_authenticated()
 class AgentFactoryHandler(BaseView):
     """POST /api/v1/agents/factory — create a new agent via the factory."""
 
-    @is_authenticated()
-    async def post(self, request: web.Request) -> web.Response:
+    async def post(self) -> web.Response:
+        request = self.request
         try:
             payload: Dict[str, Any] = await request.json()
         except Exception:

@@ -59,6 +59,7 @@ from ..services.rest_field_resolver import (
     RestFieldResolver,
     RestFieldSpec,
 )
+from ._utils import _get_request_tenant
 
 _rest_spec_adapter: TypeAdapter[RestFieldSpec] | None = None
 
@@ -228,7 +229,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     if registry is None:
         raise web.HTTPInternalServerError(reason="form_registry not configured")
 
-    form = await registry.get(form_id)
+    tenant = _get_request_tenant(request)
+    form = await registry.get(form_id, tenant=tenant)
     if form is None:
         raise web.HTTPNotFound(reason=f"Form not found: {form_id!r}")
 
@@ -296,7 +298,11 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
 
     # --- 4. Auth context ------------------------------------------------------
     auth_context = _build_auth_context(request)
-    tenant: str | None = request.headers.get("X-Parrot-Tenant")
+    # Tenant for blob metadata: honour the X-Parrot-Tenant header when present,
+    # fall back to the session-derived tenant extracted above for the registry
+    # lookup.  Both may be None, in which case the blob is stored without a
+    # tenant tag.
+    blob_tenant: str | None = request.headers.get("X-Parrot-Tenant") or tenant
 
     # --- 5. Parse RestFieldSpec ----------------------------------------------
     rest_meta = (field.meta or {}).get("rest", {})
@@ -321,8 +327,8 @@ async def handle_rest_upload(request: web.Request) -> web.Response:
     blob_meta = BlobMetadata(
         form_id=form_id,
         field_id=field_id,
-        submission_id=session_id,   # str | None — None is correct when absent
-        tenant=tenant,              # str | None — None is correct when absent
+        submission_id=session_id,       # str | None — None is correct when absent
+        tenant=blob_tenant,             # str | None — None is correct when absent
         content_type=detected_mime or "application/octet-stream",
         size_bytes=len(file_bytes),
     )

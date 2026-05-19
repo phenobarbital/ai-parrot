@@ -12,7 +12,13 @@ Table: form_schemas
 - created_at, updated_at: TIMESTAMPTZ
 - created_by: VARCHAR (optional metadata)
 
-Usage:
+Usage (self-managed pool — recommended):
+    storage = PostgresFormStorage(dsn="postgresql://user:pw@host/db")
+    await storage.initialize()   # creates pool + DDL
+    await storage.save(form_schema)
+    await storage.close()        # closes pool
+
+Usage (externally-managed pool — backward compatible):
     pool = await asyncpg.create_pool(dsn="postgresql://...")
     storage = PostgresFormStorage(pool=pool)
     await storage.initialize()
@@ -103,23 +109,84 @@ class PostgresFormStorage(FormStorage):
     ORDER BY form_id, updated_at DESC
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(
+        self,
+        *,
+        pool: Any | None = None,
+        dsn: str | None = None,
+        min_size: int = 2,
+        max_size: int = 10,
+        **pool_kwargs: Any,
+    ) -> None:
         """Initialize PostgresFormStorage.
 
         Args:
-            pool: asyncpg connection pool (asyncpg.Pool).
+            pool: An existing asyncpg connection pool. When provided,
+                ``_owns_pool`` is False and ``close()`` will not close it.
+            dsn: asyncpg DSN string. Used by ``initialize()`` to create the
+                pool when ``pool`` is None.
+            min_size: Minimum pool size (default 2). Ignored when pool is
+                provided externally.
+            max_size: Maximum pool size (default 10). Ignored when pool is
+                provided externally.
+            **pool_kwargs: Additional kwargs forwarded to ``asyncpg.create_pool()``.
         """
-        self._pool = pool
+        self._pool: Any | None = pool
+        self._dsn: str | None = dsn
+        self._min_size = min_size
+        self._max_size = max_size
+        self._pool_kwargs = pool_kwargs
+        # Track ownership: False when pool is provided externally.
+        self._owns_pool: bool = pool is None
         self.logger = logging.getLogger(__name__)
+
+    def _require_pool(self) -> None:
+        """Raise RuntimeError if the pool is not initialized.
+
+        Raises:
+            RuntimeError: If initialize() has not been called yet.
+        """
+        if self._pool is None:
+            raise RuntimeError(
+                "PostgresFormStorage is not initialized. "
+                "Call initialize() before performing storage operations."
+            )
 
     async def initialize(self) -> None:
         """Create the form_schemas table if it does not exist.
 
+        When no pool was provided at construction time, creates a new
+        ``asyncpg`` pool using the stored DSN and pool sizing parameters.
         This method is idempotent — safe to call on every startup.
         """
+        if self._pool is None:
+            import asyncpg  # lazy runtime import
+            self._pool = await asyncpg.create_pool(
+                dsn=self._dsn,
+                min_size=self._min_size,
+                max_size=self._max_size,
+                **self._pool_kwargs,
+            )
+            self.logger.info("PostgresFormStorage: created asyncpg pool")
+
         async with self._pool.acquire() as conn:
             await conn.execute(self.CREATE_TABLE_SQL)
         self.logger.info("form_schemas table ensured")
+
+    async def close(self) -> None:
+        """Close the asyncpg pool if this storage owns it.
+
+        When the pool was provided externally (``pool=...`` kwarg at
+        construction), this method is a no-op — the caller retains pool
+        ownership.
+
+        Idempotent: calling ``close()`` multiple times does not raise.
+        """
+        if self._owns_pool and self._pool is not None:
+            await self._pool.close()
+            self.logger.info("PostgresFormStorage: pool closed")
+        self._pool = None
+        self._owns_pool = False
 
     async def save(
         self,
@@ -138,6 +205,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             The form_id of the saved form.
         """
+        self._require_pool()
         version = getattr(form, "version", "1.0") or "1.0"
         schema_json = json.dumps(form.model_dump())
         style_json = json.dumps(style.model_dump()) if style else None
@@ -169,6 +237,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             FormSchema if found, None otherwise.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             if version is not None:
                 row = await conn.fetchrow(self.LOAD_VERSION_SQL, form_id, version)
@@ -200,6 +269,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             True if at least one row was deleted, False if not found.
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             result = await conn.execute(self.DELETE_SQL, form_id)
 
@@ -216,6 +286,7 @@ class PostgresFormStorage(FormStorage):
         Returns:
             List of dicts with form_id, version, and title (if available).
         """
+        self._require_pool()
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(self.LIST_SQL)
 

@@ -1269,15 +1269,38 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 status=400
             )
 
-        # Refuse to delete registry-based agents
+        # Registry-based agents: only factory-created ones can be deleted.
+        # Repo-committed YAMLs are protected (the file would just be re-loaded
+        # at next startup, so deletion via API is a no-op at best).
         registry = self._registry
         if registry and registry.has(agent_name):
             db_agent = await self._get_db_agent(agent_name)
             if not db_agent:
+                metadata = registry.get_metadata(agent_name)
+                bot_config = getattr(metadata, "bot_config", None)
+                origin = getattr(bot_config, "origin", "repo") if bot_config else "repo"
+                if origin == "factory":
+                    ok, reason = registry.delete_factory_agent(agent_name)
+                    if not ok:
+                        return self.error(
+                            response={"message": reason},
+                            status=500,
+                        )
+                    manager = self._manager
+                    if manager:
+                        try:
+                            manager.remove_bot(agent_name)
+                        except (KeyError, Exception):
+                            pass
+                    return self.json_response({
+                        "message": f"Factory agent '{agent_name}' deleted",
+                        "name": agent_name,
+                        "source": "factory",
+                    })
                 return self.error(
                     response={
                         "message": (
-                            f"Agent '{agent_name}' is registry-based (YAML/code) "
+                            f"Agent '{agent_name}' is a repo YAML/code agent "
                             "and cannot be deleted via this endpoint."
                         )
                     },

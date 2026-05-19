@@ -7,8 +7,7 @@ external network). All blob storage and resolver calls are mocked.
 from __future__ import annotations
 
 import io
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import FormData, web
@@ -47,6 +46,7 @@ def form_with_rest(rest_field_callback: FormField) -> FormSchema:
         form_id="demo-form",
         title={"en": "Demo"},
         sections=[FormSection(section_id="s1", fields=[rest_field_callback])],
+        tenant="navigator",
     )
 
 
@@ -272,6 +272,7 @@ async def test_upload_415_disallowed_mime(
         form_id="demo-form",
         title={"en": "Demo"},
         sections=[FormSection(section_id="s1", fields=[field])],
+        tenant="navigator",
     )
 
     client = await _make_client(aiohttp_client, form, mock_blob_storage, mock_resolver)
@@ -413,6 +414,7 @@ async def test_e2e_backwards_compat_existing_forms(
                 fields=[text_field, number_field, select_field],
             )
         ],
+        tenant="navigator",
     )
 
     client = await _make_client(aiohttp_client, legacy_form, mock_blob_storage, mock_resolver)
@@ -543,6 +545,7 @@ def form_with_args(rest_field_with_args: FormField) -> FormSchema:
     return FormSchema(
         form_id="form-args",
         title={"en": "Args"},
+        tenant="navigator",
         sections=[FormSection(section_id="s1", fields=[rest_field_with_args])],
     )
 

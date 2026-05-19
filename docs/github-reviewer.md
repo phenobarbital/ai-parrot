@@ -281,6 +281,68 @@ share one endpoint and let the `repository` guard inside
 
 ---
 
+## Tool-Assisted Review
+
+`GitHubReviewer` exposes three on-demand code-retrieval tools to the LLM so
+it can pull additional repository context during a PR review when the diff
+alone is insufficient.
+
+The tools are registered automatically during `post_configure()` via
+`_attach_toolkit(git_toolkit, "Git")`. If the LLM is confident in its verdict
+from the diff alone it returns `PRReviewResult` directly without calling any
+tools.
+
+### Tools
+
+- **`get_file_content_at_ref(path, ref, start_line?, end_line?)`** —
+  full file body at a given commit, branch, or tag. Supports line slicing for
+  large files via `start_line` / `end_line`. Results are SHA-keyed in a
+  two-tier cache (in-process LRU + optional Redis) so repeated requests for
+  the same ref within a session cost no extra HTTP calls.
+- **`compare_pr_versions(pr_number, path)`** — base and head versions of a
+  single file in the PR, both as full content. Use when the diff hunk is too
+  small to see the full before/after of a refactored function or class.
+- **`search_repo_code(query)`** — GitHub Code Search restricted to the PR's
+  own repository on its default branch. Use when you suspect a changed symbol
+  has callers or related code that are not shown in the diff. Note: rate-limited
+  to 30 requests/minute; returns `error='rate_limited'` instead of raising when
+  the quota is exceeded.
+
+### Configuration
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `GITHUB_REVIEWER_MAX_TOOL_CALLS` | `5` | Hard cap on tool calls per review session |
+| `GITHUB_REVIEWER_BLOB_CACHE_TTL` | `604800` | SHA-keyed blob cache TTL in seconds (7 days) |
+| `REDIS_URL` | unset | Optional Redis URL for shared cross-process blob cache |
+
+The `max_review_tool_calls` constructor kwarg takes priority over the env var:
+
+```python
+reviewer = MyReviewer(
+    repository="owner/repo",
+    max_review_tool_calls=10,   # overrides GITHUB_REVIEWER_MAX_TOOL_CALLS
+)
+```
+
+Setting `max_review_tool_calls=0` reverts to the original one-shot review
+behaviour (no tool calls attempted; `max_iterations=1` is passed to `ask()`).
+
+### Cap-hit telemetry
+
+When the LLM exhausts its tool-call budget the reviewer emits a single
+`WARNING` log line:
+
+```
+GitHubReviewer: PR <repo>#<pr_number> hit tool-call cap (count=<N>, tools=<names>)
+```
+
+If this warning fires frequently in production, consider raising
+`GITHUB_REVIEWER_MAX_TOOL_CALLS` (or the constructor kwarg). The cap exists
+to bound LLM token cost and latency on every review.
+
+---
+
 ## Weekly activity report
 
 Every Monday at 09:00 UTC (configurable), the agent posts a contributor

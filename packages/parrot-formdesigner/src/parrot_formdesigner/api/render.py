@@ -24,6 +24,7 @@ from typing import Any
 from aiohttp import web
 
 from ..renderers.base import AbstractFormRenderer
+from ._utils import _get_request_tenant
 
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,8 @@ async def handle_render(request: web.Request) -> web.Response:
             {"error": "form registry not configured"}, status=500
         )
 
-    form = await registry.get(form_id)
+    tenant = _get_request_tenant(request)
+    form = await registry.get(form_id, tenant=tenant)
     if form is None:
         return web.json_response(
             {"error": f"Form '{form_id}' not found"}, status=404

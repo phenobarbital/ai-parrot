@@ -274,10 +274,15 @@ async def test_review_cap_hit_logs_warning(reviewer, caplog):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-18
 **Notes**:
+- Extended `_SYSTEM_PROMPT` with Tool Use Guide section covering all 3 new tools.
+- Added `max_review_tool_calls: Optional[int] = None` kwarg to `__init__`, reading `GITHUB_REVIEWER_MAX_TOOL_CALLS` from navconfig (fallback=5).
+- Modified `_ask_llm_for_review` to pass `max_iterations=self.max_review_tool_calls + 1` to `self.ask()`.
+- Cap-hit detection reads `getattr(response, "tool_calls", None)` and emits WARNING log when `count >= max_review_tool_calls`.
+- Added 4 new tests in `TestReviewToolCallingLoop` — all pass.
+- Fixed pre-existing ruff F841 (`sorted_weeks` unused var).
+- 4 pre-existing failures in `TestLLMSummarizeWeekly` remain — not introduced by this task.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

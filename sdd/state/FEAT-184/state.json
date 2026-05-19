@@ -1,0 +1,67 @@
+{
+  "feature_id": "FEAT-184",
+  "slug": "agenttool-s3-readreports",
+  "phase": "proposal_drafted",
+  "started_at": "2026-05-18T23:50:00Z",
+  "updated_at": "2026-05-19T00:05:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 12,
+    "grep_calls": 14,
+    "git_calls": 3,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 12,
+    "grep_calls": 14,
+    "git_calls": 3,
+    "depth_reached": 1,
+    "wall_seconds": 180,
+    "queries_skipped": 0,
+    "truncated": false
+  },
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "file_path": null,
+    "summary_oneline": "S3 report reader toolkit — agnostic LLM-facing tools for retrieving, filtering, comparing, and summarizing S3-stored reports"
+  },
+  "phases": {
+    "source": {
+      "status": "completed",
+      "completed_at": "2026-05-18T23:50:10Z"
+    },
+    "plan": {
+      "status": "completed",
+      "approved_by_user": false,
+      "completed_at": "2026-05-18T23:50:30Z"
+    },
+    "research": {
+      "status": "completed",
+      "completed_at": "2026-05-18T23:53:00Z",
+      "duration_seconds": 150,
+      "files_read": 12,
+      "findings_count": 10
+    },
+    "synthesis": {
+      "status": "completed",
+      "completed_at": "2026-05-18T23:55:00Z",
+      "overall_confidence": "high"
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/agenttool-s3-readreports.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "commit",
+    "next_action": "Commit proposal and state files"
+  }
+}

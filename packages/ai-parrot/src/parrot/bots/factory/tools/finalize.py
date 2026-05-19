@@ -38,6 +38,13 @@ async def finalize_agent_registration(
     Returns a dict with the YAML path and whether the registry picked up the
     new definition (the registry skips ``enabled=False`` configs silently).
     """
+    # Stamp origin=factory so the YAML is recognised as runtime-created and
+    # therefore deletable via the bots DELETE endpoint.
+    if isinstance(definition, BotConfig):
+        definition = definition.model_copy(update={"origin": "factory"})
+    else:
+        definition = BotConfig(**{**definition.model_dump(), "origin": "factory"})
+
     yaml_path = await write_agent_yaml(definition, category=category)
 
     # Reload only the directory we just wrote to — avoids redundant rescans.

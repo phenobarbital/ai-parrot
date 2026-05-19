@@ -1,0 +1,64 @@
+{
+  "feature_id": "FEAT-186",
+  "feature": "formdesigner-partial-saves",
+  "phase": "committed",
+  "started_at": "2026-05-19T12:00:00Z",
+  "updated_at": "2026-05-19T12:30:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "depth": 2,
+    "wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 7,
+    "grep_calls": 4,
+    "git_calls": 1,
+    "depth_reached": 1
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Submission backend for saving partial form answers into Redis with TTL and session recovery"
+  },
+  "phases": {
+    "plan": {
+      "approved_by_user": true
+    },
+    "research": {
+      "completed_at": "2026-05-19T12:15:00Z",
+      "duration_seconds": 180,
+      "files_read": 7,
+      "grep_calls": 4,
+      "git_calls": 1
+    },
+    "synthesis": {
+      "overall_confidence": "high",
+      "claims_high": 7,
+      "claims_medium": 1,
+      "claims_low": 0
+    },
+    "review_gate": {
+      "approved": true
+    },
+    "qa": {
+      "status": "complete",
+      "questions_total": 2,
+      "questions_answered": 2
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/formdesigner-partial-saves.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Proceed to /sdd-spec FEAT-186"
+  },
+  "errors": []
+}
