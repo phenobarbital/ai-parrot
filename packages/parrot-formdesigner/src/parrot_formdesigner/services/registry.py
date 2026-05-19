@@ -24,12 +24,27 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
+from .validators import FormValidator
+
+if TYPE_CHECKING:
+    from aiohttp import web
 
 logger = logging.getLogger(__name__)
+
+
+class FormAlreadyExistsError(ValueError):
+    """Raised when registering a form whose ``form_id`` is already taken.
+
+    Subclasses ``ValueError`` so existing ``except ValueError`` blocks keep
+    working, but lets API handlers distinguish 409 Conflict (duplicate id)
+    from 422 Unprocessable Entity (validation failure).
+    """
+
+    pass
 
 
 class FormStorage(ABC):
@@ -118,6 +133,15 @@ class FormStorage(ABC):
         """
         ...
 
+    async def close(self) -> None:
+        """Release any resources held by this storage backend.
+
+        Default implementation is a no-op. Subclasses that hold resources
+        (e.g. asyncpg pools, file handles) should override this method.
+        Called automatically by :meth:`FormRegistry.on_shutdown` when the
+        aiohttp application shuts down.
+        """
+
 
 class FormRegistry:
     """Thread-safe, multi-tenant registry for FormSchema objects.
@@ -152,6 +176,7 @@ class FormRegistry:
         self,
         storage: FormStorage | None = None,
         *,
+        app: "web.Application | None" = None,
         default_tenant: str = "navigator",
         require_tenant: bool = True,
     ) -> None:
@@ -159,6 +184,10 @@ class FormRegistry:
 
         Args:
             storage: Optional FormStorage backend for persistence.
+            app: Optional aiohttp ``web.Application`` instance. When provided,
+                the registry self-registers as ``app['form_registry']`` and
+                hooks :meth:`on_startup` / :meth:`on_shutdown` into the
+                application's lifecycle signals automatically.
             default_tenant: Tenant name used when callers pass ``tenant=None``.
                 Defaults to ``"navigator"`` to match
                 ``PostgresFormStorage.DEFAULT_SCHEMA``.
@@ -174,13 +203,30 @@ class FormRegistry:
         self._storage = storage
         self._default_tenant = default_tenant
         self._require_tenant = require_tenant
+        self._app: "web.Application | None" = None
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
         self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
         self.logger = logging.getLogger(__name__)
 
+        if app is not None:
+            self._app = app
+            app["form_registry"] = self
+            app.on_startup.append(self.on_startup)
+            app.on_shutdown.append(self.on_shutdown)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @property
+    def default_tenant(self) -> str:
+        """Tenant slug used when callers don't supply one explicitly.
+
+        Exposed so HTTP handlers can enrich tenant-less requests at the
+        boundary (e.g. anonymous or session-less calls), instead of relying
+        on ``register()``'s ``require_tenant=False`` escape hatch.
+        """
+        return self._default_tenant
 
     def _resolve_tenant(
         self,
@@ -322,6 +368,65 @@ class FormRegistry:
         """
         self._storage = storage
 
+    async def on_startup(self, app: "web.Application") -> None:
+        """aiohttp ``on_startup`` signal handler.
+
+        Calls ``storage.initialize()`` (when the backend exposes it) and then
+        :meth:`load_from_storage` to hydrate the in-memory cache for the
+        registry's ``default_tenant``. Registered automatically when an
+        ``app`` is passed to :meth:`__init__`.
+
+        Safe to call when no storage is configured — early-returns instead
+        of raising so app boot keeps working in storage-less test setups.
+
+        Args:
+            app: aiohttp application (provided by aiohttp's signal machinery).
+        """
+        if self._storage is None:
+            self.logger.debug("on_startup: no storage configured — skipping")
+            return
+
+        if hasattr(self._storage, "initialize"):
+            try:
+                await self._storage.initialize()  # type: ignore[attr-defined]
+                self.logger.info("FormRegistry: storage initialized")
+            except Exception as exc:
+                self.logger.error(
+                    "FormRegistry: storage initialize() failed: %s", exc
+                )
+                return
+
+        try:
+            count = await self.load_from_storage()
+            self.logger.info(
+                "FormRegistry: loaded %d forms from storage on startup",
+                count,
+            )
+        except Exception as exc:
+            self.logger.error(
+                "FormRegistry: load_from_storage() failed: %s", exc
+            )
+
+    async def on_shutdown(self, app: "web.Application") -> None:
+        """aiohttp ``on_shutdown`` signal handler.
+
+        Calls ``storage.close()`` to release backend-held resources (e.g.
+        an asyncpg pool). Registered automatically when an ``app`` is passed
+        to :meth:`__init__`.
+
+        Args:
+            app: aiohttp application (provided by aiohttp's signal machinery).
+        """
+        if self._storage is None:
+            self.logger.debug("on_shutdown: no storage configured — skipping")
+            return
+
+        try:
+            await self._storage.close()
+            self.logger.info("FormRegistry: storage closed")
+        except Exception as exc:
+            self.logger.error("FormRegistry: storage close() failed: %s", exc)
+
     async def unregister(self, form_id: str, *, tenant: str | None = None) -> bool:
         """Unregister a form schema from a specific tenant.
 
@@ -355,6 +460,113 @@ class FormRegistry:
                 self.logger.warning("Unregister callback failed: %s", exc)
 
         return True
+
+    async def clone_form(
+        self,
+        source_form_id: str,
+        new_form_id: str,
+        patch: dict[str, Any] | None = None,
+        *,
+        persist: bool = True,
+        tenant: str | None = None,
+    ) -> FormSchema:
+        """Clone an existing form under a new ``form_id``.
+
+        Creates a deep copy of the source form, assigns ``new_form_id``,
+        resets ``version`` to ``"1.0"`` and ``created_at`` to ``None``,
+        records ``meta["cloned_from"]`` for provenance, optionally applies an
+        RFC 7396 merge-patch, validates the result, and registers it.
+
+        Source lookup and clone registration share the same resolved tenant,
+        so cloning happens within a single tenant scope.
+
+        Args:
+            source_form_id: ``form_id`` of the form to clone.
+            new_form_id: ``form_id`` to assign to the cloned form.
+            patch: Optional RFC 7396 merge-patch dict to apply on top of the
+                cloned form before validation. ``form_id`` and ``created_at``
+                in the patch are ignored.
+            persist: If ``True`` (default), persist the cloned form via the
+                configured storage backend.
+            tenant: Tenant scope for both source lookup and clone
+                registration. ``None`` resolves to ``default_tenant``.
+
+        Returns:
+            The newly cloned and registered ``FormSchema``.
+
+        Raises:
+            KeyError: When ``source_form_id`` is not found under ``tenant``.
+            FormAlreadyExistsError: When ``new_form_id`` already exists under
+                ``tenant``.
+            ValueError: When ``FormValidator.check_schema`` reports structural
+                errors, or when the patch produces an invalid schema.
+        """
+        resolved = self._resolve_tenant(tenant)
+
+        source = await self.get(source_form_id, tenant=resolved)
+        if source is None:
+            raise KeyError(f"Form '{source_form_id}' not found")
+
+        if await self.contains(new_form_id, tenant=resolved):
+            raise FormAlreadyExistsError(
+                f"Form '{new_form_id}' already exists"
+            )
+
+        clone = source.model_copy(deep=True)
+
+        clone.form_id = new_form_id
+        clone.version = "1.0"
+        clone.created_at = None
+        clone.tenant = resolved
+
+        if clone.meta is None:
+            clone.meta = {}
+        clone.meta["cloned_from"] = source_form_id
+
+        if patch:
+            # Deferred import: api/_utils sits inside the api package whose
+            # __init__ pulls handlers → registry, creating a cycle if imported
+            # at module load time.
+            from ..api._utils import _deep_merge
+
+            clone_dict = clone.model_dump()
+            merged = _deep_merge(clone_dict, patch)
+            merged["form_id"] = new_form_id
+            merged.pop("created_at", None)
+            # RFC 7396 null removal can wipe meta — re-seed provenance.
+            meta = merged.get("meta") or {}
+            meta["cloned_from"] = source_form_id
+            merged["meta"] = meta
+            merged["tenant"] = resolved
+            clone = FormSchema.model_validate(merged)
+            clone.created_at = None
+            clone.tenant = resolved
+
+        errors = FormValidator().check_schema(clone)
+        if errors:
+            raise ValueError(f"Cloned form failed validation: {errors}")
+
+        self.logger.info(
+            "Cloning form '%s' -> '%s' (tenant=%s, persist=%s)",
+            source_form_id,
+            new_form_id,
+            resolved,
+            persist,
+        )
+        await self.register(
+            clone, persist=persist, overwrite=False, tenant=resolved
+        )
+
+        # TOCTOU guard: ensure the clone is actually in the bucket after
+        # register() returns. Concurrent writers with overwrite=False could
+        # have lost the race.
+        if not await self.contains(new_form_id, tenant=resolved):
+            raise ValueError(
+                f"Form '{new_form_id}' could not be registered — "
+                "concurrent conflict"
+            )
+
+        return clone
 
     # ------------------------------------------------------------------
     # Public API — read paths
