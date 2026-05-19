@@ -1,0 +1,56 @@
+{
+  "pricing": {
+    "last_updated": "2026-05-18",
+    "source": "https://ai.google.dev/gemini-api/docs/pricing",
+    "currency": "USD",
+    "notes": "Pricing for Gemini API via Google AI. Vertex AI pricing may differ per region. Provider key in CostCalculator: 'gemini'."
+  },
+  "models": {
+    "gemini-2.5-flash-preview-05-20": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 3.50,
+      "cached_input_per_1m": 0.0375,
+      "valid_from": "2025-05-20"
+    },
+    "gemini-2.5-pro-preview-05-06": {
+      "input_per_1m": 1.25,
+      "output_per_1m": 10.00,
+      "cached_input_per_1m": 0.3125,
+      "valid_from": "2025-05-06"
+    },
+    "gemini-2.0-flash": {
+      "input_per_1m": 0.10,
+      "output_per_1m": 0.40,
+      "cached_input_per_1m": 0.025,
+      "valid_from": "2025-02-05"
+    },
+    "gemini-2.0-flash-lite": {
+      "input_per_1m": 0.075,
+      "output_per_1m": 0.30,
+      "valid_from": "2025-02-24"
+    },
+    "gemini-1.5-pro": {
+      "input_per_1m": 1.25,
+      "output_per_1m": 5.00,
+      "cached_input_per_1m": 0.3125,
+      "valid_from": "2024-05-14"
+    },
+    "gemini-1.5-flash": {
+      "input_per_1m": 0.075,
+      "output_per_1m": 0.30,
+      "cached_input_per_1m": 0.01875,
+      "valid_from": "2024-05-14"
+    },
+    "gemini-1.5-flash-8b": {
+      "input_per_1m": 0.0375,
+      "output_per_1m": 0.15,
+      "cached_input_per_1m": 0.01,
+      "valid_from": "2024-10-03"
+    },
+    "gemini-1.0-pro": {
+      "input_per_1m": 0.50,
+      "output_per_1m": 1.50,
+      "valid_from": "2023-12-13"
+    }
+  }
+}
