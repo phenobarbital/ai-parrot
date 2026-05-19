@@ -99,11 +99,39 @@ Consume any OpenAPI spec as a dynamic toolkit using `OpenAPIToolkit`
 
 ## Git Configuration
 
-- **Integration branch**: `dev` (default base for `type: feature`)
-- **Production branch**: `main` (mandatory base for `type: hotfix`)
-- **Flow types** (FEAT-145): every brainstorm/proposal/spec declares `type` and `base_branch` via YAML frontmatter at the top.
-- **Worktrees branch from `base_branch`** (which `/sdd-task` and `sdd-worker` ensure HEAD is on before creating the worktree). Hotfix worktrees branch from `main`; feature worktrees branch from `dev` (or any non-main branch the user picks for sub-features).
-- **`/sdd-done` NEVER pushes to or opens a PR against `main`** — hotfix PRs are user-initiated. After the user merges the hotfix into `main`, run `/sdd-done <FEAT-ID> --sync-dev` to propagate the change back to `dev`.
+The Git Parrot Flow (FEAT-187) uses three long-lived branches:
+
+- **`main`** — tagged releases only. Hotfixes land here via PR;
+  no feature work ever bases on `main`.
+- **`staging`** — release candidate branch. Cut from `dev` when the
+  team decides to freeze a release. Receives `main → staging` syncs
+  automatically (via `.github/workflows/sync-down.yml`); the
+  `dev → staging` direction is a manual cut at freeze time.
+- **`dev`** — integration branch for all feature work. Default base
+  for `type: feature` flows.
+
+**Flow types** (FEAT-145, refined by FEAT-187):
+- `feature` — base is `dev` (default) or `staging` (during a release
+  freeze). NEVER `main`.
+- `hotfix` — base is `main` (mandatory).
+
+**Sync-down automation** (FEAT-187): `.github/workflows/sync-down.yml`
+listens for pushes to `main` and tries to fast-forward `staging` and
+`dev`. When fast-forward is not possible, it opens a sync PR against
+the lagging branch. `/sdd-done --sync-down` is the manual fallback for
+the same operation.
+
+**`/sdd-done` NEVER pushes to or opens a PR against `main`** —
+hotfix PRs are user-initiated. After the user merges the hotfix into
+`main`, the Action propagates the change to `staging` and `dev`. If
+the Action fails (or the user is offline), run
+`/sdd-done <FEAT-ID> --sync-down` to do the same locally.
+
+**Recommended branch protection**: `main` (and `staging` once in use)
+should require PRs, passing CI, and signed commits. Not configured
+declaratively in this repo — set via GitHub repo settings.
+
+- **Worktrees branch from `base_branch`** (which `/sdd-task` and `sdd-worker` ensure HEAD is on before creating the worktree). Hotfix worktrees branch from `main`; feature worktrees branch from `dev` or `staging` (during a release freeze).
 
 ## Worktree Creation
 
