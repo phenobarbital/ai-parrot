@@ -7,6 +7,38 @@ effects.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from aiohttp import web
+
+
+def _get_request_tenant(request: "web.Request") -> str | None:
+    """Extract the effective tenant from an aiohttp request.
+
+    Reads the first program slug from the navigator-auth session
+    (``request.session["session"]["programs"][0]``). Returns ``None``
+    when no session is present or the programs list is empty, allowing
+    :class:`~parrot_formdesigner.services.registry.FormRegistry` to fall
+    back to its configured ``default_tenant``.
+
+    This is the shared implementation of the pattern established by
+    ``FormAPIHandler._get_tenant`` (TASK-1243) for use in module-level
+    handlers that do not inherit from ``FormAPIHandler``.
+
+    Args:
+        request: Incoming aiohttp web.Request.
+
+    Returns:
+        First program slug string, or ``None`` if not available.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return None
+    userinfo = session.get("session", {})
+    programs: list[str] = userinfo.get("programs", [])
+    return programs[0] if programs else None
+
 
 def _deep_merge(base: dict, patch: dict) -> dict:
     """RFC 7396 JSON merge-patch: recursively merge patch onto base.

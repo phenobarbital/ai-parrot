@@ -255,6 +255,8 @@ class CreateFormTool(AbstractTool):
         client: Any,
         registry: FormRegistry | None = None,
         model: str | None = None,
+        *,
+        tenant: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize CreateFormTool.
@@ -263,11 +265,15 @@ class CreateFormTool(AbstractTool):
             client: LLM client with a completion() or ask() method.
             registry: Optional FormRegistry for refinement lookups and persistence.
             model: Optional model name override for form generation calls.
+            tenant: Optional tenant slug used when looking up and registering forms.
+                When ``None``, :class:`FormRegistry` falls back to its configured
+                ``default_tenant``.
         """
         super().__init__(**kwargs)
         self._client = client
         self._registry = registry
         self._model = model
+        self._tenant = tenant
         self._validator = FormValidator()
         self.logger = logging.getLogger(__name__)
 
@@ -303,7 +309,7 @@ class CreateFormTool(AbstractTool):
         try:
             existing: FormSchema | None = None
             if refine_form_id and self._registry is not None:
-                existing = await self._registry.get(refine_form_id)
+                existing = await self._registry.get(refine_form_id, tenant=self._tenant)
                 if existing is None:
                     return ToolResult(
                         success=False,
@@ -364,7 +370,7 @@ class CreateFormTool(AbstractTool):
                 try:
                     overwrite = refine_form_id is not None
                     await self._registry.register(
-                        form, persist=True, overwrite=overwrite,
+                        form, persist=True, overwrite=overwrite, tenant=self._tenant,
                     )
                 except Exception as exc:
                     self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
