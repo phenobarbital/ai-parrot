@@ -238,7 +238,7 @@ class FormAPIHandler:
         storage = self.registry.storage
         if storage is not None:
             try:
-                persisted = await storage.list_forms()
+                persisted = await storage.list_forms(tenant=tenant)
             except Exception as exc:
                 self.logger.warning("FormStorage.list_forms failed: %s", exc)
                 persisted = []
@@ -334,7 +334,14 @@ class FormAPIHandler:
         if not prompt:
             return web.json_response({"error": "prompt is required"}, status=400)
 
-        result = await self._create_tool.execute(prompt=prompt, persist=True)
+        tenant = self._get_tenant(request)
+        from ..tools.create_form import CreateFormTool
+        create_tool = CreateFormTool(
+            client=self._get_llm_client(),
+            registry=self.registry,
+            tenant=tenant,
+        )
+        result = await create_tool.execute(prompt=prompt, persist=True)
 
         if not result.success:
             return web.json_response(
@@ -387,7 +394,13 @@ class FormAPIHandler:
         if not prompt:
             return web.json_response({"error": "prompt is required"}, status=400)
 
-        result = await self._create_tool.execute(
+        from ..tools.create_form import CreateFormTool
+        create_tool = CreateFormTool(
+            client=self._get_llm_client(),
+            registry=self.registry,
+            tenant=tenant,
+        )
+        result = await create_tool.execute(
             prompt=prompt,
             refine_form_id=form_id,
             persist=True,
@@ -661,7 +674,10 @@ class FormAPIHandler:
             )
 
         service = str(body.get("service", "networkninja"))
-        result = await self._db_tool.execute(
+        tenant = self._get_tenant(request)
+        from ..tools.database_form import DatabaseFormTool
+        db_tool = DatabaseFormTool(registry=self.registry, tenant=tenant)
+        result = await db_tool.execute(
             service=service, formid=formid, orgid=orgid, persist=False
         )
 

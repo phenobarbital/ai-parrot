@@ -108,23 +108,35 @@ class TelegramFormRouter(Router):
         payload: TelegramFormPayload = result.content
 
         if payload.mode == TelegramRenderMode.WEBAPP:
-            await self._start_webapp(payload, chat_id, bot)
+            await self._start_webapp(payload, form_id, chat_id, bot, state, tenant=tenant)
         else:
-            await self._start_inline(payload, form_id, chat_id, bot, state)
+            await self._start_inline(payload, form_id, chat_id, bot, state, tenant=tenant)
 
     async def _start_webapp(
         self,
         payload: TelegramFormPayload,
+        form_id: str,
         chat_id: int,
         bot: Bot,
+        state: FSMContext,
+        *,
+        tenant: str | None = None,
     ) -> None:
         """Send a WebApp button for the form.
 
         Args:
             payload: Rendered form payload.
+            form_id: Form identifier (persisted in FSM state for submit).
             chat_id: Telegram chat ID.
             bot: aiogram Bot instance.
+            state: FSMContext for tracking form metadata.
+            tenant: Optional tenant slug persisted in FSM state so that
+                ``_handle_webapp_data`` can retrieve the form under the
+                correct tenant.
         """
+        await state.set_state(FormFilling.active)
+        await state.update_data(form_id=form_id, tenant=tenant)
+
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
@@ -149,6 +161,8 @@ class TelegramFormRouter(Router):
         chat_id: int,
         bot: Bot,
         state: FSMContext,
+        *,
+        tenant: str | None = None,
     ) -> None:
         """Start inline keyboard form flow.
 
@@ -158,6 +172,8 @@ class TelegramFormRouter(Router):
             chat_id: Telegram chat ID.
             bot: aiogram Bot instance.
             state: FSMContext for tracking progress.
+            tenant: Optional tenant slug persisted in FSM state so that
+                ``_submit_form`` can retrieve the form under the correct tenant.
         """
         if not payload.steps:
             await bot.send_message(chat_id, "This form has no fields to fill.")
@@ -168,6 +184,7 @@ class TelegramFormRouter(Router):
         await state.set_state(FormFilling.active)
         await state.update_data(
             form_id=form_id,
+            tenant=tenant,
             current_field_idx=0,
             answers={},
             steps=steps_data,
@@ -374,7 +391,9 @@ class TelegramFormRouter(Router):
             answers: Collected answers dict.
             state: FSMContext to clear on completion.
         """
-        form = await self.registry.get(form_id, tenant=None)
+        data = await state.get_data()
+        tenant = data.get("tenant")
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             await message.edit_text("Form not found. Submission failed.")
             await state.clear()
@@ -422,7 +441,9 @@ class TelegramFormRouter(Router):
             await message.answer("Missing form identifier in submission.")
             return
 
-        form = await self.registry.get(form_id, tenant=None)
+        fsm_data = await state.get_data()
+        tenant = fsm_data.get("tenant")
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             await message.answer(f"Form '{form_id}' not found.")
             return
