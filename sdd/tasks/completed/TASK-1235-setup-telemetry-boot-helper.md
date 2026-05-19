@@ -308,4 +308,12 @@ def test_openlit_lazy_when_disabled():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `setup_telemetry(config)` and `shutdown_telemetry()` in `parrot/observability/setup.py`.
+`ConfigurationError` defined in `parrot/observability/errors.py`. `__init__.py` updated to re-export
+both boot helpers and `ConfigurationError`. All 9 acceptance criteria verified via direct Python
+invocation: disabled returns None with no SDK imports; idempotent same config; conflicting config
+raises ConfigurationError; service.instance.id defaults to hostname-pid; openlit lazy when disabled;
+openlit.init called when enabled; shutdown clears state; double shutdown idempotent; shutdown before
+setup is no-op. The export timeout errors during shutdown are expected (no collector in test env).
+Cross-task verified: navconfig.get('PARROT_PRICING_PATH', fallback=None) pattern confirmed working.
+Committed as `feat(otel-observability): TASK-1235`.

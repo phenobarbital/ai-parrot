@@ -272,13 +272,23 @@ class EventRegistry:
                 )
                 self._emit_subscriber_error(event, sub, exc)
 
-            # Per-subscriber dual-emit to EventBus
+            # Per-subscriber dual-emit to EventBus (fire-and-forget, FEAT-177 TASK-1227).
+            # A slow bus must never block the agent request path — the §5 performance
+            # budget (< 0.1% LLM-latency overhead) is unenforceable otherwise.
+            # Asyncio's default task-exception handler logs unhandled exceptions raised
+            # inside ``_event_bus.emit``; we do not attach an explicit done-callback.
             if sub.forward_to_bus and self._event_bus is not None:
                 channel = f"{self._bus_channel_prefix}.{cls_name}"
                 try:
-                    await self._event_bus.emit(channel, event.to_dict())
-                except Exception:
-                    logger.exception("Dual-emit to EventBus failed for channel %s", channel)
+                    asyncio.create_task(
+                        self._event_bus.emit(channel, event.to_dict()),
+                        name=f"lifecycle.bus.{cls_name}",
+                    )
+                except RuntimeError:
+                    # No running loop at scheduling time — log and continue.
+                    logger.exception(
+                        "Dual-emit scheduling failed for channel %s", channel
+                    )
 
         # Forward to global registry (if enabled and not already the global)
         if self._forward_to_global:

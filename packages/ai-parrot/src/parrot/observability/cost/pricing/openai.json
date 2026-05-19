@@ -1,0 +1,90 @@
+{
+  "pricing": {
+    "last_updated": "2026-05-18",
+    "source": "https://openai.com/api/pricing/",
+    "currency": "USD"
+  },
+  "models": {
+    "gpt-4o-2024-08-06": {
+      "input_per_1m": 2.50,
+      "output_per_1m": 10.00,
+      "cached_input_per_1m": 1.25,
+      "valid_from": "2024-08-06"
+    },
+    "gpt-4o-2024-11-20": {
+      "input_per_1m": 2.50,
+      "output_per_1m": 10.00,
+      "cached_input_per_1m": 1.25,
+      "valid_from": "2024-11-20"
+    },
+    "gpt-4o": {
+      "input_per_1m": 2.50,
+      "output_per_1m": 10.00,
+      "cached_input_per_1m": 1.25,
+      "valid_from": "2024-05-13"
+    },
+    "gpt-4o-mini-2024-07-18": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 0.60,
+      "cached_input_per_1m": 0.075,
+      "valid_from": "2024-07-18"
+    },
+    "gpt-4o-mini": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 0.60,
+      "cached_input_per_1m": 0.075,
+      "valid_from": "2024-07-18"
+    },
+    "o1-2024-12-17": {
+      "input_per_1m": 15.00,
+      "output_per_1m": 60.00,
+      "cached_input_per_1m": 7.50,
+      "valid_from": "2024-12-17"
+    },
+    "o1": {
+      "input_per_1m": 15.00,
+      "output_per_1m": 60.00,
+      "cached_input_per_1m": 7.50,
+      "valid_from": "2024-12-17"
+    },
+    "o1-mini-2024-09-12": {
+      "input_per_1m": 1.10,
+      "output_per_1m": 4.40,
+      "cached_input_per_1m": 0.55,
+      "valid_from": "2024-09-12"
+    },
+    "o1-mini": {
+      "input_per_1m": 1.10,
+      "output_per_1m": 4.40,
+      "cached_input_per_1m": 0.55,
+      "valid_from": "2024-09-12"
+    },
+    "o3-mini": {
+      "input_per_1m": 1.10,
+      "output_per_1m": 4.40,
+      "cached_input_per_1m": 0.55,
+      "valid_from": "2025-01-31"
+    },
+    "o3": {
+      "input_per_1m": 10.00,
+      "output_per_1m": 40.00,
+      "cached_input_per_1m": 2.50,
+      "valid_from": "2025-04-16"
+    },
+    "gpt-4-turbo": {
+      "input_per_1m": 10.00,
+      "output_per_1m": 30.00,
+      "valid_from": "2024-04-09"
+    },
+    "gpt-4": {
+      "input_per_1m": 30.00,
+      "output_per_1m": 60.00,
+      "valid_from": "2023-06-13"
+    },
+    "gpt-3.5-turbo": {
+      "input_per_1m": 0.50,
+      "output_per_1m": 1.50,
+      "valid_from": "2023-03-01"
+    }
+  }
+}

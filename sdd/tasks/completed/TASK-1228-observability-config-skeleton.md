@@ -168,4 +168,4 @@ def test_config_rejects_unknown_protocol():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-19. Created `parrot/observability/__init__.py` (with `ObservabilityConfig` re-export), `config.py` (Pydantic v2 model with all spec-mandated fields), `subscribers/__init__.py` placeholder, `cost/__init__.py` placeholder. Added `observability` and `observability-openlit` extras to pyproject.toml without removing the existing `otel` extra. All config defaults verified: `enabled=False`, `capture_prompts=False`, `sampling_ratio=1.0`, etc. Validation rejects `sampling_ratio=1.5` and `otlp_protocol="thrift"` as expected.

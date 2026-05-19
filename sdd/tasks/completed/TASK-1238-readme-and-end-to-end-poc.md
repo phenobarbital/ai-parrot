@@ -204,4 +204,8 @@ See "PoC script structure" and "Perf benchmark" above. Both files materialize as
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created all 3 required files plus an `__init__.py` for the new test package:
+- `parrot/observability/README.md`: all 10 sections (Quickstart, Configuration, navconfig env-vars, PII contract, Performance contract, OpenLIT contract, Examples, PoC scenarios, Cost pricing, Troubleshooting)
+- `tests/integration/observability/test_poc.py`: 5 scenarios verified passing — traces only (1 span 'parrot.client.openai.chat'), metrics only (3 metric types), traces+metrics+cost, openlit mocked (init called once), sampling=10% over 100 requests (9 spans, within 2-25 tolerance)
+- `tests/integration/observability/test_perf.py`: 3 perf tests verified passing — disabled p50=0.001 ms, enabled p50=0.074 ms, delta=0.074 ms (well within 1 ms budget)
+All tests use InMemorySpanExporter/InMemoryMetricReader; zero real network calls. Committed as `feat(otel-observability): TASK-1238`.

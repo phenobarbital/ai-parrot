@@ -213,4 +213,4 @@ Adjust constructor kwargs (`event_bus=`) and the `subscribe(...)` signature to m
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-19. The blocking `await self._event_bus.emit(...)` at registry.py lines 276-281 was replaced with `asyncio.create_task(...)`. The `except RuntimeError` guard handles "no running loop at scheduling time". Tests confirm a slow bus does not delay `EventRegistry.emit` past 100ms, and a failing bus task does not propagate to the emit caller. Both unit tests pass with correct PYTHONPATH.

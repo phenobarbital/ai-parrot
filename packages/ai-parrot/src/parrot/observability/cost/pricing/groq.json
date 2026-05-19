@@ -1,0 +1,69 @@
+{
+  "pricing": {
+    "last_updated": "2026-05-18",
+    "source": "https://groq.com/pricing/",
+    "currency": "USD"
+  },
+  "models": {
+    "llama-3.3-70b-versatile": {
+      "input_per_1m": 0.59,
+      "output_per_1m": 0.79,
+      "valid_from": "2024-12-09"
+    },
+    "llama-3.1-70b-versatile": {
+      "input_per_1m": 0.59,
+      "output_per_1m": 0.79,
+      "valid_from": "2024-07-23"
+    },
+    "llama-3.1-8b-instant": {
+      "input_per_1m": 0.05,
+      "output_per_1m": 0.08,
+      "valid_from": "2024-07-23"
+    },
+    "llama3-70b-8192": {
+      "input_per_1m": 0.59,
+      "output_per_1m": 0.79,
+      "valid_from": "2024-04-18"
+    },
+    "llama3-8b-8192": {
+      "input_per_1m": 0.05,
+      "output_per_1m": 0.08,
+      "valid_from": "2024-04-18"
+    },
+    "llama3-groq-70b-8192-tool-use-preview": {
+      "input_per_1m": 0.89,
+      "output_per_1m": 0.89,
+      "valid_from": "2024-07-09"
+    },
+    "llama3-groq-8b-8192-tool-use-preview": {
+      "input_per_1m": 0.19,
+      "output_per_1m": 0.19,
+      "valid_from": "2024-07-09"
+    },
+    "mixtral-8x7b-32768": {
+      "input_per_1m": 0.24,
+      "output_per_1m": 0.24,
+      "valid_from": "2024-01-19"
+    },
+    "gemma2-9b-it": {
+      "input_per_1m": 0.20,
+      "output_per_1m": 0.20,
+      "valid_from": "2024-06-27"
+    },
+    "gemma-7b-it": {
+      "input_per_1m": 0.07,
+      "output_per_1m": 0.07,
+      "valid_from": "2024-02-21"
+    },
+    "deepseek-r1-distill-llama-70b": {
+      "input_per_1m": 0.75,
+      "output_per_1m": 0.99,
+      "valid_from": "2025-01-29"
+    },
+    "qwen-qwq-32b": {
+      "input_per_1m": 0.29,
+      "output_per_1m": 0.39,
+      "valid_from": "2025-03-05"
+    }
+  }
+}

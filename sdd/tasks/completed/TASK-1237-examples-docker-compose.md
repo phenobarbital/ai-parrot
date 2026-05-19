@@ -154,4 +154,10 @@ This task has no automated tests — verification is manual per the acceptance c
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created all 4 required files plus a companion `prometheus.yml` required by the compose stack:
+- `docker-compose.observability.yml`: OpenLIT UI (ghcr.io/openlit/openlit:latest) + ClickHouse 24-alpine + Prometheus v2.51.0 with healthcheck on ClickHouse
+- `prometheus.yml`: scrape config for OpenLIT metrics endpoint
+- `basic_telemetry.py`: demonstrates `setup_telemetry(enabled=True, enable_openlit=True)`, 3 chat completion calls (falls back to synthetic OTel spans if `openai` not installed), `shutdown_telemetry()`
+- `grafana-dashboards/parrot-overview.json`: 4 panels (token throughput, cost by model, p95 latency, error rate) for Grafana 10+ with Prometheus datasource variable
+- `examples/README.md`: full quickstart including prerequisites, startup/teardown commands, env vars table, and links to upstream docs
+Smoke test (import + callable check) passes. Live Docker validation requires a running Docker daemon (not available in CI). Committed as `feat(otel-observability): TASK-1237`.
