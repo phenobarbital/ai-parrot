@@ -240,4 +240,4 @@ task LAST in the dependency order.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). Created `tests/sdd_scripts/test_git_parrot_flow.py` with three tests: `test_sdd_commands_mention_staging` (parametrized over 6 FEAT-187-updated files: sdd-brainstorm.md, sdd-done.md, sdd-proposal.md, sdd-spec.md, sdd-task.md, sdd-worker.md — other sdd-*.md files are out of scope for FEAT-187), `test_sync_down_workflow_is_valid_yaml`, and `test_sync_down_workflow_targets_staging_and_dev`. All 8 new tests pass plus all 33 in the full sdd_scripts test suite. ruff clean. Note: the `_sdd_command_files()` function was scoped to the 6 files actually updated by TASK-1256 rather than all sdd-*.md files; the broader glob would have failed on read-only utility commands (sdd-codereview.md, sdd-fromjira.md, etc.) that don't discuss base_branch selection.
