@@ -1,107 +1,141 @@
-# 🦜 AI-Parrot Documentation
-
-Welcome to the AI-Parrot documentation. This is your comprehensive guide to building intelligent agents, chatbots, and LLM-powered applications.
-
-## 📚 Table of Contents
-
-### 🚀 Getting Started
-
-- [Installation Guide](INSTALL.md) - Set up AI-Parrot in your environment
-- [Configuration](config.md) - Configure AI-Parrot for your needs
-- [Quick Start Guide](tools_quick.md) - Get up and running quickly
-
-### 🤖 Core Concepts
-
-- [Agents](agent.md) - Understanding AI agents in AI-Parrot
-- [Agent Mesh](agent_mesh.md) - Multi-agent systems and coordination
-- [Crews](crew.md) - Organizing agents into teams
-- [Crew Handler](crew_handler.md) - Managing crew operations
-- [Crew Summary](crew_summary.md) - Summarizing crew activities
-- [Orchestration](orchestration.md) - Orchestrating complex workflows
-- [Advanced Orchestration](ORCHESTRATION.md) - Advanced orchestration patterns
-
-### 🛠️ Tools & Capabilities
-
-- [Tools Overview](tools.md) - Comprehensive guide to tools
-- [What-If Tool](whatif_tool.md) - Scenario analysis and optimization
-- [Sandbox Tool](sandbox_tool.md) - Safe code execution environment
-- [Hierarchy Tool](hierarchy_tool.md) - Working with hierarchical data
-- [Tool Clone](tool_clone.md) - Cloning and replicating tools
-- [ArXiv Tool](ARXIV_TOOL_README.md) - Research paper integration
-- [Charts & Visualization](charts_samples.md) - Creating visualizations
-
-### 💬 Communication & Integration
-
-- [Agent-to-Agent Communication](a2a_communication.md) - Inter-agent messaging
-- [MCP Sessions](mcp_session.md) - Model Context Protocol sessions
-- [Telegram Integration](telegram_integration.md) - Building Telegram bots
-- [Microsoft Teams Integration](msteams.md) - Teams bot integration
-- [Voice Chat](voice_chat.md) - Voice-enabled conversations
-- [WhisperX Integration](whisperx.md) - Speech recognition
-
-### 🗄️ Knowledge & Data
-
-- [Local Knowledge Base](local_kb.md) - Building local knowledge bases
-- [Outputs](outputs.md) - Managing agent outputs
-- [Company Info](company_info.md) - Company information tools
-
-### 🌐 API & Development
-
-- [API Endpoints](API_ENDPOINTS.md) - REST API reference
-- [Jupyter Mode](jupyter_mode.md) - Using AI-Parrot in Jupyter notebooks
-- [Job Manager](jobmanager.md) - Managing background jobs
-
-### 📖 Reference
-
-- [Classes Reference](CLASSES.md) - Class documentation
-- [Functions Reference](FUNCTIONS.md) - Function documentation
-- [Style Guide](STYLE_GUIDE.md) - Code style and conventions
-
-### 🔧 Advanced Topics
-
-- [MCP GenMedia Installation](install-mcp-genmedia.md) - Installing GenMedia for MCP
+---
+hide:
+  - navigation
+  - toc
 ---
 
-## 🎯 Quick Navigation by Use Case
+# AI-Parrot
 
-### Building a Chatbot
-1. Start with [Installation](INSTALL.md)
-2. Read [Agents](agent.md) to understand the basics
-3. Check [Tools Overview](tools.md) for available capabilities
-4. Review [Configuration](config.md) for setup
+**Async-first Python framework for building AI Agents and Chatbots.**
 
-### Creating Multi-Agent Systems
-1. Learn about [Agent Mesh](agent_mesh.md)
-2. Understand [Crews](crew.md) and [Crew Handler](crew_handler.md)
-3. Explore [Orchestration](orchestration.md) patterns
-4. Review [A2A Communication](a2a_communication.md)
+AI-Parrot is a vendor-agnostic framework that lets you build conversational
+agents, tool-using assistants and multi-agent crews on top of any major LLM
+provider — OpenAI, Anthropic, Google GenAI, Groq, VertexAI, HuggingFace —
+through a single async interface.
 
-### Integrating with External Services
-1. [Telegram Integration](telegram_integration.md)
-2. [Microsoft Teams Integration](msteams.md)
-3. [Voice Chat](voice_chat.md)
-4. [API Endpoints](API_ENDPOINTS.md)
-
-### Working with Data & Analysis
-1. [What-If Tool](whatif_tool.md) for scenario analysis
-2. [Charts & Visualization](charts_samples.md)
-3. [Local Knowledge Base](local_kb.md)
-4. [Sandbox Tool](sandbox_tool.md) for safe execution
+[Get started →](INSTALL.md){ .md-button .md-button--primary }
+[Browse the API →](api-reference/index.md){ .md-button }
 
 ---
 
-## 📝 Contributing
+## Documentation by chapter
 
-When contributing to the documentation, please follow the [Style Guide](STYLE_GUIDE.md) to maintain consistency.
+<div class="grid cards" markdown>
+
+-   :material-cube-outline:{ .lg .middle } **Foundations**
+
+    ---
+
+    Core abstractions, data models and the architectural decisions that
+    keep AI-Parrot async and vendor-agnostic.
+
+    [→ Open chapter](chapters/foundations.md)
+
+-   :material-brain:{ .lg .middle } **LLM Clients**
+
+    ---
+
+    One `AbstractClient` interface for every provider. Streaming,
+    retries, presets and embeddings.
+
+    [→ Open chapter](chapters/llm-clients.md)
+
+-   :material-robot-outline:{ .lg .middle } **Bots & Agents**
+
+    ---
+
+    `Chatbot`, `Agent`, `AgentCrew` — single agents and multi-agent
+    orchestration with sequential, parallel and DAG execution.
+
+    [→ Open chapter](chapters/bots-agents.md)
+
+-   :material-database-search:{ .lg .middle } **Memory & Knowledge**
+
+    ---
+
+    Conversation memory, episodic memory and RAG over PgVector,
+    FAISS, Milvus, Arango or BigQuery.
+
+    [→ Open chapter](chapters/memory-knowledge.md)
+
+-   :material-tools:{ .lg .middle } **Tools, Loaders & RAG**
+
+    ---
+
+    The `@tool` decorator, toolkits, OpenAPI ingestion and document
+    loaders for the RAG pipeline.
+
+    [→ Open chapter](chapters/tools-rag.md)
+
+-   :material-connection:{ .lg .middle } **Integrations & Transport**
+
+    ---
+
+    Telegram, MS Teams, WhatsApp, voice. MCP servers/clients and the
+    A2A inter-agent protocol.
+
+    [→ Open chapter](chapters/integrations.md)
+
+</div>
 
 ---
 
-## 🔗 External Resources
+## Quick navigation by use case
+
+=== "Build a chatbot"
+
+    1. [Install AI-Parrot](INSTALL.md)
+    2. Read the [Bots & Agents overview](chapters/bots-agents.md)
+    3. Pick the tools you need in [Tools, Loaders & RAG](chapters/tools-rag.md)
+    4. Tune behaviour via [Configuration](config.md)
+
+=== "Build a multi-agent system"
+
+    1. Read [Bots & Agents](chapters/bots-agents.md) and pick the
+       right execution mode (sequential / parallel / DAG).
+    2. For cross-host or cross-process agents, jump to
+       [A2A Communication](a2a_communication.md).
+    3. Production patterns live in
+       [Advanced Orchestration](ORCHESTRATION.md).
+
+=== "RAG over your documents"
+
+    1. Pick a vector store —
+       [Storage Backends](storage-backends.md).
+    2. Wire loaders →
+       [Local Knowledge Base](local_kb.md),
+       [Loaders Metadata](loaders-metadata.md).
+    3. Tune retrieval with
+       [Parent-Child Retrieval](parent-child-retrieval.md).
+
+=== "Expose an agent as a service"
+
+    1. Decide the surface — REST? MCP? Messaging?
+    2. REST: [API Endpoints](API_ENDPOINTS.md).
+    3. MCP: [MCP Sessions](mcp_session.md) and
+       [Simple MCP Server](simple_mcp_server.md).
+    4. Telegram / Teams / WhatsApp: see the
+       [Integrations chapter](chapters/integrations.md).
+
+---
+
+## Contributing
+
+Documentation lives in `docs/` and follows the
+[Style Guide](STYLE_GUIDE.md). The site is built with
+[MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and the
+API reference is generated by
+[mkdocstrings](https://mkdocstrings.github.io/) from the docstrings in
+`packages/ai-parrot/src/parrot/`.
+
+Run the site locally:
+
+```bash
+pip install -r requirements-docs.txt
+pip install -e packages/ai-parrot
+mkdocs serve
+```
+
+## External resources
 
 - [GitHub Repository](https://github.com/phenobarbital/ai-parrot)
-- [Project README](../README.md)
-
----
-
-
-

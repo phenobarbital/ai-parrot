@@ -1,0 +1,226 @@
+site_name: AI-Parrot
+site_description: Async-first Python framework for building AI Agents and Chatbots
+site_url: https://phenobarbital.github.io/ai-parrot/
+repo_url: https://github.com/phenobarbital/ai-parrot
+repo_name: phenobarbital/ai-parrot
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - navigation.tracking
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: green
+      accent: light green
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    logo: material/robot-happy-outline
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - glightbox
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths:
+            - packages/ai-parrot/src
+          options:
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            docstring_style: google
+            docstring_section_style: spacy
+            members_order: source
+            filters:
+              - "!^_"
+            heading_level: 2
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.caret
+  - pymdownx.tilde
+  - pymdownx.mark
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/phenobarbital/ai-parrot
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/ai-parrot/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: INSTALL.md
+      - Configuration: config.md
+      - Quick Start (Tools): tools_quick.md
+  - Foundations:
+      - Overview: chapters/foundations.md
+      - Architecture - MCP Server: architecture/01-mcp-server.md
+      - Architecture - A2A: architecture/02-a2a.md
+      - Architecture - Toolkits: architecture/03-toolkits.md
+      - Architecture - Interaction Surface: architecture/04-interaction-surface.md
+      - Architecture - Hardening: architecture/05-hardening.md
+      - Architecture - Cross-cutting: architecture/06-cross-cutting.md
+      - Architecture - AgentCrew: architecture/07-agentcrew.md
+      - Architecture - AgentsFlow DAG: architecture/08-agentsflow-dag.md
+      - Architecture - Ontologic RAG: architecture/09-ontologic-rag.md
+  - LLM Clients:
+      - Overview: chapters/llm-clients.md
+      - Per-loop Caching: clients/per-loop-cache.md
+      - Contextual Embedding: contextual-embedding.md
+      - Matryoshka Embeddings: matryoshka-embeddings.md
+  - Bots & Agents:
+      - Overview: chapters/bots-agents.md
+      - Agents: agent.md
+      - Agent Mesh: agent_mesh.md
+      - Agent Service: agent_service.md
+      - Agent Factory Handler: agent_factory_handler.md
+      - Agent Config Creation: agent_config_creation.md
+      - Crews: crew.md
+      - Crew Handler: crew_handler.md
+      - Crew Summary: crew_summary.md
+      - Orchestration: orchestration.md
+      - Advanced Orchestration: ORCHESTRATION.md
+      - Test Agent: testagent.md
+      - UI Agent: uiagent.md
+  - Memory & Knowledge:
+      - Overview: chapters/memory-knowledge.md
+      - Execution Memory: EXECUTION_MEMORY.md
+      - Local Knowledge Base: local_kb.md
+      - Parent-Child Retrieval: parent-child-retrieval.md
+      - Loaders Metadata: loaders-metadata.md
+      - DocumentDB: documentdb.md
+      - DocumentDB Interface: documentdb_interface.md
+      - Storage Backends: storage-backends.md
+      - DynamoDB Local: dynamodb-local.md
+      - Database Agent: database-agent.md
+      - Dataset Manager Design: datasetmanager_design.md
+      - Company Info: company_info.md
+      - User Profile: user-profile.md
+  - Tools, Loaders & RAG:
+      - Overview: chapters/tools-rag.md
+      - Tools Reference: tools.md
+      - What-If Tool: whatif_tool.md
+      - Sandbox Tool: sandbox_tool.md
+      - Hierarchy Tool: hierarchy_tool.md
+      - Tool Clone: tool_clone.md
+      - ArXiv Tool: ARXIV_TOOL_README.md
+      - FRED API Tool: fred_api_tool.md
+      - Odoo Toolkit: odoo_toolkit_capabilities.md
+      - GitHub Reviewer: github-reviewer.md
+      - Charts & Visualization: charts_samples.md
+      - Toolbar API: toolbar-api.md
+  - Integrations & Transport:
+      - Overview: chapters/integrations.md
+      - A2A Communication: a2a_communication.md
+      - MCP Sessions: mcp_session.md
+      - Simple MCP Server: simple_mcp_server.md
+      - MCP Server Config: simple_mcp_server_config.md
+      - Install GitHub MCP: install_github_mcp.md
+      - Install MCP GenMedia: install-mcp-genmedia.md
+      - Telegram: telegram_integration.md
+      - MS Teams: msteams.md
+      - WhatsApp Orchestrator: WHATSAPP_AUTONOMOUS_ORCHESTRATOR.md
+      - WhatsApp Spec: messaging/whatsapp.md
+      - WhatsApp Implementation: messaging/implement-whatsapp.md
+      - Office 365 OAuth: integrations/office365-oauth2.md
+      - Voice Chat: voice_chat.md
+      - WhisperX: whisperx.md
+  - Orchestration & Flows:
+      - Decision Nodes: DECISION_NODE_USAGE.md
+      - Bot Cleanup Lifecycle: bot-cleanup-lifecycle.md
+      - Infographic Handler API: infographic_handler_api.md
+      - VectorStore Handler API: vectorstore_handler_api.md
+      - Jira Specialist Prompt Layers: jira-specialist-prompt-layers.md
+  - Advanced:
+      - API Endpoints (REST): API_ENDPOINTS.md
+      - Ephemeral Agents API: api/feat-149-ephemeral-agents-api.md
+      - Jupyter Mode: jupyter_mode.md
+      - Job Manager: jobmanager.md
+      - Outputs: outputs.md
+      - AWS Deployment: aws_deployment.md
+      - 2026 Roadmap: parrot_roadmap_2026.md
+      - PR Review Setup: pr-review-setup.md
+      - Web HITL Frontend Brainstorm: web-hitl-frontend-brainstorm.md
+  - API Reference:
+      - Overview: api-reference/index.md
+      - Clients: api-reference/clients.md
+      - Bots: api-reference/bots.md
+      - Tools: api-reference/tools.md
+      - Memory: api-reference/memory.md
+      - Stores: api-reference/stores.md
+      - Loaders: api-reference/loaders.md
+      - Integrations: api-reference/integrations.md
+      - MCP: api-reference/mcp.md
+      - A2A: api-reference/a2a.md
+  - Reference:
+      - Classes: CLASSES.md
+      - Functions: FUNCTIONS.md
+  - Development:
+      - Style Guide: STYLE_GUIDE.md
+      - SDD Workflow: sdd/WORKFLOW.md
+      - SDD Guide: sdd/GUIDE.md
