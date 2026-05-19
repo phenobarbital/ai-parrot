@@ -63,8 +63,12 @@ def test_database_agent_init_rejects_enable_retry():
 async def test_database_agent_ask_calls_client_ask(mock_llm_client, fake_postgres_toolkit):
     """ask() invokes _llm.ask with use_tools=True and structured_output=QueryResponse."""
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     await agent.ask("list tables")
     call_kwargs = mock_llm_client.ask.call_args.kwargs
     assert call_kwargs.get("use_tools") is True
@@ -87,8 +91,12 @@ async def test_database_agent_ask_unpacks_structured_output_into_aimessage(
         is_structured=True, output=qr, response="ok", data=None,
     )
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     msg = await agent.ask("hi")
     assert msg.is_structured is True
     assert msg.response == "ok"
@@ -98,8 +106,8 @@ async def test_database_agent_ask_unpacks_structured_output_into_aimessage(
 async def test_database_agent_ask_no_toolkits_returns_error_response(mock_llm_client):
     """With no toolkits, ask() returns an AIMessage wrapping a QueryResponse error."""
     agent = DatabaseAgent(toolkits=[])
-    agent._llm = mock_llm_client
     await agent.configure()
+    agent._llm = mock_llm_client
     msg = await agent.ask("hi")
     qr = msg.output
     assert isinstance(qr, QueryResponse)
@@ -113,8 +121,12 @@ async def test_database_agent_ask_uses_default_components_when_omitted(
 ):
     """When output_components is not passed, ask() uses get_default_components()."""
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     await agent.ask("hi")
     # LLM was called — no error means default components were resolved
     assert mock_llm_client.ask.called
@@ -129,10 +141,10 @@ async def test_configure_creates_internal_toolkit(fake_postgres_toolkit):
     """configure() must instantiate and store a DatabaseAgentToolkit."""
     from parrot.bots.database.toolkits import DatabaseAgentToolkit
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = MagicMock()
-    agent._llm.ask = AsyncMock(return_value=MagicMock(output=None, is_structured=False))
     assert agent._internal_toolkit is None
     await agent.configure()
+    agent._llm = MagicMock()
+    agent._llm.ask = AsyncMock(return_value=MagicMock(output=None, is_structured=False))
     assert isinstance(agent._internal_toolkit, DatabaseAgentToolkit)
 
 
@@ -146,8 +158,12 @@ async def test_internal_toolkit_gating_excludes_unrequested_tools(
 ):
     """SQL_QUERY only → optimization tools must NOT appear; SQL tools must appear."""
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     await agent.ask("hi", output_components=OutputComponent.SQL_QUERY)
     tools = mock_llm_client.ask.call_args.kwargs.get("tools") or []
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}
@@ -161,8 +177,12 @@ async def test_internal_toolkit_gating_optimization_components(
 ):
     """OPTIMIZATION_TIPS → optimization tool set exposed."""
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     await agent.ask("hi", output_components=OutputComponent.OPTIMIZATION_TIPS)
     tools = mock_llm_client.ask.call_args.kwargs.get("tools") or []
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}
@@ -179,8 +199,12 @@ async def test_ask_omits_components_uses_router_intent_overlay(
     baseline alone. Otherwise intent-specific tools are silently dropped.
     """
     agent = DatabaseAgent(toolkits=[fake_postgres_toolkit])
-    agent._llm = mock_llm_client
     await agent.configure()
+    # Override _llm AFTER configure() — the inherited AbstractBot.configure
+    # chain (now reached via super() in DatabaseAgent.configure) replaces
+    # _llm with a freshly-resolved client. Injecting the mock afterwards
+    # preserves the test's intent.
+    agent._llm = mock_llm_client
     # "optimize this query" triggers QueryIntent.OPTIMIZE_QUERY in the
     # router, which adds FULL_ANALYSIS (includes OPTIMIZATION_TIPS).
     await agent.ask("optimize this query")
@@ -219,8 +243,8 @@ async def test_ask_non_retryable_exec_error_surfaces_as_failure_response(
         toolkits=[fake_postgres_toolkit],
         retry_config=QueryRetryConfig(max_retries=1),
     )
-    agent._llm = llm
     await agent.configure()
+    agent._llm = llm
 
     msg = await agent.ask("show me the bogus column")
     assert isinstance(msg.output, QueryResponse)

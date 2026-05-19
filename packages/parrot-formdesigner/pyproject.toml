@@ -48,7 +48,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.24.51",
+    "ai-parrot>=0.24.52",
 ]
 redis = [
     "redis>=4.5",
