@@ -152,7 +152,7 @@
       "feature_id": "FEAT-183",
       "feature": "formregistry-multi-tenancy",
       "spec": "sdd/specs/formregistry-multi-tenancy.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,8 @@
       "parallelism_notes": "Final verification gate; runs after all implementation tasks are done.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1246-integration-tests-acceptance-sweep.md"
+      "completed_at": "2026-05-19T00:10:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1246-integration-tests-acceptance-sweep.md"
     }
   ]
 }
