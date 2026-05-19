@@ -194,7 +194,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -211,8 +211,8 @@
       "parallelism_notes": "Integrates all prior stages — must run after all component tasks complete",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1262-graphindex-builder.md"
+      "completed_at": "2026-05-19T16:00:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1262-graphindex-builder.md"
     },
     {
       "id": "TASK-1263",
