@@ -50,9 +50,14 @@ dependencies = [
 ai-parrot = [
     "ai-parrot>=0.24.51",
 ]
+redis = [
+    "redis>=4.5",
+]
 test = [
     "pypdf>=6.0",
     "jsonschema>=4.0",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
 ]
 
 [project.urls]

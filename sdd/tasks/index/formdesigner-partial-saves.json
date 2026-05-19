@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-19T12:45:00Z",
-  "completed_at": "2026-05-19T02:00:13+00:00",
+  "completed_at": "2026-05-19T01:35:27+00:00",
   "tasks": [
     {
       "id": "TASK-1247",
@@ -19,12 +19,11 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation model \u2014 all other tasks depend on this",
+      "parallelism_notes": "Foundation model — all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1247-partial-form-data-model.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:25:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1247-partial-form-data-model.md"
     },
     {
       "id": "TASK-1248",
@@ -43,9 +42,8 @@
       "parallelism_notes": "Depends on TASK-1247 for PartialFormData model",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1248-partial-save-store-service.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1248-partial-save-store-service.md"
     },
     {
       "id": "TASK-1249",
@@ -65,9 +63,8 @@
       "parallelism_notes": "Depends on store service and model",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1249-partial-save-handlers.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:30:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1249-partial-save-handlers.md"
     },
     {
       "id": "TASK-1250",
@@ -87,9 +84,8 @@
       "parallelism_notes": "Modifies submit_data() which TASK-1249 also touches",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1250-submit-merge-integration.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:32:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1250-submit-merge-integration.md"
     },
     {
       "id": "TASK-1251",
@@ -108,9 +104,8 @@
       "parallelism_notes": "Depends on handler methods existing",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1251-partial-save-routes.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:33:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1251-partial-save-routes.md"
     },
     {
       "id": "TASK-1252",
@@ -130,12 +125,11 @@
         "TASK-1251"
       ],
       "parallel": false,
-      "parallelism_notes": "Final validation \u2014 depends on all implementation tasks",
+      "parallelism_notes": "Final validation — depends on all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": "2026-05-19T02:00:13+00:00",
-      "file": "sdd/tasks/completed/TASK-1252-partial-saves-integration-tests.md",
-      "verification": "verified"
+      "completed_at": "2026-05-19T01:35:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1252-partial-saves-integration-tests.md"
     }
   ]
 }

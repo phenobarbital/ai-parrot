@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
+    from ..services.partial_saves import PartialSaveStore
     from ..services.rest_field_resolver import RestFieldResolver
     from ..services.submissions import FormSubmissionStorage
 
@@ -91,6 +92,7 @@ def setup_form_api(
     base_path: str = "/api/v1",
     blob_storage: "AbstractBlobStorage | None" = None,
     resolver: "RestFieldResolver | None" = None,
+    partial_store: "PartialSaveStore | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -110,6 +112,10 @@ def setup_form_api(
             ``S3BlobStorage()`` lazily on first use from environment variables.
         resolver: Optional ``RestFieldResolver`` instance. If ``None``, the
             upload handler will create a default instance on first use.
+        partial_store: Optional Redis-backed ``PartialSaveStore`` for ephemeral
+            partial form answer caching.  When ``None``, the partial save
+            endpoints (POST/GET/DELETE ``/forms/{form_id}/partial``) will
+            return 503.
     """
     # Stash the registry on the app for the dispatcher / operations handler.
     # Guard: skip if already set (FormRegistry.__init__ sets it when app= is
@@ -131,11 +137,23 @@ def setup_form_api(
     # Seed the renderer registry with the V1 default renderers.
     render_module._seed_default_renderers()
 
+    # Stash partial store on the app for lifecycle management (optional).
+    if partial_store is not None:
+        app["partial_store"] = partial_store
+
+        async def _close_partial_store(app: web.Application) -> None:
+            ps = app.get("partial_store")
+            if ps is not None:
+                await ps.close()
+
+        app.on_shutdown.append(_close_partial_store)
+
     handler = FormAPIHandler(
         registry=registry,
         client=client,
         submission_storage=submission_storage,
         forwarder=forwarder,
+        partial_store=partial_store,
     )
 
     bp = base_path.rstrip("/")
@@ -197,6 +215,17 @@ def setup_form_api(
     app.router.add_post(
         f"{bp}/forms/{{form_id}}/fields/{{field_id}}/upload",
         _wrap_auth(uploads_module.handle_rest_upload),
+    )
+
+    # Partial saves (FEAT-186)
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.save_partial)
+    )
+    app.router.add_get(
+        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.get_partial)
+    )
+    app.router.add_delete(
+        f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.delete_partial)
     )
 
     logger.info("setup_form_api: mounted on %s", bp)
