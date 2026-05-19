@@ -241,7 +241,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -261,8 +261,8 @@
       "parallelism_notes": "Final acceptance gate — depends on everything else.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1238-readme-and-end-to-end-poc.md"
+      "completed_at": "2026-05-19T01:56:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1238-readme-and-end-to-end-poc.md"
     }
   ]
 }
