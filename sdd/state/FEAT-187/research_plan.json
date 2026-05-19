@@ -1,0 +1,139 @@
+{
+  "feat_id": "FEAT-187",
+  "mode": "enrichment",
+  "generated_at": "2026-05-19",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Verify OntologyGraphStore class signature and methods",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q002",
+      "intent": "Verify TenantContext, Ontology, Entity, Relation schemas",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q003",
+      "intent": "Verify PageIndex public API and schemas",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/pageindex/__init__.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q004",
+      "intent": "Verify PageIndexNode schema fields",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/pageindex/schemas.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q005",
+      "intent": "Verify PromptBuilder layers and KNOWLEDGE_LAYER",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q006",
+      "intent": "Verify AbstractToolkit base class and @tool decorator",
+      "type": "grep",
+      "pattern": "class AbstractToolkit",
+      "target": "packages/ai-parrot/src/parrot/tools/",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q007",
+      "intent": "Verify AbstractClient interface for embedding support",
+      "type": "grep",
+      "pattern": "async def embed|async def completion|class AbstractClient",
+      "target": "packages/ai-parrot/src/parrot/clients/",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q008",
+      "intent": "Locate ai-parrot-loaders package and verify loader interface",
+      "type": "glob",
+      "pattern": "**/ai-parrot-loaders/**/__init__.py",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q009",
+      "intent": "Verify parrot.knowledge.ontology module structure",
+      "type": "tree",
+      "target": "packages/ai-parrot/src/parrot/knowledge/",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q010",
+      "intent": "Check pyproject.toml for existing extras and dependencies",
+      "type": "read",
+      "target": "packages/ai-parrot/pyproject.toml",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q011",
+      "intent": "Check if graphindex module already exists (anti-hallucination verification)",
+      "type": "grep",
+      "pattern": "graphindex",
+      "target": "packages/ai-parrot/src/parrot/",
+      "priority": 1,
+      "parent_id": null
+    },
+    {
+      "id": "Q012",
+      "intent": "Verify Flowtask component base class and integration",
+      "type": "grep",
+      "pattern": "class.*Component|flowtask",
+      "target": "packages/",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q013",
+      "intent": "Recent git activity on ontology and pageindex modules",
+      "type": "git_log",
+      "target": "packages/ai-parrot/src/parrot/knowledge/ packages/ai-parrot/src/parrot/pageindex/",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q014",
+      "intent": "Verify PromptBuilder class and how knowledge_content is injected",
+      "type": "read",
+      "target": "packages/ai-parrot/src/parrot/bots/prompts/builder.py",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q015",
+      "intent": "Check existing embedding infrastructure",
+      "type": "tree",
+      "target": "packages/ai-parrot/src/parrot/embeddings/",
+      "priority": 2,
+      "parent_id": null
+    },
+    {
+      "id": "Q016",
+      "intent": "Locate ai-parrot-tools package and existing toolkits",
+      "type": "glob",
+      "pattern": "**/ai-parrot-tools/**/",
+      "priority": 2,
+      "parent_id": null
+    }
+  ]
+}
