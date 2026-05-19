@@ -15,11 +15,20 @@ from parrot.core.events.lifecycle.events import (
 from parrot.core.events.lifecycle.trace import TraceContext
 from parrot.observability.attributes import (
     PROVIDER_TO_GEN_AI_SYSTEM,
+    _reset_warned_unknown_for_tests,
     build_after_client_attrs,
     build_before_client_attrs,
     build_before_invoke_attrs,
     resolve_gen_ai_system,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_warned_unknown():
+    """Reset the module-level _warned_unknown set before each test for isolation."""
+    _reset_warned_unknown_for_tests()
+    yield
+    _reset_warned_unknown_for_tests()
 
 
 # ---------------------------------------------------------------------------

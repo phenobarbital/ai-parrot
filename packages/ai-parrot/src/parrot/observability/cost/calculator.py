@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
@@ -31,6 +32,11 @@ _LOADED: Optional[dict[str, dict[str, dict]]] = None
 # Metadata per provider: {provider: {"last_updated": date, "source": str}}
 _META: dict[str, dict] = {}
 _BUNDLED_DIR = Path(__file__).parent / "pricing"
+
+# Guards _LOADED mutations: both the initial load and any _apply_override calls.
+# Prevents a race when multiple threads construct CostCalculator concurrently
+# with different override_path values.
+_PRICING_LOCK = threading.Lock()
 
 
 def _reset_pricing_cache_for_tests() -> None:
@@ -148,16 +154,35 @@ class CostCalculator:
         stale_warn_days: int = 90,
         today: Optional[date] = None,
     ) -> None:
+        """Initialize a CostCalculator, loading pricing tables on first call.
+
+        Pricing tables are loaded once at module level and cached. Subsequent
+        constructions reuse the cached data.
+
+        Note:
+            Concurrent construction with different ``override_path`` values will
+            serialize on ``_PRICING_LOCK``. The last override applied wins for
+            any model keys present in multiple override files.
+
+        Args:
+            override_path: Optional directory containing ``<provider>.json`` files
+                that override bundled pricing via deep-merge (per-model granularity).
+            stale_warn_days: Emit a WARN at boot for any provider file older than
+                this many days. Default: 90.
+            today: Reference date for staleness check. Defaults to ``date.today()``.
+                Pass explicitly in tests to avoid time-dependent failures.
+        """
         global _LOADED
-        if _LOADED is None:
-            _LOADED = _load_bundled_pricing()
-            if override_path:
+        with _PRICING_LOCK:
+            if _LOADED is None:
+                _LOADED = _load_bundled_pricing()
+                if override_path:
+                    _apply_override(_LOADED, override_path)
+                _check_staleness(today or date.today(), stale_warn_days)
+            elif override_path:
+                # Cache was already populated; apply override on top of cached state.
                 _apply_override(_LOADED, override_path)
-            _check_staleness(today or date.today(), stale_warn_days)
-        elif override_path:
-            # Cache was already populated; apply override on top of cached state.
-            _apply_override(_LOADED, override_path)
-            _check_staleness(today or date.today(), stale_warn_days)
+                _check_staleness(today or date.today(), stale_warn_days)
 
         self._pricing = _LOADED
         self._warned_unknown: set[tuple[str, str]] = set()

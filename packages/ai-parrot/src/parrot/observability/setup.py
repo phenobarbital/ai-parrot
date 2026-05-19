@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import socket
+import threading
 import uuid
 from typing import Optional
 
@@ -46,6 +47,18 @@ _STATE: dict[str, ParrotTelemetryProvider] = {}
 _TRACER_PROVIDER: Optional[object] = None
 _METER_PROVIDER: Optional[object] = None
 _SUBSCRIPTION_IDS: list[str] = []
+
+# threading.Lock (not asyncio) guards the idempotency check → construct → write
+# sequence on _STATE/_TRACER_PROVIDER/_METER_PROVIDER/_SUBSCRIPTION_IDS.
+# threading.Lock is used (not asyncio.Lock) because setup_telemetry may be called
+# at import time or in synchronous boot code before an event loop exists.
+_SETUP_LOCK = threading.Lock()
+
+# Token-space bucket boundaries for gen_ai.client.token.usage histogram.
+# These are NOT seconds; the latency buckets ([0.01..60.0]) are wrong for tokens.
+_TOKEN_BUCKETS: list[int] = [
+    10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000
+]
 
 
 def setup_telemetry(
@@ -73,172 +86,200 @@ def setup_telemetry(
         logger.debug("setup_telemetry: config.enabled=False — returning None.")
         return None
 
-    cfg_hash = _hash_config(config)
-    if cfg_hash in _STATE:
-        logger.debug("setup_telemetry: same config — returning cached provider.")
-        return _STATE[cfg_hash]
-    if _STATE:
-        raise ConfigurationError(
-            "setup_telemetry has already been configured with a different "
-            "ObservabilityConfig. Call shutdown_telemetry() first to reconfigure."
-        )
-
-    # --- Lazy OTel SDK imports (only when enabled=True) ----------------------
-    from opentelemetry import metrics as otel_metrics  # noqa: PLC0415
-    from opentelemetry import trace as otel_trace  # noqa: PLC0415
-    from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
-    from opentelemetry.sdk.metrics.export import (  # noqa: PLC0415
-        PeriodicExportingMetricReader,
-    )
-    from opentelemetry.sdk.metrics.view import (  # noqa: PLC0415
-        ExplicitBucketHistogramAggregation,
-        View,
-    )
-    from opentelemetry.sdk.resources import Resource  # noqa: PLC0415
-    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
-    from opentelemetry.sdk.trace.export import (  # noqa: PLC0415
-        BatchSpanProcessor,
-        SimpleSpanProcessor,
-    )
-    from opentelemetry.sdk.trace.sampling import TraceIdRatioBased  # noqa: PLC0415
-
-    # --- 1. Resource ---------------------------------------------------------
-    instance_id = config.service_instance_id or _resolve_instance_id()
-    parrot_ver = _get_parrot_version()
-    resource = Resource.create(
-        {
-            "service.name": config.service_name,
-            "service.version": config.service_version or "unknown",
-            "service.instance.id": instance_id,
-            "parrot.version": parrot_ver,
-        }
-    )
-
-    # --- 2. TracerProvider ---------------------------------------------------
-    from parrot.observability.exporters import make_span_exporter  # noqa: PLC0415
-
-    span_exporter = make_span_exporter(config)
-    tracer_provider = TracerProvider(
-        resource=resource,
-        sampler=TraceIdRatioBased(config.sampling_ratio),
-    )
-    bsp = BatchSpanProcessor(span_exporter)
-    tracer_provider.add_span_processor(bsp)
-    # Defensive: verify NO SimpleSpanProcessor slipped in via monkey-patching.
-    for proc in tracer_provider._active_span_processor._span_processors:  # type: ignore[attr-defined]
-        if isinstance(proc, SimpleSpanProcessor):
+    with _SETUP_LOCK:
+        cfg_hash = _hash_config(config)
+        if cfg_hash in _STATE:
+            logger.debug("setup_telemetry: same config — returning cached provider.")
+            return _STATE[cfg_hash]
+        if _STATE:
             raise ConfigurationError(
-                "SimpleSpanProcessor is forbidden in the observability stack "
-                "(spec §5). Use BatchSpanProcessor."
+                "setup_telemetry has already been configured with a different "
+                "ObservabilityConfig. Call shutdown_telemetry() first to reconfigure."
             )
-    otel_trace.set_tracer_provider(tracer_provider)
-    _TRACER_PROVIDER = tracer_provider
 
-    # --- 3. MeterProvider with histogram Views --------------------------------
-    from parrot.observability.exporters import make_metric_exporter  # noqa: PLC0415
-
-    buckets: list[float] = config.histogram_buckets or [
-        0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0
-    ]
-    _histogram_names = [
-        "gen_ai.client.operation.duration",
-        "parrot.tool.execution.duration",
-        "parrot.agent.invoke.duration",
-    ]
-    views = [
-        View(
-            instrument_name=name,
-            aggregation=ExplicitBucketHistogramAggregation(boundaries=buckets),
+        # --- Lazy OTel SDK imports (only when enabled=True) ----------------------
+        from opentelemetry import metrics as otel_metrics  # noqa: PLC0415
+        from opentelemetry import trace as otel_trace  # noqa: PLC0415
+        from opentelemetry.sdk.metrics import MeterProvider  # noqa: PLC0415
+        from opentelemetry.sdk.metrics.export import (  # noqa: PLC0415
+            PeriodicExportingMetricReader,
         )
-        for name in _histogram_names
-    ]
-    metric_exporter = make_metric_exporter(config)
-    reader = PeriodicExportingMetricReader(
-        metric_exporter,
-        export_interval_millis=config.metric_export_interval_ms,
-    )
-    meter_provider = MeterProvider(
-        resource=resource,
-        metric_readers=[reader],
-        views=views,
-    )
-    otel_metrics.set_meter_provider(meter_provider)
-    _METER_PROVIDER = meter_provider
-
-    # --- 4. CostCalculator (optional) -----------------------------------------
-    cost_calc = None
-    if config.enable_cost_tracking:
-        from parrot.observability.cost.calculator import CostCalculator  # noqa: PLC0415
-
-        override: Optional[str] = config.pricing_override_path
-        if override is None:
-            try:
-                from navconfig import config as nav_config  # noqa: PLC0415
-
-                override = nav_config.get("PARROT_PRICING_PATH", fallback=None)
-            except Exception:  # noqa: BLE001
-                logger.debug(
-                    "navconfig not available; skipping PARROT_PRICING_PATH lookup."
-                )
-        cost_calc = CostCalculator(override_path=override)
-
-    # --- 5. Subscribers -------------------------------------------------------
-    from parrot.observability.subscribers.trace import (  # noqa: PLC0415
-        GenAIOpenTelemetrySubscriber,
-    )
-    from parrot.observability.subscribers.metrics import MetricsSubscriber  # noqa: PLC0415
-
-    trace_sub = (
-        GenAIOpenTelemetrySubscriber(
-            service_name=config.service_name,
-            tracer_provider=tracer_provider,
-            cost_calculator=cost_calc,
-            capture_completions=config.capture_completions,
+        from opentelemetry.sdk.metrics.view import (  # noqa: PLC0415
+            ExplicitBucketHistogramAggregation,
+            View,
         )
-        if config.enable_traces
-        else None
-    )
-    metrics_sub = (
-        MetricsSubscriber(
-            meter_provider=meter_provider,
-            service_name=config.service_name,
-            histogram_buckets=buckets,
-            cost_calculator=cost_calc,
+        from opentelemetry.sdk.resources import Resource  # noqa: PLC0415
+        from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
+        from opentelemetry.sdk.trace.export import (  # noqa: PLC0415
+            BatchSpanProcessor,
+            SimpleSpanProcessor,
         )
-        if config.enable_metrics
-        else None
-    )
+        from opentelemetry.sdk.trace.sampling import TraceIdRatioBased  # noqa: PLC0415
 
-    # --- 6. Bundle + register -------------------------------------------------
-    from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
-        get_global_registry,
-    )
+        # --- 1. Resource ---------------------------------------------------------
+        instance_id = config.service_instance_id or _resolve_instance_id()
+        parrot_ver = _get_parrot_version()
+        resource = Resource.create(
+            {
+                "service.name": config.service_name,
+                "service.version": config.service_version or "unknown",
+                "service.instance.id": instance_id,
+                "parrot.version": parrot_ver,
+            }
+        )
 
-    provider = ParrotTelemetryProvider(
-        trace_subscriber=trace_sub,
-        metrics_subscriber=metrics_sub,
-    )
-    subscription_ids = get_global_registry().add_provider(provider)
-    _SUBSCRIPTION_IDS.extend(subscription_ids)
+        # --- 2. TracerProvider ---------------------------------------------------
+        from parrot.observability.exporters import make_span_exporter  # noqa: PLC0415
 
-    # --- 7. OpenLIT (lazy) ----------------------------------------------------
-    if config.enable_openlit:
-        from parrot.observability.openlit_integration import init_openlit  # noqa: PLC0415
+        span_exporter = make_span_exporter(config)
+        tracer_provider = TracerProvider(
+            resource=resource,
+            sampler=TraceIdRatioBased(config.sampling_ratio),
+        )
+        bsp = BatchSpanProcessor(span_exporter)
+        tracer_provider.add_span_processor(bsp)
+        # Defensive: verify NO SimpleSpanProcessor slipped in via monkey-patching.
+        # NOTE: _active_span_processor._span_processors is a private attribute of
+        # SynchronousMultiSpanProcessor from opentelemetry-sdk<2.0. This access is
+        # intentional and version-pinned to opentelemetry-sdk>=1.25,<2.0 in
+        # pyproject.toml. If the SDK renames this in a patch release, the guard
+        # degrades gracefully: AttributeError is caught and logged at DEBUG level
+        # rather than crashing.
+        try:
+            for proc in tracer_provider._active_span_processor._span_processors:  # type: ignore[attr-defined]
+                if isinstance(proc, SimpleSpanProcessor):
+                    raise ConfigurationError(
+                        "SimpleSpanProcessor is forbidden in the observability stack "
+                        "(spec §5). Use BatchSpanProcessor."
+                    )
+        except AttributeError:
+            logger.debug(
+                "setup_telemetry: _active_span_processor._span_processors not found "
+                "(OTel SDK internals may have changed); SimpleSpanProcessor guard skipped."
+            )
+        otel_trace.set_tracer_provider(tracer_provider)
+        _TRACER_PROVIDER = tracer_provider
 
-        init_openlit(config)
+        # --- 3. MeterProvider with histogram Views --------------------------------
+        from parrot.observability.exporters import make_metric_exporter  # noqa: PLC0415
 
-    _STATE[cfg_hash] = provider
-    logger.info(
-        "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, "
-        "cost=%s, openlit=%s) → %s",
-        config.service_name,
-        config.enable_traces,
-        config.enable_metrics,
-        config.enable_cost_tracking,
-        config.enable_openlit,
-        config.otlp_endpoint,
-    )
-    return provider
+        buckets: list[float] = config.histogram_buckets or [
+            0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0
+        ]
+        _latency_histogram_names = [
+            "gen_ai.client.operation.duration",
+            "parrot.tool.execution.duration",
+            "parrot.agent.invoke.duration",
+        ]
+        views = [
+            View(
+                instrument_name=name,
+                aggregation=ExplicitBucketHistogramAggregation(boundaries=buckets),
+            )
+            for name in _latency_histogram_names
+        ]
+        # Token usage histogram uses token-space bucket boundaries (not seconds).
+        views.append(
+            View(
+                instrument_name="gen_ai.client.token.usage",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    boundaries=_TOKEN_BUCKETS
+                ),
+            )
+        )
+        metric_exporter = make_metric_exporter(config)
+        reader = PeriodicExportingMetricReader(
+            metric_exporter,
+            export_interval_millis=config.metric_export_interval_ms,
+        )
+        meter_provider = MeterProvider(
+            resource=resource,
+            metric_readers=[reader],
+            views=views,
+        )
+        otel_metrics.set_meter_provider(meter_provider)
+        _METER_PROVIDER = meter_provider
+
+        # --- 4. CostCalculator (optional) -----------------------------------------
+        cost_calc = None
+        if config.enable_cost_tracking:
+            from parrot.observability.cost.calculator import CostCalculator  # noqa: PLC0415
+
+            override: Optional[str] = config.pricing_override_path
+            if override is None:
+                try:
+                    from navconfig import config as nav_config  # noqa: PLC0415
+
+                    override = nav_config.get("PARROT_PRICING_PATH", fallback=None)
+                except ImportError:
+                    logger.debug(
+                        "navconfig not available; skipping PARROT_PRICING_PATH lookup."
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "navconfig raised an unexpected error during PARROT_PRICING_PATH "
+                        "lookup: %s",
+                        exc,
+                    )
+            cost_calc = CostCalculator(override_path=override)
+
+        # --- 5. Subscribers -------------------------------------------------------
+        from parrot.observability.subscribers.trace import (  # noqa: PLC0415
+            GenAIOpenTelemetrySubscriber,
+        )
+        from parrot.observability.subscribers.metrics import MetricsSubscriber  # noqa: PLC0415
+
+        trace_sub = (
+            GenAIOpenTelemetrySubscriber(
+                service_name=config.service_name,
+                tracer_provider=tracer_provider,
+                cost_calculator=cost_calc,
+                capture_completions=config.capture_completions,
+            )
+            if config.enable_traces
+            else None
+        )
+        metrics_sub = (
+            MetricsSubscriber(
+                meter_provider=meter_provider,
+                service_name=config.service_name,
+                histogram_buckets=buckets,
+                cost_calculator=cost_calc,
+            )
+            if config.enable_metrics
+            else None
+        )
+
+        # --- 6. Bundle + register -------------------------------------------------
+        from parrot.core.events.lifecycle.global_registry import (  # noqa: PLC0415
+            get_global_registry,
+        )
+
+        provider = ParrotTelemetryProvider(
+            trace_subscriber=trace_sub,
+            metrics_subscriber=metrics_sub,
+        )
+        subscription_ids = get_global_registry().add_provider(provider)
+        _SUBSCRIPTION_IDS.extend(subscription_ids)
+
+        # --- 7. OpenLIT (lazy) ----------------------------------------------------
+        if config.enable_openlit:
+            from parrot.observability.openlit_integration import init_openlit  # noqa: PLC0415
+
+            init_openlit(config)
+
+        _STATE[cfg_hash] = provider
+        logger.info(
+            "setup_telemetry: observability active for '%s' (traces=%s, metrics=%s, "
+            "cost=%s, openlit=%s) → %s",
+            config.service_name,
+            config.enable_traces,
+            config.enable_metrics,
+            config.enable_cost_tracking,
+            config.enable_openlit,
+            config.otlp_endpoint,
+        )
+        return provider
 
 
 def shutdown_telemetry() -> None:
@@ -252,6 +293,13 @@ def shutdown_telemetry() -> None:
 
     This function is safe to call when ``setup_telemetry`` was never called, or
     after a previous ``shutdown_telemetry`` — it is fully idempotent.
+
+    Note:
+        OpenLIT cannot be safely re-initialized after shutdown. If
+        ``setup_telemetry(enable_openlit=True)`` is called again after
+        ``shutdown_telemetry()``, the OpenLIT instrumentation will not be
+        re-applied. Use ``openlit_integration._reset_for_tests()`` only in
+        test contexts.
     """
     global _TRACER_PROVIDER, _METER_PROVIDER, _SUBSCRIPTION_IDS  # noqa: PLW0603
 

@@ -456,8 +456,8 @@ matrix = [
 
 # OpenTelemetry distributed tracing (FEAT-176 — lifecycle events)
 otel = [
-    "opentelemetry-api>=1.25",
-    "opentelemetry-sdk>=1.25",
+    "opentelemetry-api>=1.25,<2.0",
+    "opentelemetry-sdk>=1.25,<2.0",
 ]
 
 # Full observability stack (FEAT-177 — spans + metrics + cost + OTLP exporters)

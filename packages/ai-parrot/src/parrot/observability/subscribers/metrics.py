@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 # LLM-tuned default histogram bucket boundaries (seconds) per D6 resolution.
 _DEFAULT_BUCKETS: list[float] = [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]
 
+# Token-space bucket boundaries for gen_ai.client.token.usage histogram.
+# These are in tokens (not seconds) — latency buckets are inappropriate here.
+# OTel View wiring is done in setup_telemetry() using these same boundaries.
+_TOKEN_BUCKETS: list[int] = [
+    10, 50, 100, 500, 1000, 2000, 5000, 10000, 50000, 100000
+]
+
 
 class MetricsSubscriber:
     """OTel counter and histogram subscriber for LLM / tool / invoke events.

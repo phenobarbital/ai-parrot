@@ -216,3 +216,42 @@ def test_shutdown_before_setup_is_no_op() -> None:
     """shutdown_telemetry() when nothing was set up is a no-op."""
     with _isolated():
         shutdown_telemetry()  # must not raise
+
+
+def test_setup_forbids_simple_span_processor() -> None:
+    """setup_telemetry raises ConfigurationError when a SimpleSpanProcessor
+    is found in the TracerProvider's active span processor chain.
+
+    The guard accesses the private OTel SDK attribute
+    ``SynchronousMultiSpanProcessor._span_processors`` (intentional, version-pinned
+    to opentelemetry-sdk<2.0). This test exercises that exact path by monkey-patching
+    the real TracerProvider so that _active_span_processor._span_processors is a
+    list containing a SimpleSpanProcessor after construction.
+    """
+    from opentelemetry.sdk.trace import TracerProvider  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: PLC0415
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
+        InMemorySpanExporter,
+    )
+
+    with _isolated():
+        cfg = ObservabilityConfig(
+            enabled=True,
+            enable_cost_tracking=False,
+            enable_openlit=False,
+        )
+
+        fake_simple = SimpleSpanProcessor(InMemorySpanExporter())
+        original_init = TracerProvider.__init__
+
+        def _patched_init(self, *args, **kwargs):
+            """Wrap real __init__, then replace _span_processors with a list
+            that includes a SimpleSpanProcessor so the guard fires."""
+            original_init(self, *args, **kwargs)
+            # _span_processors is a tuple on the SynchronousMultiSpanProcessor;
+            # reassign it as a list that contains the fake SimpleSpanProcessor.
+            self._active_span_processor._span_processors = [fake_simple]
+
+        with patch.object(TracerProvider, "__init__", _patched_init):
+            with pytest.raises(ConfigurationError, match="SimpleSpanProcessor"):
+                setup_telemetry(cfg)

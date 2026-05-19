@@ -84,17 +84,17 @@ class GenAIOpenTelemetrySubscriber:
         capture_completions: bool = False,
     ) -> None:
         try:
-            from opentelemetry import trace  # noqa: F401
+            from opentelemetry import trace as otel_trace  # noqa: PLC0415
         except ImportError as exc:
             raise ImportError(
                 "GenAIOpenTelemetrySubscriber requires the 'observability' extra. "
                 "Install with: pip install 'ai-parrot[observability]'"
             ) from exc
-        if tracer_provider is not None:
-            self._tracer = tracer_provider.get_tracer(service_name)
-        else:
-            from opentelemetry import trace as otel_trace
-            self._tracer = otel_trace.get_tracer(service_name)
+        self._tracer = (
+            tracer_provider.get_tracer(service_name)
+            if tracer_provider is not None
+            else otel_trace.get_tracer(service_name)
+        )
         self._cost = cost_calculator
         self._capture_completions = capture_completions
         self._active_spans: Dict[str, Any] = {}
@@ -327,6 +327,9 @@ class GenAIOpenTelemetrySubscriber:
 
     async def _on_message(self, event: MessageAddedEvent) -> None:
         """Attach a span event to the active invoke span."""
+        # Relies on the emitter (AbstractBot / Agent) copying the invoke-level
+        # trace_context into MessageAddedEvent. If a new root context is used,
+        # the lookup will miss and the span event will be silently dropped.
         span_key = event.trace_context.span_id if event.trace_context else None
         span = await self._get_active_span(span_key)
         if span is None:

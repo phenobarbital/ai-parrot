@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from parrot.core.events.lifecycle.provider import EventProvider
 from parrot.core.events.lifecycle.registry import EventRegistry

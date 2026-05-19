@@ -12,10 +12,7 @@ exporters and readers baked in at fixture time.
 
 from __future__ import annotations
 
-import asyncio
 import sys
-from contextlib import contextmanager
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -126,7 +123,8 @@ async def _drive_invoke_cycle(registry, *, agent_name: str = "test-agent") -> No
 # Scenario 1 — traces only (enable_metrics=False)
 # ---------------------------------------------------------------------------
 
-def test_scenario_1_traces_only() -> None:
+@pytest.mark.asyncio
+async def test_scenario_1_traces_only() -> None:
     """Span exporter captures spans; no MetricsSubscriber registered."""
     exporter = InMemorySpanExporter()
     tp = _make_tracer_provider(exporter)
@@ -138,7 +136,7 @@ def test_scenario_1_traces_only() -> None:
         )
         trace_sub.register(registry)
 
-        asyncio.run(_drive_client_cycle(registry))
+        await _drive_client_cycle(registry)
 
     finished = exporter.get_finished_spans()
     assert len(finished) >= 1, f"Expected at least 1 span, got {len(finished)}"
@@ -152,7 +150,8 @@ def test_scenario_1_traces_only() -> None:
 # Scenario 2 — metrics only (enable_traces=False)
 # ---------------------------------------------------------------------------
 
-def test_scenario_2_metrics_only() -> None:
+@pytest.mark.asyncio
+async def test_scenario_2_metrics_only() -> None:
     """Metric reader collects counters/histograms; no trace subscriber."""
     reader = InMemoryMetricReader()
     mp = _make_meter_provider(reader)
@@ -164,7 +163,7 @@ def test_scenario_2_metrics_only() -> None:
         )
         metrics_sub.register(registry)
 
-        asyncio.run(_drive_client_cycle(registry))
+        await _drive_client_cycle(registry)
 
     metrics = reader.get_metrics_data()
     # At least one metric should have been recorded
@@ -183,7 +182,8 @@ def test_scenario_2_metrics_only() -> None:
 # Scenario 3 — traces + metrics + cost
 # ---------------------------------------------------------------------------
 
-def test_scenario_3_traces_metrics_cost() -> None:
+@pytest.mark.asyncio
+async def test_scenario_3_traces_metrics_cost() -> None:
     """Both exporter and reader are populated; cost counter is updated."""
     from parrot.observability.cost.calculator import CostCalculator, _reset_pricing_cache_for_tests
 
@@ -209,7 +209,7 @@ def test_scenario_3_traces_metrics_cost() -> None:
         trace_sub.register(registry)
         metrics_sub.register(registry)
 
-        asyncio.run(_drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini"))
+        await _drive_client_cycle(registry, client_name="openai", model="gpt-4o-mini")
 
     # Traces: at least one span
     spans = exporter.get_finished_spans()
@@ -231,7 +231,8 @@ def test_scenario_3_traces_metrics_cost() -> None:
 # Scenario 4 — traces + OpenLIT (mocked)
 # ---------------------------------------------------------------------------
 
-def test_scenario_4_openlit_mocked() -> None:
+@pytest.mark.asyncio
+async def test_scenario_4_openlit_mocked() -> None:
     """OpenLIT init is called exactly once; trace subscriber still works."""
     from parrot.observability.openlit_integration import _reset_for_tests
 
@@ -259,7 +260,7 @@ def test_scenario_4_openlit_mocked() -> None:
             tracer_provider=tp,
         )
         trace_sub.register(registry)
-        asyncio.run(_drive_client_cycle(registry))
+        await _drive_client_cycle(registry)
 
     spans = exporter.get_finished_spans()
     assert len(spans) >= 1, "Spans expected from trace subscriber"
@@ -271,7 +272,8 @@ def test_scenario_4_openlit_mocked() -> None:
 # Scenario 5 — sampling=0.1 over 100 requests
 # ---------------------------------------------------------------------------
 
-def test_scenario_5_sampling_ratio() -> None:
+@pytest.mark.asyncio
+async def test_scenario_5_sampling_ratio() -> None:
     """With sampling_ratio=0.1 and 100 requests, roughly 10 spans arrive (±50%)."""
     from opentelemetry.sdk.trace.sampling import TraceIdRatioBased  # noqa: PLC0415
 
@@ -283,17 +285,14 @@ def test_scenario_5_sampling_ratio() -> None:
     )
     tp.add_span_processor(SimpleSpanProcessor(exporter))
 
-    async def drive_100(registry):
-        for _ in range(100):
-            await _drive_client_cycle(registry)
-
     with scope() as registry:
         trace_sub = GenAIOpenTelemetrySubscriber(
             service_name="parrot-poc",
             tracer_provider=tp,
         )
         trace_sub.register(registry)
-        asyncio.run(drive_100(registry))
+        for _ in range(100):
+            await _drive_client_cycle(registry)
 
     spans = exporter.get_finished_spans()
     # With 10% sampling, expect roughly 10 spans (±50% tolerance = 5..15).

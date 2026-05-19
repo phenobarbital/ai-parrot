@@ -15,9 +15,12 @@ Public surface:
 """
 
 from parrot.observability.config import ObservabilityConfig
+from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
 from parrot.observability.provider import ParrotTelemetryProvider
 from parrot.observability.setup import setup_telemetry, shutdown_telemetry
+from parrot.observability.subscribers.metrics import MetricsSubscriber
+from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 
 __all__: list[str] = [
     "ObservabilityConfig",
@@ -25,4 +28,7 @@ __all__: list[str] = [
     "ParrotTelemetryProvider",
     "setup_telemetry",
     "shutdown_telemetry",
+    "GenAIOpenTelemetrySubscriber",
+    "MetricsSubscriber",
+    "CostCalculator",
 ]

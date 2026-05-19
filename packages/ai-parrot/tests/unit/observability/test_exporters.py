@@ -5,7 +5,6 @@ FEAT-177 TASK-1234.
 
 from __future__ import annotations
 
-import pytest
 
 from parrot.observability import ObservabilityConfig
 from parrot.observability.exporters import make_metric_exporter, make_span_exporter

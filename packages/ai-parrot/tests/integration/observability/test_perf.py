@@ -25,7 +25,6 @@ import sys
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader

@@ -48,6 +48,16 @@ PROVIDER_TO_GEN_AI_SYSTEM: dict[str, str] = {
 _warned_unknown: set[str] = set()
 
 
+def _reset_warned_unknown_for_tests() -> None:
+    """Clear the module-level _warned_unknown deduplication set.
+
+    NEVER call in production. For test isolation only. Allows tests to assert
+    that a warning is emitted even when the same unknown provider was seen in a
+    previous test.
+    """
+    _warned_unknown.clear()
+
+
 def resolve_gen_ai_system(client_name: str) -> str:
     """Resolve a ``client_name`` emitted on ``BeforeClientCallEvent`` to the
     corresponding ``gen_ai.system`` OTel attribute value.
@@ -127,6 +137,7 @@ def build_before_client_attrs(event: BeforeClientCallEvent) -> dict[str, Any]:
     attrs: dict[str, Any] = {
         "gen_ai.system": resolve_gen_ai_system(event.client_name),
         "gen_ai.request.model": event.model,
+        # Custom extension — not part of OTel GenAI SemConv stable spec (May 2025)
         "gen_ai.request.has_tools": event.has_tools,
     }
     if event.temperature is not None:
