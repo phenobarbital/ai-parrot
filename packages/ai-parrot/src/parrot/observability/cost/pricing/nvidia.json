@@ -1,0 +1,35 @@
+{
+  "pricing": {
+    "last_updated": "2026-05-18",
+    "source": "https://build.nvidia.com/nim/pricing",
+    "currency": "USD",
+    "notes": "NVIDIA NIM pricing varies by model and deployment; values below are best-effort estimates from the NVIDIA Build platform. Verify at https://build.nvidia.com before using in billing. Provider key in CostCalculator: 'nvidia'."
+  },
+  "models": {
+    "meta/llama-3.1-70b-instruct": {
+      "input_per_1m": 0.97,
+      "output_per_1m": 0.97,
+      "valid_from": "2024-07-23"
+    },
+    "meta/llama-3.1-8b-instruct": {
+      "input_per_1m": 0.20,
+      "output_per_1m": 0.20,
+      "valid_from": "2024-07-23"
+    },
+    "meta/llama-3.1-405b-instruct": {
+      "input_per_1m": 3.45,
+      "output_per_1m": 3.45,
+      "valid_from": "2024-07-23"
+    },
+    "nvidia/llama-3.1-nemotron-70b-instruct": {
+      "input_per_1m": 0.97,
+      "output_per_1m": 0.97,
+      "valid_from": "2024-10-15"
+    },
+    "mistralai/mistral-7b-instruct-v0.3": {
+      "input_per_1m": 0.15,
+      "output_per_1m": 0.15,
+      "valid_from": "2024-06-17"
+    }
+  }
+}

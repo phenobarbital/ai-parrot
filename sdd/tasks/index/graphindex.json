@@ -1,0 +1,260 @@
+{
+  "feature": "graphindex",
+  "feature_id": "FEAT-187",
+  "spec": "sdd/specs/graphindex.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-19T00:00:00Z",
+  "completed_at": "2026-05-19T16:04:33+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1253",
+      "slug": "graphindex-core-schema",
+      "title": "Core Schema — Universal Node/Edge Models and Meta-Ontology",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Prerequisite for all other tasks — freezes the UniversalNode/UniversalEdge contract",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:44:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1253-graphindex-core-schema.md"
+    },
+    {
+      "id": "TASK-1254",
+      "slug": "graphindex-code-extractor",
+      "title": "Code Extractor — tree-sitter Python Parsing",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "No shared files with other extractors or embed/assembly — can run in parallel after TASK-1253",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1254-graphindex-code-extractor.md"
+    },
+    {
+      "id": "TASK-1255",
+      "slug": "graphindex-loader-extractor",
+      "title": "Loader-Based Extractor — ai-parrot-loaders + PageIndex Integration",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "No shared files with other extractors or embed/assembly — can run in parallel after TASK-1253",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1255-graphindex-loader-extractor.md"
+    },
+    {
+      "id": "TASK-1256",
+      "slug": "graphindex-skill-extractor",
+      "title": "SKILL.md Extractor",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "No shared files with other extractors — can run in parallel after TASK-1253",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1256-graphindex-skill-extractor.md"
+    },
+    {
+      "id": "TASK-1257",
+      "slug": "graphindex-embed-stage",
+      "title": "Embedding Stage — EmbeddingModel + FAISS + pgvector",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "No shared files with extractors or assembly — can run in parallel after TASK-1253",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:50:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1257-graphindex-embed-stage.md"
+    },
+    {
+      "id": "TASK-1258",
+      "slug": "graphindex-assembly",
+      "title": "Graph Assembly — rustworkx PyDiGraph Construction",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "No shared files with extractors or embed — can run in parallel after TASK-1253",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:50:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1258-graphindex-assembly.md"
+    },
+    {
+      "id": "TASK-1259",
+      "slug": "graphindex-cross-domain-resolution",
+      "title": "Cross-Domain Resolution — Level 1 Embedding Threshold",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1257",
+        "TASK-1258"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs FAISS index from TASK-1257 and assembled graph from TASK-1258",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:54:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1259-graphindex-cross-domain-resolution.md"
+    },
+    {
+      "id": "TASK-1260",
+      "slug": "graphindex-persistence",
+      "title": "Persistence — ArangoDB via OntologyGraphStore + pgvector",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1253"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on core schema — can run in parallel with extractors and embed/assembly",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:56:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1260-graphindex-persistence.md"
+    },
+    {
+      "id": "TASK-1261",
+      "slug": "graphindex-analytics-report",
+      "title": "Analytics + Report — Centrality, Connections, GRAPH_REPORT.md",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1258",
+        "TASK-1259"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs assembled graph from TASK-1258 and resolved edges from TASK-1259",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T15:58:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1261-graphindex-analytics-report.md"
+    },
+    {
+      "id": "TASK-1262",
+      "slug": "graphindex-builder",
+      "title": "Pipeline Builder — GraphIndexBuilder Orchestrator",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1254",
+        "TASK-1255",
+        "TASK-1256",
+        "TASK-1257",
+        "TASK-1258",
+        "TASK-1259",
+        "TASK-1260",
+        "TASK-1261"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integrates all prior stages — must run after all component tasks complete",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T16:00:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1262-graphindex-builder.md"
+    },
+    {
+      "id": "TASK-1263",
+      "slug": "graphindex-toolkit",
+      "title": "GraphIndex Toolkit — Agent-Facing Tools",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1253",
+        "TASK-1257",
+        "TASK-1258"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs core schema, FAISS index, and graph assembly — can start once those three land",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T16:02:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1263-graphindex-toolkit.md"
+    },
+    {
+      "id": "TASK-1264",
+      "slug": "graphindex-flowtask-pyproject",
+      "title": "Flowtask Integration + pyproject.toml Extra",
+      "feature_id": "FEAT-187",
+      "feature": "graphindex",
+      "spec": "sdd/specs/graphindex.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1262"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the builder orchestrator to wrap in Flowtask component",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-19T16:04:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1264-graphindex-flowtask-pyproject.md"
+    }
+  ]
+}

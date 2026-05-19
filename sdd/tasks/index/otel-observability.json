@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-19T02:35:28+00:00",
   "tasks": [
     {
       "id": "TASK-1227",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Per-spec isolation per spec §Worktree Strategy. TASK-1227 patches shared FEAT-176 code that every subsequent task depends on; running it in parallel with any other FEAT-177 task is unsafe.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1227-patch-eventregistry-fire-and-forget.md"
+      "completed_at": "2026-05-19T01:26:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1227-patch-eventregistry-fire-and-forget.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1228",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Per-spec sequential — creates the package every later task imports from.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1228-observability-config-skeleton.md"
+      "completed_at": "2026-05-19T01:29:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1228-observability-config-skeleton.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1229",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +64,9 @@
       "parallelism_notes": "Per-spec sequential — TASK-1230 and TASK-1231 both import from attributes.py.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1229-genai-attribute-builders.md"
+      "completed_at": "2026-05-19T01:30:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1229-genai-attribute-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1230",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +85,9 @@
       "parallelism_notes": "Per-spec sequential. In principle TASK-1230 and TASK-1231 touch different files and could run in parallel, but the spec mandates per-spec isolation in one worktree.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1230-genai-opentelemetry-subscriber.md"
+      "completed_at": "2026-05-19T01:32:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1230-genai-opentelemetry-subscriber.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1231",
@@ -92,7 +96,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +106,9 @@
       "parallelism_notes": "Per-spec sequential — see TASK-1230 note.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1231-metrics-subscriber.md"
+      "completed_at": "2026-05-19T01:34:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1231-metrics-subscriber.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1232",
@@ -112,7 +117,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1232-cost-calculator-pricing.md"
+      "completed_at": "2026-05-19T01:37:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1232-cost-calculator-pricing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1233",
@@ -132,7 +138,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -144,8 +150,9 @@
       "parallelism_notes": "Per-spec sequential. Trivial glue task — joins the three subscribers/services into one provider.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1233-parrot-telemetry-provider.md"
+      "completed_at": "2026-05-19T01:38:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1233-parrot-telemetry-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1234",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -164,8 +171,9 @@
       "parallelism_notes": "Per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1234-otlp-exporter-helpers.md"
+      "completed_at": "2026-05-19T01:42:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1234-otlp-exporter-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1235",
@@ -174,7 +182,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -191,8 +199,9 @@
       "parallelism_notes": "Wires everything together — must come after all subscribers, provider, exporters, and OpenLIT wrapper.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1235-setup-telemetry-boot-helper.md"
+      "completed_at": "2026-05-19T01:49:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1235-setup-telemetry-boot-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1236",
@@ -201,7 +210,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -211,8 +220,9 @@
       "parallelism_notes": "Per-spec sequential. Standalone wrapper; only consumer is TASK-1235.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1236-openlit-integration.md"
+      "completed_at": "2026-05-19T01:43:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1236-openlit-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1237",
@@ -221,7 +231,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -231,8 +241,9 @@
       "parallelism_notes": "Per-spec sequential. Manual-verified deliverable; depends on a working setup_telemetry.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1237-examples-docker-compose.md"
+      "completed_at": "2026-05-19T01:51:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1237-examples-docker-compose.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1238",
@@ -241,7 +252,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -261,8 +272,9 @@
       "parallelism_notes": "Final acceptance gate — depends on everything else.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1238-readme-and-end-to-end-poc.md"
+      "completed_at": "2026-05-19T01:56:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1238-readme-and-end-to-end-poc.md",
+      "verification": "verified"
     }
   ]
 }

@@ -1,0 +1,74 @@
+{
+  "feat_id": "FEAT-187",
+  "slug": "graphindex",
+  "title": "GraphIndex — Structured Knowledge Graph Indexing",
+  "mode": "enrichment",
+  "phase": "committed",
+  "started_at": "2026-05-19T00:00:00Z",
+  "updated_at": "2026-05-19T00:00:00Z",
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "file_path": "sdd/proposals/graphindex.proposal.md",
+    "summary_oneline": "GraphIndex — structured knowledge graph indexing unifying code, docs, and skills via pipeline-of-stages build"
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 15,
+    "grep_calls": 16,
+    "git_calls": 3,
+    "depth_reached": 1,
+    "wall_seconds": 270
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "phases": {
+    "source": {
+      "status": "complete",
+      "completed_at": "2026-05-19T00:00:00Z"
+    },
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true,
+      "completed_at": "2026-05-19T00:00:00Z"
+    },
+    "research": {
+      "status": "complete",
+      "completed_at": "2026-05-19T00:00:00Z",
+      "queries_executed": 16,
+      "queries_skipped": 0,
+      "findings_count": 12
+    },
+    "synthesis": {
+      "status": "complete",
+      "completed_at": "2026-05-19T00:00:00Z",
+      "corrections": 5,
+      "confirmations": 10,
+      "unknowns": 2
+    },
+    "review_gate": {
+      "status": "complete",
+      "user_action": "proceed"
+    },
+    "qa": {
+      "status": "skipped",
+      "reason": "Only 2 minor unknowns that don't block proposal — deferred to spec"
+    },
+    "output": {
+      "status": "complete",
+      "proposal_path": "sdd/proposals/graphindex.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "Run /sdd-spec FEAT-187 to decompose into tasks"
+  }
+}

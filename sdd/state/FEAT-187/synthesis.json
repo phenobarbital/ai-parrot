@@ -1,0 +1,190 @@
+{
+  "feat_id": "FEAT-187",
+  "mode": "enrichment",
+  "summary_oneline": "GraphIndex — structured knowledge graph indexing unifying code, docs, and skills via pipeline-of-stages build with rustworkx + tree-sitter + FAISS + ArangoDB",
+  "overall_confidence": "high",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py",
+      "symbol": "OntologyGraphStore",
+      "role": "persistence backend for graph nodes and edges — consumed unchanged",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/ontology/schema.py",
+      "symbol": "TenantContext, MergedOntology, EntityDef, RelationDef",
+      "role": "tenant isolation primitives — extended with universal meta-ontology",
+      "evidence": ["F002"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/pageindex/",
+      "symbol": "build_page_index, md_to_tree, PageIndexNode",
+      "role": "tree builders consumed by loader-based extractor for hierarchical content",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/prompts/layers.py",
+      "symbol": "KNOWLEDGE_LAYER, PromptBuilder",
+      "role": "GRAPH_REPORT.md injection into agent system prompt",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit",
+      "role": "base class for GraphIndexToolkit",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/",
+      "symbol": "EmbeddingModel, EmbeddingRegistry, SentenceTransformerModel",
+      "role": "embedding infrastructure for Stage 2 (Embed) — replaces proposal's AbstractClient reference",
+      "evidence": ["F006", "F011"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-loaders/",
+      "symbol": "AbstractLoader, parrot_loaders",
+      "role": "content acquisition for non-code formats",
+      "evidence": ["F007"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/",
+      "symbol": "graphindex (new module)",
+      "role": "new module — confirmed does not exist yet",
+      "evidence": ["F008"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-tools/",
+      "symbol": "GraphIndexToolkit (new)",
+      "role": "agent-facing tools — follows existing toolkit pattern",
+      "evidence": ["F012"],
+      "confidence": "high"
+    }
+  ],
+  "corrections": [
+    {
+      "id": "COR-1",
+      "claim": "Proposal references TenantContext.ontology as type Ontology",
+      "actual": "Type is MergedOntology, not Ontology",
+      "evidence": ["F002"],
+      "impact": "Code references in proposal and spec must use MergedOntology"
+    },
+    {
+      "id": "COR-2",
+      "claim": "Proposal references Entity and Relation types",
+      "actual": "Actual types are EntityDef and RelationDef",
+      "evidence": ["F002"],
+      "impact": "All schema references must use EntityDef/RelationDef"
+    },
+    {
+      "id": "COR-3",
+      "claim": "Proposal says parrot.clients.AbstractClient for embeddings and summaries",
+      "actual": "AbstractClient has no embed() method. Embeddings use parrot.embeddings.EmbeddingModel. For summaries, use AbstractClient.ask() or .complete()",
+      "evidence": ["F006", "F011"],
+      "impact": "Stage 2 (Embed) must use parrot.embeddings infrastructure. Summary/verification stages use AbstractClient.ask()"
+    },
+    {
+      "id": "COR-4",
+      "claim": "Proposal says AbstractClient.ask exact signature needs verification",
+      "actual": "ask(prompt, model, max_tokens, temperature, files?, system_prompt?, structured_output?, tools?, ...) -> MessageResponse",
+      "evidence": ["F006"],
+      "impact": "Now verified — use ask() for LLM calls, complete() for simple text extraction"
+    },
+    {
+      "id": "COR-5",
+      "claim": "TenantContext field set listed as 3 fields",
+      "actual": "TenantContext has 4 fields: tenant_id, arango_db, pgvector_schema, ontology",
+      "evidence": ["F002"],
+      "impact": "pgvector_schema field is useful — GraphIndex can use it for pgvector embedding storage"
+    }
+  ],
+  "confirmations": [
+    {
+      "id": "CON-1",
+      "claim": "OntologyGraphStore has upsert_nodes, create_edges, get_all_nodes, soft_delete_nodes, execute_traversal, initialize_tenant",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-2",
+      "claim": "PageIndex public API matches: build_page_index, md_to_tree, PageIndexRetriever, etc.",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-3",
+      "claim": "KNOWLEDGE_LAYER at priority 30 with knowledge_content template",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-4",
+      "claim": "AbstractToolkit auto-discovers public async methods as tools",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-5",
+      "claim": "graphindex module does not exist — clean namespace",
+      "evidence": ["F008"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-6",
+      "claim": "faiss-cpu already in [embeddings] extra",
+      "evidence": ["F009"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-7",
+      "claim": "rustworkx, tree-sitter, tree-sitter-languages, pathspec NOT declared — new extra needed",
+      "evidence": ["F009"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-8",
+      "claim": "ai-parrot-loaders has 24+ loaders covering all mentioned formats",
+      "evidence": ["F007"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-9",
+      "claim": "Flowtask Component base class is in external flowtask package",
+      "evidence": ["F010"],
+      "confidence": "high"
+    },
+    {
+      "id": "CON-10",
+      "claim": "40+ existing toolkits follow AbstractToolkit pattern in ai-parrot-tools",
+      "evidence": ["F012"],
+      "confidence": "high"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "What is the exact Flowtask Component base class interface and registration contract?",
+      "blocks_claims": [],
+      "plausible_answers": ["Check external flowtask package docs", "Follow FlowtaskToolkit.flowtask_component_call pattern"],
+      "user_answer": null
+    },
+    {
+      "id": "U2",
+      "question": "How should the LoaderBasedExtractor detect hierarchical vs flat content from a loader?",
+      "blocks_claims": [],
+      "plausible_answers": ["Maintain a static mapping of loader type → hierarchical/flat", "Probe the output for heading structure", "Add is_hierarchical to loader metadata"],
+      "user_answer": null
+    }
+  ],
+  "recommended_next_command": {
+    "command": "/sdd-spec",
+    "rationale": "The proposal is well-structured with high-confidence localization across all integration points. All critical code references verified against the live codebase. Five corrections identified but none are architectural — they are naming/import fixes. Ready for spec decomposition."
+  }
+}

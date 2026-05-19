@@ -1,0 +1,75 @@
+{
+  "pricing": {
+    "last_updated": "2026-05-18",
+    "source": "https://www.anthropic.com/pricing",
+    "currency": "USD"
+  },
+  "models": {
+    "claude-3-5-sonnet-20241022": {
+      "input_per_1m": 3.00,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": 0.30,
+      "valid_from": "2024-10-22"
+    },
+    "claude-3-5-sonnet": {
+      "input_per_1m": 3.00,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": 0.30,
+      "valid_from": "2024-10-22"
+    },
+    "claude-3-5-haiku-20241022": {
+      "input_per_1m": 0.80,
+      "output_per_1m": 4.00,
+      "cached_input_per_1m": 0.08,
+      "valid_from": "2024-10-22"
+    },
+    "claude-3-5-haiku": {
+      "input_per_1m": 0.80,
+      "output_per_1m": 4.00,
+      "cached_input_per_1m": 0.08,
+      "valid_from": "2024-10-22"
+    },
+    "claude-3-opus-20240229": {
+      "input_per_1m": 15.00,
+      "output_per_1m": 75.00,
+      "cached_input_per_1m": 1.50,
+      "valid_from": "2024-02-29"
+    },
+    "claude-3-opus": {
+      "input_per_1m": 15.00,
+      "output_per_1m": 75.00,
+      "cached_input_per_1m": 1.50,
+      "valid_from": "2024-02-29"
+    },
+    "claude-3-haiku-20240307": {
+      "input_per_1m": 0.25,
+      "output_per_1m": 1.25,
+      "cached_input_per_1m": 0.03,
+      "valid_from": "2024-03-07"
+    },
+    "claude-3-haiku": {
+      "input_per_1m": 0.25,
+      "output_per_1m": 1.25,
+      "cached_input_per_1m": 0.03,
+      "valid_from": "2024-03-07"
+    },
+    "claude-opus-4-20250514": {
+      "input_per_1m": 15.00,
+      "output_per_1m": 75.00,
+      "cached_input_per_1m": 1.50,
+      "valid_from": "2025-05-14"
+    },
+    "claude-sonnet-4-20250514": {
+      "input_per_1m": 3.00,
+      "output_per_1m": 15.00,
+      "cached_input_per_1m": 0.30,
+      "valid_from": "2025-05-14"
+    },
+    "claude-haiku-4-20250514": {
+      "input_per_1m": 0.80,
+      "output_per_1m": 4.00,
+      "cached_input_per_1m": 0.08,
+      "valid_from": "2025-05-14"
+    }
+  }
+}
