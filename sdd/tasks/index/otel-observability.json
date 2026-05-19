@@ -221,7 +221,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -231,8 +231,8 @@
       "parallelism_notes": "Per-spec sequential. Manual-verified deliverable; depends on a working setup_telemetry.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1237-examples-docker-compose.md"
+      "completed_at": "2026-05-19T01:51:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1237-examples-docker-compose.md"
     },
     {
       "id": "TASK-1238",
