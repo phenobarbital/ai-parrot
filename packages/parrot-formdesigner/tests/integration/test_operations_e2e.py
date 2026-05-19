@@ -25,6 +25,7 @@ def sample_form() -> FormSchema:
         form_id="ops-form",
         version="1.0",
         title={"en": "Ops Form"},
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",
@@ -247,6 +248,7 @@ async def test_move_field_round_trip(aiohttp_client):
     form = FormSchema(
         form_id="move-test",
         title={"en": "M"},
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",

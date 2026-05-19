@@ -6,15 +6,12 @@ a REST fallback endpoint for payloads exceeding the 4 KB sendData() limit.
 
 from __future__ import annotations
 
-import json
 import logging
-from html import escape
 from pathlib import Path
 
 import jinja2
 from aiohttp import web
 
-from ..core.style import StyleSchema
 from ..renderers.html5 import HTML5Renderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
@@ -22,6 +19,28 @@ from ..services.validators import FormValidator
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "renderers" / "templates"
+
+
+def _get_request_tenant(request: web.Request) -> str | None:
+    """Extract the effective tenant from an aiohttp request.
+
+    Mirrors ``parrot_formdesigner.api._utils._get_request_tenant`` but is
+    inlined here to avoid a circular dependency between the ``ui`` and ``api``
+    sub-packages (the ``ui`` package must remain importable without pulling
+    in ``api``).
+
+    Args:
+        request: Incoming aiohttp web.Request.
+
+    Returns:
+        First program slug string, or ``None`` if not available.
+    """
+    session = getattr(request, "session", None)
+    if session is None:
+        return None
+    userinfo = session.get("session", {})
+    programs: list[str] = userinfo.get("programs", [])
+    return programs[0] if programs else None
 
 
 class TelegramWebAppHandler:
@@ -58,12 +77,12 @@ class TelegramWebAppHandler:
             HTML response with the Telegram WebApp page, or 404.
         """
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = _get_request_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.Response(text="Form not found", status=404)
 
         # Render the form HTML
-        style = StyleSchema()
         rendered = await self.renderer.render(form)
         form_html = rendered.content
 
@@ -100,7 +119,8 @@ class TelegramWebAppHandler:
             JSON response with is_valid and errors.
         """
         form_id = request.match_info["form_id"]
-        form = await self.registry.get(form_id)
+        tenant = _get_request_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return web.json_response(
                 {"error": f"Form '{form_id}' not found"}, status=404
