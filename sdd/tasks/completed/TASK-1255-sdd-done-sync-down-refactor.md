@@ -256,4 +256,4 @@ grep -qE '(staging.*dev|dev.*staging)' .claude/commands/sdd-done.md
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). Renamed flag `--sync-dev` to `--sync-down` in Usage block with `--sync-dev` kept as deprecated alias. Guardrails updated to mention both `staging` and `dev` propagation targets and reference the sync-down.yml Action. §9 hard-refusal block updated to reference `--sync-down`. §9.5 completely rewritten as "Hotfix → Sync-down" with two independent target blocks (staging first, then dev), one-time pre-flight check, independent failure handling per target, explicit `git checkout main` at end, and summary exit code. All grep checks pass.

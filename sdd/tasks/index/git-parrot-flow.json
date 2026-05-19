@@ -50,7 +50,7 @@
       "feature_id": "FEAT-187",
       "feature": "git-parrot-flow",
       "spec": "sdd/specs/git-parrot-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Logical dependency on TASK-1253 (KNOWN_BRANCHES) for prose references, and on TASK-1254 (Action) so that the rewritten skill can reference the Action by filename in deprecation/fallback messages. File-disjoint, so technically parallelizable, but content-coherent only after both upstreams exist.",
       "assigned_to": null,
       "started_at": "2026-05-19T14:52:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1255-sdd-done-sync-down-refactor.md"
+      "completed_at": "2026-05-19T14:57:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1255-sdd-done-sync-down-refactor.md"
     },
     {
       "id": "TASK-1256",
