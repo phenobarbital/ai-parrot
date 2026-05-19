@@ -19,6 +19,13 @@ import yaml
 from pydantic import BaseModel, model_validator
 
 
+#: Canonical long-lived branches in the Git Parrot Flow (FEAT-187).
+#: Commands use this for a soft warning when ``base_branch`` falls
+#: outside the set; ``FlowMeta`` itself accepts any string so
+#: sub-feature branches keep working (see CLAUDE.md).
+KNOWN_BRANCHES: frozenset[str] = frozenset({"main", "staging", "dev"})
+
+
 class FlowMeta(BaseModel):
     """SDD flow metadata derived from a doc's YAML frontmatter."""
 
