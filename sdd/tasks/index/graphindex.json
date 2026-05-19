@@ -92,7 +92,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "No shared files with extractors or assembly — can run in parallel after TASK-1253",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1257-graphindex-embed-stage.md"
+      "completed_at": "2026-05-19T15:50:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1257-graphindex-embed-stage.md"
     },
     {
       "id": "TASK-1258",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "No shared files with extractors or embed — can run in parallel after TASK-1253",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1258-graphindex-assembly.md"
+      "completed_at": "2026-05-19T15:50:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1258-graphindex-assembly.md"
     },
     {
       "id": "TASK-1259",
