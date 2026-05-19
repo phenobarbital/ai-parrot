@@ -1,0 +1,135 @@
+{
+  "feature": "formdesigner-partial-saves",
+  "feature_id": "FEAT-186",
+  "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-19T12:45:00Z",
+  "completed_at": "2026-05-19T01:35:27+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1247",
+      "slug": "partial-form-data-model",
+      "title": "PartialFormData Pydantic Model",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation model — all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:25:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1247-partial-form-data-model.md"
+    },
+    {
+      "id": "TASK-1248",
+      "slug": "partial-save-store-service",
+      "title": "PartialSaveStore Redis Service",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1247"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1247 for PartialFormData model",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1248-partial-save-store-service.md"
+    },
+    {
+      "id": "TASK-1249",
+      "slug": "partial-save-handlers",
+      "title": "Partial Save Handler Methods",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1247",
+        "TASK-1248"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on store service and model",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:30:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1249-partial-save-handlers.md"
+    },
+    {
+      "id": "TASK-1250",
+      "slug": "submit-merge-integration",
+      "title": "Submit Merge Integration (?merge_partials)",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1248",
+        "TASK-1249"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies submit_data() which TASK-1249 also touches",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:32:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1250-submit-merge-integration.md"
+    },
+    {
+      "id": "TASK-1251",
+      "slug": "partial-save-routes",
+      "title": "Route Registration for Partial Saves",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1249"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on handler methods existing",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:33:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1251-partial-save-routes.md"
+    },
+    {
+      "id": "TASK-1252",
+      "slug": "partial-saves-integration-tests",
+      "title": "Integration Tests for Partial Saves",
+      "feature_id": "FEAT-186",
+      "feature": "formdesigner-partial-saves",
+      "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1247",
+        "TASK-1248",
+        "TASK-1249",
+        "TASK-1250",
+        "TASK-1251"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation — depends on all implementation tasks",
+      "assigned_to": null,
+      "started_at": "2026-05-19T01:23:55+00:00",
+      "completed_at": "2026-05-19T01:35:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1252-partial-saves-integration-tests.md"
+    }
+  ]
+}
