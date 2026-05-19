@@ -32,7 +32,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "No shared files with other extractors or embed/assembly — can run in parallel after TASK-1253",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1254-graphindex-code-extractor.md"
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1254-graphindex-code-extractor.md"
     },
     {
       "id": "TASK-1255",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "No shared files with other extractors or embed/assembly — can run in parallel after TASK-1253",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1255-graphindex-loader-extractor.md"
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1255-graphindex-loader-extractor.md"
     },
     {
       "id": "TASK-1256",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "No shared files with other extractors — can run in parallel after TASK-1253",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1256-graphindex-skill-extractor.md"
+      "completed_at": "2026-05-19T15:48:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1256-graphindex-skill-extractor.md"
     },
     {
       "id": "TASK-1257",
