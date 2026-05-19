@@ -227,6 +227,116 @@ class TestSavePartial:
 
         assert resp.status == 503
 
+    async def test_save_answers_not_dict_returns_400(self):
+        """POST /partial with 'answers' as a non-dict returns 400."""
+        store = MagicMock(spec=PartialSaveStore)
+        handler = _make_handler(partial_store=store)
+        req = _make_request(body={"answers": "not-a-dict"})
+
+        resp = await handler.save_partial(req)
+
+        assert resp.status == 400
+        body = json.loads(resp.body)
+        assert "'answers' must be a JSON object" in body["error"]
+
+    async def test_save_empty_answers_no_cache_returns_200_short_circuit(self):
+        """POST /partial with 'answers': {} short-circuits when no cached partial."""
+        store = MagicMock(spec=PartialSaveStore)
+        store.get = AsyncMock(return_value=None)
+
+        handler = _make_handler(partial_store=store)
+        req = _make_request(body={"answers": {}})
+
+        resp = await handler.save_partial(req)
+
+        assert resp.status == 200
+        body = json.loads(resp.body)
+        assert body["data"] == {}
+        assert body["field_errors"] == {}
+        # save() must NOT have been called — no Redis write
+        store.save.assert_not_called()
+
+    async def test_save_empty_answers_with_cache_returns_existing_partial(self):
+        """POST /partial with 'answers': {} returns existing cached partial."""
+        form = _make_form()
+        store = MagicMock(spec=PartialSaveStore)
+        existing = _make_partial(data={"name": "Alice"}, field_errors={"age": ["Required"]})
+        store.get = AsyncMock(return_value=existing)
+
+        handler = _make_handler(form=form, partial_store=store)
+        req = _make_request(body={"answers": {}})
+
+        resp = await handler.save_partial(req)
+
+        assert resp.status == 200
+        body = json.loads(resp.body)
+        assert body["data"]["name"] == "Alice"
+        assert "age" in body["field_errors"]
+        # save() must NOT have been called
+        store.save.assert_not_called()
+
+    async def test_get_partial_returns_field_errors_from_previous_save(self):
+        """GET /partial returns field_errors persisted from the last save (Fix C)."""
+        from typing import Any
+
+        # Inline in-memory store so _redis_set / _redis_get work without real Redis
+        class _FakeRedis:
+            def __init__(self) -> None:
+                self._store: dict[str, str] = {}
+
+            async def get(self, key: str) -> str | None:
+                return self._store.get(key)
+
+            async def setex(self, key: str, ttl: int, value: str) -> None:
+                self._store[key] = value
+
+            async def delete(self, key: str) -> int:
+                if key in self._store:
+                    del self._store[key]
+                    return 1
+                return 0
+
+            async def close(self) -> None:
+                pass
+
+        class InlineStore(PartialSaveStore):
+            def __init__(self) -> None:
+                super().__init__(ttl_seconds=3600, redis_url=None)
+                self._fake = _FakeRedis()
+
+            async def _get_redis(self) -> Any:
+                return self._fake
+
+        store = InlineStore()
+        form = _make_form()
+        registry = MagicMock()
+        registry.get = AsyncMock(return_value=form)
+
+        handler = FormAPIHandler(
+            registry=registry,
+            partial_store=store,
+        )
+        # Make validator return an error for "age"
+        handler.validator.validate_field = AsyncMock(
+            side_effect=lambda field, value, **kw: ["Must be positive"] if field.field_id == "age" else []
+        )
+
+        # Save with an invalid age — field_errors should be persisted to Redis
+        req_save = _make_request(body={"answers": {"name": "Alice", "age": -5}})
+        resp_save = await handler.save_partial(req_save)
+        assert resp_save.status == 200
+        save_body = json.loads(resp_save.body)
+        assert "age" in save_body["field_errors"]
+
+        # Retrieve — field_errors must still be present (persisted via Fix C)
+        req_get = _make_request(method="GET")
+        resp_get = await handler.get_partial(req_get)
+        assert resp_get.status == 200
+        get_body = json.loads(resp_get.body)
+        assert "age" in get_body["field_errors"], (
+            "GET /partial should return field_errors persisted from the last save"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestGetPartial

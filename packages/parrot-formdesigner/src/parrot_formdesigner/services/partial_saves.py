@@ -87,6 +87,12 @@ class PartialSaveStore:
         Returns:
             PartialFormData representing the full merged state after the save.
         """
+        # First lock acquisition: read the existing partial via self.get() which
+        # calls _get_redis() internally. This and the second acquisition below
+        # are intentionally separate — the lock is released between read and
+        # write so that the asyncio event loop is not held across the merge
+        # computation. The last-write-wins semantics are acceptable for this
+        # ephemeral cache; strict read-modify-write atomicity is not required.
         existing = await self.get(form_id, session_id)
         merged_data: dict[str, Any] = {
             **(existing.data if existing else {}),
@@ -98,11 +104,12 @@ class PartialSaveStore:
             form_id=form_id,
             session_id=session_id,
             data=merged_data,
-            field_errors={},  # populated by handler, not store
+            field_errors={},  # Computed by handler for response only; not stored in Redis.
             saved_at=now,
             expires_at=now + self._ttl,
         )
 
+        # Second lock acquisition: write the merged partial back to Redis.
         redis = await self._get_redis()
         if redis is not None:
             await self._redis_set(redis, partial)
@@ -166,6 +173,11 @@ class PartialSaveStore:
 
     def _redis_key(self, form_id: str, session_id: str) -> str:
         """Build the namespaced Redis key for a form+session pair.
+
+        Note: colons in ``form_id`` are safe for Redis string keys — they are
+        treated as literal characters and carry no special meaning in Redis
+        key space (unlike in cluster slot hashing with ``{}``, which is not
+        used here).
 
         Args:
             form_id: Form identifier.

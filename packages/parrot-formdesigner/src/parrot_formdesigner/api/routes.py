@@ -141,6 +141,13 @@ def setup_form_api(
     if partial_store is not None:
         app["partial_store"] = partial_store
 
+        async def _close_partial_store(app: web.Application) -> None:
+            ps = app.get("partial_store")
+            if ps is not None:
+                await ps.close()
+
+        app.on_shutdown.append(_close_partial_store)
+
     handler = FormAPIHandler(
         registry=registry,
         client=client,

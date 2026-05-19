@@ -277,6 +277,20 @@ class FormAPIHandler:
 
         answers: dict = body.get("answers", {})
 
+        if not isinstance(answers, dict):
+            return web.json_response(
+                {"error": "'answers' must be a JSON object"}, status=400
+            )
+
+        if not answers:
+            existing = await self._partial_store.get(form_id, session_id)
+            if existing is not None:
+                return web.json_response(existing.model_dump(mode="json"), status=200)
+            return web.json_response(
+                {"form_id": form_id, "session_id": session_id, "data": {}, "field_errors": {}},
+                status=200,
+            )
+
         form = await self.registry.get(form_id)
         if form is None:
             return web.json_response(
@@ -306,6 +320,19 @@ class FormAPIHandler:
         # Attach field_errors to the PartialFormData using model_copy
         if field_errors:
             partial = partial.model_copy(update={"field_errors": field_errors})
+            # Persist updated partial (with field_errors) back to Redis so that
+            # GET /partial returns the last validation state.
+            try:
+                await self._partial_store._redis_set(
+                    await self._partial_store._get_redis(), partial
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "PartialSaveStore: failed to persist field_errors for %s/%s: %s",
+                    form_id,
+                    session_id,
+                    exc,
+                )
 
         return web.json_response(
             json.loads(partial.model_dump_json()), status=200
