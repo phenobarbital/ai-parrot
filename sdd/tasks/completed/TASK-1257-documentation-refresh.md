@@ -285,4 +285,4 @@ grep -q 'sync-down.yml' sdd/WORKFLOW.md  # exit 0
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). CLAUDE.md "Git Configuration" block rewritten to describe the three long-lived branches (main, staging, dev), the sync-down.yml Action, --sync-down flag, and recommended branch protection. 8 `staging` mentions total, cites FEAT-187, references --sync-down. sdd/WORKFLOW.md received a "Git Configuration (FEAT-187)" subsection update and a new `## Release Cut` section with three subsections (cutting the branch, during the freeze, releasing) plus Recommended Branch Protection note. Both files cite FEAT-187 and reference sync-down.yml. All grep checks pass.

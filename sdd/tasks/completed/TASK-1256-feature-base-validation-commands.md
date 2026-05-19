@@ -251,4 +251,4 @@ The literal regression check:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). All five files received surgical edits: (1) sdd-brainstorm.md: rewrote lines 46-60 type-question block with new prose, removed `base_branch: dev | main | <other>` YAML example, added refusal block. (2) sdd-spec.md: added feature-main refusal check immediately after the hotfix validation block, plus staging note. (3) sdd-task.md: updated prose to include `staging` as valid feature base, added refusal block. (4) sdd-proposal.md: updated Step 0 to mention `staging` as valid integration branch, added refusal block. (5) sdd-worker.md: §0 now mentions `staging` as valid base_branch and includes the refusal block. All grep checks pass. No change to sdd-done.md or sdd-start.md.

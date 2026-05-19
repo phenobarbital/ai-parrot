@@ -253,4 +253,4 @@ Manual integration test (post-merge, documented for the operator):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). Created `.github/workflows/sync-down.yml` with matrix over `[staging, dev]`, `fail-fast: false`, target-exists guard using `git ls-remote --exit-code`, FF step with `continue-on-error: true`, and `peter-evans/create-pull-request@v6` PR fallback. YAML validates cleanly with PyYAML. `actionlint` not available in this environment (noted per task spec). No existing workflow files modified.
