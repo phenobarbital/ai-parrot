@@ -772,11 +772,15 @@ class FormAPIHandler:
         Flow:
         1. Load the form from registry (404 if not found).
         2. Parse JSON body (400 if invalid).
-        3. Validate submission data (422 if invalid).
-        4. Store locally if ``submission_storage`` is configured.
-        5. Forward to endpoint if form has an ``endpoint`` submit action and
+        3. If ``?merge_partials=true``, load cached partial and merge into data
+           (submitted values override cached; skipped silently if no store or
+           no cached partial).
+        4. Validate submission data (422 if invalid).
+        5. Store locally if ``submission_storage`` is configured.
+        6. Forward to endpoint if form has an ``endpoint`` submit action and
            ``forwarder`` is configured.
-        6. Return composite result — always 200, even when forwarding fails.
+        7. If merge was performed, delete the cached partial on success.
+        8. Return composite result — always 200, even when forwarding fails.
         """
         import uuid
         from datetime import datetime, timezone
@@ -794,6 +798,32 @@ class FormAPIHandler:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        # Optional: merge cached partial answers into submitted data
+        # (?merge_partials=true — submitted values take precedence)
+        _merge_session_id: str | None = None
+        merge_partials = request.query.get("merge_partials", "").lower() == "true"
+        if merge_partials and self._partial_store is not None:
+            _merge_session_id = self._extract_session_id(request)
+            if _merge_session_id:
+                try:
+                    cached = await self._partial_store.get(form_id, _merge_session_id)
+                    if cached:
+                        # cached values fill gaps; submitted values win on overlap
+                        data = {**cached.data, **data}
+                        self.logger.debug(
+                            "Merged %d cached partial fields into submit for %s/%s",
+                            len(cached.data),
+                            form_id,
+                            _merge_session_id,
+                        )
+                except Exception as exc:
+                    self.logger.warning(
+                        "Failed to load partial for merge %s/%s: %s",
+                        form_id,
+                        _merge_session_id,
+                        exc,
+                    )
 
         # Validate submission data against form schema
         result = await self.validator.validate(form, data)
@@ -840,6 +870,23 @@ class FormAPIHandler:
                     "Forward failed for submission %s: %s",
                     submission.submission_id,
                     forward_error,
+                )
+
+        # Cleanup: delete cached partial after successful submission
+        if merge_partials and _merge_session_id and self._partial_store is not None:
+            try:
+                await self._partial_store.delete(form_id, _merge_session_id)
+                self.logger.debug(
+                    "Deleted cached partial for %s/%s after successful submit",
+                    form_id,
+                    _merge_session_id,
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Failed to delete partial after submit %s/%s: %s",
+                    form_id,
+                    _merge_session_id,
+                    exc,
                 )
 
         return web.json_response({
