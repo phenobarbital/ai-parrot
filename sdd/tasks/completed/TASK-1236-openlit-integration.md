@@ -193,4 +193,10 @@ def test_init_missing_raises():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `init_openlit(config)` in `parrot/observability/openlit_integration.py`.
+Module-level `_INITIALIZED` sentinel ensures at-most-once init per process. openlit is
+lazy-imported inside `init_openlit` — never at module top-level (verified: `"openlit" not in
+sys.modules` after plain import). Missing openlit raises ImportError mentioning the
+`observability-openlit` extra. `_reset_for_tests()` resets the sentinel for test isolation.
+All 5 acceptance criteria verified via direct Python invocation. Committed as
+`feat(otel-observability): TASK-1236`.
