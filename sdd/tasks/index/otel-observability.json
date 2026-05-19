@@ -174,7 +174,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -191,8 +191,8 @@
       "parallelism_notes": "Wires everything together — must come after all subscribers, provider, exporters, and OpenLIT wrapper.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1235-setup-telemetry-boot-helper.md"
+      "completed_at": "2026-05-19T01:49:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1235-setup-telemetry-boot-helper.md"
     },
     {
       "id": "TASK-1236",
