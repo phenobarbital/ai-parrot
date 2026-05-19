@@ -132,7 +132,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Needs FAISS index from TASK-1257 and assembled graph from TASK-1258",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1259-graphindex-cross-domain-resolution.md"
+      "completed_at": "2026-05-19T15:54:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1259-graphindex-cross-domain-resolution.md"
     },
     {
       "id": "TASK-1260",
