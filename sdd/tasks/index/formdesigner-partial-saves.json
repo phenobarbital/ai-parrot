@@ -73,7 +73,7 @@
       "feature_id": "FEAT-186",
       "feature": "formdesigner-partial-saves",
       "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Modifies submit_data() which TASK-1249 also touches",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1250-submit-merge-integration.md"
+      "completed_at": "2026-05-19T01:32:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1250-submit-merge-integration.md"
     },
     {
       "id": "TASK-1251",
