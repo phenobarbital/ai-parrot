@@ -14,9 +14,11 @@ Public surface (grows as subsequent FEAT-177 tasks land):
 """
 
 from parrot.observability.config import ObservabilityConfig
+from parrot.observability.provider import ParrotTelemetryProvider
 
 __all__: list[str] = [
     "ObservabilityConfig",
+    "ParrotTelemetryProvider",
 ]
 
 # Deferred re-exports — added as each task lands:
@@ -24,4 +26,3 @@ __all__: list[str] = [
 # from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
 # from parrot.observability.subscribers.metrics import MetricsSubscriber
 # from parrot.observability.cost.calculator import CostCalculator
-# from parrot.observability.provider import ParrotTelemetryProvider
