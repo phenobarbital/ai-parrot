@@ -71,7 +71,7 @@
       "feature_id": "FEAT-187",
       "feature": "git-parrot-flow",
       "spec": "sdd/specs/git-parrot-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Depends on TASK-1253 (KNOWN_BRANCHES) for prose. Touches 5 command/agent files that are disjoint from every other task's surface. Could run in parallel with TASK-1255 in principle but bunching all command edits sequentially reduces review noise.",
       "assigned_to": null,
       "started_at": "2026-05-19T14:52:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1256-feature-base-validation-commands.md"
+      "completed_at": "2026-05-19T14:59:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1256-feature-base-validation-commands.md"
     },
     {
       "id": "TASK-1257",
