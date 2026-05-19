@@ -29,6 +29,7 @@ def sample_form() -> FormSchema:
     return FormSchema(
         form_id="e2e-xml",
         title={"en": "E2E XML"},
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",

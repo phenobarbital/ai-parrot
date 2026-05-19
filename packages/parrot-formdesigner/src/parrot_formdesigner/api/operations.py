@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ..core.schema import FormField, FormSchema, FormSection, FormSubsection
 from ..services.validators import FormValidator
-from ._utils import _bump_version, _deep_merge
+from ._utils import _bump_version, _deep_merge, _get_request_tenant
 
 
 logger = logging.getLogger(__name__)
@@ -380,7 +380,8 @@ async def handle_operations(request: web.Request) -> web.Response:
             {"error": "form registry not configured"}, status=500
         )
 
-    form = await registry.get(form_id)
+    tenant = _get_request_tenant(request)
+    form = await registry.get(form_id, tenant=tenant)
     if form is None:
         logger.warning("operations: form '%s' not found", form_id)
         return web.json_response(
@@ -456,7 +457,7 @@ async def handle_operations(request: web.Request) -> web.Response:
         )
 
     working.version = _bump_version(form.version)
-    await registry.register(working, persist=True, overwrite=True)
+    await registry.register(working, persist=True, overwrite=True, tenant=tenant)
     logger.info(
         "operations: applied %d ops to form '%s' → version %s",
         len(envelope.operations),

@@ -40,6 +40,8 @@ def sample_form() -> FormSchema:
     return FormSchema(
         form_id="test-form",
         title={"en": "Test"},
+        # FEAT-183: tenant required by FormRegistry (require_tenant=True default).
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",

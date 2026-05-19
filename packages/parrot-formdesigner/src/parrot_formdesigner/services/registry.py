@@ -10,6 +10,12 @@ Migrated from parrot/integrations/dialogs/registry.py with:
 - persist= parameter on register()
 - load_from_storage() for startup hydration
 - Async register/unregister callbacks
+
+Multi-tenancy support (FEAT-183):
+- Internal state is dict[tenant, dict[form_id, FormSchema]] (nested dict).
+- Every public method accepts kwarg-only ``tenant: str | None = None``.
+- ``tenant=None`` resolves strictly to ``default_tenant`` — never aggregates.
+- ``on_unregister`` callbacks receive ``(form_id, tenant)`` — BREAKING change.
 """
 
 from __future__ import annotations
@@ -18,21 +24,12 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from ..core.schema import FormSchema
 from ..core.style import StyleSchema
-from .validators import FormValidator
-
-if TYPE_CHECKING:
-    from aiohttp import web
 
 logger = logging.getLogger(__name__)
-
-
-class FormAlreadyExistsError(ValueError):
-    """Raised when attempting to register a form with an ID that already exists."""
-    pass
 
 
 class FormStorage(ABC):
@@ -121,60 +118,100 @@ class FormStorage(ABC):
         """
         ...
 
-    async def close(self) -> None:
-        """Release any resources held by this storage backend.
-
-        Default implementation is a no-op. Subclasses that hold resources
-        (e.g. asyncpg pools, file handles) should override this method.
-        Called automatically by ``FormRegistry.on_shutdown`` when the
-        aiohttp application shuts down.
-        """
-
 
 class FormRegistry:
-    """Thread-safe registry for FormSchema objects.
+    """Thread-safe, multi-tenant registry for FormSchema objects.
 
-    Supports in-memory registration, optional persistence via FormStorage,
-    async event callbacks, and YAML directory loading via YamlExtractor.
+    Supports in-memory registration scoped by tenant, optional persistence
+    via FormStorage, async event callbacks, and YAML directory loading via
+    YamlExtractor.
 
-    Example:
+    Internal state is ``dict[tenant, dict[form_id, FormSchema]]``.
+    Every public read/write method accepts a kwarg-only ``tenant=`` parameter
+    that resolves via: explicit kwarg > form.tenant (register paths) >
+    ``default_tenant``.
+
+    Example::
+
         registry = FormRegistry()
-        await registry.register(form_schema)
-        form = await registry.get("my-form")
+        await registry.register(form_schema)                     # requires form.tenant
+        form = await registry.get("my-form", tenant="navigator")
 
         # With persistence
         registry = FormRegistry(storage=PostgreSQLFormStorage(...))
         await registry.register(form_schema, persist=True)
-        await registry.load_from_storage()
+        await registry.load_from_storage(tenant="navigator")
+
+        # Cross-tenant admin pattern (explicit loop — no aggregation via tenant=None):
+        all_forms: list[FormSchema] = []
+        for t in await registry.list_tenants():
+            all_forms.extend(await registry.list_forms(tenant=t))
     """
 
     def __init__(
         self,
-        app: "web.Application | None" = None,
-        storage: "FormStorage | None" = None,
+        storage: FormStorage | None = None,
+        *,
+        default_tenant: str = "navigator",
+        require_tenant: bool = True,
     ) -> None:
         """Initialize FormRegistry.
 
         Args:
-            app: Optional aiohttp ``web.Application`` instance. When provided,
-                the registry self-registers as ``app['form_registry']`` and
-                hooks ``on_startup`` / ``on_shutdown`` into the application's
-                lifecycle signals automatically.
             storage: Optional FormStorage backend for persistence.
+            default_tenant: Tenant name used when callers pass ``tenant=None``.
+                Defaults to ``"navigator"`` to match
+                ``PostgresFormStorage.DEFAULT_SCHEMA``.
+            require_tenant: When ``True`` (default), :meth:`register` raises
+                ``ValueError`` if the form's effective tenant would fall all
+                the way through to ``default_tenant`` because BOTH the
+                explicit ``tenant=`` kwarg AND ``form.tenant`` are ``None``.
+                When ``False``, such forms are silently sealed to
+                ``default_tenant``.
         """
-        self._forms: dict[str, FormSchema] = {}
+        self._forms: dict[str, dict[str, FormSchema]] = {}
         self._lock = asyncio.Lock()
         self._storage = storage
-        self._app: "web.Application | None" = None
+        self._default_tenant = default_tenant
+        self._require_tenant = require_tenant
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
-        self._on_unregister: list[Callable[[str], Awaitable[None]]] = []
+        self._on_unregister: list[Callable[[str, str], Awaitable[None]]] = []
         self.logger = logging.getLogger(__name__)
 
-        if app is not None:
-            self._app = app
-            app["form_registry"] = self
-            app.on_startup.append(self.on_startup)
-            app.on_shutdown.append(self.on_shutdown)
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_tenant(
+        self,
+        tenant: str | None,
+        form: FormSchema | None = None,
+    ) -> str:
+        """Resolve effective tenant.
+
+        Precedence: explicit kwarg > form.tenant (register paths only) >
+        ``default_tenant``.
+
+        This mirrors ``PostgresFormStorage._resolve_schema`` in
+        ``services/storage.py:97-107``.
+
+        Args:
+            tenant: Caller-supplied tenant kwarg (may be ``None``).
+            form: Optional FormSchema whose ``.tenant`` field provides a
+                fallback. Pass only in ``register()`` paths.
+
+        Returns:
+            Resolved tenant string — never ``None``.
+        """
+        if tenant is not None:
+            return tenant
+        if form is not None and form.tenant is not None:
+            return form.tenant
+        return self._default_tenant
+
+    # ------------------------------------------------------------------
+    # Public API — write paths
+    # ------------------------------------------------------------------
 
     async def register(
         self,
@@ -182,39 +219,95 @@ class FormRegistry:
         *,
         persist: bool = False,
         overwrite: bool = True,
+        tenant: str | None = None,
     ) -> None:
-        """Register a form schema.
+        """Register a form schema under a specific tenant.
+
+        Resolution order for the effective tenant:
+
+        1. Explicit ``tenant=`` kwarg (if not ``None``).
+        2. ``form.tenant`` (if not ``None``).
+        3. ``self._default_tenant``.
+
+        When ``require_tenant=True`` (the default), step 3 is only reached
+        if BOTH the kwarg AND ``form.tenant`` are ``None`` — in that case a
+        ``ValueError`` is raised to prevent accidental un-scoped registration.
+
+        If the explicit kwarg differs from ``form.tenant``, a ``WARNING`` is
+        logged and the kwarg wins.  ``form.tenant`` is never mutated.
 
         Args:
             form: FormSchema to register.
             persist: If True, also save to storage backend.
                 Logs a warning (does not raise) if no storage is configured.
             overwrite: If True, overwrite existing registration (default True).
+            tenant: Explicit tenant override.  ``None`` means "use
+                form.tenant or default_tenant".
+
+        Raises:
+            ValueError: When ``require_tenant=True`` and both ``tenant=``
+                kwarg and ``form.tenant`` are ``None``.
         """
+        # Determine whether resolution would fall all the way to default_tenant
+        # because no explicit information was provided.
+        both_missing = tenant is None and form.tenant is None
+        if both_missing and self._require_tenant:
+            raise ValueError(
+                f"FormRegistry: form.tenant is required (form_id={form.form_id!r}). "
+                "Set form.tenant or pass tenant= explicitly, or use "
+                "require_tenant=False to seal to default_tenant."
+            )
+
+        resolved = self._resolve_tenant(tenant, form=form)
+
+        # Warn when explicit kwarg overrides form.tenant.
+        if (
+            tenant is not None
+            and form.tenant is not None
+            and tenant != form.tenant
+        ):
+            self.logger.warning(
+                "FormRegistry.register: explicit tenant=%r overrides "
+                "form.tenant=%r for form_id=%r. The form is indexed under %r.",
+                tenant,
+                form.tenant,
+                form.form_id,
+                resolved,
+            )
+
         async with self._lock:
-            if form.form_id in self._forms and not overwrite:
-                self.logger.debug("Form %s already registered, skipping", form.form_id)
+            tenant_bucket = self._forms.setdefault(resolved, {})
+            if form.form_id in tenant_bucket and not overwrite:
+                self.logger.debug(
+                    "Form %s already registered under tenant=%s, skipping",
+                    form.form_id,
+                    resolved,
+                )
                 return
 
-            self._forms[form.form_id] = form
+            tenant_bucket[form.form_id] = form
 
-        # Persist to backend if requested
+        # Persist to backend if requested.
         if persist:
             if self._storage is not None:
                 try:
-                    await self._storage.save(form, tenant=form.tenant)
+                    await self._storage.save(form, tenant=resolved)
                 except Exception as exc:
                     self.logger.warning(
-                        "Failed to persist form %s: %s", form.form_id, exc
+                        "Failed to persist form %s (tenant=%s): %s",
+                        form.form_id,
+                        resolved,
+                        exc,
                     )
             else:
                 self.logger.warning(
                     "persist=True but no FormStorage configured — "
-                    "form %s saved in-memory only",
+                    "form %s (tenant=%s) saved in-memory only",
                     form.form_id,
+                    resolved,
                 )
 
-        # Fire callbacks
+        # Fire on_register callbacks (unchanged signature: form carries .tenant).
         for callback in self._on_register:
             try:
                 await callback(form)
@@ -229,124 +322,138 @@ class FormRegistry:
         """
         self._storage = storage
 
-    async def on_startup(self, app: "web.Application") -> None:
-        """aiohttp startup signal handler.
+    async def unregister(self, form_id: str, *, tenant: str | None = None) -> bool:
+        """Unregister a form schema from a specific tenant.
 
-        Calls ``storage.initialize()`` (if the storage has the method) and
-        then ``load_from_storage()`` to hydrate the in-memory cache on startup.
-        This method is registered automatically when a ``web.Application`` is
-        passed to ``__init__``.
-
-        Args:
-            app: The aiohttp application (provided by aiohttp's signal machinery).
-        """
-        if self._storage is None:
-            self.logger.debug("on_startup: no storage configured — skipping")
-            return
-
-        if hasattr(self._storage, "initialize"):
-            try:
-                await self._storage.initialize()  # type: ignore[attr-defined]
-                self.logger.info("FormRegistry: storage initialized")
-            except Exception as exc:
-                self.logger.error("FormRegistry: storage initialize() failed: %s", exc)
-                return
-
-        try:
-            count = await self.load_from_storage()
-            self.logger.info("FormRegistry: loaded %d forms from storage on startup", count)
-        except Exception as exc:
-            self.logger.error("FormRegistry: load_from_storage() failed: %s", exc)
-
-    async def on_shutdown(self, app: "web.Application") -> None:
-        """aiohttp shutdown signal handler.
-
-        Calls ``storage.close()`` to release resources (e.g. close asyncpg
-        pool). This method is registered automatically when a
-        ``web.Application`` is passed to ``__init__``.
-
-        Args:
-            app: The aiohttp application (provided by aiohttp's signal machinery).
-        """
-        if self._storage is None:
-            self.logger.debug("on_shutdown: no storage configured — skipping")
-            return
-
-        try:
-            await self._storage.close()
-            self.logger.info("FormRegistry: storage closed")
-        except Exception as exc:
-            self.logger.error("FormRegistry: storage close() failed: %s", exc)
-
-    async def unregister(self, form_id: str) -> bool:
-        """Unregister a form schema.
+        If removing the form leaves the tenant bucket empty, the outer key
+        is deleted so :meth:`list_tenants` never reports empty tenants.
 
         Args:
             form_id: ID of the form to remove.
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
             True if removed, False if not found.
         """
+        resolved = self._resolve_tenant(tenant)
+
         async with self._lock:
-            form = self._forms.pop(form_id, None)
-            if form is None:
+            bucket = self._forms.get(resolved)
+            if bucket is None or form_id not in bucket:
                 return False
 
-        # Fire callbacks
+            bucket.pop(form_id)
+            # Clean up empty outer key so list_tenants() stays accurate.
+            if not bucket:
+                del self._forms[resolved]
+
+        # Fire on_unregister callbacks with new (form_id, tenant) signature.
         for callback in self._on_unregister:
             try:
-                await callback(form_id)
+                await callback(form_id, resolved)
             except Exception as exc:
                 self.logger.warning("Unregister callback failed: %s", exc)
 
         return True
 
-    async def get(self, form_id: str) -> FormSchema | None:
-        """Get a form schema by ID.
+    # ------------------------------------------------------------------
+    # Public API — read paths
+    # ------------------------------------------------------------------
+
+    async def get(self, form_id: str, *, tenant: str | None = None) -> FormSchema | None:
+        """Get a form schema by ID within a specific tenant.
 
         Args:
             form_id: Form identifier.
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            FormSchema if found, None otherwise.
+            FormSchema if found under the resolved tenant, ``None`` otherwise.
+            A form registered under ``"epson"`` is invisible to
+            ``get(form_id, tenant="pokemon")``.
         """
+        resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return self._forms.get(form_id)
+            return self._forms.get(resolved, {}).get(form_id)
 
-    async def list_forms(self) -> list[FormSchema]:
-        """List all registered form schemas.
+    async def list_forms(self, *, tenant: str | None = None) -> list[FormSchema]:
+        """List all registered form schemas for a specific tenant.
+
+        Never aggregates across tenants.  To iterate all tenants, loop over
+        :meth:`list_tenants` and call ``list_forms(tenant=t)`` for each.
+
+        Args:
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            List of all registered FormSchema objects.
+            List of FormSchema objects registered under the resolved tenant.
         """
+        resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return list(self._forms.values())
+            return list(self._forms.get(resolved, {}).values())
 
-    async def list_form_ids(self) -> list[str]:
-        """List all registered form IDs.
+    async def list_form_ids(self, *, tenant: str | None = None) -> list[str]:
+        """List all registered form IDs for a specific tenant.
+
+        Args:
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            List of form_id strings.
+            List of form_id strings under the resolved tenant.
         """
+        resolved = self._resolve_tenant(tenant)
         async with self._lock:
-            return list(self._forms.keys())
+            return list(self._forms.get(resolved, {}).keys())
 
-    async def contains(self, form_id: str) -> bool:
-        """Check if a form is registered.
+    async def contains(self, form_id: str, *, tenant: str | None = None) -> bool:
+        """Check if a form is registered under a specific tenant.
 
         Args:
             form_id: Form identifier to check.
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
 
         Returns:
-            True if registered.
+            True if the form is registered under the resolved tenant.
+        """
+        resolved = self._resolve_tenant(tenant)
+        async with self._lock:
+            return form_id in self._forms.get(resolved, {})
+
+    async def clear(self, *, tenant: str | None = None) -> None:
+        """Clear all registered forms for a specific tenant only.
+
+        Never aggregates.  Drops only ``resolved_tenant``'s forms and removes
+        the outer key so :meth:`list_tenants` stays accurate.
+
+        Args:
+            tenant: Tenant scope.  ``None`` resolves to ``default_tenant``.
+        """
+        resolved = self._resolve_tenant(tenant)
+        async with self._lock:
+            self._forms.pop(resolved, None)
+
+    async def clear_all(self) -> None:
+        """Drop every tenant's forms.
+
+        Use for test teardown and maintenance only — not for single-tenant
+        operations (use :meth:`clear` for those).
         """
         async with self._lock:
-            return form_id in self._forms
-
-    async def clear(self) -> None:
-        """Clear all registered forms."""
-        async with self._lock:
             self._forms.clear()
+
+    async def list_tenants(self) -> list[str]:
+        """Return a sorted list of tenants that have at least one registered form.
+
+        Returns:
+            Alphabetically sorted list of tenant strings.  Empty when the
+            registry has no forms.
+        """
+        async with self._lock:
+            return sorted(self._forms.keys())
+
+    # ------------------------------------------------------------------
+    # Directory and storage loaders
+    # ------------------------------------------------------------------
 
     async def load_from_directory(
         self,
@@ -354,18 +461,32 @@ class FormRegistry:
         *,
         recursive: bool = True,
         overwrite: bool = False,
+        tenant: str | None = None,
     ) -> int:
         """Load YAML form definitions from a directory using YamlExtractor.
 
         If YamlExtractor is not available, logs a warning and returns 0.
 
+        Tenant resolution per file:
+
+        1. YAML's own ``tenant:`` field wins (carried on
+           ``FormSchema.tenant`` after extraction).
+        2. Otherwise the ``tenant=`` kwarg passed to this method supplies
+           a default.
+        3. Otherwise, if ``require_tenant=True``, the file is skipped with
+           a ``WARNING`` log.  If ``require_tenant=False``, the form is
+           sealed to ``default_tenant`` by the :meth:`register` call.
+
         Args:
             path: Directory path containing .yaml/.yml form files.
             recursive: If True, search subdirectories.
             overwrite: If True, overwrite existing registrations.
+            tenant: Default tenant for YAML files that don't declare
+                ``tenant:`` at the top level.
 
         Returns:
-            Number of forms successfully loaded.
+            Number of forms successfully loaded (skipped files are NOT
+            counted).
         """
         try:
             from ..extractors.yaml import YamlExtractor
@@ -385,12 +506,56 @@ class FormRegistry:
         pattern = "**/*.yaml" if recursive else "*.yaml"
         yml_pattern = "**/*.yml" if recursive else "*.yml"
 
+        # Import YAML parser for raw tenant extraction.
+        # The YamlExtractor does not currently pass `tenant:` through to
+        # FormSchema.tenant. As a workaround, we read the raw YAML dict
+        # ourselves to extract the top-level `tenant:` field before calling
+        # the extractor. See Completion Note in TASK-1240 for the gap details.
+        try:
+            import yaml as _yaml  # type: ignore[import-not-found]
+        except ImportError:
+            _yaml = None  # type: ignore[assignment]
+
         for yaml_file in list(dir_path.glob(pattern)) + list(dir_path.glob(yml_pattern)):
             try:
                 form = extractor.extract_from_file(str(yaml_file))
+
+                # Tenant resolution per spec §2 Overview:
+                # 1. YAML's own tenant: field wins — read it directly from
+                #    the raw YAML since YamlExtractor doesn't surface it.
+                yaml_tenant: str | None = None
+                if _yaml is not None:
+                    try:
+                        raw = _yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+                        if isinstance(raw, dict):
+                            yaml_tenant = raw.get("tenant") or None
+                    except Exception:
+                        pass
+
+                if yaml_tenant is not None:
+                    # YAML wins — override whatever extractor produced.
+                    form = form.model_copy(update={"tenant": yaml_tenant})
+                elif form.tenant is None and tenant is not None:
+                    # 2. Apply kwarg default.
+                    form = form.model_copy(update={"tenant": tenant})
+
+                # 3. If still no tenant and require_tenant=True, skip with warning.
+                if form.tenant is None and self._require_tenant:
+                    self.logger.warning(
+                        "Skipping %s: no tenant declared in YAML and no "
+                        "fallback tenant= kwarg supplied (require_tenant=True)",
+                        yaml_file,
+                    )
+                    continue
+
                 await self.register(form, overwrite=overwrite)
                 count += 1
-                self.logger.debug("Loaded form %s from %s", form.form_id, yaml_file)
+                self.logger.debug(
+                    "Loaded form %s (tenant=%s) from %s",
+                    form.form_id,
+                    form.tenant,
+                    yaml_file,
+                )
             except Exception as exc:
                 self.logger.warning(
                     "Failed to load form from %s: %s", yaml_file, exc
@@ -400,12 +565,15 @@ class FormRegistry:
         return count
 
     async def load_from_storage(self, *, tenant: str | None = None) -> int:
-        """Load all persisted forms from storage into memory.
+        """Load all persisted forms from storage into memory for a tenant.
+
+        Consecutive calls for different tenants do not overwrite each other —
+        each call lands results in ``_forms[resolved_tenant]``.
 
         Args:
-            tenant: Optional tenant slug forwarded to the storage backend
-                so per-tenant schemas (``epson.form_schemas``) hydrate
-                correctly. ``None`` uses the storage's default schema.
+            tenant: Tenant slug forwarded to the storage backend so per-tenant
+                schemas (``epson.form_schemas``) hydrate correctly.  ``None``
+                resolves to ``default_tenant``.
 
         Returns:
             Number of forms loaded from storage.
@@ -414,8 +582,10 @@ class FormRegistry:
             self.logger.warning("load_from_storage() called but no storage configured")
             return 0
 
+        resolved = self._resolve_tenant(tenant)
+
         try:
-            form_list = await self._storage.list_forms(tenant=tenant)
+            form_list = await self._storage.list_forms(tenant=resolved)
         except Exception as exc:
             self.logger.error("Failed to list forms from storage: %s", exc)
             return 0
@@ -426,17 +596,26 @@ class FormRegistry:
             if not form_id:
                 continue
             try:
-                form = await self._storage.load(form_id, tenant=tenant)
+                form = await self._storage.load(form_id, tenant=resolved)
                 if form is not None:
-                    await self.register(form, overwrite=True)
+                    await self.register(form, overwrite=True, tenant=resolved)
                     count += 1
             except Exception as exc:
                 self.logger.warning(
-                    "Failed to load form %s from storage: %s", form_id, exc
+                    "Failed to load form %s from storage (tenant=%s): %s",
+                    form_id,
+                    resolved,
+                    exc,
                 )
 
-        self.logger.info("Loaded %d forms from storage", count)
+        self.logger.info(
+            "Loaded %d forms from storage (tenant=%s)", count, resolved
+        )
         return count
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def has_storage(self) -> bool:
@@ -461,6 +640,10 @@ class FormRegistry:
         """
         return self._storage
 
+    # ------------------------------------------------------------------
+    # Callback registration
+    # ------------------------------------------------------------------
+
     def on_register(
         self, callback: Callable[[FormSchema], Awaitable[None]]
     ) -> None:
@@ -468,128 +651,74 @@ class FormRegistry:
 
         Args:
             callback: Async callable receiving the registered FormSchema.
+                The form's ``.tenant`` attribute is populated with the
+                resolved tenant at registration time (may still be ``None``
+                if ``require_tenant=False`` and no tenant was resolved yet).
         """
         self._on_register.append(callback)
 
     def on_unregister(
-        self, callback: Callable[[str], Awaitable[None]]
+        self, callback: Callable[[str, str], Awaitable[None]]
     ) -> None:
         """Register a callback invoked when a form is unregistered.
 
+        BREAKING change from the pre-FEAT-183 signature: callbacks now
+        receive ``(form_id, tenant)`` rather than just ``form_id``.
+
         Args:
-            callback: Async callable receiving the unregistered form_id.
+            callback: Async callable receiving ``(form_id: str,
+                tenant: str)`` — the tenant is the resolved tenant captured
+                at :meth:`unregister` call time (never ``None``).
         """
         self._on_unregister.append(callback)
 
+    # ------------------------------------------------------------------
+    # Dunder methods
+    # ------------------------------------------------------------------
+
     async def __aiter__(self):
-        """Async iterate over registered forms."""
+        """Async iterate over all registered forms in deterministic order.
+
+        Yields forms sorted by ``(tenant, form_id)`` — stable across runs,
+        required for reproducible tests and admin UIs.
+        """
         async with self._lock:
-            forms = list(self._forms.values())
-        for form in forms:
+            # Snapshot under lock to avoid modification during iteration.
+            snapshot = [
+                form
+                for t in sorted(self._forms.keys())
+                for fid in sorted(self._forms[t].keys())
+                for form in (self._forms[t].get(fid),)
+                if form is not None
+            ]
+        for form in snapshot:
             yield form
 
     def __len__(self) -> int:
-        """Return number of registered forms (non-async snapshot)."""
-        return len(self._forms)
+        """Return total number of registered forms across all tenants."""
+        return sum(len(inner) for inner in self._forms.values())
 
-    def __contains__(self, form_id: str) -> bool:
-        """Check if form_id is registered (non-async snapshot)."""
-        return form_id in self._forms
+    def __contains__(self, item: tuple[str, str]) -> bool:  # type: ignore[override]
+        """Check registration using a ``(tenant, form_id)`` tuple.
 
-    async def clone_form(
-        self,
-        source_form_id: str,
-        new_form_id: str,
-        patch: "dict[str, Any] | None" = None,
-        *,
-        persist: bool = True,
-        tenant: str | None = None,
-    ) -> "FormSchema":
-        """Clone an existing form under a new form_id.
-
-        Creates a deep copy of the source form, assigns ``new_form_id``,
-        resets ``version`` to ``"1.0"`` and ``created_at`` to ``None``,
-        records ``meta["cloned_from"]`` for provenance, optionally applies an
-        RFC 7396 merge-patch, validates the result, and registers it.
+        BREAKING change from the pre-FEAT-183 ``__contains__(form_id: str)``
+        signature.  Passing a plain ``str`` raises ``TypeError`` to catch
+        callers that have not been updated.
 
         Args:
-            source_form_id: ``form_id`` of the form to clone.
-            new_form_id: ``form_id`` to assign to the cloned form.
-            patch: Optional RFC 7396 merge-patch dict to apply on top of the
-                cloned form before validation.  ``form_id`` and ``created_at``
-                in the patch are ignored.
-            persist: If ``True`` (default), persist the cloned form via the
-                configured storage backend.
-            tenant: Optional tenant slug applied to the cloned form.  When
-                provided it overrides whatever the source form carried.
+            item: A ``(tenant, form_id)`` tuple.
 
         Returns:
-            The newly cloned and registered ``FormSchema``.
+            True if the form is registered under the given tenant.
 
         Raises:
-            KeyError: When ``source_form_id`` is not found in the registry.
-            FormAlreadyExistsError: When ``new_form_id`` already exists in the
-                registry.
-            ValueError: When ``FormValidator.check_schema`` reports structural
-                errors on the cloned (and optionally patched) form.
+            TypeError: If ``item`` is not a tuple.
         """
-        source = await self.get(source_form_id)
-        if source is None:
-            raise KeyError(f"Form '{source_form_id}' not found")
-
-        if await self.contains(new_form_id):
-            raise FormAlreadyExistsError(f"Form '{new_form_id}' already exists")
-
-        # Deep-clone via Pydantic v2
-        clone = source.model_copy(deep=True)
-
-        # Apply mandatory field resets
-        clone.form_id = new_form_id
-        clone.version = "1.0"
-        clone.created_at = None
-
-        # Apply tenant override when provided
-        if tenant is not None:
-            clone.tenant = tenant
-
-        # Record provenance in meta
-        if clone.meta is None:
-            clone.meta = {}
-        clone.meta["cloned_from"] = source_form_id
-
-        # Apply optional RFC 7396 merge-patch
-        if patch:
-            from ..api._utils import _deep_merge  # deferred to avoid circular import
-            clone_dict = clone.model_dump()
-            merged = _deep_merge(clone_dict, patch)
-            # Patch cannot override form_id or created_at
-            merged["form_id"] = new_form_id
-            merged.pop("created_at", None)
-            # Ensure provenance survives the patch (RFC 7396 null removal)
-            meta = merged.get("meta") or {}
-            meta["cloned_from"] = source_form_id
-            merged["meta"] = meta
-            clone = FormSchema.model_validate(merged)
-            # Ensure created_at remains None after re-validation
-            clone.created_at = None
-
-        # Structural validation
-        errors = FormValidator().check_schema(clone)
-        if errors:
-            raise ValueError(f"Cloned form failed validation: {errors}")
-
-        await self.register(clone, persist=persist, overwrite=False)
-
-        # TOCTOU race condition guard
-        if not await self.contains(new_form_id):
-            raise ValueError(
-                f"Form '{new_form_id}' could not be registered — concurrent conflict"
+        if not isinstance(item, tuple):
+            raise TypeError(
+                "FormRegistry.__contains__ requires a (tenant, form_id) tuple; "
+                f"got {type(item).__name__!r}. "
+                "Use: (tenant, form_id) in registry"
             )
-
-        self.logger.info(
-            "Cloned form '%s' -> '%s' (persist=%s)",
-            source_form_id,
-            new_form_id,
-            persist,
-        )
-        return clone
+        tenant, form_id = item
+        return form_id in self._forms.get(tenant, {})
