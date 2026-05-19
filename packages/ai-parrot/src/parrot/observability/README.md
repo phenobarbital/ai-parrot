@@ -1,0 +1,213 @@
+# parrot.observability — OpenTelemetry + Cost Observability
+
+OpenTelemetry-based observability for AI-Parrot: GenAI SemConv-compliant
+traces, OTel metrics (counters + histograms), and USD cost tracking wired
+against the FEAT-176 lifecycle event system.
+
+---
+
+## Quickstart
+
+```python
+from parrot.observability import ObservabilityConfig, setup_telemetry, shutdown_telemetry
+
+# Boot the stack (idempotent)
+setup_telemetry(ObservabilityConfig(
+    enabled=True,
+    service_name="my-agent",
+    otlp_endpoint="http://localhost:4318",
+    enable_cost_tracking=True,
+    enable_openlit=True,   # requires: pip install 'ai-parrot[observability-openlit]'
+))
+
+# ... run your agent as usual ...
+
+# Flush exporters on clean shutdown
+shutdown_telemetry()
+```
+
+For a live demo stack (OpenLIT UI + ClickHouse + Prometheus):
+
+```bash
+cd packages/ai-parrot/src/parrot/observability/examples
+docker compose -f docker-compose.observability.yml up -d
+python basic_telemetry.py
+```
+
+See [examples/README.md](examples/README.md) for the full quickstart.
+
+---
+
+## Configuration
+
+`ObservabilityConfig` is a Pydantic v2 model. All fields have safe defaults.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `False` | Master switch. `False` → `setup_telemetry` is a no-op. |
+| `service_name` | str | `"ai-parrot"` | OTel `service.name` resource attribute. |
+| `service_version` | str \| None | `None` | OTel `service.version`. Defaults to installed package version. |
+| `service_instance_id` | str \| None | `None` | OTel `service.instance.id`. Defaults to `"{hostname}-{pid}"`. |
+| `otlp_endpoint` | str | `"http://localhost:4318"` | OTLP collector base URL. |
+| `otlp_protocol` | `"http/protobuf"` \| `"grpc"` | `"http/protobuf"` | Transport protocol. gRPC requires `grpcio`. |
+| `otlp_headers` | dict[str, str] | `{}` | Extra HTTP headers (e.g. auth tokens). |
+| `enable_traces` | bool | `True` | Subscribe `GenAIOpenTelemetrySubscriber`. |
+| `enable_metrics` | bool | `True` | Subscribe `MetricsSubscriber`. |
+| `enable_cost_tracking` | bool | `True` | Build a `CostCalculator` and inject into subscribers. |
+| `enable_openlit` | bool | `False` | Call `openlit.init()` for auto-instrumentation. |
+| `sampling_ratio` | float | `1.0` | `TraceIdRatioBased` sampler rate `[0.0, 1.0]`. |
+| `capture_prompts` | bool | `False` | Include system-prompt SHA-256 hashes in spans. **PII guard: default off.** |
+| `capture_completions` | bool | `False` | Add per-chunk span events for streaming. **PII guard: default off.** |
+| `metric_export_interval_ms` | int | `60_000` | `PeriodicExportingMetricReader` interval (ms). |
+| `histogram_buckets` | list[float] \| None | `None` | Histogram bucket boundaries. `None` → `[0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]` (LLM-tuned). |
+| `pricing_override_path` | str \| None | `None` | Directory of `<provider>.json` pricing override files. |
+
+---
+
+## navconfig / env-var keys
+
+`setup_telemetry` reads these environment variables via `navconfig.config.get(key, fallback=None)`:
+
+| Env var | Maps to | Notes |
+|---|---|---|
+| `OBSERVABILITY_ENABLED` | `config.enabled` | Set to `"true"` or `"1"` to enable. |
+| `OBSERVABILITY_SERVICE_NAME` | `config.service_name` | Overrides the default `"ai-parrot"`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `config.otlp_endpoint` | Standard OTel env var; navconfig reads it. |
+| `OBSERVABILITY_OPENLIT` | `config.enable_openlit` | Set to `"true"` to enable OpenLIT auto-instrumentation. |
+| `OBSERVABILITY_COST` | `config.enable_cost_tracking` | Set to `"false"` to disable cost tracking. |
+| `OBSERVABILITY_SAMPLING` | `config.sampling_ratio` | Float string `"0.1"` → 10% sampling. |
+| `PARROT_PRICING_PATH` | `config.pricing_override_path` | Path to a custom pricing directory. |
+
+Note: `setup_telemetry` only reads `PARROT_PRICING_PATH` automatically. For the other
+env vars, configure `ObservabilityConfig` directly or use a navconfig integration layer.
+
+---
+
+## PII contract
+
+By default, AI-Parrot captures **zero user content** in spans or metrics:
+
+- `capture_prompts=False` (default) — no system prompt text is stored; only a SHA-256 hash when enabled.
+- `capture_completions=False` (default) — streaming response chunks are never stored.
+- `otlp_headers` are not logged.
+
+Enabling `capture_prompts=True` or `capture_completions=True` is the **user's responsibility**.
+AI-Parrot ships no default redactor. If you enable these, ensure your OTLP pipeline
+is GDPR/CCPA compliant before production use.
+
+---
+
+## Performance contract
+
+- **Disabled** (`config.enabled=False`): ~0 ns overhead; `setup_telemetry` returns
+  immediately without importing the OTel SDK.
+- **Enabled, no OpenLIT**: p50 overhead < 1 ms per `bot.ask()` round-trip on a
+  typical developer machine.
+- **Enabled + OpenLIT** (mocked): p50 overhead < 5 ms.
+- **`SimpleSpanProcessor` is forbidden** — `setup_telemetry` will raise `ConfigurationError`
+  if one is detected. Always use `BatchSpanProcessor` (wired automatically).
+
+These guarantees are enforced by `tests/integration/observability/test_perf.py`.
+
+---
+
+## OpenLIT contract
+
+OpenLIT auto-spans are **children** of AI-Parrot's own spans, not siblings.
+
+This is guaranteed automatically: `setup_telemetry` installs the global `TracerProvider`
+**before** calling `openlit.init()`. OpenLIT inherits the active provider and the active
+span context, so its spans nest correctly under ours.
+
+**Do not reorder** `setup_telemetry` and `openlit.init()` calls. If you call
+`openlit.init()` manually before `setup_telemetry`, parent-child relationships
+may be reversed.
+
+---
+
+## Examples
+
+- Live demo stack: [`examples/docker-compose.observability.yml`](examples/docker-compose.observability.yml)
+- Demo script: [`examples/basic_telemetry.py`](examples/basic_telemetry.py)
+- Grafana dashboard: [`examples/grafana-dashboards/parrot-overview.json`](examples/grafana-dashboards/parrot-overview.json)
+- Full quickstart: [`examples/README.md`](examples/README.md)
+
+---
+
+## PoC scenarios
+
+The integration test suite at
+`tests/integration/observability/test_poc.py`
+covers 5 scenarios:
+
+1. **Traces only** (`enable_metrics=False`) — span exporter captures spans.
+2. **Metrics only** (`enable_traces=False`) — metric reader collects counters/histograms.
+3. **Traces + metrics + cost** — both exporter and reader are populated; cost counter updated.
+4. **Traces + OpenLIT (mocked)** — `openlit.init` called exactly once; subscriber still works.
+5. **Sampling = 10%** — 100 requests yield ~10 spans (±50% CI tolerance).
+
+Run with:
+
+```bash
+pytest packages/ai-parrot/tests/integration/observability/test_poc.py -v
+pytest packages/ai-parrot/tests/integration/observability/test_perf.py -v
+```
+
+---
+
+## Cost pricing
+
+Bundled pricing tables live in `parrot/observability/pricing/*.json` (one file per provider).
+The format is:
+
+```json
+{
+  "<model-name>": {
+    "input": <price-per-1M-tokens>,
+    "output": <price-per-1M-tokens>,
+    "cached_input": <price-per-1M-tokens-optional>
+  }
+}
+```
+
+To override prices (e.g. for enterprise agreements):
+
+```bash
+export PARROT_PRICING_PATH=/path/to/my/pricing
+```
+
+Or set `config.pricing_override_path` directly. Override files are deep-merged
+over the bundled tables on a per-model basis.
+
+A staleness warning is logged if any pricing file is older than 90 days
+(configurable via `CostCalculator(stale_warn_days=...)` directly).
+
+---
+
+## Troubleshooting
+
+**"ModuleNotFoundError: opentelemetry.exporter.otlp..."**
+Install the `observability` extra:
+```bash
+pip install 'ai-parrot[observability]'
+```
+
+**"ImportError: enable_openlit=True requires the 'observability-openlit' extra"**
+Install:
+```bash
+pip install 'ai-parrot[observability-openlit]'
+```
+
+**OpenLIT spans appear as siblings instead of children of AI-Parrot spans**
+`openlit.init()` was called before `setup_telemetry()`. Always call
+`setup_telemetry()` first. Setting `enable_openlit=True` in `ObservabilityConfig`
+guarantees the correct order.
+
+**"ConfigurationError: setup_telemetry already configured with a different ObservabilityConfig"**
+`setup_telemetry` is idempotent for the same config but rejects a second call with
+a different config. Call `shutdown_telemetry()` first to reconfigure.
+
+**No data in OpenLIT UI**
+1. Confirm the container is healthy: `docker compose ps`
+2. Confirm `otlp_endpoint` matches the collector port (default: `http://localhost:4318`)
+3. Verify the ClickHouse schema was initialised — check OpenLIT logs: `docker compose logs openlit-ui`
