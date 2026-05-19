@@ -14,7 +14,7 @@
       "feature_id": "FEAT-187",
       "feature": "git-parrot-flow",
       "spec": "sdd/specs/git-parrot-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches scripts/sdd/sdd_meta.py + tests/sdd_scripts/test_sdd_meta.py; file-disjoint from every other task in this spec. Could run in a sibling worktree alongside TASK-1254. Spec recommends sequential per Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-05-19T14:52:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1253-known-branches-constant.md"
+      "completed_at": "2026-05-19T14:54:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1253-known-branches-constant.md"
     },
     {
       "id": "TASK-1254",

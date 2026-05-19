@@ -193,4 +193,4 @@ def test_known_branches_is_frozenset():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (FEAT-187). Added `KNOWN_BRANCHES: frozenset[str] = frozenset({"main", "staging", "dev"})` between the imports block and `class FlowMeta` in `scripts/sdd/sdd_meta.py`. Extended `tests/sdd_scripts/test_sdd_meta.py` with `test_known_branches_contains_main_staging_dev` and `test_known_branches_is_frozenset`. All 7 tests pass, ruff clean. No change to `FlowMeta`, `parse()`, or `emit()`.
