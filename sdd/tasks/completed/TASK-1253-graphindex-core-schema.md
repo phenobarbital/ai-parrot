@@ -187,4 +187,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented all models as specified:
+- `UniversalNode`, `UniversalEdge`, `Provenance`, `NodeKind`, `EdgeKind` enums with full Pydantic v2 validation
+- `confidence` iff `provenance == INFERRED` constraint enforced via `model_validator`
+- `SourceConfig`, `BuildResult`, `IngestResult` models defined
+- `meta_ontology.py` defines 6 `EntityDef` entries (prefixed `gi_`) and 5 `RelationDef` entries
+- Helper dicts `KIND_TO_COLLECTION`, `COLLECTION_TO_KIND`, `EDGE_KIND_TO_COLLECTION` for persistence routing
+- 34 unit tests — all pass
