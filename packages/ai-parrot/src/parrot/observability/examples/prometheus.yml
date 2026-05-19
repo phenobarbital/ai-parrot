@@ -1,0 +1,19 @@
+# Prometheus scrape configuration for the AI-Parrot observability stack.
+# FEAT-177 TASK-1237.
+#
+# Scrapes the OpenLIT UI metrics endpoint. Adjust targets if you run the
+# agent in a separate container or expose a custom /metrics endpoint.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "openlit"
+    static_configs:
+      - targets: ["openlit-ui:4318"]
+    metrics_path: "/metrics"
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
