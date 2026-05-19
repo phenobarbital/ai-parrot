@@ -55,23 +55,41 @@ def _node_to_doc(node: UniversalNode) -> dict[str, Any]:
 def _edge_to_doc(
     edge: UniversalEdge,
     kind_to_collection: dict[str, str],
+    node_kind_map: dict[str, str],
 ) -> dict[str, Any]:
     """Convert a ``UniversalEdge`` to an ArangoDB edge document dict.
 
-    The ``_from`` and ``_to`` fields use the per-kind vertex collection names
-    to produce fully-qualified ArangoDB document IDs.
+    The ``_from`` and ``_to`` fields are fully-qualified ArangoDB document IDs
+    of the form ``<collection>/<node_id>``.  The collection is resolved from
+    ``node_kind_map`` (node_id → kind string) combined with
+    ``kind_to_collection`` (kind string → vertex collection name).
 
     Args:
         edge: The edge to convert.
-        kind_to_collection: Mapping from kind string to vertex collection name.
+        kind_to_collection: Mapping from node-kind string to vertex collection
+            name (e.g. ``{"symbol": "gi_symbols", ...}``).
+        node_kind_map: Mapping from node_id to its kind string, built from
+            the nodes being persisted in the same call.
 
     Returns:
-        A dict suitable for ``OntologyGraphStore.create_edges``.
+        A dict suitable for ``OntologyGraphStore.create_edges``, with
+        ``_from`` and ``_to`` as fully-qualified ArangoDB IDs.
     """
-    # We use node_id as _key; for _from/_to we need the collection
-    # We store just the IDs here — the actual _from/_to ArangoDB refs
-    # are built from the collection name when creating edges.
+    src_kind = node_kind_map.get(edge.source_id, "")
+    tgt_kind = node_kind_map.get(edge.target_id, "")
+    src_collection = kind_to_collection.get(src_kind, "")
+    tgt_collection = kind_to_collection.get(tgt_kind, "")
+
+    from_ref = (
+        f"{src_collection}/{edge.source_id}" if src_collection else edge.source_id
+    )
+    to_ref = (
+        f"{tgt_collection}/{edge.target_id}" if tgt_collection else edge.target_id
+    )
+
     return {
+        "_from": from_ref,
+        "_to": to_ref,
         "source_id": edge.source_id,
         "target_id": edge.target_id,
         "kind": edge.kind.value,
@@ -122,8 +140,11 @@ class GraphIndexPersistence:
         if not nodes and not edges:
             return {"nodes_persisted": 0, "edges_persisted": 0}
 
+        # Build node_id → kind lookup so _create_edges can form _from/_to refs.
+        node_kind_map: dict[str, str] = {n.node_id: n.kind.value for n in nodes}
+
         nodes_persisted = await self._upsert_nodes(ctx, nodes)
-        edges_persisted = await self._create_edges(ctx, edges)
+        edges_persisted = await self._create_edges(ctx, edges, node_kind_map)
 
         logger.info(
             "Persisted %d nodes and %d edges for tenant %s",
@@ -188,8 +209,9 @@ class GraphIndexPersistence:
                         )
 
             # 3. Upsert new nodes and edges
+            node_kind_map: dict[str, str] = {n.node_id: n.kind.value for n in nodes}
             nodes_persisted = await self._upsert_nodes(ctx, nodes)
-            edges_persisted = await self._create_edges(ctx, edges)
+            edges_persisted = await self._create_edges(ctx, edges, node_kind_map)
 
         return {
             "nodes_replaced": nodes_persisted,
@@ -244,13 +266,18 @@ class GraphIndexPersistence:
         return total
 
     async def _create_edges(
-        self, ctx: TenantContext, edges: list[UniversalEdge]
+        self,
+        ctx: TenantContext,
+        edges: list[UniversalEdge],
+        node_kind_map: dict[str, str],
     ) -> int:
         """Route edges to per-kind edge collections and create.
 
         Args:
             ctx: Tenant context.
             edges: Edges to persist.
+            node_kind_map: Mapping of node_id → kind string, used to build
+                fully-qualified ``_from``/``_to`` ArangoDB references.
 
         Returns:
             Total number of edges created.
@@ -261,7 +288,9 @@ class GraphIndexPersistence:
             if not collection:
                 logger.warning("Unknown edge kind '%s'", edge.kind)
                 continue
-            by_collection[collection].append(_edge_to_doc(edge, KIND_TO_COLLECTION))
+            by_collection[collection].append(
+                _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
+            )
 
         total = 0
         for collection, docs in by_collection.items():

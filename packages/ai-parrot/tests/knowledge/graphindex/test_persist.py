@@ -94,13 +94,15 @@ class TestNodeToDoc:
 class TestEdgeToDoc:
     def test_includes_source_and_target(self):
         edge = make_edge("src", "tgt", EdgeKind.REFERENCES)
-        doc = _edge_to_doc(edge, KIND_TO_COLLECTION)
+        node_kind_map = {"src": NodeKind.DOCUMENT.value, "tgt": NodeKind.SECTION.value}
+        doc = _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
         assert doc["source_id"] == "src"
         assert doc["target_id"] == "tgt"
 
     def test_includes_kind_value(self):
         edge = make_edge("src", "tgt", EdgeKind.DEFINES)
-        doc = _edge_to_doc(edge, KIND_TO_COLLECTION)
+        node_kind_map = {"src": NodeKind.DOCUMENT.value, "tgt": NodeKind.SYMBOL.value}
+        doc = _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
         assert doc["kind"] == EdgeKind.DEFINES.value
 
     def test_includes_confidence(self):
@@ -111,8 +113,29 @@ class TestEdgeToDoc:
             provenance=Provenance.INFERRED,
             confidence=0.9,
         )
-        doc = _edge_to_doc(edge, KIND_TO_COLLECTION)
+        node_kind_map = {"a": NodeKind.DOCUMENT.value, "b": NodeKind.CONCEPT.value}
+        doc = _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
         assert doc["confidence"] == 0.9
+
+    def test_from_and_to_are_fully_qualified(self):
+        """_from and _to must be <collection>/<node_id> ArangoDB references."""
+        edge = make_edge("node-abc", "node-xyz", EdgeKind.CONTAINS)
+        node_kind_map = {
+            "node-abc": NodeKind.DOCUMENT.value,
+            "node-xyz": NodeKind.SECTION.value,
+        }
+        doc = _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
+        src_collection = KIND_TO_COLLECTION[NodeKind.DOCUMENT.value]
+        tgt_collection = KIND_TO_COLLECTION[NodeKind.SECTION.value]
+        assert doc["_from"] == f"{src_collection}/node-abc"
+        assert doc["_to"] == f"{tgt_collection}/node-xyz"
+
+    def test_unknown_node_kind_falls_back_to_bare_id(self):
+        """When a node_id is absent from node_kind_map, _from/_to fall back to bare id."""
+        edge = make_edge("unknown-src", "unknown-tgt", EdgeKind.EXPLAINS)
+        doc = _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map={})
+        assert doc["_from"] == "unknown-src"
+        assert doc["_to"] == "unknown-tgt"
 
 
 class TestGraphIndexPersistence:

@@ -77,7 +77,7 @@ class GraphIndexEmbedder:
             texts = [self._get_embed_text(n) for n in batch]
 
             try:
-                vectors = self.model.encode(texts)
+                vectors = await self.model.encode(texts)
 
                 # Validate output shape
                 if vectors.ndim == 1:
@@ -135,7 +135,7 @@ class GraphIndexEmbedder:
         k = min(top_k, self.index.ntotal)
 
         try:
-            query_vec = self.model.encode([query_text]).astype(np.float32)
+            query_vec = (await self.model.encode([query_text])).astype(np.float32)
             if query_vec.ndim == 1:
                 query_vec = query_vec.reshape(1, -1)
             # Normalise

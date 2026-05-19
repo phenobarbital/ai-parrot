@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
 from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
@@ -23,7 +23,7 @@ class TestGraphIndexEmbedder:
     @pytest.fixture
     def mock_model(self):
         model = MagicMock()
-        model.encode.return_value = np.random.rand(3, 384).astype(np.float32)
+        model.encode = AsyncMock(return_value=np.random.rand(3, 384).astype(np.float32))
         return model
 
     @pytest.fixture
