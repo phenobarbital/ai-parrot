@@ -23,6 +23,7 @@ class TestBotMentionedFilter:
     def filter_instance(self):
         """Create filter instance."""
         from parrot.integrations.telegram.filters import BotMentionedFilter
+
         return BotMentionedFilter()
 
     @pytest.mark.asyncio
@@ -30,13 +31,13 @@ class TestBotMentionedFilter:
         """Message with @test_bot entity should match."""
         message = MagicMock()
         message.text = "Hey @test_bot what is Python?"
-        
+
         entity = MagicMock()
         entity.type = "mention"
         entity.offset = 4
         entity.length = 9  # "@test_bot"
         message.entities = [entity]
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is True
 
@@ -46,7 +47,7 @@ class TestBotMentionedFilter:
         message = MagicMock()
         message.text = "Hello @test_bot please help"
         message.entities = None
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is True
 
@@ -56,7 +57,7 @@ class TestBotMentionedFilter:
         message = MagicMock()
         message.text = "Hello everyone!"
         message.entities = None
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is False
 
@@ -65,13 +66,13 @@ class TestBotMentionedFilter:
         """Message mentioning different bot should not match."""
         message = MagicMock()
         message.text = "Hey @other_bot what's up?"
-        
+
         entity = MagicMock()
         entity.type = "mention"
         entity.offset = 4
         entity.length = 10  # "@other_bot"
         message.entities = [entity]
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is False
 
@@ -81,7 +82,7 @@ class TestBotMentionedFilter:
         message = MagicMock()
         message.text = "Hey @TEST_BOT what is AI?"
         message.entities = None
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is True
 
@@ -90,7 +91,7 @@ class TestBotMentionedFilter:
         """Empty message should not match."""
         message = MagicMock()
         message.text = None
-        
+
         result = await filter_instance(message, mock_bot)
         assert result is False
 
@@ -111,10 +112,10 @@ class TestExtractQueryFromMention:
     async def test_simple_mention(self, mock_bot):
         """Extract query from simple @mention."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "@test_bot what is Python?"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         assert result == "what is Python?"
 
@@ -122,10 +123,10 @@ class TestExtractQueryFromMention:
     async def test_mention_in_middle(self, mock_bot):
         """Extract query with @mention in middle of text."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "Hey @test_bot tell me about AI"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         # Note: removing @mention may leave double spaces, which is acceptable
         assert "Hey" in result and "tell me about AI" in result
@@ -134,10 +135,10 @@ class TestExtractQueryFromMention:
     async def test_ask_command(self, mock_bot):
         """Extract query from /ask command."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "/ask what is machine learning?"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         assert result == "what is machine learning?"
 
@@ -145,10 +146,10 @@ class TestExtractQueryFromMention:
     async def test_ask_command_with_botname(self, mock_bot):
         """Extract query from /ask@botname command."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "/ask@test_bot what is RAG?"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         assert result == "what is RAG?"
 
@@ -156,10 +157,10 @@ class TestExtractQueryFromMention:
     async def test_empty_query(self, mock_bot):
         """Just @mention with no query should return empty string."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "@test_bot"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         assert result == ""
 
@@ -167,10 +168,10 @@ class TestExtractQueryFromMention:
     async def test_case_insensitive(self, mock_bot):
         """Username removal should be case-insensitive."""
         from parrot.integrations.telegram.utils import extract_query_from_mention
-        
+
         message = MagicMock()
         message.text = "@TEST_BOT explain this"
-        
+
         result = await extract_query_from_mention(message, mock_bot)
         assert result == "explain this"
 
@@ -191,11 +192,11 @@ class TestCommandInGroupFilter:
     async def test_simple_command(self, mock_bot):
         """Simple /ask command should match."""
         from parrot.integrations.telegram.filters import CommandInGroupFilter
-        
+
         filter_obj = CommandInGroupFilter("ask")
         message = MagicMock()
         message.text = "/ask what is Python?"
-        
+
         result = await filter_obj(message, mock_bot)
         assert result is True
 
@@ -203,11 +204,11 @@ class TestCommandInGroupFilter:
     async def test_targeted_command(self, mock_bot):
         """Targeted /ask@test_bot command should match."""
         from parrot.integrations.telegram.filters import CommandInGroupFilter
-        
+
         filter_obj = CommandInGroupFilter("ask")
         message = MagicMock()
         message.text = "/ask@test_bot what is AI?"
-        
+
         result = await filter_obj(message, mock_bot)
         assert result is True
 
@@ -215,11 +216,11 @@ class TestCommandInGroupFilter:
     async def test_different_command(self, mock_bot):
         """Different command should not match."""
         from parrot.integrations.telegram.filters import CommandInGroupFilter
-        
+
         filter_obj = CommandInGroupFilter("ask")
         message = MagicMock()
         message.text = "/help"
-        
+
         result = await filter_obj(message, mock_bot)
         assert result is False
 
@@ -227,11 +228,11 @@ class TestCommandInGroupFilter:
     async def test_not_a_command(self, mock_bot):
         """Non-command text should not match."""
         from parrot.integrations.telegram.filters import CommandInGroupFilter
-        
+
         filter_obj = CommandInGroupFilter("ask")
         message = MagicMock()
         message.text = "Hello world"
-        
+
         result = await filter_obj(message, mock_bot)
         assert result is False
 
@@ -242,12 +243,9 @@ class TestTelegramAgentConfigGroupSettings:
     def test_default_group_settings(self):
         """Default config should have group features enabled."""
         from parrot.integrations.telegram.models import TelegramAgentConfig
-        
-        config = TelegramAgentConfig(
-            name="test",
-            chatbot_id="test_agent"
-        )
-        
+
+        config = TelegramAgentConfig(name="test", chatbot_id="test_agent")
+
         assert config.enable_group_mentions is True
         assert config.enable_group_commands is True
         assert config.reply_in_thread is True
@@ -256,7 +254,7 @@ class TestTelegramAgentConfigGroupSettings:
     def test_from_dict_with_group_settings(self):
         """Config should parse group settings from dict."""
         from parrot.integrations.telegram.models import TelegramAgentConfig
-        
+
         data = {
             "chatbot_id": "my_agent",
             "enable_group_mentions": False,
@@ -264,9 +262,9 @@ class TestTelegramAgentConfigGroupSettings:
             "reply_in_thread": False,
             "enable_channel_posts": True,
         }
-        
+
         config = TelegramAgentConfig.from_dict("test", data)
-        
+
         assert config.enable_group_mentions is False
         assert config.enable_group_commands is True
         assert config.reply_in_thread is False
@@ -321,6 +319,7 @@ class TestTelegramCommandDecorator:
 
         # Should still be an async function
         import asyncio
+
         assert asyncio.iscoroutinefunction(my_func)
 
 
@@ -406,26 +405,31 @@ class TestParseKwargs:
 
     def test_keyword_args(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._parse_kwargs("key=val name=test")
         assert result == {"key": "val", "name": "test"}
 
     def test_positional_fallback(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._parse_kwargs("hello world")
         assert result == {"arg0": "hello", "arg1": "world"}
 
     def test_mixed_args(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._parse_kwargs("positional key=val")
         assert result == {"arg0": "positional", "key": "val"}
 
     def test_empty_string(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._parse_kwargs("")
         assert result == {}
 
     def test_comma_separated(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._parse_kwargs("a=1, b=2")
         assert result == {"a": "1", "b": "2"}
 
@@ -465,6 +469,87 @@ class TestGetBotCommands:
         assert "skill" in cmd_names
         assert "function" in cmd_names
         assert "question" in cmd_names
+        assert "call" in cmd_names
+
+    def test_includes_jira_commands_when_handlers_are_registered(self):
+        """Jira handler registration should feed /commands and bot menu."""
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        agent = MagicMock()
+        bot = MagicMock()
+        config = TelegramAgentConfig(name="Test", chatbot_id="test")
+        app = {"jira_oauth_manager": MagicMock()}
+
+        with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
+            mock_cb.return_value.discover_from_agent.return_value = 0
+            mock_cb.return_value.prefixes = []
+            wrapper = TelegramAgentWrapper(
+                agent=agent,
+                bot=bot,
+                config=config,
+                app=app,
+            )
+
+        cmd_names = [c.command for c in wrapper.get_bot_commands()]
+
+        assert "connect_jira" in cmd_names
+        assert "disconnect_jira" in cmd_names
+        assert "jira_status" in cmd_names
+
+    def test_omits_jira_commands_when_handlers_are_not_registered(self):
+        """Jira commands should not be advertised without an OAuth manager."""
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        agent = MagicMock()
+        bot = MagicMock()
+        config = TelegramAgentConfig(name="Test", chatbot_id="test")
+
+        with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
+            mock_cb.return_value.discover_from_agent.return_value = 0
+            mock_cb.return_value.prefixes = []
+            wrapper = TelegramAgentWrapper(
+                agent=agent,
+                bot=bot,
+                config=config,
+            )
+
+        cmd_names = [c.command for c in wrapper.get_bot_commands()]
+
+        assert "connect_jira" not in cmd_names
+        assert "disconnect_jira" not in cmd_names
+        assert "jira_status" not in cmd_names
+
+    def test_wrapper_discovers_agent_commands_without_manager_input(self):
+        """Direct wrapper callers should still expose @telegram_command methods."""
+        from parrot.integrations.telegram.decorators import telegram_command
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        class Agent:
+            name = "TestBot"
+            description = "A test bot"
+
+            @telegram_command("agent_ping", description="Ping the agent")
+            async def ping(self, raw: str = "") -> str:
+                return raw or "pong"
+
+        bot = MagicMock()
+        config = TelegramAgentConfig(name="Test", chatbot_id="test")
+
+        with patch("parrot.integrations.telegram.wrapper.CallbackRegistry") as mock_cb:
+            mock_cb.return_value.discover_from_agent.return_value = 0
+            mock_cb.return_value.prefixes = []
+            wrapper = TelegramAgentWrapper(
+                agent=Agent(),
+                bot=bot,
+                config=config,
+            )
+
+        cmd_names = [c.command for c in wrapper.get_bot_commands()]
+
+        assert "agent_ping" in cmd_names
 
 
 class TestRegisterMenuConfig:
@@ -526,7 +611,9 @@ class TestTelegramUserSession:
         from parrot.integrations.telegram.auth import TelegramUserSession
 
         # With first/last name
-        s1 = TelegramUserSession(telegram_id=1, telegram_first_name="John", telegram_last_name="Doe")
+        s1 = TelegramUserSession(
+            telegram_id=1, telegram_first_name="John", telegram_last_name="Doe"
+        )
         assert s1.display_name == "John Doe"
 
         # With username only
@@ -550,11 +637,13 @@ class TestNavigatorAuthClient:
 
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={
-            "user_id": "uid-42",
-            "display_name": "Test User",
-            "token": "session-tok",
-        })
+        mock_response.json = AsyncMock(
+            return_value={
+                "user_id": "uid-42",
+                "display_name": "Test User",
+                "token": "session-tok",
+            }
+        )
         mock_response.__aenter__ = AsyncMock(return_value=mock_response)
         mock_response.__aexit__ = AsyncMock(return_value=False)
 
@@ -630,12 +719,15 @@ class TestGetBotCommandsWithAuth:
         wrapper.agent = MagicMock()
         wrapper.bot = MagicMock()
         wrapper.config = TelegramAgentConfig(
-            name="Test", chatbot_id="test",
+            name="Test",
+            chatbot_id="test",
             auth_url="https://example.com/api/v1/auth/login",
             enable_login=True,
         )
         wrapper._agent_commands = []
-        wrapper._auth_client = NavigatorAuthClient("https://example.com/api/v1/auth/login")
+        wrapper._auth_client = NavigatorAuthClient(
+            "https://example.com/api/v1/auth/login"
+        )
         wrapper._user_sessions = {}
 
         commands = wrapper.get_bot_commands()
@@ -678,7 +770,10 @@ class TestAuthConfigParsing:
         }
         config = TelegramAgentConfig.from_dict("TestBot", data)
         assert config.auth_url == "https://nav.example.com/api/v1/auth/login"
-        assert config.login_page_url == "https://example.ngrok.app/static/telegram/login.html"
+        assert (
+            config.login_page_url
+            == "https://example.ngrok.app/static/telegram/login.html"
+        )
         assert config.enable_login is True
 
     def test_defaults_when_auth_not_configured(self):
@@ -690,7 +785,6 @@ class TestAuthConfigParsing:
         assert config.enable_login is True
 
 
-
 class TestEnrichQuestion:
     """Tests for TelegramAgentWrapper._enrich_question."""
 
@@ -698,10 +792,14 @@ class TestEnrichQuestion:
         from parrot.integrations.telegram.auth import TelegramUserSession
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
 
-        session = TelegramUserSession(telegram_id=1, telegram_first_name="Jesus", telegram_last_name="Lara")
+        session = TelegramUserSession(
+            telegram_id=1, telegram_first_name="Jesus", telegram_last_name="Lara"
+        )
         session.set_authenticated(
-            nav_user_id="uid-1", session_token="tok",
-            display_name="Jesus Lara", email="jlara@trocglobal.com",
+            nav_user_id="uid-1",
+            session_token="tok",
+            display_name="Jesus Lara",
+            email="jlara@trocglobal.com",
         )
         result = TelegramAgentWrapper._enrich_question("show my tickets", session)
         assert "show my tickets" in result
@@ -739,32 +837,38 @@ class TestBotCommandSanitization:
 
     def test_sanitize_command_name_strips_slash_and_lowercases(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         assert TelegramAgentWrapper._sanitize_command_name("/Login") == "login"
         assert TelegramAgentWrapper._sanitize_command_name("MyCmd") == "mycmd"
 
     def test_sanitize_command_name_replaces_hyphens_and_whitespace(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         assert TelegramAgentWrapper._sanitize_command_name("run-report") == "run_report"
         assert TelegramAgentWrapper._sanitize_command_name("run report") == "run_report"
 
     def test_sanitize_command_name_drops_invalid_chars(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         assert TelegramAgentWrapper._sanitize_command_name("cmd!@#") == "cmd"
 
     def test_sanitize_command_name_truncates_to_32(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._sanitize_command_name("a" * 100)
         assert result is not None
         assert len(result) == 32
 
     def test_sanitize_command_name_returns_none_for_empty(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         assert TelegramAgentWrapper._sanitize_command_name("") is None
         assert TelegramAgentWrapper._sanitize_command_name("!!!") is None
         assert TelegramAgentWrapper._sanitize_command_name(None) is None
 
     def test_sanitize_description_collapses_newlines(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         docstring = "\n    First line.\n\n    Second line.\n    "
         result = TelegramAgentWrapper._sanitize_command_description(
             docstring, fallback="fb"
@@ -774,6 +878,7 @@ class TestBotCommandSanitization:
 
     def test_sanitize_description_falls_back_when_blank(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         result = TelegramAgentWrapper._sanitize_command_description(
             "   ", fallback="/cmd"
         )
@@ -781,6 +886,7 @@ class TestBotCommandSanitization:
 
     def test_sanitize_description_truncates_to_256(self):
         from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
         long_desc = "x" * 500
         result = TelegramAgentWrapper._sanitize_command_description(
             long_desc, fallback="fb"
@@ -859,7 +965,8 @@ class TestBotCommandSanitization:
         wrapper.bot = MagicMock()
         # A YAML mapping that collides with a built-in default.
         wrapper.config = TelegramAgentConfig(
-            name="Test", chatbot_id="test",
+            name="Test",
+            chatbot_id="test",
             commands={"start": "my_start_method"},
         )
         wrapper._auth_strategy = None
