@@ -193,11 +193,6 @@ class ChatStorage:
                     timestamp=now,
                     metadata={
                         "output_mode": output_mode,
-                        "output": _safe_serialize_value(output),
-                        "data": _safe_serialize_value(data),
-                        "code": code,
-                        "tool_calls": [tc.to_dict() for tc in tool_call_objs],
-                        "sources": [s.to_dict() for s in source_objs],
                         "model": model,
                         "provider": provider,
                         "response_time_ms": response_time_ms,
@@ -321,7 +316,6 @@ class ChatStorage:
                             "turn_id": turn.turn_id,
                             "metadata": turn.metadata,
                         })
-                        tm = turn.metadata or {}
                         messages.append({
                             "role": MessageRole.ASSISTANT.value,
                             "content": turn.assistant_response,
@@ -330,15 +324,6 @@ class ChatStorage:
                             else str(turn.timestamp),
                             "turn_id": turn.turn_id,
                             "tools_used": turn.tools_used,
-                            "output": tm.get("output"),
-                            "output_mode": tm.get("output_mode"),
-                            "data": tm.get("data"),
-                            "code": tm.get("code"),
-                            "model": tm.get("model"),
-                            "provider": tm.get("provider"),
-                            "response_time_ms": tm.get("response_time_ms"),
-                            "tool_calls": tm.get("tool_calls", []),
-                            "sources": tm.get("sources", []),
                             "metadata": turn.metadata,
                         })
                     return messages
