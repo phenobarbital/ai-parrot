@@ -153,7 +153,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -163,8 +163,8 @@
       "parallelism_notes": "Only depends on core schema — can run in parallel with extractors and embed/assembly",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1260-graphindex-persistence.md"
+      "completed_at": "2026-05-19T15:56:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1260-graphindex-persistence.md"
     },
     {
       "id": "TASK-1261",
