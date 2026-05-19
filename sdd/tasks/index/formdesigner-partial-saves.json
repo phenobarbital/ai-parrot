@@ -32,7 +32,7 @@
       "feature_id": "FEAT-186",
       "feature": "formdesigner-partial-saves",
       "spec": "sdd/specs/formdesigner-partial-saves.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on TASK-1247 for PartialFormData model",
       "assigned_to": null,
       "started_at": "2026-05-19T01:23:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1248-partial-save-store-service.md"
+      "completed_at": "2026-05-19T01:27:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1248-partial-save-store-service.md"
     },
     {
       "id": "TASK-1249",
