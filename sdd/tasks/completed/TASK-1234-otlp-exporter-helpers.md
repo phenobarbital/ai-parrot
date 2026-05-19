@@ -159,4 +159,9 @@ def test_metric_exporter_round_trip():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `make_span_exporter` and `make_metric_exporter` in `parrot/observability/exporters.py`.
+HTTP variant appends `/v1/traces` or `/v1/metrics` to the base endpoint; gRPC variant uses the
+base endpoint directly with lazy imports guarded by a clear ImportError. Empty `otlp_headers`
+dict is normalized to `None` per OTel SDK expectations. All acceptance criteria verified via
+direct Python invocation (pytest conftest fails due to broken env dependency, unrelated to task).
+Both test_exporters.py and exporters.py committed in feat(otel-observability): TASK-1234 commit.
