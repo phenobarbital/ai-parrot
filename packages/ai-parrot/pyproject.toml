@@ -460,6 +460,19 @@ otel = [
     "opentelemetry-sdk>=1.25",
 ]
 
+# Full observability stack (FEAT-177 — spans + metrics + cost + OTLP exporters)
+observability = [
+    "opentelemetry-api>=1.25,<2.0",
+    "opentelemetry-sdk>=1.25,<2.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.25,<2.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.25,<2.0",
+]
+
+# Optional OpenLIT auto-instrumentation (FEAT-177 — opt-in via enable_openlit=True)
+observability-openlit = [
+    "openlit>=1.0",
+]
+
 # Developer / CI tooling (not shipped to end users)
 dev = [
     "pytest>=8.0",
