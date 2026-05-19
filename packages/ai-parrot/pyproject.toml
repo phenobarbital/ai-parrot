@@ -154,6 +154,15 @@ flowtask = [
     "flowtask>=5.10.2",
 ]
 
+# GraphIndex knowledge graph indexing (FEAT-187)
+# Note: faiss-cpu is already in core dependencies — not included here
+graphindex = [
+    "rustworkx>=0.15",
+    "tree-sitter>=0.23",
+    "tree-sitter-languages>=1.10",
+    "pathspec>=0.12",
+]
+
 # Task scheduling
 scheduler = [
     "apscheduler==3.11.2",
