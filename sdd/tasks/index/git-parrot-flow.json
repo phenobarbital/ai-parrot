@@ -32,7 +32,7 @@
       "feature_id": "FEAT-187",
       "feature": "git-parrot-flow",
       "spec": "sdd/specs/git-parrot-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only .github/workflows/sync-down.yml; file-disjoint from every other task. Functionally independent of TASK-1253 — could run before, after, or alongside it.",
       "assigned_to": null,
       "started_at": "2026-05-19T14:52:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1254-sync-down-github-action.md"
+      "completed_at": "2026-05-19T14:56:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1254-sync-down-github-action.md"
     },
     {
       "id": "TASK-1255",
