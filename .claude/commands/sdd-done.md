@@ -10,9 +10,10 @@ pushed, and clean up the worktree. Optionally transitions the linked Jira ticket
 "Done" / "Resolved".
 
 **This command runs on the spec's `base_branch`** — read from the spec's
-YAML frontmatter (FEAT-145). For `type: feature` that is `dev` (default);
-for `type: hotfix` that is `main`. NOT inside a worktree. It looks INTO the
-worktree to verify work, but modifies state only on `base_branch`.
+YAML frontmatter (FEAT-145). For `type: feature` that is `dev` (default)
+or `staging` (during a release freeze); for `type: hotfix` that is `main`.
+NOT inside a worktree. It looks INTO the worktree to verify work, but
+modifies state only on `base_branch`.
 
 ## Usage
 ```

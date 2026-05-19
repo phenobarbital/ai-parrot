@@ -326,7 +326,7 @@ Authoritative reference: `sdd/specs/sdd-flow-types-and-per-spec-index.spec.md`
 ### When NOT to Use Worktrees
 
 - **Hotfixes on `main`**: Work directly on `main` or a short-lived `hotfix/*` branch.
-- **Documentation-only changes**: No code conflicts possible, work on `develop` directly.
+- **Documentation-only changes**: No code conflicts possible, work on `dev` directly.
 - **Single-task features**: If a spec has only one task, a worktree adds overhead
   with no benefit. Work directly on a feature branch.
 - **Exploratory brainstorming**: `/sdd-brainstorm` doesn't produce code — no worktree needed.
