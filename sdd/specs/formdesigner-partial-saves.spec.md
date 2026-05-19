@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-186
 **Date**: 2026-05-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/formdesigner-partial-saves.proposal.md`
 
@@ -602,7 +602,7 @@ if "session" in request:
 
 ### Unresolved (defer to implementation)
 
-- [ ] **Nested field key convention for GROUP/ARRAY fields** -- *Owner: implementation*
+- [x] **Nested field key convention for GROUP/ARRAY fields** -- *Owner: implementation*
   Current decision: use flat `field_id` keys, store nested data as values.
   May need revision if frontends require per-child-field granularity.
 
