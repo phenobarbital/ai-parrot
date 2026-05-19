@@ -856,6 +856,10 @@ class FormAPIHandler:
         import uuid
         from datetime import datetime, timezone
 
+        from ..services.metadata_enricher import (
+            MetadataResolutionError,
+            enrich_submission,
+        )
         from ..services.submissions import FormSubmission
 
         form_id = request.match_info["form_id"]
@@ -914,6 +918,27 @@ class FormAPIHandler:
             is_valid=True,
             created_at=datetime.now(timezone.utc),
         )
+
+        # Metadata enrichment runs between validation and storage so the
+        # resolved values are persisted alongside the answers.
+        if form.metadata:
+            try:
+                core_overrides, extra_flat = await enrich_submission(
+                    request=request,
+                    form=form,
+                    submission=submission,
+                    answers=result.sanitized_data,
+                    auth_context=self._build_auth_context(request),
+                )
+            except MetadataResolutionError as exc:
+                return web.json_response(
+                    {"is_valid": False, "errors": {"_metadata": str(exc)}},
+                    status=422,
+                )
+            if core_overrides:
+                submission = submission.model_copy(update=core_overrides)
+            if extra_flat:
+                submission.data = {**submission.data, **extra_flat}
 
         # Store locally (if storage configured)
         if self._submission_storage is not None:

@@ -13,10 +13,13 @@ from .constraints import (
 )
 from .options import FieldOption, OptionsSource
 from .schema import (
+    BUILTIN_METADATA_SOURCE_NAMES,
     FormField,
+    FormMetadataField,
     FormSchema,
     FormSection,
     FormSubsection,
+    MetadataSource,
     RenderedForm,
     SectionItem,
     SubmitAction,
@@ -54,6 +57,9 @@ __all__ = [
     "FormSection",
     "SubmitAction",
     "FormSchema",
+    "FormMetadataField",
+    "MetadataSource",
+    "BUILTIN_METADATA_SOURCE_NAMES",
     "RenderedForm",
     # Style
     "LayoutType",
