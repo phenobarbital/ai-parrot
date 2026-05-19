@@ -91,7 +91,7 @@
       "feature_id": "FEAT-187",
       "feature": "git-parrot-flow",
       "spec": "sdd/specs/git-parrot-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Documentation must describe what was actually built. Sequenced after every implementation task so the prose matches the realized behaviour.",
       "assigned_to": null,
       "started_at": "2026-05-19T14:52:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1257-documentation-refresh.md"
+      "completed_at": "2026-05-19T15:02:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1257-documentation-refresh.md"
     },
     {
       "id": "TASK-1258",
