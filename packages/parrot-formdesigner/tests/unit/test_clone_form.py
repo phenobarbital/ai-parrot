@@ -53,13 +53,19 @@ def sample_form() -> FormSchema:
 async def registry(sample_form: FormSchema) -> FormRegistry:
     """FormRegistry pre-populated with the sample_form fixture.
 
+    Uses ``require_tenant=False`` so the fixture form (which carries no
+    explicit tenant) is sealed to ``default_tenant`` instead of being
+    rejected — keeps these tests focused on clone semantics, not on
+    tenant scoping (covered separately in
+    ``tests/unit/test_registry_multi_tenancy.py``).
+
     Args:
         sample_form: Source form to register.
 
     Returns:
         Configured FormRegistry instance.
     """
-    reg = FormRegistry()
+    reg = FormRegistry(require_tenant=False)
     await reg.register(sample_form)
     return reg
 
@@ -160,21 +166,23 @@ async def test_clone_patch_cannot_change_form_id(registry: FormRegistry) -> None
 @pytest.mark.asyncio
 async def test_clone_source_not_found() -> None:
     """Raises KeyError when the source form does not exist in the registry."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     with pytest.raises(KeyError, match="not found"):
         await registry.clone_form("nonexistent", "new-form")
 
 
 @pytest.mark.asyncio
 async def test_clone_duplicate_form_id(registry: FormRegistry) -> None:
-    """Raises ValueError when new_form_id already exists in the registry."""
+    """Raises FormAlreadyExistsError (a ValueError) when new_form_id is taken."""
+    from parrot_formdesigner.services.registry import FormAlreadyExistsError
+
     existing = FormSchema(
         form_id="taken-id",
         title="Existing Form",
         sections=[],
     )
     await registry.register(existing)
-    with pytest.raises(ValueError, match="already exists"):
+    with pytest.raises(FormAlreadyExistsError, match="already exists"):
         await registry.clone_form("source-form", "taken-id")
 
 
@@ -198,14 +206,19 @@ async def test_clone_validation_error(registry: FormRegistry) -> None:
 
 
 @pytest.mark.asyncio
-async def test_clone_with_tenant(registry: FormRegistry) -> None:
-    """Tenant kwarg is applied to the cloned form."""
-    clone = await registry.clone_form(
+async def test_clone_with_tenant(sample_form: FormSchema) -> None:
+    """Tenant kwarg scopes both source lookup and clone destination."""
+    reg = FormRegistry()
+    sample_form.tenant = "acme"
+    await reg.register(sample_form)
+
+    clone = await reg.clone_form(
         "source-form",
         "tenant-clone",
         tenant="acme",
     )
     assert clone.tenant == "acme"
+    assert await reg.contains("tenant-clone", tenant="acme")
 
 
 # ---------------------------------------------------------------------------
