@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-18T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-19T02:35:28+00:00",
   "tasks": [
     {
       "id": "TASK-1227",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:26:50+00:00",
-      "file": "sdd/tasks/completed/TASK-1227-patch-eventregistry-fire-and-forget.md"
+      "file": "sdd/tasks/completed/TASK-1227-patch-eventregistry-fire-and-forget.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1228",
@@ -43,7 +44,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:29:05+00:00",
-      "file": "sdd/tasks/completed/TASK-1228-observability-config-skeleton.md"
+      "file": "sdd/tasks/completed/TASK-1228-observability-config-skeleton.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1229",
@@ -63,7 +65,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:30:59+00:00",
-      "file": "sdd/tasks/completed/TASK-1229-genai-attribute-builders.md"
+      "file": "sdd/tasks/completed/TASK-1229-genai-attribute-builders.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1230",
@@ -83,7 +86,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:32:54+00:00",
-      "file": "sdd/tasks/completed/TASK-1230-genai-opentelemetry-subscriber.md"
+      "file": "sdd/tasks/completed/TASK-1230-genai-opentelemetry-subscriber.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1231",
@@ -103,7 +107,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:34:25+00:00",
-      "file": "sdd/tasks/completed/TASK-1231-metrics-subscriber.md"
+      "file": "sdd/tasks/completed/TASK-1231-metrics-subscriber.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1232",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:37:10+00:00",
-      "file": "sdd/tasks/completed/TASK-1232-cost-calculator-pricing.md"
+      "file": "sdd/tasks/completed/TASK-1232-cost-calculator-pricing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1233",
@@ -145,7 +151,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:38:05+00:00",
-      "file": "sdd/tasks/completed/TASK-1233-parrot-telemetry-provider.md"
+      "file": "sdd/tasks/completed/TASK-1233-parrot-telemetry-provider.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1234",
@@ -165,7 +172,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:42:23+00:00",
-      "file": "sdd/tasks/completed/TASK-1234-otlp-exporter-helpers.md"
+      "file": "sdd/tasks/completed/TASK-1234-otlp-exporter-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1235",
@@ -192,7 +200,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:49:11+00:00",
-      "file": "sdd/tasks/completed/TASK-1235-setup-telemetry-boot-helper.md"
+      "file": "sdd/tasks/completed/TASK-1235-setup-telemetry-boot-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1236",
@@ -212,7 +221,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:43:53+00:00",
-      "file": "sdd/tasks/completed/TASK-1236-openlit-integration.md"
+      "file": "sdd/tasks/completed/TASK-1236-openlit-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1237",
@@ -232,7 +242,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:51:33+00:00",
-      "file": "sdd/tasks/completed/TASK-1237-examples-docker-compose.md"
+      "file": "sdd/tasks/completed/TASK-1237-examples-docker-compose.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1238",
@@ -262,7 +273,8 @@
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
       "completed_at": "2026-05-19T01:56:54+00:00",
-      "file": "sdd/tasks/completed/TASK-1238-readme-and-end-to-end-poc.md"
+      "file": "sdd/tasks/completed/TASK-1238-readme-and-end-to-end-poc.md",
+      "verification": "verified"
     }
   ]
 }
