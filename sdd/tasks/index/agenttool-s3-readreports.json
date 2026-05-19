@@ -1,0 +1,70 @@
+{
+  "feature": "agenttool-s3-readreports",
+  "feature_id": "FEAT-184",
+  "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-19T00:40:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1239",
+      "slug": "generic-report-comparator",
+      "title": "GenericReportComparator + Package Init",
+      "feature_id": "FEAT-184",
+      "feature": "agenttool-s3-readreports",
+      "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Creates the parrot_tools/s3/ package — must land before TASK-1240 imports from it.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
+      "completed_at": "2026-05-18T22:31:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1239-generic-report-comparator.md"
+    },
+    {
+      "id": "TASK-1240",
+      "slug": "s3-report-reader-toolkit",
+      "title": "S3ReportReaderToolkit + Package Registry",
+      "feature_id": "FEAT-184",
+      "feature": "agenttool-s3-readreports",
+      "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1239"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports GenericReportComparator from TASK-1239. Must run after it.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
+      "completed_at": "2026-05-18T22:33:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1240-s3-report-reader-toolkit.md"
+    },
+    {
+      "id": "TASK-1241",
+      "slug": "s3-report-reader-tests",
+      "title": "Unit Tests for S3ReportReaderToolkit + GenericReportComparator",
+      "feature_id": "FEAT-184",
+      "feature": "agenttool-s3-readreports",
+      "spec": "sdd/specs/agenttool-s3-readreports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1239",
+        "TASK-1240"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests both TASK-1239 and TASK-1240 implementations. Must run last.",
+      "assigned_to": null,
+      "started_at": "2026-05-18T22:29:19+00:00",
+      "completed_at": "2026-05-18T22:38:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1241-s3-report-reader-tests.md"
+    }
+  ]
+}

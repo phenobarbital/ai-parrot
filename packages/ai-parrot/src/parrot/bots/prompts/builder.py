@@ -119,6 +119,34 @@ $rationale
         builder.add(RAG_GROUNDING_LAYER)
         return builder
 
+    @classmethod
+    def from_system_prompt(cls, system_prompt: str) -> PromptBuilder:
+        """Default stack with the identity layer replaced by ``system_prompt``.
+
+        Targets YAML-defined agents whose ``system_prompt`` already declares
+        the agent's identity ("You are an assistant for X...") and would
+        therefore conflict with the canned IDENTITY_LAYER. The user's text
+        takes over the identity slot; the rest of the default stack
+        (security, knowledge, user_session, tools, output, behavior) wraps
+        around it unchanged.
+
+        Args:
+            system_prompt: Raw system prompt text. ``$variable`` placeholders
+                are still substituted via ``string.Template`` at render time.
+
+        Returns:
+            A fresh PromptBuilder with the identity layer overridden.
+        """
+        from .layers import PromptLayer, LayerPriority, RenderPhase
+        builder = cls.default()
+        builder.add(PromptLayer(
+            name="identity",
+            priority=LayerPriority.IDENTITY,
+            phase=RenderPhase.CONFIGURE,
+            template=system_prompt,
+        ))
+        return builder
+
     # ── Mutation API ────────────────────────────────────────────
 
     def add(self, layer: PromptLayer) -> PromptBuilder:

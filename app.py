@@ -47,11 +47,13 @@ from parrot.conf import (
     JIRA_CLIENT_ID,
     JIRA_CLIENT_SECRET,
     JIRA_REDIRECT_URI,
+    default_dsn
 )
 from parrot.clients.factory import LLMFactory
 from parrot_formdesigner.api import setup_form_api
 from parrot_formdesigner.ui import setup_form_ui
 from parrot_formdesigner.services.registry import FormRegistry
+from parrot_formdesigner.services.storage import PostgresFormStorage
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 
 
@@ -235,8 +237,15 @@ class Main(AppHandler):
         # parrot-formdesigner: shared FormRegistry + REST API + HTML/Telegram UI.
         # protect_pages=False — page auth is handled client-side via JWT in
         # localStorage (see examples/forms/form_server.py).
-        form_registry = FormRegistry()
-        self.app['form_registry'] = form_registry
+        # FormRegistry self-registers as app['form_registry'] and hooks
+        # on_startup / on_shutdown signals automatically (FEAT-185).
+        storage = PostgresFormStorage(
+            dsn=default_dsn,
+            schema="navigator",
+            table_name="form_schemas",
+            tenant=None,
+        )
+        form_registry = FormRegistry(app=self.app, storage=storage)
         form_llm_client = LLMFactory.create(
             "google"
         )
@@ -278,30 +287,15 @@ class Main(AppHandler):
                 "PBAC not configured — using default resolver (AllowAll)."
             )
 
-    async def on_prepare(self, request, response):
-        """
-        on_prepare.
-        description: Signal for customize the response while is prepared.
-        """
-
-    async def pre_cleanup(self, app):
-        """
-        pre_cleanup.
-        description: Signal for running tasks before on_cleanup/shutdown App.
-        """
-
-    async def on_cleanup(self, app):
-        """
-        on_cleanup.
-        description: Signal for customize the response when server is closing
-        """
-
     async def on_startup(self, app):
         """
         on_startup.
         description: Signal for customize the response when server is started
         """
         app['websockets'] = []
+        # FormRegistry lifecycle (pool creation, DDL, cache hydration) is
+        # handled automatically by FormRegistry.on_startup via aiohttp signals
+        # (FEAT-185). No manual form-storage setup needed here.
 
     async def on_shutdown(self, app):
         """
@@ -311,3 +305,5 @@ class Main(AppHandler):
         manager = app.get('o365_auth_manager')
         if manager:
             await manager.shutdown()
+        # FormRegistry pool close is handled automatically by FormRegistry.on_shutdown
+        # via aiohttp signals (FEAT-185). No manual pool close needed here.

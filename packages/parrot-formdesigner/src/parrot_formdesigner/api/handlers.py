@@ -19,7 +19,7 @@ from pydantic import ValidationError
 from ..core.schema import FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
-from ..services.registry import FormRegistry
+from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
 
@@ -388,6 +388,64 @@ class FormAPIHandler:
             "title": title,
             "url": f"{prefix}/forms/{updated_form_id}",
         })
+
+    async def clone_form(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/clone — Clone a form under a new ID.
+
+        Creates a deep copy of the source form identified by ``form_id``,
+        assigns ``new_form_id`` from the request body, optionally applies an
+        RFC 7396 merge-patch, validates the result, and persists it.
+
+        Request body (JSON):
+            new_form_id (str): Required. Slug for the cloned form.
+            patch (dict | None): Optional RFC 7396 merge-patch.
+            tenant (str | None): Optional tenant override for the clone.
+
+        Returns:
+            201 Created with the full cloned ``FormSchema`` JSON body.
+            400 if ``new_form_id`` is missing or empty.
+            404 if the source form is not found.
+            409 if ``new_form_id`` already exists.
+            422 if the patch produces an invalid schema.
+        """
+        form_id = request.match_info["form_id"]
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        new_form_id = (body.get("new_form_id") or "").strip()
+        if not new_form_id:
+            return web.json_response({"error": "new_form_id is required"}, status=400)
+
+        patch = body.get("patch") or None
+        if patch is not None and not isinstance(patch, dict):
+            return web.json_response(
+                {"error": "patch must be a JSON object"}, status=400
+            )
+        tenant = body.get("tenant") or None
+
+        try:
+            clone = await self.registry.clone_form(
+                form_id,
+                new_form_id,
+                patch,
+                tenant=tenant,
+            )
+        except KeyError:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+        except FormAlreadyExistsError as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+        except ValueError as exc:
+            return web.json_response({"error": str(exc)}, status=422)
+
+        self.logger.info(
+            "Cloned form '%s' -> '%s'", form_id, clone.form_id
+        )
+        return web.json_response(clone.model_dump(mode="json"), status=201)
 
     async def update_form(self, request: web.Request) -> web.Response:
         """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
