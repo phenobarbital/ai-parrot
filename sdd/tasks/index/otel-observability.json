@@ -132,7 +132,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -144,8 +144,8 @@
       "parallelism_notes": "Per-spec sequential. Trivial glue task — joins the three subscribers/services into one provider.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1233-parrot-telemetry-provider.md"
+      "completed_at": "2026-05-19T01:38:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1233-parrot-telemetry-provider.md"
     },
     {
       "id": "TASK-1234",
