@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
     from ..services.forwarder import SubmissionForwarder
+    from ..services.partial_saves import PartialSaveStore
     from ..services.submissions import FormSubmissionStorage
 
 
@@ -46,6 +47,8 @@ class FormAPIHandler:
         client: Optional LLM client for natural language form creation.
         submission_storage: Optional storage backend for form submissions.
         forwarder: Optional submission forwarder for endpoint-bound submits.
+        partial_store: Optional Redis-backed store for ephemeral partial form
+            answers.  When ``None``, partial save endpoints return 503.
     """
 
     def __init__(
@@ -54,11 +57,13 @@ class FormAPIHandler:
         client: "AbstractClient | None" = None,
         submission_storage: "FormSubmissionStorage | None" = None,
         forwarder: "SubmissionForwarder | None" = None,
+        partial_store: "PartialSaveStore | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
         self._submission_storage = submission_storage
         self._forwarder = forwarder
+        self._partial_store = partial_store
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
         self.logger = logging.getLogger(__name__)
@@ -186,6 +191,204 @@ class FormAPIHandler:
 
         # 3. Default: no auth
         return AuthContext(scheme="none")
+
+    # ------------------------------------------------------------------
+    # Partial-save helpers
+    # ------------------------------------------------------------------
+
+    def _extract_session_id(self, request: web.Request) -> str | None:
+        """Extract the session ID from the navigator-auth session.
+
+        Follows the verified pattern from ``api/uploads.py:316-319``.
+
+        Args:
+            request: Incoming HTTP request with ``session`` attribute.
+
+        Returns:
+            Session ID string, or ``None`` if unavailable.
+        """
+        session_id: str | None = None
+        if "session" in request:
+            _sid = request["session"].get("id")
+            session_id = str(_sid) if _sid else None
+        return session_id
+
+    def _find_field(
+        self, form: FormSchema, field_id: str
+    ) -> "FormField | None":
+        """Find a FormField by field_id, searching all sections.
+
+        Args:
+            form: FormSchema to search.
+            field_id: Field identifier to find.
+
+        Returns:
+            The matching FormField, or None if not found.
+        """
+        from ..core.schema import FormField  # noqa: F401 (type hint only)
+        for section in form.sections:
+            for field in section.iter_fields():
+                if field.field_id == field_id:
+                    return field
+        return None
+
+    # ------------------------------------------------------------------
+    # Partial-save REST endpoints
+    # ------------------------------------------------------------------
+
+    async def save_partial(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/partial — Save partial answers.
+
+        Merges the submitted answers into the cached partial for this
+        form+session.  Each submitted field is validated individually via
+        ``FormValidator.validate_field()`` and per-field errors are returned
+        in the response.
+
+        Request body::
+
+            {"answers": {"field_id": <value>, ...}}
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            200 — full PartialFormData state as JSON, including field_errors.
+            400 — invalid JSON body or missing session_id.
+            404 — form not found in registry.
+            503 — partial save service not configured or Redis unavailable.
+        """
+        if self._partial_store is None:
+            return web.json_response(
+                {"error": "Partial save service not configured"}, status=503
+            )
+
+        form_id = request.match_info["form_id"]
+
+        session_id = self._extract_session_id(request)
+        if not session_id:
+            return web.json_response(
+                {"error": "Session ID required"}, status=400
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        answers: dict = body.get("answers", {})
+
+        form = await self.registry.get(form_id)
+        if form is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        # Save merged answers to store
+        try:
+            partial = await self._partial_store.save(form_id, session_id, answers)
+        except Exception as exc:
+            self.logger.warning(
+                "PartialSaveStore.save failed for %s/%s: %s", form_id, session_id, exc
+            )
+            return web.json_response(
+                {"error": "Partial save service unavailable"}, status=503
+            )
+
+        # Per-field validation (non-blocking — store all, report errors)
+        field_errors: dict[str, list[str]] = {}
+        for field_id, value in answers.items():
+            field = self._find_field(form, field_id)
+            if field is not None:
+                errors = await self.validator.validate_field(field, value)
+                if errors:
+                    field_errors[field_id] = errors
+
+        # Attach field_errors to the PartialFormData using model_copy
+        if field_errors:
+            partial = partial.model_copy(update={"field_errors": field_errors})
+
+        return web.json_response(
+            json.loads(partial.model_dump_json()), status=200
+        )
+
+    async def get_partial(self, request: web.Request) -> web.Response:
+        """GET /api/v1/forms/{form_id}/partial — Retrieve cached partial answers.
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            200 — PartialFormData as JSON.
+            400 — missing session_id.
+            404 — no cached partial for this form+session.
+            503 — partial save service not configured.
+        """
+        if self._partial_store is None:
+            return web.json_response(
+                {"error": "Partial save service not configured"}, status=503
+            )
+
+        form_id = request.match_info["form_id"]
+
+        session_id = self._extract_session_id(request)
+        if not session_id:
+            return web.json_response(
+                {"error": "Session ID required"}, status=400
+            )
+
+        try:
+            partial = await self._partial_store.get(form_id, session_id)
+        except Exception as exc:
+            self.logger.warning(
+                "PartialSaveStore.get failed for %s/%s: %s", form_id, session_id, exc
+            )
+            return web.json_response(
+                {"error": "Partial save service unavailable"}, status=503
+            )
+
+        if partial is None:
+            return web.json_response(
+                {"error": "No partial save found for this form and session"},
+                status=404,
+            )
+
+        return web.json_response(json.loads(partial.model_dump_json()), status=200)
+
+    async def delete_partial(self, request: web.Request) -> web.Response:
+        """DELETE /api/v1/forms/{form_id}/partial — Clear cached partial answers.
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            204 — partial cleared (or did not exist).
+            400 — missing session_id.
+            503 — partial save service not configured.
+        """
+        if self._partial_store is None:
+            return web.json_response(
+                {"error": "Partial save service not configured"}, status=503
+            )
+
+        form_id = request.match_info["form_id"]
+
+        session_id = self._extract_session_id(request)
+        if not session_id:
+            return web.json_response(
+                {"error": "Session ID required"}, status=400
+            )
+
+        try:
+            await self._partial_store.delete(form_id, session_id)
+        except Exception as exc:
+            self.logger.warning(
+                "PartialSaveStore.delete failed for %s/%s: %s",
+                form_id,
+                session_id,
+                exc,
+            )
+
+        return web.Response(status=204)
 
     async def list_forms(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms — List all registered forms with rich metadata.
