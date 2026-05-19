@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-187
 **Date**: 2026-05-19
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 **Proposal**: `sdd/proposals/graphindex.proposal.md`
 **Research state**: `sdd/state/FEAT-187/`
