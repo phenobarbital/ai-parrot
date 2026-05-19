@@ -112,7 +112,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1232-cost-calculator-pricing.md"
+      "completed_at": "2026-05-19T01:37:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1232-cost-calculator-pricing.md"
     },
     {
       "id": "TASK-1233",
