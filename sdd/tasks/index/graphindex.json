@@ -173,7 +173,7 @@
       "feature_id": "FEAT-187",
       "feature": "graphindex",
       "spec": "sdd/specs/graphindex.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -184,8 +184,8 @@
       "parallelism_notes": "Needs assembled graph from TASK-1258 and resolved edges from TASK-1259",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1261-graphindex-analytics-report.md"
+      "completed_at": "2026-05-19T15:58:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1261-graphindex-analytics-report.md"
     },
     {
       "id": "TASK-1262",
