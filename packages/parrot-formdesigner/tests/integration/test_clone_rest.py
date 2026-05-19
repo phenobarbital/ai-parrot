@@ -77,7 +77,7 @@ async def _make_client(aiohttp_client, registry: FormRegistry):
 
 async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> None:
     """POST /clone returns 201 with full FormSchema body."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     client = await _make_client(aiohttp_client, registry)
 
@@ -95,7 +95,7 @@ async def test_clone_rest_success(aiohttp_client, source_form: FormSchema) -> No
 
 async def test_clone_rest_with_patch(aiohttp_client, source_form: FormSchema) -> None:
     """POST /clone with patch body applies overrides and returns 201."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     client = await _make_client(aiohttp_client, registry)
 
@@ -121,7 +121,7 @@ async def test_clone_rest_missing_new_form_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:
     """POST /clone returns 400 when new_form_id is absent from the body."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     client = await _make_client(aiohttp_client, registry)
 
@@ -138,7 +138,7 @@ async def test_clone_rest_empty_new_form_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:
     """POST /clone returns 400 when new_form_id is an empty string."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     client = await _make_client(aiohttp_client, registry)
 
@@ -155,7 +155,7 @@ async def test_clone_rest_invalid_json(
     aiohttp_client, source_form: FormSchema
 ) -> None:
     """POST /clone returns 400 for a malformed JSON body."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     client = await _make_client(aiohttp_client, registry)
 
@@ -174,7 +174,7 @@ async def test_clone_rest_invalid_json(
 
 async def test_clone_rest_source_not_found(aiohttp_client) -> None:
     """POST /clone returns 404 when the source form does not exist."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     client = await _make_client(aiohttp_client, registry)
 
     resp = await client.post(
@@ -190,7 +190,7 @@ async def test_clone_rest_duplicate_id(
     aiohttp_client, source_form: FormSchema
 ) -> None:
     """POST /clone returns 409 when new_form_id already exists in the registry."""
-    registry = FormRegistry()
+    registry = FormRegistry(require_tenant=False)
     await registry.register(source_form)
     existing = FormSchema(
         form_id="taken-id",

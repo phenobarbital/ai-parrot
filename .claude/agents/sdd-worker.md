@@ -89,7 +89,15 @@ git pull --ff-only origin "$BASE_BRANCH"
 ```
 
 `base_branch` defaults to `dev` for `type: feature` and is fixed to `main`
-for `type: hotfix`. If the working tree is dirty or `--ff-only` fails,
+for `type: hotfix`. `staging` is also a valid `base_branch` for `type: feature`
+during a release freeze (FEAT-187). Features MUST NOT base on `main` — if the
+spec declares `type: feature, base_branch: main`, abort with:
+```
+⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
+   or staging (during a release freeze). For changes that must base on
+   main, set type='hotfix' in the document frontmatter.
+```
+If the working tree is dirty or `--ff-only` fails,
 abort with a clear message — do NOT stash.
 
 ### 1. Resolve the Feature (FEAT-145)

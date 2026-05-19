@@ -151,24 +151,27 @@ class FormAPIHandler:
         userinfo = session.get("session", {})
         return userinfo.get("programs", [])
 
-    def _get_tenant(self, request: web.Request) -> str | None:
+    def _get_tenant(self, request: web.Request) -> str:
         """Extract the effective tenant for this request.
 
         Returns the first program slug from the navigator-auth session (as set
-        by :meth:`_get_programs`). When no programs are present, returns ``None``
-        so that :class:`~parrot_formdesigner.services.registry.FormRegistry`
-        falls back to its configured ``default_tenant``.
+        by :meth:`_get_programs`). When no programs are present — anonymous
+        requests, sessions without program scope, or test setups without
+        navigator-auth — falls back to the registry's configured
+        ``default_tenant`` so write paths don't crash on
+        ``require_tenant=True``.
 
         Args:
             request: Incoming HTTP request with ``session`` attribute attached
                 by the navigator-auth ``user_session`` decorator.
 
         Returns:
-            The first program slug string, or ``None`` when the session carries
-            no programs.
+            A tenant slug string — never ``None``.
         """
         programs = self._get_programs(request)
-        return programs[0] if programs else None
+        if programs:
+            return programs[0]
+        return self.registry.default_tenant
 
     def _build_auth_context(self, request: web.Request) -> AuthContext:
         """Build AuthContext from the inbound aiohttp request.

@@ -1230,162 +1230,185 @@ class AbstractBot(
 
     async def configure(self, app=None) -> None:
         """Basic Configuration of Bot.
+
+        Wrapped in ``try/except/finally`` so ``self._configured`` is always
+        flipped to ``True`` at the end, even when an inner step raises.
+        Without this guarantee an uncaught error during configure() leaves
+        ``_configured = False``; callers that gate on ``is_configured``
+        (e.g. ``BotManager.get_bot()``) then re-enter configure() on the
+        next request, which re-registers already-registered toolkits and
+        raises ``ToolNameCollisionError`` on top of the original failure —
+        masking the real cause.
         """
         self._configured = False
         self.app = None
         if app:
             self.app = app if isinstance(app, web.Application) else app.get_app()
-        # Configure conversation memory FIRST
-        self.configure_conversation_memory()
-
-        # Configure Knowledge Base
         try:
-            await self.configure_kb()
-        except Exception as e:
-            self.logger.error(
-                f"Error configuring Knowledge Base: {e}"
-            )
+            # Configure conversation memory FIRST
+            self.configure_conversation_memory()
 
-        # Configure Local Knowledge Base if enabled
-        if self._use_local_kb:
+            # Configure Knowledge Base
             try:
-                await self.configure_local_kb()
-            except Exception as e:
-                self.logger.debug(
-                    f"No local KB loaded: {e}"
-                )
-
-        # Configure LLM:
-        if not self._configured:
-            try:
-                config = self._resolve_llm_config(
-                    llm=self._llm_raw,
-                    model=self._llm_model,
-                    preset=self._llm_preset,
-                    **self._llm_kwargs
-                )
-                self._llm_config = config
-                # Default LLM instance:
-                self._llm = self._create_llm_client(config, self.conversation_memory)
-                if self.tool_manager and hasattr(self._llm, 'tool_manager'):
-                    self.sync_tools(self._llm)
+                await self.configure_kb()
             except Exception as e:
                 self.logger.error(
-                    f"Error configuring LLM: {e}"
+                    f"Error configuring Knowledge Base: {e}"
                 )
-                raise
-        # set Client tools:
-        # Log tools configuration AFTER LLM is configured
-        # Log comprehensive tools configuration
-        tools_summary = self.get_tools_summary()
-        self.logger.info(
-            f"Configuration complete: "
-            f"tools_enabled={tools_summary['tools_enabled']}, "
-            f"operation_mode={tools_summary['operation_mode']}, "
-            f"tools_count={tools_summary['tools_count']}, "
-            f"categories={tools_summary['categories']}, "
-            f"effective_mode={tools_summary['effective_mode']}"
-        )
 
-        # And define Prompt:
-        try:
-            self._define_prompt()
-        except Exception as e:
-            self.logger.error(
-                f"Error defining prompt: {e}"
-            )
-            raise
-        # Configure composable prompt builder (Phase 1) if set:
-        if self._prompt_builder and not self._prompt_builder.is_configured:
-            try:
-                await self._configure_prompt_builder()
-            except Exception as e:
-                self.logger.error(
-                    f"Error configuring prompt builder: {e}"
-                )
-                raise
-        # Check declarative store configuration first:
-        if store_config := self.define_store_config():
-            self._apply_store_config(store_config)
-        # Auto-enable vector store when config is present (e.g. loaded from YAML or DB)
-        if not self._use_vector and self._vector_store:
-            self._use_vector = True
+            # Configure Local Knowledge Base if enabled
+            if self._use_local_kb:
+                try:
+                    await self.configure_local_kb()
+                except Exception as e:
+                    self.logger.debug(
+                        f"No local KB loaded: {e}"
+                    )
+
+            # Configure LLM:
+            if not self._configured:
+                try:
+                    config = self._resolve_llm_config(
+                        llm=self._llm_raw,
+                        model=self._llm_model,
+                        preset=self._llm_preset,
+                        **self._llm_kwargs
+                    )
+                    self._llm_config = config
+                    # Default LLM instance:
+                    self._llm = self._create_llm_client(config, self.conversation_memory)
+                    if self.tool_manager and hasattr(self._llm, 'tool_manager'):
+                        self.sync_tools(self._llm)
+                except Exception as e:
+                    self.logger.error(
+                        f"Error configuring LLM: {e}"
+                    )
+                    raise
+            # set Client tools:
+            # Log tools configuration AFTER LLM is configured
+            # Log comprehensive tools configuration
+            tools_summary = self.get_tools_summary()
             self.logger.info(
-                "Auto-enabled vector store from existing config"
+                f"Configuration complete: "
+                f"tools_enabled={tools_summary['tools_enabled']}, "
+                f"operation_mode={tools_summary['operation_mode']}, "
+                f"tools_count={tools_summary['tools_count']}, "
+                f"categories={tools_summary['categories']}, "
+                f"effective_mode={tools_summary['effective_mode']}"
             )
-        # Configure VectorStore if enabled:
-        if self._use_vector:
+
+            # And define Prompt:
             try:
-                self.configure_store()
+                self._define_prompt()
             except Exception as e:
                 self.logger.error(
-                    f"Error configuring VectorStore: {e}"
+                    f"Error defining prompt: {e}"
                 )
                 raise
-        # Re-derive context_search_limit / context_score_threshold against
-        # the *actual* embedding model now that configure_store() has run.
-        # Skips any value the user passed explicitly to the constructor.
-        self._refresh_context_recs_from_store()
-        if store_config and store_config.auto_create and self.store:
-            # Auto-create collection if configured
-            await self._ensure_collection(store_config)
-        # Warmup: eagerly initialize vector store pool + embedding model.
-        # Always warm up if a store is configured; also warm up KBs if flag is set.
-        if self.warmup_on_configure or self.store:
-            await self.warmup_embeddings()
-        # Initialize the KB Selector if enabled:
-        if self.use_kb and self.use_kb_selector:
-            if not self.kb_store:
-                raise ConfigError(
-                    "KB Store must be configured to use KB Selector"
-                )
-            if not self._llm:
-                raise ConfigError(
-                    "LLM must be configured to use KB Selector"
-                )
-            try:
-                self.kb_selector = KBSelector(
-                    llm_client=self._llm,
-                    min_confidence=0.6,
-                    kbs=self.knowledge_bases
-                )
+            # Configure composable prompt builder (Phase 1) if set:
+            if self._prompt_builder and not self._prompt_builder.is_configured:
+                try:
+                    await self._configure_prompt_builder()
+                except Exception as e:
+                    self.logger.error(
+                        f"Error configuring prompt builder: {e}"
+                    )
+                    raise
+            # Check declarative store configuration first:
+            if store_config := self.define_store_config():
+                self._apply_store_config(store_config)
+            # Auto-enable vector store when config is present (e.g. loaded from YAML or DB)
+            if not self._use_vector and self._vector_store:
+                self._use_vector = True
                 self.logger.info(
-                    "KB Selector initialized"
+                    "Auto-enabled vector store from existing config"
                 )
+            # Configure VectorStore if enabled:
+            if self._use_vector:
+                try:
+                    self.configure_store()
+                except Exception as e:
+                    self.logger.error(
+                        f"Error configuring VectorStore: {e}"
+                    )
+                    raise
+            # Re-derive context_search_limit / context_score_threshold against
+            # the *actual* embedding model now that configure_store() has run.
+            # Skips any value the user passed explicitly to the constructor.
+            self._refresh_context_recs_from_store()
+            if store_config and store_config.auto_create and self.store:
+                # Auto-create collection if configured
+                await self._ensure_collection(store_config)
+            # Warmup: eagerly initialize vector store pool + embedding model.
+            # Always warm up if a store is configured; also warm up KBs if flag is set.
+            if self.warmup_on_configure or self.store:
+                await self.warmup_embeddings()
+            # Initialize the KB Selector if enabled:
+            if self.use_kb and self.use_kb_selector:
+                if not self.kb_store:
+                    raise ConfigError(
+                        "KB Store must be configured to use KB Selector"
+                    )
+                if not self._llm:
+                    raise ConfigError(
+                        "LLM must be configured to use KB Selector"
+                    )
+                try:
+                    self.kb_selector = KBSelector(
+                        llm_client=self._llm,
+                        min_confidence=0.6,
+                        kbs=self.knowledge_bases
+                    )
+                    self.logger.info(
+                        "KB Selector initialized"
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        f"Error initializing KB Selector: {e}"
+                    )
+                    raise
+            # Post-configure hook — runs after the base configuration is complete
+            # and after ``self.app`` has been attached. Subclasses can override to
+            # wire up app-scoped resources (OAuth managers, DB pools, schedulers,
+            # etc.) without having to touch base ``__init__`` timing.
+            try:
+                await self.post_configure()
             except Exception as e:
                 self.logger.error(
-                    f"Error initializing KB Selector: {e}"
+                    f"Error in post_configure for {getattr(self, 'name', self.__class__.__name__)}: {e}",
+                    exc_info=True,
                 )
                 raise
-        self._configured = True
-        # Post-configure hook — runs after the base configuration is complete
-        # and after ``self.app`` has been attached. Subclasses can override to
-        # wire up app-scoped resources (OAuth managers, DB pools, schedulers,
-        # etc.) without having to touch base ``__init__`` timing.
-        try:
-            await self.post_configure()
-        except Exception as e:
+
+            # FEAT-176: emit AgentConfiguredEvent after all configure steps succeed.
+            _llm_provider = ""
+            _llm_model = ""
+            if self._llm_config:
+                _llm_provider = self._llm_config.provider or ""
+                _llm_model = self._llm_config.model or ""
+            self.events.emit_nowait(AgentConfiguredEvent(
+                trace_context=TraceContext.new_root(),
+                agent_name=self.name,
+                llm_provider=_llm_provider,
+                llm_model=_llm_model,
+                has_vector_store=bool(self.store),
+                source_type="agent",
+                source_name=self.name,
+            ))
+        except Exception:
+            # Log with stack trace then re-raise; the finally block below
+            # still marks the bot configured so callers don't retry into
+            # the same failure (and into toolkit-collision errors that
+            # would mask the real cause).
             self.logger.error(
-                f"Error in post_configure for {getattr(self, 'name', self.__class__.__name__)}: {e}",
+                "Error during configure() for '%s'",
+                getattr(self, "name", self.__class__.__name__),
                 exc_info=True,
             )
             raise
-
-        # FEAT-176: emit AgentConfiguredEvent after all configure steps succeed.
-        _llm_provider = ""
-        _llm_model = ""
-        if self._llm_config:
-            _llm_provider = self._llm_config.provider or ""
-            _llm_model = self._llm_config.model or ""
-        self.events.emit_nowait(AgentConfiguredEvent(
-            trace_context=TraceContext.new_root(),
-            agent_name=self.name,
-            llm_provider=_llm_provider,
-            llm_model=_llm_model,
-            has_vector_store=bool(self.store),
-            source_type="agent",
-            source_name=self.name,
-        ))
+        finally:
+            # Always mark configured — see method docstring for rationale.
+            self._configured = True
 
     async def post_configure(self) -> None:
         """Hook called at the end of :meth:`configure`.

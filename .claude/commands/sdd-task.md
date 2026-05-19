@@ -32,8 +32,19 @@ git pull --ff-only origin "$BASE"
 ```
 
 For `type: hotfix`, `BASE` MUST be `main`. For `type: feature`, `BASE` defaults
-to `dev` and may be any non-main branch (sub-features extend a parent feature
-branch — see `CLAUDE.md`).
+to `dev` and may be `staging` (during a release freeze) or any non-main branch
+(sub-features extend a parent feature branch — see `CLAUDE.md`).
+
+**Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
+```
+⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
+   or staging (during a release freeze). For changes that must base on
+   main, set type='hotfix' in the document frontmatter.
+```
+
+Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
+(FEAT-187). Use `base_branch: staging` when decomposing stabilization fixes for a
+frozen release candidate.
 
 **Abort conditions (do NOT stash or auto-resolve):**
 - Working tree dirty: `⚠️  Cannot sync <BASE>: working tree has uncommitted changes. Stash or commit first, then re-run /sdd-task.`
