@@ -136,6 +136,17 @@ BASE_BRANCH=$(echo "$META" | awk '{print $2}')
    Fix the brainstorm/proposal frontmatter and re-run /sdd-spec.
 ```
 
+**Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
+```
+⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
+   or staging (during a release freeze). For changes that must base on
+   main, set type='hotfix' in the document frontmatter.
+```
+
+Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
+(FEAT-187). Use `base_branch: staging` when applying stabilization fixes to a
+frozen release candidate.
+
 **Sync:** before scaffolding, switch to the base branch and pull:
 ```bash
 git checkout "$BASE_BRANCH"

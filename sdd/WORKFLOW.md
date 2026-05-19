@@ -125,7 +125,27 @@ When complete, the agent must:
 
 ---
 
-## Flow Types (FEAT-145)
+## Git Configuration (FEAT-187)
+
+The Git Parrot Flow uses three long-lived branches:
+
+- **`main`** — tagged releases only. Hotfixes land here via PR;
+  no feature work ever bases on `main`.
+- **`staging`** — release candidate branch. Cut from `dev` when the
+  team decides to freeze a release. Receives `main → staging` syncs
+  automatically (via `.github/workflows/sync-down.yml`); the
+  `dev → staging` direction is a manual cut at freeze time.
+- **`dev`** — integration branch for all feature work. Default base
+  for `type: feature` flows.
+
+**Sync-down automation** (FEAT-187): `.github/workflows/sync-down.yml`
+listens for pushes to `main` and tries to fast-forward both `staging` and
+`dev`. When fast-forward is not possible, it opens a sync PR against the
+lagging branch. `/sdd-done --sync-down` is the manual fallback.
+
+---
+
+## Flow Types (FEAT-145, refined by FEAT-187)
 
 Every brainstorm/proposal/spec declares its flow type via YAML frontmatter
 at the top of the document:
@@ -133,19 +153,73 @@ at the top of the document:
 ```yaml
 ---
 type: feature        # one of: feature | hotfix
-base_branch: dev     # for feature: any branch; for hotfix: must be "main"
+base_branch: dev     # for feature: dev or staging; for hotfix: must be "main"
 ---
 ```
 
-| Type      | base_branch       | When to use                                        |
-|-----------|-------------------|----------------------------------------------------|
-| `feature` | `dev` (default)   | Most work. Lands on `dev` via `/sdd-done`.         |
-| `feature` | `<other-branch>`  | Sub-features extending another feature branch.     |
-| `hotfix`  | `main` (required) | Production hotfixes. Land on `main` via manual PR. |
+| Type      | base_branch         | When to use                                                  |
+|-----------|---------------------|--------------------------------------------------------------|
+| `feature` | `dev` (default)     | Most work. Lands on `dev` via `/sdd-done`.                   |
+| `feature` | `staging`           | Stabilization fix during a release freeze. Lands on `staging`. |
+| `feature` | `<other-branch>`    | Sub-features extending another feature branch.               |
+| `hotfix`  | `main` (required)   | Production hotfixes. Land on `main` via manual PR.           |
 
-`/sdd-done` enforces: hotfixes are NEVER auto-pushed or auto-PR'd to `main`.
-The user opens the PR manually; afterwards, `/sdd-done --sync-dev` propagates
-the change back to `dev`.
+Features MUST NOT base on `main`. `/sdd-done` enforces: hotfixes are NEVER
+auto-pushed or auto-PR'd to `main`. The user opens the PR manually; afterwards,
+`.github/workflows/sync-down.yml` propagates the change back to `staging` and
+`dev` automatically. If the Action fails, run `/sdd-done --sync-down` locally.
+
+---
+
+## Release Cut
+
+When the team decides to freeze a release, a maintainer cuts `staging`
+from `dev`. This is a manual, infrequent operation today (see open
+question in `sdd/specs/git-parrot-flow.spec.md` §8 about a future
+`/sdd-release-cut` command).
+
+### Cutting the branch
+
+```bash
+git checkout dev
+git pull --ff-only origin dev
+
+# First freeze (creates the branch):
+git checkout -B staging origin/dev
+git push --set-upstream origin staging
+
+# Subsequent freezes (staging already exists):
+git checkout staging
+git merge --ff-only dev
+git push origin staging
+```
+
+### During the freeze
+
+- New feature work continues on `dev`. It is destined for the NEXT
+  release, not this one.
+- Hotfixes land on `main` as usual. The sync-down Action propagates
+  them to `staging` and `dev` automatically.
+- Stabilization fixes that target THIS release should land on
+  `staging` directly: open a brainstorm/spec with
+  `type: feature, base_branch: staging`.
+
+### Releasing
+
+1. Open PR `staging → main`.
+2. Review, run full CI, ensure all stabilization fixes are in.
+3. Merge the PR.
+4. Tag the merge commit: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+5. The Action propagates the merge commit back to `dev` (and to
+   `staging` if any post-merge fixes were on `main`).
+6. `.github/workflows/release.yml` fires on the tag event and
+   publishes the release artifacts.
+
+### Recommended Branch Protection
+
+`main` (and `staging` once in active use) should require PRs, passing CI
+status checks, and signed commits. Configure via GitHub repo settings —
+not declaratively in this repo (open question in spec §8).
 
 ---
 

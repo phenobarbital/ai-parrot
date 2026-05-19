@@ -16,11 +16,14 @@ if TYPE_CHECKING:
 def _get_request_tenant(request: "web.Request") -> str | None:
     """Extract the effective tenant from an aiohttp request.
 
-    Reads the first program slug from the navigator-auth session
-    (``request.session["session"]["programs"][0]``). Returns ``None``
-    when no session is present or the programs list is empty, allowing
-    :class:`~parrot_formdesigner.services.registry.FormRegistry` to fall
-    back to its configured ``default_tenant``.
+    Resolution order:
+
+    1. First program slug from the navigator-auth session
+       (``request.session["session"]["programs"][0]``).
+    2. ``request.app["form_registry"].default_tenant`` when the registry
+       has self-registered (FEAT-185) — covers anonymous and session-less
+       paths so ``register(require_tenant=True)`` doesn't bite.
+    3. ``None`` only when both sources are absent (unusual test setups).
 
     This is the shared implementation of the pattern established by
     ``FormAPIHandler._get_tenant`` (TASK-1243) for use in module-level
@@ -30,14 +33,22 @@ def _get_request_tenant(request: "web.Request") -> str | None:
         request: Incoming aiohttp web.Request.
 
     Returns:
-        First program slug string, or ``None`` if not available.
+        Tenant slug string, or ``None`` if neither the session nor the
+        application registry can provide one.
     """
     session = getattr(request, "session", None)
-    if session is None:
-        return None
-    userinfo = session.get("session", {})
-    programs: list[str] = userinfo.get("programs", [])
-    return programs[0] if programs else None
+    if session is not None:
+        userinfo = session.get("session", {})
+        programs: list[str] = userinfo.get("programs", [])
+        if programs:
+            return programs[0]
+
+    registry = request.app.get("form_registry") if request.app is not None else None
+    if registry is not None:
+        default = getattr(registry, "default_tenant", None)
+        if default is not None:
+            return default
+    return None
 
 
 def _deep_merge(base: dict, patch: dict) -> dict:

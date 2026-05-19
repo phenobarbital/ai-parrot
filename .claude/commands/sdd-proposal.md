@@ -55,7 +55,17 @@ then asks targeted questions about genuine unknowns.
 ```bash
 REPO_ROOT=$(pwd)
 ```
-You must be on `dev` or the integration branch when starting.
+You must be on `dev`, `staging`, or the integration branch when starting. The
+`base_branch` for the proposal defaults to `dev` for `type: feature` flows and to
+`main` for `type: hotfix` flows. `staging` is valid as a `base_branch` for
+`type: feature` during a release freeze (FEAT-187).
+
+**Validation:** if `TYPE == "feature"` and `BASE_BRANCH == "main"`, abort:
+```
+⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
+   or staging (during a release freeze). For changes that must base on
+   main, set type='hotfix' in the document frontmatter.
+```
 
 ### 1. Parse Input & Allocate FEAT-ID
 

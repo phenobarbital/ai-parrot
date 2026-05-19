@@ -53,3 +53,30 @@ def test_emit_round_trips(tmp_path: Path) -> None:
     f = tmp_path / "doc.md"
     f.write_text(block + "# body\n")
     assert parse(f) == meta
+
+
+def test_known_branches_contains_main_staging_dev() -> None:
+    """KNOWN_BRANCHES exposes exactly the three canonical Git Parrot Flow branches."""
+    from scripts.sdd.sdd_meta import KNOWN_BRANCHES
+
+    assert KNOWN_BRANCHES == frozenset({"main", "staging", "dev"})
+
+
+def test_known_branches_is_frozenset() -> None:
+    """KNOWN_BRANCHES must be immutable to prevent accidental mutation by consumers."""
+    from scripts.sdd.sdd_meta import KNOWN_BRANCHES
+
+    assert isinstance(KNOWN_BRANCHES, frozenset)
+
+
+def test_flowmeta_feature_main_still_parses() -> None:
+    """FlowMeta must NOT reject type=feature, base_branch=main at the schema layer.
+
+    The refusal lives in SDD command files (FEAT-187), not in the Pydantic model.
+    This test prevents accidental schema-level enforcement that would break the
+    command-layer refusal logic (e.g. a future validator added to FlowMeta that
+    silently discards the intent of the command-file guard).
+    """
+    meta = FlowMeta(type="feature", base_branch="main")
+    assert meta.type == "feature"
+    assert meta.base_branch == "main"

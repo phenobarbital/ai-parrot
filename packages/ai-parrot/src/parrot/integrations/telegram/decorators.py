@@ -20,6 +20,7 @@ def telegram_command(
             - "positional": `/cmd arg1 arg2` → method(*args)
             - "raw": `/cmd <everything>` → method(text)
     """
+
     def decorator(fn: Callable) -> Callable:
         fn._telegram_command = {
             "command": command,
@@ -27,6 +28,7 @@ def telegram_command(
             "parse_mode": parse_mode,
         }
         return fn
+
     return decorator
 
 
@@ -50,15 +52,17 @@ def discover_telegram_commands(agent: Any) -> List[Dict[str, Any]]:
         if attr is None or not callable(attr):
             continue
         meta = getattr(attr, "_telegram_command", None)
-        if meta is None:
+        if not isinstance(meta, dict):
             continue
         cmd_name = meta["command"]
         if cmd_name in seen:
             continue
         seen.add(cmd_name)
-        commands.append({
-            **meta,
-            "method_name": attr_name,
-            "method": attr,
-        })
+        commands.append(
+            {
+                **meta,
+                "method_name": attr_name,
+                "method": attr,
+            }
+        )
     return commands
