@@ -27,6 +27,7 @@ def sample_form() -> FormSchema:
     return FormSchema(
         form_id="e2e-pdf",
         title={"en": "E2E PDF"},
+        tenant="navigator",
         sections=[
             FormSection(
                 section_id="s1",
