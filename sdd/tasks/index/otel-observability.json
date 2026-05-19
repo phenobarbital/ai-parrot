@@ -72,7 +72,7 @@
       "feature_id": "FEAT-177",
       "feature": "otel-observability",
       "spec": "sdd/specs/otel-observability.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Per-spec sequential. In principle TASK-1230 and TASK-1231 touch different files and could run in parallel, but the spec mandates per-spec isolation in one worktree.",
       "assigned_to": null,
       "started_at": "2026-05-18T21:59:30+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1230-genai-opentelemetry-subscriber.md"
+      "completed_at": "2026-05-19T01:32:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1230-genai-opentelemetry-subscriber.md"
     },
     {
       "id": "TASK-1231",
