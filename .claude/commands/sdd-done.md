@@ -21,8 +21,10 @@ worktree to verify work, but modifies state only on `base_branch`.
 /sdd-done FEAT-014 --dry-run           # show what would change, don't change anything
 /sdd-done FEAT-014 --force             # mark done even if some checks fail
 /sdd-done FEAT-014 --resolve-jira      # also transition the Jira ticket to Done
-/sdd-done FEAT-014 --sync-dev          # for hotfixes: after the user merges the PR
-                                       # to main, propagate the change to dev
+/sdd-done FEAT-014 --sync-down         # for hotfixes: after the user merges the PR
+                                       # to main, propagate the change to staging + dev
+                                       # (mostly redundant with sync-down.yml Action)
+/sdd-done FEAT-014 --sync-dev          # deprecated alias for --sync-down
 ```
 
 ## Guardrails
@@ -36,8 +38,10 @@ worktree to verify work, but modifies state only on `base_branch`.
 > Hotfixes go to `main` ONLY via a manually-opened PR. This rule is non-negotiable
 > and applies to every flag combination — including `--force` and `--resolve-jira`.
 > For hotfixes, this command pushes the hotfix branch and prints a `gh pr create
-> --base main` snippet. After the user merges the PR, re-run with `--sync-dev` to
-> propagate the change back to `dev`.
+> --base main` snippet. After the user merges the PR, the `.github/workflows/sync-down.yml`
+> Action propagates the change to `staging` and `dev` automatically. If the Action
+> fails or you are offline, re-run with `--sync-down` to propagate the change back to
+> both `staging` and `dev` manually. (`--sync-dev` is a deprecated alias for `--sync-down`.)
 
 ## Steps
 
@@ -223,9 +227,11 @@ if [[ "$BASE_BRANCH" == "main" ]]; then
        --title "<hotfix title>" \\
        --body "<verification summary>"
 
-   After the PR merges, re-run with --sync-dev to propagate the change to dev:
+   After the PR merges, the sync-down.yml Action propagates the change to staging
+   and dev automatically. If the Action fails or you are offline, re-run with
+   --sync-down to propagate the change manually:
 
-     /sdd-done <FEAT-ID> --sync-dev
+     /sdd-done <FEAT-ID> --sync-down
 
 EOF
     exit 0   # NOT an error — the hotfix workflow continues outside this command
@@ -258,24 +264,60 @@ After a successful merge, push `<BASE_BRANCH>`:
 git push origin "$BASE_BRANCH"
 ```
 
-### 9.5. Hotfix → Dev Sync (FEAT-145, only with `--sync-dev`)
+### 9.5. Hotfix → Sync-down (FEAT-187, only with `--sync-down`)
 
-This sub-step runs ONLY when the user passes `--sync-dev` AND `TYPE == "hotfix"`.
-It propagates a hotfix that has just been merged into `main` (via the manual PR
-from §9) back into `dev` so feature branches stay in sync.
+This sub-step runs ONLY when the user passes `--sync-down` (or the deprecated
+`--sync-dev` alias) AND `TYPE == "hotfix"`. It propagates a hotfix that has just
+been merged into `main` (via the manual PR from §9) back into `staging` and `dev`
+so both stay in sync.
 
-**Pre-flight:** verify the hotfix landed on `origin/main`:
+If `--sync-dev` is used instead of `--sync-down`, first emit:
+```
+ℹ️  --sync-dev is deprecated; use --sync-down. Continuing with sync-down behaviour.
+```
+
+In normal operation, `.github/workflows/sync-down.yml` does this automatically
+after every push to `main`. Run this command only when the Action has failed or
+the user is operating offline.
+
+**Pre-flight (run once):** verify the hotfix landed on `origin/main`:
 ```bash
 git fetch origin
 if ! git merge-base --is-ancestor "feat-<FEAT-ID>-<slug>" origin/main; then
     echo "⚠️  feat-<FEAT-ID>-<slug> is not yet an ancestor of origin/main."
-    echo "   Open the PR and merge it first, then re-run with --sync-dev."
+    echo "   Open the PR and merge it first, then re-run with --sync-down."
     exit 1
 fi
 ```
 
-**Sync** — optimistic auto-merge with safe abort on conflict (decision 4c
-from the FEAT-145 design discussion):
+**Sync to `staging`** — optimistic auto-merge with safe abort on conflict:
+```bash
+git checkout staging
+git pull --ff-only origin staging
+
+if git merge --no-edit feat-<FEAT-ID>-<slug>; then
+    git push origin staging
+    echo "✅ staging synced with hotfix feat-<FEAT-ID>-<slug>."
+    STAGING_OK=true
+else
+    git merge --abort
+    STAGING_OK=false
+    cat <<EOF
+⚠️  Conflict syncing hotfix into staging. The merge has been aborted (no changes left).
+
+    Resolve manually:
+      git checkout staging
+      git merge feat-<FEAT-ID>-<slug>
+      # ...resolve conflicts in your editor...
+      git commit
+      git push origin staging
+
+EOF
+fi
+```
+
+**Sync to `dev`** — optimistic auto-merge with safe abort on conflict
+(independent of `staging` outcome — always attempt):
 ```bash
 git checkout dev
 git pull --ff-only origin dev
@@ -283,8 +325,10 @@ git pull --ff-only origin dev
 if git merge --no-edit feat-<FEAT-ID>-<slug>; then
     git push origin dev
     echo "✅ dev synced with hotfix feat-<FEAT-ID>-<slug>."
+    DEV_OK=true
 else
     git merge --abort
+    DEV_OK=false
     cat <<EOF
 ⚠️  Conflict syncing hotfix into dev. The merge has been aborted (no changes left).
 
@@ -296,6 +340,21 @@ else
       git push origin dev
 
 EOF
+fi
+```
+
+**Return to base:** leave the user on `main` (the hotfix's base branch):
+```bash
+git checkout main
+```
+
+**Summary and exit code:**
+```bash
+if $STAGING_OK && $DEV_OK; then
+    echo "✅ Sync-down complete: staging and dev are in sync with main."
+    exit 0
+else
+    echo "⚠️  Sync-down partially failed. See above for failed targets."
     exit 1
 fi
 ```
