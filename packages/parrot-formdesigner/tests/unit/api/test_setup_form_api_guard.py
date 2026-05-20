@@ -5,10 +5,9 @@ was already set by FormRegistry.__init__(app=...).
 """
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
 from aiohttp.web import Application
 
-from parrot_formdesigner.services.registry import FormRegistry, FormStorage
+from parrot_formdesigner.services.registry import FormRegistry
 
 
 class TestSetupFormApiGuard:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection, RenderedForm
+from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.jsonschema import JsonSchemaRenderer
 

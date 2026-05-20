@@ -12,7 +12,6 @@ Covers:
 """
 
 import sys
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot_formdesigner.services.storage import PostgresFormStorage

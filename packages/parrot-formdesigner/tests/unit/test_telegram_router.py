@@ -1,14 +1,13 @@
 """Unit tests for TelegramFormRouter."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from aiogram import Router
 
 from parrot_formdesigner.core.options import FieldOption
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
-from parrot_formdesigner.renderers.telegram.models import TelegramRenderMode
 from parrot_formdesigner.renderers.telegram.renderer import TelegramRenderer
 from parrot_formdesigner.renderers.telegram.router import TelegramFormRouter
 from parrot_formdesigner.services.registry import FormRegistry

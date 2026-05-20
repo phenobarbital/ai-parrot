@@ -1,7 +1,7 @@
 """Core form models for parrot-formdesigner.
 
 This package exposes all public symbols from the core form abstraction layer:
-types, constraints, options, schema, and style models.
+types, constraints, options, schema, style models, and lifecycle event models.
 """
 
 from .auth import ApiKeyAuth, AuthConfig, BearerAuth, NoAuth
@@ -10,6 +10,14 @@ from .constraints import (
     DependencyRule,
     FieldCondition,
     FieldConstraints,
+)
+from .events import (
+    EventResolution,
+    FormEventAbort,
+    FormEventBinding,
+    FormEventContext,
+    FormEventName,
+    FormEventsConfig,
 )
 from .options import FieldOption, OptionsSource
 from .schema import (
@@ -67,4 +75,11 @@ __all__ = [
     "FieldStyleHint",
     "StyleSchema",
     "FormStyle",
+    # Lifecycle events (FEAT-188)
+    "FormEventName",
+    "FormEventBinding",
+    "FormEventsConfig",
+    "FormEventContext",
+    "EventResolution",
+    "FormEventAbort",
 ]

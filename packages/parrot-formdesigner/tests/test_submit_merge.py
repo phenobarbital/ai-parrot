@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from aiohttp import web
 
 from parrot_formdesigner.api.handlers import FormAPIHandler

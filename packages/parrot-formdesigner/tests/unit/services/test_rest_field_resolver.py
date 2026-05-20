@@ -6,7 +6,6 @@ configuration-error scenarios.
 
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -20,13 +19,11 @@ from parrot_formdesigner.services.callback_registry import (
 from parrot_formdesigner.services.rest_field_resolver import (
     AdditionalArg,
     CallbackRestFieldSpec,
-    ConfigurationError,
     InternalRestFieldSpec,
     RemoteRestFieldSpec,
     RestCallbackInput,
     RestCallbackOutput,
     RestFieldResolver,
-    RestFieldResult,
     RestFieldSpec,
 )
 

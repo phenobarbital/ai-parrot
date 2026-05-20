@@ -265,7 +265,7 @@ class TestRegistryMultiTenancy:
 
     async def test_load_from_storage_per_tenant_no_overwrite(self) -> None:
         """Sequential load_from_storage for different tenants populates both."""
-        from unittest.mock import AsyncMock as AM, call
+        from unittest.mock import AsyncMock as AM
 
         epson_form = _make_form("f", tenant="epson")
         pokemon_form = _make_form("f", tenant="pokemon")

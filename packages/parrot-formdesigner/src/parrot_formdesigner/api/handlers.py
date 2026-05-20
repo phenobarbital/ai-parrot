@@ -11,15 +11,18 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 from aiohttp import web
 from pydantic import ValidationError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from navigator.responses import JSONResponse
-from ..core.schema import FormSchema, RenderedForm
+from ..core.events import FormEventAbort, FormEventName
+from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
+from ..services.csrf import issue_form_csrf_token, validate_form_csrf_token
+from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
@@ -248,7 +251,6 @@ class FormAPIHandler:
         Returns:
             The matching FormField, or None if not found.
         """
-        from ..core.schema import FormField  # noqa: F401 (type hint only)
         for section in form.sections:
             for field in section.iter_fields():
                 if field.field_id == field_id:
@@ -509,6 +511,25 @@ class FormAPIHandler:
             content_type="application/json"
         )
 
+    @staticmethod
+    def _form_has_remote_binding(form: FormSchema) -> bool:
+        """Return True if the form declares any event binding with remote=True.
+
+        Args:
+            form: FormSchema to inspect.
+
+        Returns:
+            ``True`` when at least one binding has ``remote=True``.
+        """
+        events = getattr(form, "events", None)
+        if events is None:
+            return False
+        for field_name in type(events).model_fields:
+            binding = getattr(events, field_name, None)
+            if binding is not None and getattr(binding, "remote", False):
+                return True
+        return False
+
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
         form_id = request.match_info["form_id"]
@@ -516,7 +537,29 @@ class FormAPIHandler:
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
-        return JSONResponse(form.model_dump())
+        # lifecycle: onBeforeOpen — can abort or mutate (abort only in MVP)
+        try:
+            await dispatch(
+                "onBeforeOpen",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=self._build_auth_context(request),
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
+        response = JSONResponse(form.model_dump(exclude_none=True))
+        # Attach CSRF token when the form has any remote-bridged binding
+        if self._form_has_remote_binding(form):
+            session_id = self._extract_session_id(request)
+            if session_id:
+                response.headers["X-Form-CSRF-Token"] = issue_form_csrf_token(
+                    session_id, form_id
+                )
+        return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
@@ -526,7 +569,25 @@ class FormAPIHandler:
         if form is None:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         rendered: RenderedForm = await self.schema_renderer.render(form)
-        return JSONResponse(rendered.content)
+        # lifecycle: onSchemaLoaded — can apply shallow schema_overrides
+        try:
+            resolution = await dispatch(
+                "onSchemaLoaded",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=self._build_auth_context(request),
+                schema_dump=rendered.content,
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
+        content = rendered.content
+        if resolution.schema_overrides:
+            content = apply_schema_overrides(content, dict(resolution.schema_overrides))
+        return JSONResponse(content)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/style — Get style schema."""
@@ -537,6 +598,94 @@ class FormAPIHandler:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         style = form.meta.get("style") if form.meta else None
         return JSONResponse(style or {})
+
+    async def remote_event(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/events/{event_name} — Remote event bridge.
+
+        Called by the HTML5 renderer when a binding declares ``remote: true``.
+        Validates a per-session per-form CSRF token, dispatches the lifecycle
+        event, and returns the ``EventResolution`` as JSON.
+
+        Args:
+            request: Incoming POST request with ``form_id`` and ``event_name``
+                in the URL, ``X-CSRF-Token`` header, and a JSON body optionally
+                containing ``payload`` and ``schema_dump``.
+
+        Returns:
+            200 — EventResolution JSON.
+            400 — Unknown event name or invalid JSON body.
+            403 — Missing or invalid CSRF token.
+            404 — Form not found.
+            status from FormEventAbort.status_code — when a handler aborts.
+        """
+        form_id = request.match_info["form_id"]
+        event_name = request.match_info["event_name"]
+
+        # 1. Validate event_name against the FormEventName Literal
+        if event_name not in get_args(FormEventName):
+            return JSONResponse(
+                {"error": f"Unknown event '{event_name}'"}, status=400
+            )
+
+        # 2. Load form
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
+        if form is None:
+            return JSONResponse(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        # 3. CSRF validation
+        session_id = self._extract_session_id(request)
+        token = request.headers.get("X-CSRF-Token") or request.headers.get(
+            "X-Form-CSRF-Token"
+        )
+        if (
+            not session_id
+            or not token
+            or not validate_form_csrf_token(session_id, form_id, token)
+        ):
+            return JSONResponse(
+                {"error": "CSRF token invalid or missing"}, status=403
+            )
+
+        # 4. Parse body
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError, Exception):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        # 5. Build auth context (with fallback)
+        try:
+            auth_ctx = self._build_auth_context(request)
+        except Exception as _auth_exc:
+            self.logger.warning(
+                "remote_event: _build_auth_context failed for form=%r event=%r — "
+                "falling back to scheme=none. Error: %s",
+                form_id,
+                event_name,
+                _auth_exc,
+            )
+            auth_ctx = AuthContext(scheme="none")
+
+        # 6. Dispatch the event
+        try:
+            resolution = await dispatch(
+                event_name,  # type: ignore[arg-type]
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=auth_ctx,
+                payload=body.get("payload"),
+                schema_dump=body.get("schema_dump"),
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
+
+        return JSONResponse(resolution.model_dump(exclude_none=True))
 
     async def validate(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
@@ -767,7 +916,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump())
+        return JSONResponse(form.model_dump(exclude_none=True))
 
     async def patch_form(self, request: web.Request) -> web.Response:
         """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
@@ -813,7 +962,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump())
+        return JSONResponse(form.model_dump(exclude_none=True))
 
     async def delete_form(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id} — Remove a registered form.
@@ -884,124 +1033,222 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        # Optional: merge cached partial answers into submitted data
-        # (?merge_partials=true — submitted values take precedence)
-        _merge_session_id: str | None = None
-        merge_partials = request.query.get("merge_partials", "").lower() == "true"
-        if merge_partials and self._partial_store is not None:
-            _merge_session_id = self._extract_session_id(request)
-            if _merge_session_id:
-                try:
-                    cached = await self._partial_store.get(form_id, _merge_session_id)
-                    if cached:
-                        # cached values fill gaps; submitted values win on overlap
-                        data = {**cached.data, **data}
-                        self.logger.debug(
-                            "Merged %d cached partial fields into submit for %s/%s",
-                            len(cached.data),
+        # lifecycle: outer envelope for onError dispatch on any exception.
+        # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
+        # directly — it is never routed through onError (spec §7).
+        # _auth_ctx is computed lazily on first dispatch call to avoid
+        # breaking tests that mock request.headers as a generic MagicMock.
+        _auth_ctx = None
+
+        try:
+            try:
+                _auth_ctx = self._build_auth_context(request)
+            except Exception:
+                _auth_ctx = AuthContext(scheme="none")
+
+            # Optional: merge cached partial answers into submitted data
+            # (?merge_partials=true — submitted values take precedence)
+            _merge_session_id: str | None = None
+            merge_partials = request.query.get("merge_partials", "").lower() == "true"
+            if merge_partials and self._partial_store is not None:
+                _merge_session_id = self._extract_session_id(request)
+                if _merge_session_id:
+                    try:
+                        cached = await self._partial_store.get(form_id, _merge_session_id)
+                        if cached:
+                            # cached values fill gaps; submitted values win on overlap
+                            data = {**cached.data, **data}
+                            self.logger.debug(
+                                "Merged %d cached partial fields into submit for %s/%s",
+                                len(cached.data),
+                                form_id,
+                                _merge_session_id,
+                            )
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to load partial for merge %s/%s: %s",
                             form_id,
                             _merge_session_id,
+                            exc,
                         )
+
+            # lifecycle: onBeforeSubmit — may mutate payload or abort
+            try:
+                resolution = await dispatch(
+                    "onBeforeSubmit",
+                    form=form,
+                    request=request,
+                    tenant=tenant,
+                    auth_context=_auth_ctx,
+                    payload=data,
+                )
+                if resolution.payload is not None:
+                    data = dict(resolution.payload)
+            except FormEventAbort as exc:
+                # Abort is a controlled flow — do NOT route through onError.
+                return JSONResponse(
+                    {"error": exc.user_message, "reason": exc.reason},
+                    status=exc.status_code,
+                )
+
+            # Validate submission data against form schema
+            result = await self.validator.validate(form, data)
+            if not result.is_valid:
+                _validation_exc = ValueError(f"Validation failed: {result.errors}")
+                # dispatch onError (best-effort) before the early 422 return
+                try:
+                    _err_res = await dispatch(
+                        "onError",
+                        form=form,
+                        request=request,
+                        tenant=tenant,
+                        auth_context=_auth_ctx,
+                        error=_validation_exc,
+                    )
+                except Exception as _meta_exc:
+                    self.logger.exception("onError handler raised during validation: %s", _meta_exc)
+                return JSONResponse(
+                    {"is_valid": False, "errors": result.errors},
+                    status=422,
+                )
+
+            # Build submission record
+            submission = FormSubmission(
+                submission_id=str(uuid.uuid4()),
+                form_id=form_id,
+                form_version=form.version,
+                data=result.sanitized_data,
+                is_valid=True,
+                created_at=datetime.now(timezone.utc),
+            )
+
+            # Metadata enrichment runs between validation and storage so the
+            # resolved values are persisted alongside the answers.
+            if form.metadata:
+                try:
+                    core_overrides, extra_flat = await enrich_submission(
+                        request=request,
+                        form=form,
+                        submission=submission,
+                        answers=result.sanitized_data,
+                        auth_context=_auth_ctx,
+                    )
+                except MetadataResolutionError as exc:
+                    # dispatch onError (best-effort) before the early 422 return
+                    try:
+                        await dispatch(
+                            "onError",
+                            form=form,
+                            request=request,
+                            tenant=tenant,
+                            auth_context=_auth_ctx,
+                            error=exc,
+                        )
+                    except Exception as _meta_exc:
+                        self.logger.exception(
+                            "onError handler raised during metadata: %s", _meta_exc
+                        )
+                    return JSONResponse(
+                        {"is_valid": False, "errors": {"_metadata": str(exc)}},
+                        status=422,
+                    )
+                if core_overrides:
+                    submission = submission.model_copy(update=core_overrides)
+                if extra_flat:
+                    submission.data = {**submission.data, **extra_flat}
+
+            # Store locally (if storage configured)
+            if self._submission_storage is not None:
+                await self._submission_storage.store(submission)
+            else:
+                self.logger.debug(
+                    "No submission_storage configured — skipping local storage for %s",
+                    submission.submission_id,
+                )
+
+            # Forward to endpoint (if form has endpoint action and forwarder configured)
+            forwarded = False
+            forward_status = None
+            forward_error = None
+            if (
+                form.submit is not None
+                and form.submit.action_type == "endpoint"
+                and self._forwarder is not None
+            ):
+                fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
+                forwarded = fwd_result.success
+                forward_status = fwd_result.status_code
+                forward_error = fwd_result.error
+                if not forwarded:
+                    self.logger.warning(
+                        "Forward failed for submission %s: %s",
+                        submission.submission_id,
+                        forward_error,
+                    )
+
+            # Cleanup: delete cached partial after successful submission
+            if merge_partials and _merge_session_id and self._partial_store is not None:
+                try:
+                    await self._partial_store.delete(form_id, _merge_session_id)
+                    self.logger.debug(
+                        "Deleted cached partial for %s/%s after successful submit",
+                        form_id,
+                        _merge_session_id,
+                    )
                 except Exception as exc:
                     self.logger.warning(
-                        "Failed to load partial for merge %s/%s: %s",
+                        "Failed to delete partial after submit %s/%s: %s",
                         form_id,
                         _merge_session_id,
                         exc,
                     )
 
-        # Validate submission data against form schema
-        result = await self.validator.validate(form, data)
-        if not result.is_valid:
-            return JSONResponse(
-                {"is_valid": False, "errors": result.errors},
-                status=422,
+            # lifecycle: onAfterSubmit — side-effects only; failures routed via onError
+            await dispatch(
+                "onAfterSubmit",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=_auth_ctx,
+                payload=submission.data,
             )
 
-        # Build submission record
-        submission = FormSubmission(
-            submission_id=str(uuid.uuid4()),
-            form_id=form_id,
-            form_version=form.version,
-            data=result.sanitized_data,
-            is_valid=True,
-            created_at=datetime.now(timezone.utc),
-        )
+            return JSONResponse({
+                "submission_id": submission.submission_id,
+                "is_valid": True,
+                "forwarded": forwarded,
+                "forward_status": forward_status,
+                "forward_error": forward_error,
+            })
 
-        # Metadata enrichment runs between validation and storage so the
-        # resolved values are persisted alongside the answers.
-        if form.metadata:
+        except FormEventAbort:
+            # Already handled above — re-raise so it surfaces correctly
+            # if there is an outer handler.
+            raise
+        except Exception as exc:
+            # lifecycle: onError — dispatch and then re-raise original exception.
+            # The original status code (422 for validation, 500 for unexpected)
+            # is preserved because we re-raise.
+            _user_message: str | None = None
             try:
-                core_overrides, extra_flat = await enrich_submission(
-                    request=request,
+                _err_res = await dispatch(
+                    "onError",
                     form=form,
-                    submission=submission,
-                    answers=result.sanitized_data,
-                    auth_context=self._build_auth_context(request),
+                    request=request,
+                    tenant=tenant,
+                    auth_context=_auth_ctx,
+                    error=exc,
                 )
-            except MetadataResolutionError as exc:
-                return JSONResponse(
-                    {"is_valid": False, "errors": {"_metadata": str(exc)}},
-                    status=422,
-                )
-            if core_overrides:
-                submission = submission.model_copy(update=core_overrides)
-            if extra_flat:
-                submission.data = {**submission.data, **extra_flat}
-
-        # Store locally (if storage configured)
-        if self._submission_storage is not None:
-            await self._submission_storage.store(submission)
-        else:
-            self.logger.debug(
-                "No submission_storage configured — skipping local storage for %s",
-                submission.submission_id,
+                _user_message = _err_res.user_message
+            except Exception as meta_exc:
+                self.logger.exception("onError handler itself raised: %s", meta_exc)
+            if _user_message:
+                # Surface friendly message in the request for outer error handlers
+                request["_lifecycle_user_message"] = _user_message
+            self.logger.exception(
+                "submit_data failed for form %r: %s", form_id, exc
             )
-
-        # Forward to endpoint (if form has endpoint action and forwarder configured)
-        forwarded = False
-        forward_status = None
-        forward_error = None
-        if (
-            form.submit is not None
-            and form.submit.action_type == "endpoint"
-            and self._forwarder is not None
-        ):
-            fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
-            forwarded = fwd_result.success
-            forward_status = fwd_result.status_code
-            forward_error = fwd_result.error
-            if not forwarded:
-                self.logger.warning(
-                    "Forward failed for submission %s: %s",
-                    submission.submission_id,
-                    forward_error,
-                )
-
-        # Cleanup: delete cached partial after successful submission
-        if merge_partials and _merge_session_id and self._partial_store is not None:
-            try:
-                await self._partial_store.delete(form_id, _merge_session_id)
-                self.logger.debug(
-                    "Deleted cached partial for %s/%s after successful submit",
-                    form_id,
-                    _merge_session_id,
-                )
-            except Exception as exc:
-                self.logger.warning(
-                    "Failed to delete partial after submit %s/%s: %s",
-                    form_id,
-                    _merge_session_id,
-                    exc,
-                )
-
-        return JSONResponse({
-            "submission_id": submission.submission_id,
-            "is_valid": True,
-            "forwarded": forwarded,
-            "forward_status": forward_status,
-            "forward_error": forward_error,
-        })
+            raise
 
     async def load_from_db(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/from-db — Load a form from database definition.

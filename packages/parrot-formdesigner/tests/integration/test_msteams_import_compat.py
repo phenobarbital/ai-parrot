@@ -1,5 +1,4 @@
 """Integration test: MS Teams integration imports are unaffected by parrot-formdesigner."""
-import pytest
 from pathlib import Path
 
 # Path to worktree root (4 levels up from this file)

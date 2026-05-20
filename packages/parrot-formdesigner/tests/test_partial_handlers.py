@@ -10,7 +10,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from aiohttp import web
 
 from parrot_formdesigner.api.handlers import FormAPIHandler

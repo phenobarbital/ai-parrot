@@ -4,6 +4,16 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
+from .csrf import (
+    issue_form_csrf_token,
+    validate_form_csrf_token,
+)
+from .event_dispatcher import apply_schema_overrides, dispatch
+from .event_registry import (
+    get_form_event,
+    list_form_events,
+    register_form_event,
+)
 from .forwarder import ForwardResult, SubmissionForwarder
 from .metadata_callbacks import MetadataCallbackInput, MetadataCallbackOutput
 from .metadata_enricher import MetadataResolutionError, enrich_submission
@@ -32,4 +42,14 @@ __all__ = [
     "SubmissionForwarder",
     "ValidationResult",
     "enrich_submission",
+    # Lifecycle event registry (FEAT-188)
+    "register_form_event",
+    "get_form_event",
+    "list_form_events",
+    # Lifecycle event dispatcher (FEAT-188)
+    "dispatch",
+    "apply_schema_overrides",
+    # CSRF helpers for remote events endpoint (FEAT-188)
+    "issue_form_csrf_token",
+    "validate_form_csrf_token",
 ]

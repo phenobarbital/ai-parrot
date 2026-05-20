@@ -1,6 +1,5 @@
 """Unit tests for Telegram form models."""
 
-import pytest
 
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.renderers.telegram.models import (

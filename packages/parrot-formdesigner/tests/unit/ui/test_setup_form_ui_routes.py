@@ -41,7 +41,6 @@ def test_app_form_registry_setdefault_does_not_overwrite():
 
 def test_telegram_route_has_no_auth_wrapper():
     """The Telegram WebApp route is public (no `is_authenticated` wrap)."""
-    from parrot_formdesigner.ui.telegram import TelegramWebAppHandler
 
     app = web.Application()
     setup_form_ui(app, FormRegistry())
