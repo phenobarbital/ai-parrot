@@ -93,7 +93,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Modifies the same file as TASK-1270 (api/handlers.py); must be sequential to avoid merge conflicts.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1269-handlers-read-hooks.md"
+      "completed_at": "2026-05-20T21:05:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1269-handlers-read-hooks.md"
     },
     {
       "id": "TASK-1270",

@@ -227,7 +227,7 @@ async def test_get_schema_applies_shallow_overrides(api_client, form_with_schema
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-20
+**Notes**: onBeforeOpen wired into get_form, onSchemaLoaded wired into get_schema. FormEventAbort caught and converted to HTTP response. FormField import moved to module level (pre-existing ruff issue fixed). 10 integration tests passing. Ruff clean.
+**Deviations from spec**: Minor — FormField moved to top-level import (pre-existing ruff warning); handler_refs in tests use underscores not hyphens (regex constraint).
