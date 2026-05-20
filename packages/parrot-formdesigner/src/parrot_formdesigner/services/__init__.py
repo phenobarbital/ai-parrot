@@ -4,6 +4,7 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
+from .event_dispatcher import apply_schema_overrides, dispatch
 from .event_registry import (
     _clear_event_registry_for_tests,
     get_form_event,
@@ -43,4 +44,7 @@ __all__ = [
     "get_form_event",
     "list_form_events",
     "_clear_event_registry_for_tests",
+    # Lifecycle event dispatcher (FEAT-188)
+    "dispatch",
+    "apply_schema_overrides",
 ]
