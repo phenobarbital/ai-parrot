@@ -16,7 +16,8 @@ from asyncdb.exceptions import NoDataFound, UninitializedError
 from asyncdb import AsyncPool
 from ..conf import (
     default_dsn,
-    KB_DEFAULT_MODEL
+    KB_DEFAULT_MODEL,
+    DEFAULT_LLM_MODEL,
 )
 from ..embeddings import get_model_recommendations
 from ..handlers.models import BotModel
@@ -364,7 +365,10 @@ class Chatbot(BaseBot):
 
         # LLM Configuration
         self._llm = self._from_db(bot, 'llm', default='google')
-        self._llm_model = self._from_db(bot, 'model', default='gemini-2.5-flash')
+        self._llm_model = self._from_db(
+            bot, 'model',
+            default=getattr(self, 'model', None) or DEFAULT_LLM_MODEL,
+        )
         self._llm_temp = self._from_db(bot, 'temperature', default=0.1)
         self._max_tokens = self._from_db(bot, 'max_tokens', default=1024)
         self._top_k = self._from_db(bot, 'top_k', default=41)
