@@ -17,9 +17,11 @@ from aiohttp import web
 from pydantic import ValidationError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from navigator.responses import JSONResponse
-from ..core.schema import FormSchema, RenderedForm
+from ..core.events import FormEventAbort
+from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
+from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
 from ._utils import _bump_version, _deep_merge, _loc_to_str
@@ -248,7 +250,6 @@ class FormAPIHandler:
         Returns:
             The matching FormField, or None if not found.
         """
-        from ..core.schema import FormField  # noqa: F401 (type hint only)
         for section in form.sections:
             for field in section.iter_fields():
                 if field.field_id == field_id:
@@ -516,6 +517,20 @@ class FormAPIHandler:
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+        # lifecycle: onBeforeOpen — can abort or mutate (abort only in MVP)
+        try:
+            await dispatch(
+                "onBeforeOpen",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=self._build_auth_context(request),
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
         return JSONResponse(form.model_dump())
 
     async def get_schema(self, request: web.Request) -> web.Response:
@@ -526,7 +541,25 @@ class FormAPIHandler:
         if form is None:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         rendered: RenderedForm = await self.schema_renderer.render(form)
-        return JSONResponse(rendered.content)
+        # lifecycle: onSchemaLoaded — can apply shallow schema_overrides
+        try:
+            resolution = await dispatch(
+                "onSchemaLoaded",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=self._build_auth_context(request),
+                schema_dump=rendered.content,
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
+        content = rendered.content
+        if resolution.schema_overrides:
+            content = apply_schema_overrides(content, dict(resolution.schema_overrides))
+        return JSONResponse(content)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/style — Get style schema."""
