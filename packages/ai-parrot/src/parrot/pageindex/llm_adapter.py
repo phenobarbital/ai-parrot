@@ -110,7 +110,7 @@ class PageIndexLLMAdapter:
         """
         for attempt in range(self.max_retries):
             try:
-                response = await self.client.ask(
+                response = await self.client.invoke(
                     prompt=prompt,
                     model=self.model,
                     temperature=temperature,

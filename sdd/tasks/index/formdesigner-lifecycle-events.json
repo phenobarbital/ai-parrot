@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-20T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-20T23:36:23+00:00",
   "tasks": [
     {
       "id": "TASK-1265",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation task — blocks all others. Sequential per spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1265-core-events-models.md"
     },
     {
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,7 +42,7 @@
       "parallelism_notes": "Could theoretically run in parallel with TASK-1268 (both depend only on TASK-1265), but spec worktree strategy is per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1266-event-registry.md"
     },
     {
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallelism_notes": "Depends on registry; sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1267-event-dispatcher.md"
     },
     {
@@ -73,7 +73,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallelism_notes": "Could theoretically run in parallel with TASK-1266 (both depend only on TASK-1265), but spec worktree strategy is per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1268-formschema-events-field.md"
     },
     {
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,7 +104,7 @@
       "parallelism_notes": "Modifies the same file as TASK-1270 (api/handlers.py); must be sequential to avoid merge conflicts.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1269-handlers-read-hooks.md"
     },
     {
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,7 +126,7 @@
       "parallelism_notes": "Same file as TASK-1269 (api/handlers.py); sequential. Adds the most complex try/except envelope.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1270-handlers-submit-hooks.md"
     },
     {
@@ -136,7 +136,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -148,7 +148,7 @@
       "parallelism_notes": "Touches api/handlers.py (adds remote_event method) and api/routes.py; sequential after submit-hooks land.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1271-remote-events-endpoint.md"
     },
     {
@@ -158,7 +158,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,7 +169,7 @@
       "parallelism_notes": "Needs the remote endpoint (1271) to exist before the bridge script can be wired correctly; sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1272-html5-renderer-events.md"
     },
     {
@@ -179,7 +179,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -196,7 +196,7 @@
       "parallelism_notes": "Final integration task; must run last.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
+      "completed_at": "2026-05-20T23:36:23+00:00",
       "file": "sdd/tasks/active/TASK-1273-e2e-tests-and-docs.md"
     }
   ]
