@@ -426,7 +426,10 @@ GOOGLE_CREDENTIALS_FILE = Path(
 )
 
 ## LLM default config:
-DEFAULT_LLM_MODEL = config.get('LLM_MODEL', fallback='gemini-2.5-flash')
+from .models.google import GoogleModel
+DEFAULT_LLM_MODEL = config.get(
+    'LLM_MODEL', fallback=GoogleModel.GEMINI_FLASH_LATEST.value
+)
 DEFAULT_LLM_TEMPERATURE = config.get('LLM_TEMPERATURE', fallback=0.1)
 
 """
