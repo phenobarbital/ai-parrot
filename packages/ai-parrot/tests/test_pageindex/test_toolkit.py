@@ -164,3 +164,43 @@ async def test_lightweight_adapter_built_when_model_given(tmp_path: Path):
 async def test_no_lightweight_adapter_when_omitted(tmp_path: Path):
     tk = PageIndexToolkit(adapter=_adapter(), storage_dir=tmp_path)
     assert tk._light_adapter is None
+
+
+@pytest.mark.asyncio
+async def test_import_pdf_splices_into_tree(monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path):
+    pdf = tmp_path / "fake_compliance.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stub")
+
+    async def fake_build_page_index(doc, adapter, options=None):
+        return {
+            "doc_name": "fake_compliance.pdf",
+            "doc_description": "stubbed compliance document",
+            "structure": [
+                {"title": "Article 1 — Subject matter",
+                 "summary": "Scope of the regulation."},
+                {"title": "Article 5 — Principles",
+                 "summary": "Lawful, fair and transparent processing."},
+            ],
+        }
+
+    monkeypatch.setattr(
+        "parrot.pageindex.toolkit.build_page_index", fake_build_page_index,
+    )
+
+    await toolkit.create_tree("compliance")
+    result = await toolkit.import_pdf("compliance", str(pdf))
+    assert result["doc_name"] == "fake_compliance.pdf"
+    assert result["doc_description"] == "stubbed compliance document"
+    assert len(result["new_node_ids"]) == 2
+
+    tree = await toolkit.get_tree("compliance")
+    titles = [n["title"] for n in tree["structure"]]
+    assert "Article 1 — Subject matter" in titles
+    assert "Article 5 — Principles" in titles
+
+
+@pytest.mark.asyncio
+async def test_import_pdf_missing_file_raises(toolkit: PageIndexToolkit, tmp_path: Path):
+    await toolkit.create_tree("compliance")
+    with pytest.raises(FileNotFoundError):
+        await toolkit.import_pdf("compliance", str(tmp_path / "missing.pdf"))

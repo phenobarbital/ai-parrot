@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..tools.toolkit import AbstractToolkit
+from .builder import build_page_index
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import IngestedMarkdown, TwoStepIngester
 from .llm_adapter import PageIndexLLMAdapter
@@ -288,6 +289,48 @@ class PageIndexToolkit(AbstractToolkit):
             parent_node_id=parent_node_id,
             hint=f"Source filename: {path.name}",
         )
+
+    async def import_pdf(
+        self,
+        tree_name: str,
+        pdf_path: str,
+        parent_node_id: Optional[str] = None,
+        with_summaries: bool = True,
+        with_doc_description: bool = False,
+    ) -> dict[str, Any]:
+        """Build a PageIndex subtree from a PDF and splice it into ``tree_name``.
+
+        Args:
+            tree_name: Existing tree to insert into.
+            pdf_path: Path to the source PDF on disk.
+            parent_node_id: Insert under this node id, or at root if ``None``.
+            with_summaries: When ``True``, generate per-node LLM summaries.
+            with_doc_description: When ``True``, also generate a one-sentence
+                top-level document description.
+
+        Returns:
+            ``{tree_name, new_node_ids, doc_name, doc_description?, pages}``
+        """
+        if not Path(pdf_path).is_file():
+            raise FileNotFoundError(f"PDF not found: {pdf_path}")
+        tree = self._load_tree(tree_name)
+        subtree = await build_page_index(
+            doc=pdf_path,
+            adapter=self._adapter,
+            options={
+                "if_add_node_summary": "yes" if with_summaries else "no",
+                "if_add_doc_description": "yes" if with_doc_description else "no",
+                "if_add_node_id": "yes",
+            },
+        )
+        new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
+        self._persist(tree_name)
+        return {
+            "tree_name": tree_name,
+            "new_node_ids": new_ids,
+            "doc_name": subtree.get("doc_name"),
+            "doc_description": subtree.get("doc_description"),
+        }
 
     async def import_folder(
         self,
