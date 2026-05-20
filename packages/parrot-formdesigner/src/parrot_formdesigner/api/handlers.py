@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 from pydantic import ValidationError
-
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
+from navigator.responses import JSONResponse
 from ..core.schema import FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
@@ -280,7 +281,7 @@ class FormAPIHandler:
             503 — partial save service not configured or Redis unavailable.
         """
         if self._partial_store is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Partial save service not configured"}, status=503
             )
 
@@ -288,34 +289,34 @@ class FormAPIHandler:
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Session ID required"}, status=400
             )
 
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         answers: dict = body.get("answers", {})
 
         if not isinstance(answers, dict):
-            return web.json_response(
+            return JSONResponse(
                 {"error": "'answers' must be a JSON object"}, status=400
             )
 
         if not answers:
             existing = await self._partial_store.get(form_id, session_id)
             if existing is not None:
-                return web.json_response(existing.model_dump(mode="json"), status=200)
-            return web.json_response(
+                return JSONResponse(existing.model_dump(mode="json"), status=200)
+            return JSONResponse(
                 {"form_id": form_id, "session_id": session_id, "data": {}, "field_errors": {}},
                 status=200,
             )
 
         form = await self.registry.get(form_id)
         if form is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
@@ -326,7 +327,7 @@ class FormAPIHandler:
             self.logger.warning(
                 "PartialSaveStore.save failed for %s/%s: %s", form_id, session_id, exc
             )
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Partial save service unavailable"}, status=503
             )
 
@@ -356,8 +357,8 @@ class FormAPIHandler:
                     exc,
                 )
 
-        return web.json_response(
-            json.loads(partial.model_dump_json()), status=200
+        return JSONResponse(
+            json_decoder(partial.model_dump_json()), status=200
         )
 
     async def get_partial(self, request: web.Request) -> web.Response:
@@ -373,7 +374,7 @@ class FormAPIHandler:
             503 — partial save service not configured.
         """
         if self._partial_store is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Partial save service not configured"}, status=503
             )
 
@@ -381,7 +382,7 @@ class FormAPIHandler:
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Session ID required"}, status=400
             )
 
@@ -391,17 +392,19 @@ class FormAPIHandler:
             self.logger.warning(
                 "PartialSaveStore.get failed for %s/%s: %s", form_id, session_id, exc
             )
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Partial save service unavailable"}, status=503
             )
 
         if partial is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "No partial save found for this form and session"},
                 status=404,
             )
 
-        return web.json_response(json.loads(partial.model_dump_json()), status=200)
+        return JSONResponse(
+            json_decoder(partial.model_dump_json()), status=200
+        )
 
     async def delete_partial(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id}/partial — Clear cached partial answers.
@@ -415,7 +418,7 @@ class FormAPIHandler:
             503 — partial save service not configured.
         """
         if self._partial_store is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Partial save service not configured"}, status=503
             )
 
@@ -423,7 +426,7 @@ class FormAPIHandler:
 
         session_id = self._extract_session_id(request)
         if not session_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Session ID required"}, status=400
             )
 
@@ -498,7 +501,13 @@ class FormAPIHandler:
                     }
 
         forms = sorted(descriptors.values(), key=lambda d: d["form_id"])
-        return web.json_response({"forms": forms})
+        content = json_encoder(
+            {"forms": forms}
+        )
+        return web.Response(
+            body=content,
+            content_type="application/json"
+        )
 
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
@@ -506,8 +515,8 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
-        return web.json_response(form.model_dump())
+            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
+        return JSONResponse(form.model_dump())
 
     async def get_schema(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
@@ -515,9 +524,9 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         rendered: RenderedForm = await self.schema_renderer.render(form)
-        return web.json_response(rendered.content)
+        return JSONResponse(rendered.content)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/style — Get style schema."""
@@ -525,9 +534,9 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         style = form.meta.get("style") if form.meta else None
-        return web.json_response(style or {})
+        return JSONResponse(style or {})
 
     async def validate(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
@@ -535,15 +544,15 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
-            return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
+            return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         try:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         result = await self.validator.validate(form, data)
         status = 200 if result.is_valid else 422
-        return web.json_response(
+        return JSONResponse(
             {"is_valid": result.is_valid, "errors": result.errors},
             status=status,
         )
@@ -554,18 +563,18 @@ class FormAPIHandler:
         # time. Check its client directly rather than calling _get_llm_client()
         # again, so the guard accurately reflects the tool's actual state.
         if self._create_tool.client is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "No LLM client configured for form creation"},
                 status=503,
             )
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
-            return web.json_response({"error": "prompt is required"}, status=400)
+            return JSONResponse({"error": "prompt is required"}, status=400)
 
         tenant = self._get_tenant(request)
         from ..tools.create_form import CreateFormTool
@@ -577,21 +586,21 @@ class FormAPIHandler:
         result = await create_tool.execute(prompt=prompt, persist=True)
 
         if not result.success:
-            return web.json_response(
+            return JSONResponse(
                 {"error": result.metadata.get("error", "Form creation failed")},
-                status=500,
+                status=400,
             )
 
         form_data = result.metadata.get("form", {})
         form_id = form_data.get("form_id")
         if not form_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Form creation succeeded but form_id missing"},
-                status=500,
+                status=401,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return web.json_response({
+        return JSONResponse({
             "form_id": form_id,
             "title": title,
             "url": f"{prefix}/forms/{form_id}",
@@ -605,7 +614,7 @@ class FormAPIHandler:
         The LLM is instructed to strictly preserve the FormSchema JSON structure.
         """
         if self._create_tool.client is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "No LLM client configured for form editing"},
                 status=503,
             )
@@ -614,18 +623,18 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
         if not prompt:
-            return web.json_response({"error": "prompt is required"}, status=400)
+            return JSONResponse({"error": "prompt is required"}, status=400)
 
         from ..tools.create_form import CreateFormTool
         create_tool = CreateFormTool(
@@ -640,7 +649,7 @@ class FormAPIHandler:
         )
 
         if not result.success:
-            return web.json_response(
+            return JSONResponse(
                 {"error": result.metadata.get("error", "Form editing failed")},
                 status=500,
             )
@@ -648,13 +657,13 @@ class FormAPIHandler:
         form_data = result.metadata.get("form", {})
         updated_form_id = form_data.get("form_id")
         if not updated_form_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Form editing succeeded but form_id missing"},
                 status=500,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return web.json_response({
+        return JSONResponse({
             "form_id": updated_form_id,
             "title": title,
             "url": f"{prefix}/forms/{updated_form_id}",
@@ -684,15 +693,15 @@ class FormAPIHandler:
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         new_form_id = (body.get("new_form_id") or "").strip()
         if not new_form_id:
-            return web.json_response({"error": "new_form_id is required"}, status=400)
+            return JSONResponse({"error": "new_form_id is required"}, status=400)
 
         patch = body.get("patch") or None
         if patch is not None and not isinstance(patch, dict):
-            return web.json_response(
+            return JSONResponse(
                 {"error": "patch must be a JSON object"}, status=400
             )
         tenant = body.get("tenant") or None
@@ -705,18 +714,18 @@ class FormAPIHandler:
                 tenant=tenant,
             )
         except KeyError:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
         except FormAlreadyExistsError as exc:
-            return web.json_response({"error": str(exc)}, status=409)
+            return JSONResponse({"error": str(exc)}, status=409)
         except ValueError as exc:
-            return web.json_response({"error": str(exc)}, status=422)
+            return JSONResponse({"error": str(exc)}, status=422)
 
         self.logger.info(
             "Cloned form '%s' -> '%s'", form_id, clone.form_id
         )
-        return web.json_response(clone.model_dump(mode="json"), status=201)
+        return JSONResponse(clone.model_dump(mode="json"), status=201)
 
     async def update_form(self, request: web.Request) -> web.Response:
         """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
@@ -730,17 +739,17 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         if not isinstance(body, dict) or body.get("form_id") != form_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "form_id in URL and body must match"}, status=400
             )
 
@@ -749,16 +758,16 @@ class FormAPIHandler:
         try:
             form = FormSchema.model_validate(body)
         except ValidationError as exc:
-            return web.json_response({"errors": exc.errors()}, status=422)
+            return JSONResponse({"errors": exc.errors()}, status=422)
 
         schema_errors = self.validator.check_schema(form)
         if schema_errors:
-            return web.json_response({"errors": schema_errors}, status=422)
+            return JSONResponse({"errors": schema_errors}, status=422)
 
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
-        return web.json_response(form.model_dump())
+        return JSONResponse(form.model_dump())
 
     async def patch_form(self, request: web.Request) -> web.Response:
         """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
@@ -772,17 +781,17 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         if not body:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "PATCH body must not be empty"}, status=400
             )
 
@@ -795,16 +804,16 @@ class FormAPIHandler:
         try:
             form = FormSchema.model_validate(merged)
         except ValidationError as exc:
-            return web.json_response({"errors": exc.errors()}, status=422)
+            return JSONResponse({"errors": exc.errors()}, status=422)
 
         schema_errors = self.validator.check_schema(form)
         if schema_errors:
-            return web.json_response({"errors": schema_errors}, status=422)
+            return JSONResponse({"errors": schema_errors}, status=422)
 
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
-        return web.json_response(form.model_dump())
+        return JSONResponse(form.model_dump())
 
     async def delete_form(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id} — Remove a registered form.
@@ -819,7 +828,7 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         existing = await self.registry.get(form_id, tenant=tenant)
         if existing is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
@@ -866,14 +875,14 @@ class FormAPIHandler:
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_id, tenant=tenant)
         if form is None:
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Form '{form_id}' not found"}, status=404
             )
 
         try:
             data = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         # Optional: merge cached partial answers into submitted data
         # (?merge_partials=true — submitted values take precedence)
@@ -904,7 +913,7 @@ class FormAPIHandler:
         # Validate submission data against form schema
         result = await self.validator.validate(form, data)
         if not result.is_valid:
-            return web.json_response(
+            return JSONResponse(
                 {"is_valid": False, "errors": result.errors},
                 status=422,
             )
@@ -931,7 +940,7 @@ class FormAPIHandler:
                     auth_context=self._build_auth_context(request),
                 )
             except MetadataResolutionError as exc:
-                return web.json_response(
+                return JSONResponse(
                     {"is_valid": False, "errors": {"_metadata": str(exc)}},
                     status=422,
                 )
@@ -986,7 +995,7 @@ class FormAPIHandler:
                     exc,
                 )
 
-        return web.json_response({
+        return JSONResponse({
             "submission_id": submission.submission_id,
             "is_valid": True,
             "forwarded": forwarded,
@@ -1005,7 +1014,7 @@ class FormAPIHandler:
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
-            return web.json_response({"error": "Invalid JSON body"}, status=400)
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
         formid = body.get("formid")
 
@@ -1016,7 +1025,7 @@ class FormAPIHandler:
 
         if formid is None or orgid is None:
             missing = [name for name, val in [("formid", formid), ("orgid", orgid)] if val is None]
-            return web.json_response(
+            return JSONResponse(
                 {"error": f"Missing required field(s): {', '.join(missing)}"},
                 status=400,
             )
@@ -1025,13 +1034,13 @@ class FormAPIHandler:
             formid = int(formid)
             orgid = int(orgid)
         except (TypeError, ValueError):
-            return web.json_response(
+            return JSONResponse(
                 {"error": "'formid' and 'orgid' must be integers"},
                 status=422,
             )
 
         if formid < 1 or orgid < 1:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "'formid' and 'orgid' must be positive integers"},
                 status=422,
             )
@@ -1047,18 +1056,18 @@ class FormAPIHandler:
         if not result.success:
             error_msg = result.metadata.get("error", "Failed to load form from database")
             status = 404 if "not found" in error_msg.lower() else 500
-            return web.json_response({"error": error_msg}, status=status)
+            return JSONResponse({"error": error_msg}, status=status)
 
         form_data = result.metadata.get("form", {})
         form_id = form_data.get("form_id")
         if not form_id:
-            return web.json_response(
+            return JSONResponse(
                 {"error": "Form load succeeded but form_id missing"},
                 status=500,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
-        return web.json_response({
+        return JSONResponse({
             "form_id": form_id,
             "title": title,
             "url": f"{prefix}/forms/{form_id}",
