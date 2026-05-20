@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'landing/**'
       - 'mkdocs.yml'
       - 'requirements-docs.txt'
       - 'packages/ai-parrot/src/parrot/**'
@@ -40,6 +41,9 @@ jobs:
 
       - name: Build site
         run: mkdocs build
+
+      - name: Overlay static landing page at site root
+        run: cp -R landing/. site/
 
       - uses: actions/upload-pages-artifact@v3
         with:
