@@ -158,7 +158,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,8 +169,8 @@
       "parallelism_notes": "Needs the remote endpoint (1271) to exist before the bridge script can be wired correctly; sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1272-html5-renderer-events.md"
+      "completed_at": "2026-05-20T21:20:06+00:00",
+      "file": "sdd/tasks/completed/TASK-1272-html5-renderer-events.md"
     },
     {
       "id": "TASK-1273",
