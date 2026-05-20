@@ -1,12 +1,12 @@
 site_name: AI-Parrot
 site_description: Async-first Python framework for building AI Agents and Chatbots
-site_url: https://phenobarbital.github.io/ai-parrot/
+site_url: https://phenobarbital.github.io/ai-parrot/docs/
 repo_url: https://github.com/phenobarbital/ai-parrot
 repo_name: phenobarbital/ai-parrot
 edit_uri: edit/main/docs/
 
 docs_dir: docs
-site_dir: site
+site_dir: site/docs
 
 validation:
   omitted_files: warn
