@@ -109,7 +109,7 @@ class FormEventContext(BaseModel):
 
     event: FormEventName
     form_id: str
-    tenant: str
+    tenant: str | None
     auth_context: Any  # services.auth_context.AuthContext — avoid circular
     payload: Mapping[str, Any] | None = None       # submit only
     schema_dump: Mapping[str, Any] | None = None   # open / schema_loaded only

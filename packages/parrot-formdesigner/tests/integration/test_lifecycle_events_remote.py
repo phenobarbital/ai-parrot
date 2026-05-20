@@ -137,7 +137,7 @@ class TestCSRFStore:
 
         t1 = issue_form_csrf_token("sess1", "form1")
         t2 = issue_form_csrf_token("sess1", "form1")
-        assert t1 != t2 or True  # tokens are random — just verify old token is now invalid
+        assert t1 != t2  # tokens are random — just verify old token is now invalid
         assert validate_form_csrf_token("sess1", "form1", t2) is True
 
     def test_wrong_token_fails_validation(self) -> None:

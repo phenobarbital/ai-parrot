@@ -13,6 +13,7 @@ MVP limitations:
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from typing import Final
@@ -20,6 +21,13 @@ from typing import Final
 _TTL_SECONDS: Final[int] = 3600
 # In-process store: {(session_id, form_id): (token, expires_at)}
 _STORE: dict[tuple[str, str], tuple[str, float]] = {}
+
+logging.getLogger(__name__).warning(
+    "parrot-formdesigner: CSRF token store is in-process memory. "
+    "This will not work correctly under multi-worker deployments "
+    "(gunicorn -w N > 1). Use a shared backend (Redis) for production "
+    "multi-worker setups."
+)
 
 
 def issue_form_csrf_token(session_id: str, form_id: str) -> str:

@@ -29,7 +29,7 @@ from parrot_formdesigner.core.events import EventResolution
 
 @register_form_event("survey_v1.onBeforeSubmit", tenant="acme")
 async def normalize_email(ctx):
-    payload = dict(ctx.payload)
+    payload = dict(ctx.payload or {})
     payload["email"] = payload["email"].strip().lower()
     return EventResolution(payload=payload)
 ```

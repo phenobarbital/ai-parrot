@@ -2,8 +2,7 @@
 
 from datetime import datetime, timezone
 
-import pytest
-from parrot_formdesigner.services.submissions import FormSubmission, FormSubmissionStorage
+from parrot_formdesigner.services.submissions import FormSubmission
 
 
 class TestFormSubmission:

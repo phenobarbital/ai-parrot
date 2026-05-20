@@ -551,7 +551,7 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
-        response = JSONResponse(form.model_dump())
+        response = JSONResponse(form.model_dump(exclude_none=True))
         # Attach CSRF token when the form has any remote-bridged binding
         if self._form_has_remote_binding(form):
             session_id = self._extract_session_id(request)
@@ -658,7 +658,14 @@ class FormAPIHandler:
         # 5. Build auth context (with fallback)
         try:
             auth_ctx = self._build_auth_context(request)
-        except Exception:
+        except Exception as _auth_exc:
+            self.logger.warning(
+                "remote_event: _build_auth_context failed for form=%r event=%r — "
+                "falling back to scheme=none. Error: %s",
+                form_id,
+                event_name,
+                _auth_exc,
+            )
             auth_ctx = AuthContext(scheme="none")
 
         # 6. Dispatch the event
@@ -909,7 +916,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump())
+        return JSONResponse(form.model_dump(exclude_none=True))
 
     async def patch_form(self, request: web.Request) -> web.Response:
         """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
@@ -955,7 +962,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump())
+        return JSONResponse(form.model_dump(exclude_none=True))
 
     async def delete_form(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id} — Remove a registered form.

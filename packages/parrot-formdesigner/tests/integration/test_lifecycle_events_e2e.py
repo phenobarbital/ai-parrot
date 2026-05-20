@@ -35,7 +35,6 @@ from parrot_formdesigner.core.schema import FormSchema
 from parrot_formdesigner.renderers.html5 import HTML5Renderer
 from parrot_formdesigner.services.csrf import (
     _clear_csrf_store_for_tests,
-    issue_form_csrf_token,
 )
 from parrot_formdesigner.services.event_registry import (
     _clear_event_registry_for_tests,

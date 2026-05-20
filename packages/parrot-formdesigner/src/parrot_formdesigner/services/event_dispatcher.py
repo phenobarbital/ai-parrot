@@ -159,7 +159,7 @@ async def dispatch(
     ctx = FormEventContext(
         event=event,
         form_id=form.form_id,
-        tenant=tenant or "",
+        tenant=tenant,
         auth_context=auth_context,
         payload=payload,
         schema_dump=schema_dump,

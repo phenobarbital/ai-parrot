@@ -9,7 +9,6 @@ Tests:
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from parrot_formdesigner.core.partial import PartialFormData
 

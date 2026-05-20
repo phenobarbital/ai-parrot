@@ -25,6 +25,11 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
   - Zero overhead and byte-identical responses for forms that do not declare
     `events`.
   - See `docs/lifecycle-events.md` for full documentation.
+  - **Known limitation**: The CSRF token store (`services/csrf.py`) uses an
+    in-process dictionary. It is NOT shared across multiple worker processes
+    (e.g., `gunicorn -w N` with N > 1). For production multi-worker
+    deployments, replace `_STORE` with a shared backend such as Redis.
+    A module-level warning is logged at import time to surface this limitation.
 
 ## [0.2.0] — 2026-05-07 — Structural Refactor (FEAT-152)
 
