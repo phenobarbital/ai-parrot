@@ -52,7 +52,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Depends on registry; sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1267-event-dispatcher.md"
+      "completed_at": "2026-05-20T21:00:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1267-event-dispatcher.md"
     },
     {
       "id": "TASK-1268",
