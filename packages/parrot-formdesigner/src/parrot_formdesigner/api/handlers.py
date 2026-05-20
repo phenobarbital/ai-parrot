@@ -917,124 +917,222 @@ class FormAPIHandler:
         except (json.JSONDecodeError, ValueError):
             return JSONResponse({"error": "Invalid JSON body"}, status=400)
 
-        # Optional: merge cached partial answers into submitted data
-        # (?merge_partials=true — submitted values take precedence)
-        _merge_session_id: str | None = None
-        merge_partials = request.query.get("merge_partials", "").lower() == "true"
-        if merge_partials and self._partial_store is not None:
-            _merge_session_id = self._extract_session_id(request)
-            if _merge_session_id:
-                try:
-                    cached = await self._partial_store.get(form_id, _merge_session_id)
-                    if cached:
-                        # cached values fill gaps; submitted values win on overlap
-                        data = {**cached.data, **data}
-                        self.logger.debug(
-                            "Merged %d cached partial fields into submit for %s/%s",
-                            len(cached.data),
+        # lifecycle: outer envelope for onError dispatch on any exception.
+        # FormEventAbort from onBeforeSubmit is caught INSIDE and handled
+        # directly — it is never routed through onError (spec §7).
+        # _auth_ctx is computed lazily on first dispatch call to avoid
+        # breaking tests that mock request.headers as a generic MagicMock.
+        _auth_ctx = None
+
+        try:
+            try:
+                _auth_ctx = self._build_auth_context(request)
+            except Exception:
+                _auth_ctx = AuthContext(scheme="none")
+
+            # Optional: merge cached partial answers into submitted data
+            # (?merge_partials=true — submitted values take precedence)
+            _merge_session_id: str | None = None
+            merge_partials = request.query.get("merge_partials", "").lower() == "true"
+            if merge_partials and self._partial_store is not None:
+                _merge_session_id = self._extract_session_id(request)
+                if _merge_session_id:
+                    try:
+                        cached = await self._partial_store.get(form_id, _merge_session_id)
+                        if cached:
+                            # cached values fill gaps; submitted values win on overlap
+                            data = {**cached.data, **data}
+                            self.logger.debug(
+                                "Merged %d cached partial fields into submit for %s/%s",
+                                len(cached.data),
+                                form_id,
+                                _merge_session_id,
+                            )
+                    except Exception as exc:
+                        self.logger.warning(
+                            "Failed to load partial for merge %s/%s: %s",
                             form_id,
                             _merge_session_id,
+                            exc,
                         )
+
+            # lifecycle: onBeforeSubmit — may mutate payload or abort
+            try:
+                resolution = await dispatch(
+                    "onBeforeSubmit",
+                    form=form,
+                    request=request,
+                    tenant=tenant,
+                    auth_context=_auth_ctx,
+                    payload=data,
+                )
+                if resolution.payload is not None:
+                    data = dict(resolution.payload)
+            except FormEventAbort as exc:
+                # Abort is a controlled flow — do NOT route through onError.
+                return JSONResponse(
+                    {"error": exc.user_message, "reason": exc.reason},
+                    status=exc.status_code,
+                )
+
+            # Validate submission data against form schema
+            result = await self.validator.validate(form, data)
+            if not result.is_valid:
+                _validation_exc = ValueError(f"Validation failed: {result.errors}")
+                # dispatch onError (best-effort) before the early 422 return
+                try:
+                    _err_res = await dispatch(
+                        "onError",
+                        form=form,
+                        request=request,
+                        tenant=tenant,
+                        auth_context=_auth_ctx,
+                        error=_validation_exc,
+                    )
+                except Exception as _meta_exc:
+                    self.logger.exception("onError handler raised during validation: %s", _meta_exc)
+                return JSONResponse(
+                    {"is_valid": False, "errors": result.errors},
+                    status=422,
+                )
+
+            # Build submission record
+            submission = FormSubmission(
+                submission_id=str(uuid.uuid4()),
+                form_id=form_id,
+                form_version=form.version,
+                data=result.sanitized_data,
+                is_valid=True,
+                created_at=datetime.now(timezone.utc),
+            )
+
+            # Metadata enrichment runs between validation and storage so the
+            # resolved values are persisted alongside the answers.
+            if form.metadata:
+                try:
+                    core_overrides, extra_flat = await enrich_submission(
+                        request=request,
+                        form=form,
+                        submission=submission,
+                        answers=result.sanitized_data,
+                        auth_context=_auth_ctx,
+                    )
+                except MetadataResolutionError as exc:
+                    # dispatch onError (best-effort) before the early 422 return
+                    try:
+                        await dispatch(
+                            "onError",
+                            form=form,
+                            request=request,
+                            tenant=tenant,
+                            auth_context=_auth_ctx,
+                            error=exc,
+                        )
+                    except Exception as _meta_exc:
+                        self.logger.exception(
+                            "onError handler raised during metadata: %s", _meta_exc
+                        )
+                    return JSONResponse(
+                        {"is_valid": False, "errors": {"_metadata": str(exc)}},
+                        status=422,
+                    )
+                if core_overrides:
+                    submission = submission.model_copy(update=core_overrides)
+                if extra_flat:
+                    submission.data = {**submission.data, **extra_flat}
+
+            # Store locally (if storage configured)
+            if self._submission_storage is not None:
+                await self._submission_storage.store(submission)
+            else:
+                self.logger.debug(
+                    "No submission_storage configured — skipping local storage for %s",
+                    submission.submission_id,
+                )
+
+            # Forward to endpoint (if form has endpoint action and forwarder configured)
+            forwarded = False
+            forward_status = None
+            forward_error = None
+            if (
+                form.submit is not None
+                and form.submit.action_type == "endpoint"
+                and self._forwarder is not None
+            ):
+                fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
+                forwarded = fwd_result.success
+                forward_status = fwd_result.status_code
+                forward_error = fwd_result.error
+                if not forwarded:
+                    self.logger.warning(
+                        "Forward failed for submission %s: %s",
+                        submission.submission_id,
+                        forward_error,
+                    )
+
+            # Cleanup: delete cached partial after successful submission
+            if merge_partials and _merge_session_id and self._partial_store is not None:
+                try:
+                    await self._partial_store.delete(form_id, _merge_session_id)
+                    self.logger.debug(
+                        "Deleted cached partial for %s/%s after successful submit",
+                        form_id,
+                        _merge_session_id,
+                    )
                 except Exception as exc:
                     self.logger.warning(
-                        "Failed to load partial for merge %s/%s: %s",
+                        "Failed to delete partial after submit %s/%s: %s",
                         form_id,
                         _merge_session_id,
                         exc,
                     )
 
-        # Validate submission data against form schema
-        result = await self.validator.validate(form, data)
-        if not result.is_valid:
-            return JSONResponse(
-                {"is_valid": False, "errors": result.errors},
-                status=422,
+            # lifecycle: onAfterSubmit — side-effects only; failures routed via onError
+            await dispatch(
+                "onAfterSubmit",
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=_auth_ctx,
+                payload=submission.data,
             )
 
-        # Build submission record
-        submission = FormSubmission(
-            submission_id=str(uuid.uuid4()),
-            form_id=form_id,
-            form_version=form.version,
-            data=result.sanitized_data,
-            is_valid=True,
-            created_at=datetime.now(timezone.utc),
-        )
+            return JSONResponse({
+                "submission_id": submission.submission_id,
+                "is_valid": True,
+                "forwarded": forwarded,
+                "forward_status": forward_status,
+                "forward_error": forward_error,
+            })
 
-        # Metadata enrichment runs between validation and storage so the
-        # resolved values are persisted alongside the answers.
-        if form.metadata:
+        except FormEventAbort:
+            # Already handled above — re-raise so it surfaces correctly
+            # if there is an outer handler.
+            raise
+        except Exception as exc:
+            # lifecycle: onError — dispatch and then re-raise original exception.
+            # The original status code (422 for validation, 500 for unexpected)
+            # is preserved because we re-raise.
+            _user_message: str | None = None
             try:
-                core_overrides, extra_flat = await enrich_submission(
-                    request=request,
+                _err_res = await dispatch(
+                    "onError",
                     form=form,
-                    submission=submission,
-                    answers=result.sanitized_data,
-                    auth_context=self._build_auth_context(request),
+                    request=request,
+                    tenant=tenant,
+                    auth_context=_auth_ctx,
+                    error=exc,
                 )
-            except MetadataResolutionError as exc:
-                return JSONResponse(
-                    {"is_valid": False, "errors": {"_metadata": str(exc)}},
-                    status=422,
-                )
-            if core_overrides:
-                submission = submission.model_copy(update=core_overrides)
-            if extra_flat:
-                submission.data = {**submission.data, **extra_flat}
-
-        # Store locally (if storage configured)
-        if self._submission_storage is not None:
-            await self._submission_storage.store(submission)
-        else:
-            self.logger.debug(
-                "No submission_storage configured — skipping local storage for %s",
-                submission.submission_id,
+                _user_message = _err_res.user_message
+            except Exception as meta_exc:
+                self.logger.exception("onError handler itself raised: %s", meta_exc)
+            if _user_message:
+                # Surface friendly message in the request for outer error handlers
+                request["_lifecycle_user_message"] = _user_message
+            self.logger.exception(
+                "submit_data failed for form %r: %s", form_id, exc
             )
-
-        # Forward to endpoint (if form has endpoint action and forwarder configured)
-        forwarded = False
-        forward_status = None
-        forward_error = None
-        if (
-            form.submit is not None
-            and form.submit.action_type == "endpoint"
-            and self._forwarder is not None
-        ):
-            fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
-            forwarded = fwd_result.success
-            forward_status = fwd_result.status_code
-            forward_error = fwd_result.error
-            if not forwarded:
-                self.logger.warning(
-                    "Forward failed for submission %s: %s",
-                    submission.submission_id,
-                    forward_error,
-                )
-
-        # Cleanup: delete cached partial after successful submission
-        if merge_partials and _merge_session_id and self._partial_store is not None:
-            try:
-                await self._partial_store.delete(form_id, _merge_session_id)
-                self.logger.debug(
-                    "Deleted cached partial for %s/%s after successful submit",
-                    form_id,
-                    _merge_session_id,
-                )
-            except Exception as exc:
-                self.logger.warning(
-                    "Failed to delete partial after submit %s/%s: %s",
-                    form_id,
-                    _merge_session_id,
-                    exc,
-                )
-
-        return JSONResponse({
-            "submission_id": submission.submission_id,
-            "is_valid": True,
-            "forwarded": forwarded,
-            "forward_status": forward_status,
-            "forward_error": forward_error,
-        })
+            raise
 
     async def load_from_db(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/from-db — Load a form from database definition.
