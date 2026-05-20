@@ -12,6 +12,11 @@ from .builder import build_page_index
 from .md_builder import md_to_tree
 from .retriever import PageIndexRetriever
 from .llm_adapter import PageIndexLLMAdapter
+from .store import JSONTreeStore
+from .tree_ops import splice_subtree, delete_node, reindex_node_ids
+from .hybrid_search import HybridPageIndexSearch
+from .ingest import TwoStepIngester, IngestedMarkdown
+from .toolkit import PageIndexToolkit
 
 __all__ = [
     "build_page_index",
@@ -21,4 +26,12 @@ __all__ = [
     "PageIndexNode",
     "TreeSearchResult",
     "TocItem",
+    "JSONTreeStore",
+    "splice_subtree",
+    "delete_node",
+    "reindex_node_ids",
+    "HybridPageIndexSearch",
+    "TwoStepIngester",
+    "IngestedMarkdown",
+    "PageIndexToolkit",
 ]
