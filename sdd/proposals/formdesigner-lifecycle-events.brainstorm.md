@@ -399,9 +399,9 @@ from parrot_formdesigner.api.operations import OperationError  # api/operations.
 
 ## Open Questions
 
-- [ ] ¿Soportar múltiples handlers por evento por form en MVP, o postergar a un follow-up? Decisión actual: **un handler por evento** (regla del registry, duplicado → ValueError); si se necesitan varios, el propio handler los orquesta. — *Owner: Jesus Lara*
-- [ ] ¿`onError` debe disparase también para `FormEventAbort` o solo para excepciones no-controladas? Decisión preliminar: **no** — abort es flujo válido, no error. — *Owner: Jesus Lara*
-- [ ] ¿La ruta `POST /forms/{form_id}/events/{event_name}` para `remote: true` requiere auth distinta a los handlers principales (ej. CSRF token, scope específico)? — *Owner: Jesus Lara*
-- [ ] ¿`EventResolution.schema_overrides` se aplica como deep-merge o shallow-merge? Propuesta: shallow para MVP; deep cuando aparezca un caso real. — *Owner: Jesus Lara*
-- [ ] ¿Telegram renderer debería emitir un equivalente al `CustomEvent` (ej. callbacks de bot) en un follow-up, o queda como post-MVP indefinido? — *Owner: Jesus Lara*
-- [ ] ¿Convención de naming del `handler_ref`: free-form (`"survey_v1.onBeforeSubmit"`) o namespaced (`"<form_id>.<event>"` obligatorio para evitar colisiones cross-form)? — *Owner: Jesus Lara*
+- [x] ¿Soportar múltiples handlers por evento por form en MVP, o postergar a un follow-up? Decisión actual: **un handler por evento** (regla del registry, duplicado → ValueError); si se necesitan varios, el propio handler los orquesta. — *Owner: Jesus Lara*: un handler por evento
+- [ ] ¿`onError` debe disparase también para `FormEventAbort` o solo para excepciones no-controladas? Decisión preliminar: **no** — abort es flujo válido, no error. — *Owner: Jesus Lara*: no
+- [ ] ¿La ruta `POST /forms/{form_id}/events/{event_name}` para `remote: true` requiere auth distinta a los handlers principales (ej. CSRF token, scope específico)? — *Owner: Jesus Lara*: si
+- [ ] ¿`EventResolution.schema_overrides` se aplica como deep-merge o shallow-merge? Propuesta: shallow para MVP; deep cuando aparezca un caso real. — *Owner: Jesus Lara*: shallow para MVP
+- [ ] ¿Telegram renderer debería emitir un equivalente al `CustomEvent` (ej. callbacks de bot) en un follow-up, o queda como post-MVP indefinido? — *Owner: Jesus Lara*: en un follow-up
+- [ ] ¿Convención de naming del `handler_ref`: free-form (`"survey_v1.onBeforeSubmit"`) o namespaced (`"<form_id>.<event>"` obligatorio para evitar colisiones cross-form)? — *Owner: Jesus Lara*: namespaced, para evitar colisiones.

@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-188
 **Date**: 2026-05-20
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor of `parrot-formdesigner`)
 
 > **Source brainstorm**: `sdd/proposals/formdesigner-lifecycle-events.brainstorm.md`
