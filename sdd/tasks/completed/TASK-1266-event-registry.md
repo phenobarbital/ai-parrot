@@ -215,7 +215,7 @@ class TestRegisterFormEvent:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-20
+**Notes**: event_registry.py created as structural mirror of callback_registry.py. Async-only guard added. Re-exported from services/__init__.py. 16 unit tests passing. Ruff clean.
 **Deviations from spec**: none
