@@ -136,7 +136,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -148,8 +148,8 @@
       "parallelism_notes": "Touches api/handlers.py (adds remote_event method) and api/routes.py; sequential after submit-hooks land.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1271-remote-events-endpoint.md"
+      "completed_at": "2026-05-20T21:16:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1271-remote-events-endpoint.md"
     },
     {
       "id": "TASK-1272",
