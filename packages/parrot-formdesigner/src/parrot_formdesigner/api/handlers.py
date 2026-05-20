@@ -11,16 +11,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 from aiohttp import web
 from pydantic import ValidationError
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from navigator.responses import JSONResponse
-from ..core.events import FormEventAbort
+from ..core.events import FormEventAbort, FormEventName
 from ..core.schema import FormField, FormSchema, RenderedForm
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.auth_context import AuthContext
+from ..services.csrf import issue_form_csrf_token, validate_form_csrf_token
 from ..services.event_dispatcher import apply_schema_overrides, dispatch
 from ..services.registry import FormAlreadyExistsError, FormRegistry
 from ..services.validators import FormValidator
@@ -510,6 +511,25 @@ class FormAPIHandler:
             content_type="application/json"
         )
 
+    @staticmethod
+    def _form_has_remote_binding(form: FormSchema) -> bool:
+        """Return True if the form declares any event binding with remote=True.
+
+        Args:
+            form: FormSchema to inspect.
+
+        Returns:
+            ``True`` when at least one binding has ``remote=True``.
+        """
+        events = getattr(form, "events", None)
+        if events is None:
+            return False
+        for field_name in type(events).model_fields:
+            binding = getattr(events, field_name, None)
+            if binding is not None and getattr(binding, "remote", False):
+                return True
+        return False
+
     async def get_form(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id} — Get full FormSchema as JSON."""
         form_id = request.match_info["form_id"]
@@ -531,7 +551,15 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
-        return JSONResponse(form.model_dump())
+        response = JSONResponse(form.model_dump())
+        # Attach CSRF token when the form has any remote-bridged binding
+        if self._form_has_remote_binding(form):
+            session_id = self._extract_session_id(request)
+            if session_id:
+                response.headers["X-Form-CSRF-Token"] = issue_form_csrf_token(
+                    session_id, form_id
+                )
+        return response
 
     async def get_schema(self, request: web.Request) -> web.Response:
         """GET /api/v1/forms/{form_id}/schema — Get JSON Schema (structural)."""
@@ -570,6 +598,87 @@ class FormAPIHandler:
             return JSONResponse({"error": f"Form '{form_id}' not found"}, status=404)
         style = form.meta.get("style") if form.meta else None
         return JSONResponse(style or {})
+
+    async def remote_event(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/events/{event_name} — Remote event bridge.
+
+        Called by the HTML5 renderer when a binding declares ``remote: true``.
+        Validates a per-session per-form CSRF token, dispatches the lifecycle
+        event, and returns the ``EventResolution`` as JSON.
+
+        Args:
+            request: Incoming POST request with ``form_id`` and ``event_name``
+                in the URL, ``X-CSRF-Token`` header, and a JSON body optionally
+                containing ``payload`` and ``schema_dump``.
+
+        Returns:
+            200 — EventResolution JSON.
+            400 — Unknown event name or invalid JSON body.
+            403 — Missing or invalid CSRF token.
+            404 — Form not found.
+            status from FormEventAbort.status_code — when a handler aborts.
+        """
+        form_id = request.match_info["form_id"]
+        event_name = request.match_info["event_name"]
+
+        # 1. Validate event_name against the FormEventName Literal
+        if event_name not in get_args(FormEventName):
+            return JSONResponse(
+                {"error": f"Unknown event '{event_name}'"}, status=400
+            )
+
+        # 2. Load form
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_id, tenant=tenant)
+        if form is None:
+            return JSONResponse(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        # 3. CSRF validation
+        session_id = self._extract_session_id(request)
+        token = request.headers.get("X-CSRF-Token") or request.headers.get(
+            "X-Form-CSRF-Token"
+        )
+        if (
+            not session_id
+            or not token
+            or not validate_form_csrf_token(session_id, form_id, token)
+        ):
+            return JSONResponse(
+                {"error": "CSRF token invalid or missing"}, status=403
+            )
+
+        # 4. Parse body
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError, Exception):
+            return JSONResponse({"error": "Invalid JSON body"}, status=400)
+
+        # 5. Build auth context (with fallback)
+        try:
+            auth_ctx = self._build_auth_context(request)
+        except Exception:
+            auth_ctx = AuthContext(scheme="none")
+
+        # 6. Dispatch the event
+        try:
+            resolution = await dispatch(
+                event_name,  # type: ignore[arg-type]
+                form=form,
+                request=request,
+                tenant=tenant,
+                auth_context=auth_ctx,
+                payload=body.get("payload"),
+                schema_dump=body.get("schema_dump"),
+            )
+        except FormEventAbort as exc:
+            return JSONResponse(
+                {"error": exc.user_message, "reason": exc.reason},
+                status=exc.status_code,
+            )
+
+        return JSONResponse(resolution.model_dump(exclude_none=True))
 
     async def validate(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/validate — Validate form submission."""

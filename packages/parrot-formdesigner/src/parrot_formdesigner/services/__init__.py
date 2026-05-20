@@ -4,6 +4,11 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
+from .csrf import (
+    _clear_csrf_store_for_tests,
+    issue_form_csrf_token,
+    validate_form_csrf_token,
+)
 from .event_dispatcher import apply_schema_overrides, dispatch
 from .event_registry import (
     _clear_event_registry_for_tests,
@@ -47,4 +52,8 @@ __all__ = [
     # Lifecycle event dispatcher (FEAT-188)
     "dispatch",
     "apply_schema_overrides",
+    # CSRF helpers for remote events endpoint (FEAT-188)
+    "issue_form_csrf_token",
+    "validate_form_csrf_token",
+    "_clear_csrf_store_for_tests",
 ]

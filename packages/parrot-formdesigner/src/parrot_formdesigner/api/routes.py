@@ -228,4 +228,10 @@ def setup_form_api(
         f"{bp}/forms/{{form_id}}/partial", _wrap_auth(handler.delete_partial)
     )
 
+    # Remote lifecycle event bridge (FEAT-188)
+    app.router.add_post(
+        f"{bp}/forms/{{form_id}}/events/{{event_name}}",
+        _wrap_auth(handler.remote_event),
+    )
+
     logger.info("setup_form_api: mounted on %s", bp)
