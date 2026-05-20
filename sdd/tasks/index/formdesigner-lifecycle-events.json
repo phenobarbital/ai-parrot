@@ -114,7 +114,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Same file as TASK-1269 (api/handlers.py); sequential. Adds the most complex try/except envelope.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1270-handlers-submit-hooks.md"
+      "completed_at": "2026-05-20T21:11:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1270-handlers-submit-hooks.md"
     },
     {
       "id": "TASK-1271",
