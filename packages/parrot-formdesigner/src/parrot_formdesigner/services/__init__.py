@@ -4,6 +4,12 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
+from .event_registry import (
+    _clear_event_registry_for_tests,
+    get_form_event,
+    list_form_events,
+    register_form_event,
+)
 from .forwarder import ForwardResult, SubmissionForwarder
 from .metadata_callbacks import MetadataCallbackInput, MetadataCallbackOutput
 from .metadata_enricher import MetadataResolutionError, enrich_submission
@@ -32,4 +38,9 @@ __all__ = [
     "SubmissionForwarder",
     "ValidationResult",
     "enrich_submission",
+    # Lifecycle event registry (FEAT-188)
+    "register_form_event",
+    "get_form_event",
+    "list_form_events",
+    "_clear_event_registry_for_tests",
 ]
