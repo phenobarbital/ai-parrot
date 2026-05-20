@@ -14,7 +14,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — blocks all others. Sequential per spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1265-core-events-models.md"
+      "completed_at": "2026-05-20T20:57:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1265-core-events-models.md"
     },
     {
       "id": "TASK-1266",
