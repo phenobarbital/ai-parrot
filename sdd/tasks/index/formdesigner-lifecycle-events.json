@@ -73,7 +73,7 @@
       "feature_id": "FEAT-188",
       "feature": "formdesigner-lifecycle-events",
       "spec": "sdd/specs/formdesigner-lifecycle-events.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Could theoretically run in parallel with TASK-1266 (both depend only on TASK-1265), but spec worktree strategy is per-spec sequential.",
       "assigned_to": null,
       "started_at": "2026-05-20T20:54:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1268-formschema-events-field.md"
+      "completed_at": "2026-05-20T21:02:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1268-formschema-events-field.md"
     },
     {
       "id": "TASK-1269",
