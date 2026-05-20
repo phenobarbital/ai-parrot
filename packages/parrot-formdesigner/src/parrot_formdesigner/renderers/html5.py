@@ -16,7 +16,7 @@ import jinja2
 import markdown2
 
 from ..core.constraints import DependencyRule
-from ..core.options import FieldOption
+from ..core.events import FormEventsConfig
 from ..core.schema import (
     FormField,
     FormSchema,
@@ -24,7 +24,7 @@ from ..core.schema import (
     RenderedForm,
     RenderWarning,
 )
-from ..core.style import FieldSizeHint, LayoutType, StyleSchema
+from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 
@@ -292,6 +292,7 @@ class HTML5Renderer(AbstractFormRenderer):
         locale: str = "en",
         prefilled: dict[str, Any] | None = None,
         errors: dict[str, str] | None = None,
+        csrf_token: str | None = None,
     ) -> RenderedForm:
         """Render a FormSchema as an HTML5 form fragment.
 
@@ -301,6 +302,10 @@ class HTML5Renderer(AbstractFormRenderer):
             locale: Locale for i18n label resolution.
             prefilled: Pre-filled field values (field_id -> value).
             errors: Field-level error messages (field_id -> message).
+            csrf_token: Optional per-session CSRF token for the remote event
+                bridge. When provided and the form has lifecycle events, a
+                ``<meta name="parrot-csrf-token">`` tag is prepended to the
+                output and the inline lifecycle script reads it.
 
         Returns:
             RenderedForm with HTML string as content and content_type="text/html".
@@ -348,12 +353,123 @@ class HTML5Renderer(AbstractFormRenderer):
             render_field=render_field,
         )
 
+        # lifecycle: inject CSRF meta + lifecycle script when form has events
+        rendered_html = self._inject_lifecycle(rendered_html, form, csrf_token)
+
         return RenderedForm(
             content=rendered_html,
             content_type="text/html",
             metadata={"locale": locale, "layout": layout_class},
             warnings=warnings,
         )
+
+    # ------------------------------------------------------------------
+    # Lifecycle injection helpers (FEAT-188)
+    # ------------------------------------------------------------------
+
+    # Raw JS template — uses unique sentinels __FORM_ID__ and __EVENTS_CONFIG__
+    # to avoid Python str.format() brace conflicts with the JS object literals.
+    _LIFECYCLE_SCRIPT_TEMPLATE = (
+        "\n<script>\n"
+        "(function() {\n"
+        "  var FORM_ID = __FORM_ID__;\n"
+        "  var EVENTS_CONFIG = __EVENTS_CONFIG__;\n"
+        "  var formEl = document.getElementById('parrot-form-' + FORM_ID);\n"
+        "  if (!formEl) return;\n"
+        "\n"
+        "  var _csrfMeta = document.querySelector('meta[name=\"parrot-csrf-token\"]');\n"
+        "  var csrfToken = _csrfMeta ? _csrfMeta.getAttribute('content') : null;\n"
+        "\n"
+        "  function emit(name, detail) {\n"
+        "    formEl.dispatchEvent(new CustomEvent('parrot:' + name, {\n"
+        "      detail: detail, bubbles: true, cancelable: true,\n"
+        "    }));\n"
+        "  }\n"
+        "\n"
+        "  function bridge(eventName, payload, timeoutMs) {\n"
+        "    timeoutMs = timeoutMs || 5000;\n"
+        "    if (!EVENTS_CONFIG[eventName] || !EVENTS_CONFIG[eventName].remote)"
+        " return Promise.resolve();\n"
+        "    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;\n"
+        "    var timer = ctl ? setTimeout(function() { ctl.abort(); }, timeoutMs) : null;\n"
+        "    return fetch(\n"
+        "      '/api/v1/forms/' + FORM_ID + '/events/' + eventName,\n"
+        "      {\n"
+        "        method: 'POST',\n"
+        "        credentials: 'same-origin',\n"
+        "        headers: {\n"
+        "          'Content-Type': 'application/json',\n"
+        "          'X-CSRF-Token': csrfToken || '',\n"
+        "        },\n"
+        "        body: JSON.stringify({ payload: payload }),\n"
+        "        signal: ctl ? ctl.signal : undefined,\n"
+        "      }\n"
+        "    ).then(function(r) {\n"
+        "      if (timer) clearTimeout(timer);\n"
+        "      return r.json();\n"
+        "    }).catch(function(e) {\n"
+        "      if (timer) clearTimeout(timer);\n"
+        "      console.warn('[parrot] remote event ' + eventName + ' failed:', e);\n"
+        "    });\n"
+        "  }\n"
+        "\n"
+        "  document.addEventListener('DOMContentLoaded', function() {\n"
+        "    emit('before-open', { form_id: FORM_ID });\n"
+        "    bridge('onBeforeOpen', {});\n"
+        "  });\n"
+        "\n"
+        "  formEl.addEventListener('submit', function(ev) {\n"
+        "    var data = {};\n"
+        "    var fd = new FormData(formEl);\n"
+        "    fd.forEach(function(v, k) { data[k] = v; });\n"
+        "    var beforeEvt = new CustomEvent('parrot:before-submit', {\n"
+        "      detail: { form_id: FORM_ID, payload: data },\n"
+        "      bubbles: true, cancelable: true,\n"
+        "    });\n"
+        "    if (!formEl.dispatchEvent(beforeEvt)) {\n"
+        "      ev.preventDefault();\n"
+        "      return;\n"
+        "    }\n"
+        "    bridge('onBeforeSubmit', data);\n"
+        "  });\n"
+        "})();\n"
+        "</script>"
+    )
+
+    def _inject_lifecycle(
+        self,
+        html_str: str,
+        form: FormSchema,
+        csrf_token: str | None,
+    ) -> str:
+        """Append CSRF meta tag and lifecycle script when the form has events.
+
+        Args:
+            html_str: The rendered HTML produced by the Jinja2 template.
+            form: The FormSchema being rendered.
+            csrf_token: Optional CSRF token; emits a ``<meta>`` when present.
+
+        Returns:
+            HTML string with optional CSRF meta tag and lifecycle script appended.
+            Returns ``html_str`` unchanged when ``form.events`` is None.
+        """
+        events: FormEventsConfig | None = getattr(form, "events", None)
+        if events is None:
+            return html_str
+
+        prefix = ""
+        if csrf_token:
+            safe_token = html.escape(csrf_token, quote=True)
+            prefix = f'<meta name="parrot-csrf-token" content="{safe_token}">\n'
+
+        events_config = events.model_dump(exclude_none=True)
+        script = (
+            self._LIFECYCLE_SCRIPT_TEMPLATE
+            .replace("__FORM_ID__", json.dumps(form.form_id))
+            .replace("__EVENTS_CONFIG__", json.dumps(events_config))
+        )
+
+        return prefix + html_str + script
 
     def _render_field_html(
         self,
