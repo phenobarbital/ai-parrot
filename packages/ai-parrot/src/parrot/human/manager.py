@@ -5,7 +5,7 @@ import asyncio
 import json
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from navconfig.logging import logging
@@ -14,6 +14,13 @@ from .actions.notify import NotifyAction
 from .actions.ticket import TicketAction
 from .channels.base import ESCALATE_OPTION_KEY, HumanChannel
 from .escalation_intent import RejectIntentDetector
+from .events import (
+    HitlChainExhaustedEvent,
+    HitlTierActionExecutedEvent,
+    HitlTierActionFailedEvent,
+    HitlTierAdvancedEvent,
+    HitlTierEnteredEvent,
+)
 from .models import (
     ConsensusMode,
     EscalationActionType,
@@ -68,6 +75,7 @@ class HumanInteractionManager:
         channels: Optional[Dict[str, HumanChannel]] = None,
         redis_url: Optional[str] = None,
         reject_detector: Optional[RejectIntentDetector] = None,
+        on_event: Optional[Callable[[str, Any], Awaitable[None]]] = None,
     ) -> None:
         self.channels: Dict[str, HumanChannel] = channels or {}
         self._redis_url = redis_url
@@ -82,6 +90,30 @@ class HumanInteractionManager:
         }
         self._policies: Dict[str, EscalationPolicy] = {}
         self._reject_detector: Optional[RejectIntentDetector] = reject_detector
+        self._on_event: Optional[Callable[[str, Any], Awaitable[None]]] = on_event
+
+    # ------------------------------------------------------------------
+    # Event emission helpers
+    # ------------------------------------------------------------------
+
+    async def _emit(self, event_name: str, payload: Any) -> None:
+        """Emit a structured event to the registered subscriber.
+
+        Emission is best-effort: subscriber exceptions are caught and
+        logged so the manager's control flow is never interrupted.
+
+        Args:
+            event_name: Dot-namespaced event identifier (e.g. ``"hitl.tier.entered"``).
+            payload: A Pydantic event model from :mod:`parrot.human.events`.
+        """
+        if self._on_event is None:
+            return
+        try:
+            await self._on_event(event_name, payload)
+        except Exception:
+            self.logger.exception(
+                "HITL event subscriber raised for event %r", event_name
+            )
 
     # ------------------------------------------------------------------
     # Redis helpers
@@ -522,6 +554,18 @@ class HumanInteractionManager:
             interaction_id,
             cause,
         )
+        from_level = interaction.current_tier_level
+        to_level = from_level + 1
+        await self._emit(
+            "hitl.tier.advanced",
+            HitlTierAdvancedEvent(
+                interaction_id=interaction_id,
+                policy_id=interaction.policy_id,
+                from_level=from_level,
+                to_level=to_level,
+                cause=cause,
+            ),
+        )
         await self._escalate_to_next_tier(interaction, channel, cause=cause)
 
     # ------------------------------------------------------------------
@@ -826,6 +870,16 @@ class HumanInteractionManager:
 
         if action == TimeoutAction.ESCALATE:
             if interaction.policy:
+                await self._emit(
+                    "hitl.tier.advanced",
+                    HitlTierAdvancedEvent(
+                        interaction_id=interaction.interaction_id,
+                        policy_id=interaction.policy_id,
+                        from_level=interaction.current_tier_level,
+                        to_level=interaction.current_tier_level + 1,
+                        cause="timeout",
+                    ),
+                )
                 await self._escalate_to_next_tier(interaction, channel)
             else:
                 await self._escalate(interaction, channel)
@@ -898,7 +952,13 @@ class HumanInteractionManager:
                 interaction.current_tier_level,
                 interaction.interaction_id,
             )
-            # TODO: emit hitl.chain.exhausted event (TASK-1280)
+            await self._emit(
+                "hitl.chain.exhausted",
+                HitlChainExhaustedEvent(
+                    interaction_id=interaction.interaction_id,
+                    policy_id=interaction.policy_id,
+                ),
+            )
             await self._finish_with_timeout(interaction)
             return
 
@@ -914,7 +974,16 @@ class HumanInteractionManager:
             # Advance the cursor and recurse to skip this tier
             interaction.current_tier_level = next_level
             await self._update_status(interaction)
-            # TODO: emit hitl.tier.advanced event (TASK-1280)
+            await self._emit(
+                "hitl.tier.advanced",
+                HitlTierAdvancedEvent(
+                    interaction_id=interaction.interaction_id,
+                    policy_id=interaction.policy_id,
+                    from_level=next_level - 1,
+                    to_level=next_level,
+                    cause=cause,
+                ),
+            )
             await self._escalate_to_next_tier(
                 interaction, channel,
                 cause="business_hours_off",
@@ -928,7 +997,15 @@ class HumanInteractionManager:
         interaction.status = InteractionStatus.ESCALATED
         await self._update_status(interaction)
 
-        # TODO: emit hitl.tier.entered event (TASK-1280)
+        await self._emit(
+            "hitl.tier.entered",
+            HitlTierEnteredEvent(
+                interaction_id=interaction.interaction_id,
+                policy_id=interaction.policy_id,
+                tier_level=next_level,
+                cause=cause,
+            ),
+        )
         self.logger.info(
             "Interaction %s entering tier %d (%s), cause=%s",
             interaction.interaction_id,
@@ -963,21 +1040,57 @@ class HumanInteractionManager:
                         next_tier.action_type,
                         interaction.interaction_id,
                     )
-                    # TODO: emit hitl.tier.action_failed event (TASK-1280)
+                    await self._emit(
+                        "hitl.tier.action_failed",
+                        HitlTierActionFailedEvent(
+                            interaction_id=interaction.interaction_id,
+                            policy_id=interaction.policy_id,
+                            tier_level=next_level,
+                            kind=action_metadata.get("kind", str(next_tier.action_type.value)),
+                            reason=str(action_metadata.get("message", "error=True")),
+                        ),
+                    )
                 else:
-                    # TODO: emit hitl.tier.action_executed event (TASK-1280)
-                    pass
-            except Exception:
+                    await self._emit(
+                        "hitl.tier.action_executed",
+                        HitlTierActionExecutedEvent(
+                            interaction_id=interaction.interaction_id,
+                            policy_id=interaction.policy_id,
+                            tier_level=next_level,
+                            kind=action_metadata.get("kind", str(next_tier.action_type.value)),
+                            action_metadata=action_metadata,
+                        ),
+                    )
+            except Exception as exc:
                 action_failed = True
                 self.logger.exception(
                     "Action %s raised for interaction %s; advancing to next tier.",
                     next_tier.action_type,
                     interaction.interaction_id,
                 )
-                # TODO: emit hitl.tier.action_failed event (TASK-1280)
+                await self._emit(
+                    "hitl.tier.action_failed",
+                    HitlTierActionFailedEvent(
+                        interaction_id=interaction.interaction_id,
+                        policy_id=interaction.policy_id,
+                        tier_level=next_level,
+                        kind=str(next_tier.action_type.value),
+                        reason=str(exc),
+                    ),
+                )
 
         # 3a. Action failed → advance to next tier instead of resolving with empty metadata
         if action_failed:
+            await self._emit(
+                "hitl.tier.advanced",
+                HitlTierAdvancedEvent(
+                    interaction_id=interaction.interaction_id,
+                    policy_id=interaction.policy_id,
+                    from_level=next_level,
+                    to_level=next_level + 1,
+                    cause="action_failed",
+                ),
+            )
             await self._escalate_to_next_tier(
                 interaction, channel,
                 cause="action_failed",
