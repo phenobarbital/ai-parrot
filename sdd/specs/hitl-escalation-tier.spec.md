@@ -4,7 +4,7 @@ type: feature
 base_branch: dev
 ---
 
-# Feature Specification: HITL Multi-Tier Escalation Policy (per-agent)
+# Feature Specification: HITL Multi-Tier Escalation Policy (per-policy_id registry + gap completion)
 
 **Feature ID**: FEAT-194
 **Date**: 2026-05-21
@@ -13,98 +13,110 @@ base_branch: dev
 **Target version**: 1.7.0
 
 > Brainstorm source: `sdd/proposals/hitl-escalation-tier.brainstorm.md`
-> (Option A — Per-Agent `EscalationPolicy` + Pluggable `EscalationAction` Strategies).
+> (Option A was recommended; the implementation that shipped in commit
+> `afe70e82` took a simpler **Option-B-leaning** path — registry-based
+> policy lookup + enum action type + opaque `action_metadata`. This spec
+> is the v0.2 reconciliation: it ratifies the shipped baseline and
+> formalises the remaining gaps as the V1 completion work.)
+
+> Companion document: `documentation/hitl_tiered_escalation_example.md`
+> shows the public usage shape of the shipped baseline.
 
 ---
 
 ## 1. Motivation & Business Requirements
 
-> Why does this feature exist? What problem does it solve?
-
 ### Problem Statement
 
-AI-Parrot has **two parallel Human-in-the-Loop (HITL) paths** that don't share
-a model of escalation:
-
-1. `parrot.human.*` — rich, async, multi-channel (CLI / Telegram / Web).
-   Provides `HumanTool`, `HumanDecisionNode`, `HumanInteractionManager`,
-   consensus modes, timeouts. **Escalation today is a single flat hop**: on
-   `TimeoutAction.ESCALATE`, the manager re-emits the same interaction to
-   `escalation_targets` over the same channel. There is no concept of tiers,
-   no concept of *changing the medium* (ticket / email / live chat link),
-   and no policy declared at the agent level.
-
-2. `parrot.core.tools.handoff.HandoffTool` — synchronous, in-band with the
-   active chat (Telegram / Slack / Teams). Raises `HumanInteractionInterrupt`,
-   the `AutonomousOrchestrator` catches it, suspends the agent, sends the
-   prompt to the active user, then resumes. Useful for "missing parameter"
-   prompts but has no targets, no consensus, no timeouts, no escalation, and
-   bypasses `HumanInteractionManager` entirely.
-
-Real-world HITL escalations are not "ask the same question to a backup
-person." They follow business rules driven by **criticality + tier-specific
-actions** (L0 active user, L1 on-call human, L2 open ticket, L3 live-chat
-deep-link, L4 email a manager). These actions are heterogeneous and must be
-declared **per-agent** (an HR agent escalates to HR managers; a Finance
-agent escalates to a Finance director). The current manager cannot
-represent any of this.
+AI-Parrot historically had two parallel HITL paths — `parrot.human.*`
+(rich, async, multi-channel, **single-hop escalation**) and
+`parrot.core.tools.handoff.HandoffTool` (synchronous in-chat handoff,
+**no escalation at all**). Real-world HITL escalations need
+**criticality + tier-specific actions** (L1 on-call → L2 ticket →
+L3 manager email), declared per agent/policy. Commit `afe70e82` shipped
+a tiered-escalation baseline that addresses the structural gap, but
+several functional gaps remain before the feature is production-grade.
 
 ### Goals
 
-- Introduce `EscalationPolicy` as a per-agent declarative artifact: ordered
-  list of `EscalationTier`s, each with its own trigger, action, targets,
-  optional channel override, and optional business-hours window.
-- Make `EscalationAction` pluggable (strategy port). Ship four
-  implementations in V1: `AskAlternateHumansAction`, `OpenTicketAction`
-  (Zammad), `LiveChatHandoffAction` (generic webhook), `EmailAction`
-  (aiosmtplib over the existing SMTP config keys).
-- Support four triggers in V1: `TIMEOUT`, `EXPLICIT_REJECT`, `SEVERITY`
-  (a-priori), `BUSINESS_HOURS_OFF`.
-- Inject the policy into `HumanInteraction` at `HumanTool`/`HumanDecisionNode`
-  construction time; have `HumanInteractionManager` consume the resolved
-  chain when escalating. No global registry in V1.
-- Keep `HandoffTool` as a deprecated alias that delegates to
-  `HumanInteractionManager` — zero breakage for existing callers; emit a
-  `DeprecationWarning` once per process.
-- Make `HumanChannel` opt-in to a standardised "↑ Escalar" reject button.
-  Telegram and Web render it; CLI doesn't. A lightweight
-  `RejectIntentDetector` (regex first, Groq Haiku confirmation only when
-  the regex is ambiguous) augments channels that can't render the button.
-- Add a `severity` parameter to `ask_human` (low / normal / high / critical)
-  so the LLM can declaratively pick a higher starting tier when appropriate.
-- Maintain full backwards compatibility: `escalation_targets` (flat list)
-  keeps working and is auto-converted to a single `AskAlternateHumansAction`
-  tier.
-- Async-action outcomes are **fire-and-forget**: a tier that opens a ticket
-  or sends an email returns a confirmation string immediately
-  (`"[escalated:ticket:zammad] Ticket TKT-123 opened. A human will follow
-  up there."`). No cross-channel correlation in V1.
-- Emit structured tier-transition events on the existing FEAT-176
-  `EventEmitterMixin` bus so observability/audit tooling can subscribe.
+**V1 baseline (already shipped in `afe70e82`):**
+- `EscalationPolicy` / `EscalationTier` / `EscalationActionType` data
+  model with contiguous-level validator.
+- `HumanInteractionManager._policies` registry keyed by `policy_id`;
+  `manager._escalate_to_next_tier` advances on `TimeoutAction.ESCALATE`.
+- Fire-and-forget semantics for non-`INTERACT` action types
+  (`NOTIFY` / `TICKET`): the agent is resumed immediately with the
+  action's `action_metadata["message"]` string.
+- `HumanInteraction.policy_id` / `HumanInteraction.policy` /
+  `HumanInteraction.current_tier_level` runtime fields.
+- `HumanTool` and `HandoffTool` accept a `policy_id` argument from the
+  LLM and forward it to the manager.
+- `HumanInteractionInterrupt.policy_id` slot consumed by `HandoffTool`.
+- Backwards-compat with legacy `escalation_targets` (single-hop) via
+  fallback path in `_handle_timeout`.
 
-### Non-Goals (explicitly out of scope)
+**V1 completion (this spec's delta):**
+- Replace the two simulated stubs (`NotifyAction`, `TicketAction`) with
+  real implementations:
+  - `EmailAction` — `aiosmtplib` over existing SMTP config keys
+    (`smtp_host`, `smtp_port`, `smtp_host_user`, `smtp_host_password`).
+  - `ZammadTicketAction` — `aiohttp` REST client against Zammad.
+  - `WebhookLiveChatAction` — generic POST to a configurable webhook,
+    returns a `deep_link` string.
+- Keep `EscalationActionType` as the public enum, but treat
+  `NOTIFY`/`TICKET` as **dispatchers** keyed on `action_metadata["kind"]`
+  (`"email"` / `"webhook"` / `"zammad"`) so multiple concrete actions
+  share a single enum value without growing the enum.
+- Add the missing triggers as first-class causes the manager honours:
+  - `EXPLICIT_REJECT` — a standardised `__escalate__` `ChoiceOption` is
+    rendered by opt-in channels (Telegram, Web); when the manager
+    receives a response with `value="__escalate__"`, it advances
+    immediately instead of accumulating.
+  - `SEVERITY` — new `Severity` enum + `HumanInteraction.severity` field
+    + optional per-tier `min_severity` mapping in `EscalationTier`.
+    `_select_starting_tier(policy, severity)` picks the starting tier.
+  - `BUSINESS_HOURS_OFF` — new optional `EscalationTier.business_hours`
+    (tz + days + hours window). Off-hours tiers are skipped at
+    tier-entry time.
+- Add `RejectIntentDetector` (regex first, optional Groq Haiku
+  confirmation inline with short timeout) so free-text replies can
+  also trigger `EXPLICIT_REJECT`. Inline `await`, not callback.
+- Add reject-button rendering to `TelegramHumanChannel` and
+  `WebHumanChannel` via opt-in `HumanChannel.render_reject_button = True`
+  class attr; CLI keeps default `False`.
+- Add `HumanDecisionNode.escalation_policy_id` so flow nodes can
+  participate.
+- Unify the `HandoffTool` dual-path: when the manager registration
+  succeeds, the orchestrator MUST NOT also suspend on the
+  `HumanInteractionInterrupt` — the tool returns the manager's result
+  string directly. Keep `HumanInteractionInterrupt` as the legacy
+  no-manager fallback only. Emit a `DeprecationWarning` once per process
+  encouraging migration to `HumanTool` with `policy_id`.
+- Emit structured tier-transition events on the existing
+  `EventEmitterMixin` bus (FEAT-176):
+  `hitl.tier.entered`, `hitl.tier.advanced`,
+  `hitl.tier.action_executed`, `hitl.tier.action_failed`,
+  `hitl.chain.exhausted`.
+- Fix the latent action-failure bug in `_escalate_to_next_tier`
+  (manager.py:733–740): when `action.execute()` raises, treat as
+  `FAILED → advance to next tier`, not "continue silently with empty
+  metadata."
 
-- **Cross-channel correlation / agent resume on ticket reply.** When a tier
-  opens a ticket, the original agent does NOT wait for the ticket to be
-  resolved. A future spec can add custom-field-based correlation.
-- **Zendesk adapter in V1.** Only Zammad ships in V1; Zendesk is deferred
-  to V2 (resolved in brainstorm).
-- **Long-lived audit log persistence beyond Redis.** V1 keeps tier-transition
-  history in the same `hitl:*` Redis namespace with the existing TTL.
-  Pushing to an external store / log shipper is V2.
-- **Concrete live-chat vendor adapter (Intercom / Chatwoot).** V1 ships a
-  generic webhook-based `LiveChatHandoffAction`; vendor-specific adapters
-  are V2 sub-features.
-- **Runtime policy reconfiguration via registry.** Rejected in the
-  brainstorm (Option B): policies are injected at agent-construction time
-  and require a restart to change. Option B may be added later without
-  breaking the V1 contract.
-- **LLM-driven policy interpretation.** Rejected in the brainstorm (Option D):
-  V1 tiers are deterministic / structured. An LLM-driven *tier-picker* can
-  be added on top later.
-- **Event-bus-only escalation architecture.** Rejected in the brainstorm
-  (Option C): events are *emitted* but escalation control flow remains in
-  the manager.
+### Non-Goals (explicitly out of scope for V1)
+
+- **Cross-channel correlation** (ticket reply → resume original agent).
+  Fire-and-forget for non-`INTERACT` tiers stays. Future spec.
+- **Zendesk** adapter. Zammad-only in V1 (resolved in brainstorm).
+- **External audit-log persistence**. Redis namespace only;
+  log-shipper / DB sink deferred (resolved in brainstorm).
+- **Hot-reload of policy registry**. Registry is mutated by
+  `manager._policies[...] = policy` at startup; no admin endpoint.
+- **Removing `HandoffTool`**. Deprecation only — callers in
+  `parrot/agents/demo.py:194` and downstream code continue to work.
+- **Refactoring the action model into discriminated classes** (the
+  brainstorm's Option-A shape). The shipped enum + `action_metadata`
+  shape is ratified; concrete action kinds are dispatched by
+  `action_metadata["kind"]` within the existing enum values.
 
 ---
 
@@ -112,251 +124,154 @@ represent any of this.
 
 ### Overview
 
-The `Agent` declares an `EscalationPolicy` that contains an ordered list of
-`EscalationTier`s. The `HumanTool` (or `HumanDecisionNode`) takes the
-policy in its constructor; on every call, it resolves the applicable tier
-chain (skipping severity-floored and off-hours tiers) and serialises it
-into the `HumanInteraction.escalation_chain` field plus the policy `id`
-into `HumanInteraction.escalation_policy_ref`. Both fields are persisted to
-Redis along with the interaction, so the chain survives process restarts.
+Commit `afe70e82` shipped the *control plane*: data model, registry,
+tier loop, fire-and-forget for non-`INTERACT` tiers. This spec ships
+the *operational completion*: real action backends, the three missing
+triggers, reject UX, telemetry, and the `HandoffTool` dedup.
 
-`HumanInteractionManager` is refactored: the current `_escalate` becomes
-`_advance_chain`. On a trigger fire (`TIMEOUT`, `EXPLICIT_REJECT`,
-`SEVERITY`, `BUSINESS_HOURS_OFF`), the manager picks the next applicable
-tier from the persisted chain and calls
-`await tier.action.execute(interaction, tier, ctx)`. The action returns an
-`EscalationOutcome`:
+The architectural shape is preserved:
 
-- `RESOLVED(value)` — a human gave an answer; resolve the future with
-  `value`.
-- `ASYNC_HANDLED(message)` — a ticket was opened / email sent / link
-  generated; resolve the future immediately with the confirmation `message`
-  and close the interaction.
-- `FAILED(reason)` — action could not execute; the manager advances to the
-  next tier (if any) or terminates with `TIMEOUT`/`CANCEL`.
-
-`HandoffTool._execute` is rewritten: instead of raising
-`HumanInteractionInterrupt` directly, it builds a `HumanInteraction` with
-`target_humans=["__current_user__"]` and `escalation_chain=None`, then
-dispatches via `HumanInteractionManager.request_human_input`. A
-`DeprecationWarning` is emitted once per process. The old behaviour
-(suspending the orchestrator) is preserved by having the manager resolve
-the interaction through whichever channel is bound to the active chat
-session.
-
-The `AutonomousOrchestrator` gains one small change: when it catches a
-`HumanInteractionInterrupt` whose `policy_id` is set, it does NOT block
-waiting for resume — the tool already returned the confirmation string
-directly, so the orchestrator just propagates that value to the LLM. For
-unset `policy_id` (legacy path), behaviour is unchanged.
-
-`HumanChannel` gains an opt-in class attribute
-`render_reject_button: bool = False`. Channels that set `True` (Telegram,
-Web) append a standard `ChoiceOption(key="__escalate__", label="↑ Escalar")`
-to every rendered interaction. When the manager receives a response whose
-value is `"__escalate__"`, it treats it as `EXPLICIT_REJECT` and calls
-`_advance_chain(interaction_id, cause=Reject)`.
-
-`RejectIntentDetector` runs whenever a free-text response arrives. It first
-checks against a regex of canned escalation phrases (Spanish + English).
-If the regex matches with high confidence → treat as `EXPLICIT_REJECT`. If
-no match but the response is short/ambiguous → optional Groq Haiku call
-returns a structured `is_escalate: bool` decision. The Haiku call is **not**
-a callback — it's an inline await with a short timeout so it doesn't slow
-down the response path noticeably. Both regex and LLM stages are off when
-no escalation chain is attached.
-
-Structured `EscalationEvent`s are emitted on `EventEmitterMixin` for every
-tier transition (`hitl.tier.entered`, `hitl.tier.advanced`,
-`hitl.tier.action_executed`, `hitl.chain.exhausted`). Subscribers register
-through the existing event bus; no new infrastructure.
+- Policies are owned by `HumanInteractionManager._policies: Dict[str, EscalationPolicy]`.
+- `HumanTool` / `HandoffTool` expose `policy_id` to the LLM (already shipped).
+- `HumanDecisionNode` gets a constructor `escalation_policy_id` kwarg
+  to mirror the same contract from flow code.
+- Inside `_escalate_to_next_tier`, the manager picks the next tier from
+  `interaction.policy.tiers`, applies severity floor + business-hours
+  skip, runs the action through a dispatcher keyed on
+  `(action_type, action_metadata["kind"])`, and resolves
+  fire-and-forget for non-`INTERACT` kinds.
 
 ### Component Diagram
 
 ```
+                                ┌─────────────────────────┐
+                                │  Agent author           │
+                                │  manager._policies[id]= │
+                                │     EscalationPolicy(…) │
+                                └────────────┬────────────┘
+                                             │ at startup
+                                             ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Agent(escalation_policy=hr_policy)                                 │
-│     │                                                               │
-│     └── HumanTool(escalation_policy=hr_policy)                      │
-│            │ on _execute:                                           │
-│            │   resolve_chain(severity, now) → List[EscalationTier]  │
-│            │   build HumanInteraction with                          │
-│            │     .escalation_policy_ref, .escalation_chain, .severity│
-│            ▼                                                        │
-│        HumanInteractionManager.request_human_input(interaction)     │
-└──────────────────────────────────────┬──────────────────────────────┘
-                                       │ persist + start L0 tier
-                                       ▼
-            ┌─────────────────────────────────────────────────┐
-            │  _advance_chain loop                            │
-            │   pick next applicable tier                     │
-            │   call tier.action.execute(...)                 │
-            └───────┬────────────────────────┬────────────────┘
-                    │                        │
-         ┌──────────▼──────────┐  ┌──────────▼──────────────┐
-         │ AskAlternateHumans  │  │ OpenTicket / Email /    │
-         │ (RESOLVED via       │  │ LiveChat (ASYNC_HANDLED)│
-         │  HumanChannel reply)│  │  → return confirmation  │
-         └──────────┬──────────┘  │     string immediately  │
-                    │             └─────────────────────────┘
-            on TIMEOUT or
-            EXPLICIT_REJECT
-            (from button or
-             RejectIntentDetector)
-                    │
-                    ▼
-            advance_chain → next tier
-                    │
-            chain exhausted → CANCEL/TIMEOUT
+│  Agent → ask_human(question, severity="high", policy_id="hr")       │
+│        │                                                            │
+│        ▼                                                            │
+│  HumanTool builds HumanInteraction(policy_id, severity, …)          │
+│        │                                                            │
+│        ▼                                                            │
+│  HumanInteractionManager.request_human_input(interaction)           │
+│        │ load policy from _policies[policy_id]                      │
+│        │ attach interaction.policy = <snapshot>                     │
+│        │ start_tier = _select_starting_tier(policy, severity)       │
+│        │ advance to start_tier (skip lower / off-hours)             │
+└────────────────────────────────────┬────────────────────────────────┘
+                                     │
+            ┌────────────────────────┴────────────────────────┐
+            │  _escalate_to_next_tier loop                    │
+            │  cause ∈ {TIMEOUT, EXPLICIT_REJECT,             │
+            │           BUSINESS_HOURS_OFF, ACTION_FAILED}    │
+            │  pick next applicable tier                      │
+            │  emit hitl.tier.entered                         │
+            │  run action via dispatcher                      │
+            │  emit hitl.tier.action_executed | _failed       │
+            └────────┬──────────────────────────┬─────────────┘
+                     │                          │
+        INTERACT tier                  NOTIFY / TICKET tier
+        (re-dispatch, wait)            (run action, resolve)
+                     │                          │
+        on TIMEOUT or REJECT          ASYNC_HANDLED:
+        → advance_to_next             attach action_metadata["message"]
+                                      resolve future immediately
 
-            ─── (in parallel) ───────────────────────────────
-            EventEmitterMixin emits:
-              hitl.tier.entered, hitl.tier.advanced,
-              hitl.tier.action_executed, hitl.chain.exhausted
+         ─── reject paths ──────────────────────────────────────────
+         channel renders "↑ Escalar" ChoiceOption(key="__escalate__")
+            user taps → response.value="__escalate__" → manager
+            intercepts in receive_response → advance_chain(cause=REJECT)
+         channel delivers free-text response
+            → RejectIntentDetector.is_escalation_intent(text)
+              regex pass → True → advance(cause=REJECT)
+              regex ambiguous + Groq Haiku available
+                → inline await (≤1.5s) → if True → advance(cause=REJECT)
+              else → treat as normal response
 ```
 
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `parrot.human.manager.HumanInteractionManager` | modifies | `_escalate` → `_advance_chain` loop + action runner; persists chain to Redis |
-| `parrot.human.models.HumanInteraction` | extends | New fields: `escalation_chain`, `escalation_policy_ref`, `severity`. `escalation_targets` retained as legacy alias |
-| `parrot.human.tool.HumanTool` | extends | New ctor kwarg `escalation_policy`; `HumanToolInput` adds `severity` field |
-| `parrot.human.node.HumanDecisionNode` | extends | Mirrors HumanTool: new ctor kwarg `escalation_policy`; honoured in V1 (per brainstorm decision) |
-| `parrot.human.channels.base.HumanChannel` | extends | New class attr `render_reject_button: bool = False`; standard reject `ChoiceOption` constant |
-| `parrot.human.channels.telegram.TelegramHumanChannel` | extends | Sets `render_reject_button = True`; renders the inline button |
-| `parrot.human.channels.web.WebHumanChannel` | extends | Sets `render_reject_button = True`; renders the equivalent UI affordance |
-| `parrot.human.channels.cli.CLIHumanChannel` | none | Leaves `render_reject_button = False`; intent detector still applies |
-| `parrot.core.tools.handoff.HandoffTool` | refactors | Becomes deprecated alias delegating to `HumanInteractionManager`; `DeprecationWarning` once per process |
-| `parrot.core.exceptions.HumanInteractionInterrupt` | none | `interaction_id` and `policy_id` slots already exist |
-| `parrot.autonomous.orchestrator.AutonomousOrchestrator` | minor | When `interrupt.policy_id` is set, don't re-enter suspend/resume — propagate the tool result directly |
-| `parrot.integrations.manager.IntegrationBotManager` | none in V1 | Manager wiring unchanged |
-| `parrot.handlers.web_hitl` | minor | Route the reject button callback to `manager.advance_chain(interaction_id, cause=REJECT)` |
-| `parrot.tools.abstract.EventEmitterMixin` (FEAT-176) | uses | Emit structured tier-transition events |
-| `parrot.handlers.agents.abstract` SMTP config | reuses | `EmailAction` reads existing `smtp_host`/`smtp_port`/`smtp_host_user`/`smtp_host_password` keys |
+| `parrot.human.manager.HumanInteractionManager` | extends | Add `_select_starting_tier`, public `advance_chain`, dispatcher for action kinds, severity + hours skipping in `_escalate_to_next_tier`; fix action-failure bug |
+| `parrot.human.models.EscalationTier` | extends | Add optional `business_hours: Optional[BusinessHours]`, optional `min_severity: Optional[Severity]` |
+| `parrot.human.models.HumanInteraction` | extends | Add `severity: Optional[Severity]` |
+| `parrot.human.tool.HumanToolInput` | extends | Add `severity` field with constrained `Literal` values |
+| `parrot.human.node.HumanDecisionNode` | extends | New ctor kwarg `escalation_policy_id`, passed through to interaction build |
+| `parrot.human.channels.base.HumanChannel` | extends | Add class attr `render_reject_button: bool = False`; export `ESCALATE_OPTION_KEY = "__escalate__"` constant |
+| `parrot.human.channels.telegram.TelegramHumanChannel` | extends | `render_reject_button = True`; inject reject button in inline keyboard |
+| `parrot.human.channels.web.WebHumanChannel` | extends | `render_reject_button = True`; render equivalent UI affordance |
+| `parrot.human.channels.cli.CLIHumanChannel` | none | Leaves `render_reject_button = False`; reject reachable via intent detector only |
+| `parrot.human.actions.notify.NotifyAction` | rewrites | Replace stub with real dispatch: `kind=email` → `EmailBackend`; `kind=webhook` → `WebhookBackend` |
+| `parrot.human.actions.ticket.TicketAction` | rewrites | Replace stub with real dispatch: `kind=zammad` → `ZammadBackend` |
+| `parrot.core.tools.handoff.HandoffTool` | extends | When manager-registered path succeeds, return manager result string instead of also raising; emit `DeprecationWarning` once per process |
+| `parrot.autonomous.orchestrator.AutonomousOrchestrator` | minor | When `HumanInteractionInterrupt.policy_id` is set AND `interaction_id` is set AND a result for it exists in Redis, propagate the result string instead of suspending |
+| `parrot.tools.abstract.EventEmitterMixin` (FEAT-176) | uses | Manager emits `hitl.tier.*` and `hitl.chain.*` events |
+| `parrot.handlers.web_hitl` | extends | Route `value="__escalate__"` to `manager.advance_chain(interaction_id, cause="reject")` |
+| `parrot.handlers.agents.abstract` SMTP config | reuses | `EmailBackend` reads existing `smtp_host`/`smtp_port`/`smtp_host_user`/`smtp_host_password` |
 
-### Data Models
+### Data Models (delta over shipped baseline)
 
 ```python
-# parrot/human/escalation/models.py (NEW)
+# parrot/human/models.py — EXTEND existing classes (do NOT rename)
 
-class Severity(str, Enum):
+class Severity(str, Enum):                                          # NEW
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
     CRITICAL = "critical"
 
 
-class BusinessHours(BaseModel):
-    tz: str                              # IANA, e.g. "Europe/Madrid"
-    days: str                            # "mon-fri" | "mon-sun" | "mon,wed,fri"
-    hours: str                           # "09:00-18:00"
-
-
-class EscalationTrigger(BaseModel):
-    """Discriminated union via `type` field."""
-    type: Literal[
-        "timeout", "reject", "severity", "business_hours_off"
-    ]
-    # Per-type fields:
-    seconds: Optional[float] = None      # type=timeout
-    min_severity: Optional[Severity] = None  # type=severity
-
-
-class EscalationActionConfig(BaseModel):
-    """Discriminated union via `type` field — defines an action without instantiating it."""
-    type: Literal[
-        "ask_alternate_humans", "open_ticket",
-        "live_chat_handoff", "email"
-    ]
-    # Per-type fields (subset shown):
-    targets: Optional[List[str]] = None
-    platform: Optional[Literal["zammad"]] = None   # open_ticket — V1: zammad only
-    queue: Optional[str] = None                     # open_ticket
-    title_template: Optional[str] = None            # open_ticket
-    webhook_url: Optional[str] = None               # live_chat_handoff
-    to: Optional[List[str]] = None                  # email
-    subject_template: Optional[str] = None          # email
+class BusinessHours(BaseModel):                                     # NEW
+    tz: str                          # IANA, e.g. "Europe/Madrid"
+    days: str                        # "mon-fri" | "mon,wed,fri" | "mon-sun"
+    hours: str                       # "09:00-18:00"
 
 
 class EscalationTier(BaseModel):
-    level: int                                    # 1, 2, 3...
-    label: str                                    # "HR on-call"
-    trigger: EscalationTrigger
-    action: EscalationActionConfig
-    channel: Optional[str] = None                 # channel override
-    business_hours: Optional[BusinessHours] = None
+    # existing fields preserved (level, name, channel_type, target_humans,
+    # timeout, action_type, action_metadata)
+    min_severity: Optional[Severity] = None                          # NEW
+    business_hours: Optional[BusinessHours] = None                   # NEW
 
 
-class EscalationPolicy(BaseModel):
-    id: str                                       # stable identifier, used in logs/audit
-    tiers: List[EscalationTier]                   # must be non-empty; validator enforces
-
-    def resolve_chain(
-        self, severity: Severity, now: datetime,
-    ) -> List[EscalationTier]:
-        """Return the ordered applicable tiers, skipping severity-floored
-        and off-hours ones. Pure function — easy to unit-test."""
-
-
-class EscalationOutcome(BaseModel):
-    """Returned by EscalationAction.execute."""
-    status: Literal["resolved", "async_handled", "failed"]
-    value: Any = None                             # human answer (resolved) or confirmation string (async_handled)
-    reason: Optional[str] = None                  # failed reason
-
-# parrot/human/models.py — EXTENDED fields on existing HumanInteraction:
 class HumanInteraction(BaseModel):
-    # ... existing fields unchanged ...
-    severity: Optional[Severity] = None                          # NEW
-    escalation_policy_ref: Optional[str] = None                  # NEW — policy.id
-    escalation_chain: Optional[List[EscalationTier]] = None      # NEW — resolved snapshot
-    current_tier_level: Optional[int] = None                     # NEW — runtime cursor
-    # escalation_targets: Optional[List[str]] kept as legacy alias;
-    #   auto-converted to a single AskAlternateHumansAction tier when set.
+    # existing fields preserved
+    severity: Severity = Severity.NORMAL                             # NEW
 ```
 
-### New Public Interfaces
+`EscalationActionType` and `EscalationPolicy` stay byte-identical to
+what is committed. The `action_metadata` payload schema is formalised
+per kind:
 
 ```python
-# parrot/human/escalation/actions/base.py (NEW)
-class EscalationAction(ABC):
-    """Pluggable strategy: do something with an interaction at a given tier."""
-    @abstractmethod
-    async def execute(
+# Documented action_metadata schemas (validated at action-dispatch time)
+NotifyAction.kind == "email":     {"kind": "email", "to": List[str], "subject_template": str}
+NotifyAction.kind == "webhook":   {"kind": "webhook", "url": str}
+TicketAction.kind  == "zammad":   {"kind": "zammad", "queue": str, "title_template": str}
+```
+
+### New / Extended Public Interfaces
+
+```python
+# parrot/human/manager.py — NEW PUBLIC METHOD
+class HumanInteractionManager:
+    async def advance_chain(
         self,
-        interaction: "HumanInteraction",
-        tier: "EscalationTier",
-        ctx: "EscalationContext",
-    ) -> EscalationOutcome: ...
+        interaction_id: str,
+        cause: Literal[
+            "timeout", "reject", "business_hours_off", "action_failed"
+        ],
+    ) -> None:
+        """Public entry point for channels (reject button) and tests."""
 
 
-# parrot/human/escalation/intent.py (NEW)
-class RejectIntentDetector:
-    def __init__(
-        self,
-        regex_phrases: Optional[List[str]] = None,
-        llm_client: Optional["AbstractClient"] = None,
-        llm_timeout_seconds: float = 1.5,
-    ) -> None: ...
-    async def is_escalation_intent(self, text: str) -> bool: ...
-
-
-# parrot/human/tool.py — extended ctor
-class HumanTool(AbstractTool):
-    def __init__(
-        self,
-        manager: Any = None,
-        *,
-        default_channel: str = "telegram",
-        default_targets: Optional[List[str]] = None,
-        source_agent: Optional[str] = None,
-        escalation_policy: Optional["EscalationPolicy"] = None,   # NEW
-        **kwargs: Any,
-    ) -> None: ...
-
-
-# parrot/human/node.py — extended ctor
+# parrot/human/node.py — EXTENDED ctor
 class HumanDecisionNode:
     def __init__(
         self,
@@ -369,384 +284,552 @@ class HumanDecisionNode:
         consensus_mode: "ConsensusMode" = ConsensusMode.FIRST_RESPONSE,
         source_agent: Optional[str] = None,
         source_flow: Optional[str] = None,
-        escalation_policy: Optional["EscalationPolicy"] = None,   # NEW
+        escalation_policy_id: Optional[str] = None,                   # NEW
+        severity: Severity = Severity.NORMAL,                         # NEW
     ) -> None: ...
 
 
-# parrot/human/manager.py — new public method
-class HumanInteractionManager:
-    async def advance_chain(
+# parrot/human/actions/backends/ (NEW submodule)
+class ActionBackend(ABC):
+    @abstractmethod
+    async def execute(
         self,
-        interaction_id: str,
-        cause: Literal["timeout", "reject", "severity", "business_hours_off", "action_failed"],
-    ) -> None:
-        """Public entry point for channels to trigger explicit escalation."""
+        interaction: HumanInteraction,
+        tier: EscalationTier,
+    ) -> Dict[str, Any]:
+        """Concrete backend (Email/Zammad/Webhook) returns metadata dict
+        with at minimum {'message': '<string to send to LLM>'}."""
+
+
+# parrot/human/escalation_intent.py (NEW)
+class RejectIntentDetector:
+    def __init__(
+        self,
+        regex_phrases: Optional[List[str]] = None,
+        llm_client: Optional["AbstractClient"] = None,
+        llm_timeout_seconds: float = 1.5,
+    ) -> None: ...
+    async def is_escalation_intent(self, text: str) -> bool: ...
 ```
 
 ---
 
 ## 3. Module Breakdown
 
-> Each module below maps to one or more Task Artifacts in Phase 2.
+> Modules below are split into **(B) baseline already shipped** and
+> **(C) completion work** for this spec. (B) modules are listed for
+> context and reference; tasks should be created only for (C).
 
-### Module 1: Escalation data models
+### (B) Baseline — already shipped in commit `afe70e82`
 
-- **Path**: `parrot/human/escalation/models.py`
-- **Responsibility**: Pydantic models for `Severity`, `BusinessHours`,
-  `EscalationTrigger`, `EscalationActionConfig`, `EscalationTier`,
-  `EscalationPolicy`, `EscalationOutcome`, plus `EscalationPolicy.resolve_chain`.
-- **Depends on**: stdlib `datetime`, `zoneinfo` (with `pytz` fallback for
-  Windows), `pydantic` ≥ 2.
+These modules exist today and are NOT to be re-created. Tasks may
+*touch* them as marked in (C).
 
-### Module 2: Escalation action port + foundation tier
+- **B1**. `parrot/human/models.py` — `EscalationActionType`,
+  `EscalationTier`, `EscalationPolicy`, `HumanInteraction.policy_id`,
+  `HumanInteraction.policy`, `HumanInteraction.current_tier_level`,
+  payload validators.
+- **B2**. `parrot/human/actions/base.py` — `EscalationAction` ABC.
+- **B3**. `parrot/human/actions/notify.py` + `ticket.py` — **stub**
+  implementations (to be replaced by C4).
+- **B4**. `parrot/human/manager.py` — `_policies` registry, `_actions`
+  dispatcher, `_escalate_to_next_tier` loop, fire-and-forget resolution,
+  `asyncio.Lock` for Redis init, legacy `_escalate` fallback.
+- **B5**. `parrot/human/tool.py` — `HumanToolInput.policy_id`,
+  `_resolve_channel`, `_parse_options`, structured error returns.
+- **B6**. `parrot/core/tools/handoff.py` — `policy_id` plumbing,
+  `manager.request_human_input_async` registration (dual-path).
+- **B7**. `parrot/core/exceptions.py` — `HumanInteractionInterrupt`
+  with `interaction_id` + `policy_id` slots.
 
-- **Path**: `parrot/human/escalation/actions/base.py` and
-  `parrot/human/escalation/actions/ask_alternate_humans.py`.
-- **Responsibility**: `EscalationAction` ABC + `EscalationContext`
-  dataclass. `AskAlternateHumansAction` is the V1 refactor of the current
-  `_escalate` behaviour — re-emits the interaction to alternate targets via
-  the manager.
-- **Depends on**: Module 1.
+### (C) Completion modules — this spec's delta
 
-### Module 3: HumanInteraction model extension + Redis schema
+#### C1: Severity + BusinessHours model + starting-tier logic
 
-- **Path**: `parrot/human/models.py`
-- **Responsibility**: Add `severity`, `escalation_policy_ref`,
-  `escalation_chain`, `current_tier_level` fields. Add an auto-conversion
-  validator so legacy `escalation_targets` becomes a one-tier
-  `AskAlternateHumansAction` chain.
-- **Depends on**: Module 1, Module 2.
+- **Path**: `parrot/human/models.py` (extends B1).
+- **Responsibility**: Add `Severity` enum, `BusinessHours` model,
+  `EscalationTier.min_severity`, `EscalationTier.business_hours`,
+  `HumanInteraction.severity`. Add `EscalationPolicy.select_starting_tier(
+  severity, now)` helper as a pure method on the model (no I/O).
+- **Depends on**: B1.
 
-### Module 4: Manager refactor — `_advance_chain` loop + `advance_chain` public API
+#### C2: Action backends (real implementations)
 
-- **Path**: `parrot/human/manager.py`
-- **Responsibility**: Rename `_escalate` to `_advance_chain`. Add tier
-  selection logic, action invocation, outcome handling, public
-  `advance_chain` method for channel-driven escalation. Preserve
-  consensus, timeout, and ownership-validation semantics for tiers whose
-  action is `AskAlternateHumansAction`. Persist the active chain + cursor
-  to Redis with each transition.
-- **Depends on**: Modules 1, 2, 3.
+- **Path**: `parrot/human/actions/backends/{email,zammad,webhook}.py` (new submodule).
+- **Responsibility**:
+  - `EmailBackend(ActionBackend)` — `aiosmtplib` send using existing
+    SMTP config keys; renders `subject_template` / body from
+    `interaction.question` + `interaction.context`. Returns
+    `{"message": "[escalated:email] Notified <to>.", "to": [...], "status": "sent"}`.
+  - `ZammadBackend(ActionBackend)` — `aiohttp` POST to
+    `{base_url}/api/v1/tickets` with `Authorization: Token token=…`.
+    Returns `{"message": "[escalated:ticket:zammad] Ticket {n} opened.", "ticket_id": ..., "url": ...}`.
+  - `WebhookBackend(ActionBackend)` — generic POST of
+    `{interaction_id, question, severity, user_id}`; expects
+    `{deep_link: str}` back; returns `{"message": "[escalated:live_chat] {deep_link}", "deep_link": ...}`.
+  - Each backend raises a typed exception on failure; caller maps to
+    `EscalationActionFailed`.
+- **Depends on**: C1 (for `Severity` in payloads). `aiosmtplib`, `aiohttp`.
 
-### Module 5: `OpenTicketAction` + Zammad async REST client
+#### C3: NotifyAction / TicketAction rewrites — dispatcher pattern
 
-- **Path**: `parrot/human/escalation/actions/open_ticket.py` and
-  `parrot/clients/zammad.py`.
-- **Responsibility**: Zammad REST adapter (auth via token, create-ticket
-  API). `OpenTicketAction` formats `title_template` / `body` from the
-  interaction, calls the client, returns
-  `EscalationOutcome.async_handled(f"[escalated:ticket:zammad] Ticket {n} opened.")`.
-- **Depends on**: Module 1, Module 2 (port). `aiohttp` (existing).
+- **Path**: `parrot/human/actions/notify.py`, `parrot/human/actions/ticket.py`
+  (replace B3 stub bodies).
+- **Responsibility**: Each action reads `tier.action_metadata["kind"]`
+  and dispatches to the corresponding `ActionBackend`:
+  - `NotifyAction` knows about `kind ∈ {"email", "webhook"}`.
+  - `TicketAction` knows about `kind ∈ {"zammad"}` (extension hook for
+    future `"zendesk"`).
+- **Backwards compat**: when `action_metadata["kind"]` is missing, fall
+  back to the historical `channel="email"` / `platform="zammad"`
+  defaults so the example doc in
+  `documentation/hitl_tiered_escalation_example.md` keeps working
+  unchanged.
+- **Depends on**: B2, B3, C2.
 
-### Module 6: `EmailAction`
+#### C4: Manager — action-failure fix + advance_chain public + severity/hours selection
 
-- **Path**: `parrot/human/escalation/actions/email.py`
-- **Responsibility**: aiosmtplib-backed async email sender. Reads existing
-  SMTP config keys (`smtp_host`, `smtp_port`, `smtp_host_user`,
-  `smtp_host_password`) from the agent/integration config. Formats
-  `subject_template` / body, sends, returns
-  `EscalationOutcome.async_handled(...)`.
-- **Depends on**: Module 1, Module 2 (port). `aiosmtplib` ≥ 3.0.
+- **Path**: `parrot/human/manager.py` (extends B4).
+- **Responsibility**:
+  1. In `_escalate_to_next_tier`: when `action.execute()` raises, do
+     NOT silently set `action_metadata = {}` and continue. Instead emit
+     `hitl.tier.action_failed` and call
+     `await self._escalate_to_next_tier(interaction, channel)` again
+     (advance to next tier). If the chain is exhausted while every tier
+     keeps failing, terminate via `_finish_with_timeout`.
+  2. Add `_select_starting_tier(policy, severity, now)` — returns the
+     first tier whose `min_severity` ≤ requested AND whose
+     `business_hours` includes `now` (or has no window).
+  3. Add public `async advance_chain(interaction_id, cause)` — invoked
+     by channels (reject button) and by the integration handler.
+  4. When advancing for `cause="business_hours_off"`, skip the current
+     tier without dispatching its action.
+  5. When `interaction.policy` is set in `request_human_input`, call
+     `_select_starting_tier` and set `current_tier_level` accordingly
+     BEFORE dispatching to channel.
+- **Depends on**: B4, C1, C7 (events).
 
-### Module 7: `LiveChatHandoffAction` (generic webhook)
+#### C5: RejectIntentDetector
 
-- **Path**: `parrot/human/escalation/actions/live_chat.py`
-- **Responsibility**: POST a JSON payload (interaction_id, question,
-  user_id, severity) to a configured `webhook_url`. Expects the webhook to
-  return a `deep_link` string. Returns
-  `EscalationOutcome.async_handled(f"[escalated:live_chat] {deep_link}")`.
-- **Depends on**: Module 1, Module 2 (port). `aiohttp` (existing).
+- **Path**: `parrot/human/escalation_intent.py` (new).
+- **Responsibility**: Hand-tuned regex of canned phrases (Spanish +
+  English seed sets, ≥ 8 each). Optional Groq Haiku client used inline
+  via `asyncio.wait_for(..., timeout=llm_timeout_seconds)` when regex
+  is ambiguous. Returns `bool`. Pure helper; the manager calls it from
+  `receive_response` before the normal accumulation path. **NOT a
+  callback** — synchronous inline await.
+- **Depends on**: optional `parrot.clients.groq`.
 
-### Module 8: `RejectIntentDetector`
-
-- **Path**: `parrot/human/escalation/intent.py`
-- **Responsibility**: Regex stage with a curated Spanish + English phrase
-  list (e.g., "pasame con un humano", "I need a human", "escalate me").
-  Optional Groq Haiku stage when the regex is ambiguous and a client is
-  configured. Returns `bool`. **Not a callback** — synchronous inline
-  await with a short timeout (default 1.5s).
-- **Depends on**: `parrot.clients.groq` (optional).
-
-### Module 9: `HumanChannel` reject-button hook + Telegram/Web implementations
+#### C6: Channel reject-button hook + Telegram/Web rendering
 
 - **Path**: `parrot/human/channels/base.py`,
-  `parrot/human/channels/telegram.py`, `parrot/human/channels/web.py`
-- **Responsibility**: Add `render_reject_button: bool = False` class attr
-  on `HumanChannel`. Define module-level constant
-  `ESCALATE_OPTION = ChoiceOption(key="__escalate__", label="↑ Escalar")`.
-  Telegram and Web channels set `render_reject_button = True` and inject
-  `ESCALATE_OPTION` into every rendered interaction. CLI is unchanged.
-- **Depends on**: Module 1 (key constant).
+  `parrot/human/channels/telegram.py`, `parrot/human/channels/web.py`.
+- **Responsibility**: Add class attr `render_reject_button: bool = False`
+  to `HumanChannel`. Export module-level constant
+  `ESCALATE_OPTION_KEY = "__escalate__"`. Telegram + Web channels set
+  `render_reject_button = True` and append the reject button to every
+  rendered interaction. The manager intercepts responses whose value
+  equals `ESCALATE_OPTION_KEY` in `receive_response` and routes them to
+  `advance_chain(cause="reject")` instead of accumulating.
+- **Depends on**: C4 (`advance_chain`).
 
-### Module 10: Web HITL handler — reject callback route
+#### C7: Structured tier-transition events
 
-- **Path**: `parrot/handlers/web_hitl.py`
-- **Responsibility**: When a response comes in with value `"__escalate__"`,
-  call `manager.advance_chain(interaction_id, cause="reject")` instead of
-  the normal `receive_response` flow.
-- **Depends on**: Module 4, Module 9.
+- **Path**: `parrot/human/events.py` (new) + emission sites in C4.
+- **Responsibility**: Pydantic models for `HitlTierEnteredEvent`,
+  `HitlTierAdvancedEvent`, `HitlTierActionExecutedEvent`,
+  `HitlTierActionFailedEvent`, `HitlChainExhaustedEvent`. Common
+  payload fields: `interaction_id`, `policy_id`, `tier_level`,
+  `cause`, `timestamp`. Manager emits via `EventEmitterMixin.emit` (or
+  the equivalent it gains by inheriting from `EventEmitterMixin` if it
+  doesn't already). If the manager cannot inherit from the mixin
+  without breaking, expose an `on_event: Optional[Callable]` hook on
+  the manager that the integration layer wires.
+- **Depends on**: B4, C4, `parrot.tools.abstract.EventEmitterMixin`
+  (verify inheritance path during implementation).
 
-### Module 11: `HumanTool` + `HumanDecisionNode` policy injection + severity input
+#### C8: HumanDecisionNode policy + severity kwargs
 
-- **Path**: `parrot/human/tool.py`, `parrot/human/node.py`
-- **Responsibility**: Add `escalation_policy` ctor kwarg to both. Add
-  `severity` field to `HumanToolInput`. On `_execute`, both call
-  `policy.resolve_chain(severity, now)` and attach the result to the
-  `HumanInteraction`. Tool description is updated to teach the LLM about
-  `severity`.
-- **Depends on**: Module 1, Module 3.
+- **Path**: `parrot/human/node.py`.
+- **Responsibility**: Add `escalation_policy_id` and `severity` ctor
+  kwargs; thread them through into the built `HumanInteraction`. Update
+  docstring and example in `documentation/hitl_tiered_escalation_example.md`.
+- **Depends on**: C1.
 
-### Module 12: `HandoffTool` deprecation alias
+#### C9: HumanTool severity input
 
-- **Path**: `parrot/core/tools/handoff.py`
-- **Responsibility**: Rewrite `_execute` / `_aexecute` to build a
-  `HumanInteraction` with `target_humans=["__current_user__"]`,
-  `escalation_policy=None`, and dispatch via the process-wide
-  `HumanInteractionManager` (`get_default_human_manager()`). Emit
-  `DeprecationWarning` once per process. Existing callers
-  (`parrot/agents/demo.py:194`) continue working.
-- **Depends on**: Module 4.
+- **Path**: `parrot/human/tool.py`.
+- **Responsibility**: Add `severity: str = Field(default="normal", ...)`
+  to `HumanToolInput` with constrained values via `Literal`. Convert to
+  `Severity` enum in `_execute` and set
+  `interaction.severity = severity_enum`. Update tool description so
+  the LLM learns when to use `high`/`critical`.
+- **Depends on**: C1.
 
-### Module 13: Orchestrator policy-aware interrupt handling
+#### C10: HandoffTool dedup + DeprecationWarning
 
-- **Path**: `parrot/autonomous/orchestrator.py`
-- **Responsibility**: When a caught `HumanInteractionInterrupt` carries a
-  non-null `policy_id`, treat as already-handled: do NOT re-enter
-  suspend/resume — propagate the tool's return value to the LLM. Legacy
-  (null `policy_id`) path is unchanged.
-- **Depends on**: Module 4.
+- **Path**: `parrot/core/tools/handoff.py` (extends B6).
+- **Responsibility**:
+  1. When the manager registration succeeds AND the registered
+     interaction resolves before the interrupt is raised (e.g., the
+     starting tier is non-`INTERACT` so the manager resolves
+     immediately), return the manager's result string and do NOT raise
+     `HumanInteractionInterrupt`.
+  2. When the manager registration fails (no manager configured), keep
+     the legacy `raise HumanInteractionInterrupt(prompt=prompt)` path
+     unchanged.
+  3. Emit `DeprecationWarning` once per process on first instantiation
+     of `HandoffTool`, pointing users to
+     `HumanTool(..., policy_id="...")`.
+- **Depends on**: B4, B6.
 
-### Module 14: Structured escalation events
+#### C11: Orchestrator policy-id branch hardening
 
-- **Path**: `parrot/human/escalation/events.py`
-- **Responsibility**: Define `EscalationEvent` Pydantic models for
-  `hitl.tier.entered`, `hitl.tier.advanced`, `hitl.tier.action_executed`,
-  `hitl.chain.exhausted`. Wire emission from inside `_advance_chain`
-  using `EventEmitterMixin`.
-- **Depends on**: Module 4. `parrot.tools.abstract.EventEmitterMixin`
-  (FEAT-176).
+- **Path**: `parrot/autonomous/orchestrator.py`.
+- **Responsibility**: In the catch block at orchestrator.py:541-564
+  (and the mirror at 824), when `interrupt.policy_id` is set AND
+  `interrupt.interaction_id` is set, before re-entering suspend/resume,
+  call `await manager.get_result(interaction_id)` once. If a result
+  exists, propagate its `consolidated_value` /
+  `action_metadata["message"]` to the LLM and skip suspension. If not,
+  legacy suspend path runs.
+- **Depends on**: C10.
+
+#### C12: Web HITL reject route
+
+- **Path**: `parrot/handlers/web_hitl.py`.
+- **Responsibility**: When a response payload arrives with
+  `value="__escalate__"`, call `manager.advance_chain(interaction_id, cause="reject")`
+  instead of `manager.receive_response(...)`. Same authorisation check
+  (`is_valid_respondent`) applies.
+- **Depends on**: C4, C6.
+
+#### C13: Documentation update
+
+- **Path**: `documentation/hitl_tiered_escalation_example.md`.
+- **Responsibility**: Expand with examples for `severity`,
+  `business_hours`, the reject button, and the real action kinds
+  (`kind=email|webhook|zammad`). Note the `HandoffTool` deprecation.
+- **Depends on**: C1, C2, C3, C5, C6, C9, C10.
 
 ---
 
 ## 4. Test Specification
 
-### Unit Tests
+### Unit Tests (new — for C1–C13)
 
 | Test | Module | Description |
 |---|---|---|
-| `test_escalation_policy_resolve_chain_severity_floor` | 1 | `severity=critical` skips L0/L1 tiers |
-| `test_escalation_policy_resolve_chain_business_hours_off` | 1 | Off-hours tiers are skipped at chain build time |
-| `test_escalation_policy_empty_tiers_rejected` | 1 | Constructing a policy with zero tiers raises |
-| `test_business_hours_boundary_at_tier_entry` | 1 | Boundary is evaluated at tier-entry time, not mid-flight |
-| `test_ask_alternate_humans_action_resolved_outcome` | 2 | Returns `RESOLVED(value)` when a human replies |
-| `test_human_interaction_legacy_escalation_targets_auto_converted` | 3 | Setting `escalation_targets=["x"]` produces a one-tier chain |
-| `test_advance_chain_picks_next_applicable_tier` | 4 | Cursor moves forward correctly on timeout |
-| `test_advance_chain_skips_off_hours_tier_at_runtime` | 4 | Off-hours re-evaluation at advance time |
-| `test_advance_chain_exhausted_falls_back_to_cancel_or_default` | 4 | Terminal state when chain runs out |
-| `test_advance_chain_action_failed_advances_to_next_tier` | 4 | `FAILED` outcome triggers next tier |
-| `test_open_ticket_action_zammad_success_returns_async_handled` | 5 | Returns confirmation with ticket number |
-| `test_open_ticket_action_zammad_http_failure_returns_failed` | 5 | HTTP failure → `FAILED`, next tier picked |
-| `test_email_action_smtp_send_returns_async_handled` | 6 | Mocked aiosmtplib send returns confirmation |
-| `test_email_action_smtp_failure_returns_failed` | 6 | SMTP refusal → `FAILED` |
-| `test_live_chat_handoff_webhook_returns_deep_link` | 7 | Webhook returns link, action returns confirmation |
-| `test_reject_intent_detector_regex_match_es` | 8 | "pasame con un humano" → True |
-| `test_reject_intent_detector_regex_match_en` | 8 | "I need a human" → True |
-| `test_reject_intent_detector_llm_fallback_on_ambiguous` | 8 | Mocked Groq Haiku response is honoured |
-| `test_reject_intent_detector_llm_timeout_returns_false` | 8 | LLM timeout doesn't escalate |
-| `test_telegram_channel_renders_reject_button` | 9 | Inline keyboard contains `__escalate__` option |
-| `test_cli_channel_does_not_render_reject_button` | 9 | Reject option absent on CLI |
-| `test_web_hitl_reject_callback_routes_to_advance_chain` | 10 | `value="__escalate__"` triggers escalation |
-| `test_human_tool_severity_routes_to_starting_tier` | 11 | `severity="critical"` skips lower tiers |
-| `test_human_decision_node_with_escalation_policy` | 11 | Node honours policy at flow time |
-| `test_handoff_tool_emits_deprecation_warning_once` | 12 | `DeprecationWarning` fires exactly once per process |
-| `test_handoff_tool_delegates_to_manager` | 12 | Old behaviour reproduced via new path |
-| `test_orchestrator_skips_suspend_for_policy_handled_interrupt` | 13 | `policy_id` set → no suspend/resume |
-| `test_escalation_event_emitted_on_tier_advance` | 14 | Event with correct payload observed on the bus |
+| `test_severity_enum_ordering` | C1 | `LOW < NORMAL < HIGH < CRITICAL` for comparisons |
+| `test_business_hours_includes_now` | C1 | TZ-correct boundary at 9:00 / 17:59 / 18:00 / 18:01 |
+| `test_policy_select_starting_tier_severity_floor` | C1 | `severity=critical` returns first tier with `min_severity<=critical` |
+| `test_policy_select_starting_tier_skips_off_hours` | C1 | Off-hours tier at start time is skipped |
+| `test_email_backend_aiosmtplib_send_returns_message` | C2 | Mocked SMTP returns confirmation containing recipients |
+| `test_email_backend_smtp_failure_raises_typed_exception` | C2 | SMTP error → typed exception |
+| `test_zammad_backend_create_ticket_returns_id_and_url` | C2 | Mocked Zammad REST returns ticket id + url in message |
+| `test_zammad_backend_http_failure_raises_typed_exception` | C2 | Non-2xx → typed exception |
+| `test_webhook_backend_posts_payload_returns_deep_link` | C2 | Mocked webhook returns deep_link in message |
+| `test_notify_action_dispatches_to_email_backend` | C3 | `kind=email` routes correctly |
+| `test_notify_action_dispatches_to_webhook_backend` | C3 | `kind=webhook` routes correctly |
+| `test_notify_action_legacy_no_kind_falls_back_to_email` | C3 | Back-compat with shipped example doc |
+| `test_ticket_action_dispatches_to_zammad_backend` | C3 | `kind=zammad` routes correctly |
+| `test_advance_chain_on_action_failed_advances_to_next_tier` | C4 | Failure no longer silently continues |
+| `test_advance_chain_on_action_failed_chain_exhausted_terminates` | C4 | All tiers fail → terminal `TIMEOUT`/`CANCEL` |
+| `test_advance_chain_public_method_routes_by_cause` | C4 | Reject cause vs timeout cause produce same advance |
+| `test_select_starting_tier_called_on_request_human_input` | C4 | Severity-driven starting tier picked before dispatch |
+| `test_advance_chain_skips_off_hours_at_runtime` | C4 | Re-evaluation at advance time, not just chain build |
+| `test_reject_intent_detector_regex_match_es` | C5 | "pasame con un humano" / "necesito un humano" → True |
+| `test_reject_intent_detector_regex_match_en` | C5 | "I need a human" / "please escalate" → True |
+| `test_reject_intent_detector_negative_cases` | C5 | "thanks" / "ok" / unrelated free-text → False |
+| `test_reject_intent_detector_llm_fallback_on_ambiguous` | C5 | Mocked Groq Haiku response is honoured |
+| `test_reject_intent_detector_llm_timeout_returns_false` | C5 | `asyncio.wait_for` timeout → False, no exception |
+| `test_telegram_channel_renders_escalate_option` | C6 | Inline keyboard contains `__escalate__` key |
+| `test_web_channel_renders_escalate_option` | C6 | Web UI affordance present |
+| `test_cli_channel_does_not_render_escalate_option` | C6 | Reject button absent in CLI |
+| `test_manager_intercepts_escalate_value_in_receive_response` | C6 | Value `"__escalate__"` routes to `advance_chain` not `accumulate` |
+| `test_events_emitted_on_tier_entered` | C7 | Event observed with correct payload |
+| `test_events_emitted_on_action_executed_and_failed` | C7 | Separate event types for success / failure |
+| `test_events_emitted_on_chain_exhausted` | C7 | Terminal event fires once |
+| `test_decision_node_propagates_policy_id_and_severity` | C8 | Built interaction carries both |
+| `test_human_tool_severity_input_sets_interaction_severity` | C9 | `severity="critical"` propagated to manager |
+| `test_human_tool_severity_invalid_returns_actionable_error` | C9 | Bad value → structured LLM error |
+| `test_handoff_tool_emits_deprecation_warning_once` | C10 | `warnings.simplefilter('always')` catches one warning per process |
+| `test_handoff_tool_returns_manager_result_when_async_resolved` | C10 | When non-INTERACT tier resolves immediately, no interrupt is raised |
+| `test_handoff_tool_falls_back_to_interrupt_with_no_manager` | C10 | Legacy path unchanged |
+| `test_orchestrator_consumes_existing_result_without_suspending` | C11 | Result-in-Redis short-circuit |
+| `test_web_hitl_routes_escalate_value_to_advance_chain` | C12 | End-to-end reject button |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_e2e_telegram_tier_chain_timeout_to_ticket` | L1 (Telegram) times out → L2 opens Zammad ticket → tool returns confirmation string to LLM |
-| `test_e2e_web_reject_button_advances_to_email_tier` | Web user taps "↑ Escalar" → L3 email is sent → agent receives confirmation |
-| `test_e2e_severity_critical_skips_to_l3_email` | Agent calls `ask_human(severity="critical")` → manager picks L3 email directly |
-| `test_e2e_handoff_tool_legacy_callsite_still_works` | Existing `HandoffTool` callsite from `parrot/agents/demo.py` works end-to-end with only a deprecation warning |
-| `test_e2e_chain_exhaustion_returns_cancel_message` | All tiers fail / time out → final return is the documented "no human available" string |
-| `test_e2e_redis_persistence_chain_survives_manager_restart` | Kill manager mid-flight; restart; advance_chain on the surviving interaction succeeds |
+| `test_e2e_telegram_tier_timeout_to_zammad_ticket` | L1 Telegram interactive times out → L2 Zammad ticket via real REST stub → LLM gets confirmation |
+| `test_e2e_web_reject_button_advances_to_email_tier` | Web user taps reject → next tier sends email via aiosmtplib stub → LLM gets confirmation |
+| `test_e2e_severity_critical_skips_lower_tiers` | `ask_human(severity="critical")` → manager starts at first tier with `min_severity<=critical` |
+| `test_e2e_business_hours_off_skips_tier` | Frozen-clock fixture at 22:00 outside L1 hours → manager skips L1 directly to L2 |
+| `test_e2e_handoff_tool_with_policy_id_unifies_path` | `HandoffTool(prompt, policy_id=...)` against a non-INTERACT starting tier → no suspend, returns confirmation string |
+| `test_e2e_handoff_tool_legacy_no_manager_still_suspends` | Old behaviour preserved when manager is None |
+| `test_e2e_chain_all_tiers_action_fails_terminates_cleanly` | Two non-INTERACT tiers both fail → terminal CANCEL/TIMEOUT |
+| `test_e2e_events_bus_records_full_chain` | All `hitl.tier.*` events observed in order |
 
 ### Test Data / Fixtures
 
 ```python
 # tests/human/escalation/conftest.py — new fixtures
 @pytest.fixture
-def hr_policy() -> EscalationPolicy:
-    """3-tier HR policy: L1 alternate humans, L2 Zammad ticket, L3 email."""
+def critical_support_policy() -> EscalationPolicy:
+    """3-tier mirror of the example doc, but with real action kinds."""
 
 @pytest.fixture
-def mock_zammad_server(aiohttp_server):
-    """Stub Zammad REST endpoint returning {ticket_id: 'TKT-123'}."""
+def frozen_business_hours_clock(monkeypatch):
+    """Patch datetime.now used by select_starting_tier."""
+
+@pytest.fixture
+async def mock_zammad_server(aiohttp_server):
+    """Stub Zammad REST that returns a deterministic ticket id."""
 
 @pytest.fixture
 def mock_smtp_server():
-    """In-memory aiosmtplib server."""
+    """In-memory aiosmtplib server / asyncmock for send."""
 
 @pytest.fixture
 def mock_groq_haiku_client():
-    """Stub AbstractClient that returns structured {is_escalate: bool}."""
+    """Stub AbstractClient returning {is_escalate: bool}."""
+
+@pytest.fixture
+def telegram_channel_capture():
+    """Captures rendered inline keyboards from TelegramHumanChannel."""
 ```
 
 ---
 
 ## 5. Acceptance Criteria
 
-> This feature is complete when ALL of the following are true:
+> Baseline checkboxes that are already satisfied by `afe70e82` are
+> pre-checked; completion criteria for this spec are unchecked.
 
-- [ ] All unit tests in §4 pass (`pytest packages/ai-parrot/tests/human/escalation/ -v`).
+### Baseline (verified at HEAD; preserved by C-work)
+
+- [x] `EscalationPolicy`, `EscalationTier`, `EscalationActionType` exist
+  and are exported from `parrot.human.models`.
+- [x] `HumanInteractionManager._policies` registry accepts policies by
+  `policy_id`.
+- [x] `_escalate_to_next_tier` advances `current_tier_level` and
+  dispatches via the `_actions[EscalationActionType]` map.
+- [x] Non-`INTERACT` tiers resolve fire-and-forget with
+  `action_metadata["message"]` propagated to the LLM.
+- [x] Legacy `escalation_targets` keeps working via the fallback path
+  in `_handle_timeout`.
+- [x] `HumanTool` exposes `policy_id` in its input schema.
+- [x] `HandoffTool` accepts `policy_id` and forwards it.
+- [x] `HumanInteractionInterrupt.policy_id` slot is consumed.
+- [x] `EscalationPolicy` validator rejects non-contiguous tier levels.
+
+### Completion (this spec)
+
+- [ ] All unit tests in §4 (C1–C13) pass.
 - [ ] All integration tests in §4 pass.
-- [ ] `HandoffTool` continues to work with zero callsite changes (verified
-  by re-running existing `tests/core/tools/test_handoff_tool.py` and
-  `tests/agents/test_demo.py` without modification).
-- [ ] Legacy `escalation_targets: List[str]` field continues to work; an
-  existing `HumanInteraction(escalation_targets=[...])` payload from before
-  this feature still escalates correctly.
-- [ ] `EscalationPolicy` with zero tiers raises at construction (Pydantic
-  validator).
-- [ ] `severity="critical"` on `ask_human` causes the manager to skip lower
-  tiers per the policy's severity floors.
-- [ ] Tier with `business_hours` set is skipped when `now` falls outside
-  the window at the moment of entry.
-- [ ] `OpenTicketAction` against a stub Zammad server returns a
-  confirmation string containing the ticket id.
-- [ ] `EmailAction` against an in-memory SMTP server returns a confirmation
-  string and the email body contains the original `interaction.question`.
-- [ ] `LiveChatHandoffAction` POSTs to the configured webhook with the
-  documented payload shape and returns the deep-link in the confirmation.
-- [ ] Telegram channel renders the "↑ Escalar" inline button on every
-  interaction; tapping it advances the chain.
-- [ ] Web channel renders the equivalent affordance and routes through
-  `advance_chain`.
-- [ ] CLI channel is unaffected and continues to render only the
-  interaction's own options.
-- [ ] `RejectIntentDetector` returns `True` for at least 8 canned phrases
-  (4 Spanish + 4 English) and `False` for clearly unrelated free-text.
-- [ ] LLM-fallback path of `RejectIntentDetector` honours its
-  `llm_timeout_seconds` and returns `False` on timeout (does not block the
-  response).
-- [ ] `HumanInteractionInterrupt` raised inside an escalation-enabled tool
-  does NOT cause the orchestrator to suspend the agent (verified by
-  asserting no suspend/resume entries in the orchestrator history).
-- [ ] Structured events (`hitl.tier.entered`, `hitl.tier.advanced`,
-  `hitl.tier.action_executed`, `hitl.chain.exhausted`) are emitted on the
-  `EventEmitterMixin` bus with the documented payload shape.
-- [ ] `DeprecationWarning` is emitted exactly once per process when
-  `HandoffTool` is instantiated.
-- [ ] No new external dependency is added other than `aiosmtplib`
-  (Zammad / live-chat / events use `aiohttp` / stdlib / existing
-  `EventEmitterMixin`).
-- [ ] `ruff check packages/ai-parrot/src/parrot/human/escalation/` passes.
-- [ ] `mypy packages/ai-parrot/src/parrot/human/escalation/` passes.
-- [ ] Docs added under `docs/human/escalation/` covering: declaring an
-  `EscalationPolicy`, the four V1 actions, the four V1 triggers, and the
-  `severity` parameter.
+- [ ] `Severity` enum, `BusinessHours` model, `EscalationTier.min_severity`,
+  `EscalationTier.business_hours`, `HumanInteraction.severity` exist
+  and are exported.
+- [ ] `EscalationPolicy.select_starting_tier(severity, now)` is a pure
+  method covered by ≥ 6 unit tests including boundary cases.
+- [ ] `EmailBackend` against a stub SMTP server returns a confirmation
+  message whose body contains the original `interaction.question`.
+- [ ] `ZammadBackend` against a stub REST server returns a confirmation
+  message containing the ticket id and ticket URL.
+- [ ] `WebhookBackend` POSTs the documented payload shape and surfaces
+  the returned `deep_link` in its message.
+- [ ] `NotifyAction` / `TicketAction` dispatch by
+  `action_metadata["kind"]` with backwards-compatible defaults for
+  callers that omit `"kind"`.
+- [ ] `_escalate_to_next_tier` advances to the next tier on action
+  failure (no silent continuation with empty metadata).
+- [ ] Manager exposes public `advance_chain(interaction_id, cause)`.
+- [ ] `RejectIntentDetector` returns `True` for at least 8 canned
+  phrases (4 Spanish + 4 English) and `False` for clearly unrelated
+  free-text. LLM-fallback path honours its `llm_timeout_seconds`.
+- [ ] `TelegramHumanChannel` and `WebHumanChannel` render the reject
+  affordance with key `__escalate__`. CLI channel does not.
+- [ ] Tapping the reject button advances the chain through
+  `advance_chain(cause="reject")`.
+- [ ] `HumanDecisionNode` accepts `escalation_policy_id` and `severity`
+  ctor kwargs.
+- [ ] `HumanToolInput` accepts `severity` with constrained values and
+  produces an actionable error for invalid inputs.
+- [ ] `HandoffTool` returns the manager result without raising
+  `HumanInteractionInterrupt` when the manager-registered interaction
+  resolves immediately (non-INTERACT starting tier).
+- [ ] `HandoffTool` emits `DeprecationWarning` exactly once per process.
+- [ ] `AutonomousOrchestrator` short-circuits to the manager result when
+  `interrupt.policy_id` and `interaction_id` are set and a result is
+  already persisted in Redis.
+- [ ] Structured events
+  (`hitl.tier.entered`, `hitl.tier.advanced`,
+  `hitl.tier.action_executed`, `hitl.tier.action_failed`,
+  `hitl.chain.exhausted`) are emitted with the documented payload shape.
+- [ ] `documentation/hitl_tiered_escalation_example.md` documents
+  severity, business hours, the reject button, and the real action
+  kinds.
+- [ ] `ruff check packages/ai-parrot/src/parrot/human/` passes.
+- [ ] `mypy packages/ai-parrot/src/parrot/human/` passes for new modules.
+- [ ] No new dependency added beyond `aiosmtplib`. (`aiohttp` and
+  `pydantic` already present.)
 
 ---
 
 ## 6. Codebase Contract
 
-> **CRITICAL — Anti-Hallucination Anchor**
-> This section is the single source of truth for what exists in the
-> codebase. Implementation agents MUST NOT reference imports, attributes,
-> or methods not listed here without first verifying via `grep` or `read`.
+> Verified at HEAD after commit `afe70e82` (2026-05-21).
+> Implementation agents MUST NOT reference imports, attributes, or
+> methods not listed here without first verifying via `grep` / `read`.
 
 ### Verified Imports
 
 ```python
-# All confirmed at HEAD:
+# Confirmed working at HEAD:
 from parrot.human import (
     HumanInteractionManager, HumanInteraction, HumanResponse,
     HumanChannel, InteractionType, InteractionStatus, TimeoutAction,
     ConsensusMode, ChoiceOption, HumanTool, HumanDecisionNode,
     set_default_human_manager, get_default_human_manager,
-)                                        # parrot/human/__init__.py:10-87
+)                                          # parrot/human/__init__.py:10-87
+from parrot.human.models import (
+    EscalationActionType, EscalationTier, EscalationPolicy,
+    InteractionResult,
+)                                          # parrot/human/models.py:12-24 (__all__)
+from parrot.human.actions.base import EscalationAction
+from parrot.human.actions.notify import NotifyAction
+from parrot.human.actions.ticket import TicketAction
 from parrot.human.channels.base import HumanChannel
 from parrot.human.channels.cli import CLIHumanChannel, CLIDaemonHumanChannel
-from parrot.human.channels.telegram import TelegramHumanChannel  # lazy via __getattr__
 from parrot.human.channels.web import WebHumanChannel
-from parrot.human.manager import HumanInteractionManager
 from parrot.human.tool import HumanTool, HumanToolInput
 from parrot.human.node import HumanDecisionNode
-from parrot.human.models import (
-    InteractionType, InteractionStatus, TimeoutAction, ConsensusMode,
-    ChoiceOption, HumanInteraction, HumanResponse, InteractionResult,
-)
 from parrot.core.tools.handoff import HandoffTool, HandoffToolSchema
 from parrot.core.exceptions import HumanInteractionInterrupt
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema
 ```
 
-### Existing Class Signatures
+### Existing Class Signatures (post-`afe70e82`)
 
 ```python
-# parrot/human/models.py:60-90
+# parrot/human/models.py:77-82
+class EscalationActionType(str, Enum):
+    INTERACT = "interact"        # bi-directional human interaction
+    NOTIFY = "notify"            # one-way notification (email/SMS/webhook)
+    TICKET = "ticket"            # open ticket in external system
+
+# parrot/human/models.py:85-112
+class EscalationTier(BaseModel):
+    level: int                                  # ge=1
+    name: str
+    channel_type: Optional[str] = None
+    target_humans: List[str] = Field(default_factory=list)
+    timeout: float = Field(default=3600.0, gt=0)
+    action_type: EscalationActionType = EscalationActionType.INTERACT
+    action_metadata: Dict[str, Any] = Field(default_factory=dict)
+    # validator: INTERACT requires non-empty target_humans
+
+# parrot/human/models.py:115-132
+class EscalationPolicy(BaseModel):
+    policy_id: str = Field(default_factory=lambda: str(uuid4()))
+    name: str
+    tiers: List[EscalationTier] = Field(default_factory=list)
+    # validator: levels must be contiguous starting at 1
+
+# parrot/human/models.py:135-185 — HumanInteraction (subset, NEW fields marked)
 class HumanInteraction(BaseModel):
-    interaction_id: str = Field(default_factory=lambda: str(uuid4()))  # line 64
-    question: str                                                       # line 67
-    context: Optional[str] = None                                       # line 68
-    interaction_type: InteractionType = InteractionType.FREE_TEXT       # line 69
-    options: Optional[List[ChoiceOption]] = None                        # line 70
-    form_schema: Optional[Dict[str, Any]] = None                        # line 71
-    default_response: Optional[Any] = None                              # line 72
-    target_humans: List[str] = Field(default_factory=list)              # line 75
-    consensus_mode: ConsensusMode = ConsensusMode.FIRST_RESPONSE        # line 76
-    timeout: float = 7200.0                                             # line 79
-    timeout_action: TimeoutAction = TimeoutAction.CANCEL                # line 80
-    escalation_targets: Optional[List[str]] = None                      # line 81
-    source_agent: Optional[str] = None                                  # line 84
-    source_flow: Optional[str] = None                                   # line 85
-    source_node: Optional[str] = None                                   # line 86
-    status: InteractionStatus = InteractionStatus.PENDING               # line 89
+    interaction_id: str = Field(default_factory=lambda: str(uuid4()))
+    question: str
+    context: Optional[str] = None
+    interaction_type: InteractionType = InteractionType.FREE_TEXT
+    options: Optional[List[ChoiceOption]] = None
+    form_schema: Optional[Dict[str, Any]] = None
+    default_response: Any = None
+    target_humans: List[str] = Field(default_factory=list)
+    consensus_mode: ConsensusMode = ConsensusMode.FIRST_RESPONSE
+    timeout: float = Field(default=7200.0, gt=0)
+    timeout_action: TimeoutAction = TimeoutAction.CANCEL
+    escalation_targets: List[str] = Field(default_factory=list)
+    policy_id: Optional[str] = None                           # SHIPPED
+    policy: Optional[EscalationPolicy] = None                 # SHIPPED
+    current_tier_level: int = Field(default=0, ge=0)          # SHIPPED
+    source_agent: Optional[str] = None
+    source_flow: Optional[str] = None
+    source_node: Optional[str] = None
+    status: InteractionStatus = InteractionStatus.PENDING
 
-# parrot/human/models.py:22-32
-class InteractionStatus(str, Enum):
-    PENDING = "pending"
-    DELIVERED = "delivered"
-    PARTIAL = "partial"
-    COMPLETED = "completed"
-    TIMEOUT = "timeout"
-    ESCALATED = "escalated"          # already reserved
-    CANCELLED = "cancelled"
+# parrot/human/models.py:238-248
+class InteractionResult(BaseModel):
+    interaction_id: str
+    status: InteractionStatus
+    responses: List[HumanResponse] = Field(default_factory=list)
+    consolidated_value: Any = None
+    timed_out: bool = False
+    escalated: bool = False
+    tier_level: int = Field(default=0, ge=0)                  # SHIPPED
+    action_metadata: Dict[str, Any] = Field(default_factory=dict)  # SHIPPED
 
-# parrot/human/models.py:34-41
-class TimeoutAction(str, Enum):
-    CANCEL = "cancel"
-    DEFAULT = "default"
-    ESCALATE = "escalate"            # drives the current single-hop escalation
-    RETRY = "retry"
+# parrot/human/actions/base.py:9-22
+class EscalationAction(ABC):
+    @abstractmethod
+    async def execute(
+        self,
+        interaction: HumanInteraction,
+        tier: EscalationTier,
+    ) -> Dict[str, Any]: ...
 
-# parrot/human/manager.py:34-67
+# parrot/human/actions/notify.py:6-25 — STUB to be replaced (C3)
+class NotifyAction(EscalationAction):
+    async def execute(self, interaction, tier) -> Dict[str, Any]:
+        # Currently: logs and returns simulated dict.
+        # Will dispatch by tier.action_metadata["kind"] in C3.
+
+# parrot/human/actions/ticket.py:7-28 — STUB to be replaced (C3)
+class TicketAction(EscalationAction):
+    async def execute(self, interaction, tier) -> Dict[str, Any]:
+        # Currently: returns {"ticket_id": "SIM-12345", ...}
+        # Will dispatch by tier.action_metadata["kind"] in C3.
+
+# parrot/human/manager.py:60-76
 class HumanInteractionManager:
     def __init__(
         self,
-        channels: Optional[Dict[str, HumanChannel]] = None,  # line 58
-        redis_url: Optional[str] = None,                     # line 59
-    ) -> None: ...
+        channels: Optional[Dict[str, HumanChannel]] = None,
+        redis_url: Optional[str] = None,
+    ) -> None:
+        # ...
+        self._actions: Dict[EscalationActionType, Any] = {
+            EscalationActionType.TICKET: TicketAction(),
+            EscalationActionType.NOTIFY: NotifyAction(),
+        }
+        self._policies: Dict[str, EscalationPolicy] = {}
 
-# parrot/human/manager.py:634-699 — to be REPLACED by _advance_chain
-async def _escalate(
+# parrot/human/manager.py:698-780 — _escalate_to_next_tier (current behaviour)
+async def _escalate_to_next_tier(
     self, interaction: HumanInteraction, channel: str,
-) -> None: ...
+) -> None:
+    # picks next_tier; runs action; for INTERACT re-dispatches; for
+    # NOTIFY/TICKET resolves immediately with action_metadata.
+    # BUG (C4): on action.execute() exception, sets action_metadata={} and
+    #           still resolves as if success. Must instead emit
+    #           hitl.tier.action_failed and recurse to next tier.
 
-# parrot/human/tool.py:98-139
+# parrot/human/tool.py:120-123
+class HumanToolInput(AbstractToolArgsSchema):
+    # ... existing fields ...
+    policy_id: Optional[str] = Field(default=None, ...)       # SHIPPED
+
+# parrot/human/tool.py:155-168
 class HumanTool(AbstractTool):
-    name: str = "ask_human"                                           # line 112
-    args_schema: Type[BaseModel] = HumanToolInput                     # line 124
     def __init__(
         self,
-        manager: Any = None,                                          # line 128
+        manager: Any = None,
         *,
-        default_channel: str = "telegram",                            # line 130
-        default_targets: Optional[List[str]] = None,                  # line 131
-        source_agent: Optional[str] = None,                           # line 132
+        default_channel: Optional[str] = "telegram",
+        default_targets: Optional[List[str]] = None,
+        source_agent: Optional[str] = None,
         **kwargs: Any,
     ) -> None: ...
 
@@ -766,9 +849,9 @@ class HumanDecisionNode:
         source_flow: Optional[str] = None,
     ) -> None: ...
 
-# parrot/human/channels/base.py:11-57
+# parrot/human/channels/base.py:11-70
 class HumanChannel(ABC):
-    channel_type: str = "base"                                         # line 19
+    channel_type: str = "base"
     @abstractmethod
     async def send_interaction(
         self, interaction: HumanInteraction, recipient: str,
@@ -779,75 +862,78 @@ class HumanChannel(ABC):
     ) -> None: ...
     async def register_cancel_handler(
         self, callback: Callable[[str], Awaitable[bool]],
-    ) -> None: return None  # default no-op
+    ) -> None: return None
 
-# parrot/core/exceptions.py:11-40 — ALREADY has policy_id slot
+# parrot/core/exceptions.py:12-41
 class HumanInteractionInterrupt(ParrotError):
     def __init__(
         self,
         prompt: str,
-        interaction_id: Optional[str] = None,                          # line 22
-        policy_id: Optional[str] = None,                               # line 23 — reserved for THIS feature
+        interaction_id: Optional[str] = None,
+        policy_id: Optional[str] = None,
         *args, **kwargs
     ): ...
 
-# parrot/core/tools/handoff.py:18-44
+# parrot/core/tools/handoff.py:22-76
 class HandoffTool(AbstractTool):
     name: str = "handoff_to_human"
-    args_schema: Type[BaseModel] = HandoffToolSchema
-    def _execute(self, prompt: str, **kwargs: Any) -> Any: ...
-    async def _aexecute(self, prompt: str, **kwargs: Any) -> Any: ...
-
-# parrot/tools/abstract.py:78 — base
-class AbstractTool(EventEmitterMixin, ABC): ...
+    args_schema: Type[BaseModel] = HandoffToolSchema   # includes policy_id
+    def __init__(self, manager: Any = None, **kwargs): ...
+    async def _aexecute(self, prompt, policy_id=None, **kwargs):
+        # Current: registers with manager via request_human_input_async
+        # (if available) AND raises HumanInteractionInterrupt unconditionally.
+        # C10 will change this so it returns the manager result string
+        # instead of raising when the registered interaction resolves
+        # immediately.
+    def _execute(self, prompt, **kwargs):
+        raise HumanInteractionInterrupt(prompt=prompt)
 ```
 
 ### Integration Points
 
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `EscalationPolicy` | `HumanTool.__init__` | new kwarg `escalation_policy` | parrot/human/tool.py:126-139 |
-| `EscalationPolicy` | `HumanDecisionNode.__init__` | new kwarg `escalation_policy` | parrot/human/node.py:78-99 |
-| `EscalationPolicy.resolve_chain()` | `HumanTool._execute` | called inline before building `HumanInteraction` | parrot/human/tool.py:141-205 |
-| `HumanInteraction.escalation_chain` | `HumanInteractionManager._advance_chain` | read at trigger fire | parrot/human/manager.py:634-699 (current `_escalate`) |
-| `EscalationAction.execute()` | `_advance_chain` | called per tier | parrot/human/manager.py (new method) |
-| `EscalationEvent` | `EventEmitterMixin.emit` | called from `_advance_chain` | parrot/tools/abstract.py:78 |
-| `RejectIntentDetector` | `HumanInteractionManager.receive_response` | called before normal accumulation | parrot/human/manager.py:368-441 |
-| `__escalate__` ChoiceOption value | `manager.advance_chain(cause="reject")` | intercepted before accumulation | parrot/human/manager.py:368-441 |
-| `HandoffTool._execute` | `HumanInteractionManager.request_human_input` | delegation | parrot/human/manager.py:192-240 |
-| Orchestrator `policy_id` branch | `HumanInteractionInterrupt.policy_id` | conditional path | parrot/autonomous/orchestrator.py:541-564 (catch block) |
-| `EmailAction` | SMTP config keys | reads `smtp_host`, `smtp_port`, `smtp_host_user`, `smtp_host_password` | parrot/handlers/agents/abstract.py:581-584 |
-| `IntegrationBotManager._ensure_human_manager` | `HumanInteractionManager` | unchanged; manager singleton continues to be the entry point | parrot/integrations/manager.py:154-168 |
-| Redis namespace | `hitl:interaction:{id}`, `hitl:responses:{id}`, `hitl:result:{id}` | reused; chain piggybacks on interaction blob | parrot/human/manager.py:88-138 |
+| `Severity` enum | `HumanToolInput`, `HumanInteraction.severity` | new field | parrot/human/models.py:135-185 |
+| `BusinessHours` | `EscalationTier.business_hours` | new field | parrot/human/models.py:85-112 |
+| `EscalationPolicy.select_starting_tier` | `HumanInteractionManager.request_human_input` | called pre-dispatch | parrot/human/manager.py:192-262 |
+| `EmailBackend` / `ZammadBackend` / `WebhookBackend` | `NotifyAction.execute` / `TicketAction.execute` | dispatcher by `action_metadata["kind"]` | parrot/human/actions/{notify,ticket}.py |
+| `_escalate_to_next_tier` bug fix | itself | recurse on action exception | parrot/human/manager.py:733-740 |
+| `manager.advance_chain(id, cause)` | channels (reject button), web_hitl handler | public method | parrot/human/manager.py |
+| `RejectIntentDetector` | `HumanInteractionManager.receive_response` | inline `await` before accumulation | parrot/human/manager.py:368-441 |
+| `__escalate__` ChoiceOption value | `manager.advance_chain(cause="reject")` | intercepted in `receive_response` | parrot/human/manager.py:368-441 |
+| `HandoffTool._aexecute` | `HumanInteractionManager.get_result` | post-registration short-circuit | parrot/human/manager.py:354-362 |
+| Orchestrator `policy_id` short-circuit | `HumanInteractionInterrupt.policy_id` + `interaction_id` | conditional path | parrot/autonomous/orchestrator.py:541-564 + 824 |
+| `EmailBackend` | SMTP config keys | reads existing `smtp_host`/`smtp_port`/`smtp_host_user`/`smtp_host_password` | parrot/handlers/agents/abstract.py:581-584 |
+| Tier events | `EventEmitterMixin.emit` | inheritance OR `on_event` hook on manager | parrot/tools/abstract.py:78 |
+| Redis namespace | unchanged | reuse `hitl:interaction:{id}`, `hitl:responses:{id}`, `hitl:result:{id}` | parrot/human/manager.py:88-138 |
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`parrot.human.EscalationPolicy`~~ — to be created at
-  `parrot/human/escalation/models.py`.
-- ~~`parrot.human.EscalationTier`~~ — to be created (same file).
-- ~~`parrot.human.escalation`~~ — submodule does not exist; to be created.
-- ~~`parrot.human.escalation.actions`~~ — submodule does not exist; to be created.
-- ~~`parrot.tools.zammad`~~ — no Zammad adapter exists today.
-- ~~`parrot.clients.zammad`~~ — to be created at `parrot/clients/zammad.py`.
-- ~~`parrot.tools.zendesk`~~ / ~~`parrot.clients.zendesk`~~ — **out of scope
-  for V1** (Zendesk deferred to V2).
-- ~~`HumanInteraction.severity`~~ — not a real field today; to be added.
-- ~~`HumanInteraction.escalation_chain`~~ — to be added.
-- ~~`HumanInteraction.escalation_policy_ref`~~ — to be added.
-- ~~`HumanInteraction.current_tier_level`~~ — to be added.
-- ~~`HumanTool.escalation_policy`~~ — not a real ctor kwarg today.
-- ~~`HumanDecisionNode.escalation_policy`~~ — not a real ctor kwarg today.
-- ~~`HumanChannel.render_reject_button`~~ — not a real attribute today.
-- ~~`HumanInteractionManager.advance_chain`~~ — not a real method today
-  (current name is the private `_escalate`).
-- ~~`InteractionStatus.REJECTED`~~ — does not exist; `EXPLICIT_REJECT` is
-  a *trigger*, not a status. Post-reject interactions are `ESCALATED` (or
-  `COMPLETED` once the next tier resolves).
-- ~~`PolicyRegistry`~~ — explicitly NOT in V1 (Option B rejected). Reserve
-  the name for a future spec.
-- ~~`parrot.events.EventBus`~~ — events are emitted on the existing
-  `EventEmitterMixin` (parrot/tools/abstract.py:78), not on a separate bus.
-- ~~`HandoffTool` removal~~ — explicitly preserved as a deprecated alias.
+- ~~`AskAlternateHumansAction` / `OpenTicketAction` / `LiveChatHandoffAction` / `EmailAction` as standalone classes~~ — the shipped baseline uses
+  the `EscalationActionType` enum + `action_metadata["kind"]` dispatcher
+  pattern. Do not introduce new top-level `*Action` classes that mirror
+  the enum.
+- ~~`EscalationActionConfig` discriminated union~~ — explicitly NOT in
+  V1 (rejected in favour of the shipped enum + dict shape).
+- ~~`HumanTool.escalation_policy` ctor kwarg~~ — the V1 contract is
+  `policy_id` only; the policy itself lives in `manager._policies`.
+- ~~`EscalationPolicy.resolve_chain`~~ — replaced by
+  `select_starting_tier(severity, now)` returning a single starting
+  tier (the rest of the chain is the policy's `tiers` list).
+- ~~`PolicyRegistry` as a separate class~~ — the registry is just
+  `manager._policies: Dict[str, EscalationPolicy]`. No standalone class.
+- ~~`escalation_chain` field on `HumanInteraction`~~ — the snapshot is
+  the whole `HumanInteraction.policy` field (already shipped).
+- ~~`InteractionStatus.REJECTED`~~ — does not exist; reject is a *cause*
+  for `advance_chain`, the resulting status is still `ESCALATED` /
+  `COMPLETED`.
+- ~~`parrot.events.EventBus` as a separate bus~~ — events flow on the
+  existing `EventEmitterMixin` (parrot/tools/abstract.py:78). The
+  manager either inherits from it OR exposes an `on_event` hook;
+  decide during C7 implementation.
+- ~~Zendesk client / `parrot.clients.zendesk`~~ — out of scope for V1.
+- ~~Cross-channel correlation by ticket custom field~~ — out of scope
+  for V1.
 
 ---
 
@@ -855,133 +941,130 @@ class AbstractTool(EventEmitterMixin, ABC): ...
 
 ### Patterns to Follow
 
-- All new classes are Pydantic v2 models with strict typing, per
-  `.claude/rules/python-development.md`.
-- async/await everywhere: no `requests` / `httpx` — use `aiohttp` for
-  Zammad and live-chat webhook; `aiosmtplib` for email.
-- Inherit `AbstractTool` for tools, `AbstractToolkit` if a toolkit emerges.
-- Logger pattern: `self.logger = logging.getLogger("parrot.human.escalation.<sub>")`.
-- Discriminated unions for `EscalationTrigger` and `EscalationActionConfig`
-  via Pydantic v2 `Field(discriminator="type")` so the manager can fan out
-  to the right strategy without isinstance chains.
-- `EscalationPolicy.resolve_chain` is a **pure function** — no I/O, no
-  side effects. Easy to test exhaustively.
-- `EscalationAction.execute` MUST swallow no exception silently: convert
-  every failure into `EscalationOutcome.failed(reason=str(exc))` so the
-  manager can decide whether to advance.
-- Reject-button option uses a stable sentinel key (`"__escalate__"`) so
-  channels and manager can compare without ambiguity.
-- Telemetry events use a single namespace (`hitl.tier.*`, `hitl.chain.*`)
-  so subscribers can filter with one prefix.
+- All new code is async/await with `aiohttp` / `aiosmtplib`. No
+  `requests`/`httpx`.
+- Pydantic v2 models for `Severity`, `BusinessHours`, action backend
+  payload schemas. Use `Field` constraints and `model_validator` for
+  cross-field invariants.
+- Loggers: `self.logger = logging.getLogger("parrot.human.<sub>")`.
+- Backends raise typed exceptions (`EmailBackendError`,
+  `ZammadBackendError`, `WebhookBackendError` — all subclasses of a
+  shared `ActionBackendError`); the dispatcher (`NotifyAction` /
+  `TicketAction`) catches `ActionBackendError` and re-raises as a
+  generic failure that the manager translates into a tier advance.
+- Reject button option uses the stable sentinel
+  `ESCALATE_OPTION_KEY = "__escalate__"`; channels and manager compare
+  against this constant rather than string literals.
+- `select_starting_tier` is a pure method — no I/O, no logging — so
+  it's exhaustively unit-testable.
 
 ### Known Risks / Gotchas
 
-- **Tier chain exhausted with no terminal action**: chain runs out and no
-  `TimeoutAction.DEFAULT` is set → resolve with the documented
-  *"no human available"* message. Don't leave the future hanging.
-- **Concurrent reject + timeout fire**: the manager must serialise via an
-  asyncio lock on the `interaction_id`; whichever cause arrives first wins;
-  the other is a no-op.
-- **Severity downgrade across tiers**: severity is set once at `ask_human`
-  time and only *raises* the starting floor. It does not lower it
-  mid-chain. Document this.
-- **Business-hours boundary**: evaluated at *tier-entry time*, not
-  mid-flight. A tier that enters at 17:55 with a 1h timeout will time out
-  at 18:55 even if hours end at 18:00. Document this.
-- **`OpenTicketAction` HTTP failure** with no next tier: terminate with
-  `TIMEOUT` and log loudly. Do not silently drop the interaction.
-- **`EmailAction` SMTP refused**: same as above; advance or terminate.
-- **`RejectIntentDetector` LLM-fallback latency**: must NOT block the
-  response-ingestion path beyond the configured `llm_timeout_seconds`.
-  Wrap with `asyncio.wait_for`.
-- **Channels without reject button** (CLI): the agent's policy still works
-  via TIMEOUT / SEVERITY triggers; only `EXPLICIT_REJECT` is unreachable
-  through the UI. Intent detector still tries to recover it from free-text.
-- **`HandoffTool` callers in non-integration contexts** (e.g., direct unit
-  tests that don't have a manager): when `get_default_human_manager()`
-  returns `None`, fall back to the legacy
-  `raise HumanInteractionInterrupt(...)` path so we don't regress those
-  callers.
-- **Redis key TTL** for in-flight chains: `interaction.timeout + 60s` may
-  be too short when an early tier has a short timeout but a later tier's
-  action is slow. Compute TTL as `sum(tier.timeout for tier in chain) + 60s`
-  with a 24h cap to avoid memory leaks.
-- **Policy `id` collisions**: managed by the agent author (no global
-  registry in V1). Document that IDs only matter for logs/audit.
+- **Action-failure silent continuation (C4)**: the shipped
+  `_escalate_to_next_tier` swallows `action.execute()` exceptions and
+  still resolves the future with `action_metadata={}`. The LLM sees
+  `"(no response provided)"`. Fix: emit
+  `hitl.tier.action_failed`, advance via recursive call to the next
+  tier, terminate if chain exhausts.
+- **`HandoffTool` dual-path race**: today `_aexecute` (a) calls
+  `request_human_input_async` (which schedules the timeout task), then
+  (b) raises `HumanInteractionInterrupt` — so the orchestrator suspends
+  the agent regardless. If the registered interaction has a non-INTERACT
+  starting tier, the manager resolves it almost immediately. C10 + C11
+  must coordinate so the orchestrator notices the resolved result
+  before re-entering suspend.
+- **Tier business-hours boundary**: evaluated at *tier-entry time*. A
+  tier that enters at 17:55 with a 1h timeout times out at 18:55 even
+  if hours end at 18:00. Document this in §6 of the example doc.
+- **Severity is set once**: `HumanInteraction.severity` does not change
+  mid-chain. Document this. `min_severity` on tiers acts as a *floor*
+  for the starting tier only; it doesn't gate later-tier advancement.
+- **Backwards compat with the example doc**: the example doc uses
+  `action_metadata={"channel": "email"}` and
+  `action_metadata={"platform": "jira", "project": "OPS"}`. The
+  dispatcher in C3 must accept both legacy keys (`channel`, `platform`)
+  AND the new `kind` key. Treat `channel=email` ≡ `kind=email`;
+  treat `platform=jira` as `kind=jira` (which is NOT in V1 — log a
+  warning and fall back to `kind=zammad` so existing examples don't
+  crash).
+- **Reject button on channels without it (CLI)**: free-text path must
+  also work — `RejectIntentDetector` runs in `receive_response`
+  regardless of channel.
+- **Redis TTL**: chain advancement extends the lifetime of the
+  interaction. Use `max(interaction.timeout, sum(t.timeout for t in
+  policy.tiers)) + 60` with a 24h cap. The current TTL formula
+  (`interaction.timeout + 60`) is too short for multi-tier chains.
+- **Groq Haiku optional dependency**: `RejectIntentDetector` MUST
+  accept `llm_client=None` and fall back to regex-only when no client
+  is configured. No hard import of `parrot.clients.groq` at module top.
+- **EmailBackend recipient validation**: validate the `to` list with
+  `email_validator` (already in the dep tree via Pydantic) or a simple
+  regex; reject empty lists with a typed exception.
 
 ### External Dependencies
 
 | Package | Version | Reason |
 |---|---|---|
-| `aiosmtplib` | `>=3.0` | Async SMTP send for `EmailAction`. Reuses existing `smtp_host` config keys |
-| `aiohttp` | existing | Zammad REST client + live-chat webhook |
-| `pydantic` | existing (`>=2`) | All escalation data models |
-| `python-dateutil` / `pytz` | existing | Timezone math for `BusinessHours`; `zoneinfo` alone has Windows quirks |
-| `redis.asyncio` | existing | Persistence (no change in connection management) |
-| `parrot.clients.groq` | existing | Optional Groq Haiku client for `RejectIntentDetector` LLM fallback |
+| `aiosmtplib` | `>=3.0` | `EmailBackend` async SMTP send |
+| `aiohttp` | existing | `ZammadBackend` + `WebhookBackend` |
+| `pydantic` | existing (`>=2`) | All new models |
+| `python-dateutil` / `pytz` | existing | `BusinessHours` timezone math |
+| `redis.asyncio` | existing | Unchanged |
+| `parrot.clients.groq` | existing | Optional Groq Haiku for `RejectIntentDetector` |
 
 ---
 
 ## 8. Open Questions
 
-> Resolved questions are carried forward from the brainstorm with `[x]`.
-> Unresolved questions remain `[ ]` and are owned by Jesus Lara unless noted.
+> Resolved questions from the brainstorm are carried forward; new
+> ones surfaced during the reconciliation are unchecked.
 
-- [x] Granularity of `EscalationPolicy` (per-agent vs per-toolkit vs per-interaction) — *Resolved in brainstorm*: per-agent.
-- [x] Wiring model (`HumanTool` injection vs registry vs hybrid) — *Resolved in brainstorm*: injection in `HumanTool`.
-- [x] V1 action set — *Resolved in brainstorm*: AskAlternateHumans + OpenTicket (Zammad first) + LiveChatHandoff + Email.
-- [x] V1 trigger set — *Resolved in brainstorm*: TIMEOUT + EXPLICIT_REJECT + SEVERITY + BUSINESS_HOURS_OFF.
-- [x] Async-action resolution semantics — *Resolved in brainstorm*: fire-and-forget, agent gets a confirmation string immediately.
-- [x] Cross-channel correlation (ticket reply → resume agent) — *Resolved in brainstorm*: out of scope for V1; future spec.
-- [x] `HandoffTool` fate — *Resolved in brainstorm*: keep as deprecated alias delegating to `HumanInteractionManager`.
-- [x] Business-hours model — *Resolved in brainstorm*: per-tier `business_hours` declaration.
-- [x] Severity API — *Resolved in brainstorm*: `severity` parameter on `ask_human` input; policy maps severity → starting tier.
-- [x] `EXPLICIT_REJECT` UX — *Resolved in brainstorm*: standardised "↑ Escalar" button on opt-in channels **plus** lightweight LLM intent detection on free-text (regex first, LLM confirmation only on doubt).
-- [x] Live-chat platform for `LiveChatHandoffAction` V1 — *Resolved in brainstorm*: **generic webhook** in V1; vendor-specific adapters deferred.
-- [x] Zendesk in V1? — *Resolved in brainstorm*: **punt to V2**; Zammad only in V1.
-- [x] Audit-log persistence beyond Redis — *Resolved in brainstorm*: **Redis only for now**; external storage deferred.
-- [x] Reject-intent detector V1 implementation — *Resolved in brainstorm*: regex first, Groq Haiku confirmation only when regex ambiguous; inline `await` (not callback) with short timeout.
-- [x] Should `HumanDecisionNode` get `escalation_policy` in V1? — *Resolved in brainstorm*: **yes**, included in V1.
-- [x] Telemetry / observability hook — *Resolved in brainstorm*: **yes**, emit structured `hitl.tier.*` / `hitl.chain.*` events on `EventEmitterMixin`.
-- [ ] Default `llm_timeout_seconds` for `RejectIntentDetector` — proposing 1.5s; confirm during implementation.
-- [ ] Exact regex phrase list for `RejectIntentDetector` V1 (Spanish + English seed sets) — decide during Module 8 implementation; ship at least 8 phrases (per acceptance criteria).
-- [ ] Zammad REST auth method — token vs OAuth2; assume **token** (`Authorization: Token token=...`) per Zammad defaults, but verify against the target deployment.
-- [ ] Live-chat webhook payload schema — V1 freezes a minimal schema (`{interaction_id, question, user_id, severity}` → `{deep_link}`); confirm with whoever runs the live-chat platform.
+- [x] Granularity of `EscalationPolicy` — *Resolved in brainstorm*: per-agent / per-policy_id.
+- [x] Wiring model — *Resolved by shipped implementation*: registry on `manager._policies` (Option B in brainstorm). Spec ratifies this.
+- [x] V1 action set — *Resolved*: Email + Webhook (live chat) + Zammad. Mapped onto `EscalationActionType.NOTIFY` + `TICKET` via `action_metadata["kind"]` dispatcher.
+- [x] V1 trigger set — *Resolved*: TIMEOUT (shipped) + EXPLICIT_REJECT + SEVERITY + BUSINESS_HOURS_OFF (this spec).
+- [x] Async-action resolution semantics — *Resolved by shipped implementation*: fire-and-forget with `action_metadata["message"]`.
+- [x] Cross-channel correlation — *Resolved*: out of scope for V1.
+- [x] `HandoffTool` fate — *Resolved*: keep with `DeprecationWarning`, dedup dual-path via C10/C11.
+- [x] Business-hours model — *Resolved in brainstorm*: per-tier `business_hours`.
+- [x] Severity API — *Resolved in brainstorm*: `severity` parameter on `ask_human` + `HumanInteraction.severity`.
+- [x] `EXPLICIT_REJECT` UX — *Resolved in brainstorm*: standardised button (Telegram/Web) + `RejectIntentDetector` with regex-first / Groq-Haiku-on-doubt.
+- [x] Live-chat platform — *Resolved*: generic webhook V1.
+- [x] Zendesk in V1 — *Resolved*: no, V2.
+- [x] Audit logs — *Resolved*: Redis only.
+- [x] Reject detector implementation — *Resolved*: regex first, Groq Haiku inline confirmation on doubt, not callback.
+- [x] HumanDecisionNode policy — *Resolved*: include in V1.
+- [x] Telemetry hook — *Resolved*: emit `hitl.tier.*` / `hitl.chain.*` on `EventEmitterMixin`.
+- [ ] Should the manager inherit from `EventEmitterMixin` directly, or expose an `on_event: Optional[Callable]` hook the integration layer wires? Decide during C7.
+- [ ] Default `llm_timeout_seconds` for `RejectIntentDetector` — proposing 1.5s; confirm during C5.
+- [ ] Initial regex phrase list for `RejectIntentDetector` (Spanish + English seeds) — decide during C5; ship ≥ 8 phrases per language.
+- [ ] Zammad REST auth method — assume `Authorization: Token token=…` per Zammad default; verify against the target deployment during C2.
+- [ ] Webhook payload schema for `WebhookBackend` — V1 freezes `{interaction_id, question, severity, user_id}` → `{deep_link}`; confirm with the live-chat operator.
+- [ ] Treatment of legacy `action_metadata={"platform": "jira"}` from the example doc — proposal: log warning and treat as `kind=zammad`. Decide during C3.
 
 ---
 
 ## Worktree Strategy
 
-- **Default isolation**: **per-spec** (all tasks sequential in a single
+- **Default isolation**: **per-spec** (all C-tasks sequential in one
   worktree).
-- **Rationale**: Modules 1–4 (data models + action port + interaction
-  extension + manager refactor) form a hard dependency chain. Every
-  subsequent module (5–14) depends on Module 4. Splitting into per-task
-  worktrees would force constant rebasing onto an evolving foundation with
-  little parallelism upside. Single worktree, commit task-by-task, one PR
-  against `dev`.
-- **Cross-feature dependencies**: none blocking. FEAT-045
-  (`handoff-tool-for-integrations-agents.spec.md`) is in production and
-  we extend it. FEAT-176 `EventEmitterMixin` is already merged and is
-  consumed by Module 14.
-- **Worktree creation** (from `dev`, follows CLAUDE.md policy):
+- **Rationale**: C1 (models) and C4 (manager refactor + bug fix)
+  underpin everything else. C2/C3 (backends + dispatcher) depend on C1.
+  C6/C12 depend on C4. C7 depends on C4. C10/C11 depend on C4.
+  Splitting per-task produces a rebase storm with negligible
+  parallelism win.
+- **Cross-feature dependencies**: none blocking. FEAT-045 (handoff
+  baseline) is in production. FEAT-176 (`EventEmitterMixin`) is
+  available for C7.
+- **Worktree creation**:
   ```bash
   git checkout dev
   git worktree add -b feat-194-hitl-escalation-tier \
     .claude/worktrees/feat-194-hitl-escalation-tier HEAD
-  cd .claude/worktrees/feat-194-hitl-escalation-tier
   ```
-- **In-flight code reconciliation note**: at spec-time there are
-  uncommitted modifications to `parrot/core/exceptions.py`,
-  `parrot/core/tools/handoff.py`, `parrot/human/manager.py`,
-  `parrot/human/models.py`, `parrot/human/tool.py`,
-  `packages/ai-parrot/tests/conftest.py`, and an untracked
-  `packages/ai-parrot/src/parrot/human/actions/` directory. These appear
-  to be early in-progress work toward this feature. Before opening the
-  worktree, reconcile that work against this spec (either commit it on
-  `dev` so the worktree inherits it, or stash and re-apply inside the
-  worktree). The Codebase Contract above reflects HEAD, not those
-  uncommitted changes.
+- **Baseline reconciliation**: the V1 baseline lives in commit
+  `afe70e82`, already on `dev`. The worktree will branch from `HEAD`
+  and inherit it. No stashing/reapplying needed.
 
 ---
 
@@ -989,4 +1072,5 @@ class AbstractTool(EventEmitterMixin, ABC): ...
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-05-21 | Jesus Lara (with Claude) | Initial draft, derived from `hitl-escalation-tier.brainstorm.md` Option A |
+| 0.1 | 2026-05-21 | Jesus Lara (with Claude) | Initial draft from brainstorm Option A (discriminated `*Action` classes + HumanTool injection). |
+| 0.2 | 2026-05-21 | Jesus Lara (with Claude) | Reset against shipped commit `afe70e82`. Ratify Option-B-style registry + enum + `action_metadata` dispatcher as V1 baseline. Reframe spec as baseline (B1–B7) + completion delta (C1–C13): real action backends, EXPLICIT_REJECT/SEVERITY/BUSINESS_HOURS_OFF triggers, reject UX, structured events, HandoffTool dedup, action-failure bug fix. |
