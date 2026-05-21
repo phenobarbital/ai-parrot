@@ -5,7 +5,7 @@ __description__ = (
     "Complete Framework for AI Chatbots and Agents, "
     "Supporting A2A, MCP, RAG and more."
 )
-__version__ = "0.24.53"
+__version__ = "0.24.54"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslarag@gmail.com"
 __license__ = "MIT"

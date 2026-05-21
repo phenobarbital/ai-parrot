@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, get_args
 
 from aiohttp import web
 from pydantic import ValidationError
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from navigator.responses import JSONResponse
 from ..core.events import FormEventAbort, FormEventName
 from ..core.schema import FormField, FormSchema, RenderedForm
@@ -360,7 +359,7 @@ class FormAPIHandler:
                 )
 
         return JSONResponse(
-            json_decoder(partial.model_dump_json()), status=200
+            partial.model_dump(mode="json"), status=200
         )
 
     async def get_partial(self, request: web.Request) -> web.Response:
@@ -405,7 +404,7 @@ class FormAPIHandler:
             )
 
         return JSONResponse(
-            json_decoder(partial.model_dump_json()), status=200
+            partial.model_dump(mode="json"), status=200
         )
 
     async def delete_partial(self, request: web.Request) -> web.Response:
@@ -503,13 +502,7 @@ class FormAPIHandler:
                     }
 
         forms = sorted(descriptors.values(), key=lambda d: d["form_id"])
-        content = json_encoder(
-            {"forms": forms}
-        )
-        return web.Response(
-            body=content,
-            content_type="application/json"
-        )
+        return JSONResponse({"forms": forms})
 
     @staticmethod
     def _form_has_remote_binding(form: FormSchema) -> bool:
@@ -551,7 +544,7 @@ class FormAPIHandler:
                 {"error": exc.user_message, "reason": exc.reason},
                 status=exc.status_code,
             )
-        response = JSONResponse(form.model_dump(exclude_none=True))
+        response = JSONResponse(form.model_dump(mode="json", exclude_none=True))
         # Attach CSRF token when the form has any remote-bridged binding
         if self._form_has_remote_binding(form):
             session_id = self._extract_session_id(request)
@@ -685,7 +678,7 @@ class FormAPIHandler:
                 status=exc.status_code,
             )
 
-        return JSONResponse(resolution.model_dump(exclude_none=True))
+        return JSONResponse(resolution.model_dump(mode="json", exclude_none=True))
 
     async def validate(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/{form_id}/validate — Validate form submission."""
@@ -737,7 +730,7 @@ class FormAPIHandler:
         if not result.success:
             return JSONResponse(
                 {"error": result.metadata.get("error", "Form creation failed")},
-                status=400,
+                status=500,
             )
 
         form_data = result.metadata.get("form", {})
@@ -745,7 +738,7 @@ class FormAPIHandler:
         if not form_id:
             return JSONResponse(
                 {"error": "Form creation succeeded but form_id missing"},
-                status=401,
+                status=500,
             )
         title = (result.result or {}).get("title", "")
         prefix = request.app.get("_form_prefix", "")
@@ -916,7 +909,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PUT form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump(exclude_none=True))
+        return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def patch_form(self, request: web.Request) -> web.Response:
         """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
@@ -962,7 +955,7 @@ class FormAPIHandler:
         persist = self.registry.has_storage
         await self.registry.register(form, persist=persist, overwrite=True, tenant=tenant)
         self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
-        return JSONResponse(form.model_dump(exclude_none=True))
+        return JSONResponse(form.model_dump(mode="json", exclude_none=True))
 
     async def delete_form(self, request: web.Request) -> web.Response:
         """DELETE /api/v1/forms/{form_id} — Remove a registered form.
