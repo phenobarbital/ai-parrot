@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Literal, Optional
 from uuid import uuid4
 
 from navconfig.logging import logging
@@ -12,6 +13,7 @@ from navconfig.logging import logging
 from .actions.notify import NotifyAction
 from .actions.ticket import TicketAction
 from .channels.base import HumanChannel
+from .escalation_intent import RejectIntentDetector
 from .models import (
     ConsensusMode,
     EscalationActionType,
@@ -20,8 +22,12 @@ from .models import (
     HumanResponse,
     InteractionResult,
     InteractionStatus,
+    Severity,
     TimeoutAction,
 )
+
+# Maximum allowed TTL for multi-tier chains (24h in seconds)
+_MAX_REDIS_TTL = 86400
 
 
 def _stable_key(value: Any) -> str:
@@ -61,6 +67,7 @@ class HumanInteractionManager:
         self,
         channels: Optional[Dict[str, HumanChannel]] = None,
         redis_url: Optional[str] = None,
+        reject_detector: Optional[RejectIntentDetector] = None,
     ) -> None:
         self.channels: Dict[str, HumanChannel] = channels or {}
         self._redis_url = redis_url
@@ -74,6 +81,7 @@ class HumanInteractionManager:
             EscalationActionType.NOTIFY: NotifyAction(),
         }
         self._policies: Dict[str, EscalationPolicy] = {}
+        self._reject_detector: Optional[RejectIntentDetector] = reject_detector
 
     # ------------------------------------------------------------------
     # Redis helpers
@@ -98,11 +106,32 @@ class HumanInteractionManager:
             self._redis = aioredis.from_url(url, decode_responses=True)
         return self._redis
 
+    def _compute_ttl(self, interaction: HumanInteraction) -> int:
+        """Compute a Redis TTL that covers the full multi-tier chain.
+
+        For single-hop interactions, this is ``int(interaction.timeout) + 60``.
+        For policy-bound interactions, it is at least the sum of all tier
+        timeouts plus a 60-second buffer, capped at 24h.
+
+        Args:
+            interaction: The interaction to compute TTL for.
+
+        Returns:
+            TTL in seconds (integer), capped at 24h.
+        """
+        base_ttl = int(interaction.timeout) + 60
+        if interaction.policy and interaction.policy.tiers:
+            tier_total = int(sum(t.timeout for t in interaction.policy.tiers)) + 60
+            ttl = max(base_ttl, tier_total)
+        else:
+            ttl = base_ttl
+        return min(ttl, _MAX_REDIS_TTL)
+
     async def _persist_interaction(self, interaction: HumanInteraction) -> None:
-        """Store an interaction in Redis with TTL matching its timeout."""
+        """Store an interaction in Redis with TTL covering the full multi-tier chain."""
         redis = await self._get_redis()
         key = f"hitl:interaction:{interaction.interaction_id}"
-        ttl = int(interaction.timeout) + 60  # small buffer
+        ttl = self._compute_ttl(interaction)
         await redis.setex(key, ttl, interaction.model_dump_json())
 
     async def _load_interaction(
@@ -222,8 +251,24 @@ class HumanInteractionManager:
         callback inline — so the future must already exist for
         ``receive_response`` to resolve it.
         """
-        # 1. Resolve Policy
+        # 1. Resolve Policy (sets starting tier via select_starting_tier)
         await self._resolve_interaction_policy(interaction)
+
+        # 1b. If policy set but no applicable starting tier, terminate immediately.
+        if interaction.policy and interaction.current_tier_level == 0:
+            self.logger.warning(
+                "Interaction %s has policy %s but no applicable starting tier; "
+                "terminating immediately.",
+                interaction.interaction_id,
+                interaction.policy_id,
+            )
+            result = InteractionResult(
+                interaction_id=interaction.interaction_id,
+                status=InteractionStatus.TIMEOUT,
+                timed_out=True,
+            )
+            await self._persist_result(result)
+            return result
 
         # 2. Persist
         await self._persist_interaction(interaction)
@@ -261,7 +306,14 @@ class HumanInteractionManager:
     async def _resolve_interaction_policy(
         self, interaction: HumanInteraction
     ) -> None:
-        """Resolve policy_id to a policy object and seed Tier 1 if applicable."""
+        """Resolve policy_id to a policy object and seed starting tier.
+
+        Uses ``select_starting_tier`` to pick the first applicable tier
+        based on ``interaction.severity`` and the current time. If no tier
+        is applicable (all blocked by severity floor / business hours),
+        the interaction's ``current_tier_level`` is left at 0 — the
+        caller (``request_human_input``) will detect this and terminate.
+        """
         if not interaction.policy_id:
             return
         policy = self._policies.get(interaction.policy_id)
@@ -273,15 +325,27 @@ class HumanInteractionManager:
             )
             return
         interaction.policy = policy
+
         if interaction.current_tier_level == 0 and policy.tiers:
-            tier1 = next(
-                (t for t in policy.tiers if t.level == 1), policy.tiers[0]
-            )
-            interaction.current_tier_level = tier1.level
+            now = datetime.now(timezone.utc)
+            severity = getattr(interaction, "severity", Severity.NORMAL)
+            starting_tier = policy.select_starting_tier(severity, now)
+            if starting_tier is None:
+                self.logger.info(
+                    "Policy %s: no tier applicable at start for severity=%s; "
+                    "interaction %s will terminate immediately.",
+                    interaction.policy_id,
+                    severity,
+                    interaction.interaction_id,
+                )
+                # Leave current_tier_level at 0 — caller handles this.
+                return
+            interaction.current_tier_level = starting_tier.level - 1
+            # Adjust targets/timeout from starting tier
             interaction.target_humans = (
-                tier1.target_humans or interaction.target_humans
+                starting_tier.target_humans or interaction.target_humans
             )
-            interaction.timeout = tier1.timeout
+            interaction.timeout = starting_tier.timeout
 
     async def _dispatch_to_channel(
         self, interaction: HumanInteraction, channel: str
@@ -409,6 +473,57 @@ class HumanInteractionManager:
             return None
         return InteractionResult.model_validate_json(raw)
 
+    async def advance_chain(
+        self,
+        interaction_id: str,
+        cause: Literal["timeout", "reject", "business_hours_off", "action_failed"] = "timeout",
+    ) -> None:
+        """Public entry point for advancing a tiered escalation chain.
+
+        Called by channels (reject button), the web HITL handler, and tests.
+        Loads the interaction from Redis, cancels any running timeout task,
+        and delegates to ``_escalate_to_next_tier`` with the given *cause*.
+
+        If the interaction is not found (expired or unknown id), the call
+        is silently ignored.
+
+        Args:
+            interaction_id: UUID of the interaction to advance.
+            cause: Reason for advancing — used for logging and future event
+                emission.  One of ``"timeout"``, ``"reject"``,
+                ``"business_hours_off"``, ``"action_failed"``.
+        """
+        interaction = await self._load_interaction(interaction_id)
+        if interaction is None:
+            self.logger.debug(
+                "advance_chain: unknown or expired interaction %s", interaction_id
+            )
+            return
+
+        # Already resolved — nothing to advance.
+        if await self.get_result(interaction_id) is not None:
+            self.logger.debug(
+                "advance_chain: interaction %s already resolved", interaction_id
+            )
+            return
+
+        # Derive the channel from the interaction (fall back to first registered).
+        channel = "telegram"
+        if self.channels:
+            channel = next(iter(self.channels))
+
+        # Cancel any existing timeout task so it doesn't race us.
+        timeout_task = self._timeout_tasks.pop(interaction_id, None)
+        if timeout_task and not timeout_task.done():
+            timeout_task.cancel()
+
+        self.logger.info(
+            "advance_chain: advancing interaction %s (cause=%s)",
+            interaction_id,
+            cause,
+        )
+        await self._escalate_to_next_tier(interaction, channel, cause=cause)
+
     # ------------------------------------------------------------------
     # Response ingestion (called by channels)
     # ------------------------------------------------------------------
@@ -438,6 +553,25 @@ class HumanInteractionManager:
                 interaction.interaction_type,
                 response.response_type,
             )
+            return
+
+        # --- Escalation-intent interception (TASK-1278) ---
+        # If the interaction is policy-bound and the user typed something
+        # that looks like "I need a human", advance the chain instead of
+        # accumulating the response.
+        if (
+            interaction.policy is not None
+            and self._reject_detector is not None
+            and interaction.interaction_type.value == "free_text"
+            and isinstance(response.value, str)
+            and await self._reject_detector.is_escalation_intent(response.value)
+        ):
+            self.logger.info(
+                "Escalation intent detected in response for interaction %s; "
+                "advancing chain (cause=reject).",
+                response.interaction_id,
+            )
+            await self.advance_chain(response.interaction_id, cause="reject")
             return
 
         # Accumulate: load from Redis (crash-safe), then append
@@ -696,12 +830,42 @@ class HumanInteractionManager:
             await self._trigger_rehydration(interaction, result)
 
     async def _escalate_to_next_tier(
-        self, interaction: HumanInteraction, channel: str
+        self,
+        interaction: HumanInteraction,
+        channel: str,
+        cause: str = "timeout",
+        _depth: int = 0,
     ) -> None:
-        """Move the interaction to the next tier in its policy."""
+        """Move the interaction to the next applicable tier in its policy.
+
+        Handles:
+        - Severity / business-hours skip at tier-entry (also on advance).
+        - Action failure: advances to the next tier instead of silently
+          resolving with empty metadata.
+        - Depth guard: aborts after traversing all tiers to prevent runaway
+          recursion.
+
+        Args:
+            interaction: The current interaction.
+            channel: The originating channel name (used as fallback).
+            cause: Why we are advancing — one of ``"timeout"``,
+                ``"reject"``, ``"business_hours_off"``, ``"action_failed"``.
+            _depth: Internal recursion depth counter (DO NOT pass externally).
+        """
         if not interaction.policy or not interaction.policy.tiers:
             self.logger.warning(
                 "Cannot escalate interaction %s: no policy tiers defined.",
+                interaction.interaction_id,
+            )
+            await self._finish_with_timeout(interaction)
+            return
+
+        max_depth = len(interaction.policy.tiers)
+        if _depth >= max_depth:
+            self.logger.warning(
+                "Escalation depth limit (%d) reached for interaction %s; "
+                "terminating chain.",
+                max_depth,
                 interaction.interaction_id,
             )
             await self._finish_with_timeout(interaction)
@@ -718,28 +882,94 @@ class HumanInteractionManager:
                 interaction.current_tier_level,
                 interaction.interaction_id,
             )
+            # TODO: emit hitl.chain.exhausted event (TASK-1280)
             await self._finish_with_timeout(interaction)
             return
 
-        # 1. Update state
+        # Check business hours at tier-entry time
+        now = datetime.now(timezone.utc)
+        if next_tier.business_hours is not None and not next_tier.business_hours.contains(now):
+            self.logger.info(
+                "Tier %d (%s) is off-hours for interaction %s; skipping.",
+                next_level,
+                next_tier.name,
+                interaction.interaction_id,
+            )
+            # Advance the cursor and recurse to skip this tier
+            interaction.current_tier_level = next_level
+            await self._update_status(interaction)
+            # TODO: emit hitl.tier.advanced event (TASK-1280)
+            await self._escalate_to_next_tier(
+                interaction, channel,
+                cause="business_hours_off",
+                _depth=_depth + 1,
+            )
+            return
+
+        # 1. Update state — persist BEFORE action so a crash mid-action
+        #    doesn't lose the cursor position.
         interaction.current_tier_level = next_level
         interaction.status = InteractionStatus.ESCALATED
         await self._update_status(interaction)
 
+        # TODO: emit hitl.tier.entered event (TASK-1280)
+        self.logger.info(
+            "Interaction %s entering tier %d (%s), cause=%s",
+            interaction.interaction_id,
+            next_level,
+            next_tier.name,
+            cause,
+        )
+
+        # For cause="business_hours_off", skip this tier's action entirely
+        # (we already advanced the cursor above).
+        if cause == "business_hours_off":
+            await self._escalate_to_next_tier(
+                interaction, channel,
+                cause="timeout",
+                _depth=_depth + 1,
+            )
+            return
+
         # 2. Execute Action if needed
         action_metadata: Dict[str, Any] = {}
+        action_failed = False
+
         if next_tier.action_type in self._actions:
             action = self._actions[next_tier.action_type]
             try:
                 action_metadata = await action.execute(interaction, next_tier)
+                # Check if the action itself reported an error
+                if action_metadata.get("error"):
+                    action_failed = True
+                    self.logger.warning(
+                        "Action %s returned error=True for interaction %s; advancing.",
+                        next_tier.action_type,
+                        interaction.interaction_id,
+                    )
+                    # TODO: emit hitl.tier.action_failed event (TASK-1280)
+                else:
+                    # TODO: emit hitl.tier.action_executed event (TASK-1280)
+                    pass
             except Exception:
+                action_failed = True
                 self.logger.exception(
-                    "Action %s failed for interaction %s",
+                    "Action %s raised for interaction %s; advancing to next tier.",
                     next_tier.action_type,
                     interaction.interaction_id,
                 )
+                # TODO: emit hitl.tier.action_failed event (TASK-1280)
 
-        # 3. Re-dispatch or Wait at this tier
+        # 3a. Action failed → advance to next tier instead of resolving with empty metadata
+        if action_failed:
+            await self._escalate_to_next_tier(
+                interaction, channel,
+                cause="action_failed",
+                _depth=_depth + 1,
+            )
+            return
+
+        # 3b. Re-dispatch or resolve at this tier
         if next_tier.action_type == EscalationActionType.INTERACT:
             # Apply new timeout BEFORE dispatch so the persisted blob is
             # consistent if we crash between dispatch and task scheduling.
