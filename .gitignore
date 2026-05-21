@@ -257,6 +257,7 @@ work/
 artifacts/
 examples/pageindex/store/*
 examples/pageindex/data/*
+examples/graphindex/*
 
 # Custom Agents:
 plugins/agents/
