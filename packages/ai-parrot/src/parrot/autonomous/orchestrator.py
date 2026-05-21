@@ -539,8 +539,43 @@ class AutonomousOrchestrator:
             
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
-            
+
             if isinstance(e, HumanInteractionInterrupt):
+                # HITL short-circuit: when both policy_id and interaction_id are
+                # set, the interaction was registered by HandoffTool with a tiered
+                # policy.  A slow tier action (e.g. Zammad) may have resolved
+                # *after* HandoffTool's 500ms polling window expired.  Consult
+                # the manager once before entering suspend/resume.
+                if e.policy_id and e.interaction_id:
+                    try:
+                        from parrot.human import get_default_human_manager
+                        _mgr = get_default_human_manager()
+                        if _mgr is not None:
+                            _result = await _mgr.get_result(e.interaction_id)
+                            if _result is not None:
+                                _msg = (_result.action_metadata or {}).get("message")
+                                _out = _msg if _msg is not None else _result.consolidated_value
+                                if _out is not None:
+                                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                                    exec_result = ExecutionResult(
+                                        request_id=request_id,
+                                        target_type=ExecutionTarget.AGENT,
+                                        target_id=agent_name,
+                                        success=True,
+                                        result=str(_out),
+                                        execution_time_ms=execution_time,
+                                        metadata={
+                                            "hitl_short_circuit": True,
+                                            "interaction_id": e.interaction_id,
+                                        },
+                                    )
+                                    self._add_to_history(exec_result)
+                                    return exec_result
+                    except Exception:
+                        self.logger.exception(
+                            "HITL short-circuit check failed; falling back to suspend"
+                        )
+
                 # Paused AGAIN
                 self.logger.info(f"Execution PAUSED again for agent '{agent_name}'.")
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -822,13 +857,45 @@ class AutonomousOrchestrator:
             
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
-            
+
             if isinstance(e, HumanInteractionInterrupt):
+                # HITL short-circuit: when both policy_id and interaction_id are
+                # set, consult the manager once before suspending the agent.
+                if e.policy_id and e.interaction_id:
+                    try:
+                        from parrot.human import get_default_human_manager
+                        _mgr = get_default_human_manager()
+                        if _mgr is not None:
+                            _result = await _mgr.get_result(e.interaction_id)
+                            if _result is not None:
+                                _msg = (_result.action_metadata or {}).get("message")
+                                _out = _msg if _msg is not None else _result.consolidated_value
+                                if _out is not None:
+                                    execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                                    exec_result = ExecutionResult(
+                                        request_id=request.request_id,
+                                        target_type=request.target_type,
+                                        target_id=request.target_id,
+                                        success=True,
+                                        result=str(_out),
+                                        execution_time_ms=execution_time,
+                                        metadata={
+                                            "hitl_short_circuit": True,
+                                            "interaction_id": e.interaction_id,
+                                        },
+                                    )
+                                    self._add_to_history(exec_result)
+                                    return exec_result
+                    except Exception:
+                        self.logger.exception(
+                            "HITL short-circuit check failed; falling back to suspend"
+                        )
+
                 self.logger.info(
                     f"Execution PAUSED for {request.target_type.value} "
                     f"'{request.target_id}': Human input required."
                 )
-                
+
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
                 exec_result = ExecutionResult(
                     request_id=request.request_id,
@@ -848,7 +915,7 @@ class AutonomousOrchestrator:
                         }
                     }
                 )
-                
+
                 # Emit paused event
                 if self.event_bus:
                     await self.event_bus.emit(
