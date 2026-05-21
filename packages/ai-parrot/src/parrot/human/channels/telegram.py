@@ -28,7 +28,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from navconfig.logging import logging
 
-from .base import HumanChannel
+from .base import HumanChannel, ESCALATE_OPTION_KEY
 from ..models import (
     HumanInteraction,
     HumanResponse,
@@ -73,6 +73,7 @@ class TelegramHumanChannel(HumanChannel):
     """
 
     channel_type = "telegram"
+    render_reject_button = True
 
     def __init__(
         self,
@@ -299,21 +300,27 @@ class TelegramHumanChannel(HumanChannel):
             interaction.interaction_id, chat_id
         )
 
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="✅ Approve",
-                        callback_data=f"hitl:{token_yes}",
-                    ),
-                    InlineKeyboardButton(
-                        text="❌ Reject",
-                        callback_data=f"hitl:{token_no}",
-                    ),
-                ],
-                cancel_row,
-            ]
-        )
+        rows = [
+            [
+                InlineKeyboardButton(
+                    text="✅ Approve",
+                    callback_data=f"hitl:{token_yes}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Reject",
+                    callback_data=f"hitl:{token_no}",
+                ),
+            ],
+            cancel_row,
+        ]
+
+        # Append escalate button for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            rows.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
         text = self._format_message(interaction)
         msg = await self.bot.send_message(
@@ -337,6 +344,26 @@ class TelegramHumanChannel(HumanChannel):
         return [
             InlineKeyboardButton(
                 text="✕ Cancel",
+                callback_data=f"hitl:{token}",
+            )
+        ]
+
+    async def _build_escalate_row(
+        self, interaction_id: str, chat_id: int
+    ) -> List["InlineKeyboardButton"]:
+        """Build a one-button row with ↑ Escalar for policy-bound interactions.
+
+        The token encodes ``action="escalate"``; the callback handler
+        detects this and creates a :class:`~parrot.human.models.HumanResponse`
+        with ``value=ESCALATE_OPTION_KEY`` so the manager's
+        ``receive_response`` can intercept it and call ``advance_chain``.
+        """
+        token = await self._create_token(
+            interaction_id, str(chat_id), action=f"pick:{ESCALATE_OPTION_KEY}"
+        )
+        return [
+            InlineKeyboardButton(
+                text="↑ Escalar",
                 callback_data=f"hitl:{token}",
             )
         ]
@@ -366,6 +393,12 @@ class TelegramHumanChannel(HumanChannel):
         buttons.append(
             await self._build_cancel_row(interaction.interaction_id, chat_id)
         )
+
+        # Append escalate button for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            buttons.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         text = self._format_message(interaction)
@@ -475,15 +508,15 @@ class TelegramHumanChannel(HumanChannel):
         text = self._format_message(interaction)
         text += "\n\n_Reply with your answer, or send /cancel to abort._"
 
-        # Attach a small inline keyboard with just a Cancel button so the
-        # user doesn't have to switch to typing a command.
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                await self._build_cancel_row(
-                    interaction.interaction_id, chat_id
-                )
-            ]
-        )
+        # Attach a small inline keyboard with Cancel (and optionally Escalar)
+        rows = [
+            await self._build_cancel_row(interaction.interaction_id, chat_id)
+        ]
+        if interaction.policy is not None and self.render_reject_button:
+            rows.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
         msg = await self.bot.send_message(
             chat_id=chat_id,

@@ -1000,3 +1000,88 @@ class TestRejectDetectorIntegration:
         )
         await mgr.receive_response(response)
         assert len(responses_store) == 1  # response was accumulated
+
+
+class TestEscalateButtonInterception:
+    """Tests for ESCALATE_OPTION_KEY button interception in receive_response (TASK-1279)."""
+
+    async def test_escalate_value_routes_to_advance_chain(self, mgr_with_redis):
+        """response.value == '__escalate__' on policy-bound interaction → advance_chain."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+        from parrot.human.models import ChoiceOption
+
+        mgr = mgr_with_redis
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="Approve?",
+            policy=policy,
+            interaction_type=InteractionType.SINGLE_CHOICE,
+            options=[ChoiceOption(key="yes", label="Yes"), ChoiceOption(key="no", label="No")],
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+
+        advanced = []
+        async def fake_advance(iid, cause):
+            advanced.append(cause)
+        mgr.advance_chain = fake_advance
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.SINGLE_CHOICE,
+        )
+        await mgr.receive_response(response)
+        assert advanced == ["reject"]
+
+    async def test_escalate_value_does_not_accumulate(self, mgr_with_redis):
+        """ESCALATE_OPTION_KEY response is NOT accumulated as a regular response."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+        from parrot.human.models import ChoiceOption
+
+        mgr = mgr_with_redis
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="Approve?",
+            policy=policy,
+            interaction_type=InteractionType.SINGLE_CHOICE,
+            options=[ChoiceOption(key="yes", label="Yes")],
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+        mgr.advance_chain = AsyncMock()
+        mgr._persist_responses = AsyncMock()
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.SINGLE_CHOICE,
+        )
+        await mgr.receive_response(response)
+        mgr._persist_responses.assert_not_called()
+
+    async def test_escalate_value_without_policy_accumulates(self, mgr_with_redis):
+        """ESCALATE_OPTION_KEY value without policy is accumulated normally."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+
+        mgr = mgr_with_redis
+        # Use FREE_TEXT so no options required; no policy
+        interaction = HumanInteraction(
+            question="What?",
+            interaction_type=InteractionType.FREE_TEXT,
+        )
+        responses_store = []
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+        mgr._load_responses = AsyncMock(return_value=[])
+        mgr._persist_responses = AsyncMock(side_effect=lambda iid, rs: responses_store.extend(rs))
+        mgr._evaluate_consensus = MagicMock(return_value=(False, None))
+        mgr._update_status = AsyncMock()
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.FREE_TEXT,
+        )
+        await mgr.receive_response(response)
+        assert len(responses_store) == 1  # accumulated normally

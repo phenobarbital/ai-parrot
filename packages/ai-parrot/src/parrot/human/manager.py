@@ -12,7 +12,7 @@ from navconfig.logging import logging
 
 from .actions.notify import NotifyAction
 from .actions.ticket import TicketAction
-from .channels.base import HumanChannel
+from .channels.base import ESCALATE_OPTION_KEY, HumanChannel
 from .escalation_intent import RejectIntentDetector
 from .models import (
     ConsensusMode,
@@ -553,6 +553,22 @@ class HumanInteractionManager:
                 interaction.interaction_type,
                 response.response_type,
             )
+            return
+
+        # --- Reject-button interception (TASK-1279) ---
+        # If the response value is the escalate sentinel key and the interaction
+        # is policy-bound, route to advance_chain immediately.
+        if (
+            interaction.policy is not None
+            and isinstance(response.value, str)
+            and response.value == ESCALATE_OPTION_KEY
+        ):
+            self.logger.info(
+                "Escalate button pressed for interaction %s; "
+                "advancing chain (cause=reject).",
+                response.interaction_id,
+            )
+            await self.advance_chain(response.interaction_id, cause="reject")
             return
 
         # --- Escalation-intent interception (TASK-1278) ---

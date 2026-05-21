@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
 
-from .base import HumanChannel
+from .base import HumanChannel, ESCALATE_OPTION_KEY
 from ..models import HumanInteraction, HumanResponse, InteractionType
 
 if TYPE_CHECKING:
@@ -40,6 +40,7 @@ class WebHumanChannel(HumanChannel):
     """
 
     channel_type: str = "web"
+    render_reject_button: bool = True
 
     def __init__(self, socket_manager: "UserSocketManager") -> None:
         """Initialise the WebHumanChannel.
@@ -204,6 +205,20 @@ class WebHumanChannel(HumanChannel):
                 }
                 for opt in interaction.options
             ]
+        else:
+            payload["options"] = []
+
+        # Append the escalate affordance for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            if payload["options"] is None:
+                payload["options"] = []
+            payload["options"].append(
+                {
+                    "key": ESCALATE_OPTION_KEY,
+                    "label": "↑ Escalar",
+                    "description": None,
+                }
+            )
 
         # Include form_schema for FORM type
         if interaction.interaction_type == InteractionType.FORM:
