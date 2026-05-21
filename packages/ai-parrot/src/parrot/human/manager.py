@@ -9,9 +9,13 @@ from uuid import uuid4
 
 from navconfig.logging import logging
 
+from .actions.notify import NotifyAction
+from .actions.ticket import TicketAction
 from .channels.base import HumanChannel
 from .models import (
     ConsensusMode,
+    EscalationActionType,
+    EscalationPolicy,
     HumanInteraction,
     HumanResponse,
     InteractionResult,
@@ -61,17 +65,27 @@ class HumanInteractionManager:
         self.channels: Dict[str, HumanChannel] = channels or {}
         self._redis_url = redis_url
         self._redis = None
+        self._redis_lock = asyncio.Lock()
         self._pending_futures: Dict[str, asyncio.Future] = {}
         self._timeout_tasks: Dict[str, asyncio.Task] = {}
         self.logger = logging.getLogger("parrot.human.manager")
+        self._actions: Dict[EscalationActionType, Any] = {
+            EscalationActionType.TICKET: TicketAction(),
+            EscalationActionType.NOTIFY: NotifyAction(),
+        }
+        self._policies: Dict[str, EscalationPolicy] = {}
 
     # ------------------------------------------------------------------
     # Redis helpers
     # ------------------------------------------------------------------
 
     async def _get_redis(self):
-        """Lazy-init Redis connection."""
-        if self._redis is None:
+        """Lazy-init Redis connection (concurrency-safe)."""
+        if self._redis is not None:
+            return self._redis
+        async with self._redis_lock:
+            if self._redis is not None:
+                return self._redis
             import redis.asyncio as aioredis
 
             url = self._redis_url
@@ -111,7 +125,7 @@ class HumanInteractionManager:
         """Store accumulated responses in Redis."""
         redis = await self._get_redis()
         key = f"hitl:responses:{interaction_id}"
-        data = json.dumps([r.model_dump() for r in responses])
+        data = json.dumps([r.model_dump(mode="json") for r in responses])
         await redis.setex(key, 86400, data)
 
     async def _load_responses(
@@ -129,6 +143,9 @@ class HumanInteractionManager:
             items = json.loads(raw)
             return [HumanResponse.model_validate(r) for r in items]
         except Exception:
+            self.logger.exception(
+                "Failed to deserialize responses for %s", interaction_id
+            )
             return []
 
     async def _persist_result(self, result: InteractionResult) -> None:
@@ -146,11 +163,11 @@ class HumanInteractionManager:
     ) -> bool:
         """Check whether *respondent* is an intended recipient of the interaction.
 
-        Loads the interaction from Redis and checks whether *respondent* appears
-        in ``interaction.target_humans``. Returns ``True`` when the interaction
-        is not found (to prevent leaking information about unknown IDs, which
-        are already rejected as 404 before this method is called) or when
-        ``target_humans`` is empty (open broadcast).
+        Fails closed: returns ``False`` when the interaction cannot be loaded
+        from Redis, so a missing 404 check upstream cannot turn into an
+        authorisation bypass. Returns ``True`` only when the interaction exists
+        AND (target_humans is empty (open broadcast) OR respondent appears in
+        target_humans).
 
         Args:
             interaction_id: UUID of the pending interaction.
@@ -161,8 +178,7 @@ class HumanInteractionManager:
         """
         interaction = await self._load_interaction(interaction_id)
         if interaction is None:
-            # Interaction not found — allow through; 404 is handled by the caller.
-            return True
+            return False
         if not interaction.target_humans:
             # No specific targets: open to any authenticated user.
             return True
@@ -206,25 +222,28 @@ class HumanInteractionManager:
         callback inline — so the future must already exist for
         ``receive_response`` to resolve it.
         """
-        # 1. Persist
+        # 1. Resolve Policy
+        await self._resolve_interaction_policy(interaction)
+
+        # 2. Persist
         await self._persist_interaction(interaction)
 
-        # 2. Create awaitable future BEFORE dispatch
+        # 3. Create awaitable future BEFORE dispatch
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         self._pending_futures[interaction.interaction_id] = future
 
-        # 3. Schedule timeout handler
+        # 4. Schedule timeout handler
         timeout_task = asyncio.create_task(
             self._handle_timeout(interaction, channel)
         )
         self._timeout_tasks[interaction.interaction_id] = timeout_task
 
-        # 4. Dispatch to channel (may resolve the future synchronously
+        # 5. Dispatch to channel (may resolve the future synchronously
         #    for CLI-style channels)
         await self._dispatch_to_channel(interaction, channel)
 
-        # 5. Wait for resolution
+        # 6. Wait for resolution
         try:
             result: InteractionResult = await future
             timeout_task.cancel()
@@ -238,6 +257,31 @@ class HumanInteractionManager:
         finally:
             self._pending_futures.pop(interaction.interaction_id, None)
             self._timeout_tasks.pop(interaction.interaction_id, None)
+
+    async def _resolve_interaction_policy(
+        self, interaction: HumanInteraction
+    ) -> None:
+        """Resolve policy_id to a policy object and seed Tier 1 if applicable."""
+        if not interaction.policy_id:
+            return
+        policy = self._policies.get(interaction.policy_id)
+        if not policy:
+            self.logger.warning(
+                "Policy %s not registered for interaction %s",
+                interaction.policy_id,
+                interaction.interaction_id,
+            )
+            return
+        interaction.policy = policy
+        if interaction.current_tier_level == 0 and policy.tiers:
+            tier1 = next(
+                (t for t in policy.tiers if t.level == 1), policy.tiers[0]
+            )
+            interaction.current_tier_level = tier1.level
+            interaction.target_humans = (
+                tier1.target_humans or interaction.target_humans
+            )
+            interaction.timeout = tier1.timeout
 
     async def _dispatch_to_channel(
         self, interaction: HumanInteraction, channel: str
@@ -253,12 +297,33 @@ class HumanInteractionManager:
             return
 
         channel_impl = self.channels[channel]
+        delivered_count = 0
+        failed: List[str] = []
         for human_id in interaction.target_humans:
             delivered = await channel_impl.send_interaction(
                 interaction, human_id
             )
             if delivered:
+                delivered_count += 1
                 interaction.status = InteractionStatus.DELIVERED
+            else:
+                failed.append(human_id)
+
+        if interaction.target_humans and delivered_count == 0:
+            self.logger.warning(
+                "Interaction %s not delivered to any target on channel '%s' "
+                "(targets=%s)",
+                interaction.interaction_id,
+                channel,
+                interaction.target_humans,
+            )
+        elif failed:
+            self.logger.warning(
+                "Interaction %s: channel '%s' failed to deliver to %s",
+                interaction.interaction_id,
+                channel,
+                failed,
+            )
         await self._update_status(interaction)
 
     # ------------------------------------------------------------------
@@ -280,6 +345,7 @@ class HumanInteractionManager:
           resolve it (but if the agent is already suspended,
           rehydration kicks in instead)
         """
+        await self._resolve_interaction_policy(interaction)
         await self._persist_interaction(interaction)
         await self._dispatch_to_channel(interaction, channel)
 
@@ -303,6 +369,7 @@ class HumanInteractionManager:
         The caller serialises its own state and resumes when the result
         appears in Redis (via ``get_result`` or a pub/sub listener).
         """
+        await self._resolve_interaction_policy(interaction)
         await self._persist_interaction(interaction)
 
         if channel in self.channels:
@@ -324,32 +391,13 @@ class HumanInteractionManager:
             callback_data,
         )
 
-        # Schedule async timeout (publishes timeout result to Redis)
-        asyncio.create_task(
-            self._handle_async_timeout(interaction, channel)
+        # Schedule timeout — tracked so receive_response can cancel it.
+        timeout_task = asyncio.create_task(
+            self._handle_timeout(interaction, channel)
         )
+        self._timeout_tasks[interaction.interaction_id] = timeout_task
 
         return interaction.interaction_id
-
-    async def _handle_async_timeout(
-        self, interaction: HumanInteraction, channel: str
-    ) -> None:
-        """Timeout handler for the async/suspend mode.
-
-        Unlike _handle_timeout, this doesn't resolve a Future — it
-        persists the timeout result to Redis and publishes a rehydration
-        event so the suspended agent can be resumed with a timeout status.
-        """
-        await asyncio.sleep(interaction.timeout)
-
-        # Check if already resolved
-        existing = await self.get_result(interaction.interaction_id)
-        if existing is not None:
-            return
-
-        result = self._build_timeout_result(interaction)
-        await self._persist_result(result)
-        await self._trigger_rehydration(interaction, result)
 
     async def get_result(
         self, interaction_id: str
@@ -426,18 +474,17 @@ class HumanInteractionManager:
 
         await self._persist_result(result)
 
-        # Resolve in-memory future (long-polling / hot-wait mode)
+        # Cancel timeout task in both modes — suspend/resume also schedules one.
+        timeout_task = self._timeout_tasks.pop(interaction.interaction_id, None)
+        if timeout_task and not timeout_task.done():
+            timeout_task.cancel()
+
+        # Resolve in-memory future (long-polling / hot-wait mode).
         future = self._pending_futures.pop(interaction.interaction_id, None)
         if future is not None and not future.done():
             future.set_result(result)
-            # Cancel associated timeout task
-            timeout_task = self._timeout_tasks.pop(
-                interaction.interaction_id, None
-            )
-            if timeout_task and not timeout_task.done():
-                timeout_task.cancel()
         else:
-            # Suspend/resume mode — publish event
+            # Suspend/resume mode — publish event for rehydration.
             await self._trigger_rehydration(interaction, result)
 
     # ------------------------------------------------------------------
@@ -546,37 +593,47 @@ class HumanInteractionManager:
             threshold = total_expected // 2 + 1
             if total_received < threshold:
                 return False, None
-            # Build vote counts using a stable hashable key,
-            # but return the original typed value (not the stringified key)
-            key_to_value = {}
-            vote_keys = []
-            for r in responses:
-                k = _stable_key(r.value)
-                key_to_value[k] = r.value
-                vote_keys.append(k)
-            votes = Counter(vote_keys)
-            winner_key, count = votes.most_common(1)[0]
+            winner_value, count = HumanInteractionManager._tally(responses)
             if count >= threshold:
-                return True, key_to_value[winner_key]
+                return True, winner_value
+            # Below threshold — wait unless everyone has voted, in which
+            # case it is a tie that will never break: emit a conflict result.
+            if total_received >= total_expected:
+                return True, {
+                    "conflict": True,
+                    "responses": [r.value for r in responses],
+                }
             return False, None
 
         if mode == ConsensusMode.QUORUM:
-            # At least half responded, and majority among those
+            # At least half responded, and majority among those.
             if total_received < max(total_expected // 2, 1):
                 return False, None
-            key_to_value = {}
-            vote_keys = []
-            for r in responses:
-                k = _stable_key(r.value)
-                key_to_value[k] = r.value
-                vote_keys.append(k)
-            votes = Counter(vote_keys)
-            winner_key, count = votes.most_common(1)[0]
+            winner_value, count = HumanInteractionManager._tally(responses)
             if count > total_received // 2:
-                return True, key_to_value[winner_key]
+                return True, winner_value
+            # Strict-majority tie. Keep waiting if more votes can arrive,
+            # else surface the deadlock as a conflict result.
+            if total_received >= total_expected:
+                return True, {
+                    "conflict": True,
+                    "responses": [r.value for r in responses],
+                }
             return False, None
 
         return False, None
+
+    @staticmethod
+    def _tally(responses: List[HumanResponse]) -> tuple[Any, int]:
+        """Return (winner_value, vote_count) for the most-voted response."""
+        key_to_value: Dict[str, Any] = {}
+        vote_keys: List[str] = []
+        for r in responses:
+            k = _stable_key(r.value)
+            key_to_value[k] = r.value
+            vote_keys.append(k)
+        winner_key, count = Counter(vote_keys).most_common(1)[0]
+        return key_to_value[winner_key], count
 
     # ------------------------------------------------------------------
     # Timeout & escalation
@@ -605,31 +662,132 @@ class HumanInteractionManager:
     ) -> None:
         """Wait for the timeout period, then apply the configured action.
 
-        Used by the long-polling (request_human_input) path.
+        Works for both long-polling and suspend/resume modes — the action
+        helpers (``_escalate_to_next_tier``, ``_retry``, ``_finish_with_timeout``)
+        fall back to ``_trigger_rehydration`` when no future is registered.
         """
         await asyncio.sleep(interaction.timeout)
 
-        # If already resolved, nothing to do
-        if interaction.interaction_id not in self._pending_futures:
+        # If a result has already been persisted, nothing to do.
+        if await self.get_result(interaction.interaction_id) is not None:
             return
 
         action = interaction.timeout_action
 
         if action == TimeoutAction.ESCALATE:
-            await self._escalate(interaction, channel)
+            if interaction.policy:
+                await self._escalate_to_next_tier(interaction, channel)
+            else:
+                await self._escalate(interaction, channel)
             return
 
         if action == TimeoutAction.RETRY:
             await self._retry(interaction, channel)
             return
 
-        # CANCEL or DEFAULT
+        # CANCEL or DEFAULT — resolve future if present, else publish event.
         result = self._build_timeout_result(interaction)
         await self._persist_result(result)
 
         future = self._pending_futures.pop(interaction.interaction_id, None)
         if future is not None and not future.done():
             future.set_result(result)
+        else:
+            await self._trigger_rehydration(interaction, result)
+
+    async def _escalate_to_next_tier(
+        self, interaction: HumanInteraction, channel: str
+    ) -> None:
+        """Move the interaction to the next tier in its policy."""
+        if not interaction.policy or not interaction.policy.tiers:
+            self.logger.warning(
+                "Cannot escalate interaction %s: no policy tiers defined.",
+                interaction.interaction_id,
+            )
+            await self._finish_with_timeout(interaction)
+            return
+
+        next_level = interaction.current_tier_level + 1
+        next_tier = next(
+            (t for t in interaction.policy.tiers if t.level == next_level), None
+        )
+
+        if not next_tier:
+            self.logger.info(
+                "Level %d reached for interaction %s. No more tiers.",
+                interaction.current_tier_level,
+                interaction.interaction_id,
+            )
+            await self._finish_with_timeout(interaction)
+            return
+
+        # 1. Update state
+        interaction.current_tier_level = next_level
+        interaction.status = InteractionStatus.ESCALATED
+        await self._update_status(interaction)
+
+        # 2. Execute Action if needed
+        action_metadata: Dict[str, Any] = {}
+        if next_tier.action_type in self._actions:
+            action = self._actions[next_tier.action_type]
+            try:
+                action_metadata = await action.execute(interaction, next_tier)
+            except Exception:
+                self.logger.exception(
+                    "Action %s failed for interaction %s",
+                    next_tier.action_type,
+                    interaction.interaction_id,
+                )
+
+        # 3. Re-dispatch or Wait at this tier
+        if next_tier.action_type == EscalationActionType.INTERACT:
+            # Apply new timeout BEFORE dispatch so the persisted blob is
+            # consistent if we crash between dispatch and task scheduling.
+            interaction.target_humans = next_tier.target_humans
+            interaction.timeout = next_tier.timeout
+            await self._dispatch_to_channel(
+                interaction, next_tier.channel_type or channel
+            )
+
+            # Start a new timeout for THIS level.
+            self._timeout_tasks[interaction.interaction_id] = asyncio.create_task(
+                self._handle_timeout(interaction, channel)
+            )
+        else:
+            # For non-INTERACT actions (like TICKET, NOTIFY), resume agent immediately
+            # as per fire-and-forget policy.
+            self.logger.info(
+                "Escalated to Tier %d (%s) for interaction %s. "
+                "Resuming agent with action metadata.",
+                next_level,
+                next_tier.name,
+                interaction.interaction_id,
+            )
+            result = InteractionResult(
+                interaction_id=interaction.interaction_id,
+                status=InteractionStatus.COMPLETED,
+                tier_level=next_level,
+                escalated=True,
+                action_metadata=action_metadata,
+            )
+            await self._persist_result(result)
+
+            future = self._pending_futures.pop(interaction.interaction_id, None)
+            if future is not None and not future.done():
+                future.set_result(result)
+            else:
+                # Suspend/resume mode — publish event for Orchestrator
+                await self._trigger_rehydration(interaction, result)
+
+    async def _finish_with_timeout(self, interaction: HumanInteraction) -> None:
+        """Resolve the interaction as timed out."""
+        result = self._build_timeout_result(interaction)
+        await self._persist_result(result)
+        future = self._pending_futures.pop(interaction.interaction_id, None)
+        if future is not None and not future.done():
+            future.set_result(result)
+        else:
+            await self._trigger_rehydration(interaction, result)
 
     async def _escalate(
         self, interaction: HumanInteraction, channel: str

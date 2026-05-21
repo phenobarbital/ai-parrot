@@ -812,9 +812,9 @@ from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema  # tools/
 - [x] Business-hours model — *Owner: Jesus Lara*: per-tier `business_hours` declaration (Round 2).
 - [x] Severity API — *Owner: Jesus Lara*: `severity` parameter on `ask_human` input; policy maps severity → starting tier (Round 3).
 - [x] `EXPLICIT_REJECT` UX — *Owner: Jesus Lara*: standardised "↑ Escalar" button on channels that support it **plus** lightweight LLM intent detection on free-text responses (Round 3, user combined two options).
-- [ ] Which live-chat platform powers `LiveChatHandoffAction` V1? (Intercom? Chatwoot? a generic webhook?) — *Owner: Jesus Lara*
-- [ ] Should `OpenTicketAction` also support Zendesk in V1, or punt to V2 to keep scope bounded? — *Owner: Jesus Lara*
-- [ ] Where do tier-transition audit logs land? Reusing `hitl:*` Redis keys is fine for runtime, but ops likely needs a longer-lived store (DB? log shipper?) — *Owner: Jesus Lara + Ops*
-- [ ] Reject-intent detector V1: hand-tuned regex of canned phrases, or straight to a Groq Haiku call? Hybrid (regex first, LLM fallback) is implied by Round 3 — confirm. — *Owner: Jesus Lara*
-- [ ] Should `HumanDecisionNode` (flow-level) get the same `escalation_policy` kwarg as `HumanTool` in V1, or defer to V2? — *Owner: Jesus Lara*
-- [ ] Telemetry / observability hook — emit structured events on every tier advance? (would dovetail nicely with FEAT-176 EventEmitterMixin.) — *Owner: Jesus Lara*
+- [ ] Which live-chat platform powers `LiveChatHandoffAction` V1? (Intercom? Chatwoot? a generic webhook?) — *Owner: Jesus Lara*: a generic webhook for now.
+- [ ] Should `OpenTicketAction` also support Zendesk in V1, or punt to V2 to keep scope bounded? — *Owner: Jesus Lara*: punt to V2.
+- [ ] Where do tier-transition audit logs land? Reusing `hitl:*` Redis keys is fine for runtime, but ops likely needs a longer-lived store (DB? log shipper?) — *Owner: Jesus Lara + Ops*: only redis for now.
+- [ ] Reject-intent detector V1: hand-tuned regex of canned phrases, or straight to a Groq Haiku call? Hybrid (regex first, LLM fallback) is implied by Round 3 — confirm. — *Owner: Jesus Lara*: confirmed, regex first + LLM confirmation on doubt. (not callback)
+- [ ] Should `HumanDecisionNode` (flow-level) get the same `escalation_policy` kwarg as `HumanTool` in V1, or defer to V2? — *Owner: Jesus Lara*: accept in v1.
+- [ ] Telemetry / observability hook — emit structured events on every tier advance? (would dovetail nicely with FEAT-176 EventEmitterMixin.) — *Owner: Jesus Lara*: yes, emit structured events.

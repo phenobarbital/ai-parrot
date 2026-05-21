@@ -151,14 +151,14 @@ class TestConsensusEvaluation:
         )
         # 2 of 4 responded, both agree
         responses = [
-            self._make_response("yes", "u1"),
-            self._make_response("yes", "u2"),
+            self._make_response(True, "u1"),
+            self._make_response(True, "u2"),
         ]
         reached, value = HumanInteractionManager._evaluate_consensus(
             interaction, responses
         )
         assert reached is True
-        assert value == "yes"
+        assert value is True
 
 
 class TestResponseValidation:
