@@ -41,6 +41,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,
 )
 from parrot.knowledge.ontology.schema import TenantContext
+from parrot.pageindex.toolkit import PageIndexToolkit
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,16 @@ class GraphIndexBuilder:
         ignore_file: Optional path to a ``.graphindexignore`` file.
         resolution_config: Optional ``ResolutionConfig`` for cross-domain
             resolution threshold and caps.
+        pageindex_toolkit: Optional :class:`PageIndexToolkit`. When set,
+            hierarchical loader sources are persisted as PageIndex trees
+            (lean ToC + per-node markdown sidecars) and the resulting
+            ``UniversalNode`` Section instances carry a ``content_ref``
+            that resolves to the body via :class:`NodeContentStore`.
+            The toolkit's tree name is exposed on the ``Document``
+            UniversalNode as ``domain_tags['pageindex_tree_id']`` so
+            the ontology's ``search_documents_scoped`` routing has a
+            concrete target. Omit to keep the legacy in-memory path
+            with no sidecar persistence.
     """
 
     def __init__(
@@ -68,11 +79,13 @@ class GraphIndexBuilder:
         output_dir: Path,
         ignore_file: Optional[Path] = None,
         resolution_config: Optional[ResolutionConfig] = None,
+        pageindex_toolkit: Optional[PageIndexToolkit] = None,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
         self.output_dir = Path(output_dir)
         self.resolution_config = resolution_config or ResolutionConfig()
+        self.pageindex_toolkit = pageindex_toolkit
         self.logger = logging.getLogger(__name__)
         self._ignore_spec: Optional[pathspec.PathSpec] = self._load_ignore(ignore_file)
 
@@ -345,7 +358,7 @@ class GraphIndexBuilder:
         """
         nodes: list[UniversalNode] = []
         edges: list[UniversalEdge] = []
-        extractor = LoaderExtractor()
+        extractor = LoaderExtractor(toolkit=self.pageindex_toolkit)
         for uri in sources.loader_sources:
             if self._is_ignored(uri):
                 logger.debug("Ignoring loader source: %s", uri)
@@ -439,7 +452,7 @@ class GraphIndexBuilder:
         if self._is_ignored(uri):
             return [], []
         try:
-            extractor = LoaderExtractor()
+            extractor = LoaderExtractor(toolkit=self.pageindex_toolkit)
             return await extractor.extract(None, uri)
         except Exception as exc:
             logger.warning("Loader extraction for %s failed: %s", uri, exc)
