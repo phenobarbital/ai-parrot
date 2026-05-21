@@ -38,6 +38,7 @@ from ..human import (
     get_default_human_manager,
     set_default_human_manager,
 )
+from ..human.channels.base import ESCALATE_OPTION_KEY
 from ..human.models import HumanResponse, InteractionType
 
 logger = logging.getLogger(__name__)
@@ -352,6 +353,33 @@ class HITLResponseHandler(BaseView):
                 status=403,
                 content_type="application/json",
                 body=json.dumps({"error": "forbidden: not the intended respondent"}),
+            )
+
+        # Escalate path: web UI sends the sentinel value to trigger advance_chain.
+        # Same auth gate as regular responses (is_valid_respondent already passed).
+        if body.value == ESCALATE_OPTION_KEY:
+            logger.info(
+                "HITLResponseHandler: escalate request for interaction %s by %s",
+                interaction_id,
+                respondent,
+            )
+            try:
+                await manager.advance_chain(interaction_id, cause="reject")
+            except Exception as exc:
+                logger.error(
+                    "HITLResponseHandler: advance_chain failed for %s — %s",
+                    interaction_id,
+                    exc,
+                )
+                return web.Response(
+                    status=500,
+                    content_type="application/json",
+                    body=json.dumps({"error": f"Failed to escalate: {exc}"}),
+                )
+            return web.Response(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({"status": "escalated", "interaction_id": interaction_id}),
             )
 
         # Determine response type
