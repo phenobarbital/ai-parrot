@@ -72,7 +72,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Central manager refactor — must land before any consumer of advance_chain (1279, 1280, 1283, 1285) and before the orchestrator change (1284).",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1277-manager-advance-chain.md"
+      "completed_at": "2026-05-21T22:34:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1277-manager-advance-chain.md"
     },
     {
       "id": "TASK-1278",
