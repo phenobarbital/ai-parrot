@@ -150,7 +150,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Touches node.py only — can run any time after 1274.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1281-decision-node-policy-kwargs.md"
+      "completed_at": "2026-05-21T22:54:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1281-decision-node-policy-kwargs.md"
     },
     {
       "id": "TASK-1282",
@@ -170,7 +170,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -180,8 +180,8 @@
       "parallelism_notes": "Touches tool.py only — can run any time after 1274.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1282-human-tool-severity.md"
+      "completed_at": "2026-05-21T22:54:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1282-human-tool-severity.md"
     },
     {
       "id": "TASK-1283",
