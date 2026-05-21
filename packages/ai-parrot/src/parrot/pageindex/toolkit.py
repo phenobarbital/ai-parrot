@@ -5,10 +5,15 @@ search them (hybrid BM25 + LLM-walk), retrieve aggregated text,
 insert new pages from raw content (Two-Step Chain-of-Thought ingest),
 and import whole folders preserving directory structure.
 
-The toolkit lives inside ``parrot/pageindex/`` (rather than
-``parrot/tools/``) because every tool here is conceptually a PageIndex
-operation; the older ``parrot.tools.pageindex_toolkit.PageIndexToolkit``
-is a different surface (UUID-keyed indices) and is unchanged.
+Per-tree storage is split into two artefacts:
+
+    <storage_dir>/<tree_name>.json   — lean ToC tree (titles, summaries,
+                                       categories, metadata)
+    <storage_dir>/<tree_name>/       — sidecar markdown, one .md per node,
+                                       served by NodeContentStore
+
+This matches the upstream PageIndex contract: vectorless retrieval over
+a hierarchical index, with bodies fetched on demand by node_id.
 """
 from __future__ import annotations
 
@@ -38,6 +43,8 @@ from .utils import find_node_by_id
 
 
 logger = logging.getLogger("parrot.pageindex")
+
+_MAX_TREES_HARD_CAP = 10
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -308,6 +315,117 @@ class PageIndexToolkit(AbstractToolkit):
             if body:
                 parts.append(f"## {title}\n{body}")
         return "\n\n".join(parts)
+
+    async def search_documents_scoped(
+        self,
+        tree_names: list[str],
+        query: str,
+        include_tree_context: bool = False,
+        max_trees: int = _MAX_TREES_HARD_CAP,
+    ) -> dict[str, Any]:
+        """Run an LLM tree-walk against a SUBSET of trees in one call.
+
+        Iterates over ``tree_names``, runs :class:`PageIndexRetriever`
+        per tree (LLM-walk only — no BM25), and assembles a per-tree
+        ``context`` string from sidecar markdown loaded via
+        :class:`NodeContentStore`. Falls back to summaries when a node
+        has no sidecar (e.g. legacy tree).
+
+        Designed for the ontology routing pattern: a graph query
+        produces a list of ``Document.pageindex_tree_id`` values, this
+        method searches just those trees, the agent grounds its answer
+        in the merged result.
+
+        Missing tree names are skipped with a WARNING log. Returns
+        ``{"status": "empty", ...}`` when the input is empty or every
+        name is missing.
+
+        Args:
+            tree_names: Tree names to search. Order is preserved.
+            query: Free-form natural-language query.
+            include_tree_context: When ``True``, each result entry
+                carries the per-tree ``tree_context`` blob from
+                :meth:`PageIndexRetriever.get_tree_context`.
+            max_trees: Hard cap on the number of trees searched
+                (default and max: 10). Names past the cap are dropped
+                with a DEBUG log.
+
+        Returns:
+            ``{"status": "ok"|"empty", "scoped_results": [...]}``.
+            Each entry has::
+
+                {
+                    "tree_name": str,
+                    "doc_name":  str | None,
+                    "node_list": list[str],
+                    "thinking":  str,
+                    "context":   str,
+                    # only when include_tree_context=True:
+                    "tree_context": str,
+                }
+        """
+        if not tree_names:
+            return {"status": "empty", "scoped_results": []}
+
+        effective = tree_names[: max_trees]
+        if len(tree_names) > max_trees:
+            logger.debug(
+                "search_documents_scoped: capping tree_names from %d to %d",
+                len(tree_names),
+                max_trees,
+            )
+
+        scoped_results: list[dict[str, Any]] = []
+
+        for tree_name in effective:
+            if not self._store.exists(tree_name):
+                logger.warning(
+                    "search_documents_scoped: tree %r not found — skipping",
+                    tree_name,
+                )
+                continue
+
+            tree = self._load_tree(tree_name)
+            retriever = PageIndexRetriever(
+                tree=tree,
+                adapter=self._adapter,
+                model=self._model,
+            )
+            search_result = await retriever.search(query)
+
+            context_parts: list[str] = []
+            structure = tree.get("structure", [])
+            for node_id in search_result.node_list or []:
+                node = find_node_by_id(structure, node_id)
+                if not node:
+                    continue
+                title = node.get("title") or "Section"
+                body = self._content_store.load(tree_name, node_id)
+                if not body:
+                    body = (
+                        node.get("summary")
+                        or node.get("prefix_summary")
+                        or ""
+                    )
+                if body:
+                    context_parts.append(f"## {title}\n{body}")
+
+            entry: dict[str, Any] = {
+                "tree_name": tree_name,
+                "doc_name": tree.get("doc_name"),
+                "node_list": list(search_result.node_list or []),
+                "thinking": search_result.thinking,
+                "context": "\n\n".join(context_parts),
+            }
+            if include_tree_context:
+                entry["tree_context"] = retriever.get_tree_context(
+                    include_summaries=True,
+                )
+            scoped_results.append(entry)
+
+        if not scoped_results:
+            return {"status": "empty", "scoped_results": []}
+        return {"status": "ok", "scoped_results": scoped_results}
 
     async def tag_node(
         self,
