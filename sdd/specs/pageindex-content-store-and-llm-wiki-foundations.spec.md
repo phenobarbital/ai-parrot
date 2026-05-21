@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-189
 **Date**: 2026-05-21
 **Author**: Jesús Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x (PageIndex is pre-production; no compat guarantees)
 
 ---
@@ -852,7 +852,7 @@ No new dependencies introduced.
 - [ ] **Categories taxonomy** — *Owner: TBD*: should `tag_node` validate
       categories against a configurable allow-list, or stay fully
       free-form? v1 will ship free-form; revisit if practice shows we
-      want normalisation (singular/plural, case, etc.).
+      want normalisation (singular/plural, case, etc.).: free-form
 - [ ] **Metadata filter operator surface** — *Owner: TBD*: equality-only
       for v1. If we later need ranges (`{"effective_date": {">=": "..."}}`)
       or `in` semantics, this needs a small DSL. Out of scope for now.
