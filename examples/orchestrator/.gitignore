@@ -1,0 +1,3 @@
+# Runtime artefacts — never commit
+logs/
+knowledge/.storage/
