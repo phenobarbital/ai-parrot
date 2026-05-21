@@ -572,7 +572,11 @@ def page_list_to_group_text(
         zip(page_contents, token_lengths)
     ):
         if current_token_count + page_tokens > average_tokens_per_part:
-            subsets.append("".join(current_subset))
+            # Skip closing an empty group — happens when the very first page
+            # already exceeds average_tokens_per_part on iteration 0; emitting
+            # "" would cost one wasted generate_toc_init call downstream.
+            if current_subset:
+                subsets.append("".join(current_subset))
             overlap_start = max(i - overlap_page, 0)
             current_subset = list(page_contents[overlap_start:i])
             current_token_count = sum(token_lengths[overlap_start:i])

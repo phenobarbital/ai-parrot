@@ -2,6 +2,35 @@
 
 All notable changes to `parrot-formdesigner` will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **FEAT-188 — Form Lifecycle Events**: declarative interceptor hooks
+  (`onBeforeOpen`, `onSchemaLoaded`, `onBeforeSubmit`, `onAfterSubmit`,
+  `onError`) per form. Register async handlers via
+  `register_form_event("form_id.hookName")`, declare bindings in
+  `FormSchema.events`, and the dispatcher calls them at the right point in
+  each API handler.
+  - Tenant-scoped registry with global fallback.
+  - `FormEventAbort` typed exception for controlled flow cancellation (never
+    routed through `onError`).
+  - `onBeforeSubmit` can replace the submitted payload before validation.
+  - `onSchemaLoaded` can shallowly override returned JSON Schema keys.
+  - HTML5 renderer emits DOM `CustomEvent`s (`parrot:before-open`,
+    `parrot:before-submit`) + optional `remote: true` fetch bridge with
+    per-session CSRF token protection.
+  - New route `POST /api/v1/forms/{id}/events/{event_name}` for remote event
+    bridging (requires `X-CSRF-Token`).
+  - Zero overhead and byte-identical responses for forms that do not declare
+    `events`.
+  - See `docs/lifecycle-events.md` for full documentation.
+  - **Known limitation**: The CSRF token store (`services/csrf.py`) uses an
+    in-process dictionary. It is NOT shared across multiple worker processes
+    (e.g., `gunicorn -w N` with N > 1). For production multi-worker
+    deployments, replace `_STORE` with a shared backend such as Redis.
+    A module-level warning is logged at import time to surface this limitation.
+
 ## [0.2.0] — 2026-05-07 — Structural Refactor (FEAT-152)
 
 ### Breaking Changes

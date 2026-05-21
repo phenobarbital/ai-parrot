@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from parrot_formdesigner.core.schema import FormSchema, FormField, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.tools.create_form import CreateFormTool

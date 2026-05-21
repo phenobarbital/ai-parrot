@@ -17,7 +17,7 @@ from ..core.schema import (
     RenderedForm,
     RenderWarning,
 )
-from ..core.style import LayoutType, StyleSchema
+from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
 

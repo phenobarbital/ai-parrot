@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints
+from .events import FormEventsConfig
 from .options import FieldOption, OptionsSource
 from .types import FieldType, LocalizedString
 
@@ -261,6 +262,14 @@ class FormSchema(BaseModel):
             to resolve the Postgres schema where the form is stored
             (e.g. ``"epson"`` → ``epson.form_schemas``). ``None`` falls
             back to the storage's default schema.
+        metadata: Declared contextual metadata fields captured on submission.
+        events: Optional lifecycle event bindings (FEAT-188). Maps each
+            lifecycle event name (``onBeforeOpen``, ``onSchemaLoaded``,
+            ``onBeforeSubmit``, ``onAfterSubmit``, ``onError``) to a
+            ``FormEventBinding`` that declares the logical handler reference
+            and transport options. When ``None`` (default), no lifecycle hooks
+            are invoked — forms without events behave identically to their
+            pre-FEAT-188 state.
     """
 
     form_id: str
@@ -274,6 +283,7 @@ class FormSchema(BaseModel):
     created_at: datetime | None = None
     tenant: str | None = None
     metadata: list[FormMetadataField] | None = None
+    events: FormEventsConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections."""

@@ -159,7 +159,7 @@ class TestFormSchemaEvents:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-20
+**Notes**: events field added to FormSchema in core/schema.py. Import of FormEventsConfig added. Docstring updated. 8 unit tests passing including no-breaking acid test. Ruff clean.
 **Deviations from spec**: none

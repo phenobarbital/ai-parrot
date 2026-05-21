@@ -1,6 +1,5 @@
 """Unit tests for SubmitAction auth extension (TASK-598 / FEAT-086)."""
 
-import pytest
 from parrot_formdesigner.core.auth import BearerAuth, ApiKeyAuth, NoAuth
 from parrot_formdesigner.core.schema import SubmitAction
 

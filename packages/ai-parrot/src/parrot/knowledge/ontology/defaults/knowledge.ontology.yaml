@@ -47,7 +47,11 @@ entities:
           description: "0..1 tie-break weight when multiple primaries match"
       - pageindex_tree_id:
           type: string
-          description: Opaque reference to a PageIndex tree (written by ETL on ingest)
+          description: >-
+            Name of the PageIndex tree (NodeContentStore + JSONTreeStore)
+            that holds the document's body. Used by
+            PageIndexToolkit.search_documents_scoped to scope the LLM
+            tree-walk to documents the graph identified as authoritative.
       - language:
           type: string
           default: en
@@ -162,7 +166,7 @@ traversal_patterns:
       method: search_documents_scoped
       credential_mode: service_account
       parameters:
-        tree_ids: "{{ graph.rows | map_attr('pageindex_tree_id') | json }}"
+        tree_names: "{{ graph.rows | map_attr('pageindex_tree_id') | json }}"
         query: "{{ ctx.original_query }}"
         include_tree_context: false
       result_binding: pageindex_hits

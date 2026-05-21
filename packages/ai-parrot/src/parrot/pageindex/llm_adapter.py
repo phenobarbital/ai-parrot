@@ -110,28 +110,29 @@ class PageIndexLLMAdapter:
         """
         for attempt in range(self.max_retries):
             try:
-                response = await self.client.ask(
+                response = await self.client.invoke(
                     prompt=prompt,
                     model=self.model,
                     temperature=temperature,
-                    structured_output=output_type,
+                    output_type=output_type,
                     system_prompt=system_prompt,
                 )
-                # Native structured output
-                if hasattr(response, "structured_output") and response.structured_output:
-                    result = response.structured_output
-                    if isinstance(result, output_type):
-                        return result
-                    # Try to re-parse if it came back as dict
-                    if isinstance(result, dict):
-                        return output_type.model_validate(result)
+                # invoke() returns the parsed structured value in `output`
+                # when output_type is set; fall back to JSON extraction if
+                # the provider returned raw text instead.
+                result = getattr(response, "output", None)
+                if isinstance(result, output_type):
+                    return result
+                if isinstance(result, dict):
+                    return output_type.model_validate(result)
+                if isinstance(result, list):
+                    return result
 
-                # Fallback: parse raw text
-                raw_text = response.output or ""
+                raw_text = result if isinstance(result, str) else ""
                 parsed = extract_json(raw_text)
                 if isinstance(parsed, dict):
                     return output_type.model_validate(parsed)
-                elif isinstance(parsed, list):
+                if isinstance(parsed, list):
                     return parsed
                 return parsed
             except Exception as e:

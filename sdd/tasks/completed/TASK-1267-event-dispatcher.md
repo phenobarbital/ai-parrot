@@ -252,7 +252,7 @@ class TestApplySchemaOverrides:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-20
+**Notes**: event_dispatcher.py created with dispatch() coroutine + apply_schema_overrides() helper. Defensive getattr for form.events field. Re-exported from services/__init__.py. Tests created; full dispatcher tests run after TASK-1268. Ruff clean.
+**Deviations from spec**: Dispatcher uses getattr(form, "events", None) defensively as recommended in task notes.

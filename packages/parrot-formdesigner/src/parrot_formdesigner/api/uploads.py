@@ -104,7 +104,12 @@ def _get_resolver(app: web.Application) -> RestFieldResolver:
 
 
 def _get_blob_storage(app: web.Application) -> Any:
-    """Return the app-level blob storage, or construct a default S3 one lazily.
+    """Return the app-level blob storage, or construct an ephemeral default.
+
+    The lazy default is ``TempBlobStorage`` — a process-local temp directory
+    that requires no AWS/GCS credentials. Production deployments must wire
+    ``app["blob_storage"]`` explicitly to an ``S3BlobStorage`` /
+    ``GCSBlobStorage`` / ``LocalBlobStorage`` instance.
 
     Args:
         app: The aiohttp application.
@@ -115,9 +120,13 @@ def _get_blob_storage(app: web.Application) -> Any:
     storage = app.get("blob_storage")
     if storage is not None:
         return storage
-    # Lazy default: S3BlobStorage reads from environment variables.
-    from ..services.blob_storage import S3BlobStorage  # deferred
-    return S3BlobStorage()
+    # Lazy default: TempBlobStorage — safe for tests, dev, and any path
+    # where no real backend is configured. Cached on the app so subsequent
+    # uploads share the same temp directory.
+    from ..services.blob_storage import TempBlobStorage  # deferred
+    storage = TempBlobStorage()
+    app["blob_storage"] = storage
+    return storage
 
 
 # ---------------------------------------------------------------------------

@@ -196,9 +196,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-20
+**Notes**: All 5 Pydantic models + FormEventAbort created in core/events.py. Re-exported from core/__init__.py. 29 unit tests written and passing. Ruff clean.
 **Deviations from spec**: none

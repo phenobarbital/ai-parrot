@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import copy
 import json
 import logging
@@ -9,9 +10,10 @@ import math
 import re
 from io import BytesIO
 from types import SimpleNamespace as config
-from typing import Any, Optional
+from typing import Any, Awaitable, Iterable, Optional
 
 from .llm_adapter import PageIndexLLMAdapter
+from .pdf_to_markdown import build_node_markdown_map, extract_markdown_per_page
 from .schemas import (
     GeneratedTocItem,
     PageIndexDetection,
@@ -29,7 +31,6 @@ from .utils import (
     add_preface_if_needed,
     convert_page_to_int,
     convert_physical_index_to_int,
-    count_tokens,
     extract_json,
     extract_matching_page_pairs,
     calculate_page_offset,
@@ -50,7 +51,69 @@ from .utils import (
 logger = logging.getLogger("parrot.pageindex")
 
 
+# ======================== Bounded LLM Concurrency ========================
+# Direct LLM fan-out sites used unbounded ``asyncio.gather`` which on real
+# Gemini endpoints triggers 429s and queueing once concurrent calls go above
+# ~16. ``_LLM_SEMAPHORE`` is the shared per-ingest gate; it lives in a
+# ContextVar so every helper transitively called from ``build_page_index`` sees
+# the same semaphore without having to thread a parameter through every
+# signature. Outside an ingest the helper degrades to plain ``gather``.
+
+DEFAULT_LLM_CONCURRENCY = 16
+TAGGED_PAGE_TOKEN_OVERHEAD = 32
+
+_LLM_SEMAPHORE: contextvars.ContextVar[
+    Optional[asyncio.Semaphore]
+] = contextvars.ContextVar("pageindex_llm_semaphore", default=None)
+
+
+async def _limited_gather(
+    coros: Iterable[Awaitable[Any]],
+    *,
+    return_exceptions: bool = False,
+) -> list[Any]:
+    """``asyncio.gather`` with the active LLM semaphore applied per task.
+
+    Reads the semaphore from :data:`_LLM_SEMAPHORE`; if unset, falls back
+    to plain ``asyncio.gather`` so callers outside of ``build_page_index``
+    are unaffected. Caps wall-time damage from 429 retries on flash-lite.
+    """
+    sem = _LLM_SEMAPHORE.get()
+    coros = list(coros)
+    if sem is None:
+        return await asyncio.gather(*coros, return_exceptions=return_exceptions)
+
+    async def _wrap(coro: Awaitable[Any]) -> Any:
+        async with sem:
+            return await coro
+
+    return await asyncio.gather(
+        *(_wrap(c) for c in coros),
+        return_exceptions=return_exceptions,
+    )
+
+
+def _tagged_page_text_and_tokens(
+    page_index: int,
+    page: tuple[str, int],
+) -> tuple[str, int]:
+    """Return tagged page text and a conservative token estimate.
+
+    ``get_page_tokens`` already tokenizes each raw page. The physical-index
+    tags are short and predictable, so reuse the existing page token count
+    with a fixed overhead instead of re-tokenizing full page text.
+    """
+    page_text, token_count = page
+    tagged_text = (
+        f"<physical_index_{page_index}>\n"
+        f"{page_text}\n"
+        f"<physical_index_{page_index}>\n\n"
+    )
+    return tagged_text, token_count + TAGGED_PAGE_TOKEN_OVERHEAD
+
+
 # ======================== TOC Detection ========================
+
 
 async def toc_detector_single_page(
     content: str,
@@ -77,37 +140,142 @@ async def toc_detector_single_page(
     return "no"
 
 
+def _group_page_range(group_text: str) -> Optional[tuple[int, int]]:
+    """Extract (min, max) physical-index span from a grouped page text.
+
+    Group texts produced by :func:`page_list_to_group_text` are wrapped in
+    ``<physical_index_N>`` tags; pulling them back out gives us a cheap
+    progress indicator without changing the upstream helper's contract.
+    """
+    matches = re.findall(r"<physical_index_(\d+)>", group_text)
+    if not matches:
+        return None
+    nums = [int(n) for n in matches]
+    return min(nums), max(nums)
+
+
+async def _probe_pages_for_toc(
+    page_list: list[tuple[str, int]],
+    indices: list[int],
+    adapter: PageIndexLLMAdapter,
+) -> dict[int, str]:
+    """Run ``toc_detector_single_page`` on each given page index concurrently.
+
+    Returns a mapping ``page_index -> "yes"|"no"`` using the active
+    ``_LLM_SEMAPHORE`` so the fan-out shares the global concurrency budget.
+    """
+    if not indices:
+        return {}
+
+    coros = [toc_detector_single_page(page_list[idx][0], adapter) for idx in indices]
+    results = await _limited_gather(coros, return_exceptions=True)
+
+    detected: dict[int, str] = {}
+    for idx, result in zip(indices, results):
+        if isinstance(result, Exception):
+            logger.warning("TOC detector failed on page %d: %s", idx, result)
+            detected[idx] = "no"
+        else:
+            detected[idx] = result
+    return detected
+
+
 async def find_toc_pages(
     start_page_index: int,
     page_list: list[tuple[str, int]],
     opt: config,
     adapter: PageIndexLLMAdapter,
+    extension_size: int = 5,
 ) -> list[int]:
-    """Find pages containing table of contents."""
-    last_page_is_yes = False
+    """Find the contiguous page range that contains the table of contents.
+
+    Probes the first ``toc_check_page_num`` pages concurrently (rather than
+    serially) and then walks the result vector to find the first run of
+    consecutive ``yes`` pages. If that run reaches the end of the initial
+    window the scan is extended forward in batches of ``extension_size``
+    so a TOC that straddles the boundary is still captured intact.
+
+    LLM-call count is identical to the sequential implementation in the
+    worst case; wall-time is dominated by the slowest single probe rather
+    than the sum.
+    """
+    total_pages = len(page_list)
+    # ``toc_check_page_num`` is an absolute page-index cap in the original
+    # implementation: the scan never probes a page numbered >= that value
+    # unless a TOC has already been detected (handled by the extension loop
+    # below). Match that contract here.
+    window_end = min(opt.toc_check_page_num, total_pages)
+    if start_page_index >= window_end:
+        logger.info("No TOC found")
+        return []
+
+    initial_window = list(range(start_page_index, window_end))
+    logger.info(
+        "TOC scan: probing pages %d-%d concurrently (%d pages)",
+        start_page_index,
+        window_end - 1,
+        len(initial_window),
+    )
+    detected = await _probe_pages_for_toc(page_list, initial_window, adapter)
+
+    first_yes: Optional[int] = None
+    for idx in initial_window:
+        if detected[idx] == "yes":
+            first_yes = idx
+            break
+
+    if first_yes is None:
+        logger.info("No TOC found in initial window of %d pages", len(initial_window))
+        return []
+
     toc_page_list: list[int] = []
-    i = start_page_index
-
-    while i < len(page_list):
-        if i >= opt.toc_check_page_num and not last_page_is_yes:
+    cursor = first_yes
+    end_of_run: Optional[int] = None
+    while cursor < window_end:
+        if detected[cursor] == "yes":
+            toc_page_list.append(cursor)
+            cursor += 1
+        else:
+            end_of_run = cursor - 1
             break
-        detected_result = await toc_detector_single_page(page_list[i][0], adapter)
-        if detected_result == "yes":
-            logger.info("Page %d has TOC", i)
-            toc_page_list.append(i)
-            last_page_is_yes = True
-        elif detected_result == "no" and last_page_is_yes:
-            logger.info("Found last TOC page: %d", i - 1)
-            break
-        i += 1
 
-    if not toc_page_list:
+    # The yes-run touched the edge of the probed window: extend forward
+    # in small batches until we hit either a "no" or the end of the doc.
+    while end_of_run is None and cursor < total_pages:
+        ext_end = min(cursor + extension_size, total_pages)
+        ext_window = list(range(cursor, ext_end))
+        logger.info(
+            "TOC scan: extending probe to pages %d-%d",
+            cursor,
+            ext_end - 1,
+        )
+        ext_detected = await _probe_pages_for_toc(page_list, ext_window, adapter)
+        for idx in ext_window:
+            if ext_detected[idx] == "yes":
+                toc_page_list.append(idx)
+                cursor = idx + 1
+            else:
+                end_of_run = idx - 1
+                break
+        else:
+            # whole extension was "yes" — keep going
+            continue
+
+    if toc_page_list:
+        logger.info(
+            "TOC found on pages %d-%d (%d pages)",
+            toc_page_list[0],
+            toc_page_list[-1],
+            len(toc_page_list),
+        )
+    else:
         logger.info("No TOC found")
 
     return toc_page_list
 
 
 # ======================== TOC Extraction ========================
+
 
 async def detect_page_index(
     toc_content: str,
@@ -140,6 +308,7 @@ async def toc_extractor(
     adapter: PageIndexLLMAdapter,
 ) -> dict[str, Any]:
     """Extract TOC content and check for page indices."""
+
     def transform_dots_to_colon(text: str) -> str:
         text = re.sub(r"\.{5,}", ": ", text)
         text = re.sub(r"(?:\. ){5,}\.?", ": ", text)
@@ -228,7 +397,9 @@ async def extract_toc_content(
     Directly return the full table of contents content. Do not output anything else."""
 
     response, finish_reason = await adapter.ask_with_finish_info(prompt)
-    if_complete = await check_if_toc_transformation_is_complete(content, response, adapter)
+    if_complete = await check_if_toc_transformation_is_complete(
+        content, response, adapter
+    )
 
     if if_complete == "yes" and finish_reason == "finished":
         return response
@@ -242,7 +413,9 @@ async def extract_toc_content(
         continuation_prompt, chat_history=chat_history
     )
     response = response + new_response
-    if_complete = await check_if_toc_transformation_is_complete(content, response, adapter)
+    if_complete = await check_if_toc_transformation_is_complete(
+        content, response, adapter
+    )
 
     retry_count = 0
     while not (if_complete == "yes" and finish_reason == "finished"):
@@ -254,15 +427,20 @@ async def extract_toc_content(
             continuation_prompt, chat_history=chat_history
         )
         response = response + new_response
-        if_complete = await check_if_toc_transformation_is_complete(content, response, adapter)
+        if_complete = await check_if_toc_transformation_is_complete(
+            content, response, adapter
+        )
         retry_count += 1
         if retry_count > 5:
-            raise RuntimeError("Failed to complete table of contents after maximum retries")
+            raise RuntimeError(
+                "Failed to complete table of contents after maximum retries"
+            )
 
     return response
 
 
 # ======================== TOC Transformation ========================
+
 
 async def toc_transformer(
     toc_content: str,
@@ -331,7 +509,9 @@ async def toc_transformer(
         if retry_count > 5:
             break
 
-    parsed = json.loads(last_complete) if isinstance(last_complete, str) else last_complete
+    parsed = (
+        json.loads(last_complete) if isinstance(last_complete, str) else last_complete
+    )
     if isinstance(parsed, dict) and "table_of_contents" in parsed:
         return convert_page_to_int(parsed["table_of_contents"])
     return convert_page_to_int(parsed) if isinstance(parsed, list) else []
@@ -373,6 +553,7 @@ async def toc_index_extractor(
 
 
 # ======================== Page Number Mapping ========================
+
 
 async def add_page_number_to_toc(
     part: str | list[str],
@@ -423,6 +604,7 @@ async def add_page_number_to_toc(
 
 
 # ======================== Title Verification ========================
+
 
 async def check_title_appearance(
     item: dict,
@@ -527,7 +709,7 @@ async def check_title_appearance_in_start_concurrent(
             else:
                 item["appear_start"] = "no"
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await _limited_gather(tasks, return_exceptions=True)
     for item, result in zip(valid_items, results):
         if isinstance(result, Exception):
             logger.error("Error checking start for %s: %s", item["title"], result)
@@ -539,6 +721,7 @@ async def check_title_appearance_in_start_concurrent(
 
 
 # ======================== TOC Fixing ========================
+
 
 async def single_toc_item_index_fixer(
     section_title: str,
@@ -640,7 +823,7 @@ async def fix_incorrect_toc(
         }
 
     tasks = [process_and_check_item(item) for item in incorrect_results]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    results = await _limited_gather(tasks, return_exceptions=True)
     results = [r for r in results if not isinstance(r, Exception)]
 
     invalid_results: list[dict] = []
@@ -671,7 +854,11 @@ async def fix_incorrect_toc_with_retries(
     current_incorrect = incorrect_results
 
     while current_incorrect:
-        logger.info("Fixing %d incorrect results (attempt %d)", len(current_incorrect), fix_attempt + 1)
+        logger.info(
+            "Fixing %d incorrect results (attempt %d)",
+            len(current_incorrect),
+            fix_attempt + 1,
+        )
         current_toc, current_incorrect = await fix_incorrect_toc(
             current_toc, page_list, current_incorrect, start_index, adapter
         )
@@ -685,13 +872,21 @@ async def fix_incorrect_toc_with_retries(
 
 # ======================== TOC Verification ========================
 
+
 async def verify_toc(
     page_list: list[tuple[str, int]],
     list_result: list[dict],
     start_index: int = 1,
     adapter: PageIndexLLMAdapter = None,
+    sample_size: int = 20,
 ) -> tuple[float, list[dict]]:
-    """Verify TOC accuracy by checking title appearances."""
+    """Verify TOC accuracy by checking title appearances.
+
+    Checks a random sample of indexed TOC items rather than every entry —
+    for long documents (e.g. 100+ TOC items) the full sweep was costing
+    one LLM call per section. ``sample_size`` caps the population; when
+    the list has fewer indexed items, every item is checked.
+    """
     import random
 
     last_physical_index = None
@@ -703,21 +898,35 @@ async def verify_toc(
     if last_physical_index is None or last_physical_index < len(page_list) / 2:
         return 0, []
 
-    sample_indices = range(0, len(list_result))
-
-    indexed_sample_list = []
-    for idx in sample_indices:
-        item = list_result[idx]
+    indexed_items: list[dict] = []
+    for idx, item in enumerate(list_result):
         if item.get("physical_index") is not None:
-            item_with_index = item.copy()
-            item_with_index["list_index"] = idx
-            indexed_sample_list.append(item_with_index)
+            entry = item.copy()
+            entry["list_index"] = idx
+            indexed_items.append(entry)
+
+    if not indexed_items:
+        return 0, []
+
+    if len(indexed_items) > sample_size:
+        indexed_sample_list = random.sample(indexed_items, k=sample_size)
+        logger.info(
+            "TOC verification: sampling %d of %d indexed items",
+            sample_size,
+            len(indexed_items),
+        )
+    else:
+        indexed_sample_list = indexed_items
+        logger.info(
+            "TOC verification: checking all %d indexed items",
+            len(indexed_items),
+        )
 
     tasks = [
         check_title_appearance(item, page_list, start_index, adapter)
         for item in indexed_sample_list
     ]
-    results = await asyncio.gather(*tasks)
+    results = await _limited_gather(tasks)
 
     correct_count = 0
     incorrect_results: list[dict] = []
@@ -734,6 +943,7 @@ async def verify_toc(
 
 
 # ======================== No-TOC Processing ========================
+
 
 async def generate_toc_init(
     part: str,
@@ -822,21 +1032,42 @@ async def process_no_toc(
     """Process document without existing TOC."""
     page_contents = []
     token_lengths = []
-    for page_index in range(start_index, start_index + len(page_list)):
-        page_text = (
-            f"<physical_index_{page_index}>\n"
-            f"{page_list[page_index - start_index][0]}\n"
-            f"<physical_index_{page_index}>\n\n"
-        )
+    for offset, page in enumerate(page_list):
+        page_index = start_index + offset
+        page_text, token_length = _tagged_page_text_and_tokens(page_index, page)
         page_contents.append(page_text)
-        token_lengths.append(count_tokens(page_text))
+        token_lengths.append(token_length)
 
     group_texts = page_list_to_group_text(page_contents, token_lengths)
-    logger.info("No-TOC processing: %d text groups", len(group_texts))
+    total = len(group_texts)
+    total_pages = len(page_list)
+    logger.info(
+        "No-TOC processing: %d text groups across pages %d-%d (%d pages)",
+        total,
+        start_index,
+        start_index + total_pages - 1,
+        total_pages,
+    )
 
+    def _log_group(idx: int, group_text: str) -> None:
+        span = _group_page_range(group_text)
+        pages = f"pages {span[0]}-{span[1]}" if span else "pages ?"
+        pct = (idx / total) * 100 if total else 100.0
+        logger.info(
+            "No-TOC group %d/%d (%s) — %.1f%% of doc",
+            idx,
+            total,
+            pages,
+            pct,
+        )
+
+    _log_group(1, group_texts[0])
     toc_with_page_number = await generate_toc_init(group_texts[0], adapter)
-    for group_text in group_texts[1:]:
-        additional = await generate_toc_continue(toc_with_page_number, group_text, adapter)
+    for offset, group_text in enumerate(group_texts[1:], start=2):
+        _log_group(offset, group_text)
+        additional = await generate_toc_continue(
+            toc_with_page_number, group_text, adapter
+        )
         toc_with_page_number.extend(additional)
 
     toc_with_page_number = convert_physical_index_to_int(toc_with_page_number)
@@ -844,6 +1075,7 @@ async def process_no_toc(
 
 
 # ======================== TOC with/without Page Numbers ========================
+
 
 async def process_toc_no_page_numbers(
     toc_content: str,
@@ -858,19 +1090,32 @@ async def process_toc_no_page_numbers(
 
     page_contents = []
     token_lengths = []
-    for page_index in range(start_index, start_index + len(page_list)):
-        page_text = (
-            f"<physical_index_{page_index}>\n"
-            f"{page_list[page_index - start_index][0]}\n"
-            f"<physical_index_{page_index}>\n\n"
-        )
+    for offset, page in enumerate(page_list):
+        page_index = start_index + offset
+        page_text, token_length = _tagged_page_text_and_tokens(page_index, page)
         page_contents.append(page_text)
-        token_lengths.append(count_tokens(page_text))
+        token_lengths.append(token_length)
 
     group_texts = page_list_to_group_text(page_contents, token_lengths)
+    total = len(group_texts)
+    logger.info(
+        "TOC-without-page-numbers: %d text groups across %d pages",
+        total,
+        len(page_list),
+    )
 
     toc_with_page_number = copy.deepcopy(toc_items)
-    for group_text in group_texts:
+    for idx, group_text in enumerate(group_texts, start=1):
+        span = _group_page_range(group_text)
+        pages = f"pages {span[0]}-{span[1]}" if span else "pages ?"
+        pct = (idx / total) * 100 if total else 100.0
+        logger.info(
+            "TOC-page-fill group %d/%d (%s) — %.1f%% of doc",
+            idx,
+            total,
+            pages,
+            pct,
+        )
         toc_with_page_number = await add_page_number_to_toc(
             group_text, toc_with_page_number, adapter
         )
@@ -952,7 +1197,9 @@ async def process_toc_with_page_numbers(
             f"<physical_index_{page_index+1}>\n\n"
         )
 
-    toc_with_physical_index = await toc_index_extractor(toc_no_page, main_content, adapter)
+    toc_with_physical_index = await toc_index_extractor(
+        toc_no_page, main_content, adapter
+    )
     toc_with_physical_index = convert_physical_index_to_int(toc_with_physical_index)
 
     matching_pairs = extract_matching_page_pairs(
@@ -972,16 +1219,23 @@ async def process_toc_with_page_numbers(
 
 # ======================== TOC Check ========================
 
+
 async def check_toc(
     page_list: list[tuple[str, int]],
     opt: config,
     adapter: PageIndexLLMAdapter,
+    light_adapter: Optional[PageIndexLLMAdapter] = None,
 ) -> dict[str, Any]:
     """Check for TOC presence and extract if found."""
-    toc_page_list = await find_toc_pages(0, page_list, opt, adapter)
+    light = light_adapter or adapter
+    toc_page_list = await find_toc_pages(0, page_list, opt, light)
     if not toc_page_list:
         logger.info("No TOC found")
-        return {"toc_content": None, "toc_page_list": [], "page_index_given_in_toc": "no"}
+        return {
+            "toc_content": None,
+            "toc_page_list": [],
+            "page_index_given_in_toc": "no",
+        }
 
     logger.info("TOC found on pages: %s", toc_page_list)
     toc_json = await toc_extractor(page_list, toc_page_list, adapter)
@@ -1000,11 +1254,13 @@ async def check_toc(
         and current_start_index < opt.toc_check_page_num
     ):
         additional_toc_pages = await find_toc_pages(
-            current_start_index, page_list, opt, adapter
+            current_start_index, page_list, opt, light
         )
         if not additional_toc_pages:
             break
-        additional_toc_json = await toc_extractor(page_list, additional_toc_pages, adapter)
+        additional_toc_json = await toc_extractor(
+            page_list, additional_toc_pages, adapter
+        )
         if additional_toc_json["page_index_given_in_toc"] == "yes":
             return {
                 "toc_content": additional_toc_json["toc_content"],
@@ -1022,6 +1278,7 @@ async def check_toc(
 
 # ======================== Main Pipeline ========================
 
+
 async def meta_processor(
     page_list: list[tuple[str, int]],
     mode: str | None = None,
@@ -1030,57 +1287,82 @@ async def meta_processor(
     start_index: int = 1,
     opt: config | None = None,
     adapter: PageIndexLLMAdapter = None,
+    light_adapter: Optional[PageIndexLLMAdapter] = None,
 ) -> list[dict]:
     """Main processing orchestrator for different TOC modes."""
-    logger.info("meta_processor mode=%s, start_index=%d", mode, start_index)
+    light = light_adapter or adapter
+    logger.info(
+        "meta_processor mode=%s, start_index=%d, pages=%d",
+        mode,
+        start_index,
+        len(page_list),
+    )
 
     if mode == "process_toc_with_page_numbers":
         toc_with_page_number = await process_toc_with_page_numbers(
-            toc_content, toc_page_list, page_list,
+            toc_content,
+            toc_page_list,
+            page_list,
             toc_check_page_num=opt.toc_check_page_num,
             adapter=adapter,
         )
     elif mode == "process_toc_no_page_numbers":
         toc_with_page_number = await process_toc_no_page_numbers(
-            toc_content, toc_page_list, page_list,
+            toc_content,
+            toc_page_list,
+            page_list,
             adapter=adapter,
         )
     else:
         toc_with_page_number = await process_no_toc(
-            page_list, start_index=start_index, adapter=adapter,
+            page_list,
+            start_index=start_index,
+            adapter=adapter,
         )
 
     toc_with_page_number = [
-        item for item in toc_with_page_number
-        if item.get("physical_index") is not None
+        item for item in toc_with_page_number if item.get("physical_index") is not None
     ]
     toc_with_page_number = validate_and_truncate_physical_indices(
         toc_with_page_number, len(page_list), start_index=start_index
     )
 
     accuracy, incorrect_results = await verify_toc(
-        page_list, toc_with_page_number, start_index=start_index, adapter=adapter
+        page_list, toc_with_page_number, start_index=start_index, adapter=light
     )
 
     if accuracy == 1.0 and len(incorrect_results) == 0:
         return toc_with_page_number
     if accuracy > 0.6 and incorrect_results:
         toc_with_page_number, _ = await fix_incorrect_toc_with_retries(
-            toc_with_page_number, page_list, incorrect_results,
-            start_index=start_index, max_attempts=3, adapter=adapter,
+            toc_with_page_number,
+            page_list,
+            incorrect_results,
+            start_index=start_index,
+            max_attempts=3,
+            adapter=adapter,
         )
         return toc_with_page_number
     else:
         if mode == "process_toc_with_page_numbers":
             return await meta_processor(
-                page_list, mode="process_toc_no_page_numbers",
-                toc_content=toc_content, toc_page_list=toc_page_list,
-                start_index=start_index, opt=opt, adapter=adapter,
+                page_list,
+                mode="process_toc_no_page_numbers",
+                toc_content=toc_content,
+                toc_page_list=toc_page_list,
+                start_index=start_index,
+                opt=opt,
+                adapter=adapter,
+                light_adapter=light,
             )
         elif mode == "process_toc_no_page_numbers":
             return await meta_processor(
-                page_list, mode="process_no_toc",
-                start_index=start_index, opt=opt, adapter=adapter,
+                page_list,
+                mode="process_no_toc",
+                start_index=start_index,
+                opt=opt,
+                adapter=adapter,
+                light_adapter=light,
             )
         else:
             raise RuntimeError("Processing failed")
@@ -1091,8 +1373,10 @@ async def process_large_node_recursively(
     page_list: list[tuple[str, int]],
     opt: config,
     adapter: PageIndexLLMAdapter,
+    light_adapter: Optional[PageIndexLLMAdapter] = None,
 ) -> dict:
     """Recursively split large nodes into sub-trees."""
+    light = light_adapter or adapter
     node_page_list = page_list[node["start_index"] - 1 : node["end_index"]]
     token_num = sum(page[1] for page in node_page_list)
 
@@ -1101,16 +1385,23 @@ async def process_large_node_recursively(
         and token_num >= opt.max_token_num_each_node
     ):
         logger.info(
-            "Large node: %s (%d-%d, %d tokens)",
-            node["title"], node["start_index"], node["end_index"], token_num,
+            "Large node: %s (%d-%d, %d tokens) — splitting",
+            node["title"],
+            node["start_index"],
+            node["end_index"],
+            token_num,
         )
 
         node_toc_tree = await meta_processor(
-            node_page_list, mode="process_no_toc",
-            start_index=node["start_index"], opt=opt, adapter=adapter,
+            node_page_list,
+            mode="process_no_toc",
+            start_index=node["start_index"],
+            opt=opt,
+            adapter=adapter,
+            light_adapter=light,
         )
         node_toc_tree = await check_title_appearance_in_start_concurrent(
-            node_toc_tree, page_list, adapter
+            node_toc_tree, page_list, light
         )
 
         valid_items = [
@@ -1120,7 +1411,9 @@ async def process_large_node_recursively(
         if valid_items and node["title"].strip() == valid_items[0]["title"].strip():
             node["nodes"] = post_processing(valid_items[1:], node["end_index"])
             node["end_index"] = (
-                valid_items[1]["start_index"] if len(valid_items) > 1 else node["end_index"]
+                valid_items[1]["start_index"]
+                if len(valid_items) > 1
+                else node["end_index"]
             )
         else:
             node["nodes"] = post_processing(valid_items, node["end_index"])
@@ -1129,8 +1422,15 @@ async def process_large_node_recursively(
             )
 
     if "nodes" in node and node["nodes"]:
+        logger.info(
+            "Recursing into %d children of %r",
+            len(node["nodes"]),
+            node.get("title", ""),
+        )
         tasks = [
-            process_large_node_recursively(child, page_list, opt, adapter)
+            process_large_node_recursively(
+                child, page_list, opt, adapter, light_adapter=light
+            )
             for child in node["nodes"]
         ]
         await asyncio.gather(*tasks)
@@ -1142,9 +1442,11 @@ async def tree_parser(
     page_list: list[tuple[str, int]],
     opt: config,
     adapter: PageIndexLLMAdapter,
+    light_adapter: Optional[PageIndexLLMAdapter] = None,
 ) -> list[dict]:
     """Parse page list into a hierarchical tree."""
-    check_toc_result = await check_toc(page_list, opt, adapter)
+    light = light_adapter or adapter
+    check_toc_result = await check_toc(page_list, opt, adapter, light_adapter=light)
 
     if (
         check_toc_result.get("toc_content")
@@ -1159,16 +1461,21 @@ async def tree_parser(
             toc_page_list=check_toc_result["toc_page_list"],
             opt=opt,
             adapter=adapter,
+            light_adapter=light,
         )
     else:
         toc_with_page_number = await meta_processor(
-            page_list, mode="process_no_toc",
-            start_index=1, opt=opt, adapter=adapter,
+            page_list,
+            mode="process_no_toc",
+            start_index=1,
+            opt=opt,
+            adapter=adapter,
+            light_adapter=light,
         )
 
     toc_with_page_number = add_preface_if_needed(toc_with_page_number)
     toc_with_page_number = await check_title_appearance_in_start_concurrent(
-        toc_with_page_number, page_list, adapter
+        toc_with_page_number, page_list, light
     )
 
     valid_toc_items = [
@@ -1176,8 +1483,11 @@ async def tree_parser(
     ]
 
     toc_tree = post_processing(valid_toc_items, len(page_list))
+    logger.info("Tree-parser: recursing into %d top-level nodes", len(toc_tree))
     tasks = [
-        process_large_node_recursively(node, page_list, opt, adapter)
+        process_large_node_recursively(
+            node, page_list, opt, adapter, light_adapter=light
+        )
         for node in toc_tree
     ]
     await asyncio.gather(*tasks)
@@ -1186,6 +1496,7 @@ async def tree_parser(
 
 
 # ======================== Summary Generation ========================
+
 
 async def generate_node_summary(
     node: dict,
@@ -1210,7 +1521,8 @@ async def generate_summaries_for_structure(
 
     nodes = structure_to_list(structure)
     tasks = [generate_node_summary(node, adapter) for node in nodes]
-    summaries = await asyncio.gather(*tasks)
+    logger.info("Generating summaries for %d nodes", len(tasks))
+    summaries = await _limited_gather(tasks)
 
     for node, summary in zip(nodes, summaries):
         node["summary"] = summary
@@ -1234,49 +1546,99 @@ async def generate_doc_description(
 
 # ======================== Public API ========================
 
+
 async def build_page_index(
     doc: str | BytesIO,
     adapter: PageIndexLLMAdapter,
     options: dict | config | None = None,
+    light_adapter: Optional[PageIndexLLMAdapter] = None,
+    llm_concurrency: int = DEFAULT_LLM_CONCURRENCY,
 ) -> dict:
     """Build a PageIndex tree from a PDF document.
 
     Args:
         doc: Path to a PDF file or BytesIO stream.
-        adapter: LLM adapter wrapping any AbstractClient.
+        adapter: Heavy LLM adapter, used for hierarchical TOC/structure
+            generation where output quality matters.
         options: Configuration dict or SimpleNamespace with keys like
             model, toc_check_page_num, max_page_num_each_node, etc.
+        light_adapter: Optional cheaper/faster adapter used for the
+            independent, narrow-scope calls — TOC page detection, title
+            verification/repair, per-node summaries, and the final doc
+            description. Falls back to ``adapter`` when not provided.
+        llm_concurrency: Maximum number of in-flight LLM calls across the
+            direct fan-out helpers (TOC detection, title checks, fix loop,
+            summaries). Unbounded ``gather`` hits Gemini rate limits and
+            *slows* total wall-time once a doc has dozens of nodes.
 
     Returns:
         Dictionary with doc_name and structure (the tree).
     """
     opt = ConfigLoader().load(options)
     page_list = get_page_tokens(doc)
+    light = light_adapter or adapter
 
-    logger.info("Total pages: %d, Total tokens: %d", len(page_list), sum(p[1] for p in page_list))
+    logger.info(
+        "Total pages: %d, Total tokens: %d",
+        len(page_list),
+        sum(p[1] for p in page_list),
+    )
+    if light_adapter is not None and light_adapter is not adapter:
+        logger.info(
+            "Light adapter active for verify/summaries/title-checks: model=%s",
+            getattr(light_adapter, "model", "?"),
+        )
+    logger.info("LLM fan-out concurrency cap: %d", llm_concurrency)
 
-    structure = await tree_parser(page_list, opt, adapter)
+    sem_token = _LLM_SEMAPHORE.set(asyncio.Semaphore(max(1, llm_concurrency)))
+    try:
+        structure = await tree_parser(page_list, opt, adapter, light_adapter=light)
 
-    if opt.if_add_node_id == "yes":
-        write_node_id(structure)
-    if opt.if_add_node_text == "yes":
-        add_node_text(structure, page_list)
-    if opt.if_add_node_summary == "yes":
-        if opt.if_add_node_text == "no":
+        if opt.if_add_node_id == "yes":
+            write_node_id(structure)
+        if opt.if_add_node_text == "yes":
             add_node_text(structure, page_list)
-        await generate_summaries_for_structure(structure, adapter)
-        if opt.if_add_node_text == "no":
-            remove_structure_text(structure)
-        if opt.if_add_doc_description == "yes":
-            clean_struct = create_clean_structure_for_description(structure)
-            doc_description = await generate_doc_description(clean_struct, adapter)
-            return {
-                "doc_name": get_pdf_name(doc),
-                "doc_description": doc_description,
-                "structure": structure,
-            }
+        node_markdown = _extract_node_markdown(doc, structure)
+        if opt.if_add_node_summary == "yes":
+            if opt.if_add_node_text == "no":
+                add_node_text(structure, page_list)
+            await generate_summaries_for_structure(structure, light)
+            if opt.if_add_node_text == "no":
+                remove_structure_text(structure)
+            if opt.if_add_doc_description == "yes":
+                clean_struct = create_clean_structure_for_description(structure)
+                doc_description = await generate_doc_description(clean_struct, light)
+                return {
+                    "doc_name": get_pdf_name(doc),
+                    "doc_description": doc_description,
+                    "structure": structure,
+                    "_node_markdown": node_markdown,
+                }
 
-    return {
-        "doc_name": get_pdf_name(doc),
-        "structure": structure,
-    }
+        return {
+            "doc_name": get_pdf_name(doc),
+            "structure": structure,
+            "_node_markdown": node_markdown,
+        }
+    finally:
+        _LLM_SEMAPHORE.reset(sem_token)
+
+
+def _extract_node_markdown(
+    doc: str | BytesIO,
+    structure: Any,
+) -> dict[str, str]:
+    """Extract per-node markdown from ``doc`` using ``pymupdf4llm``.
+
+    Returns an empty mapping for non-path inputs (``BytesIO``) or when
+    extraction fails — callers persist whatever they get and the
+    toolkit transparently falls back to summaries on retrieval.
+    """
+    if not isinstance(doc, str):
+        return {}
+    try:
+        pages = extract_markdown_per_page(doc)
+    except (FileNotFoundError, ImportError, ValueError) as exc:
+        logger.warning("extract_markdown_per_page failed for %s: %s", doc, exc)
+        return {}
+    return build_node_markdown_map(structure, pages)

@@ -137,7 +137,6 @@ def test_options_source_value_label_field_names_unchanged():
 
 # TASK-1148: FieldConstraints scale fields tests
 from pydantic import ValidationError
-from parrot_formdesigner.core.constraints import FieldConstraints
 
 
 def test_field_constraints_scale_validator_rejects_inverted_range():

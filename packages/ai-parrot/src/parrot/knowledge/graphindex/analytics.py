@@ -25,6 +25,13 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,
 )
 
+# FEAT-191 — optional, lazy-typed; the field is `Optional` so analytics
+# stays usable even when communities aren't computed.
+try:
+    from parrot.knowledge.graphindex.communities import CommunitiesResult
+except ImportError:  # pragma: no cover — communities ships with FEAT-191
+    CommunitiesResult = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -51,11 +58,15 @@ class AnalyticsResult:
             ``target_id``, ``confidence``, ``source_kind``, ``target_kind``.
         suggested_questions: Generated question strings derived from
             templates.
+        communities: Optional FEAT-191 Louvain partition result. When
+            set, ``generate_report`` renders an additional
+            ``## Communities`` section.
     """
 
     god_nodes: list[dict] = field(default_factory=list)
     surprising_connections: list[dict] = field(default_factory=list)
     suggested_questions: list[str] = field(default_factory=list)
+    communities: Optional["CommunitiesResult"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -328,5 +339,25 @@ def _render_report(analytics: AnalyticsResult) -> str:
     for question in analytics.suggested_questions:
         lines.append(f"- {question}")
     lines.append("")
+
+    # --- Communities (FEAT-191, only when present) ---
+    if analytics.communities is not None:
+        lines.append("## Communities")
+        lines.append("")
+        lines.append(
+            f"Global modularity: **{analytics.communities.modularity:.4f}** "
+            f"(resolution={analytics.communities.resolution}, "
+            f"weighted={analytics.communities.weighted})"
+        )
+        lines.append("")
+        lines.append("| Rank | Community | Size | Centroid | Cohesion | Top Members |")
+        lines.append("|------|-----------|------|----------|----------|-------------|")
+        for rank, comm in enumerate(analytics.communities.communities, start=1):
+            top = ", ".join(comm.top_titles)
+            lines.append(
+                f"| {rank} | `{comm.community_id}` | {comm.size} "
+                f"| {comm.centroid_node_id} | {comm.cohesion:.4f} | {top} |"
+            )
+        lines.append("")
 
     return "\n".join(lines)
