@@ -199,3 +199,13 @@ class TestPolicyIdShortCircuit:
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Applied identical short-circuit block to BOTH catch sites in `orchestrator.py`: `resume_agent` (~line 540) and `_execute` (~line 823).
+- Short-circuit condition: `e.policy_id and e.interaction_id` — skipped for legacy interrupts without policy_id.
+- On result: builds `ExecutionResult(success=True, result=str(out), metadata={"hitl_short_circuit": True, ...})` and returns without suspending.
+- On no result or exception: logs and falls through to existing suspend path.
+- Feature flag decision: no separate env guard needed — the condition is data-driven by `(policy_id, interaction_id)` presence; legacy HandoffTool calls (without these fields) always take the suspend path unchanged.
+- Patching note: `get_default_human_manager` is imported lazily inside the except block, so tests patch `parrot.human.get_default_human_manager` (the source), not `parrot.autonomous.orchestrator.get_default_human_manager`.
+- 9 tests all pass: 4 legacy + 5 new short-circuit tests.
