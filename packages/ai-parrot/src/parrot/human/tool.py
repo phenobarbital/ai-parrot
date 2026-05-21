@@ -5,6 +5,7 @@ import asyncio
 from typing import Any, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from ..tools.abstract import AbstractTool, AbstractToolArgsSchema
 from .models import (
@@ -13,6 +14,7 @@ from .models import (
     InteractionResult,
     InteractionStatus,
     InteractionType,
+    Severity,
 )
 
 
@@ -120,6 +122,21 @@ class HumanToolInput(AbstractToolArgsSchema):
     policy_id: Optional[str] = Field(
         default=None,
         description="The ID of the tiered escalation policy to use if no response.",
+    )
+    severity: Literal["low", "normal", "high", "critical"] = Field(
+        default="normal",
+        description=(
+            "Declared criticality of this human-input request. "
+            "The agent's escalation policy (if any) uses this to pick the "
+            "STARTING tier — higher severity may skip lower-priority tiers "
+            "and begin escalation at a more urgent level. "
+            "Use 'low' for advisory/nice-to-have approvals. "
+            "Use 'normal' (default) for routine decisions. "
+            "Use 'high' for irreversible operations, compliance-sensitive "
+            "actions, or anything affecting production data. "
+            "Use 'critical' ONLY for production-down / data-loss / "
+            "safety-critical situations that require immediate human response."
+        ),
     )
 
 
@@ -246,6 +263,17 @@ class HumanTool(AbstractTool):
         default_response: Any = kwargs.get("default_response")
         target_humans: Optional[list] = kwargs.get("target_humans")
         policy_id: Optional[str] = kwargs.get("policy_id")
+        raw_severity: str = kwargs.get("severity", "normal")
+
+        # Validate severity — Literal in the schema constrains this at schema
+        # level, but provide a defensive check for LLMs that bypass validation.
+        try:
+            severity_enum = Severity(raw_severity)
+        except ValueError:
+            return (
+                f"HumanTool error: unknown severity '{raw_severity}'. "
+                f"Must be one of: low, normal, high, critical"
+            )
 
         # 1. Validate interaction_type — surface a clear error to the LLM
         #    rather than silently downgrading to FREE_TEXT.
@@ -296,6 +324,7 @@ class HumanTool(AbstractTool):
                 target_humans=targets,
                 source_agent=self.source_agent,
                 policy_id=policy_id,
+                severity=severity_enum,
             )
         except ValueError as exc:
             return f"HumanTool error: invalid interaction — {exc}"
