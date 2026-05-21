@@ -52,6 +52,12 @@ combined into a transparent, decomposed relevance score:
 4. **Type affinity** — a configurable `NodeKind × NodeKind` weight that
    captures domain knowledge ("a Concept linked to a Section is more
    meaningful than a Section linked to a Section").
+5. **Embedding similarity** — cosine similarity between the two nodes'
+   FAISS-backed embeddings (via the existing
+   `GraphIndexEmbedder.get_embedding`). The signal-graph is *structural*
+   by default, but composing structure with semantic similarity is the
+   natural ensemble for an LLM-Wiki retriever — added in response to
+   open question §8.3 resolved YES.
 
 This spec also unblocks two downstream features:
 
@@ -63,11 +69,15 @@ This spec also unblocks two downstream features:
 
 ### Goals
 
-- Implement four orthogonal signal scorers, each callable independently
+- Implement five orthogonal signal scorers, each callable independently
   and returning a value in `[0, 1]` after normalisation.
 - Combine them into a single `SignalRelevance` Pydantic model that
-  carries the four sub-scores AND the combined weighted score, so an
+  carries the five sub-scores AND the combined weighted score, so an
   LLM consumer (or the report generator) can explain *why*.
+- Make the embedding signal **opt-in via dependency injection**: when
+  no `GraphIndexEmbedder` is passed, the embedding signal is treated as
+  absent and the remaining four weights are auto-renormalised to sum
+  to 1.0. Callers don't need to twiddle weights to "disable" embeddings.
 - Provide a configurable `NodeKind × NodeKind` type-affinity matrix
   with a sane default that reflects the wiki/code/skill domains.
 - Expose three public functions:
@@ -86,9 +96,6 @@ This spec also unblocks two downstream features:
 - **Adding new EdgeKinds** — the four direct-link weights operate on
   the existing 5 `EdgeKind` values. (A new `RELATED_TO` for wiki
   cross-references is a FEAT-192 concern.)
-- **Embedding-based signals** — cosine similarity is already in
-  `resolve.py`. The signal graph is *structural*; embeddings remain
-  a separate axis a caller may combine externally.
 - **Persistence of signal scores** — these are computed on demand
   from the assembled in-memory graph. No new ArangoDB collections.
 - **Replacing `resolve.py`'s cross-domain inference** — `resolve.py`
@@ -156,18 +163,24 @@ from parrot.knowledge.graphindex.schema import EdgeKind, NodeKind
 
 
 class SignalRelevanceConfig(BaseModel):
-    """Configuration for the four-signal relevance scorer.
+    """Configuration for the five-signal relevance scorer.
 
     Weights sum to 1.0 in the default configuration so the combined
     score lies in [0, 1] when each signal is normalised to [0, 1].
     The validator enforces ``abs(sum(weights) - 1.0) < 1e-6`` so
     misconfigured callers fail loudly.
+
+    When ``signal_relevance(...)`` is invoked WITHOUT a
+    ``GraphIndexEmbedder``, the embedding signal is dropped and the
+    remaining four weights are auto-renormalised inside the scorer
+    (the config itself is unchanged — immutable, frozen).
     """
 
-    w_direct: float = Field(0.40, ge=0.0, le=1.0)
-    w_source_overlap: float = Field(0.20, ge=0.0, le=1.0)
-    w_adamic_adar: float = Field(0.25, ge=0.0, le=1.0)
-    w_type_affinity: float = Field(0.15, ge=0.0, le=1.0)
+    w_direct: float = Field(0.30, ge=0.0, le=1.0)
+    w_source_overlap: float = Field(0.15, ge=0.0, le=1.0)
+    w_adamic_adar: float = Field(0.20, ge=0.0, le=1.0)
+    w_type_affinity: float = Field(0.10, ge=0.0, le=1.0)
+    w_embedding: float = Field(0.25, ge=0.0, le=1.0)
 
     # Per-edge-kind weight for the direct-link signal. Missing kinds
     # default to 0.0. Caller can override (e.g. boost EXPLAINS to 1.0
@@ -205,10 +218,12 @@ class SignalRelevanceConfig(BaseModel):
 class SignalRelevance(BaseModel):
     """Decomposed pairwise relevance result.
 
-    Combined score is the weighted sum of the four normalised signals
-    using ``config.w_*``. All four sub-scores are in [0, 1] so an
+    Combined score is the weighted sum of the normalised signals
+    using ``config.w_*`` (with weights auto-renormalised when the
+    embedding signal is absent). All sub-scores are in [0, 1] so an
     LLM consumer can read this verbatim ("connected because they
-    share 0.83 of source overlap and have type affinity 0.6").
+    share 0.83 of source overlap, have embedding sim 0.71, and type
+    affinity 0.6").
     """
 
     node_a: str
@@ -217,6 +232,7 @@ class SignalRelevance(BaseModel):
     source_overlap: float        # in [0, 1] — Jaccard over source_uri sets
     adamic_adar: float           # in [0, 1] — AA / cap, clipped
     type_affinity: float         # in [0, 1]
+    embedding: float             # in [0, 1] — cosine similarity (0.0 if no embedder)
     combined: float              # weighted sum
 
     # Raw sub-signal data so consumers (especially the LLM) can read
@@ -224,6 +240,8 @@ class SignalRelevance(BaseModel):
     direct_edges: list[dict]     # [{"kind": ..., "direction": ...}, ...]
     shared_sources: list[str]    # source_uris common to both nodes
     aa_neighbours: list[str]     # node_ids that contributed to AA
+    embedding_available: bool    # whether an embedder was supplied AND
+                                 # both nodes had embeddings
 
     model_config = ConfigDict(frozen=True)
 ```
@@ -239,8 +257,15 @@ def signal_relevance(
     node_a: str,
     node_b: str,
     config: Optional[SignalRelevanceConfig] = None,
+    embedder: Optional[GraphIndexEmbedder] = None,
 ) -> SignalRelevance:
-    """Pairwise four-signal relevance.
+    """Pairwise five-signal relevance.
+
+    When ``embedder`` is None (or when either node has no embedding),
+    the embedding signal is treated as absent: its weight is dropped
+    from the combination and the remaining four weights are
+    auto-renormalised. ``SignalRelevance.embedding`` is 0.0 in that
+    case and ``embedding_available`` is False.
 
     Raises:
         KeyError: If either node_id is not in the graph.
@@ -254,6 +279,7 @@ def relevance_neighborhood(
     top_k: int = 10,
     config: Optional[SignalRelevanceConfig] = None,
     candidate_pool: Optional[list[str]] = None,
+    embedder: Optional[GraphIndexEmbedder] = None,
 ) -> list[SignalRelevance]:
     """Top-k most relevant nodes to ``node_id`` by combined score.
 
@@ -267,12 +293,15 @@ def compute_pairwise_signals(
     nodes: list[UniversalNode],
     node_a: str,
     node_b: str,
+    embedder: Optional[GraphIndexEmbedder] = None,
 ) -> dict[str, float]:
-    """Raw four signals without combination. Cheap building block.
+    """Raw five signals without combination. Cheap building block.
 
     Returned dict has keys ``direct``, ``source_overlap``,
-    ``adamic_adar``, ``type_affinity``. Same normalisation as the
-    full scorer; just no weighting / no Pydantic wrapper.
+    ``adamic_adar``, ``type_affinity``, ``embedding``. Same
+    normalisation as the full scorer; just no weighting / no
+    Pydantic wrapper. ``embedding`` is 0.0 when no embedder is
+    supplied or when either node lacks an embedding.
     """
 
 
@@ -330,23 +359,42 @@ def _default_type_affinity() -> dict[tuple[NodeKind, NodeKind], float]:
     take the score, clip at `cap`, divide by `cap`.
 - **Depends on**: Module 1.
 
+### Module 3b: Embedding similarity signal
+- **Path**: same file.
+- **Responsibility**:
+  - `_embedding_signal(embedder, node_id_a, node_id_b)` — calls
+    `embedder.get_embedding(node_id_a)` and `(node_id_b)`; returns
+    `(score, available)` where `score = max(0.0, cosine_sim)` and
+    `available = True` iff both embeddings were resolvable.
+  - Returns `(0.0, False)` when `embedder is None` or either node
+    has no embedding (matches the `embedding_available` contract on
+    `SignalRelevance`).
+  - Same math as `resolve.py:_compute_similarity`
+    (`resolve.py:157-189`) but synchronous — `get_embedding` is sync
+    (`embed.py:157`) and there's no reason to await.
+- **Depends on**: Module 1.
+
 ### Module 4: Type affinity lookup + combined scorer
 - **Path**: same file.
 - **Responsibility**:
   - `_type_affinity(node_a, node_b, matrix)` — order-independent
     lookup; default 0.30 for unlisted pairs.
-  - `signal_relevance(...)` — combine all four; build `SignalRelevance`
+  - `_effective_weights(config, embedding_available)` — when the
+    embedding signal isn't available, redistribute `w_embedding`
+    proportionally across the other four weights so they still sum
+    to 1.0. When it IS available, return `config.w_*` as-is.
+  - `signal_relevance(...)` — combine all five; build `SignalRelevance`
     with sub-scores + raw signal data (shared sources list,
-    AA contributing neighbours, edge list).
+    AA contributing neighbours, edge list) + `embedding_available`.
   - `compute_pairwise_signals(...)` — same path without weights.
-- **Depends on**: Modules 1-3.
+- **Depends on**: Modules 1-3b.
 
 ### Module 5: Neighborhood top-k
 - **Path**: same file.
 - **Responsibility**: `relevance_neighborhood(...)` — iterate the
   candidate pool, call `signal_relevance` for each pair, sort by
   combined score, return top-k. AA reuses the same cached networkx
-  view across the loop.
+  view across the loop. Embedder (if any) is passed straight through.
 - **Depends on**: Module 4.
 
 ### Module 6: Optional builder integration (default-off)
@@ -382,10 +430,16 @@ def _default_type_affinity() -> dict[tuple[NodeKind, NodeKind], float]:
 | `test_type_affinity_concept_concept_high` | 4 | Default matrix returns 1.0 for CONCEPT-CONCEPT. |
 | `test_type_affinity_order_independent` | 4 | `(SECTION, CONCEPT) == (CONCEPT, SECTION)`. |
 | `test_type_affinity_unlisted_pair_default` | 4 | Unknown pair → 0.30 (configurable default). |
-| `test_signal_relevance_combines_with_config_weights` | 4 | All-1 sub-scores → combined == 1.0 with default weights. |
-| `test_signal_relevance_decomposed_output` | 4 | Returned `SignalRelevance` carries the raw `direct_edges`, `shared_sources`, `aa_neighbours`. |
+| `test_embedding_signal_uses_embedder` | 3b | With a stub embedder returning known vectors, the signal equals their cosine similarity. |
+| `test_embedding_signal_missing_embedding_returns_zero` | 3b | When one node has no embedding, score=0.0 and available=False. |
+| `test_embedding_signal_no_embedder_returns_zero` | 3b | `embedder=None` → score=0.0 and available=False (no exception). |
+| `test_effective_weights_renormalise_when_no_embedding` | 4 | When embedding is absent, the other four weights are scaled by `1 / (1 - w_embedding)` so they sum to 1.0. |
+| `test_effective_weights_pass_through_when_embedding_available` | 4 | When embedding IS available, all five weights are used as-is. |
+| `test_signal_relevance_combines_with_config_weights` | 4 | All-1 sub-scores → combined == 1.0 with default weights (with embedder). |
+| `test_signal_relevance_decomposed_output` | 4 | Returned `SignalRelevance` carries the raw `direct_edges`, `shared_sources`, `aa_neighbours`, and `embedding_available`. |
 | `test_signal_relevance_unknown_node_raises_keyerror` | 4 | Missing node_id raises clean `KeyError`, not a downstream crash. |
 | `test_compute_pairwise_signals_returns_unweighted` | 4 | Raw signals match the inputs to the weighted combination. |
+| `test_compute_pairwise_signals_includes_embedding` | 4 | Returned dict has the `embedding` key. |
 | `test_relevance_neighborhood_top_k_sorted` | 5 | Top-k results sorted by combined desc, length ≤ k. |
 | `test_relevance_neighborhood_candidate_pool_respected` | 5 | When `candidate_pool=[X, Y]`, only X and Y are scored. |
 | `test_relevance_neighborhood_skips_self` | 5 | Node never returned as relevant to itself. |
@@ -398,6 +452,7 @@ def _default_type_affinity() -> dict[tuple[NodeKind, NodeKind], float]:
 | `test_signals_on_assembled_graph` | Build a tiny 6-node mixed-kind graph via `GraphAssembler`; run `signal_relevance` between three pairs; assert the per-signal values match hand-computed expectations to within 1e-6. |
 | `test_neighborhood_finds_expected_top_3` | Fixture: 1 Concept node + 3 Section nodes with shared sources + 1 unrelated Symbol; `relevance_neighborhood(concept_id, top_k=3)` returns the three sections in source-overlap order. |
 | `test_signals_match_networkx_reference` | For 20 random Erdős-Rényi edges, the AA values from our wrapper match `nx.adamic_adar_index` on the same nodes within 1e-9 (sanity check the cache + clipping logic doesn't drift). |
+| `test_signals_with_embedder_match_resolve_similarity` | Stub a tiny embedder; assert the embedding sub-score for two known nodes matches `resolve._compute_similarity(a, b, embedder)` to within 1e-9 (parity with existing cross-domain inference). |
 
 ### Test Data / Fixtures
 
@@ -436,14 +491,21 @@ def signal_config_uniform() -> SignalRelevanceConfig:
 - [ ] `SignalRelevanceConfig` rejects misweighted configs at validation
       time (sum of `w_*` must equal 1.0 ± 1e-6).
 - [ ] `signal_relevance(graph, nodes, a, b)` returns a fully-populated
-      `SignalRelevance` with all four sub-scores in [0, 1] and the
-      combined score = the weighted sum of the four.
+      `SignalRelevance` with all five sub-scores in [0, 1] and the
+      combined score = the weighted sum of the five (or four, with
+      auto-renormalisation, when no embedder is supplied).
+- [ ] `signal_relevance(..., embedder=...)` populates the embedding
+      sub-score from `GraphIndexEmbedder.get_embedding`; sets
+      `embedding_available=True` iff both nodes have embeddings.
+- [ ] When `embedder=None` or either node has no embedding, the four
+      remaining weights are auto-renormalised so the combined score
+      still lies in [0, 1] and the result is interpretable.
 - [ ] `relevance_neighborhood(graph, nodes, x, top_k=10)` returns
       results sorted by combined score descending, length ≤ top_k,
       never includes `x` itself.
 - [ ] Each `SignalRelevance` carries the raw `direct_edges`,
-      `shared_sources`, and `aa_neighbours` for downstream "why"
-      consumption.
+      `shared_sources`, `aa_neighbours`, and `embedding_available`
+      for downstream "why" consumption.
 - [ ] AA is computed via `networkx.adamic_adar_index`; the
       rustworkx → networkx conversion is cached per-graph so a top-k
       call does NOT rebuild it for every pair.
@@ -477,6 +539,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalNode,            # schema.py:70
 )
 from parrot.knowledge.graphindex.assemble import GraphAssembler       # assemble.py:24
+from parrot.knowledge.graphindex.embed import GraphIndexEmbedder      # embed.py:22
 import rustworkx                                                       # assemble.py:17
 import networkx as nx           # used elsewhere (concept_catalog/service.py:20)
 ```
@@ -542,6 +605,27 @@ class GraphIndexBuilder:             # line 49
         resolution_config: Optional[ResolutionConfig] = None,
         pageindex_toolkit: Optional[PageIndexToolkit] = None,   # line 82
     ) -> None: ...                   # line 75
+```
+
+```python
+# packages/ai-parrot/src/parrot/knowledge/graphindex/embed.py
+class GraphIndexEmbedder:            # line 22
+    def get_embedding(
+        self, node_id: str,
+    ) -> Optional[np.ndarray]: ...   # line 157
+    # Returns the L2-normalised vector for node_id, or None when
+    # the node hasn't been embedded. Synchronous.
+```
+
+```python
+# packages/ai-parrot/src/parrot/knowledge/graphindex/resolve.py
+# Reference for the cosine-similarity math we mirror (NOT imported
+# from there; signals.py keeps its own sync copy to avoid coupling).
+async def _compute_similarity(
+    node_id_a: str,
+    node_id_b: str,
+    embedder: object,
+) -> Optional[float]: ...           # resolve.py:157
 ```
 
 ```python
@@ -649,12 +733,12 @@ No new dependencies.
       implementation*. SKILL-CONCEPT, SKILL-DOCUMENT not in the listed
       defaults; document the fallback (0.30) and revisit if the skills
       demo wants them.
-- [ ] **Should we expose a `with_embeddings` hook to compose external
-      cosine similarity?** — *Owner: FEAT-192*. v1 deliberately does
-      not include embeddings as a fifth signal. A composition pattern
-      could live in the toolkit (FEAT-192) by reading
-      `embedder.get_embedding(node_id)` (`embed.py:157`) and adding it
-      as a multiplier. Out of scope here.
+- [x] **Should we expose a `with_embeddings` hook to compose external
+      cosine similarity?** — *Resolved YES, in scope*: embeddings are
+      now the fifth signal (`w_embedding=0.25` default), opt-in via
+      a `GraphIndexEmbedder` passed to the scorer. When omitted, the
+      remaining four weights auto-renormalise to 1.0 so the combined
+      score stays interpretable.
 
 ---
 

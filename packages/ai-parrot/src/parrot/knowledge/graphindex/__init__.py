@@ -23,6 +23,13 @@ from parrot.knowledge.graphindex.schema import (
     BuildResult,
     IngestResult,
 )
+from parrot.knowledge.graphindex.signals import (
+    SignalRelevance,
+    SignalRelevanceConfig,
+    compute_pairwise_signals,
+    relevance_neighborhood,
+    signal_relevance,
+)
 
 __all__ = [
     "Provenance",
@@ -33,4 +40,9 @@ __all__ = [
     "SourceConfig",
     "BuildResult",
     "IngestResult",
+    "SignalRelevance",
+    "SignalRelevanceConfig",
+    "compute_pairwise_signals",
+    "relevance_neighborhood",
+    "signal_relevance",
 ]

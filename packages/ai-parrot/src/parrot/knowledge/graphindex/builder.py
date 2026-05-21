@@ -40,6 +40,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
+from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.pageindex.toolkit import PageIndexToolkit
 
@@ -70,6 +71,12 @@ class GraphIndexBuilder:
             the ontology's ``search_documents_scoped`` routing has a
             concrete target. Omit to keep the legacy in-memory path
             with no sidecar persistence.
+        signal_config: Optional :class:`SignalRelevanceConfig` (FEAT-190).
+            Stored only; the builder does not invoke the signal
+            scorer itself. Downstream consumers (analytics report,
+            FEAT-192 toolkit, the LLM-Wiki orchestrator) read this
+            attribute when they need to score node relevance with
+            tenant-specific weights instead of library defaults.
     """
 
     def __init__(
@@ -80,12 +87,14 @@ class GraphIndexBuilder:
         ignore_file: Optional[Path] = None,
         resolution_config: Optional[ResolutionConfig] = None,
         pageindex_toolkit: Optional[PageIndexToolkit] = None,
+        signal_config: Optional[SignalRelevanceConfig] = None,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
         self.output_dir = Path(output_dir)
         self.resolution_config = resolution_config or ResolutionConfig()
         self.pageindex_toolkit = pageindex_toolkit
+        self.signal_config = signal_config
         self.logger = logging.getLogger(__name__)
         self._ignore_spec: Optional[pathspec.PathSpec] = self._load_ignore(ignore_file)
 
