@@ -230,7 +230,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -241,8 +241,8 @@
       "parallelism_notes": "Tiny handler-level change; deps land first.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1285-web-hitl-reject-route.md"
+      "completed_at": "2026-05-21T23:02:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1285-web-hitl-reject-route.md"
     },
     {
       "id": "TASK-1286",
