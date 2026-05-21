@@ -609,6 +609,138 @@ class PageIndexToolkit(AbstractToolkit):
             self._persist(tree_name)
         return {"tree_name": tree_name, "removed": removed}
 
+    async def add_node(
+        self,
+        tree_name: str,
+        title: str,
+        body: str = "",
+        parent_node_id: Optional[str] = None,
+        summary: Optional[str] = None,
+        categories: Optional[list[str]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Atomically create a single node and register its content.
+
+        The PageIndex authoring primitive: an agent says "register this
+        finding under section X" and gets back the new ``node_id`` —
+        one call, one node, body persisted via :class:`NodeContentStore`,
+        tags merged in the same write.
+
+        Args:
+            tree_name: Tree to insert into.
+            title: Node title — the human-facing label that BM25 and
+                the LLM walker see.
+            body: Markdown body. Persisted as the node's sidecar so
+                ``retrieve`` returns it verbatim. Empty body is allowed
+                (synthetic / placeholder nodes).
+            parent_node_id: Insert under this node id; ``None`` appends
+                at the tree root.
+            summary: Optional short description the LLM walker uses
+                when deciding which node to dive into. Defaults to an
+                empty string.
+            categories: Free-form tags merged as a set.
+            metadata: Arbitrary key/value pairs (equality-only matching
+                at search time).
+
+        Returns:
+            ``{tree_name, node_id, parent_node_id}`` with the post-splice
+            ``node_id`` of the new node.
+        """
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("add_node requires a non-empty title")
+
+        node: dict[str, Any] = {
+            "title": title.strip(),
+            "summary": summary or "",
+        }
+        if categories:
+            node["categories"] = sorted({str(c) for c in categories})
+        if metadata:
+            node["metadata"] = dict(metadata)
+
+        tree = self._load_tree(tree_name)
+        new_ids = splice_subtree(tree, node, parent_node_id=parent_node_id)
+        new_id = new_ids[0] if new_ids else node.get("node_id")
+        if new_id and body:
+            self._content_store.save(tree_name, new_id, body)
+        self._persist(tree_name)
+        return {
+            "tree_name": tree_name,
+            "node_id": new_id,
+            "parent_node_id": parent_node_id,
+        }
+
+    async def update_node_content(
+        self,
+        tree_name: str,
+        node_id: str,
+        body: str,
+    ) -> dict[str, Any]:
+        """Overwrite a node's sidecar markdown without touching the tree.
+
+        Use this when an agent revises a finding — the ToC entry stays
+        put (same title, summary, position) but the body is rewritten.
+        Marks the BM25 index dirty so the next search reflects the
+        new content.
+
+        Raises:
+            KeyError: If ``node_id`` does not exist in the tree.
+        """
+        tree = self._load_tree(tree_name)
+        node = find_node_by_id(tree.get("structure", []), node_id)
+        if node is None:
+            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+        self._content_store.save(tree_name, node_id, body or "")
+        engine = self._search.get(tree_name)
+        if engine is not None:
+            engine.mark_dirty()
+        return {
+            "tree_name": tree_name,
+            "node_id": node_id,
+            "bytes": len(body or ""),
+        }
+
+    async def update_node(
+        self,
+        tree_name: str,
+        node_id: str,
+        title: Optional[str] = None,
+        summary: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Rename and/or re-summarize an existing node.
+
+        Persists the tree and marks the BM25 index dirty (title and
+        summary both feed the corpus). Body / categories / metadata
+        are untouched — use :meth:`update_node_content` or
+        :meth:`tag_node` for those.
+
+        Raises:
+            KeyError: If ``node_id`` does not exist.
+            ValueError: If neither ``title`` nor ``summary`` is set.
+        """
+        if title is None and summary is None:
+            raise ValueError("update_node needs at least one of title / summary")
+
+        tree = self._load_tree(tree_name)
+        node = find_node_by_id(tree.get("structure", []), node_id)
+        if node is None:
+            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+
+        if title is not None:
+            if not isinstance(title, str) or not title.strip():
+                raise ValueError("title must be a non-empty string")
+            node["title"] = title.strip()
+        if summary is not None:
+            node["summary"] = summary
+
+        self._persist(tree_name)
+        return {
+            "tree_name": tree_name,
+            "node_id": node_id,
+            "title": node.get("title"),
+            "summary": node.get("summary"),
+        }
+
 
 # ---- module-level helpers ----------------------------------------------
 

@@ -68,13 +68,19 @@ def test_tool_discovery_exposes_expected_names(toolkit: PageIndexToolkit):
     expected = {
         "pageindex_list_trees",
         "pageindex_create_tree",
+        "pageindex_delete_tree",
         "pageindex_get_tree",
         "pageindex_search",
         "pageindex_retrieve",
+        "pageindex_tag_node",
+        "pageindex_add_node",
+        "pageindex_update_node",
+        "pageindex_update_node_content",
         "pageindex_insert_markdown",
         "pageindex_insert_content",
         "pageindex_import_file",
         "pageindex_import_folder",
+        "pageindex_import_pdf",
         "pageindex_delete_node",
     }
     missing = expected - names
@@ -591,6 +597,235 @@ async def test_import_folder_persists_sidecars(
     content_dir = tmp_path / "docs"
     md_files = list(content_dir.glob("*.md"))
     assert md_files, "expected node sidecars after folder import"
+
+
+@pytest.mark.asyncio
+async def test_add_node_creates_root_leaf_atomically(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    result = await toolkit.add_node(
+        "kb",
+        title="Finding 17",
+        body="UNIQUE_FINDING_BODY — the IAM role allows iam:PassRole on *.",
+        summary="Excess IAM PassRole permissions.",
+        categories=["security", "iam"],
+        metadata={"severity": "high"},
+    )
+    assert result["node_id"]
+    assert result["parent_node_id"] is None
+    new_id = result["node_id"]
+
+    tree = await toolkit.get_tree("kb")
+    titles = [n["title"] for n in tree["structure"]]
+    assert "Finding 17" in titles
+
+    # Persisted JSON does NOT contain inline text.
+    with (tmp_path / "kb.json").open() as f:
+        persisted = json.load(f)
+    for node in persisted["structure"]:
+        assert "text" not in node
+    # Sidecar exists with the body.
+    sidecar = tmp_path / "kb" / f"{new_id}.md"
+    assert sidecar.is_file()
+    assert "UNIQUE_FINDING_BODY" in sidecar.read_text()
+    # Categories and metadata round-trip on the node.
+    node = next(n for n in persisted["structure"] if n["title"] == "Finding 17")
+    assert node["categories"] == ["iam", "security"]
+    assert node["metadata"] == {"severity": "high"}
+
+
+@pytest.mark.asyncio
+async def test_add_node_under_existing_parent(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    parent = await toolkit.add_node("kb", title="Findings", body="")
+    parent_id = parent["node_id"]
+    child = await toolkit.add_node(
+        "kb",
+        title="Finding A",
+        body="UNIQUE_CHILD_BODY",
+        parent_node_id=parent_id,
+    )
+
+    tree = await toolkit.get_tree("kb")
+    # Parent kept its slot at root.
+    root_titles = [n["title"] for n in tree["structure"]]
+    assert root_titles == ["Findings"]
+    # Child sits under it.
+    parent_node = tree["structure"][0]
+    child_titles = [n["title"] for n in (parent_node.get("nodes") or [])]
+    assert child_titles == ["Finding A"]
+    # Child has a node_id (possibly renumbered).
+    child_id_in_tree = parent_node["nodes"][0]["node_id"]
+    sidecar = tmp_path / "kb" / f"{child_id_in_tree}.md"
+    assert sidecar.is_file()
+    assert sidecar.read_text() == "UNIQUE_CHILD_BODY"
+    # Returned id matches what's in the tree.
+    assert child["node_id"] == child_id_in_tree
+
+
+@pytest.mark.asyncio
+async def test_add_node_then_retrieve_returns_body(
+    monkeypatch, toolkit: PageIndexToolkit,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    await toolkit.add_node(
+        "kb",
+        title="Finding 42",
+        body="UNIQUE_RETRIEVABLE_TOKEN appears in this body.",
+        summary="The body is retrievable.",
+    )
+    text = await toolkit.retrieve("kb", "Finding 42", top_k=3)
+    assert "UNIQUE_RETRIEVABLE_TOKEN" in text
+
+
+@pytest.mark.asyncio
+async def test_add_node_rejects_empty_title(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("kb")
+    with pytest.raises(ValueError):
+        await toolkit.add_node("kb", title="   ", body="x")
+
+
+@pytest.mark.asyncio
+async def test_update_node_content_overwrites_sidecar(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    res = await toolkit.add_node("kb", title="Finding", body="OLD_BODY")
+    node_id = res["node_id"]
+
+    await toolkit.update_node_content("kb", node_id, "NEW_BODY content here")
+
+    sidecar = tmp_path / "kb" / f"{node_id}.md"
+    assert sidecar.read_text() == "NEW_BODY content here"
+    # Tree itself didn't change.
+    tree = await toolkit.get_tree("kb")
+    assert tree["structure"][0]["title"] == "Finding"
+
+
+@pytest.mark.asyncio
+async def test_update_node_content_marks_bm25_dirty(
+    monkeypatch, toolkit: PageIndexToolkit,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    # Add two nodes so BM25 has something to score against.
+    res = await toolkit.add_node("kb", title="Finding A", body="alpha body")
+    await toolkit.add_node("kb", title="Finding B", body="beta body")
+    # Force BM25 build.
+    await toolkit.search("kb", "alpha", top_k=3, use_llm_walk=False)
+    engine = toolkit._search["kb"]
+    assert engine._dirty is False
+    await toolkit.update_node_content("kb", res["node_id"], "alpha_v2 token")
+    assert engine._dirty is True
+    # New token is now findable; old one is not.
+    hits = await toolkit.search(
+        "kb", "alpha_v2", top_k=3, use_llm_walk=False, use_bm25=True,
+    )
+    assert any(h["node_id"] == res["node_id"] for h in hits)
+
+
+@pytest.mark.asyncio
+async def test_update_node_content_unknown_id_raises(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("kb")
+    with pytest.raises(KeyError):
+        await toolkit.update_node_content("kb", "9999", "body")
+
+
+@pytest.mark.asyncio
+async def test_update_node_renames_and_resummarizes(
+    monkeypatch, toolkit: PageIndexToolkit,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    res = await toolkit.add_node(
+        "kb", title="Old Title", body="b", summary="Old summary",
+    )
+    node_id = res["node_id"]
+
+    result = await toolkit.update_node(
+        "kb", node_id, title="New Title", summary="New summary",
+    )
+    assert result["title"] == "New Title"
+    assert result["summary"] == "New summary"
+
+    tree = await toolkit.get_tree("kb")
+    node = tree["structure"][0]
+    assert node["title"] == "New Title"
+    assert node["summary"] == "New summary"
+
+
+@pytest.mark.asyncio
+async def test_update_node_partial_update(
+    monkeypatch, toolkit: PageIndexToolkit,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    res = await toolkit.add_node(
+        "kb", title="Keep Title", body="b", summary="Old summary",
+    )
+    node_id = res["node_id"]
+    await toolkit.update_node("kb", node_id, summary="Replaced")
+    tree = await toolkit.get_tree("kb")
+    node = tree["structure"][0]
+    assert node["title"] == "Keep Title"
+    assert node["summary"] == "Replaced"
+
+
+@pytest.mark.asyncio
+async def test_update_node_requires_at_least_one_field(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("kb")
+    res = await toolkit.add_node("kb", title="x", body="y")
+    with pytest.raises(ValueError):
+        await toolkit.update_node("kb", res["node_id"])
+
+
+@pytest.mark.asyncio
+async def test_update_node_unknown_id_raises(toolkit: PageIndexToolkit):
+    await toolkit.create_tree("kb")
+    with pytest.raises(KeyError):
+        await toolkit.update_node("kb", "9999", title="x")
 
 
 @pytest.mark.asyncio
