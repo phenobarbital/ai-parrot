@@ -32,7 +32,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only new submodule parrot/human/actions/backends/; can run in parallel with 1278/1281/1282 if multi-worktree is ever needed.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1275-action-backends.md"
+      "completed_at": "2026-05-21T22:27:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1275-action-backends.md"
     },
     {
       "id": "TASK-1276",
