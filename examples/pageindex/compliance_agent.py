@@ -286,51 +286,51 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
             target.unlink()
             LOG.info("Removed cached tree %s", target)
 
-    client = GoogleGenAIClient()
-    adapter = PageIndexLLMAdapter(client=client, model=HEAVY_MODEL)
+    async with GoogleGenAIClient() as client:
+        adapter = PageIndexLLMAdapter(client=client, model=HEAVY_MODEL)
 
-    toolkit = PageIndexToolkit(
-        adapter=adapter,
-        storage_dir=STORAGE_DIR,
-        lightweight_model=LIGHT_MODEL,
-        default_bm25_k=20,
-    )
+        toolkit = PageIndexToolkit(
+            adapter=adapter,
+            storage_dir=STORAGE_DIR,
+            lightweight_model=LIGHT_MODEL,
+            default_bm25_k=20,
+        )
 
-    _print_header("list_trees (before ingest)")
-    print(f"  {await toolkit.list_trees()}")
+        _print_header("list_trees (before ingest)")
+        print(f"  {await toolkit.list_trees()}")
 
-    tree = await ensure_tree(toolkit, pdf_path)
-    LOG.info(
-        "Tree %r ready: %d top-level sections",
-        TREE_NAME, len(tree.get("structure", [])),
-    )
+        tree = await ensure_tree(toolkit, pdf_path)
+        LOG.info(
+            "Tree %r ready: %d top-level sections",
+            TREE_NAME, len(tree.get("structure", [])),
+        )
 
-    _print_header("list_trees (after ingest)")
-    print(f"  {await toolkit.list_trees()}")
+        _print_header("list_trees (after ingest)")
+        print(f"  {await toolkit.list_trees()}")
 
-    await demo_search_variants(toolkit)
-    await demo_retrieve(toolkit)
-    await demo_two_step_ingest(toolkit)
-    await demo_import_file(toolkit, STORAGE_DIR / "extra")
-    # Reload tree post-mutation so retriever sees the inserts.
-    tree = await toolkit.get_tree(TREE_NAME)
-    await demo_raw_retriever(adapter, tree)
+        await demo_search_variants(toolkit)
+        await demo_retrieve(toolkit)
+        await demo_two_step_ingest(toolkit)
+        await demo_import_file(toolkit, STORAGE_DIR / "extra")
+        # Reload tree post-mutation so retriever sees the inserts.
+        tree = await toolkit.get_tree(TREE_NAME)
+        await demo_raw_retriever(adapter, tree)
 
-    _print_header("Persisted tree summary")
-    print(json.dumps(
-        {
-            "doc_name": tree.get("doc_name"),
-            "top_level_sections": [
-                {"node_id": n.get("node_id"), "title": n.get("title")}
-                for n in tree.get("structure", [])
-            ],
-        },
-        indent=2,
-        ensure_ascii=False,
-    ))
+        _print_header("Persisted tree summary")
+        print(json.dumps(
+            {
+                "doc_name": tree.get("doc_name"),
+                "top_level_sections": [
+                    {"node_id": n.get("node_id"), "title": n.get("title")}
+                    for n in tree.get("structure", [])
+                ],
+            },
+            indent=2,
+            ensure_ascii=False,
+        ))
 
-    if not skip_agent:
-        await demo_agent(toolkit)
+        if not skip_agent:
+            await demo_agent(toolkit)
 
     return 0
 

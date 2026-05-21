@@ -27,6 +27,14 @@ from .utils import find_node_by_id, get_nodes
 
 logger = logging.getLogger("parrot.pageindex")
 
+# bm25s pulls in ``jax.lax`` for its top-k selection, which emits noisy
+# DEBUG/INFO/WARNING messages about TPU/CUDA backend probing and every
+# jit compilation. None of that is actionable for PageIndex users, so we
+# pin the ``jax`` logger tree to WARNING at import time.
+for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge",
+                    "jax._src.interpreters.pxla"):
+    logging.getLogger(_jax_logger).setLevel(logging.WARNING)
+
 _RRF_K = 60
 _RERANK_TEXT_LIMIT = 2000
 
