@@ -125,6 +125,114 @@ def test_mark_dirty_triggers_rebuild():
 
 
 @pytest.mark.asyncio
+async def test_hybrid_search_content_loader_enriches_bm25(monkeypatch):
+    # Body contains a unique token absent from title and summary.
+    bodies = {
+        "0000": "unrelated billing copy",
+        "0001": "unrelated late copy",
+        "0002": "unrelated refund copy",
+        "0003": "zorblax onboarding wizard",  # unique token lives here.
+        "0004": "unrelated security copy",
+    }
+
+    def loader(node_id: str):
+        return bodies.get(node_id)
+
+    # Tree without inline "text" — the content_loader is the only path
+    # body words can reach BM25 by.
+    tree = _fixture_tree()
+    for node in [
+        tree["structure"][0],
+        tree["structure"][0]["nodes"][0],
+        tree["structure"][0]["nodes"][1],
+        tree["structure"][1],
+        tree["structure"][2],
+    ]:
+        node.pop("text", None)
+
+    engine_with = HybridPageIndexSearch(
+        tree=tree, adapter=_adapter(), default_bm25_k=5, content_loader=loader,
+    )
+    results = await engine_with.search(
+        "zorblax", top_k=3, use_bm25=True, use_llm_walk=False,
+    )
+    assert results, "BM25 should now find the unique body token"
+    assert results[0]["node_id"] == "0003"
+
+    # Control: same tree, no loader → "zorblax" is not in title/summary,
+    # so the loader version must score 0003 strictly higher than the
+    # no-loader version does.
+    engine_without = HybridPageIndexSearch(
+        tree=tree, adapter=_adapter(), default_bm25_k=5,
+    )
+    no_loader_results = await engine_without.search(
+        "zorblax", top_k=3, use_bm25=True, use_llm_walk=False,
+    )
+    loader_score = next(r["score"] for r in results if r["node_id"] == "0003")
+    no_loader_score = next(
+        (r["score"] for r in no_loader_results if r["node_id"] == "0003"), 0.0
+    )
+    assert loader_score > no_loader_score
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_no_loader_matches_baseline():
+    """Without a content_loader corpus is exactly title + summary (legacy text)."""
+    tree = _fixture_tree()
+    engine = HybridPageIndexSearch(tree=tree, adapter=_adapter())
+    ids, texts = engine._flatten_corpus()
+    # Pre-feature baseline: text reads node["text"].
+    for nid, text in zip(ids, texts):
+        from parrot.pageindex.utils import find_node_by_id
+        node = find_node_by_id(tree["structure"], nid)
+        assert node is not None
+        title = node.get("title") or ""
+        summary = node.get("summary") or ""
+        body = node.get("text") or ""
+        assert text == f"{title} {summary} {body}".strip()
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_content_loader_enriches_reranker(monkeypatch):
+    bodies = {"0001": "marker body content for refunds"}
+
+    def loader(node_id: str):
+        return bodies.get(node_id, "")
+
+    async def fake_search(self, query):
+        return TreeSearchResult(thinking="", node_list=["0001"])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+    )
+
+    captured: dict = {}
+
+    class _Reranker:
+        async def rerank(self, query, documents, top_n=None):
+            captured["docs"] = list(documents)
+            return []
+
+    tree = _fixture_tree()
+    for node in [
+        tree["structure"][0],
+        tree["structure"][0]["nodes"][0],
+        tree["structure"][0]["nodes"][1],
+        tree["structure"][1],
+        tree["structure"][2],
+    ]:
+        node.pop("text", None)
+
+    engine = HybridPageIndexSearch(
+        tree=tree, adapter=_adapter(), reranker=_Reranker(), content_loader=loader,
+    )
+    await engine.search(
+        "refunds", top_k=2, use_bm25=False, use_llm_walk=True, rerank=True,
+    )
+    doc_for_0001 = next(d for d in captured["docs"] if d.id == "0001")
+    assert "marker body content for refunds" in doc_for_0001.content
+
+
+@pytest.mark.asyncio
 async def test_reranker_invoked_when_requested(monkeypatch):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0001", "0002"])

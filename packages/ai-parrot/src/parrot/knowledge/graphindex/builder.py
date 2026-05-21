@@ -40,7 +40,13 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
+from parrot.knowledge.graphindex.communities import (
+    CommunitiesResult,
+    detect_communities,
+)
+from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
+from parrot.pageindex.toolkit import PageIndexToolkit
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,30 @@ class GraphIndexBuilder:
         ignore_file: Optional path to a ``.graphindexignore`` file.
         resolution_config: Optional ``ResolutionConfig`` for cross-domain
             resolution threshold and caps.
+        pageindex_toolkit: Optional :class:`PageIndexToolkit`. When set,
+            hierarchical loader sources are persisted as PageIndex trees
+            (lean ToC + per-node markdown sidecars) and the resulting
+            ``UniversalNode`` Section instances carry a ``content_ref``
+            that resolves to the body via :class:`NodeContentStore`.
+            The toolkit's tree name is exposed on the ``Document``
+            UniversalNode as ``domain_tags['pageindex_tree_id']`` so
+            the ontology's ``search_documents_scoped`` routing has a
+            concrete target. Omit to keep the legacy in-memory path
+            with no sidecar persistence.
+        signal_config: Optional :class:`SignalRelevanceConfig` (FEAT-190).
+            Stored only; the builder does not invoke the signal
+            scorer itself. Downstream consumers (analytics report,
+            FEAT-192 toolkit, the LLM-Wiki orchestrator) read this
+            attribute when they need to score node relevance with
+            tenant-specific weights instead of library defaults.
+        detect_communities_enabled: When True, run FEAT-191 Louvain
+            community detection between resolve and persist; the
+            partition is stored on ``self.last_community_result``
+            and ``community_id`` is written into every node's
+            ``domain_tags`` so it round-trips through persistence.
+            Default False — opt-in.
+        community_resolution: Louvain γ resolution parameter
+            (>1.0 finds smaller/tighter communities).
     """
 
     def __init__(
@@ -68,11 +98,20 @@ class GraphIndexBuilder:
         output_dir: Path,
         ignore_file: Optional[Path] = None,
         resolution_config: Optional[ResolutionConfig] = None,
+        pageindex_toolkit: Optional[PageIndexToolkit] = None,
+        signal_config: Optional[SignalRelevanceConfig] = None,
+        detect_communities_enabled: bool = False,
+        community_resolution: float = 1.0,
     ) -> None:
         self.persistence = persistence
         self.embedder = embedder
         self.output_dir = Path(output_dir)
         self.resolution_config = resolution_config or ResolutionConfig()
+        self.pageindex_toolkit = pageindex_toolkit
+        self.signal_config = signal_config
+        self.detect_communities_enabled = detect_communities_enabled
+        self.community_resolution = community_resolution
+        self.last_community_result: Optional[CommunitiesResult] = None
         self.logger = logging.getLogger(__name__)
         self._ignore_spec: Optional[pathspec.PathSpec] = self._load_ignore(ignore_file)
 
@@ -148,6 +187,28 @@ class GraphIndexBuilder:
             errors.append(f"Resolution failed: {exc}")
             inferred_edges = []
 
+        # Stage 4.5: Louvain community detection (FEAT-191, opt-in).
+        # Runs between resolve and persist so the community_id rides
+        # along on UniversalNode.domain_tags to ArangoDB.
+        if self.detect_communities_enabled:
+            try:
+                self.last_community_result = detect_communities(
+                    graph=assembler.graph,
+                    nodes=all_nodes,
+                    resolution=self.community_resolution,
+                    signal_config=self.signal_config,
+                    embedder=self.embedder if self.signal_config else None,
+                    write_back_to_nodes=True,
+                )
+                logger.info(
+                    "Stage 4.5 complete: %d communities, modularity=%.4f",
+                    len(self.last_community_result.communities),
+                    self.last_community_result.modularity,
+                )
+            except Exception as exc:
+                logger.error("Community detection failed: %s", exc)
+                errors.append(f"Community detection failed: {exc}")
+
         # Stage 5: Persist
         try:
             persist_result = await self.persistence.persist_graph(ctx, all_nodes, all_edges)
@@ -161,6 +222,8 @@ class GraphIndexBuilder:
         report_path: Optional[Path] = None
         try:
             analytics = compute_analytics(assembler.graph, all_nodes, all_edges)
+            # Attach FEAT-191 partition so the report includes communities.
+            analytics.communities = self.last_community_result
             report_path = generate_report(analytics, self.output_dir)
             logger.info("Stage 6 complete: report written to %s", report_path)
         except Exception as exc:
@@ -345,7 +408,7 @@ class GraphIndexBuilder:
         """
         nodes: list[UniversalNode] = []
         edges: list[UniversalEdge] = []
-        extractor = LoaderExtractor()
+        extractor = LoaderExtractor(toolkit=self.pageindex_toolkit)
         for uri in sources.loader_sources:
             if self._is_ignored(uri):
                 logger.debug("Ignoring loader source: %s", uri)
@@ -439,7 +502,7 @@ class GraphIndexBuilder:
         if self._is_ignored(uri):
             return [], []
         try:
-            extractor = LoaderExtractor()
+            extractor = LoaderExtractor(toolkit=self.pageindex_toolkit)
             return await extractor.extract(None, uri)
         except Exception as exc:
             logger.warning("Loader extraction for %s failed: %s", uri, exc)

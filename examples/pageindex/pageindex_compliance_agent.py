@@ -188,6 +188,63 @@ async def demo_retrieve(toolkit: PageIndexToolkit) -> None:
     print(excerpt)
 
 
+async def demo_categories(toolkit: PageIndexToolkit) -> None:
+    """Tag a couple of nodes with categories and run a filtered search."""
+    tree = await toolkit.get_tree(TREE_NAME)
+    top_level = tree.get("structure") or []
+    if len(top_level) < 2:
+        LOG.info("Skipping demo_categories — tree has fewer than 2 root nodes")
+        return
+
+    tagged_ids: list[str] = []
+    for node in top_level[:2]:
+        nid = node.get("node_id")
+        if not nid:
+            continue
+        result = await toolkit.tag_node(
+            TREE_NAME,
+            nid,
+            categories=["controls", "trust-services-criteria"],
+            metadata={"tsc": "CC7.2"},
+        )
+        tagged_ids.append(nid)
+        LOG.info(
+            "tag_node(%s) -> categories=%s metadata=%s",
+            nid, result["categories"], result["metadata"],
+        )
+
+    _print_header("search — categories filter")
+    results = await toolkit.search(
+        TREE_NAME,
+        "monitoring controls",
+        top_k=5,
+        categories=["controls"],
+    )
+    _print_search_results(results)
+    returned_ids = {r["node_id"] for r in results}
+    LOG.info(
+        "Returned %d result(s) — all in tagged set: %s",
+        len(results), returned_ids.issubset(set(tagged_ids)),
+    )
+
+
+async def demo_retrieve_returns_markdown(toolkit: PageIndexToolkit) -> None:
+    """Confirm ``retrieve`` returns sidecar markdown, not summaries."""
+    tree = await toolkit.get_tree(TREE_NAME)
+    top_level = tree.get("structure") or []
+    summaries = [n.get("summary") or "" for n in top_level if n.get("summary")]
+    body = await toolkit.retrieve(TREE_NAME, "Security trust services criterion", top_k=3)
+    _print_header("retrieve — markdown vs. summary check")
+    if not body:
+        print("  (no text returned)")
+        return
+    print(f"  retrieved {len(body):,} chars")
+    if summaries:
+        first_summary = summaries[0]
+        contains = first_summary[:80] in body
+        print(f"  first-summary substring present: {contains}")
+
+
 async def demo_two_step_ingest(toolkit: PageIndexToolkit) -> None:
     """Drop an out-of-band note into the tree via the two-step CoT pipeline."""
     note = (
@@ -312,6 +369,18 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
         if target.exists():
             target.unlink()
             LOG.info("Removed cached tree %s", target)
+        # Also wipe the per-node markdown sidecar directory so the
+        # rebuild starts from a clean content store.
+        content_dir = STORAGE_DIR / TREE_NAME
+        if content_dir.is_dir():
+            for entry in content_dir.iterdir():
+                if entry.is_file():
+                    entry.unlink()
+            try:
+                content_dir.rmdir()
+            except OSError:
+                pass
+            LOG.info("Cleared content sidecar %s", content_dir)
 
     async with GoogleGenAIClient() as client:
         adapter = PageIndexLLMAdapter(client=client, model=HEAVY_MODEL)
@@ -337,6 +406,8 @@ async def amain(pdf_path: Path, skip_agent: bool, reset: bool) -> int:
 
         await demo_search_variants(toolkit)
         await demo_retrieve(toolkit)
+        await demo_retrieve_returns_markdown(toolkit)
+        await demo_categories(toolkit)
         await demo_two_step_ingest(toolkit)
         await demo_import_file(toolkit, STORAGE_DIR / "extra")
         # Reload tree post-mutation so retriever sees the inserts.

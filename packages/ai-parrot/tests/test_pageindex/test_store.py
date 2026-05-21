@@ -61,6 +61,20 @@ def test_atomic_write_cleans_temp_on_failure(store: JSONTreeStore, tmp_path: Pat
     assert all(not name.endswith(".tmp") for name in leftover), leftover
 
 
+def test_store_strips_node_markdown_on_save(store: JSONTreeStore, tmp_path: Path):
+    tree = {
+        "doc_name": "demo",
+        "structure": [{"title": "root", "node_id": "0000"}],
+        "_node_markdown": {"0000": "# leaked body"},
+    }
+    store.save("demo", tree)
+    with (tmp_path / "demo.json").open() as f:
+        loaded = json.load(f)
+    assert "_node_markdown" not in loaded
+    # And the in-memory dict passed in was not mutated.
+    assert "_node_markdown" in tree
+
+
 def test_save_overwrites_existing(store: JSONTreeStore, tmp_path: Path):
     store.save("docs", {"structure": [{"title": "v1"}]})
     store.save("docs", {"structure": [{"title": "v2"}]})

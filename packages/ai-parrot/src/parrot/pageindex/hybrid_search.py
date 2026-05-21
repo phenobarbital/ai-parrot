@@ -17,7 +17,7 @@ and the next ``search`` rebuilds before scoring.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .._imports import lazy_import
 from .llm_adapter import PageIndexLLMAdapter
@@ -37,6 +37,7 @@ for _jax_logger in ("jax", "jax._src", "jax._src.xla_bridge",
 
 _RRF_K = 60
 _RERANK_TEXT_LIMIT = 2000
+_BM25_TEXT_LIMIT = 4000
 
 
 class HybridPageIndexSearch:
@@ -57,16 +58,36 @@ class HybridPageIndexSearch:
         reranker: Optional[Any] = None,
         model: Optional[str] = None,
         default_bm25_k: int = 20,
+        content_loader: Optional[Callable[[str], Optional[str]]] = None,
     ):
         self._tree = tree
         self._adapter = adapter
         self._reranker = reranker
         self._model = model
         self._default_bm25_k = default_bm25_k
+        self._content_loader = content_loader
 
         self._bm25_index = None
         self._corpus_node_ids: list[str] = []
         self._dirty = True
+
+    def set_content_loader(
+        self,
+        loader: Optional[Callable[[str], Optional[str]]],
+    ) -> None:
+        """Swap the per-node content loader. Marks the BM25 index dirty."""
+        self._content_loader = loader
+        self.mark_dirty()
+
+    def _load_body(self, node_id: Optional[str]) -> str:
+        if not node_id or self._content_loader is None:
+            return ""
+        try:
+            body = self._content_loader(node_id)
+        except Exception as exc:  # noqa: BLE001 — loader is user-supplied.
+            logger.warning("content_loader raised for %s: %s", node_id, exc)
+            return ""
+        return body or ""
 
     def mark_dirty(self) -> None:
         """Invalidate the BM25 index; it will be rebuilt on next search."""
@@ -94,7 +115,10 @@ class HybridPageIndexSearch:
                 continue
             title = node.get("title") or ""
             summary = node.get("summary") or node.get("prefix_summary") or ""
-            body = node.get("text") or ""
+            if self._content_loader is not None:
+                body = self._load_body(node_id)[:_BM25_TEXT_LIMIT]
+            else:
+                body = node.get("text") or ""
             texts.append(f"{title} {summary} {body}".strip())
             ids.append(node_id)
         return ids, texts
@@ -231,7 +255,10 @@ class HybridPageIndexSearch:
         docs: list[SearchResult] = []
         for cand in candidates:
             node = find_node_by_id(structure, cand["node_id"]) or {}
-            body = (node.get("text") or "")[:_RERANK_TEXT_LIMIT]
+            if self._content_loader is not None:
+                body = self._load_body(cand["node_id"])[:_RERANK_TEXT_LIMIT]
+            else:
+                body = (node.get("text") or "")[:_RERANK_TEXT_LIMIT]
             content = "\n".join(
                 part for part in (cand.get("title"), cand.get("summary"), body) if part
             )

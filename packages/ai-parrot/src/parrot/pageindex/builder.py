@@ -13,6 +13,7 @@ from types import SimpleNamespace as config
 from typing import Any, Awaitable, Iterable, Optional
 
 from .llm_adapter import PageIndexLLMAdapter
+from .pdf_to_markdown import build_node_markdown_map, extract_markdown_per_page
 from .schemas import (
     GeneratedTocItem,
     PageIndexDetection,
@@ -1597,6 +1598,7 @@ async def build_page_index(
             write_node_id(structure)
         if opt.if_add_node_text == "yes":
             add_node_text(structure, page_list)
+        node_markdown = _extract_node_markdown(doc, structure)
         if opt.if_add_node_summary == "yes":
             if opt.if_add_node_text == "no":
                 add_node_text(structure, page_list)
@@ -1610,11 +1612,33 @@ async def build_page_index(
                     "doc_name": get_pdf_name(doc),
                     "doc_description": doc_description,
                     "structure": structure,
+                    "_node_markdown": node_markdown,
                 }
 
         return {
             "doc_name": get_pdf_name(doc),
             "structure": structure,
+            "_node_markdown": node_markdown,
         }
     finally:
         _LLM_SEMAPHORE.reset(sem_token)
+
+
+def _extract_node_markdown(
+    doc: str | BytesIO,
+    structure: Any,
+) -> dict[str, str]:
+    """Extract per-node markdown from ``doc`` using ``pymupdf4llm``.
+
+    Returns an empty mapping for non-path inputs (``BytesIO``) or when
+    extraction fails — callers persist whatever they get and the
+    toolkit transparently falls back to summaries on retrieval.
+    """
+    if not isinstance(doc, str):
+        return {}
+    try:
+        pages = extract_markdown_per_page(doc)
+    except (FileNotFoundError, ImportError, ValueError) as exc:
+        logger.warning("extract_markdown_per_page failed for %s: %s", doc, exc)
+        return {}
+    return build_node_markdown_map(structure, pages)
