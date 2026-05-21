@@ -30,6 +30,12 @@ from parrot.knowledge.graphindex.signals import (
     relevance_neighborhood,
     signal_relevance,
 )
+from parrot.knowledge.graphindex.communities import (
+    Community,
+    CommunitiesResult,
+    cohesion_for_community,
+    detect_communities,
+)
 
 __all__ = [
     "Provenance",
@@ -45,4 +51,8 @@ __all__ = [
     "compute_pairwise_signals",
     "relevance_neighborhood",
     "signal_relevance",
+    "Community",
+    "CommunitiesResult",
+    "cohesion_for_community",
+    "detect_communities",
 ]
