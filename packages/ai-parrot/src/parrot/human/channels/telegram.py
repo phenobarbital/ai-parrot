@@ -175,9 +175,14 @@ class TelegramHumanChannel(HumanChannel):
 
     async def register_cancel_handler(
         self,
-        callback: Callable[[str], Awaitable[bool]],
+        callback: Callable[[str, str], Awaitable[bool]],
     ) -> None:
-        """Register the manager's cancel callback (cancel_pending)."""
+        """Register the manager's cancel callback (cancel_pending).
+
+        The callback is invoked as ``await callback(interaction_id, reason)``
+        where ``reason`` is ``"slash_cancel"`` for ``/cancel`` and
+        ``"button_cancel"`` for the ✕ inline button.
+        """
         self._cancel_callback = callback
 
     async def send_interaction(
@@ -239,12 +244,19 @@ class TelegramHumanChannel(HumanChannel):
 
     async def cancel_interaction(
         self, interaction_id: str, recipient: str
-    ) -> None:
-        """Cancel/withdraw an interaction by removing its keyboard."""
+    ) -> bool:
+        """Cancel/withdraw an interaction by removing its keyboard.
+
+        Returns ``True`` when a tracked message was found and updated,
+        ``False`` when nothing was tracked for ``interaction_id`` or the
+        Redis lookup itself raised.
+        """
+        had_state = False
         try:
             msg_key = f"hitl:msg:{interaction_id}:{recipient}"
             msg_id_raw = await self.redis.get(msg_key)
             if msg_id_raw:
+                had_state = True
                 msg_id = int(msg_id_raw)
                 try:
                     await self.bot.edit_message_reply_markup(
@@ -263,6 +275,8 @@ class TelegramHumanChannel(HumanChannel):
                 await self.redis.delete(msg_key)
         except Exception:
             self.logger.exception("Failed to cancel interaction")
+            return False
+        return had_state
 
         # Clean up awaiting text if applicable
         chat_id = int(recipient)
@@ -843,7 +857,9 @@ class TelegramHumanChannel(HumanChannel):
             await self.cancel_interaction(interaction_id, str(chat_id))
             if self._cancel_callback:
                 try:
-                    if await self._cancel_callback(interaction_id):
+                    if await self._cancel_callback(
+                        interaction_id, "slash_cancel"
+                    ):
                         cancelled += 1
                 except Exception:
                     self.logger.exception(
@@ -912,7 +928,7 @@ class TelegramHumanChannel(HumanChannel):
         # Dispatch to manager to resolve the pending future as CANCELLED
         if self._cancel_callback:
             try:
-                await self._cancel_callback(interaction_id)
+                await self._cancel_callback(interaction_id, "button_cancel")
             except Exception:
                 self.logger.exception(
                     "cancel callback failed for %s", interaction_id

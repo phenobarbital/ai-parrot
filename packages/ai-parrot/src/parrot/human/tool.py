@@ -168,23 +168,20 @@ class HumanTool(AbstractTool):
         self.source_agent = source_agent
 
     def _resolve_channel(self) -> Optional[str]:
-        """Pick a concrete channel name.
+        """Return the configured channel or pick one from the manager.
 
-        Order: ``self.default_channel`` if registered → first registered
-        channel on the manager → None (manager will warn and not dispatch).
+        - If ``default_channel`` is set, use it verbatim (current default
+          is ``"telegram"`` for back-compat). The manager logs a warning
+          when an unregistered channel is used.
+        - If ``default_channel`` is ``None``, fall back to the first
+          channel registered on the manager.
         """
-        manager = self.manager
-        if manager is None:
+        if self.default_channel is not None:
             return self.default_channel
-        if (
-            self.default_channel
-            and self.default_channel in getattr(manager, "channels", {})
-        ):
-            return self.default_channel
-        channels = getattr(manager, "channels", {})
-        if channels:
+        channels = getattr(self.manager, "channels", None)
+        if isinstance(channels, dict) and channels:
             return next(iter(channels))
-        return self.default_channel
+        return None
 
     @staticmethod
     def _parse_options(

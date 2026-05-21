@@ -130,12 +130,16 @@ class WebHumanChannel(HumanChannel):
         self,
         interaction_id: str,
         recipient: str,
-    ) -> None:
+    ) -> bool:
         """Emit a cancellation payload to the user's WebSocket channel.
 
         Args:
             interaction_id: UUID of the interaction being cancelled.
             recipient: WebSocket channel name to publish to.
+
+        Returns:
+            ``True`` when the socket manager accepted the publish,
+            ``False`` if it raised.
         """
         payload: Dict[str, Any] = {
             "type": "hitl:cancel",
@@ -147,7 +151,15 @@ class WebHumanChannel(HumanChannel):
             interaction_id,
             recipient,
         )
-        await self.socket_manager.notify_channel(recipient, payload)
+        try:
+            await self.socket_manager.notify_channel(recipient, payload)
+            return True
+        except Exception:
+            self.logger.exception(
+                "WebHumanChannel: failed to publish cancel for %s",
+                interaction_id,
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Internal helpers
