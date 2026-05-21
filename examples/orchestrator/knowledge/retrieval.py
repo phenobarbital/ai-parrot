@@ -24,17 +24,39 @@ STORAGE_DIR = _HERE / ".storage"
 PAGEINDEX_DIR = STORAGE_DIR / "pageindex"
 FAISS_DIR = STORAGE_DIR / "faiss"
 
+class _NullCM:
+    """No-op async context manager used when no PageIndex client is attached."""
+
+    async def __aenter__(self) -> "_NullCM":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
 # Lazy singletons populated by :file:`ingest.py` and reused by the tools.
 _pageindex_toolkit: Optional[Any] = None
 _pageindex_tree_names: list[str] = []
+_pageindex_client: Optional[Any] = None
 _faiss_store: Optional[Any] = None
 
 
-def attach_pageindex(toolkit: Any, tree_names: list[str]) -> None:
-    """Wire a built :class:`PageIndexToolkit` for use by ``pageindex_lookup``."""
-    global _pageindex_toolkit, _pageindex_tree_names
+def attach_pageindex(
+    toolkit: Any,
+    tree_names: list[str],
+    client: Optional[Any] = None,
+) -> None:
+    """Wire a built :class:`PageIndexToolkit` for use by ``pageindex_lookup``.
+
+    The ``client`` is re-entered as an async context manager around each
+    retrieval so the underlying SDK session stays valid for the lifetime
+    of the orchestrator (the toolkit only holds a reference — it doesn't
+    own the session).
+    """
+    global _pageindex_toolkit, _pageindex_tree_names, _pageindex_client
     _pageindex_toolkit = toolkit
     _pageindex_tree_names = list(tree_names)
+    _pageindex_client = client
 
 
 def attach_faiss(store: Any) -> None:
@@ -122,16 +144,17 @@ async def pageindex_lookup(query: str) -> str:
     if _pageindex_toolkit is not None and _pageindex_tree_names:
         try:
             collected: list[dict[str, str]] = []
-            for tree_name in _pageindex_tree_names:
-                body = await _pageindex_toolkit.retrieve(
-                    tree_name=tree_name, query=query, top_k=2
-                )
-                if body:
-                    collected.append({
-                        "source": tree_name,
-                        "section": "(see headings below)",
-                        "excerpt": body,
-                    })
+            async with _pageindex_client if _pageindex_client is not None else _NullCM():
+                for tree_name in _pageindex_tree_names:
+                    body = await _pageindex_toolkit.retrieve(
+                        tree_name=tree_name, query=query, top_k=2
+                    )
+                    if body:
+                        collected.append({
+                            "source": tree_name,
+                            "section": "(see headings below)",
+                            "excerpt": body,
+                        })
             return _format_hits(collected, "📚 PageIndex results")
         except Exception as exc:
             _LOG.warning("PageIndex query failed (%s); using fallback.", exc)

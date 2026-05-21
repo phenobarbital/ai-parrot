@@ -5,10 +5,10 @@ import logging
 
 from parrot.bots.flows.agents import OrchestratorAgent
 
-from .escalation import escalate_tier1, escalate_tier2
-from .hitl import ask_user_question
-from .rules import SYSTEM_PROMPT
-from .subagents import (
+from examples.orchestrator.escalation import escalate_tier1, escalate_tier2
+from examples.orchestrator.hitl import ask_user_question
+from examples.orchestrator.rules import SYSTEM_PROMPT
+from examples.orchestrator.subagents import (
     build_finance_specialist,
     build_hr_specialist,
     build_it_specialist,

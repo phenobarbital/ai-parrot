@@ -12,7 +12,7 @@ corresponding index has been built by :file:`knowledge/ingest.py`, and
 fall back to a simple in-memory substring scan when not — keeping the
 example runnable without any external dependencies.
 """
-from .retrieval import (
+from examples.orchestrator.knowledge.retrieval import (
     handbook_search,
     pageindex_lookup,
 )

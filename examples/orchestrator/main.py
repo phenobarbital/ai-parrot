@@ -15,11 +15,16 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 from typing import Optional
 
-from .escalation import read_tickets, reset_logs
-from .hitl import SCRIPTED_ANSWERS
-from .orchestrator import build_helpdesk_orchestrator
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from examples.orchestrator.escalation import read_tickets, reset_logs
+from examples.orchestrator.hitl import SCRIPTED_ANSWERS
+from examples.orchestrator.orchestrator import build_helpdesk_orchestrator
 
 
 SCENARIOS: dict[str, dict[str, str]] = {
@@ -62,7 +67,7 @@ def _seed_scripted_answers(scenario_cfg: dict[str, str]) -> None:
 
 async def _maybe_load_indexes() -> None:
     """Attach pre-built PageIndex/FAISS indexes if ingest.py has been run."""
-    from .knowledge.retrieval import PAGEINDEX_DIR
+    from examples.orchestrator.knowledge.retrieval import PAGEINDEX_DIR
 
     if not any(PAGEINDEX_DIR.glob("*.json")):
         logging.getLogger("orchestrator").info(
@@ -72,7 +77,7 @@ async def _maybe_load_indexes() -> None:
         )
         return
     try:
-        from .knowledge.ingest import build_all
+        from examples.orchestrator.knowledge.ingest import build_all
 
         await build_all(reset=False)
     except Exception as exc:

@@ -18,8 +18,13 @@ import argparse
 import asyncio
 import logging
 import sys
+from pathlib import Path
 
-from .retrieval import (
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from examples.orchestrator.knowledge.retrieval import (
     FAISS_DIR,
     HANDBOOKS_DIR,
     MANUALS_DIR,
@@ -32,8 +37,13 @@ from .retrieval import (
 _LOG = logging.getLogger("orchestrator.ingest")
 
 
-async def _build_pageindex() -> tuple[object, list[str]]:
-    """Build a PageIndex tree per manual; returns the toolkit + tree names."""
+async def _build_pageindex() -> tuple[object, list[str], object]:
+    """Build a PageIndex tree per manual; returns toolkit, tree names, client.
+
+    The client is returned so the caller can keep it alive (as an async
+    context manager) for the lifetime of the orchestrator — the toolkit
+    holds a reference to it but does not own its session lifecycle.
+    """
     from parrot.clients.google.client import GoogleGenAIClient
     from parrot.models.google import GoogleModel
     from parrot.pageindex import PageIndexLLMAdapter, PageIndexToolkit
@@ -43,31 +53,32 @@ async def _build_pageindex() -> tuple[object, list[str]]:
     light = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
 
     client = GoogleGenAIClient()
-    adapter = PageIndexLLMAdapter(client=client, model=heavy)
-    toolkit = PageIndexToolkit(
-        adapter=adapter,
-        storage_dir=PAGEINDEX_DIR,
-        lightweight_model=light,
-    )
-
-    tree_names: list[str] = []
-    existing = set(await toolkit.list_trees())
-    for md_path in sorted(MANUALS_DIR.glob("*.md")):
-        tree_name = md_path.stem
-        if tree_name in existing:
-            _LOG.info("Tree %r already exists — skipping.", tree_name)
-            tree_names.append(tree_name)
-            continue
-        _LOG.info("Ingesting %s → tree %r", md_path.name, tree_name)
-        await toolkit.create_tree(tree_name=tree_name, doc_name=tree_name)
-        await toolkit.insert_markdown(
-            tree_name=tree_name,
-            markdown=md_path.read_text(encoding="utf-8"),
-            doc_name=tree_name,
+    async with client:
+        adapter = PageIndexLLMAdapter(client=client, model=heavy)
+        toolkit = PageIndexToolkit(
+            adapter=adapter,
+            storage_dir=PAGEINDEX_DIR,
+            lightweight_model=light,
         )
-        tree_names.append(tree_name)
 
-    return toolkit, tree_names
+        tree_names: list[str] = []
+        existing = set(await toolkit.list_trees())
+        for md_path in sorted(MANUALS_DIR.glob("*.md")):
+            tree_name = md_path.stem
+            if tree_name in existing:
+                _LOG.info("Tree %r already exists — skipping.", tree_name)
+                tree_names.append(tree_name)
+                continue
+            _LOG.info("Ingesting %s → tree %r", md_path.name, tree_name)
+            await toolkit.create_tree(tree_name=tree_name, doc_name=tree_name)
+            await toolkit.insert_markdown(
+                tree_name=tree_name,
+                markdown=md_path.read_text(encoding="utf-8"),
+                doc_name=tree_name,
+            )
+            tree_names.append(tree_name)
+
+    return toolkit, tree_names, client
 
 
 async def _build_faiss() -> object:
@@ -78,7 +89,7 @@ async def _build_faiss() -> object:
     FAISS_DIR.mkdir(parents=True, exist_ok=True)
     store = FAISSStore(collection_name="handbooks")
 
-    from .retrieval import split_into_sections
+    from examples.orchestrator.knowledge.retrieval import split_into_sections
 
     documents: list[Document] = []
     for md_path in sorted(HANDBOOKS_DIR.glob("*.md")):
@@ -112,8 +123,8 @@ async def build_all(reset: bool = False) -> None:
                     if child.is_file():
                         child.unlink()
 
-    toolkit, tree_names = await _build_pageindex()
-    attach_pageindex(toolkit, tree_names)
+    toolkit, tree_names, client = await _build_pageindex()
+    attach_pageindex(toolkit, tree_names, client)
 
     faiss = await _build_faiss()
     attach_faiss(faiss)

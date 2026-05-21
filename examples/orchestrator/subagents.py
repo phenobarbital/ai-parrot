@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from parrot.bots.agent import BasicAgent
 
-from .knowledge import handbook_search, pageindex_lookup
+from examples.orchestrator.knowledge import handbook_search, pageindex_lookup
 
 
 HR_PROMPT = """\

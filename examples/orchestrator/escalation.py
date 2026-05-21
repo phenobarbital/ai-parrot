@@ -20,7 +20,7 @@ from typing import Any
 
 from parrot.tools import tool
 
-from .rules import TIER1_EMAIL, TIER2_EMAIL
+from examples.orchestrator.rules import TIER1_EMAIL, TIER2_EMAIL
 
 
 _LOG = logging.getLogger("orchestrator.escalation")
