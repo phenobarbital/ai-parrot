@@ -255,6 +255,8 @@ etc/
 documents/
 work/
 artifacts/
+examples/pageindex/store/*
+examples/pageindex/data/*
 
 # Custom Agents:
 plugins/agents/
