@@ -130,7 +130,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -140,8 +140,8 @@
       "parallelism_notes": "Adds emission points in manager methods touched by 1277 — sequence after 1277 to avoid merge churn.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1280-tier-events.md"
+      "completed_at": "2026-05-21T22:49:12+00:00",
+      "file": "sdd/tasks/completed/TASK-1280-tier-events.md"
     },
     {
       "id": "TASK-1281",
