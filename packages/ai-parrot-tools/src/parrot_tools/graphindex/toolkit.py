@@ -1,19 +1,43 @@
 """GraphIndex Toolkit — Agent-Facing Tools.
 
-Exposes the knowledge graph to AI agents as a set of callable tools via
-``GraphIndexToolkit(AbstractToolkit)``.  All public async methods are
-auto-discovered and registered as tools by the ``AbstractToolkit``
+Exposes the knowledge graph to AI agents as a set of 19 callable tools
+via ``GraphIndexToolkit(AbstractToolkit)``.  All public async methods
+are auto-discovered and registered as tools by the ``AbstractToolkit``
 base class.
 
-Hot queries read from the in-memory ``rustworkx.PyDiGraph`` and FAISS
-index.  ``explain()`` optionally uses an ``AbstractClient`` for LLM
-summary generation.
+Hot read queries operate over the in-memory ``rustworkx.PyDiGraph``
+and FAISS index. Write tools mutate the same in-memory state through
+the ``GraphAssembler`` reference (when supplied) so the graph stays
+consistent; agents can build the wiki from inside a tool call.
+
+Optional integrations:
+
+* ``GraphIndexEmbedder`` — when injected, replaces the placeholder
+  query encoder with a real ``model.encode`` call and embeds freshly
+  created nodes so ``find_node`` and ``search_hybrid`` see them.
+* ``SignalRelevanceConfig`` (FEAT-190) — drives ``relevance()`` and
+  ``neighborhood_by_relevance()``. Lazy-imported.
+* FEAT-191 communities — ``list_communities`` / ``find_community``
+  cache the partition until a write tool runs. Lazy-imported.
+
+Tool surface:
+
+  # READ
+  find_node, find_references, get_neighborhood, traverse,
+  search_hybrid, find_central_nodes, shortest_path, explain,
+  relevance, neighborhood_by_relevance, list_communities,
+  find_community
+
+  # WRITE
+  create_concept, create_node, link_nodes, unlink_nodes,
+  attach_summary, tag_node, merge_nodes
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import faiss
 import numpy as np
@@ -21,27 +45,45 @@ import rustworkx
 
 from parrot.tools.toolkit import AbstractToolkit
 
+if TYPE_CHECKING:
+    from parrot.knowledge.graphindex.assemble import GraphAssembler
+    from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
+    from parrot.knowledge.graphindex.schema import UniversalNode
+    from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
+
 logger = logging.getLogger(__name__)
 
 
 class GraphIndexToolkit(AbstractToolkit):
-    """Agent-facing tools for querying the GraphIndex knowledge graph.
+    """Agent-facing tools for querying AND mutating the GraphIndex graph.
 
-    Provides semantic search, graph traversal, centrality queries,
-    and LLM-powered explanations over the assembled knowledge graph.
-
-    All public async methods are auto-discovered by ``AbstractToolkit``
-    and registered as callable agent tools.
+    Read-only queries work with the original three-positional-arg
+    constructor (graph, faiss_index, node_map, node_id_list). Write
+    capabilities and signal/community wrappers require the
+    ``assembler``, ``embedder``, and ``nodes`` kwargs.
 
     Args:
-        graph: The assembled ``rustworkx.PyDiGraph``.  Node payloads must
-            be dicts with at least ``node_id``, ``kind``, and ``title``.
+        graph: The assembled ``rustworkx.PyDiGraph``. Node payloads
+            must be dicts with at least ``node_id``, ``kind``, ``title``.
         faiss_index: FAISS index populated with node embeddings.
-        node_map: Mapping from application-level ``node_id`` string to
-            the rustworkx integer node index.
+        node_map: Mapping ``node_id`` (str) → rustworkx integer index.
         node_id_list: Ordered list mapping FAISS position → ``node_id``.
-        client: Optional ``AbstractClient`` instance for ``explain()``
-            LLM summaries.
+            Mutations may set entries to ``None`` to orphan a FAISS row
+            (FAISS does not support row deletion for ``IndexFlatL2``).
+        client: Optional ``AbstractClient`` for ``explain()``.
+        assembler: Optional ``GraphAssembler`` — required for the write
+            tools. Without it, write methods return a structured
+            ``{"error": ...}`` response instead of raising.
+        embedder: Optional ``GraphIndexEmbedder`` — used to embed new
+            nodes (``create_concept`` / ``create_node``) and to encode
+            queries for ``find_node`` / ``search_hybrid``. Falls back
+            to the placeholder hash encoder when missing.
+        nodes: Optional list of ``UniversalNode`` instances kept in
+            sync with the graph; required by signal/community tools
+            and by ``attach_summary`` (so the model object stays
+            authoritative).
+        signal_config: Optional :class:`SignalRelevanceConfig` (FEAT-190).
+            Defaults to the library's default config when not supplied.
     """
 
     def __init__(
@@ -50,7 +92,11 @@ class GraphIndexToolkit(AbstractToolkit):
         faiss_index: faiss.Index,
         node_map: dict[str, int],
         node_id_list: list[str],
-        client=None,  # Optional[AbstractClient]
+        client=None,
+        assembler: Optional["GraphAssembler"] = None,
+        embedder: Optional["GraphIndexEmbedder"] = None,
+        nodes: Optional[list["UniversalNode"]] = None,
+        signal_config: Optional["SignalRelevanceConfig"] = None,
     ) -> None:
         super().__init__()
         self.graph = graph
@@ -58,7 +104,41 @@ class GraphIndexToolkit(AbstractToolkit):
         self.node_map = node_map
         self.node_id_list = node_id_list
         self.client = client
+        self.assembler = assembler
+        self.embedder = embedder
+        self.nodes = nodes if nodes is not None else []
+        self.signal_config = signal_config
+        self._community_cache: Optional[Any] = None
+        self._encoder_warning_emitted = False
         self.logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @property
+    def _write_supported(self) -> bool:
+        """True iff the toolkit has the dependencies to mutate state."""
+        return self.assembler is not None and self.embedder is not None
+
+    def _no_write_error(self, op: str) -> dict:
+        return {
+            "error": (
+                f"{op}: write tools require an assembler + embedder. "
+                "Construct GraphIndexToolkit with assembler=... and "
+                "embedder=... to enable writes."
+            ),
+        }
+
+    def _invalidate_community_cache(self) -> None:
+        self._community_cache = None
+
+    def _node_by_id(self, node_id: str) -> Optional["UniversalNode"]:
+        for n in self.nodes:
+            if n.node_id == node_id:
+                return n
+        return None
+
 
     # ------------------------------------------------------------------
     # Public agent tools
@@ -83,9 +163,7 @@ class GraphIndexToolkit(AbstractToolkit):
 
         try:
             dim = self.faiss_index.d
-            # Encode query to a unit vector via a simple hash (placeholder
-            # for real embedding; in production use the embedder's model)
-            query_vec = self._encode_query(query, dim)
+            query_vec = await self._encode_query(query, dim)
             distances, indices = self.faiss_index.search(query_vec, 1)
             faiss_pos = int(indices[0][0])
             if faiss_pos < 0 or faiss_pos >= len(self.node_id_list):
@@ -237,7 +315,7 @@ class GraphIndexToolkit(AbstractToolkit):
         k = min(top_k * 2, self.faiss_index.ntotal)
         try:
             dim = self.faiss_index.d
-            query_vec = self._encode_query(query, dim)
+            query_vec = await self._encode_query(query, dim)
             distances, indices = self.faiss_index.search(query_vec, k)
         except Exception as exc:
             logger.error("search_hybrid FAISS search failed: %s", exc)
@@ -395,24 +473,569 @@ class GraphIndexToolkit(AbstractToolkit):
                 f"{summary}"
             ).strip()
 
+    # ==================================================================
+    # WRITE tools (require assembler + embedder)
+    # ==================================================================
+
+    async def create_concept(
+        self,
+        title: str,
+        summary: str,
+        source_uri: Optional[str] = None,
+        categories: Optional[list[str]] = None,
+    ) -> dict:
+        """Create a CONCEPT node and embed it.
+
+        The deterministic node_id is a SHA-1 prefix of
+        ``"concept::title::summary"`` so re-creating an identical
+        concept is idempotent at the id level. Categories are stored
+        in ``domain_tags['categories']``.
+
+        Returns ``{node_id, kind, title, status}`` or ``{"error": ...}``.
+        """
+        return await self._create_node(
+            kind="concept",
+            title=title,
+            summary=summary,
+            source_uri=source_uri,
+            categories=categories,
+        )
+
+    async def create_node(
+        self,
+        kind: str,
+        title: str,
+        summary: Optional[str] = None,
+        source_uri: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        domain_tags: Optional[dict] = None,
+    ) -> dict:
+        """Generic node creation for any ``NodeKind``."""
+        return await self._create_node(
+            kind=kind,
+            title=title,
+            summary=summary,
+            source_uri=source_uri,
+            parent_id=parent_id,
+            domain_tags=domain_tags,
+        )
+
+    async def _create_node(
+        self,
+        kind: str,
+        title: str,
+        summary: Optional[str] = None,
+        source_uri: Optional[str] = None,
+        parent_id: Optional[str] = None,
+        categories: Optional[list[str]] = None,
+        domain_tags: Optional[dict] = None,
+    ) -> dict:
+        if not self._write_supported:
+            return self._no_write_error("create_node")
+        if not isinstance(title, str) or not title.strip():
+            return {"error": "create_node: title must be a non-empty string"}
+
+        from parrot.knowledge.graphindex.schema import NodeKind, UniversalNode
+        try:
+            kind_enum = NodeKind(kind)
+        except ValueError:
+            return {"error": f"create_node: unknown kind {kind!r}"}
+
+        node_id = self._mint_node_id(kind, title, summary or "")
+        if node_id in self.node_map:
+            return {"error": f"create_node: node_id {node_id!r} already exists"}
+
+        tags = dict(domain_tags or {})
+        if categories:
+            tags["categories"] = sorted({str(c) for c in categories})
+
+        node = UniversalNode(
+            node_id=node_id,
+            kind=kind_enum,
+            title=title.strip(),
+            source_uri=source_uri or f"agent://{kind}/{node_id}",
+            summary=summary or "",
+            parent_id=parent_id,
+            domain_tags=tags,
+        )
+
+        try:
+            rust_idx = self.assembler.add_node(node)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"create_node: assembler rejected: {exc}"}
+        self.node_map[node_id] = rust_idx
+
+        # Embed the new node and append to FAISS / node_id_list bookkeeping.
+        try:
+            await self.embedder.embed_nodes([node])
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("create_node: embed failed for %s: %s", node_id, exc)
+        # The embedder appends to its own internal map; mirror onto the
+        # toolkit's node_id_list so query encoding stays consistent.
+        if node_id not in self.node_id_list:
+            self.node_id_list.append(node_id)
+
+        self.nodes.append(node)
+        self._invalidate_community_cache()
+        return {
+            "node_id": node_id,
+            "kind": kind_enum.value,
+            "title": node.title,
+            "status": "created",
+        }
+
+    async def link_nodes(
+        self,
+        source_id: str,
+        target_id: str,
+        kind: str,
+        confidence: Optional[float] = None,
+    ) -> dict:
+        """Add a directed edge.
+
+        ``confidence`` is allowed iff ``kind`` is treated as INFERRED
+        provenance — the underlying ``UniversalEdge`` validator
+        enforces ``confidence ⇔ provenance=INFERRED``.
+        """
+        if not self._write_supported:
+            return self._no_write_error("link_nodes")
+        if source_id not in self.node_map or target_id not in self.node_map:
+            return {"error": "link_nodes: unknown source_id or target_id"}
+
+        from parrot.knowledge.graphindex.schema import (
+            EdgeKind, Provenance, UniversalEdge,
+        )
+        try:
+            kind_enum = EdgeKind(kind)
+        except ValueError:
+            return {"error": f"link_nodes: unknown edge kind {kind!r}"}
+
+        provenance = (
+            Provenance.INFERRED if confidence is not None else Provenance.EXTRACTED
+        )
+
+        try:
+            edge = UniversalEdge(
+                source_id=source_id,
+                target_id=target_id,
+                kind=kind_enum,
+                provenance=provenance,
+                confidence=confidence,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface validator failures
+            return {"error": f"link_nodes: {exc}"}
+
+        try:
+            self.assembler.add_edge(edge)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"link_nodes: assembler rejected: {exc}"}
+
+        self._invalidate_community_cache()
+        return {
+            "source_id": source_id,
+            "target_id": target_id,
+            "kind": kind_enum.value,
+            "status": "linked",
+        }
+
+    async def unlink_nodes(
+        self,
+        source_id: str,
+        target_id: str,
+        kind: Optional[str] = None,
+    ) -> dict:
+        """Remove edge(s) between two nodes.
+
+        ``kind=None`` removes every edge between them (in either
+        direction); a specific kind removes only matching edges.
+        """
+        if not self._write_supported:
+            return self._no_write_error("unlink_nodes")
+        src_idx = self.node_map.get(source_id)
+        tgt_idx = self.node_map.get(target_id)
+        if src_idx is None or tgt_idx is None:
+            return {"error": "unlink_nodes: unknown source_id or target_id"}
+
+        removed = 0
+        for s, t in ((src_idx, tgt_idx), (tgt_idx, src_idx)):
+            for _eidx, payload in list(self._edges_between(s, t)):
+                if kind is not None and payload.get("kind") != kind:
+                    continue
+                try:
+                    self.graph.remove_edge(s, t)
+                    removed += 1
+                except Exception:
+                    pass
+                # Also clean the assembler's edge_index_map entry.
+                if hasattr(self.assembler, "_edge_index_map"):
+                    edge_key = (
+                        payload.get("source_id"),
+                        payload.get("target_id"),
+                        payload.get("kind"),
+                    )
+                    self.assembler._edge_index_map.pop(edge_key, None)
+
+        if removed == 0:
+            return {
+                "source_id": source_id,
+                "target_id": target_id,
+                "removed": 0,
+                "status": "no_op",
+            }
+
+        self._invalidate_community_cache()
+        return {
+            "source_id": source_id,
+            "target_id": target_id,
+            "removed": removed,
+            "status": "unlinked",
+        }
+
+    def _edges_between(self, src_idx: int, tgt_idx: int):
+        """Yield (edge_index, payload) for every edge from src to tgt."""
+        try:
+            edge_indices = self.graph.edge_indices_from_endpoints(src_idx, tgt_idx)
+        except Exception:
+            edge_indices = []
+        for eidx in edge_indices:
+            try:
+                yield eidx, self.graph.get_edge_data_by_index(eidx)
+            except Exception:
+                continue
+
+    async def attach_summary(self, node_id: str, summary: str) -> dict:
+        """Set / overwrite the summary on an existing node and re-embed."""
+        if not self._write_supported:
+            return self._no_write_error("attach_summary")
+        idx = self.node_map.get(node_id)
+        if idx is None:
+            return {"error": f"attach_summary: node {node_id!r} not found"}
+        if not isinstance(summary, str):
+            return {"error": "attach_summary: summary must be a string"}
+
+        payload = self.graph[idx]
+        if isinstance(payload, dict):
+            payload["summary"] = summary
+
+        node = self._node_by_id(node_id)
+        if node is not None:
+            node.summary = summary
+            try:
+                await self.embedder.embed_nodes([node])
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning(
+                    "attach_summary: re-embed failed for %s: %s", node_id, exc,
+                )
+
+        self._invalidate_community_cache()
+        return {"node_id": node_id, "summary": summary, "status": "updated"}
+
+    async def tag_node(self, node_id: str, key: str, value: Any) -> dict:
+        """Shallow-merge a single key/value into the node's ``domain_tags``."""
+        if not self._write_supported:
+            return self._no_write_error("tag_node")
+        if not isinstance(key, str) or not key:
+            return {"error": "tag_node: key must be a non-empty string"}
+        idx = self.node_map.get(node_id)
+        if idx is None:
+            return {"error": f"tag_node: node {node_id!r} not found"}
+
+        payload = self.graph[idx]
+        if isinstance(payload, dict):
+            tags = payload.setdefault("domain_tags", {})
+            if isinstance(tags, dict):
+                tags[key] = value
+
+        node = self._node_by_id(node_id)
+        if node is not None:
+            node.domain_tags[key] = value
+
+        self._invalidate_community_cache()
+        return {"node_id": node_id, "key": key, "value": value, "status": "tagged"}
+
+    async def merge_nodes(
+        self,
+        canonical_id: str,
+        duplicate_id: str,
+    ) -> dict:
+        """Re-point every edge of ``duplicate_id`` to ``canonical_id`` and
+        remove the duplicate node.
+
+        FAISS does not support row deletion for ``IndexFlatL2``, so the
+        duplicate's FAISS position is orphaned: ``node_id_list[pos]``
+        is set to ``None`` and read tools skip the position. Edges that
+        would duplicate an existing canonical edge (same source, target,
+        kind) are dropped, not double-added. Self-loops created by the
+        merge are dropped.
+        """
+        if not self._write_supported:
+            return self._no_write_error("merge_nodes")
+        if canonical_id not in self.node_map or duplicate_id not in self.node_map:
+            return {"error": "merge_nodes: unknown canonical_id or duplicate_id"}
+        if canonical_id == duplicate_id:
+            return {"error": "merge_nodes: canonical_id == duplicate_id"}
+
+        dup_idx = self.node_map[duplicate_id]
+        canonical_idx = self.node_map[canonical_id]
+
+        # Collect every (other_id, payload, direction) before we mutate.
+        out_edges: list[dict] = list(
+            payload for _s, _t, payload in self.graph.out_edges(dup_idx)
+        )
+        in_edges: list[dict] = list(
+            payload for _s, _t, payload in self.graph.in_edges(dup_idx)
+        )
+
+        existing_keys = self._existing_edge_keys(canonical_idx)
+        redirected = 0
+
+        from parrot.knowledge.graphindex.schema import (
+            EdgeKind, Provenance, UniversalEdge,
+        )
+
+        for payload in out_edges:
+            target = payload.get("target_id")
+            kind_v = payload.get("kind")
+            if target in (canonical_id, duplicate_id) or not target or not kind_v:
+                continue
+            key = (canonical_id, target, kind_v)
+            if key in existing_keys:
+                continue
+            try:
+                edge = UniversalEdge(
+                    source_id=canonical_id,
+                    target_id=target,
+                    kind=EdgeKind(kind_v),
+                    provenance=Provenance(payload.get("provenance", "extracted")),
+                    confidence=payload.get("confidence"),
+                )
+                self.assembler.add_edge(edge)
+                existing_keys.add(key)
+                redirected += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("merge_nodes: out-edge redirect failed: %s", exc)
+
+        for payload in in_edges:
+            source = payload.get("source_id")
+            kind_v = payload.get("kind")
+            if source in (canonical_id, duplicate_id) or not source or not kind_v:
+                continue
+            key = (source, canonical_id, kind_v)
+            if key in existing_keys:
+                continue
+            try:
+                edge = UniversalEdge(
+                    source_id=source,
+                    target_id=canonical_id,
+                    kind=EdgeKind(kind_v),
+                    provenance=Provenance(payload.get("provenance", "extracted")),
+                    confidence=payload.get("confidence"),
+                )
+                self.assembler.add_edge(edge)
+                existing_keys.add(key)
+                redirected += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("merge_nodes: in-edge redirect failed: %s", exc)
+
+        # Remove the duplicate node + its references in every map.
+        try:
+            self.graph.remove_node(dup_idx)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": f"merge_nodes: remove_node failed: {exc}"}
+        self.node_map.pop(duplicate_id, None)
+        if hasattr(self.assembler, "_node_index_map"):
+            self.assembler._node_index_map.pop(duplicate_id, None)
+        try:
+            faiss_pos = self.node_id_list.index(duplicate_id)
+            self.node_id_list[faiss_pos] = None
+        except ValueError:
+            pass
+        self.nodes = [n for n in self.nodes if n.node_id != duplicate_id]
+
+        self._invalidate_community_cache()
+        return {
+            "canonical_id": canonical_id,
+            "duplicate_id": duplicate_id,
+            "redirected_edges": redirected,
+            "status": "merged",
+        }
+
+    def _existing_edge_keys(self, node_idx: int) -> set[tuple]:
+        """Return the set of ``(source_id, target_id, kind)`` triples
+        currently incident on ``node_idx``."""
+        keys: set[tuple] = set()
+        for _s, _t, payload in self.graph.out_edges(node_idx):
+            keys.add((payload.get("source_id"), payload.get("target_id"),
+                      payload.get("kind")))
+        for _s, _t, payload in self.graph.in_edges(node_idx):
+            keys.add((payload.get("source_id"), payload.get("target_id"),
+                      payload.get("kind")))
+        return keys
+
+    @staticmethod
+    def _mint_node_id(kind: str, title: str, summary: str) -> str:
+        import hashlib
+        raw = f"{kind}::{title}::{summary}".encode("utf-8")
+        return hashlib.sha1(raw).hexdigest()[:16]
+
+    # ==================================================================
+    # READ tools — signal + community surface (FEAT-190 / FEAT-191)
+    # ==================================================================
+
+    async def relevance(self, node_a: str, node_b: str) -> dict:
+        """Decomposed five-signal relevance between two nodes (FEAT-190).
+
+        Returns ``{direct, source_overlap, adamic_adar, type_affinity,
+        embedding, combined, direct_edges, shared_sources,
+        aa_neighbours, embedding_available}`` or
+        ``{"error": "FEAT-190 not available"}``.
+        """
+        try:
+            from parrot.knowledge.graphindex.signals import signal_relevance
+        except ImportError:
+            return {"error": "FEAT-190 signals module not available"}
+        try:
+            result = signal_relevance(
+                graph=self.graph,
+                nodes=self.nodes,
+                node_a=node_a,
+                node_b=node_b,
+                config=self.signal_config,
+                embedder=self.embedder,
+            )
+        except KeyError as exc:
+            return {"error": str(exc)}
+        return result.model_dump()
+
+    async def neighborhood_by_relevance(
+        self,
+        node_id: str,
+        top_k: int = 10,
+    ) -> list[dict]:
+        """Top-K nodes most relevant to ``node_id`` by combined signal score."""
+        try:
+            from parrot.knowledge.graphindex.signals import relevance_neighborhood
+        except ImportError:
+            return [{"error": "FEAT-190 signals module not available"}]
+        if node_id not in self.node_map:
+            return [{"error": f"node {node_id!r} not found"}]
+        results = relevance_neighborhood(
+            graph=self.graph,
+            nodes=self.nodes,
+            node_id=node_id,
+            top_k=top_k,
+            config=self.signal_config,
+            embedder=self.embedder,
+        )
+        return [r.model_dump() for r in results]
+
+    async def list_communities(self, min_size: int = 2) -> list[dict]:
+        """FEAT-191 Louvain communities, filtered by minimum size.
+
+        The result is cached until any write tool runs. Repeated calls
+        do not re-run Louvain.
+        """
+        cached = self._get_or_compute_communities()
+        if cached is None:
+            return [{"error": "FEAT-191 communities module not available"}]
+        return [
+            c.model_dump()
+            for c in cached.communities
+            if c.size >= min_size
+        ]
+
+    async def find_community(self, node_id: str) -> dict:
+        """Return the Community containing ``node_id`` (FEAT-191)."""
+        cached = self._get_or_compute_communities()
+        if cached is None:
+            return {"error": "FEAT-191 communities module not available"}
+        cid = cached.node_to_community.get(node_id)
+        if cid is None:
+            return {"error": f"node {node_id!r} not in any community"}
+        for c in cached.communities:
+            if c.community_id == cid:
+                return c.model_dump()
+        return {"error": f"community {cid!r} not found"}
+
+    def _get_or_compute_communities(self):
+        if self._community_cache is not None:
+            return self._community_cache
+        try:
+            from parrot.knowledge.graphindex.communities import (
+                detect_communities,
+            )
+        except ImportError:
+            return None
+        result = detect_communities(
+            graph=self.graph,
+            nodes=self.nodes,
+            signal_config=self.signal_config,
+            embedder=self.embedder if self.signal_config else None,
+            write_back_to_nodes=False,
+        )
+        self._community_cache = result
+        return result
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _encode_query(self, query: str, dim: int) -> np.ndarray:
-        """Encode a query string to a FAISS-compatible float32 vector.
+    async def _encode_query(self, query: str, dim: int) -> np.ndarray:
+        """Encode a query string into a FAISS-compatible ``(1, dim)`` vector.
 
-        This is a deterministic placeholder encoder that creates a vector
-        from the query's character codes.  In production, a real embedding
-        model should be injected via a ``GraphIndexEmbedder``.
+        When a :class:`GraphIndexEmbedder` was injected, delegates to
+        its underlying embedding model — this is the production path
+        and matches what the build pipeline used to index nodes. The
+        underlying ``model.encode`` may be sync or async; both are
+        supported.
+
+        When no embedder is available, falls back to a deterministic
+        character-code hash so the read tools still work in unit-tests
+        and ad-hoc demos. A WARNING is logged once per toolkit instance
+        the first time the fallback triggers.
 
         Args:
             query: The query string.
-            dim: The vector dimension.
+            dim: Vector dimension expected by the FAISS index.
 
         Returns:
-            A (1, dim) float32 numpy array.
+            A ``(1, dim)`` float32 numpy array.
         """
+        if self.embedder is not None:
+            try:
+                vecs = self.embedder.model.encode([query])
+                # Support both sync and async encoders.
+                if asyncio.iscoroutine(vecs):
+                    vecs = await vecs
+                arr = np.asarray(vecs, dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr.reshape(1, -1)
+                if arr.shape[1] != dim:
+                    raise ValueError(
+                        f"_encode_query: embedder returned dim {arr.shape[1]} "
+                        f"but FAISS index dim is {dim}"
+                    )
+                # Normalise — FAISS IndexFlatIP / IndexFlatL2 read
+                # better with unit vectors.
+                norms = np.linalg.norm(arr, axis=1, keepdims=True)
+                norms[norms == 0] = 1.0
+                return (arr / norms).astype(np.float32)
+            except Exception as exc:  # noqa: BLE001 — surface fallback path
+                self.logger.warning(
+                    "_encode_query: embedder failed (%s); falling back to "
+                    "placeholder hash encoder",
+                    exc,
+                )
+
+        if not self._encoder_warning_emitted:
+            self.logger.warning(
+                "_encode_query: no embedder injected — using deterministic "
+                "placeholder hash. find_node / search_hybrid results will "
+                "NOT reflect real semantic similarity. Pass embedder=... "
+                "at construction to fix.",
+            )
+            self._encoder_warning_emitted = True
+
         vec = np.zeros(dim, dtype=np.float32)
         for i, ch in enumerate(query[:dim]):
             vec[i % dim] += float(ord(ch))
