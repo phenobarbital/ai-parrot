@@ -466,6 +466,134 @@ async def test_delete_tree_clears_sidecar_and_json(
 
 
 @pytest.mark.asyncio
+async def test_insert_markdown_persists_sidecar_and_strips_text(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    md = (
+        "# Tutorial\n\n"
+        "Welcome to the tutorial section of the manual. This guide covers "
+        "every part of the workflow you need to know before getting started.\n\n"
+        "## Installation\n"
+        "Run the official installer binary with administrator privileges. "
+        "The installer extracts the runtime, the language packs and the "
+        "default configuration profile into /opt/app. UNIQUE_INSTALL_MARKER.\n\n"
+        "## Configuration\n"
+        "Edit the config.yaml file to override custom settings such as the "
+        "default port, the database connection string and the logging level. "
+        "The configuration loader watches the file and reloads on change.\n"
+    )
+    await toolkit.insert_markdown("kb", md)
+
+    # Persisted JSON contains no inline text on any node.
+    with (tmp_path / "kb.json").open() as f:
+        persisted = json.load(f)
+
+    def _walk(node):
+        if isinstance(node, dict):
+            assert "text" not in node, f"node {node.get('title')!r} still has inline text"
+            for child in node.get("nodes") or []:
+                _walk(child)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+    _walk(persisted["structure"])
+
+    # Sidecar directory exists and contains at least the leaf-node bodies.
+    content_dir = tmp_path / "kb"
+    assert content_dir.is_dir()
+    md_files = list(content_dir.glob("*.md"))
+    assert md_files, "expected at least one node sidecar"
+    bodies = [p.read_text(encoding="utf-8") for p in md_files]
+    assert any("UNIQUE_INSTALL_MARKER" in b for b in bodies)
+
+
+@pytest.mark.asyncio
+async def test_insert_markdown_retrieve_returns_body(
+    monkeypatch, toolkit: PageIndexToolkit,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    await toolkit.create_tree("kb")
+    md = (
+        "# Tutorial\n\n"
+        "Welcome to the tutorial section of the manual. This guide covers "
+        "every part of the workflow you need to know before getting started.\n\n"
+        "## Installation\n"
+        "Run the official installer binary with administrator privileges. "
+        "The installer extracts the runtime, the language packs and the "
+        "default configuration profile into /opt/app. UNIQUE_INSTALL_MARKER.\n"
+    )
+    await toolkit.insert_markdown("kb", md)
+
+    text = await toolkit.retrieve("kb", "installer admin", top_k=3)
+    assert "UNIQUE_INSTALL_MARKER" in text
+
+
+@pytest.mark.asyncio
+async def test_import_folder_persists_sidecars(
+    monkeypatch, toolkit: PageIndexToolkit, tmp_path: Path,
+):
+    async def fake_retriever_search(self, query):
+        return TreeSearchResult(thinking="", node_list=[])
+    monkeypatch.setattr(
+        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        fake_retriever_search,
+    )
+    src = tmp_path / "src"
+    (src / "sub").mkdir(parents=True)
+    (src / "alpha.md").write_text(
+        "# Alpha\n\n"
+        "Alpha section body of substantial length with descriptive content "
+        "to clear the thinning threshold. UNIQUE_ALPHA_TOKEN appears here.\n"
+        "## Subalpha\n"
+        "Sub-section under alpha with more descriptive content to ensure "
+        "the leaf node survives the markdown-builder thin pass.\n",
+        encoding="utf-8",
+    )
+    (src / "sub" / "beta.md").write_text(
+        "# Beta\n\n"
+        "Beta section body of substantial length with descriptive content "
+        "to clear the thinning threshold. UNIQUE_BETA_TOKEN appears here.\n"
+        "## Subbeta\n"
+        "Sub-section under beta with more descriptive content to ensure "
+        "the leaf node survives the markdown-builder thin pass.\n",
+        encoding="utf-8",
+    )
+    # Insertable content avoids needing real LLM calls via the stub adapter.
+    await toolkit.create_tree("docs")
+    await toolkit.import_folder("docs", str(src), glob_pattern="*.md")
+
+    # The persisted tree carries no inline text on any node.
+    with (tmp_path / "docs.json").open() as f:
+        persisted = json.load(f)
+
+    def _walk(node):
+        if isinstance(node, dict):
+            assert "text" not in node
+            for child in node.get("nodes") or []:
+                _walk(child)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+    _walk(persisted["structure"])
+
+    content_dir = tmp_path / "docs"
+    md_files = list(content_dir.glob("*.md"))
+    assert md_files, "expected node sidecars after folder import"
+
+
+@pytest.mark.asyncio
 async def test_create_tree_wipes_orphan_content_dir(
     toolkit: PageIndexToolkit, tmp_path: Path,
 ):

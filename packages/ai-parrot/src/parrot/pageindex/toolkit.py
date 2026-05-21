@@ -372,6 +372,11 @@ class PageIndexToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Parse ``markdown`` into a PageIndex subtree and splice it in.
 
+        Lean-tree semantics: the ToC keeps titles, summaries, and metadata;
+        the per-node markdown body is moved to :class:`NodeContentStore`
+        keyed by ``node_id``. This matches the PageIndex contract — the
+        persisted JSON does NOT carry inline ``text`` fields.
+
         ``parent_node_id=None`` appends at the tree root.
         """
         tree = self._load_tree(tree_name)
@@ -380,7 +385,12 @@ class PageIndexToolkit(AbstractToolkit):
             adapter=self._adapter,
             doc_name=doc_name or "ingested.md",
         )
+        # Build-time scratch fields that should never reach disk.
+        node_markdown = _pop_node_field(subtree, "text")
+        _strip_keys_in_place(subtree, ("token_count", "line_num"))
+        original_id_to_node = _capture_node_id_object_map(subtree)
         new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
+        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
         self._persist(tree_name)
         return {"tree_name": tree_name, "new_node_ids": new_ids}
 
@@ -601,6 +611,63 @@ class PageIndexToolkit(AbstractToolkit):
 
 
 # ---- module-level helpers ----------------------------------------------
+
+def _pop_node_field(subtree: Any, field: str) -> dict[str, str]:
+    """Remove ``field`` from every node and return ``{node_id: value}``.
+
+    Used by markdown-path ingest to move the inline ``text`` field
+    written by :func:`md_to_tree` into :class:`NodeContentStore` —
+    keyed by ``node_id`` so it matches the PDF ingest contract.
+
+    Nodes without a ``node_id`` (e.g. synthetic root containers) are
+    skipped; the field is still removed from them so the persisted
+    tree stays lean.
+    """
+    out: dict[str, str] = {}
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            value = node.pop(field, None)
+            nid = node.get("node_id")
+            if nid and isinstance(value, str) and value:
+                out[str(nid)] = value
+            children = node.get("nodes")
+            if children:
+                _walk(children)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    if isinstance(subtree, dict) and "structure" in subtree:
+        _walk(subtree.get("structure"))
+    else:
+        _walk(subtree)
+    return out
+
+
+def _strip_keys_in_place(subtree: Any, keys: tuple[str, ...]) -> None:
+    """Remove ``keys`` from every node dict reached from ``subtree``.
+
+    PageIndex trees are the canonical on-disk artefact for retrieval;
+    build-time scratch fields like ``token_count`` and ``line_num``
+    have no consumer at retrieval time and would bloat the JSON.
+    """
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for k in keys:
+                node.pop(k, None)
+            children = node.get("nodes")
+            if children:
+                _walk(children)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    if isinstance(subtree, dict) and "structure" in subtree:
+        _walk(subtree.get("structure"))
+    else:
+        _walk(subtree)
+
 
 def _capture_node_id_object_map(subtree: Any) -> dict[str, dict[str, Any]]:
     """Record ``node_id -> node-dict`` references for every node in ``subtree``.
