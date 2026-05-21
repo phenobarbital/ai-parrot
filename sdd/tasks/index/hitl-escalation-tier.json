@@ -110,7 +110,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -120,8 +120,8 @@
       "parallelism_notes": "Touches channels/base.py, telegram.py, web.py AND manager.receive_response — single worktree to avoid races with 1278's manager change.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1279-reject-button-channels.md"
+      "completed_at": "2026-05-21T22:44:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1279-reject-button-channels.md"
     },
     {
       "id": "TASK-1280",
