@@ -49,10 +49,13 @@ class PageIndexToolkit(AbstractToolkit):
             ``<tree_name>.json``.
         reranker: Optional :class:`AbstractReranker` instance applied to
             the fused candidate set when ``rerank=True`` is requested.
-        lightweight_model: Model id used for the Step-1 Chain-of-Thought
-            analysis. A second :class:`PageIndexLLMAdapter` is built with
-            this model, sharing the same underlying client; ``adapter`` is
-            never mutated.
+        lightweight_model: Model id used for the cheaper helper calls —
+            Step-1 Chain-of-Thought analysis during text ingest, and during
+            ``import_pdf``: TOC-page detection, per-node summaries, doc
+            description, title verification, and TOC accuracy checks. A
+            second :class:`PageIndexLLMAdapter` is built with this model,
+            sharing the same underlying client; ``adapter`` is never
+            mutated.
         model: Optional override for the model passed to
             :class:`PageIndexRetriever`. Defaults to ``adapter.model``.
         default_bm25_k: Number of BM25 candidates fetched per query.
@@ -322,6 +325,7 @@ class PageIndexToolkit(AbstractToolkit):
                 "if_add_doc_description": "yes" if with_doc_description else "no",
                 "if_add_node_id": "yes",
             },
+            light_adapter=self._light_adapter,
         )
         new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
         self._persist(tree_name)

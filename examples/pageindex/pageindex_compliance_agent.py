@@ -14,20 +14,17 @@ The script exercises every public tool surfaced by
 * ``delete_node``       — prune a branch by node id
 * ``PageIndexRetriever`` — LLM-only tree-walk against the persisted tree
 
-The PDF defaults to ``examples/pageindex/<file>.pdf``. To run with the
-canonical GDPR text, download it once::
+The PDF defaults to ``examples/pageindex/data/AICPA_SOC2_Compliance_Guide_on_AWS.pdf``
+— a TOC-bearing AWS SOC 2 guide that exercises the with-TOC path. To
+swap in a different compliance corpus (GDPR, NIST SP 800-53, HIPAA
+Privacy Rule, PCI DSS, ISO 27001 excerpt, …), drop it under
+``examples/pageindex/data/`` and pass the path::
 
-    mkdir -p examples/pageindex/data
-    curl -L -o examples/pageindex/data/gdpr.pdf \\
-        'https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:32016R0679'
+    python examples/pageindex_compliance_agent.py path/to/your.pdf
 
-Then::
-
-    python examples/pageindex_compliance_agent.py examples/pageindex/data/gdpr.pdf
-
-Any other compliance PDF (NIST SP 800-53, HIPAA Privacy Rule, PCI DSS,
-ISO 27001 controls excerpt) works the same way — anything with a TOC
-will produce a usable tree.
+Any compliance PDF with reasonable headings — TOC or not — will produce
+a usable tree. The demo queries below assume SOC 2 / AWS subject matter
+but the toolkit itself is content-agnostic.
 
 Requirements:
     * ``GOOGLE_API_KEY`` exported and reachable via navconfig.
@@ -45,6 +42,7 @@ from pathlib import Path
 
 from parrot.bots.agent import BasicAgent
 from parrot.clients.google.client import GoogleGenAIClient
+from parrot.models.google import GoogleModel
 from parrot.pageindex import (
     PageIndexLLMAdapter,
     PageIndexRetriever,
@@ -58,16 +56,20 @@ LOG = logging.getLogger("pageindex_compliance_agent")
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+# Heavy model handles the reasoning-bound calls — TOC extraction, hierarchy
+# generation, search-tree walks. Light model handles the high-fan-out,
+# narrowly-scoped helpers — TOC page detection, title verification,
+# per-node summaries, and the doc description.
 
-HEAVY_MODEL = "gemini-3-flash-preview"          # tree-walk, summaries, ingest step-2
-LIGHT_MODEL = "gemini-2.5-flash-lite"           # ingest step-1 CoT analysis
+HEAVY_MODEL = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+LIGHT_MODEL = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
 
 
 # ---------------------------------------------------------------------------
 # Storage layout
 # ---------------------------------------------------------------------------
 
-DEFAULT_PDF = Path("examples/pageindex/data/gdpr.pdf")
+DEFAULT_PDF = Path("examples/pageindex/data/AICPA_SOC2_Compliance_Guide_on_AWS.pdf")
 STORAGE_DIR = Path("examples/pageindex/store")
 TREE_NAME = "compliance"
 
@@ -77,8 +79,9 @@ TREE_NAME = "compliance"
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a regulatory-compliance assistant grounded in a single source
-document indexed as a PageIndex tree named "compliance".
+You are a SOC 2 / AWS compliance assistant grounded in a single source
+document indexed as a PageIndex tree named "compliance" — the AICPA
+SOC 2 Compliance Guide on AWS.
 
 You have access to a PageIndex toolkit; the most useful tools are:
 - pageindex_search(tree_name, query, top_k, use_bm25, use_llm_walk, rerank)
@@ -86,12 +89,13 @@ You have access to a PageIndex toolkit; the most useful tools are:
 - pageindex_get_tree(tree_name)
 - pageindex_insert_content(tree_name, content, hint, parent_node_id)
 
-When the user asks a question about the regulation:
+When the user asks about SOC 2 controls, Trust Services Criteria, or
+how to map them onto AWS services:
 1. Call pageindex_retrieve to ground your answer in the source text.
 2. Cite the section title returned in the retrieval.
 3. If retrieval returns nothing, say so explicitly instead of guessing.
 
-Be precise: regulatory language matters. Quote short excerpts when useful.
+Be precise: audit language matters. Quote short excerpts when useful.
 """
 
 
@@ -142,7 +146,10 @@ async def ensure_tree(toolkit: PageIndexToolkit, pdf_path: Path) -> dict:
 
 async def demo_search_variants(toolkit: PageIndexToolkit) -> None:
     """Compare BM25-only, LLM-only and hybrid hits side-by-side."""
-    query = "what are the obligations of the data controller when a breach occurs"
+    query = (
+        "which AWS services help satisfy the SOC 2 Security trust services "
+        "criterion for logical access controls"
+    )
 
     _print_header(f"search — BM25 only — {query!r}")
     _print_search_results(
@@ -168,7 +175,10 @@ async def demo_search_variants(toolkit: PageIndexToolkit) -> None:
 
 async def demo_retrieve(toolkit: PageIndexToolkit) -> None:
     """Show the aggregated-text retrieval that an Agent would normally use."""
-    query = "rights of the data subject to access and rectification"
+    query = (
+        "what evidence should we collect to demonstrate the SOC 2 "
+        "availability criterion is met in an AWS environment"
+    )
     text = await toolkit.retrieve(TREE_NAME, query, top_k=3)
     _print_header(f"retrieve(top_k=3) — {query!r}")
     if not text:
@@ -181,16 +191,18 @@ async def demo_retrieve(toolkit: PageIndexToolkit) -> None:
 async def demo_two_step_ingest(toolkit: PageIndexToolkit) -> None:
     """Drop an out-of-band note into the tree via the two-step CoT pipeline."""
     note = (
-        "INTERNAL NOTE — Q3 2026 compliance review.\n"
-        "Our DPO confirmed three follow-up actions after the audit:\n"
-        "1. Tighten the data-retention policy for analytics events to 13 months.\n"
-        "2. Add a quarterly Article-30 record-of-processing-activities review.\n"
-        "3. Document the legal-basis matrix for marketing communications under "
-        "Article 6(1)(f) legitimate interest, including the LIA."
+        "INTERNAL NOTE — Q3 2026 SOC 2 audit prep.\n"
+        "Three follow-up actions after the readiness assessment with our QSA:\n"
+        "1. Enable AWS CloudTrail organization-wide trail with log file "
+        "validation and immutable S3 storage to satisfy CC7.2 monitoring.\n"
+        "2. Add quarterly access-review attestation for all IAM roles tagged "
+        "production, evidencing CC6.1 logical access controls.\n"
+        "3. Document the change-management workflow in AWS CodePipeline + "
+        "Jira, mapping each gate to CC8.1 change authorization criteria."
     )
     _print_header("insert_content — Two-Step Chain-of-Thought ingest")
     result = await toolkit.insert_content(
-        TREE_NAME, note, hint="Internal compliance follow-ups, derived from the audit",
+        TREE_NAME, note, hint="Internal SOC 2 audit follow-ups from QSA readiness review",
     )
     print(f"  new_node_ids: {result['new_node_ids']}")
     print(f"  title:        {result['title']}")
@@ -202,14 +214,23 @@ async def demo_import_file(toolkit: PageIndexToolkit, tmp_dir: Path) -> None:
     tmp_dir.mkdir(parents=True, exist_ok=True)
     snippet = tmp_dir / "incident_playbook.md"
     snippet.write_text(
-        "# Incident Response Playbook\n\n"
+        "# Incident Response Playbook (AWS / SOC 2)\n\n"
         "## Detection\n"
-        "Trigger an incident as soon as a confirmed unauthorised access to "
-        "personal data is detected by the SIEM or reported by an employee.\n\n"
+        "Open an incident as soon as Amazon GuardDuty, AWS Security Hub, "
+        "or an internal alert from CloudWatch indicates a confirmed "
+        "unauthorised access to a production AWS account or to customer "
+        "data stored in S3, RDS, or DynamoDB.\n\n"
+        "## Containment\n"
+        "Within 30 minutes of confirmation, revoke compromised IAM "
+        "credentials, rotate access keys, and isolate affected EC2 "
+        "instances by attaching a quarantine security group. Snapshot the "
+        "instance volumes for forensic analysis before terminating.\n\n"
         "## Notification timeline\n"
-        "Under GDPR Article 33 the data controller must notify the supervisory "
-        "authority without undue delay and where feasible within 72 hours after "
-        "becoming aware of the breach.\n",
+        "SOC 2 CC2.3 requires that material security incidents are "
+        "communicated to internal stakeholders without undue delay. "
+        "Notify the CISO and the SOC 2 control owner within 4 hours; "
+        "notify affected customers per contractual SLAs (typically 72 "
+        "hours for material breaches).\n",
         encoding="utf-8",
     )
     _print_header(f"import_file — {snippet}")
@@ -224,13 +245,17 @@ async def demo_raw_retriever(adapter: PageIndexLLMAdapter, tree: dict) -> None:
         tree=tree,
         adapter=adapter,
         expert_knowledge=(
-            "This tree indexes a regulatory text. Lower-level sections "
-            "typically map to Articles; recitals appear near the beginning."
+            "This tree indexes the AICPA SOC 2 Compliance Guide on AWS. "
+            "Top-level sections map to phases of a SOC 2 programme "
+            "(Trust Services Criteria, AWS-specific control guidance, "
+            "evidence collection, governance). Look for category-specific "
+            "criteria sections when answering control-mapping questions."
         ),
     )
     _print_header("PageIndexRetriever.search — direct LLM tree walk")
     result = await retriever.search(
-        "lawful basis for processing personal data"
+        "how should we structure evidence collection for the "
+        "confidentiality trust services criterion in AWS"
     )
     print(f"  thinking : {result.thinking[:240]}…")
     print(f"  node_ids : {result.node_list}")
@@ -252,9 +277,11 @@ async def demo_agent(toolkit: PageIndexToolkit) -> None:
 
     async with agent:
         prompt = (
-            "Summarise what the regulation says about cross-border transfers "
-            "of personal data. Use the pageindex_retrieve tool against the "
-            "'compliance' tree and cite the section title you used."
+            "Summarise how the guide recommends mapping the SOC 2 Security "
+            "trust services criterion onto AWS services (think IAM, "
+            "CloudTrail, GuardDuty, KMS). Use the pageindex_retrieve tool "
+            "against the 'compliance' tree and cite the section title "
+            "you used."
         )
         _print_header("BasicAgent.ask — grounded Q&A")
         print(f"User: {prompt}\n")
