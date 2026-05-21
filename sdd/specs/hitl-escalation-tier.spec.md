@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-194
 **Date**: 2026-05-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.7.0
 
 > Brainstorm source: `sdd/proposals/hitl-escalation-tier.brainstorm.md`
