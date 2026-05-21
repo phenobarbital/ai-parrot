@@ -190,7 +190,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -200,8 +200,8 @@
       "parallelism_notes": "Touches handoff.py — depends on 1277's get_result usage pattern.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1283-handoff-tool-dedup.md"
+      "completed_at": "2026-05-21T22:56:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1283-handoff-tool-dedup.md"
     },
     {
       "id": "TASK-1284",
