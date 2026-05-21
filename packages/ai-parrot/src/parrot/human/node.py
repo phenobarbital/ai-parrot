@@ -10,6 +10,7 @@ from .models import (
     InteractionResult,
     InteractionStatus,
     InteractionType,
+    Severity,
 )
 
 if TYPE_CHECKING:
@@ -85,7 +86,25 @@ class HumanDecisionNode:
             (default FREE_TEXT). Ignored when interaction_config is given.
         source_agent: Name of the parent agent (for traceability).
         source_flow: Name of the parent flow (for traceability).
+        escalation_policy_id: Optional policy ID to attach to the built
+            HumanInteraction.  When provided, the manager's escalation
+            chain is activated for this interaction.  Constructor kwargs
+            take precedence over any value in *interaction_config*.
+        severity: Declared criticality level for the built interaction.
+            Affects which tier the escalation chain starts at.
+            Defaults to :attr:`Severity.NORMAL`.
+
+    Example::
+
+        node = HumanDecisionNode(
+            name="hr_approval",
+            manager=hitl_manager,
+            escalation_policy_id="hr-policy",
+            severity=Severity.HIGH,
+        )
     """
+
+    is_configured: bool = True  # Satisfies _ensure_agent_ready (FlowNode contract)
 
     def __init__(
         self,
@@ -99,6 +118,8 @@ class HumanDecisionNode:
         interaction_type: InteractionType = InteractionType.FREE_TEXT,
         source_agent: Optional[str] = None,
         source_flow: Optional[str] = None,
+        escalation_policy_id: Optional[str] = None,
+        severity: Severity = Severity.NORMAL,
     ) -> None:
         self._name = name
         self.manager = manager
@@ -109,9 +130,9 @@ class HumanDecisionNode:
         self.interaction_type = interaction_type
         self.source_agent = source_agent
         self.source_flow = source_flow
+        self.escalation_policy_id: Optional[str] = escalation_policy_id
+        self.severity: Severity = severity
         self.logger = logging.getLogger(f"parrot.human.node.{name}")
-        # Satisfy _ensure_agent_ready — prevents FSM from calling configure()
-        self.is_configured: bool = True
         # Attribute expected by FlowNode (satisfies duck-typed agent interface)
         self.tool_manager = None
 
@@ -180,6 +201,18 @@ class HumanDecisionNode:
                     if self.source_flow is not None
                     else self.interaction_config.source_flow
                 ),
+                # Constructor kwargs win over interaction_config values
+                # (explicit > inherited — mirrors target_humans override pattern)
+                "policy_id": (
+                    self.escalation_policy_id
+                    if self.escalation_policy_id is not None
+                    else self.interaction_config.policy_id
+                ),
+                "severity": (
+                    self.severity
+                    if self.severity != Severity.NORMAL
+                    else self.interaction_config.severity
+                ),
             }
             # If the flow provides a dynamic question, append as context
             if question:
@@ -202,6 +235,8 @@ class HumanDecisionNode:
                 source_node=self._name,
                 source_agent=self.source_agent,
                 source_flow=self.source_flow,
+                policy_id=self.escalation_policy_id,
+                severity=self.severity,
             )
 
         self.logger.info(
