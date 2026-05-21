@@ -63,8 +63,15 @@ class JSONTreeStore:
             return json.load(f)
 
     def save(self, tree_name: str, tree: dict[str, Any]) -> None:
-        """Atomically persist a tree to disk."""
+        """Atomically persist a tree to disk.
+
+        Strips reserved keys like ``_node_markdown`` before serialising —
+        per-node markdown lives in :class:`NodeContentStore`, not inside
+        the ToC tree. Defensive: the toolkit pops it before calling here.
+        """
         path = self._path_for(tree_name)
+        if isinstance(tree, dict) and "_node_markdown" in tree:
+            tree = {k: v for k, v in tree.items() if k != "_node_markdown"}
         tmp_fd, tmp_path = tempfile.mkstemp(
             prefix=f".{tree_name}.",
             suffix=".json.tmp",

@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from ..tools.toolkit import AbstractToolkit
 from .builder import build_page_index
+from .content_store import NodeContentStore
 from .hybrid_search import HybridPageIndexSearch
 from .ingest import IngestedMarkdown, TwoStepIngester
 from .llm_adapter import PageIndexLLMAdapter
@@ -75,6 +76,7 @@ class PageIndexToolkit(AbstractToolkit):
         model: Optional[str] = None,
         default_bm25_k: int = 20,
         folder_concurrency: int = 4,
+        content_cache_size: int = 256,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -85,6 +87,9 @@ class PageIndexToolkit(AbstractToolkit):
             else None
         )
         self._store = JSONTreeStore(storage_dir)
+        self._content_store = NodeContentStore(
+            storage_dir, cache_size=content_cache_size
+        )
         self._reranker = reranker
         self._model = model or adapter.model
         self._default_bm25_k = default_bm25_k
@@ -122,6 +127,7 @@ class PageIndexToolkit(AbstractToolkit):
                 reranker=self._reranker,
                 model=self._model,
                 default_bm25_k=self._default_bm25_k,
+                content_loader=self._content_store.loader_for(tree_name),
             )
             self._search[tree_name] = engine
         return engine
@@ -167,10 +173,25 @@ class PageIndexToolkit(AbstractToolkit):
         """
         if self._store.exists(tree_name):
             raise ValueError(f"Tree {tree_name!r} already exists")
+        # Defensive: a stale content directory from a previous tree with the
+        # same name would silently feed wrong sidecars into retrieval.
+        self._content_store.delete_tree(tree_name)
         tree = {"doc_name": doc_name or tree_name, "structure": []}
         self._trees[tree_name] = tree
         self._store.save(tree_name, tree)
         return {"tree_name": tree_name, "doc_name": tree["doc_name"]}
+
+    async def delete_tree(self, tree_name: str) -> dict[str, Any]:
+        """Delete a tree JSON and every sidecar markdown file for it."""
+        tree_removed = self._store.delete(tree_name)
+        sidecars_removed = self._content_store.delete_tree(tree_name)
+        self._trees.pop(tree_name, None)
+        self._search.pop(tree_name, None)
+        return {
+            "tree_name": tree_name,
+            "tree_removed": tree_removed,
+            "sidecars_removed": sidecars_removed,
+        }
 
     async def get_tree(self, tree_name: str) -> dict[str, Any]:
         """Return the full tree dict for ``tree_name``."""
@@ -184,20 +205,67 @@ class PageIndexToolkit(AbstractToolkit):
         use_bm25: bool = True,
         use_llm_walk: bool = True,
         rerank: bool = False,
+        categories: Optional[list[str]] = None,
+        metadata_filter: Optional[dict[str, Any]] = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search over a tree.
 
         Returns ordered candidates, each ``{node_id, title, summary, score, source}``.
         ``source`` is one of ``"bm25"``, ``"llm"``, ``"fused"``, ``"reranked"``.
+
+        Args:
+            categories: When set, candidates whose node does NOT carry
+                **all** of the listed categories are filtered out
+                (AND-semantics).
+            metadata_filter: When set, candidates whose node metadata
+                does not have ``metadata[k] == v`` for every ``(k, v)``
+                in the dict are filtered out (equality-only).
         """
         engine = self._search_for(tree_name)
-        return await engine.search(
+        # Over-fetch slightly when filtering so we still return ``top_k``
+        # results after the post-filter where possible. The engine itself
+        # caps to its own internal bm25 budget.
+        fetch_k = top_k
+        if categories or metadata_filter:
+            fetch_k = max(top_k * 4, top_k)
+        results = await engine.search(
             query=query,
-            top_k=top_k,
+            top_k=fetch_k,
             use_bm25=use_bm25,
             use_llm_walk=use_llm_walk,
             rerank=rerank,
         )
+        if categories or metadata_filter:
+            results = self._apply_filters(
+                tree_name, results, categories, metadata_filter
+            )
+        return results[:top_k]
+
+    def _apply_filters(
+        self,
+        tree_name: str,
+        results: list[dict[str, Any]],
+        categories: Optional[list[str]],
+        metadata_filter: Optional[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        tree = self._trees.get(tree_name) or self._store.load(tree_name)
+        structure = tree.get("structure", [])
+        required_categories = set(categories or [])
+        filtered: list[dict[str, Any]] = []
+        for cand in results:
+            node = find_node_by_id(structure, cand["node_id"]) or {}
+            if required_categories:
+                node_cats = set(node.get("categories") or [])
+                if not required_categories.issubset(node_cats):
+                    continue
+            if metadata_filter:
+                node_meta = node.get("metadata") or {}
+                if not all(
+                    node_meta.get(k) == v for k, v in metadata_filter.items()
+                ):
+                    continue
+            filtered.append(cand)
+        return filtered
 
     async def retrieve(
         self,
@@ -205,7 +273,12 @@ class PageIndexToolkit(AbstractToolkit):
         query: str,
         top_k: int = 5,
     ) -> str:
-        """Hybrid search + text aggregation for use in an LLM prompt."""
+        """Hybrid search + per-node markdown aggregation.
+
+        Loads each result's markdown from :class:`NodeContentStore`. Falls
+        back to summary text only when the content sidecar is missing
+        (e.g. a tree imported before this feature).
+        """
         candidates = await self.search(
             tree_name=tree_name,
             query=query,
@@ -224,10 +297,71 @@ class PageIndexToolkit(AbstractToolkit):
             if not node:
                 continue
             title = node.get("title") or "Section"
-            body = node.get("text") or node.get("summary") or node.get("prefix_summary") or ""
+            body = self._content_store.load(tree_name, cand["node_id"])
+            if not body:
+                body = (
+                    node.get("text")
+                    or node.get("summary")
+                    or node.get("prefix_summary")
+                    or ""
+                )
             if body:
                 parts.append(f"## {title}\n{body}")
         return "\n\n".join(parts)
+
+    async def tag_node(
+        self,
+        tree_name: str,
+        node_id: str,
+        categories: Optional[list[str]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Add or merge ``categories`` / ``metadata`` tags on a node.
+
+        Categories are merged as a set (sorted on persist); metadata as
+        a shallow dict (later writes win on overlapping keys). The tree
+        is persisted and the BM25 index is marked dirty so the next
+        search picks up the change.
+
+        Args:
+            tree_name: Tree containing the node.
+            node_id: Node id to tag.
+            categories: Categories to add to the node. Free-form strings.
+            metadata: Arbitrary key/value pairs to merge into the node's
+                metadata. Equality-match only for v1 — range queries
+                and wildcards are out of scope.
+
+        Returns:
+            ``{tree_name, node_id, categories, metadata}`` with the
+            post-merge values.
+        """
+        tree = self._load_tree(tree_name)
+        node = find_node_by_id(tree.get("structure", []), node_id)
+        if node is None:
+            raise KeyError(f"node_id {node_id!r} not found in tree {tree_name!r}")
+
+        if categories:
+            existing = set(node.get("categories") or [])
+            existing.update(str(c) for c in categories)
+            node["categories"] = sorted(existing)
+        if metadata:
+            existing_meta = dict(node.get("metadata") or {})
+            existing_meta.update(metadata)
+            node["metadata"] = existing_meta
+
+        # Drop empty containers so the persisted JSON stays lean.
+        if not node.get("categories"):
+            node.pop("categories", None)
+        if not node.get("metadata"):
+            node.pop("metadata", None)
+
+        self._persist(tree_name)
+        return {
+            "tree_name": tree_name,
+            "node_id": node_id,
+            "categories": list(node.get("categories") or []),
+            "metadata": dict(node.get("metadata") or {}),
+        }
 
     async def insert_markdown(
         self,
@@ -327,7 +461,14 @@ class PageIndexToolkit(AbstractToolkit):
             },
             light_adapter=self._light_adapter,
         )
+        # ``build_page_index`` returns per-node markdown keyed by the
+        # build-time node ids. Splicing renumbers ids tree-wide, so we
+        # capture object references BEFORE the splice to recover the
+        # new ids afterwards.
+        node_markdown = dict(subtree.pop("_node_markdown", {}) or {})
+        original_id_to_node = _capture_node_id_object_map(subtree)
         new_ids = splice_subtree(tree, subtree, parent_node_id=parent_node_id)
+        self._save_node_markdown(tree_name, original_id_to_node, node_markdown)
         self._persist(tree_name)
         return {
             "tree_name": tree_name,
@@ -335,6 +476,30 @@ class PageIndexToolkit(AbstractToolkit):
             "doc_name": subtree.get("doc_name"),
             "doc_description": subtree.get("doc_description"),
         }
+
+    def _save_node_markdown(
+        self,
+        tree_name: str,
+        original_id_to_node: dict[str, dict[str, Any]],
+        node_markdown: dict[str, str],
+    ) -> None:
+        """Persist per-node markdown after a splice + reindex.
+
+        ``splice_subtree`` reuses the original node dict references and
+        :func:`reindex_node_ids` mutates ``node_id`` in place, so the
+        same dict objects we captured before the splice now carry the
+        post-splice ids — no path reconstruction needed.
+        """
+        if not node_markdown:
+            return
+        for original_id, markdown in node_markdown.items():
+            node = original_id_to_node.get(original_id)
+            if node is None:
+                continue
+            new_id = node.get("node_id")
+            if not new_id:
+                continue
+            self._content_store.save(tree_name, new_id, markdown or "")
 
     async def import_folder(
         self,
@@ -416,9 +581,72 @@ class PageIndexToolkit(AbstractToolkit):
         tree_name: str,
         node_id: str,
     ) -> dict[str, Any]:
-        """Delete a node and all its descendants from the tree."""
+        """Delete a node and all its descendants from the tree.
+
+        Also removes any sidecar markdown for the deleted subtree and
+        evicts the matching LRU cache entries so a later ``retrieve``
+        cannot see stale content.
+        """
         tree = self._load_tree(tree_name)
+        node = find_node_by_id(tree.get("structure", []), node_id)
+        descendant_ids: list[str] = []
+        if node is not None:
+            descendant_ids = _collect_node_ids(node)
         removed = _delete_node(tree, node_id)
         if removed:
+            for nid in descendant_ids:
+                self._content_store.delete_node(tree_name, nid)
             self._persist(tree_name)
         return {"tree_name": tree_name, "removed": removed}
+
+
+# ---- module-level helpers ----------------------------------------------
+
+def _capture_node_id_object_map(subtree: Any) -> dict[str, dict[str, Any]]:
+    """Record ``node_id -> node-dict`` references for every node in ``subtree``.
+
+    ``splice_subtree`` reuses these dict objects in-place; later
+    reindexing rewrites their ``node_id`` field without changing the
+    object identity. Holding the references lets us recover the
+    post-splice ids without rewalking the parent tree.
+    """
+    out: dict[str, dict[str, Any]] = {}
+
+    def _walk(node: Any) -> None:
+        if isinstance(node, dict):
+            nid = node.get("node_id")
+            if nid:
+                out[str(nid)] = node
+            children = node.get("nodes")
+            if children:
+                _walk(children)
+        elif isinstance(node, list):
+            for item in node:
+                _walk(item)
+
+    if isinstance(subtree, dict) and "structure" in subtree:
+        _walk(subtree.get("structure"))
+    else:
+        _walk(subtree)
+    return out
+
+
+def _collect_node_ids(node: Any) -> list[str]:
+    """Return every ``node_id`` reachable from ``node`` (inclusive)."""
+    ids: list[str] = []
+
+    def _walk(n: Any) -> None:
+        if isinstance(n, dict):
+            nid = n.get("node_id")
+            if nid:
+                ids.append(str(nid))
+            children = n.get("nodes")
+            if isinstance(children, list):
+                for child in children:
+                    _walk(child)
+        elif isinstance(n, list):
+            for item in n:
+                _walk(item)
+
+    _walk(node)
+    return ids
