@@ -5,7 +5,7 @@ FEAT-194 — TASK-1275
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, TYPE_CHECKING
 
 import aiohttp
 

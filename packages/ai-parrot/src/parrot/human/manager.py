@@ -294,6 +294,15 @@ class HumanInteractionManager:
                 interaction.interaction_id,
                 interaction.policy_id,
             )
+            # Emit hitl.chain.exhausted when no applicable starting tier is found
+            # (Issue 6).
+            await self._emit(
+                "hitl.chain.exhausted",
+                HitlChainExhaustedEvent(
+                    interaction_id=interaction.interaction_id,
+                    policy_id=interaction.policy_id or "",
+                ),
+            )
             result = InteractionResult(
                 interaction_id=interaction.interaction_id,
                 status=InteractionStatus.TIMEOUT,
@@ -391,6 +400,10 @@ class HumanInteractionManager:
                 interaction.interaction_id,
             )
             return
+
+        # Record the originating channel on the interaction so advance_chain
+        # can target the same channel when re-escalating (Issue 7).
+        interaction.channel = channel
 
         channel_impl = self.channels[channel]
         delivered_count = 0
@@ -539,9 +552,10 @@ class HumanInteractionManager:
             )
             return
 
-        # Derive the channel from the interaction (fall back to first registered).
-        channel = "telegram"
-        if self.channels:
+        # Derive the channel from the originating channel stored on the interaction
+        # (Issue 7); fall back to first registered channel if not set.
+        channel = interaction.channel or "telegram"
+        if not interaction.channel and self.channels:
             channel = next(iter(self.channels))
 
         # Cancel any existing timeout task so it doesn't race us.
@@ -554,18 +568,9 @@ class HumanInteractionManager:
             interaction_id,
             cause,
         )
-        from_level = interaction.current_tier_level
-        to_level = from_level + 1
-        await self._emit(
-            "hitl.tier.advanced",
-            HitlTierAdvancedEvent(
-                interaction_id=interaction_id,
-                policy_id=interaction.policy_id,
-                from_level=from_level,
-                to_level=to_level,
-                cause=cause,
-            ),
-        )
+        # NOTE: hitl.tier.advanced is emitted inside _escalate_to_next_tier
+        # after confirming the tier is applicable (not skipped). Emitting here
+        # would produce a duplicate event (Issue 8).
         await self._escalate_to_next_tier(interaction, channel, cause=cause)
 
     # ------------------------------------------------------------------
@@ -997,15 +1002,19 @@ class HumanInteractionManager:
         interaction.status = InteractionStatus.ESCALATED
         await self._update_status(interaction)
 
-        await self._emit(
-            "hitl.tier.entered",
-            HitlTierEnteredEvent(
-                interaction_id=interaction.interaction_id,
-                policy_id=interaction.policy_id,
-                tier_level=next_level,
-                cause=cause,
-            ),
-        )
+        # Guard: do NOT emit hitl.tier.entered when the tier is being skipped
+        # due to off-hours (Issue 9). The tier is not actually entered — it is
+        # skipped. hitl.tier.entered fires only for tiers we actually execute.
+        if cause != "business_hours_off":
+            await self._emit(
+                "hitl.tier.entered",
+                HitlTierEnteredEvent(
+                    interaction_id=interaction.interaction_id,
+                    policy_id=interaction.policy_id,
+                    tier_level=next_level,
+                    cause=cause,
+                ),
+            )
         self.logger.info(
             "Interaction %s entering tier %d (%s), cause=%s",
             interaction.interaction_id,
@@ -1266,6 +1275,26 @@ class HumanInteractionManager:
                 "Failed to publish rehydration event for %s",
                 interaction.interaction_id,
             )
+
+    # ------------------------------------------------------------------
+    # Public introspection helpers
+    # ------------------------------------------------------------------
+
+    def has_pending(self, interaction_id: str) -> bool:
+        """Return True if there is an active pending future for this interaction.
+
+        Provides a public interface to check pending state without callers
+        reaching into ``_pending_futures`` directly (Issue 10).
+
+        Args:
+            interaction_id: UUID of the interaction to check.
+
+        Returns:
+            ``True`` when a non-done future exists for ``interaction_id``,
+            ``False`` otherwise.
+        """
+        fut = self._pending_futures.get(interaction_id)
+        return fut is not None and not fut.done()
 
     # ------------------------------------------------------------------
     # Cleanup

@@ -181,3 +181,19 @@ class TestTelegramKeyboardWithRejectButton:
         # We can't easily inspect text in unit tests without real aiogram,
         # so just confirm the token contains ESCALATE_OPTION_KEY
         assert row is not None
+
+
+class TestCLIChannelNoRejectButton:
+    """CLI channel must NOT render the reject button (spec §4 C6)."""
+
+    def test_cli_channel_render_reject_button_is_false(self):
+        from parrot.human.channels.cli import CLIHumanChannel
+        assert CLIHumanChannel.render_reject_button is False
+
+    def test_cli_channel_does_not_override_reject_button(self):
+        """CLIHumanChannel inherits render_reject_button=False from HumanChannel base."""
+        from parrot.human.channels.cli import CLIHumanChannel
+        from parrot.human.channels.base import HumanChannel
+        # CLI should use the base class default (False), not override it
+        assert CLIHumanChannel.render_reject_button == HumanChannel.render_reject_button
+        assert CLIHumanChannel.render_reject_button is False

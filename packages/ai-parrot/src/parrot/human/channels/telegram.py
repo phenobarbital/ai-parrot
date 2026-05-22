@@ -23,7 +23,7 @@ Usage:
 """
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from navconfig.logging import logging
@@ -92,7 +92,7 @@ class TelegramHumanChannel(HumanChannel):
         self.redis = redis
         self.token_ttl = token_ttl
         self.parse_mode = parse_mode
-        self.logger = logging.getLogger("HITL.Telegram")
+        self.logger = logging.getLogger("parrot.human.channels.telegram")
 
         # Router for handling callback queries
         self.router = Router(name="hitl_telegram")
@@ -277,12 +277,13 @@ class TelegramHumanChannel(HumanChannel):
         except Exception:
             self.logger.exception("Failed to cancel interaction")
             return False
-        return had_state
 
         # Clean up awaiting text if applicable
         chat_id = int(recipient)
         if self._awaiting_text.get(chat_id) == interaction_id:
             del self._awaiting_text[chat_id]
+
+        return had_state
 
     # ─── Sending Interactions ─────────────────────────────────────────────
 
@@ -685,7 +686,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=response_type,
             value=value,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": callback_query.message.chat.id,
@@ -798,7 +799,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=InteractionType.MULTI_CHOICE,
             value=selected,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": callback_query.message.chat.id,
@@ -857,7 +858,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=response_type,
             value=value,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": chat_id,
@@ -1006,7 +1007,7 @@ class TelegramHumanChannel(HumanChannel):
             "interaction_id": interaction_id,
             "human_id": human_id,
             "action": action,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if extra:
             data["extra"] = extra

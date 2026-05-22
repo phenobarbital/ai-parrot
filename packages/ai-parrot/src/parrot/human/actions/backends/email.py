@@ -30,8 +30,10 @@ class EmailBackend(ActionBackend):
         password: SMTP auth password (may be ``None`` for open relays).
         default_from: The ``From:`` address used when ``action_metadata`` does
             not provide one.
-        use_tls: Whether to use STARTTLS (default ``False``).
-        use_ssl: Whether to use implicit TLS / SSL (default ``False``).
+        use_tls: Whether to use implicit TLS / SSL on connect (default ``False``).
+            Passed as ``use_tls`` to aiosmtplib; typically used on port 465.
+        use_ssl: Whether to use STARTTLS after connect (default ``False``).
+            Mapped to ``start_tls`` in aiosmtplib; typically used on port 587.
 
     Example ``action_metadata`` consumed by this backend::
 

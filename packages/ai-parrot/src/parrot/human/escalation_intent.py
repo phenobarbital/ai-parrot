@@ -125,7 +125,7 @@ class RejectIntentDetector:
             return await asyncio.wait_for(
                 self._llm_classify(norm), timeout=self._llm_timeout
             )
-        except (asyncio.TimeoutError, Exception):
+        except Exception:
             return False
 
     # ------------------------------------------------------------------

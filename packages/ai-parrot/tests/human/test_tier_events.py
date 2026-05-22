@@ -7,7 +7,7 @@ TASK-1280 — FEAT-194 hitl-escalation-tier
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -24,8 +24,6 @@ from parrot.human.models import (
     EscalationPolicy,
     EscalationTier,
     HumanInteraction,
-    InteractionResult,
-    InteractionStatus,
 )
 
 
@@ -106,6 +104,7 @@ def _wire_escalate(mgr, interaction, *, action_result=None, action_raises=None):
 
 class TestEventEmission:
 
+    @pytest.mark.asyncio
     async def test_emits_tier_entered_on_escalation(self, mgr_with_events, events_log):
         """hitl.tier.entered is emitted when a tier is entered."""
         mgr = mgr_with_events
@@ -124,6 +123,7 @@ class TestEventEmission:
         assert entered[0].tier_level == 1
         assert entered[0].cause == "timeout"
 
+    @pytest.mark.asyncio
     async def test_emits_tier_advanced_on_advance_chain(self, mgr_with_events, events_log):
         """hitl.tier.advanced is emitted when advance_chain is called."""
         mgr = mgr_with_events
@@ -147,12 +147,13 @@ class TestEventEmission:
 
         await mgr.advance_chain(interaction.interaction_id, cause="reject")
 
-        advanced = [e for n, e in events_log if n == "hitl.tier.advanced"]
-        assert advanced, "Expected hitl.tier.advanced"
-        assert isinstance(advanced[0], HitlTierAdvancedEvent)
-        assert advanced[0].cause == "reject"
-        assert advanced[0].from_level == 1
+        # NOTE: advance_chain no longer emits hitl.tier.advanced itself (Issue 8
+        # fix removed the duplicate emission). The event is emitted inside
+        # _escalate_to_next_tier. Since we stubbed that method, no event is
+        # emitted here — just verify advance_chain called the stub.
+        assert "reject" in escalated, "Expected _escalate_to_next_tier called with cause=reject"
 
+    @pytest.mark.asyncio
     async def test_emits_action_executed_after_success(self, mgr_with_events, events_log):
         """hitl.tier.action_executed is emitted on successful NOTIFY action."""
         mgr = mgr_with_events
@@ -170,6 +171,7 @@ class TestEventEmission:
         assert isinstance(executed[0], HitlTierActionExecutedEvent)
         assert executed[0].tier_level == 1
 
+    @pytest.mark.asyncio
     async def test_emits_action_failed_on_exception(self, mgr_with_events, events_log):
         """hitl.tier.action_failed is emitted when action raises."""
         mgr = mgr_with_events
@@ -187,6 +189,7 @@ class TestEventEmission:
         assert isinstance(failed[0], HitlTierActionFailedEvent)
         assert "SMTP down" in failed[0].reason
 
+    @pytest.mark.asyncio
     async def test_emits_action_failed_on_error_true(self, mgr_with_events, events_log):
         """hitl.tier.action_failed is emitted when action returns error=True."""
         mgr = mgr_with_events
@@ -203,6 +206,7 @@ class TestEventEmission:
         assert failed, "Expected hitl.tier.action_failed"
         assert isinstance(failed[0], HitlTierActionFailedEvent)
 
+    @pytest.mark.asyncio
     async def test_emits_chain_exhausted(self, mgr_with_events, events_log):
         """hitl.chain.exhausted is emitted when all tiers are traversed."""
         mgr = mgr_with_events
@@ -220,6 +224,7 @@ class TestEventEmission:
         assert isinstance(exhausted[0], HitlChainExhaustedEvent)
         assert exhausted[0].interaction_id == interaction.interaction_id
 
+    @pytest.mark.asyncio
     async def test_subscriber_exception_does_not_abort_flow(self, events_log):
         """A subscriber that raises does NOT abort the manager's escalation flow."""
         bad_events = []
@@ -246,6 +251,7 @@ class TestEventEmission:
         # Flow still completes (result persisted)
         assert persisted or True  # flow didn't crash
 
+    @pytest.mark.asyncio
     async def test_no_emission_when_on_event_is_none(self):
         """When on_event is None, emit() is a no-op — no exceptions raised."""
         mgr = HumanInteractionManager()  # no on_event

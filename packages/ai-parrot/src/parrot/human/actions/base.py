@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..models import HumanInteraction, EscalationTier, InteractionResult
+    from ..models import HumanInteraction, EscalationTier
 
 
 class EscalationAction(ABC):

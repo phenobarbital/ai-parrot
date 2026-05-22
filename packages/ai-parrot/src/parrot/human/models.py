@@ -394,6 +394,14 @@ class HumanInteraction(BaseModel):
     source_agent: Optional[str] = None
     source_flow: Optional[str] = None
     source_node: Optional[str] = None
+    channel: Optional[str] = Field(
+        default=None,
+        description=(
+            "Name of the channel through which this interaction was first dispatched. "
+            "Set by the manager in request_human_input/_dispatch_to_channel; "
+            "used by advance_chain to target the same channel when re-escalating."
+        ),
+    )
 
     # State (managed by the engine)
     status: InteractionStatus = InteractionStatus.PENDING

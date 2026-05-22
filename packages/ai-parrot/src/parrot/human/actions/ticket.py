@@ -68,15 +68,19 @@ class TicketAction(EscalationAction):
         The legacy ``platform="jira"`` case logs a warning and falls back
         to Zammad (Jira is deferred to V2).
 
-        On backend failure returns ``{"message": ..., "error": True}``
-        so the manager can advance to the next tier.
+        On backend failure, re-raises :class:`ActionBackendError` so the
+        manager's ``_escalate_to_next_tier`` can advance the chain.
 
         Args:
             interaction: The human interaction being escalated.
             tier: The escalation tier providing ``action_metadata``.
 
         Returns:
-            Backend result dict, or ``{"message": ..., "error": True}`` on failure.
+            Backend result dict on success.
+
+        Raises:
+            ActionBackendError: When the backend fails, so the manager
+                can advance to the next tier.
         """
         meta = tier.action_metadata
         # Support new "kind" key and legacy "platform" key
@@ -90,17 +94,13 @@ class TicketAction(EscalationAction):
             )
             kind = "zammad"
 
+        backend = self._get_backend(kind)
         try:
-            backend = self._get_backend(kind)
             return await backend.execute(interaction, tier)
         except ActionBackendError as exc:
-            self.logger.warning(
-                "TicketAction backend %r failed for interaction %s: %s",
+            self.logger.error(
+                "TicketAction backend failed (kind=%s): %s",
                 kind,
-                getattr(interaction, "interaction_id", "?"),
                 exc,
             )
-            return {
-                "message": f"[escalated:{kind}] failed: {exc}",
-                "error": True,
-            }
+            raise  # re-raise so manager._escalate_to_next_tier can advance the chain

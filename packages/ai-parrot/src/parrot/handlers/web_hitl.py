@@ -329,7 +329,7 @@ class HITLResponseHandler(BaseView):
         # Verify the interaction exists — if the manager has a pending future
         # for this ID the response is valid; if not, return 404.
         if (
-            interaction_id not in manager._pending_futures
+            not manager.has_pending(interaction_id)
             and not await manager.get_result(interaction_id)
         ):
             logger.warning(

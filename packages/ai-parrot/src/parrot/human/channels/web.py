@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Dict, Optional
 
 from .base import HumanChannel, ESCALATE_OPTION_KEY
 from ..models import HumanInteraction, HumanResponse, InteractionType
@@ -39,8 +39,8 @@ class WebHumanChannel(HumanChannel):
         channel_type: Identifier for this channel type, fixed to ``"web"``.
     """
 
-    channel_type: str = "web"
-    render_reject_button: bool = True
+    channel_type: ClassVar[str] = "web"
+    render_reject_button: ClassVar[bool] = True
 
     def __init__(self, socket_manager: "UserSocketManager") -> None:
         """Initialise the WebHumanChannel.
