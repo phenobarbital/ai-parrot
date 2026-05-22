@@ -227,3 +227,10 @@ class TestDedup:
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Added `_deprecation_warned: bool = False` class-level flag and `DeprecationWarning` emission in `__init__` (fires once per process; reset with `HandoffTool._deprecation_warned = False` in tests).
+- Added short bounded poll (5 x 100ms) in `_aexecute` after `request_human_input_async`: returns `action_metadata["message"]` or `consolidated_value` immediately if available; falls through to interrupt if poll exhausted or result empty.
+- Legacy path (no manager) and `_execute` sync path unchanged.
+- 8 tests all pass: 2 legacy, 2 DeprecationWarning, 4 dedup. Demo agent tests (7) also pass; `demo.py:194` HandoffTool now emits the deprecation warning as expected.

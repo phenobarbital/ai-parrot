@@ -5,7 +5,31 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Awaitable, Callable, ClassVar
 
 if TYPE_CHECKING:
-    from ..models import HumanInteraction, HumanResponse
+    from ..models import ChoiceOption, HumanInteraction, HumanResponse
+
+
+# ── Escalation button constants ───────────────────────────────────────────────
+
+#: Sentinel value placed in ``response.value`` when the user taps the
+#: "↑ Escalar" reject button.  The manager's ``receive_response``
+#: intercepts this value and routes the interaction to ``advance_chain``.
+ESCALATE_OPTION_KEY: str = "__escalate__"
+
+
+def escalate_option() -> "ChoiceOption":
+    """Return the standardised "↑ Escalar" choice option.
+
+    Channels that opt in to the reject button append this option to their
+    rendered UI when the interaction is policy-bound
+    (``interaction.policy is not None``).
+
+    Returns:
+        A :class:`~parrot.human.models.ChoiceOption` with
+        ``key=ESCALATE_OPTION_KEY`` and ``label="↑ Escalar"``.
+    """
+    from ..models import ChoiceOption
+
+    return ChoiceOption(key=ESCALATE_OPTION_KEY, label="↑ Escalar")
 
 
 # Signature of the cancel callback registered by HumanInteractionManager.
@@ -38,9 +62,21 @@ class HumanChannel(ABC):
         channel — these methods are kept ``async`` deliberately to leave
         room for channels that need to perform a remote handshake at
         registration time (e.g. subscribing to a webhook topic).
+
+    Note on ``render_reject_button``:
+        When ``True`` the channel appends an "↑ Escalar" reject button
+        to the rendered UI for policy-bound interactions.  Channels that
+        do not have an interactive UI (CLI, etc.) should leave this as
+        ``False`` — the text-based fallback is provided by
+        :class:`~parrot.human.escalation_intent.RejectIntentDetector`.
     """
 
     channel_type: ClassVar[str] = "base"
+
+    #: When ``True`` the channel will render the "↑ Escalar" button
+    #: for policy-bound interactions.  Opt in by setting this to ``True``
+    #: in the subclass body.
+    render_reject_button: ClassVar[bool] = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 

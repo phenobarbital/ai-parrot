@@ -2,17 +2,24 @@
 import asyncio
 
 import pytest
+import pytz
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.human.manager import HumanInteractionManager
 from parrot.human.node import HumanDecisionNode
 from parrot.human.models import (
+    BusinessHours,
     ConsensusMode,
+    EscalationActionType,
+    EscalationPolicy,
+    EscalationTier,
     HumanInteraction,
     HumanResponse,
     InteractionResult,
     InteractionStatus,
     InteractionType,
+    Severity,
     TimeoutAction,
 )
 
@@ -615,3 +622,466 @@ class TestHumanDecisionNode:
     def test_tool_manager_is_none(self):
         node = HumanDecisionNode(name="gate", manager=AsyncMock())
         assert node.tool_manager is None
+
+
+# ==========================================================================
+# FEAT-194 TASK-1277 tests — action-failure fix + advance_chain + TTL
+# ==========================================================================
+
+def _make_policy(*tiers):
+    return EscalationPolicy(name="test-policy", tiers=list(tiers))
+
+
+def _notify_tier(level, action_metadata=None, target_humans=None, business_hours=None, min_severity=None):
+    meta = action_metadata or {"kind": "email", "to": ["ops@x.com"]}
+    return EscalationTier(
+        level=level,
+        name=f"L{level}",
+        action_type=EscalationActionType.NOTIFY,
+        action_metadata=meta,
+        target_humans=target_humans or [],
+        business_hours=business_hours,
+        min_severity=min_severity,
+    )
+
+
+def _interact_tier(level, target_humans):
+    return EscalationTier(
+        level=level,
+        name=f"L{level}",
+        action_type=EscalationActionType.INTERACT,
+        target_humans=target_humans,
+    )
+
+
+@pytest.fixture
+def mgr_with_redis():
+    """Manager with fully mocked Redis and no real channels."""
+    redis = AsyncMock()
+    redis.setex = AsyncMock()
+    redis.get = AsyncMock(return_value=None)
+    redis.publish = AsyncMock()
+    redis.close = AsyncMock()
+    mgr = HumanInteractionManager()
+    mgr._redis = redis
+    return mgr
+
+
+class TestActionFailureAdvances:
+    """Tests for action-failure detection and tier advancement."""
+
+    async def test_action_error_dict_advances_to_next_tier(self, mgr_with_redis):
+        """When action returns error=True, manager advances to next tier."""
+        mgr = mgr_with_redis
+
+        # Tier 1: NOTIFY that returns error=True; Tier 2: NOTIFY that succeeds
+        policy = _make_policy(
+            _notify_tier(1, {"kind": "email", "to": ["a@b.com"]}),
+            _notify_tier(2, {"kind": "email", "to": ["b@b.com"]}),
+        )
+        interaction = HumanInteraction(
+            question="Test?",
+            policy=policy,
+            current_tier_level=0,
+            policy_id="p1",
+        )
+        mgr._policies["p1"] = policy
+
+        # Make tier-1 action fail; tier-2 action succeed
+        action_results = [
+            {"message": "fail", "error": True},
+            {"message": "ok tier2", "status": "sent"},
+        ]
+        call_count = {"n": 0}
+
+        async def mock_execute(interaction_obj, tier_obj):
+            idx = call_count["n"]
+            call_count["n"] += 1
+            return action_results[idx]
+
+        mgr._actions[EscalationActionType.NOTIFY].execute = mock_execute
+        # Capture persist_result calls
+        persisted = []
+        async def fake_persist_result(result):
+            persisted.append(result)
+        mgr._persist_result = fake_persist_result
+        mgr._persist_interaction = AsyncMock()
+        mgr._update_status = AsyncMock()
+        mgr._trigger_rehydration = AsyncMock()
+
+        await mgr._escalate_to_next_tier(interaction, "test", cause="timeout")
+
+        # Should have attempted both tiers
+        assert call_count["n"] == 2
+        assert persisted, "A result should have been persisted"
+        final = persisted[-1]
+        assert final.tier_level == 2
+        assert final.action_metadata.get("message") == "ok tier2"
+
+    async def test_all_tiers_fail_terminates_cleanly(self, mgr_with_redis):
+        """When all tiers fail, chain terminates via _finish_with_timeout."""
+        mgr = mgr_with_redis
+
+        policy = _make_policy(
+            _notify_tier(1),
+            _notify_tier(2),
+        )
+        interaction = HumanInteraction(
+            question="Test?",
+            policy=policy,
+            current_tier_level=0,
+            policy_id="p1",
+        )
+        mgr._policies["p1"] = policy
+
+        async def always_fail(interaction_obj, tier_obj):
+            return {"message": "fail", "error": True}
+
+        mgr._actions[EscalationActionType.NOTIFY].execute = always_fail
+        persisted = []
+        async def fake_persist_result(result):
+            persisted.append(result)
+        mgr._persist_result = fake_persist_result
+        mgr._persist_interaction = AsyncMock()
+        mgr._update_status = AsyncMock()
+        mgr._trigger_rehydration = AsyncMock()
+
+        await mgr._escalate_to_next_tier(interaction, "test", cause="timeout")
+
+        assert persisted
+        # Chain exhausted → terminates with TIMEOUT-like status
+        final = persisted[-1]
+        assert final.status in (InteractionStatus.TIMEOUT, InteractionStatus.CANCELLED)
+
+
+class TestAdvanceChainPublic:
+    """Tests for the public advance_chain() method."""
+
+    async def test_advance_chain_reject_picks_next_tier(self, mgr_with_redis):
+        """advance_chain(cause='reject') advances to the next tier."""
+        mgr = mgr_with_redis
+
+        policy = _make_policy(
+            _interact_tier(1, ["u1"]),
+            _notify_tier(2),
+        )
+        interaction = HumanInteraction(
+            question="?",
+            policy=policy,
+            current_tier_level=1,  # currently at tier 1
+            policy_id="p1",
+        )
+        mgr._policies["p1"] = policy
+
+        serialised = interaction.model_dump_json()
+        mgr._redis.get = AsyncMock(side_effect=[serialised, None])
+
+        advanced_to = []
+        async def fake_next_tier(inter, ch, cause="timeout", _depth=0):
+            advanced_to.append(cause)
+        mgr._escalate_to_next_tier = fake_next_tier
+
+        await mgr.advance_chain(interaction.interaction_id, cause="reject")
+        assert advanced_to == ["reject"]
+
+    async def test_advance_chain_unknown_id_is_silent(self, mgr_with_redis):
+        """advance_chain with an unknown id is silently ignored."""
+        mgr = mgr_with_redis
+        mgr._redis.get = AsyncMock(return_value=None)
+        # Should not raise
+        await mgr.advance_chain("nonexistent-id", cause="timeout")
+
+    async def test_advance_chain_already_resolved_is_silent(self, mgr_with_redis):
+        """advance_chain does nothing when result already persisted."""
+        mgr = mgr_with_redis
+
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="?",
+            policy=policy,
+            current_tier_level=1,
+        )
+        result = InteractionResult(
+            interaction_id=interaction.interaction_id,
+            status=InteractionStatus.COMPLETED,
+        )
+        # Load interaction, then load result
+        mgr._redis.get = AsyncMock(side_effect=[
+            interaction.model_dump_json(),  # _load_interaction
+            result.model_dump_json(),       # get_result
+        ])
+        called = []
+        async def fake_next_tier(*a, **k):
+            called.append(True)
+        mgr._escalate_to_next_tier = fake_next_tier
+
+        await mgr.advance_chain(interaction.interaction_id, cause="reject")
+        assert not called, "Should not advance an already-resolved interaction"
+
+
+class TestStartingTierSelection:
+    """Tests for severity-driven starting tier selection in request_human_input."""
+
+    async def test_select_starting_tier_called_with_severity(self, mgr_with_redis):
+        """_resolve_interaction_policy sets current_tier_level from select_starting_tier."""
+        mgr = mgr_with_redis
+
+        policy = _make_policy(
+            _notify_tier(1, min_severity=Severity.NORMAL),
+            _notify_tier(2, min_severity=Severity.HIGH),
+        )
+        mgr._policies["p1"] = policy
+        interaction = HumanInteraction(
+            question="?",
+            policy_id="p1",
+            severity=Severity.NORMAL,
+        )
+        await mgr._resolve_interaction_policy(interaction)
+        # NORMAL qualifies for L1 (min_severity=NORMAL <= NORMAL)
+        assert interaction.current_tier_level == 0  # level-1 means starts at 0
+
+    async def test_no_applicable_tier_leaves_level_zero(self, mgr_with_redis):
+        """When no tier is applicable, current_tier_level stays 0."""
+        mgr = mgr_with_redis
+
+        policy = _make_policy(
+            _notify_tier(1, min_severity=Severity.CRITICAL),
+        )
+        mgr._policies["p1"] = policy
+        interaction = HumanInteraction(
+            question="?",
+            policy_id="p1",
+            severity=Severity.LOW,
+        )
+        await mgr._resolve_interaction_policy(interaction)
+        assert interaction.current_tier_level == 0
+
+
+class TestRedisTtlMultiTier:
+    """Tests for the extended Redis TTL formula."""
+
+    def test_ttl_covers_sum_of_tier_timeouts(self):
+        """Multi-tier TTL is at least the sum of tier timeouts."""
+        mgr = HumanInteractionManager()
+        policy = _make_policy(
+            EscalationTier(
+                level=1, name="L1",
+                timeout=1800,
+                action_type=EscalationActionType.NOTIFY,
+                action_metadata={"kind": "email", "to": ["a@b"]},
+            ),
+            EscalationTier(
+                level=2, name="L2",
+                timeout=3600,
+                action_type=EscalationActionType.NOTIFY,
+                action_metadata={"kind": "email", "to": ["b@b"]},
+            ),
+        )
+        interaction = HumanInteraction(
+            question="?",
+            policy=policy,
+            timeout=3600.0,
+        )
+        ttl = mgr._compute_ttl(interaction)
+        # sum(1800, 3600) + 60 = 5460 > 3600 + 60
+        assert ttl >= 5460
+
+    def test_ttl_capped_at_24h(self):
+        """TTL never exceeds 86400 (24h)."""
+        mgr = HumanInteractionManager()
+        policy = _make_policy(
+            EscalationTier(
+                level=1, name="L1",
+                timeout=50000,
+                action_type=EscalationActionType.NOTIFY,
+                action_metadata={"kind": "email", "to": ["a@b"]},
+            ),
+            EscalationTier(
+                level=2, name="L2",
+                timeout=50000,
+                action_type=EscalationActionType.NOTIFY,
+                action_metadata={"kind": "email", "to": ["b@b"]},
+            ),
+        )
+        interaction = HumanInteraction(question="?", policy=policy)
+        ttl = mgr._compute_ttl(interaction)
+        assert ttl == 86400  # capped
+
+
+class TestRejectDetectorIntegration:
+    """Tests for RejectIntentDetector wiring into receive_response (TASK-1278)."""
+
+    async def test_reject_intent_routes_to_advance_chain(self, mgr_with_redis):
+        """Free-text response with escalation intent calls advance_chain(cause='reject')."""
+        from parrot.human.escalation_intent import RejectIntentDetector
+
+        mgr = mgr_with_redis
+        detector = RejectIntentDetector()
+        mgr._reject_detector = detector
+
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="How can I help?",
+            policy=policy,
+            interaction_type=InteractionType.FREE_TEXT,
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value="I need a human",
+            respondent="user1",
+            response_type=InteractionType.FREE_TEXT,
+        )
+
+        advanced = []
+        async def fake_advance(iid, cause):
+            advanced.append(cause)
+        mgr.advance_chain = fake_advance
+
+        await mgr.receive_response(response)
+        assert advanced == ["reject"]
+
+    async def test_reject_intent_does_not_accumulate(self, mgr_with_redis):
+        """When escalation intent is detected, response is NOT accumulated."""
+        from parrot.human.escalation_intent import RejectIntentDetector
+
+        mgr = mgr_with_redis
+        detector = RejectIntentDetector()
+        mgr._reject_detector = detector
+
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="How can I help?",
+            policy=policy,
+            interaction_type=InteractionType.FREE_TEXT,
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value="pasame con un humano",
+            respondent="user1",
+            response_type=InteractionType.FREE_TEXT,
+        )
+
+        mgr.advance_chain = AsyncMock()
+        mgr._persist_responses = AsyncMock()
+
+        await mgr.receive_response(response)
+
+        mgr.advance_chain.assert_called_once_with(interaction.interaction_id, cause="reject")
+        mgr._persist_responses.assert_not_called()
+
+    async def test_no_detector_configured_accumulates_normally(self, mgr_with_redis):
+        """Without a detector, 'I need a human' is accumulated as a regular response."""
+        mgr = mgr_with_redis
+        # No detector — default None
+        assert mgr._reject_detector is None
+
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="How can I help?",
+            policy=policy,
+            interaction_type=InteractionType.FREE_TEXT,
+        )
+        responses_store = []
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+        mgr._load_responses = AsyncMock(return_value=[])
+        mgr._persist_responses = AsyncMock(side_effect=lambda iid, rs: responses_store.extend(rs))
+        mgr._evaluate_consensus = MagicMock(return_value=(False, None))
+        mgr._update_status = AsyncMock()
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value="I need a human",
+            respondent="user1",
+            response_type=InteractionType.FREE_TEXT,
+        )
+        await mgr.receive_response(response)
+        assert len(responses_store) == 1  # response was accumulated
+
+
+class TestEscalateButtonInterception:
+    """Tests for ESCALATE_OPTION_KEY button interception in receive_response (TASK-1279)."""
+
+    async def test_escalate_value_routes_to_advance_chain(self, mgr_with_redis):
+        """response.value == '__escalate__' on policy-bound interaction → advance_chain."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+        from parrot.human.models import ChoiceOption
+
+        mgr = mgr_with_redis
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="Approve?",
+            policy=policy,
+            interaction_type=InteractionType.SINGLE_CHOICE,
+            options=[ChoiceOption(key="yes", label="Yes"), ChoiceOption(key="no", label="No")],
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+
+        advanced = []
+        async def fake_advance(iid, cause):
+            advanced.append(cause)
+        mgr.advance_chain = fake_advance
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.SINGLE_CHOICE,
+        )
+        await mgr.receive_response(response)
+        assert advanced == ["reject"]
+
+    async def test_escalate_value_does_not_accumulate(self, mgr_with_redis):
+        """ESCALATE_OPTION_KEY response is NOT accumulated as a regular response."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+        from parrot.human.models import ChoiceOption
+
+        mgr = mgr_with_redis
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="Approve?",
+            policy=policy,
+            interaction_type=InteractionType.SINGLE_CHOICE,
+            options=[ChoiceOption(key="yes", label="Yes")],
+        )
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+        mgr.advance_chain = AsyncMock()
+        mgr._persist_responses = AsyncMock()
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.SINGLE_CHOICE,
+        )
+        await mgr.receive_response(response)
+        mgr._persist_responses.assert_not_called()
+
+    async def test_escalate_value_without_policy_accumulates(self, mgr_with_redis):
+        """ESCALATE_OPTION_KEY value without policy is accumulated normally."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+
+        mgr = mgr_with_redis
+        # Use FREE_TEXT so no options required; no policy
+        interaction = HumanInteraction(
+            question="What?",
+            interaction_type=InteractionType.FREE_TEXT,
+        )
+        responses_store = []
+        mgr._redis.get = AsyncMock(return_value=interaction.model_dump_json())
+        mgr._load_responses = AsyncMock(return_value=[])
+        mgr._persist_responses = AsyncMock(side_effect=lambda iid, rs: responses_store.extend(rs))
+        mgr._evaluate_consensus = MagicMock(return_value=(False, None))
+        mgr._update_status = AsyncMock()
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="user1",
+            response_type=InteractionType.FREE_TEXT,
+        )
+        await mgr.receive_response(response)
+        assert len(responses_store) == 1  # accumulated normally

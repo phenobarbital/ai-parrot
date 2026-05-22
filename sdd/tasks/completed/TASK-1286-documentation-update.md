@@ -145,3 +145,15 @@ At minimum, the agent should:
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Expanded `documentation/hitl_tiered_escalation_example.md` (84 lines -> 403 lines) with 7 new sections (sections 4-10):
+  - §4 Severity — `min_severity` on tiers, `severity` kwarg on `ask_human`, example LLM system-prompt fragment.
+  - §5 Business Hours — `BusinessHours` model with timezone/weekdays/start_hour/end_hour and boundary semantics.
+  - §6 Real action kinds — email/webhook/Zammad examples using `kind` key in `action_metadata`; legacy back-compat note.
+  - §7 Reject UX — Telegram/Web escalate button mechanics, `RejectIntentDetector` for free-text channels.
+  - §8 HumanDecisionNode — AgentsFlow wiring with `escalation_policy_id` + `severity` kwargs.
+  - §9 HandoffTool deprecation — cross-reference to `HumanTool(..., policy_id=...)`, deprecation warning note.
+  - §10 Observability — `on_event` callback, event name table, subscriber exception isolation note.
+- All code samples verified against actual codebase imports (all resolve without errors).

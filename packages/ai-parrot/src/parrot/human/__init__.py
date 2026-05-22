@@ -16,6 +16,8 @@ from .models import (
     HumanInteraction,
     HumanResponse,
     InteractionResult,
+    Severity,
+    BusinessHours,
 )
 from .channels.base import HumanChannel
 from .channels.cli import CLIDaemonHumanChannel, CLIHumanChannel
@@ -72,6 +74,8 @@ __all__ = [
     "HumanInteraction",
     "HumanResponse",
     "InteractionResult",
+    "Severity",
+    "BusinessHours",
     # Channels
     "HumanChannel",
     "CLIHumanChannel",

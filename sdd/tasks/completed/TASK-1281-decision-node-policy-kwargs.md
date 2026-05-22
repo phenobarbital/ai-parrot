@@ -173,3 +173,11 @@ async def test_back_compat_no_new_kwargs(): ...
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Added `escalation_policy_id: Optional[str] = None` and `severity: Severity = Severity.NORMAL` constructor kwargs to `HumanDecisionNode`.
+- Stored as `self.escalation_policy_id` and `self.severity` instance attributes.
+- In `ask()` with `interaction_config`: constructor kwargs win over config values using explicit precedence logic (`policy_id`: None check; `severity`: NORMAL-as-sentinel check so config's non-NORMAL value wins when ctor uses default).
+- In `ask()` without config: `policy_id=self.escalation_policy_id, severity=self.severity` passed directly to `HumanInteraction`.
+- 5 tests all pass: ctor kwargs propagate, ctor wins over config, config used when no ctor override, back-compat (no kwargs), bare construction attributes.

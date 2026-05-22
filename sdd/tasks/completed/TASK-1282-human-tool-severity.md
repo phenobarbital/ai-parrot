@@ -184,3 +184,10 @@ async def test_tool_description_mentions_severity_levels(): ...
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Added `severity: Literal["low", "normal", "high", "critical"]` field to `HumanToolInput` with detailed description teaching the LLM when to use each level.
+- In `_execute`: reads `raw_severity`, validates with `Severity(raw_severity)`, returns `"HumanTool error: unknown severity '<val>'. Must be one of: low, normal, high, critical"` on ValueError.
+- Passes `severity=severity_enum` to `HumanInteraction` constructor.
+- 7 tests all pass: all 4 severity levels propagate, invalid value returns actionable error with value in message, schema has severity field, description mentions all 4 levels.

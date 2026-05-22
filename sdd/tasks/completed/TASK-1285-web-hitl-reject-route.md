@@ -163,3 +163,11 @@ async def test_unknown_interaction_silent_2xx(): ...
 ---
 
 ## Completion Note
+
+Implemented 2026-05-22 by sdd-worker (FEAT-194).
+
+- Added `from ..human.channels.base import ESCALATE_OPTION_KEY` import to `web_hitl.py`.
+- Inserted escalate branch in `HITLResponseHandler.post()` immediately after the `is_valid_respondent` check: if `body.value == ESCALATE_OPTION_KEY`, calls `await manager.advance_chain(interaction_id, cause="reject")` and returns `{"status": "escalated"}` with HTTP 200. Otherwise falls through to the existing `receive_response` path.
+- 404 for unknown interactions applies before auth gate (pre-existing behaviour unchanged).
+- Test file in `tests/handlers/test_web_hitl_reject.py` uses `--noconftest` (handlers/conftest.py has a pre-existing import failure unrelated to this task). 4 tests pass: escalate routes to advance_chain, normal values route to receive_response, unauthorised user gets 403, unknown interaction gets 404.
+- All 17 existing `TestHITLResponseHandler`/`TestContextVar`/`TestWebHumanTool`/`TestHITLResponseBody` tests continue to pass.
