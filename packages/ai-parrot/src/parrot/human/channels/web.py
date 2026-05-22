@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Dict, Optional
 
-from .base import HumanChannel
+from .base import HumanChannel, ESCALATE_OPTION_KEY
 from ..models import HumanInteraction, HumanResponse, InteractionType
 
 if TYPE_CHECKING:
@@ -39,7 +39,8 @@ class WebHumanChannel(HumanChannel):
         channel_type: Identifier for this channel type, fixed to ``"web"``.
     """
 
-    channel_type: str = "web"
+    channel_type: ClassVar[str] = "web"
+    render_reject_button: ClassVar[bool] = True
 
     def __init__(self, socket_manager: "UserSocketManager") -> None:
         """Initialise the WebHumanChannel.
@@ -130,12 +131,16 @@ class WebHumanChannel(HumanChannel):
         self,
         interaction_id: str,
         recipient: str,
-    ) -> None:
+    ) -> bool:
         """Emit a cancellation payload to the user's WebSocket channel.
 
         Args:
             interaction_id: UUID of the interaction being cancelled.
             recipient: WebSocket channel name to publish to.
+
+        Returns:
+            ``True`` when the socket manager accepted the publish,
+            ``False`` if it raised.
         """
         payload: Dict[str, Any] = {
             "type": "hitl:cancel",
@@ -147,7 +152,15 @@ class WebHumanChannel(HumanChannel):
             interaction_id,
             recipient,
         )
-        await self.socket_manager.notify_channel(recipient, payload)
+        try:
+            await self.socket_manager.notify_channel(recipient, payload)
+            return True
+        except Exception:
+            self.logger.exception(
+                "WebHumanChannel: failed to publish cancel for %s",
+                interaction_id,
+            )
+            return False
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -192,6 +205,20 @@ class WebHumanChannel(HumanChannel):
                 }
                 for opt in interaction.options
             ]
+        else:
+            payload["options"] = []
+
+        # Append the escalate affordance for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            if payload["options"] is None:
+                payload["options"] = []
+            payload["options"].append(
+                {
+                    "key": ESCALATE_OPTION_KEY,
+                    "label": "↑ Escalar",
+                    "description": None,
+                }
+            )
 
         # Include form_schema for FORM type
         if interaction.interaction_type == InteractionType.FORM:

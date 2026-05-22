@@ -23,12 +23,12 @@ Usage:
 """
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from navconfig.logging import logging
 
-from .base import HumanChannel
+from .base import HumanChannel, ESCALATE_OPTION_KEY
 from ..models import (
     HumanInteraction,
     HumanResponse,
@@ -73,6 +73,7 @@ class TelegramHumanChannel(HumanChannel):
     """
 
     channel_type = "telegram"
+    render_reject_button = True
 
     def __init__(
         self,
@@ -91,7 +92,7 @@ class TelegramHumanChannel(HumanChannel):
         self.redis = redis
         self.token_ttl = token_ttl
         self.parse_mode = parse_mode
-        self.logger = logging.getLogger("HITL.Telegram")
+        self.logger = logging.getLogger("parrot.human.channels.telegram")
 
         # Router for handling callback queries
         self.router = Router(name="hitl_telegram")
@@ -175,9 +176,14 @@ class TelegramHumanChannel(HumanChannel):
 
     async def register_cancel_handler(
         self,
-        callback: Callable[[str], Awaitable[bool]],
+        callback: Callable[[str, str], Awaitable[bool]],
     ) -> None:
-        """Register the manager's cancel callback (cancel_pending)."""
+        """Register the manager's cancel callback (cancel_pending).
+
+        The callback is invoked as ``await callback(interaction_id, reason)``
+        where ``reason`` is ``"slash_cancel"`` for ``/cancel`` and
+        ``"button_cancel"`` for the ✕ inline button.
+        """
         self._cancel_callback = callback
 
     async def send_interaction(
@@ -239,12 +245,19 @@ class TelegramHumanChannel(HumanChannel):
 
     async def cancel_interaction(
         self, interaction_id: str, recipient: str
-    ) -> None:
-        """Cancel/withdraw an interaction by removing its keyboard."""
+    ) -> bool:
+        """Cancel/withdraw an interaction by removing its keyboard.
+
+        Returns ``True`` when a tracked message was found and updated,
+        ``False`` when nothing was tracked for ``interaction_id`` or the
+        Redis lookup itself raised.
+        """
+        had_state = False
         try:
             msg_key = f"hitl:msg:{interaction_id}:{recipient}"
             msg_id_raw = await self.redis.get(msg_key)
             if msg_id_raw:
+                had_state = True
                 msg_id = int(msg_id_raw)
                 try:
                     await self.bot.edit_message_reply_markup(
@@ -263,11 +276,14 @@ class TelegramHumanChannel(HumanChannel):
                 await self.redis.delete(msg_key)
         except Exception:
             self.logger.exception("Failed to cancel interaction")
+            return False
 
         # Clean up awaiting text if applicable
         chat_id = int(recipient)
         if self._awaiting_text.get(chat_id) == interaction_id:
             del self._awaiting_text[chat_id]
+
+        return had_state
 
     # ─── Sending Interactions ─────────────────────────────────────────────
 
@@ -285,21 +301,27 @@ class TelegramHumanChannel(HumanChannel):
             interaction.interaction_id, chat_id
         )
 
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="✅ Approve",
-                        callback_data=f"hitl:{token_yes}",
-                    ),
-                    InlineKeyboardButton(
-                        text="❌ Reject",
-                        callback_data=f"hitl:{token_no}",
-                    ),
-                ],
-                cancel_row,
-            ]
-        )
+        rows = [
+            [
+                InlineKeyboardButton(
+                    text="✅ Approve",
+                    callback_data=f"hitl:{token_yes}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Reject",
+                    callback_data=f"hitl:{token_no}",
+                ),
+            ],
+            cancel_row,
+        ]
+
+        # Append escalate button for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            rows.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
         text = self._format_message(interaction)
         msg = await self.bot.send_message(
@@ -323,6 +345,26 @@ class TelegramHumanChannel(HumanChannel):
         return [
             InlineKeyboardButton(
                 text="✕ Cancel",
+                callback_data=f"hitl:{token}",
+            )
+        ]
+
+    async def _build_escalate_row(
+        self, interaction_id: str, chat_id: int
+    ) -> List["InlineKeyboardButton"]:
+        """Build a one-button row with ↑ Escalar for policy-bound interactions.
+
+        The token encodes ``action="escalate"``; the callback handler
+        detects this and creates a :class:`~parrot.human.models.HumanResponse`
+        with ``value=ESCALATE_OPTION_KEY`` so the manager's
+        ``receive_response`` can intercept it and call ``advance_chain``.
+        """
+        token = await self._create_token(
+            interaction_id, str(chat_id), action=f"pick:{ESCALATE_OPTION_KEY}"
+        )
+        return [
+            InlineKeyboardButton(
+                text="↑ Escalar",
                 callback_data=f"hitl:{token}",
             )
         ]
@@ -352,6 +394,12 @@ class TelegramHumanChannel(HumanChannel):
         buttons.append(
             await self._build_cancel_row(interaction.interaction_id, chat_id)
         )
+
+        # Append escalate button for policy-bound interactions
+        if interaction.policy is not None and self.render_reject_button:
+            buttons.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         text = self._format_message(interaction)
@@ -461,15 +509,15 @@ class TelegramHumanChannel(HumanChannel):
         text = self._format_message(interaction)
         text += "\n\n_Reply with your answer, or send /cancel to abort._"
 
-        # Attach a small inline keyboard with just a Cancel button so the
-        # user doesn't have to switch to typing a command.
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                await self._build_cancel_row(
-                    interaction.interaction_id, chat_id
-                )
-            ]
-        )
+        # Attach a small inline keyboard with Cancel (and optionally Escalar)
+        rows = [
+            await self._build_cancel_row(interaction.interaction_id, chat_id)
+        ]
+        if interaction.policy is not None and self.render_reject_button:
+            rows.append(
+                await self._build_escalate_row(interaction.interaction_id, chat_id)
+            )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
         msg = await self.bot.send_message(
             chat_id=chat_id,
@@ -638,7 +686,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=response_type,
             value=value,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": callback_query.message.chat.id,
@@ -751,7 +799,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=InteractionType.MULTI_CHOICE,
             value=selected,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": callback_query.message.chat.id,
@@ -810,7 +858,7 @@ class TelegramHumanChannel(HumanChannel):
             respondent=telegram_user_id,
             response_type=response_type,
             value=value,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             metadata={
                 "channel": "telegram",
                 "chat_id": chat_id,
@@ -843,7 +891,9 @@ class TelegramHumanChannel(HumanChannel):
             await self.cancel_interaction(interaction_id, str(chat_id))
             if self._cancel_callback:
                 try:
-                    if await self._cancel_callback(interaction_id):
+                    if await self._cancel_callback(
+                        interaction_id, "slash_cancel"
+                    ):
                         cancelled += 1
                 except Exception:
                     self.logger.exception(
@@ -912,7 +962,7 @@ class TelegramHumanChannel(HumanChannel):
         # Dispatch to manager to resolve the pending future as CANCELLED
         if self._cancel_callback:
             try:
-                await self._cancel_callback(interaction_id)
+                await self._cancel_callback(interaction_id, "button_cancel")
             except Exception:
                 self.logger.exception(
                     "cancel callback failed for %s", interaction_id
@@ -957,7 +1007,7 @@ class TelegramHumanChannel(HumanChannel):
             "interaction_id": interaction_id,
             "human_id": human_id,
             "action": action,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         if extra:
             data["extra"] = extra

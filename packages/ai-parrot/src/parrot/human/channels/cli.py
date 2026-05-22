@@ -157,14 +157,20 @@ class CLIHumanChannel(HumanChannel):
 
     async def cancel_interaction(
         self, interaction_id: str, recipient: str
-    ) -> None:
-        """Cancel a pending interaction."""
-        if interaction_id in self._pending:
-            del self._pending[interaction_id]
-            short_id = interaction_id[:8]
-            self.console.print(
-                f"\n  [yellow]⚠️ Interaction {short_id}... cancelled[/yellow]"
-            )
+    ) -> bool:
+        """Cancel a pending interaction.
+
+        Returns ``True`` if a pending interaction existed and was removed,
+        ``False`` if nothing was tracked for ``interaction_id``.
+        """
+        if interaction_id not in self._pending:
+            return False
+        del self._pending[interaction_id]
+        short_id = interaction_id[:8]
+        self.console.print(
+            f"\n  [yellow]⚠️ Interaction {short_id}... cancelled[/yellow]"
+        )
+        return True
 
     # ─── Rendering ────────────────────────────────────────────────────────
 
@@ -545,8 +551,12 @@ class CLIDaemonHumanChannel(HumanChannel):
 
     async def cancel_interaction(
         self, interaction_id: str, recipient: str
-    ) -> None:
-        """Publish cancellation event."""
+    ) -> bool:
+        """Publish cancellation event.
+
+        Returns ``True`` when the publish succeeded, ``False`` if Redis
+        raised.
+        """
         try:
             await self.redis.publish(
                 f"{self.queue_prefix}:{recipient}:notify",
@@ -559,8 +569,10 @@ class CLIDaemonHumanChannel(HumanChannel):
                     }
                 ),
             )
+            return True
         except Exception:
             self.logger.exception("Failed to cancel interaction")
+            return False
 
     async def start_response_listener(self, recipient: str) -> None:
         """Listen for responses from the CLI companion.

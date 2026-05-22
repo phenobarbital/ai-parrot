@@ -6,15 +6,5 @@
   "base_branch": "dev",
   "created_at": null,
   "completed_at": null,
-  "tasks": [
-    {
-      "id": "TASK-748",
-      "slug": "navigator-baseline-regression-tests",
-      "title": "Baseline regression tests for NavigatorToolkit",
-      "priority": "high",
-      "effort": "M",
-      "file": "sdd/tasks/completed/TASK-746-feat-106-tests.md",
-      "status": "done"
-    }
-  ]
+  "tasks": []
 }

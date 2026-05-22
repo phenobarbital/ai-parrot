@@ -37,7 +37,21 @@ if str(TESTS_DIR) not in sys.path:
 
 
 def _install_navconfig_stub() -> None:
-    """Provide a lightweight ``navconfig`` implementation for tests."""
+    """Provide a lightweight ``navconfig`` implementation for tests.
+
+    If the real ``navconfig`` package is installed (it ships transitively
+    with ``navigator-api``) we use it as-is — Cython modules like
+    ``navigator.types`` bind ``DEBUG``/``SETTINGS_DIR``/``loglevel`` at
+    import time and the stub keeps drifting out of sync. Only fall back
+    to the stub when the package genuinely cannot be imported.
+    """
+    try:
+        import navconfig  # noqa: F401
+        import navconfig.logging  # noqa: F401
+        import navconfig.exceptions  # noqa: F401
+        return
+    except ImportError:
+        pass
 
     class _Config:
         def get(self, _key: str, fallback=None):  # noqa: D401
@@ -59,6 +73,12 @@ def _install_navconfig_stub() -> None:
     navconfig_module = types.ModuleType("navconfig")
     navconfig_module.config = _Config()
     navconfig_module.BASE_DIR = PROJECT_ROOT
+    # navigator.types (Cython) does `from navconfig import config, DEBUG`.
+    # Honour PARROT_DEBUG / DEBUG env vars so tests can flip it.
+    import os as _os
+    navconfig_module.DEBUG = _os.environ.get(
+        "PARROT_DEBUG", _os.environ.get("DEBUG", "")
+    ).lower() in ("1", "true", "yes", "on")
 
     # Add 'notice' level to standard logging (navconfig extends it)
     NOTICE_LEVEL = 25
@@ -74,6 +94,9 @@ def _install_navconfig_stub() -> None:
     logging_module = types.ModuleType("navconfig.logging")
     logging_module.logging = logging
     logging_module.Logger = logging.Logger
+    # navigator.applications.base does `from navconfig.logging import logging, loglevel`.
+    logging_module.loglevel = logging.INFO
+    logging_module.LOGLEVEL = "INFO"
     navconfig_module.logging = logging_module
 
     exceptions_module = types.ModuleType("navconfig.exceptions")
