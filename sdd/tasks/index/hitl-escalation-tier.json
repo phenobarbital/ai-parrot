@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-22T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-22T14:31:54.983940+00:00",
   "tasks": [
     {
       "id": "TASK-1274",
@@ -14,16 +14,16 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation for severity/hours — must land before any consumer (1277, 1281, 1282).",
+      "parallelism_notes": "Foundation for severity/hours \u2014 must land before any consumer (1277, 1281, 1282).",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1274-severity-businesshours-models.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1274-severity-businesshours-models.md"
     },
     {
       "id": "TASK-1275",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches only new submodule parrot/human/actions/backends/; can run in parallel with 1278/1281/1282 if multi-worktree is ever needed.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1275-action-backends.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1275-action-backends.md"
     },
     {
       "id": "TASK-1276",
@@ -52,38 +52,38 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1275"
       ],
       "parallel": false,
-      "parallelism_notes": "Replaces shipped stubs in actions/notify.py and ticket.py — coordinate with 1277 to avoid manager refactor conflicts.",
+      "parallelism_notes": "Replaces shipped stubs in actions/notify.py and ticket.py \u2014 coordinate with 1277 to avoid manager refactor conflicts.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1276-action-dispatcher.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1276-action-dispatcher.md"
     },
     {
       "id": "TASK-1277",
       "slug": "manager-advance-chain",
-      "title": "Manager — action-failure fix + advance_chain + severity/hours selection",
+      "title": "Manager \u2014 action-failure fix + advance_chain + severity/hours selection",
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-1274"
       ],
       "parallel": false,
-      "parallelism_notes": "Central manager refactor — must land before any consumer of advance_chain (1279, 1280, 1283, 1285) and before the orchestrator change (1284).",
+      "parallelism_notes": "Central manager refactor \u2014 must land before any consumer of advance_chain (1279, 1280, 1283, 1285) and before the orchestrator change (1284).",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1277-manager-advance-chain.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1277-manager-advance-chain.md"
     },
     {
       "id": "TASK-1278",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -100,8 +100,8 @@
       "parallelism_notes": "New standalone module + 6-line addition to manager.receive_response. Can land any time; manager-side wiring is small and self-contained.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1278-reject-intent-detector.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1278-reject-intent-detector.md"
     },
     {
       "id": "TASK-1279",
@@ -110,18 +110,18 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-1277"
       ],
       "parallel": false,
-      "parallelism_notes": "Touches channels/base.py, telegram.py, web.py AND manager.receive_response — single worktree to avoid races with 1278's manager change.",
+      "parallelism_notes": "Touches channels/base.py, telegram.py, web.py AND manager.receive_response \u2014 single worktree to avoid races with 1278's manager change.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1279-reject-button-channels.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1279-reject-button-channels.md"
     },
     {
       "id": "TASK-1280",
@@ -130,18 +130,18 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-1277"
       ],
       "parallel": false,
-      "parallelism_notes": "Adds emission points in manager methods touched by 1277 — sequence after 1277 to avoid merge churn.",
+      "parallelism_notes": "Adds emission points in manager methods touched by 1277 \u2014 sequence after 1277 to avoid merge churn.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1280-tier-events.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1280-tier-events.md"
     },
     {
       "id": "TASK-1281",
@@ -150,18 +150,18 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-1274"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches node.py only — can run any time after 1274.",
+      "parallelism_notes": "Touches node.py only \u2014 can run any time after 1274.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1281-decision-node-policy-kwargs.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1281-decision-node-policy-kwargs.md"
     },
     {
       "id": "TASK-1282",
@@ -170,18 +170,18 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-1274"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches tool.py only — can run any time after 1274.",
+      "parallelism_notes": "Touches tool.py only \u2014 can run any time after 1274.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1282-human-tool-severity.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1282-human-tool-severity.md"
     },
     {
       "id": "TASK-1283",
@@ -190,18 +190,18 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1277"
       ],
       "parallel": false,
-      "parallelism_notes": "Touches handoff.py — depends on 1277's get_result usage pattern.",
+      "parallelism_notes": "Touches handoff.py \u2014 depends on 1277's get_result usage pattern.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1283-handoff-tool-dedup.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1283-handoff-tool-dedup.md"
     },
     {
       "id": "TASK-1284",
@@ -210,27 +210,27 @@
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-1283"
       ],
       "parallel": false,
-      "parallelism_notes": "Companion to 1283 — sequence right after it.",
+      "parallelism_notes": "Companion to 1283 \u2014 sequence right after it.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1284-orchestrator-policyid-shortcircuit.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1284-orchestrator-policyid-shortcircuit.md"
     },
     {
       "id": "TASK-1285",
       "slug": "web-hitl-reject-route",
-      "title": "Web HITL handler — reject button route",
+      "title": "Web HITL handler \u2014 reject button route",
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -241,17 +241,17 @@
       "parallelism_notes": "Tiny handler-level change; deps land first.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1285-web-hitl-reject-route.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1285-web-hitl-reject-route.md"
     },
     {
       "id": "TASK-1286",
       "slug": "documentation-update",
-      "title": "Documentation update — tiered escalation example",
+      "title": "Documentation update \u2014 tiered escalation example",
       "feature_id": "FEAT-194",
       "feature": "hitl-escalation-tier",
       "spec": "sdd/specs/hitl-escalation-tier.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -263,11 +263,11 @@
         "TASK-1283"
       ],
       "parallel": false,
-      "parallelism_notes": "Last — references the surface that all upstream tasks deliver.",
+      "parallelism_notes": "Last \u2014 references the surface that all upstream tasks deliver.",
       "assigned_to": null,
       "started_at": "2026-05-21T22:20:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1286-documentation-update.md"
+      "completed_at": "2026-05-22T14:31:54.983940+00:00",
+      "file": "sdd/tasks/completed/TASK-1286-documentation-update.md"
     }
   ]
 }
