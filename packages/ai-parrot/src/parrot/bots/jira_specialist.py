@@ -459,7 +459,9 @@ class JiraSpecialist(Agent):
         flows can target a single developer.
         """
         raw = config.getlist("STANDUP_DEVELOPERS") or JIRA_USERS or []
-        developers = [Developer(**d) for d in raw if isinstance(d, dict)]
+        developers = [
+            Developer(**d) for d in raw if isinstance(d, dict) and d.get('is_developer') is True
+        ]
         if developer_id:
             developers = [d for d in developers if d.id == developer_id]
         return developers
@@ -506,6 +508,7 @@ class JiraSpecialist(Agent):
 
     async def run_morning_standup(
         self,
+        developer: Optional[dict] = None,
         developer_id: Optional[str] = None,
         **kwargs: Any,
     ) -> List[Dict[str, Any]]:
@@ -524,10 +527,13 @@ class JiraSpecialist(Agent):
         Returns:
             List of per-developer result dicts.
         """
-        developers = self._load_developers_sync(developer_id=developer_id)
-        if not developers:
-            self.logger.warning("run_morning_standup: no developers configured")
-            return []
+        if developer is not None:
+            developers = [Developer(**developer)]
+        else:
+            developers = self._load_developers_sync(developer_id=developer_id)
+            if not developers:
+                self.logger.warning("run_morning_standup: no developers configured")
+                return []
 
         today = date.today().isoformat()
 
@@ -536,7 +542,7 @@ class JiraSpecialist(Agent):
                 f"Run the morning standup for {dev.name} "
                 f"(jira_username={dev.jira_username}, date={today}).\n"
                 f"Follow the 'Morning check-in' section of your system prompt. "
-                f"Build the JQL using assignee = \"{dev.jira_username}\" "
+                f"Build the JQL using assignee = \"{dev.jira_account_id}\" "
                 f"instead of currentUser(). "
                 f"If blockers escalate to a manager, use "
                 f"target_humans=[\"{dev.manager_chat_id or dev.telegram_chat_id}\"]. "
@@ -1543,7 +1549,6 @@ class JiraSpecialist(Agent):
 
         return [] if df.empty else df
 
-    @schedule_weekly_report
     async def weekly_ticket_count_report(self) -> Dict[str, Any]:
         """Month-to-date ticket count by Assignee grouped by Component.
 
@@ -1561,8 +1566,6 @@ class JiraSpecialist(Agent):
             (nested ``{component: {assignee: count}}``) and a flat
             ``rows`` list — useful for tests and downstream consumers.
         """
-        report_recipient = "jlara@trocglobal.com"
-
         today = date.today()
         start_of_month = today.replace(day=1)
         start_str = start_of_month.isoformat()
@@ -1666,27 +1669,12 @@ class JiraSpecialist(Agent):
 
         subject = f"Jira Weekly Ticket Report — MTD {start_str} → {end_str}"
 
-        try:
-            await self.send_notification(
-                message=body,
-                recipients=report_recipient,
-                provider="email",
-                subject=subject,
-            )
-        except Exception as exc:
-            self.logger.error(
-                "weekly_ticket_count_report: failed to email %s: %s",
-                report_recipient,
-                exc,
-                exc_info=True,
-            )
-
         self.logger.info(
             "Weekly MTD report generated: %d tickets across %d component(s).",
             result["total_tickets"],
             len(result["by_component"]),
         )
-        return result
+        return body, subject
 
     async def get_ticket(self, issue_number: str) -> JiraTicketDetail:
         """Get detailed information for a specific Jira ticket, including history."""
