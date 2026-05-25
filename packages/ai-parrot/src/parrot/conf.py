@@ -820,3 +820,25 @@ ACCEPTANCE_CRITERION_ALLOWLIST: list[str] = config.getlist(
 DEV_LOOP_PLAN_LLM: str = config.get(
     "DEV_LOOP_PLAN_LLM", fallback=""
 )
+
+# ---------------------------------------------------------------------------
+# Remote Tool Executors (parrot.tools.executors)
+# ---------------------------------------------------------------------------
+# Qworker service — used by QworkerToolExecutor(transport="http").
+QWORKER_URL: str = config.get("QWORKER_URL", fallback="")
+QWORKER_API_TOKEN: str = config.get("QWORKER_API_TOKEN", fallback="")
+QWORKER_TIMEOUT: int = config.getint("QWORKER_TIMEOUT", fallback=300)
+
+# Kubernetes — used by K8sToolExecutor. K8S_KUBECONFIG_PATH defaults
+# to None so the executor falls back to in-cluster config when set,
+# then to ~/.kube/config.
+K8S_KUBECONFIG_PATH: str = config.get("K8S_KUBECONFIG_PATH", fallback="") or None
+K8S_NAMESPACE: str = config.get("K8S_NAMESPACE", fallback="parrot-tools")
+K8S_TOOL_IMAGE: str = config.get("K8S_TOOL_IMAGE", fallback="parrot-tools:latest")
+K8S_JOB_TTL_SECONDS: int = config.getint("K8S_JOB_TTL_SECONDS", fallback=60)
+
+# Base URL the worker posts opt-in webhook deliveries to. Empty string
+# disables async delivery.
+TOOL_EXECUTOR_WEBHOOK_BASE_URL: str = config.get(
+    "TOOL_EXECUTOR_WEBHOOK_BASE_URL", fallback=""
+)

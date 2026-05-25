@@ -1,7 +1,7 @@
 """
 Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 """
-from typing import ClassVar, Dict, Any, Union, Optional, Type
+from typing import TYPE_CHECKING, ClassVar, Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
@@ -18,6 +18,9 @@ from ..core.events.lifecycle.trace import TraceContext
 from ..core.events.lifecycle.events import (
     BeforeToolCallEvent, AfterToolCallEvent, ToolCallFailedEvent,
 )
+
+if TYPE_CHECKING:
+    from .executors.abstract import AbstractToolExecutor
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -104,6 +107,9 @@ class AbstractTool(EventEmitterMixin, ABC):
         base_url: Optional[str] = None,
         static_dir: Optional[Union[str, Path]] = None,
         routing_meta: Optional[Dict] = None,
+        executor: Optional["AbstractToolExecutor"] = None,
+        webhook_callback_url: Optional[str] = None,
+        remote_timeout_seconds: int = 300,
         **kwargs
     ):
         """
@@ -117,18 +123,39 @@ class AbstractTool(EventEmitterMixin, ABC):
             static_dir: Static directory path
             routing_meta: Optional routing hints dict for CapabilityRegistry.
                 Supported keys: ``"description"``, ``"not_for"``.
+            executor: Optional :class:`AbstractToolExecutor` that runs the
+                tool off-process (Kubernetes pod, Qworker, etc.). When
+                ``None`` (the default), the tool executes in-process —
+                identical to the legacy behaviour.
+            webhook_callback_url: When set, the executor returns a
+                ``ToolResult(status="pending")`` immediately and the
+                final result arrives at this URL out-of-band. Only
+                honoured by executors that support async delivery.
+            remote_timeout_seconds: Max wall-clock seconds the executor
+                waits for the remote runtime to return. Ignored when
+                ``executor`` is ``None``.
             **kwargs: Additional configuration
         """
         # routing_meta — per-instance to avoid shared mutable default
         self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
 
-        # Store initialization parameters for cloning
+        # Remote execution wiring (None = legacy in-process behaviour)
+        self.executor: Optional["AbstractToolExecutor"] = executor
+        self.webhook_callback_url: Optional[str] = webhook_callback_url
+        self.remote_timeout_seconds: int = int(remote_timeout_seconds)
+
+        # Store initialization parameters for cloning. The live executor
+        # instance is captured so clone() reuses the same transport;
+        # ToolExecutionEnvelope serialization strips it before sending.
         self._init_kwargs = {
             'name': name,
             'description': description,
             'output_dir': output_dir,
             'base_url': base_url,
             'static_dir': static_dir,
+            'executor': executor,
+            'webhook_callback_url': webhook_callback_url,
+            'remote_timeout_seconds': remote_timeout_seconds,
             **kwargs
         }
 
@@ -518,9 +545,31 @@ class AbstractTool(EventEmitterMixin, ABC):
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
 
-            # Execute the tool
+            # Resolve the kwargs dict that the tool actually receives.
             if hasattr(validated_args, 'model_dump'):
-                raw_result = await self._execute(*args, **validated_args.model_dump())
+                resolved_kwargs = validated_args.model_dump()
+            else:
+                resolved_kwargs = dict(kwargs)
+
+            # ── Remote execution dispatch (executor=) ─────────────────────
+            # When an executor is configured we package the call as an
+            # envelope and hand it off; permission checks, lifecycle
+            # events and result normalisation continue to run here so
+            # remote and local tools look identical to the agent loop.
+            if self.executor is not None and not args:
+                from .executors.abstract import build_envelope_from_tool
+
+                envelope = build_envelope_from_tool(
+                    self,
+                    arguments=resolved_kwargs,
+                    permission_context=pctx,
+                    trace_context=tool_tc,
+                    timeout_seconds=self.remote_timeout_seconds,
+                    webhook_callback_url=self.webhook_callback_url,
+                )
+                raw_result = await self.executor.execute(envelope)
+            elif hasattr(validated_args, 'model_dump'):
+                raw_result = await self._execute(*args, **resolved_kwargs)
             else:
                 raw_result = await self._execute(*args, **kwargs)
 
