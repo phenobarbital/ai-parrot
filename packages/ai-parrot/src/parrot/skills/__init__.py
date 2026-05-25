@@ -45,7 +45,7 @@ from .models import (
     ExtractedSkill,
 )
 
-from .parsers import parse_skill_file
+from .parsers import parse_skill_file, parse_skill_directory
 from .file_registry import SkillFileRegistry
 from .middleware import create_skill_trigger_middleware
 
@@ -86,8 +86,9 @@ __all__ = [
     "SearchSkillArgs",
     "ReadSkillArgs",
     "ExtractedSkill",
-    # Parser
+    # Parsers
     "parse_skill_file",
+    "parse_skill_directory",
     # File Registry
     "SkillFileRegistry",
     # Middleware

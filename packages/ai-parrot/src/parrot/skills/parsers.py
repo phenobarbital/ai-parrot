@@ -95,3 +95,35 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
         token_count=token_count,
         file_path=file_path,
     )
+
+
+def parse_skill_directory(skill_dir: Path) -> SkillDefinition:
+    """Parse a composite skill: ``{dir}/SKILL.md`` plus adjacent asset files.
+
+    A composite skill is a directory containing a ``SKILL.md`` entry point
+    (parsed via :func:`parse_skill_file`) and zero or more adjacent asset
+    files (scripts, templates, examples). The ``assets_dir`` field on the
+    returned :class:`~parrot.skills.models.SkillDefinition` is set to the
+    directory path so downstream components can enumerate assets.
+
+    Args:
+        skill_dir: Path to the skill directory (must contain ``SKILL.md``).
+
+    Returns:
+        Parsed and validated SkillDefinition with ``assets_dir`` set to
+        ``skill_dir``.
+
+    Raises:
+        FileNotFoundError: If ``SKILL.md`` is absent in ``skill_dir``.
+        ValueError: If required frontmatter fields are missing from
+            ``SKILL.md``.
+        ValidationError: If the skill fails Pydantic validation.
+    """
+    skill_md = skill_dir / "SKILL.md"
+    if not skill_md.exists():
+        raise FileNotFoundError(
+            f"Missing SKILL.md in composite skill directory: {skill_dir}"
+        )
+    skill = parse_skill_file(skill_md)
+    skill.assets_dir = skill_dir
+    return skill
