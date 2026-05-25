@@ -32,7 +32,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies models.py which TASK-1287 just moved. Sequential with TASK-1287.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1288-model-extension.md"
+      "completed_at": "2026-05-25T10:47:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1288-model-extension.md"
     },
     {
       "id": "TASK-1289",
