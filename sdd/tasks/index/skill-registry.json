@@ -133,7 +133,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Uses get_by_name() from TASK-1290. Independent of TASK-1291/1292 but sequential per worktree strategy.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1293-load-skill-tool.md"
+      "completed_at": "2026-05-25T10:55:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1293-load-skill-tool.md"
     },
     {
       "id": "TASK-1294",

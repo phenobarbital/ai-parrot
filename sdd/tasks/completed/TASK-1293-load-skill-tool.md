@@ -257,10 +257,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: Added LoadSkillArgs and LoadSkillTool to tools.py. Updated create_skill_tools() to include LoadSkillTool when file_registry is provided. Exported from __init__.py. 6 tests pass.
 
 **Deviations from spec**: none | describe if any
