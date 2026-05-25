@@ -7,8 +7,12 @@ Provides automatic skill management integration:
 - Auto-extraction of skills from conversations
 - File-based skill registry with eager loading
 - Skill trigger middleware for /trigger patterns
+- Directory-based skill discovery (FEAT-188)
+- Static <available_skills> prompt layer injection (FEAT-188)
+- On-demand LoadSkillTool registration (FEAT-188)
 """
 from __future__ import annotations
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
@@ -21,28 +25,53 @@ if TYPE_CHECKING:
 
 
 class SkillRegistryMixin:
-    """
-    Mixin to add skill registry capabilities to AbstractBot.
-    
+    """Mixin to add skill registry capabilities to AbstractBot.
+
     Features:
+
     - Auto-configure skill registry
     - Expose skill tools to agent
     - Inject relevant skills into context
     - Auto-extract skills from conversations
-    
-    Usage:
+    - File-based skill registry with eager loading
+    - Skill trigger middleware for /trigger patterns
+    - Directory discovery via :class:`~parrot.skills.loader.SkillsDirectoryLoader`
+      when :attr:`skill_paths` is non-empty (FEAT-188).
+    - Static ``<available_skills>`` XML layer injected into system prompt via
+      :func:`~parrot.skills.prompt.render_skills_prompt_layer` when
+      :attr:`inject_skills_into_prompt` is ``True`` (FEAT-188).
+    - :class:`~parrot.skills.tools.LoadSkillTool` registration for on-demand
+      skill body retrieval (FEAT-188).
+
+    Usage::
+
         class MyAgent(SkillRegistryMixin, AbstractBot):
             enable_skill_registry = True
+            skill_paths = [Path(".agent/skills/")]
+            inject_skills_into_prompt = True
     """
-    
-    # Configuration
+
+    # Configuration — existing
     enable_skill_registry: bool = True
     skill_registry_expose_tools: bool = True
     skill_registry_inject_context: bool = True
     skill_registry_auto_extract: bool = False  # Expensive, opt-in
     skill_registry_max_context_skills: int = 3
     skill_registry_max_context_tokens: int = 1500
-    
+
+    # Configuration — FEAT-188 directory discovery
+    skill_paths: List[Path] = []
+    """Filesystem paths to scan for skills at configure() time.
+    Default is empty (opt-in). Recommended: ``[Path(".agent/skills/")]``."""
+
+    inject_skills_into_prompt: bool = True
+    """Inject an ``<available_skills>`` XML layer into the system prompt when
+    ``skill_paths`` is non-empty and skills are discovered. Default ``True``."""
+
+    skill_prompt_max_entries: Optional[int] = None
+    """Truncation limit for the ``<available_skills>`` layer. ``None`` means
+    include all discovered skills. Default ``None``."""
+
     # Runtime
     _skill_registry: Optional[SkillRegistry] = None
     _skill_file_registry: Optional["SkillFileRegistry"] = None
@@ -153,6 +182,51 @@ class SkillRegistryMixin:
             n_skills,
             skills_dir,
         )
+
+        # --- FEAT-188: Directory discovery ---
+        skill_paths = getattr(self, 'skill_paths', [])
+        if skill_paths:
+            from .loader import SkillsDirectoryLoader
+            loader = SkillsDirectoryLoader(
+                paths=skill_paths,
+                logger=logger,
+            )
+            loaded = await loader.load_into(self._skill_file_registry)
+            logger.info(
+                "SkillsDirectoryLoader: loaded %d skills from %s",
+                loaded,
+                [str(p) for p in skill_paths],
+            )
+
+        # --- FEAT-188: Prompt layer injection ---
+        inject = getattr(self, 'inject_skills_into_prompt', True)
+        if inject and self._skill_file_registry.list_skills():
+            prompt_builder = getattr(self, '_prompt_builder', None)
+            if prompt_builder is not None:
+                from .prompt import render_skills_prompt_layer
+                max_entries = getattr(self, 'skill_prompt_max_entries', None)
+                layer = render_skills_prompt_layer(
+                    self._skill_file_registry,
+                    max_skills=max_entries,
+                )
+                prompt_builder.add(layer)
+                logger.debug("Skills prompt layer injected (%d entries)", len(self._skill_file_registry.list_skills()))
+
+        # --- FEAT-188: LoadSkillTool registration ---
+        if skill_paths:
+            from .tools import LoadSkillTool
+            load_tool = LoadSkillTool(file_registry=self._skill_file_registry)
+            tool_manager = getattr(self, 'tool_manager', None)
+            if tool_manager and hasattr(tool_manager, 'register_tool'):
+                result = tool_manager.register_tool(load_tool)
+                if inspect.isawaitable(result):
+                    await result
+            elif hasattr(self, '_tools'):
+                if isinstance(self._tools, list):
+                    self._tools.append(load_tool)
+                else:
+                    self._tools = list(self._tools) + [load_tool]
+            logger.debug("LoadSkillTool registered")
 
     async def save_learned_skill(
         self,
