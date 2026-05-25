@@ -65,6 +65,7 @@ from .tools import (
     ReadSkillTool,
     ListSkillsTool,
     SaveLearnedSkillTool,
+    LoadSkillTool,
     create_skill_tools,
 )
 
@@ -111,6 +112,7 @@ __all__ = [
     "ReadSkillTool",
     "ListSkillsTool",
     "SaveLearnedSkillTool",
+    "LoadSkillTool",
     "create_skill_tools",
     # Mixin
     "SkillRegistryMixin",

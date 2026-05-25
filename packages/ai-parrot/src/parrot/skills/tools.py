@@ -504,6 +504,80 @@ category: {category}
         )
 
 
+class LoadSkillArgs(BaseModel):
+    """Arguments for loading a skill's full content on demand."""
+
+    name: str = Field(..., description="Skill name as listed in <available_skills>.")
+
+
+class LoadSkillTool(AbstractTool):
+    """Tier 2 on-demand skill retrieval tool.
+
+    The LLM calls this tool after spotting a relevant skill in the
+    ``<available_skills>`` prompt index (Tier 1). Returns the full
+    ``template_body`` of the skill, plus an asset manifest for composite
+    skills.
+
+    Args:
+        file_registry: A configured
+            :class:`~parrot.skills.file_registry.SkillFileRegistry` to look
+            up skills by name.
+    """
+
+    name: str = "load_skill"
+    description: str = (
+        "Load the full content of a skill from the agent's skills directory. "
+        "Use after spotting a relevant skill in <available_skills>."
+    )
+    args_schema: Type[BaseModel] = LoadSkillArgs
+
+    def __init__(self, file_registry: "SkillFileRegistry", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._file_registry = file_registry
+
+    async def _execute(self, name: str, **kwargs) -> ToolResult:
+        """Retrieve a skill's full body and optional asset manifest.
+
+        Args:
+            name: The skill name as listed in ``<available_skills>``.
+            **kwargs: Ignored extra keyword arguments.
+
+        Returns:
+            :class:`~parrot.tools.abstract.ToolResult` with:
+
+            - ``status="done"`` and ``result=template_body`` on success.
+            - ``status="error"`` if the skill is not found.
+            - ``metadata["assets"]``: list of asset filenames (relative to
+              ``assets_dir``) for composite skills; empty list otherwise.
+            - ``metadata["is_composite"]``: ``True`` for composite skills.
+            - ``metadata["skill_name"]`` and ``metadata["category"]``.
+        """
+        skill = self._file_registry.get_by_name(name)
+        if not skill:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=f"Skill not found: {name}",
+            )
+
+        assets: List[str] = []
+        if skill.assets_dir:
+            for p in sorted(skill.assets_dir.rglob("*")):
+                if p.is_file() and p.name != "SKILL.md":
+                    assets.append(str(p.relative_to(skill.assets_dir)))
+
+        return ToolResult(
+            status="done",
+            result=skill.template_body,
+            metadata={
+                "skill_name": name,
+                "category": skill.category,
+                "assets": assets,
+                "is_composite": skill.assets_dir is not None,
+            },
+        )
+
+
 def create_skill_tools(
     registry: SkillRegistry,
     agent_id: str,
@@ -511,30 +585,34 @@ def create_skill_tools(
     file_registry: Optional["SkillFileRegistry"] = None,
     learned_dir: Optional[Path] = None,
 ) -> List[AbstractTool]:
-    """
-    Create skill registry tools for an agent.
-    
+    """Create skill registry tools for an agent.
+
     Args:
-        registry: Configured SkillRegistry
-        agent_id: Agent identifier
-        include_write_tools: Include document/update tools
-        
+        registry: Configured SkillRegistry (DB-backed).
+        agent_id: Agent identifier string.
+        include_write_tools: If ``True``, include document/update tools.
+        file_registry: Optional :class:`~parrot.skills.file_registry.SkillFileRegistry`
+            for file-based tools. When provided, ``SaveLearnedSkillTool`` and
+            ``LoadSkillTool`` are included.
+        learned_dir: Path to the learned skills directory, required when
+            ``file_registry`` is provided for ``SaveLearnedSkillTool``.
+
     Returns:
-        List of tools
+        List of :class:`~parrot.tools.abstract.AbstractTool` instances.
     """
-    tools = [
+    tools: List[AbstractTool] = [
         SearchSkillsTool(registry=registry),
         ReadSkillTool(registry=registry),
         ListSkillsTool(registry=registry),
     ]
-    
+
     if include_write_tools:
         tools.extend([
             DocumentSkillTool(registry=registry, agent_id=agent_id),
             UpdateSkillTool(registry=registry, agent_id=agent_id),
         ])
 
-    # Add file-based learned skill tool when file registry is available
+    # Add file-based tools when file registry is available
     if file_registry is not None and learned_dir is not None:
         tools.append(
             SaveLearnedSkillTool(
@@ -542,5 +620,8 @@ def create_skill_tools(
                 learned_dir=learned_dir,
             )
         )
+
+    if file_registry is not None:
+        tools.append(LoadSkillTool(file_registry=file_registry))
 
     return tools
