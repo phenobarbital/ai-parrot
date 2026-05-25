@@ -118,6 +118,17 @@ class SkillFileRegistry:
         """
         return self._skills.get(trigger)
 
+    def get_by_name(self, name: str) -> Optional[SkillDefinition]:
+        """Look up a skill by its name.
+
+        Args:
+            name: The skill name as declared in the frontmatter ``name:`` field.
+
+        Returns:
+            The matching SkillDefinition or None if not found.
+        """
+        return self._by_name.get(name)
+
     def add(self, skill: SkillDefinition) -> None:
         """Hot-add a skill. Used for learned skills saved during session.
 
