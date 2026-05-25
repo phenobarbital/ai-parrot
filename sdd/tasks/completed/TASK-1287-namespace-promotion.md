@@ -221,10 +221,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: All 8 .py files moved to parrot/skills/. The ...tools.abstract import in tools.py corrected to ..tools.abstract. Updated parrot/memory/skills/__init__.py as deprecation shim. Updated parrot/memory/unified/mixin.py. Modified parse_skill_file to allow empty triggers: [] (only raise when key absent). All 5 tests pass.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Allowed empty triggers list in parsers.py — needed for composite skills without triggers.

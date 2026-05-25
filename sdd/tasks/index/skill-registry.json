@@ -14,7 +14,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches every file in the module; all subsequent tasks depend on this.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1287-namespace-promotion.md"
+      "completed_at": "2026-05-25T10:46:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1287-namespace-promotion.md"
     },
     {
       "id": "TASK-1288",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1287"],
+      "depends_on": [
+        "TASK-1287"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies models.py which TASK-1287 just moved. Sequential with TASK-1287.",
       "assigned_to": null,
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1288"],
+      "depends_on": [
+        "TASK-1288"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on assets_dir field from TASK-1288. Modifies parsers.py.",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1287"],
+      "depends_on": [
+        "TASK-1287"
+      ],
       "parallel": false,
       "parallelism_notes": "Only depends on TASK-1287 (namespace move). Could theoretically parallel with TASK-1288/1289 but sequential in one worktree per spec strategy.",
       "assigned_to": null,
@@ -89,7 +95,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1289", "TASK-1290"],
+      "depends_on": [
+        "TASK-1289",
+        "TASK-1290"
+      ],
       "parallel": false,
       "parallelism_notes": "Uses parse_skill_directory (TASK-1289) and SkillFileRegistry.add (TASK-1290). Core discovery component.",
       "assigned_to": null,
@@ -107,7 +116,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1290"],
+      "depends_on": [
+        "TASK-1290"
+      ],
       "parallel": false,
       "parallelism_notes": "Uses SkillFileRegistry.list_skills() (available after TASK-1290). Independent of TASK-1291/1293 but sequential per worktree strategy.",
       "assigned_to": null,
@@ -125,7 +136,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1290"],
+      "depends_on": [
+        "TASK-1290"
+      ],
       "parallel": false,
       "parallelism_notes": "Uses get_by_name() from TASK-1290. Independent of TASK-1291/1292 but sequential per worktree strategy.",
       "assigned_to": null,
@@ -143,7 +156,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1291", "TASK-1292", "TASK-1293"],
+      "depends_on": [
+        "TASK-1291",
+        "TASK-1292",
+        "TASK-1293"
+      ],
       "parallel": false,
       "parallelism_notes": "Final integration task. Depends on all prior tasks. Wires everything into the mixin.",
       "assigned_to": null,
