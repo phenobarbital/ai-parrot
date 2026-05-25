@@ -1,111 +1,31 @@
 """
-AI-Parrot SkillRegistry Module.
+AI-Parrot SkillRegistry Module — Deprecated re-export shim.
 
-Git-like versioned skill/knowledge registry that enables agents to:
-- Document learned skills and patterns
-- Version control with unified diffs
-- Search and discover relevant skills
-- Auto-extract skills from conversations
+This module has been promoted to the top-level ``parrot.skills`` namespace.
+Importing from ``parrot.memory.skills`` will issue a ``DeprecationWarning``.
 
-Usage:
-    from parrot.skills import (
-        SkillRegistry,
-        SkillRegistryMixin,
-        create_skill_tools,
-    )
-    
-    # Option 1: Use mixin
-    class MyAgent(SkillRegistryMixin, AbstractBot):
-        enable_skill_registry = True
-    
-    # Option 2: Use registry directly
-    registry = SkillRegistry(namespace="my_org/my_agent")
-    await registry.configure()
-    
-    skill, version = await registry.upload_skill(
-        name="Database Query Pattern",
-        content="# How to query efficiently...",
-        agent_id="my_agent",
-    )
+Migrate to:
+    from parrot.skills import <name>
 """
+import importlib
+import warnings
 
-from .models import (
-    Skill,
-    SkillVersion,
-    SkillMetadata,
-    SkillCategory,
-    SkillStatus,
-    ContentType,
-    SkillSource,
-    SkillDefinition,
-    SkillSearchResult,
-    UploadSkillArgs,
-    SearchSkillArgs,
-    ReadSkillArgs,
-    ExtractedSkill,
-)
+_NEW_MODULE = "parrot.skills"
 
-from .parsers import parse_skill_file
-from .file_registry import SkillFileRegistry
-from .middleware import create_skill_trigger_middleware
 
-from .store import (
-    SkillRegistry,
-    create_skill_registry,
-    compute_unified_diff,
-    apply_unified_diff,
-)
+def __getattr__(name: str):
+    """Lazy re-export with DeprecationWarning."""
+    new_mod = importlib.import_module(_NEW_MODULE)
+    if hasattr(new_mod, name):
+        warnings.warn(
+            f"Importing '{name}' from 'parrot.memory.skills' is deprecated. "
+            f"Use 'parrot.skills' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return getattr(new_mod, name)
+    raise AttributeError(f"module 'parrot.memory.skills' has no attribute '{name}'")
 
-from .tools import (
-    DocumentSkillTool,
-    UpdateSkillTool,
-    SearchSkillsTool,
-    ReadSkillTool,
-    ListSkillsTool,
-    SaveLearnedSkillTool,
-    create_skill_tools,
-)
 
-from .mixin import (
-    SkillRegistryMixin,
-    SkillRegistryHooks,
-)
-
-__all__ = [
-    # Models
-    "Skill",
-    "SkillVersion",
-    "SkillMetadata",
-    "SkillCategory",
-    "SkillStatus",
-    "ContentType",
-    "SkillSource",
-    "SkillDefinition",
-    "SkillSearchResult",
-    "UploadSkillArgs",
-    "SearchSkillArgs",
-    "ReadSkillArgs",
-    "ExtractedSkill",
-    # Parser
-    "parse_skill_file",
-    # File Registry
-    "SkillFileRegistry",
-    # Middleware
-    "create_skill_trigger_middleware",
-    # Store
-    "SkillRegistry",
-    "create_skill_registry",
-    "compute_unified_diff",
-    "apply_unified_diff",
-    # Tools
-    "DocumentSkillTool",
-    "UpdateSkillTool",
-    "SearchSkillsTool",
-    "ReadSkillTool",
-    "ListSkillsTool",
-    "SaveLearnedSkillTool",
-    "create_skill_tools",
-    # Mixin
-    "SkillRegistryMixin",
-    "SkillRegistryHooks",
-]
+# Preserve __all__ for star imports
+from parrot.skills import __all__  # noqa: F401, E402
