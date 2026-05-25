@@ -48,6 +48,7 @@ from .models import (
 from .parsers import parse_skill_file, parse_skill_directory
 from .file_registry import SkillFileRegistry
 from .loader import SkillsDirectoryLoader
+from .prompt import render_skills_prompt_layer
 from .middleware import create_skill_trigger_middleware
 
 from .store import (
@@ -94,6 +95,8 @@ __all__ = [
     "SkillFileRegistry",
     # Loader
     "SkillsDirectoryLoader",
+    # Prompt layer factory
+    "render_skills_prompt_layer",
     # Middleware
     "create_skill_trigger_middleware",
     # Store
