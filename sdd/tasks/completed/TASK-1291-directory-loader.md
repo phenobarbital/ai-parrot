@@ -253,10 +253,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: Created loader.py with SkillsDirectoryLoader. Exported from __init__.py. 9 tests pass including single-file, composite, mixed, nonexistent path, and malformed file cases.
 
 **Deviations from spec**: none | describe if any
