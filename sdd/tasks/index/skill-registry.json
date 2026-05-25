@@ -72,7 +72,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Only depends on TASK-1287 (namespace move). Could theoretically parallel with TASK-1288/1289 but sequential in one worktree per spec strategy.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1290-registry-get-by-name.md"
+      "completed_at": "2026-05-25T10:49:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1290-registry-get-by-name.md"
     },
     {
       "id": "TASK-1291",
