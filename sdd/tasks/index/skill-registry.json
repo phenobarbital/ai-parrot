@@ -113,7 +113,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Uses SkillFileRegistry.list_skills() (available after TASK-1290). Independent of TASK-1291/1293 but sequential per worktree strategy.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1292-prompt-layer-factory.md"
+      "completed_at": "2026-05-25T10:53:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1292-prompt-layer-factory.md"
     },
     {
       "id": "TASK-1293",

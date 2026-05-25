@@ -240,10 +240,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: Created prompt.py with render_skills_prompt_layer(). XML block with skill entries, trigger hints, load_skill() hints. 11 tests pass.
 
 **Deviations from spec**: none | describe if any
