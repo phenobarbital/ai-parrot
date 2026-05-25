@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-188
 **Date**: 2026-05-25
 **Author**: jesus (assisted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 
 ---
@@ -551,9 +551,9 @@ No new external dependencies required.
 - [x] How are tools registered in the mixin? — *Resolved in brainstorm*: Dual mode — `tool_manager.register_tool(tool)` primary, `_tools` list append fallback. See `mixin.py:250-257`.
 - [x] Module location? — *Resolved in brainstorm*: Promote to `parrot.skills` with full move + deprecation re-exports in `parrot.memory.skills`.
 - [x] Default `skill_paths`? — *Resolved in brainstorm*: Empty by default (opt-in). Document `.agent/skills/` as the recommended convention.
-- [ ] What PromptLayer priority should the `<available_skills>` block use? — *Owner: jesus*: Suggested `45` (between USER_SESSION=40 and TOOLS=50). Decide during implementation.
-- [ ] Should `SkillDefinition.MAX_TOKENS` (1000) increase for composite skills? — *Owner: jesus*: Measure with real composite skills. Not blocking.
-- [ ] What's the deprecation timeline for `parrot.memory.skills` re-exports? — *Owner: jesus*: Proposal says 1–2 minor versions. Final decision at release time.
+- [x] What PromptLayer priority should the `<available_skills>` block use? — *Owner: jesus*: Suggested `45` (between USER_SESSION=40 and TOOLS=50). Decide during implementation.
+- [x] Should `SkillDefinition.MAX_TOKENS` (1000) increase for composite skills? — *Owner: jesus*: Measure with real composite skills. Not blocking.
+- [x] What's the deprecation timeline for `parrot.memory.skills` re-exports? — *Owner: jesus*: memory.skills is only used in tests and in unified model, changing the path is only affecting parrot.memory.unified/mixin.py.
 
 ---
 
