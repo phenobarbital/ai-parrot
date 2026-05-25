@@ -272,10 +272,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: Added skill_paths, inject_skills_into_prompt, skill_prompt_max_entries to SkillRegistryMixin. Extended _configure_skill_file_registry() with directory discovery, prompt layer injection, and LoadSkillTool dual-mode registration. 6 integration tests pass. 51 total tests pass.
 
 **Deviations from spec**: none | describe if any
