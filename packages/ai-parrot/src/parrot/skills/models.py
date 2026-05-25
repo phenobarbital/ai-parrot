@@ -66,6 +66,10 @@ class SkillDefinition(BaseModel):
     template_body: str
     token_count: int
     file_path: Path
+    assets_dir: Optional[Path] = Field(
+        default=None,
+        description="Filesystem dir for composite skills; None for single-file.",
+    )
 
     MAX_TOKENS: ClassVar[int] = 1000
 
