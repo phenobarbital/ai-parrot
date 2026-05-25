@@ -52,7 +52,7 @@
       "feature_id": "FEAT-188",
       "feature": "skill-registry",
       "spec": "sdd/specs/skill-registry.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on assets_dir field from TASK-1288. Modifies parsers.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1289-composite-skill-parser.md"
+      "completed_at": "2026-05-25T10:48:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1289-composite-skill-parser.md"
     },
     {
       "id": "TASK-1290",
