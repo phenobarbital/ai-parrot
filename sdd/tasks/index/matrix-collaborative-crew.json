@@ -32,7 +32,7 @@
       "feature_id": "FEAT-195",
       "feature": "matrix-collaborative-crew",
       "spec": "sdd/specs/matrix-collaborative-crew.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Only touches config.py — no overlap with TASK-1295 or TASK-1297.",
       "assigned_to": null,
       "started_at": "2026-05-26T10:46:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1296-collaborative-config.md"
+      "completed_at": "2026-05-26T10:52:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1296-collaborative-config.md"
     },
     {
       "id": "TASK-1297",
