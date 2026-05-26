@@ -14,7 +14,7 @@
       "feature_id": "FEAT-195",
       "feature": "matrix-collaborative-crew",
       "spec": "sdd/specs/matrix-collaborative-crew.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No file overlap with TASK-1296 or TASK-1297. Touches appservice.py, mention.py, transport.py (send_reply only).",
       "assigned_to": null,
       "started_at": "2026-05-26T10:46:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1295-reply-to-threading.md"
+      "completed_at": "2026-05-26T10:50:13+00:00",
+      "file": "sdd/tasks/completed/TASK-1295-reply-to-threading.md"
     },
     {
       "id": "TASK-1296",

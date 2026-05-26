@@ -189,10 +189,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-26
+**Notes**: Implemented send_reply_as_agent() and send_reply_as_bot() on MatrixAppService
+using m.in_reply_to relation. Added build_reply_content() helper to mention.py. Added
+send_reply() to _AppServiceBotClient in transport.py. All 7 tests pass. Files are at
+packages/ai-parrot/src/parrot/integrations/matrix/appservice.py,
+packages/ai-parrot/src/parrot/integrations/matrix/crew/mention.py,
+packages/ai-parrot/src/parrot/integrations/matrix/crew/transport.py, and
+packages/ai-parrot/tests/test_matrix_reply_to.py.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
