@@ -242,7 +242,7 @@ class MatrixCrewTransport:
         """
         # 1 — Agent self-filter with collaborative session bypass
         if sender in self._agent_mxids:
-            session = self._active_sessions.get(room_id)
+            session = getattr(self, "_active_sessions", {}).get(room_id)
             if session and session.is_active:
                 # Only bypass self-filter for @mentions during an active session
                 mentioned = parse_mention(body, self._config.server_name)
