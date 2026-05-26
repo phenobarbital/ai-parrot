@@ -19,14 +19,15 @@ Public API::
     )
 """
 
-from .config import MatrixCrewAgentEntry, MatrixCrewConfig
+from .config import CollaborativeConfig, MatrixCrewAgentEntry, MatrixCrewConfig
 from .coordinator import MatrixCoordinator
 from .crew_wrapper import MatrixCrewAgentWrapper
-from .mention import build_pill, format_reply, parse_mention
+from .mention import build_pill, build_reply_content, format_reply, parse_mention
 from .registry import MatrixAgentCard, MatrixCrewRegistry
 from .transport import MatrixCrewTransport
 
 __all__ = [
+    "CollaborativeConfig",
     "MatrixCrewConfig",
     "MatrixCrewAgentEntry",
     "MatrixCrewRegistry",
@@ -37,4 +38,5 @@ __all__ = [
     "parse_mention",
     "format_reply",
     "build_pill",
+    "build_reply_content",
 ]
