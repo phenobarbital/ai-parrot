@@ -23,6 +23,24 @@ Room topology:
   ANALYST ROOM:   @analyst only — direct conversations about finance
   RESEARCHER ROOM: @researcher only — direct conversations about research
 
+Collaborative investigation mode (optional):
+  Add a ``collaborative:`` section to the YAML config to enable the
+  ``!investigate`` command. Example::
+
+      collaborative:
+        command_prefix: "!investigate"
+        max_rounds: 2
+        summarizer_agent: "assistant"
+        session_verbosity: "full"
+
+  When a human sends ``!investigate <question>`` in the general room:
+    1. All non-summarizer agents investigate the question in parallel.
+    2. Agents cross-pollinate (see each other's results) for N rounds.
+    3. The summarizer agent synthesises the final answer.
+
+  See ``collaborative_example.py`` and ``collaborative_crew.yaml`` for a
+  dedicated example with a three-agent (analyst + researcher + summarizer) setup.
+
 Prerequisites:
   1. A Matrix homeserver (Synapse or Dendrite) running and accessible
   2. Application Service registration file (generate with registration.py):

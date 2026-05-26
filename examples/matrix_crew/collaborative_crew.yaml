@@ -1,0 +1,81 @@
+# collaborative_crew.yaml
+#
+# Example Matrix crew configuration with collaborative investigation mode.
+#
+# Collaborative mode adds:
+#   - A "!investigate <question>" command that triggers all non-summarizer
+#     agents to investigate in parallel.
+#   - Cross-pollination rounds where agents see each other's findings.
+#   - A dedicated summarizer agent that synthesises the final answer.
+#
+# Usage:
+#   python collaborative_example.py --config collaborative_crew.yaml
+#
+# Required environment variables:
+#   MATRIX_AS_TOKEN    — Application Service token (from registration.yaml)
+#   MATRIX_HS_TOKEN    — Homeserver token (from registration.yaml)
+
+homeserver_url: "http://localhost:8008"
+server_name: "example.local"
+as_token: "${MATRIX_AS_TOKEN}"
+hs_token: "${MATRIX_HS_TOKEN}"
+bot_mxid: "@parrot-bot:example.local"
+general_room_id: "!general:example.local"
+appservice_port: 8449
+
+# Collaborative mode requires at least 2 investigator agents + 1 summarizer.
+agents:
+  analyst:
+    chatbot_id: "financial-analyst"
+    display_name: "Financial Analyst"
+    mxid_localpart: "analyst"
+    skills:
+      - "market-analysis"
+      - "financial-data"
+      - "equity-research"
+
+  researcher:
+    chatbot_id: "web-researcher"
+    display_name: "Web Researcher"
+    mxid_localpart: "researcher"
+    skills:
+      - "web-search"
+      - "news-retrieval"
+      - "summarization"
+
+  summarizer:
+    chatbot_id: "synthesis-agent"
+    display_name: "Synthesis Agent"
+    mxid_localpart: "summarizer"
+    skills:
+      - "synthesis"
+      - "scoring"
+      - "report-generation"
+
+# Collaborative investigation settings.
+# Remove this section to disable collaborative mode (normal crew behaviour).
+collaborative:
+  # Trigger command — users type "!investigate <question>" in the general room
+  command_prefix: "!investigate"
+
+  # Number of cross-pollination rounds (1 = investigate + synthesize only)
+  max_rounds: 2
+
+  # Per-agent response timeout in seconds
+  agent_timeout: 120.0
+
+  # Whole-session timeout in seconds
+  session_timeout: 600.0
+
+  # Agent name (must match a key in `agents:`) that produces the final synthesis.
+  # Set to null to post raw results without synthesis.
+  summarizer_agent: "summarizer"
+
+  # Announcement verbosity:
+  #   "full"    — post phase start/end messages in the room (default)
+  #   "minimal" — only post errors / completion
+  #   "silent"  — no announcements (useful for testing)
+  session_verbosity: "full"
+
+  # Include recent chat messages as additional context for agents
+  include_chat_context: true
