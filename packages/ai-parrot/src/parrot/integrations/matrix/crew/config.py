@@ -6,10 +6,10 @@ operating on a Matrix homeserver via the Application Service protocol.
 import logging
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +126,9 @@ class CollaborativeConfig(BaseModel):
         default=None,
         description="Agent name for final synthesis (None = post raw results)",
     )
-    session_verbosity: str = Field(
+    session_verbosity: Literal["full", "minimal", "silent"] = Field(
         default="full",
-        description="'full' posts all announcements, 'minimal' reduces them",
+        description="'full' posts all announcements, 'minimal' reduces them, 'silent' suppresses all",
     )
     include_chat_context: bool = Field(
         default=True,
@@ -189,6 +189,30 @@ class MatrixCrewConfig(BaseModel):
         default=None,
         description="Collaborative session configuration (optional, backward-compatible)",
     )
+
+    @model_validator(mode="after")
+    def validate_summarizer_agent(self) -> "MatrixCrewConfig":
+        """Ensure summarizer_agent references a known agent in the agents dict.
+
+        Validation is only enforced when ``agents`` is non-empty.  An empty
+        ``agents`` dict is allowed (e.g. minimal / test configurations), so
+        referencing a ``summarizer_agent`` before agents are declared is valid.
+
+        Returns:
+            Self after validation.
+
+        Raises:
+            ValueError: If ``collaborative.summarizer_agent`` is set, the
+                ``agents`` dict is non-empty, and the summarizer name is not a
+                key in ``agents``.
+        """
+        if self.collaborative and self.collaborative.summarizer_agent and self.agents:
+            if self.collaborative.summarizer_agent not in self.agents:
+                raise ValueError(
+                    f"summarizer_agent '{self.collaborative.summarizer_agent}' "
+                    f"not found in agents: {list(self.agents.keys())}"
+                )
+        return self
 
     @classmethod
     def from_yaml(cls, path: str) -> "MatrixCrewConfig":

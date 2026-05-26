@@ -8,7 +8,6 @@ Wraps mautrix.appservice.AppService to provide:
 """
 from __future__ import annotations
 from typing import Any, Callable, Coroutine, Dict, Optional, Set
-import asyncio
 
 from navconfig.logging import logging
 
@@ -261,11 +260,90 @@ class MatrixAppService:
         event_id = await intent.send_text(RoomID(room_id), message)
         return str(event_id)
 
+    async def send_formatted_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        body: str,
+        formatted_body: str,
+    ) -> str:
+        """Send a formatted HTML message as a specific virtual agent.
+
+        Sends a ``m.text`` event with both a plain-text ``body`` and an HTML
+        ``formatted_body``, using the ``org.matrix.custom.html`` format. Matrix
+        clients that support rich text will render the HTML; others fall back
+        to the plain-text body.
+
+        Args:
+            agent_name: Name of the registered agent.
+            room_id: Target room.
+            body: Plain-text message body (shown in non-HTML clients).
+            formatted_body: HTML-formatted message body (shown in rich clients).
+
+        Returns:
+            Event ID of the sent message.
+
+        Raises:
+            ValueError: If the agent is not registered.
+        """
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            raise ValueError(f"Agent '{agent_name}' not registered")
+
+        intent = self._get_intent(mxid)
+        from mautrix.types import (  # type: ignore
+            Format,
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=body,
+            format=Format.HTML,
+            formatted_body=formatted_body,
+        )
+        event_id = await intent.send_message(RoomID(room_id), content)
+        return str(event_id)
+
     async def send_as_bot(self, room_id: str, message: str) -> str:
         """Send a message as the bot user."""
         event_id = await self.bot_intent.send_text(
             RoomID(room_id), message
         )
+        return str(event_id)
+
+    async def send_custom_event_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        event_type: str,
+        content: dict,
+    ) -> Optional[str]:
+        """Send a custom Matrix event as a specific virtual agent.
+
+        Args:
+            agent_name: The registered agent name.
+            room_id: The Matrix room ID.
+            event_type: The Matrix event type string.
+            content: The event content dict.
+
+        Returns:
+            The event ID if sent successfully, None otherwise.
+        """
+        from mautrix.types import EventType as MxEventType, RoomID  # type: ignore
+
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            self.logger.warning(
+                "send_custom_event_as_agent: unknown agent %s", agent_name
+            )
+            return None
+        intent = self._get_intent(mxid)
+        custom_type = MxEventType.find(
+            event_type, t_class=MxEventType.Class.MESSAGE
+        )
+        event_id = await intent.send_message_event(RoomID(room_id), custom_type, content)
         return str(event_id)
 
     async def send_reply_as_agent(

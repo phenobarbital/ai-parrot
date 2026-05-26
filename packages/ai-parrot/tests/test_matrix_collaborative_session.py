@@ -59,8 +59,13 @@ def mock_registry():
         display_name="Summarizer",
         mxid="@summarizer:server",
     )
+    _cards_by_mxid = {
+        "@analyst:server": card_a,
+        "@researcher:server": card_b,
+        "@summarizer:server": card_sum,
+    }
     registry.all_agents.return_value = [card_a, card_b, card_sum]
-    registry.get_by_mxid.return_value = card_a
+    registry.get_by_mxid.side_effect = lambda mxid: _cards_by_mxid.get(mxid)
     return registry
 
 

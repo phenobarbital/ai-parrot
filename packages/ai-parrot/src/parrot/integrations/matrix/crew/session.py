@@ -135,10 +135,11 @@ class MatrixCollaborativeSession:
             self.logger.error(
                 "Session %s failed: %s", self._session_id, exc, exc_info=True
             )
-            self._state.phase = SessionPhase.FAILED
-            await self._announce(
-                f"Collaborative session failed: {exc}"
-            )
+            if self._state.phase != SessionPhase.FAILED:
+                self._state.phase = SessionPhase.FAILED
+                await self._announce(
+                    f"Collaborative session failed: {exc}"
+                )
 
         self._state.completed_at = datetime.now(timezone.utc)
         return self._state
@@ -166,14 +167,14 @@ class MatrixCollaborativeSession:
         if not localpart:
             return
 
-        # Find the target wrapper by mxid_localpart
+        # Resolve the target wrapper via registry (avoids accessing private _config)
+        mxid = f"@{localpart}:{self._server_name}"
+        card = await self._registry.get_by_mxid(mxid)
         target_wrapper = None
         target_agent_name = None
-        for agent_name, wrapper in self._wrappers.items():
-            if hasattr(wrapper, "_config") and wrapper._config.mxid_localpart == localpart:
-                target_wrapper = wrapper
-                target_agent_name = agent_name
-                break
+        if card and card.agent_name in self._wrappers:
+            target_agent_name = card.agent_name
+            target_wrapper = self._wrappers[card.agent_name]
 
         if not target_wrapper:
             self.logger.debug(
@@ -341,7 +342,13 @@ class MatrixCollaborativeSession:
                 agent.ask(payload),
                 timeout=self._config.agent_timeout,
             )
-            synthesis_text = str(synthesis)
+            # Extract text from AIMessage if needed; otherwise coerce to str
+            if hasattr(synthesis, "to_text"):
+                synthesis_text = synthesis.to_text
+            elif hasattr(synthesis, "content"):
+                synthesis_text = str(synthesis.content)
+            else:
+                synthesis_text = str(synthesis)
 
             event_id = await self._appservice.send_as_agent(
                 self._config.summarizer_agent,
@@ -402,7 +409,13 @@ class MatrixCollaborativeSession:
                 agent.ask(prompt),
                 timeout=self._config.agent_timeout,
             )
-            response_text = str(response_obj)
+            # Extract text from AIMessage if needed; otherwise coerce to str
+            if hasattr(response_obj, "to_text"):
+                response_text = response_obj.to_text
+            elif hasattr(response_obj, "content"):
+                response_text = str(response_obj.content)
+            else:
+                response_text = str(response_obj)
 
             # Post the result to the room
             event_id = await self._appservice.send_as_agent(
@@ -503,12 +516,22 @@ class MatrixCollaborativeSession:
     def _build_synthesizer_payload(self) -> str:
         """Build the structured payload for the summarizer agent.
 
+        When ``include_chat_context`` is ``True``, recent room history should
+        be prepended to the payload. Room history fetch is not yet implemented
+        (see TODO below) — a debug log is emitted instead.
+
         Returns a formatted string with the original question and all
         agent results organized by agent name.
 
         Returns:
             Structured synthesis prompt string.
         """
+        if self._config.include_chat_context:
+            # TODO(FEAT-195): fetch recent room messages via appservice and prepend to context
+            self.logger.debug(
+                "include_chat_context=True but room history fetch not yet implemented"
+            )
+
         lines = [
             "Synthesize the following investigation results for the question:",
             f'"{self._question}"',
@@ -581,7 +604,15 @@ class MatrixCollaborativeSession:
         try:
             await self._appservice.send_as_bot(self._room_id, message)
         except Exception as exc:
-            self.logger.warning(
+            # Use DEBUG when the session is already in a terminal phase to
+            # avoid noisy WARNING logs from cascading send failures.
+            level = (
+                logging.DEBUG
+                if self._state.phase in (SessionPhase.FAILED, SessionPhase.COMPLETED)
+                else logging.WARNING
+            )
+            self.logger.log(
+                level,
                 "Session %s: failed to post announcement: %s",
                 self._session_id,
                 exc,

@@ -6,6 +6,7 @@ Supports the async context-manager protocol for clean lifecycle management.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from typing import Dict, Optional
@@ -291,10 +292,10 @@ class MatrixCrewTransport:
                 self.logger.info(
                     "Starting collaborative session in %s: %r", room_id, question
                 )
-                try:
-                    await session.run()
-                finally:
-                    self._active_sessions.pop(room_id, None)
+                asyncio.create_task(
+                    self._run_session(room_id, session),
+                    name=f"collab-session-{room_id}",
+                )
                 return
 
         # 3 — Dedicated room routing
@@ -340,6 +341,28 @@ class MatrixCrewTransport:
         self.logger.debug(
             "No routing match for message in %s from %s", room_id, sender
         )
+
+    async def _run_session(
+        self, room_id: str, session: "MatrixCollaborativeSession"
+    ) -> None:
+        """Run a collaborative session as a fire-and-forget asyncio task.
+
+        Wraps ``session.run()`` so that exceptions are logged rather than
+        propagated to the event dispatcher, and the session is always cleaned
+        up from ``_active_sessions`` on completion.
+
+        Args:
+            room_id: Matrix room ID the session is running in.
+            session: The ``MatrixCollaborativeSession`` to execute.
+        """
+        try:
+            await session.run()
+        except Exception as exc:
+            self.logger.error(
+                "Session in %s failed: %s", room_id, exc, exc_info=True
+            )
+        finally:
+            self._active_sessions.pop(room_id, None)
 
     def _is_collaborative_command(self, body: str) -> Optional[str]:
         """Detect a collaborative investigation command prefix.

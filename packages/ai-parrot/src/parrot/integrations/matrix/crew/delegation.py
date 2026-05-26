@@ -97,12 +97,24 @@ class HybridDelegator:
             pill = f"@{request.target_agent}"
 
         # 2. Post visible message as the requester
-        visible_msg = f"Asking {pill} to: {request.task_description}"
-        visible_event_id = await self._appservice.send_as_agent(
-            request.requester_name,
-            request.room_id,
-            visible_msg,
-        )
+        # Use plain text for the body and HTML pill in formatted_body so Matrix
+        # clients that don't support rich text don't show raw <a href="..."> tags.
+        if target_card:
+            plain_body = f"Asking {target_card.display_name} to: {request.task_description}"
+            formatted_msg = f"Asking {pill} to: {request.task_description}"
+            visible_event_id = await self._appservice.send_formatted_as_agent(
+                request.requester_name,
+                request.room_id,
+                plain_body,
+                formatted_msg,
+            )
+        else:
+            visible_msg = f"Asking {pill} to: {request.task_description}"
+            visible_event_id = await self._appservice.send_as_agent(
+                request.requester_name,
+                request.room_id,
+                visible_msg,
+            )
 
         # 3. Send m.parrot.task custom event
         task_id = str(uuid.uuid4())
@@ -178,8 +190,8 @@ class HybridDelegator:
     ) -> None:
         """Send a custom Matrix event via the AppService as the requester.
 
-        Looks up the requester agent's MXID, obtains the matching intent,
-        and sends the custom event to the room.
+        Delegates to the public ``send_custom_event_as_agent()`` method on
+        the AppService to avoid accessing private attributes.
 
         Args:
             requester_name: Agent name performing the delegation.
@@ -188,23 +200,11 @@ class HybridDelegator:
             content: Event content dict.
         """
         try:
-            from mautrix.types import EventType as MxEventType, RoomID  # type: ignore
-
-            # Get the requester's MXID from the registered agents map
-            mxid = self._appservice._registered_agents.get(requester_name)
-            if not mxid:
-                self.logger.warning(
-                    "Requester '%s' not found in registered agents — skipping custom event",
-                    requester_name,
-                )
-                return
-
-            intent = self._appservice._get_intent(mxid)
-            custom_type = MxEventType.find(
-                event_type, t_class=MxEventType.Class.MESSAGE
-            )
-            await intent.send_message_event(
-                RoomID(room_id), custom_type, content
+            await self._appservice.send_custom_event_as_agent(
+                requester_name,
+                room_id,
+                event_type,
+                content,
             )
         except Exception as exc:
             self.logger.error(
@@ -225,7 +225,7 @@ class HybridDelegator:
         Returns:
             Parsed ``ResultEventContent`` if received, ``None`` on timeout.
         """
-        future: asyncio.Future = asyncio.get_event_loop().create_future()
+        future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[task_id] = future
 
         try:

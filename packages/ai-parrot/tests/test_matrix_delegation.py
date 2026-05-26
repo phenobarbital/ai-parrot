@@ -19,6 +19,7 @@ def _make_delegator() -> tuple[HybridDelegator, AsyncMock, AsyncMock]:
     """Return (delegator, mock_appservice, mock_registry)."""
     appservice = AsyncMock()
     appservice.send_as_agent.return_value = "$visible_event"
+    appservice.send_formatted_as_agent.return_value = "$formatted_event"
     appservice.send_reply_as_agent.return_value = "$reply_event"
     appservice._registered_agents = {"analyst": "@analyst:server"}
 
@@ -90,7 +91,12 @@ class TestHybridDelegator:
 
     @pytest.mark.asyncio
     async def test_delegate_posts_visible_message(self):
-        """Visible 'Asking @peer...' message is posted as the requester."""
+        """Visible 'Asking @peer...' message is posted as the requester.
+
+        After FIX-11, when the target agent is known, the delegation message is
+        sent via send_formatted_as_agent (plain text body + HTML formatted_body).
+        Falls back to send_as_agent when the target card cannot be resolved.
+        """
         delegator, appservice, _ = _make_delegator()
 
         # Immediately resolve the result so delegate() doesn't hang
@@ -106,10 +112,24 @@ class TestHybridDelegator:
 
         await delegator.delegate(_make_request(), timeout=1.0)
 
-        # Visible message must have been sent
-        appservice.send_as_agent.assert_called_once()
-        call_args = appservice.send_as_agent.call_args
-        assert "Asking" in call_args[0][2] or "Asking" in str(call_args)
+        # Visible message must have been sent — either as formatted or plain text
+        total_calls = (
+            appservice.send_as_agent.call_count
+            + appservice.send_formatted_as_agent.call_count
+        )
+        assert total_calls == 1, (
+            f"Expected exactly one send call, got send_as_agent="
+            f"{appservice.send_as_agent.call_count}, "
+            f"send_formatted_as_agent={appservice.send_formatted_as_agent.call_count}"
+        )
+        # Check the message text regardless of which method was used
+        if appservice.send_formatted_as_agent.call_count:
+            call_args = appservice.send_formatted_as_agent.call_args
+            body = call_args[0][2] if call_args[0] else str(call_args)
+        else:
+            call_args = appservice.send_as_agent.call_args
+            body = call_args[0][2] if call_args[0] else str(call_args)
+        assert "Asking" in body or "Asking" in str(call_args)
 
     @pytest.mark.asyncio
     async def test_delegate_sends_custom_event(self):
@@ -172,7 +192,7 @@ class TestHybridDelegator:
         delegator, _, _ = _make_delegator()
 
         # Set up a pending future
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         task_id = "task-abc-123"
         delegator._pending[task_id] = future
@@ -192,7 +212,7 @@ class TestHybridDelegator:
         """Non-result event type does not resolve any futures."""
         delegator, _, _ = _make_delegator()
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
         delegator._pending["task-xyz"] = future
 

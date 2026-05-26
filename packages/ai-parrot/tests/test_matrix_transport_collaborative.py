@@ -1,4 +1,5 @@
 """Tests for MatrixCrewTransport collaborative integration (TASK-1299 — FEAT-195)."""
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -124,6 +125,8 @@ class TestTransportCollaborativeRouting:
                 body="!investigate What is the market trend?",
                 event_id="$evt1",
             )
+            # Let the background task execute
+            await asyncio.sleep(0)
 
         mock_session.run.assert_called_once()
 
@@ -146,6 +149,8 @@ class TestTransportCollaborativeRouting:
                 body="!investigate What is the market trend?",
                 event_id="$evt1",
             )
+            # Let the background task run to completion
+            await asyncio.sleep(0)
 
         assert "!room:server" not in transport._active_sessions
 
@@ -269,7 +274,12 @@ class TestTransportCollaborativeRouting:
 
     @pytest.mark.asyncio
     async def test_session_cleanup_on_failure(self):
-        """Session is removed from _active_sessions even on exception."""
+        """Session is removed from _active_sessions even when run() raises.
+
+        After FIX-1, session.run() is wrapped in an asyncio.Task so exceptions
+        do NOT propagate to on_room_message. The cleanup happens inside the
+        _run_session coroutine after the task completes.
+        """
         transport = _make_transport()
 
         mock_session = AsyncMock()
@@ -280,14 +290,17 @@ class TestTransportCollaborativeRouting:
             "parrot.integrations.matrix.crew.transport.MatrixCollaborativeSession",
             return_value=mock_session,
         ):
-            # run() raises — session must still be cleaned up
-            with pytest.raises(RuntimeError, match="Session exploded"):
-                await transport.on_room_message(
-                    room_id="!room:server",
-                    sender="@human:server",
-                    body="!investigate Test question",
-                    event_id="$evt8",
-                )
+            # on_room_message should return immediately — no exception propagates
+            await transport.on_room_message(
+                room_id="!room:server",
+                sender="@human:server",
+                body="!investigate Test question",
+                event_id="$evt8",
+            )
+
+        # Let the background task run and clean up (multiple yields for task completion)
+        for _ in range(5):
+            await asyncio.sleep(0)
 
         assert "!room:server" not in transport._active_sessions
 
