@@ -22,6 +22,7 @@ Public API::
 from .config import CollaborativeConfig, MatrixCrewAgentEntry, MatrixCrewConfig
 from .coordinator import MatrixCoordinator
 from .crew_wrapper import MatrixCrewAgentWrapper
+from .delegation import DelegationRequest, HybridDelegator
 from .mention import build_pill, build_reply_content, format_reply, parse_mention
 from .registry import MatrixAgentCard, MatrixCrewRegistry
 from .session import MatrixCollaborativeSession
@@ -45,6 +46,8 @@ __all__ = [
     "SessionPhase",
     "AgentRoundResult",
     "CollaborativeSessionState",
+    "DelegationRequest",
+    "HybridDelegator",
     "parse_mention",
     "format_reply",
     "build_pill",

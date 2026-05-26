@@ -73,6 +73,7 @@ class MatrixAppService:
         self._registered_agents: Dict[str, str] = {}  # name → mxid
         self._agent_rooms: Dict[str, Set[str]] = {}  # mxid → room_ids
         self._event_callback: Optional[EventCallback] = None
+        self._custom_event_callback: Optional[Callable] = None  # for m.parrot.* events
         self.logger = logging.getLogger("parrot.matrix.appservice")
 
     # ------------------------------------------------------------------
@@ -362,9 +363,35 @@ class MatrixAppService:
         """
         self._event_callback = callback
 
+    def set_custom_event_callback(self, callback: Callable) -> None:
+        """Set the callback for incoming custom ``m.parrot.*`` events.
+
+        The callback is invoked for ``m.parrot.task`` and ``m.parrot.result``
+        events with signature:
+            async def handler(event_type: str, content: dict) -> None
+
+        Args:
+            callback: Async callable accepting ``(event_type, content)``.
+        """
+        self._custom_event_callback = callback
+
     async def _handle_event(self, event: Event) -> None:
         """Process events pushed by the homeserver."""
         try:
+            event_type_str = str(event.type)
+
+            # Route custom m.parrot.* events to the custom callback
+            if event_type_str in (ParrotEventType.TASK, ParrotEventType.RESULT):
+                if self._custom_event_callback:
+                    content_dict: Dict[str, Any] = {}
+                    if hasattr(event, "content") and event.content is not None:
+                        try:
+                            content_dict = dict(event.content)
+                        except Exception:
+                            content_dict = {}
+                    await self._custom_event_callback(event_type_str, content_dict)
+                return
+
             # Only handle room messages
             if event.type != EventType.ROOM_MESSAGE:
                 return
