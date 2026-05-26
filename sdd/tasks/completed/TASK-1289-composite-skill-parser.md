@@ -172,10 +172,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-25
+**Notes**: parse_skill_directory() added to parsers.py. Exported from __init__.py. SkillDefinition is not frozen so skill.assets_dir = skill_dir works post-construction. 6 tests pass.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
