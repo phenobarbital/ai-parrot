@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-195
 **Date**: 2026-05-26
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Brainstorm**: `sdd/proposals/matrix-collaborative-crew.brainstorm.md`
 
@@ -628,10 +628,10 @@ class BotManager:
 
 ### Unresolved
 
-- [ ] Should collaborative sessions support file/media attachments from agents (e.g., charts, data tables)? — *Owner: Jesus*
-- [ ] Should the summarizer support configurable synthesis strategies (e.g., weighted scoring, majority vote, LLM synthesis)? Or just LLM synthesis for now? — *Owner: Jesus*
-- [ ] Should `!investigate` support parameters (e.g., `!investigate --rounds 3 --agents analyst,researcher`)? — *Owner: Jesus*
-- [ ] How should the session handle long-running agent tasks (>60s)? Stream partial results or wait silently? — *Owner: Jesus*
+- [ ] Should collaborative sessions support file/media attachments from agents (e.g., charts, data tables)? — *Owner: Jesus*: Yes
+- [ ] Should the summarizer support configurable synthesis strategies (e.g., weighted scoring, majority vote, LLM synthesis)? Or just LLM synthesis for now? — *Owner: Jesus*, yes, support configurable strategies.
+- [ ] Should `!investigate` support parameters (e.g., `!investigate --rounds 3 --agents analyst,researcher`)? — *Owner: Jesus*: yes.
+- [ ] How should the session handle long-running agent tasks (>60s)? Stream partial results or wait silently? — *Owner: Jesus*: silently
 
 ---
 

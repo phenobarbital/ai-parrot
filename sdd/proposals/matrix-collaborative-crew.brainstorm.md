@@ -679,7 +679,7 @@ from parrot.integrations.matrix.events import TaskEventContent, ResultEventConte
 - [x] Agent autonomy for delegation? — *Owner: Jesus*: Agent-autonomous (agents know the registry and @mention peers directly).
 - [x] Session visibility? — *Owner: Jesus*: Full phase announcements (configurable).
 - [x] Default rounds? — *Owner: Jesus*: 1 round default.
-- [ ] Should collaborative sessions support file/media attachments from agents (e.g., charts, data tables)? — *Owner: Jesus*
-- [ ] Should the summarizer support configurable synthesis strategies (e.g., weighted scoring, majority vote, LLM synthesis)? Or just LLM synthesis for now? — *Owner: Jesus*
-- [ ] Should the `!investigate` command support parameters (e.g., `!investigate --rounds 3 --agents analyst,researcher`)? — *Owner: Jesus*
-- [ ] How should the session handle long-running agent tasks (>60s)? Stream partial results or wait silently? — *Owner: Jesus*
+- [ ] Should collaborative sessions support file/media attachments from agents (e.g., charts, data tables)? — *Owner: Jesus*: Yes
+- [ ] Should the summarizer support configurable synthesis strategies (e.g., weighted scoring, majority vote, LLM synthesis)? Or just LLM synthesis for now? — *Owner: Jesus*: yes, support.
+- [ ] Should the `!investigate` command support parameters (e.g., `!investigate --rounds 3 --agents analyst,researcher`)? — *Owner: Jesus*: yes
+- [ ] How should the session handle long-running agent tasks (>60s)? Stream partial results or wait silently? — *Owner: Jesus*: wait silently
