@@ -267,6 +267,84 @@ class MatrixAppService:
         )
         return str(event_id)
 
+    async def send_reply_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        message: str,
+        reply_to_event_id: str,
+    ) -> str:
+        """Send a reply-to message as a specific virtual agent.
+
+        Sets the ``m.in_reply_to`` relation so Matrix clients render the
+        message as a threaded reply to the referenced event.
+
+        Args:
+            agent_name: Name of the registered agent.
+            room_id: Target room.
+            message: Reply text.
+            reply_to_event_id: Event ID of the message being replied to.
+
+        Returns:
+            Event ID of the sent reply.
+
+        Raises:
+            ValueError: If the agent is not registered.
+        """
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            raise ValueError(f"Agent '{agent_name}' not registered")
+
+        intent = self._get_intent(mxid)
+        from mautrix.types import (  # type: ignore
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=message,
+        )
+        content["m.relates_to"] = {
+            "m.in_reply_to": {"event_id": reply_to_event_id}
+        }
+        event_id = await intent.send_message(RoomID(room_id), content)
+        return str(event_id)
+
+    async def send_reply_as_bot(
+        self,
+        room_id: str,
+        message: str,
+        reply_to_event_id: str,
+    ) -> str:
+        """Send a reply-to message as the bot user.
+
+        Sets the ``m.in_reply_to`` relation so Matrix clients render the
+        message as a threaded reply to the referenced event.
+
+        Args:
+            room_id: Target room.
+            message: Reply text.
+            reply_to_event_id: Event ID of the message being replied to.
+
+        Returns:
+            Event ID of the sent reply.
+        """
+        from mautrix.types import (  # type: ignore
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=message,
+        )
+        content["m.relates_to"] = {
+            "m.in_reply_to": {"event_id": reply_to_event_id}
+        }
+        event_id = await self.bot_intent.send_message(RoomID(room_id), content)
+        return str(event_id)
+
     # ------------------------------------------------------------------
     # Event handling
     # ------------------------------------------------------------------

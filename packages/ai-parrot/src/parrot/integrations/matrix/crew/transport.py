@@ -326,6 +326,23 @@ class _AppServiceBotClient:
         """
         return await self._appservice.send_as_bot(room_id, text)
 
+    async def send_reply(
+        self, room_id: str, text: str, reply_to_event_id: str
+    ) -> str:
+        """Send a reply-to message as the coordinator bot.
+
+        Args:
+            room_id: Target room.
+            text: Reply text.
+            reply_to_event_id: Event ID of the message being replied to.
+
+        Returns:
+            Event ID string.
+        """
+        return await self._appservice.send_reply_as_bot(
+            room_id, text, reply_to_event_id
+        )
+
     async def edit_message(
         self, room_id: str, event_id: str, new_text: str
     ) -> str:
