@@ -7,13 +7,15 @@ Supports the async context-manager protocol for clean lifecycle management.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Dict, Optional
 
-from .config import MatrixCrewConfig, MatrixCrewAgentEntry
+from .config import MatrixCrewConfig
 from .coordinator import MatrixCoordinator
 from .crew_wrapper import MatrixCrewAgentWrapper
 from .mention import parse_mention
 from .registry import MatrixAgentCard, MatrixCrewRegistry
+from .session import MatrixCollaborativeSession
 
 
 class MatrixCrewTransport:
@@ -41,6 +43,7 @@ class MatrixCrewTransport:
         self._wrappers: Dict[str, MatrixCrewAgentWrapper] = {}
         self._room_to_agent: Dict[str, str] = {}  # dedicated room → agent name
         self._agent_mxids: set[str] = set()  # all virtual MXIDs (for self-filter)
+        self._active_sessions: Dict[str, MatrixCollaborativeSession] = {}  # room_id → session
         self.logger = logging.getLogger(__name__)
 
     # ------------------------------------------------------------------
@@ -221,11 +224,15 @@ class MatrixCrewTransport:
         """Route an incoming Matrix room message to the correct agent wrapper.
 
         Routing priority:
-        1. Ignore messages from virtual agent MXIDs or the coordinator bot.
-        2. Dedicated room → route to the owning agent.
-        3. ``@mention`` in body → route to the mentioned agent.
-        4. ``unaddressed_agent`` configured → route to the default agent.
-        5. Otherwise → ignore.
+        1. Agent self-filter (virtual agent MXIDs + coordinator):
+           - If an active collaborative session exists AND the agent message
+             contains an @mention → route through session (inter-agent bypass).
+           - Otherwise → drop silently.
+        2. ``!investigate <question>`` command (human) → create collaborative session.
+        3. Dedicated room → route to the owning agent.
+        4. ``@mention`` in body → route to the mentioned agent.
+        5. ``unaddressed_agent`` configured → route to the default agent.
+        6. Otherwise → ignore.
 
         Args:
             room_id: Matrix room ID.
@@ -233,13 +240,64 @@ class MatrixCrewTransport:
             body: Plain-text message body.
             event_id: Matrix event ID.
         """
-        # 1 — Ignore self (virtual agent MXIDs + coordinator)
+        # 1 — Agent self-filter with collaborative session bypass
         if sender in self._agent_mxids:
+            session = self._active_sessions.get(room_id)
+            if session and session.is_active:
+                # Only bypass self-filter for @mentions during an active session
+                mentioned = parse_mention(body, self._config.server_name)
+                if mentioned:
+                    self.logger.debug(
+                        "Routing inter-agent @mention from %s during active session",
+                        sender,
+                    )
+                    await session.handle_inter_agent_message(sender, body, str(event_id) if event_id else "")
+                    return
+            # Normal self-filter: drop non-mention agent messages
             return
 
         event_id_str = str(event_id) if event_id else ""
 
-        # 2 — Dedicated room routing
+        # 2 — !investigate command (human) → create collaborative session
+        question = self._is_collaborative_command(body)
+        if question is not None:
+            collab = self._config.collaborative
+            if collab is None:
+                self.logger.debug(
+                    "Received !investigate but collaborative config is not set — ignoring"
+                )
+                # Fall through to normal routing
+            else:
+                if room_id in self._active_sessions:
+                    self.logger.info(
+                        "Concurrent session request in %s — rejecting", room_id
+                    )
+                    await self._appservice.send_as_bot(  # type: ignore[union-attr]
+                        room_id,
+                        "A collaborative session is already active in this room.",
+                    )
+                    return
+                session = MatrixCollaborativeSession(
+                    session_id=str(uuid.uuid4()),
+                    room_id=room_id,
+                    question=question,
+                    config=collab,
+                    appservice=self._appservice,  # type: ignore[arg-type]
+                    registry=self._registry,
+                    wrappers=self._wrappers,
+                    server_name=self._config.server_name,
+                )
+                self._active_sessions[room_id] = session
+                self.logger.info(
+                    "Starting collaborative session in %s: %r", room_id, question
+                )
+                try:
+                    await session.run()
+                finally:
+                    self._active_sessions.pop(room_id, None)
+                return
+
+        # 3 — Dedicated room routing
         if room_id in self._room_to_agent:
             agent_name = self._room_to_agent[room_id]
             wrapper = self._wrappers.get(agent_name)
@@ -250,7 +308,7 @@ class MatrixCrewTransport:
                 await wrapper.handle_message(room_id, sender, body, event_id_str)
                 return
 
-        # 3 — @mention routing
+        # 4 — @mention routing
         localpart = parse_mention(body, self._config.server_name)
         if localpart:
             # Find the wrapper whose mxid_localpart matches
@@ -267,7 +325,7 @@ class MatrixCrewTransport:
                         )
                         return
 
-        # 4 — Default / unaddressed agent
+        # 5 — Default / unaddressed agent
         if self._config.unaddressed_agent:
             wrapper = self._wrappers.get(self._config.unaddressed_agent)
             if wrapper:
@@ -278,10 +336,36 @@ class MatrixCrewTransport:
                 await wrapper.handle_message(room_id, sender, body, event_id_str)
                 return
 
-        # 5 — Ignore
+        # 6 — Ignore
         self.logger.debug(
             "No routing match for message in %s from %s", room_id, sender
         )
+
+    def _is_collaborative_command(self, body: str) -> Optional[str]:
+        """Detect a collaborative investigation command prefix.
+
+        Checks if ``body`` starts with the configured ``command_prefix``
+        (from ``config.collaborative.command_prefix``). Returns the extracted
+        question string if matched, ``None`` otherwise.
+
+        If no collaborative config is set, always returns ``None``.
+
+        Args:
+            body: Plain-text message body to inspect.
+
+        Returns:
+            The question string (stripped) if the body matches the command
+            prefix, otherwise ``None``.
+        """
+        collab = self._config.collaborative
+        if collab is None:
+            return None
+        prefix = collab.command_prefix
+        stripped = body.strip()
+        if stripped.startswith(prefix):
+            question = stripped[len(prefix):].strip()
+            return question if question else None
+        return None
 
     # ------------------------------------------------------------------
     # Context manager
