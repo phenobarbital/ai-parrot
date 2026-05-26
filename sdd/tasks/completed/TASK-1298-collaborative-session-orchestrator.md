@@ -438,3 +438,15 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+### Completion Note
+
+Implemented `MatrixCollaborativeSession` in `packages/ai-parrot/src/parrot/integrations/matrix/crew/session.py`.
+
+Key implementation decisions:
+- `BotManager.get_bot()` is called with plain `await` (not wrapped in `asyncio.wait_for`) — only `agent.ask()` is wrapped with the per-agent timeout. This allows `BotManager.get_bot` to be mocked as an `AsyncMock` in tests without errors.
+- Module-level `from parrot.manager import BotManager` (inside `try/except ImportError`) ensures `patch("parrot.integrations.matrix.crew.session.BotManager")` works in unit tests.
+- `_announce()` respects `session_verbosity`: "silent" suppresses all messages, "minimal" passes only failure/error/cancel/complete keywords.
+- All 20 tests pass. Ruff lint clean.
+
+Updated `__init__.py` to export `MatrixCollaborativeSession` and created `test_matrix_collaborative_session.py` with 20 tests covering all acceptance criteria.

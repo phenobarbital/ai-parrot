@@ -68,7 +68,7 @@
       "feature_id": "FEAT-195",
       "feature": "matrix-collaborative-crew",
       "spec": "sdd/specs/matrix-collaborative-crew.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on all three foundation tasks. Must be sequential after 1295-1297.",
       "assigned_to": null,
       "started_at": "2026-05-26T10:46:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1298-collaborative-session-orchestrator.md"
+      "completed_at": "2026-05-26T11:02:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1298-collaborative-session-orchestrator.md"
     },
     {
       "id": "TASK-1299",
