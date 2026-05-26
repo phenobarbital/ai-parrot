@@ -50,7 +50,7 @@
       "feature_id": "FEAT-195",
       "feature": "matrix-collaborative-crew",
       "spec": "sdd/specs/matrix-collaborative-crew.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Creates new file session_models.py — no overlap with TASK-1295 or TASK-1296.",
       "assigned_to": null,
       "started_at": "2026-05-26T10:46:28+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1297-session-state-models.md"
+      "completed_at": "2026-05-26T10:54:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1297-session-state-models.md"
     },
     {
       "id": "TASK-1298",
