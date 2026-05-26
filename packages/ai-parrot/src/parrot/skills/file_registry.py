@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .models import SkillDefinition, SkillSource
+from .models import SkillDefinition
 from .parsers import parse_skill_file
 
 

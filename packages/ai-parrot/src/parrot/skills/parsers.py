@@ -56,7 +56,12 @@ def parse_skill_file(file_path: Path) -> SkillDefinition:
     _raw_triggers = metadata.get("triggers", _triggers_sentinel)
     if _raw_triggers is _triggers_sentinel:
         raise ValueError(f"Skill file missing 'triggers' field: {file_path}")
-    triggers: List[str] = _raw_triggers if isinstance(_raw_triggers, list) else list(_raw_triggers)
+    if isinstance(_raw_triggers, str):
+        triggers: List[str] = [_raw_triggers]
+    elif isinstance(_raw_triggers, list):
+        triggers = _raw_triggers
+    else:
+        triggers = list(_raw_triggers)
 
     if not name:
         raise ValueError(f"Skill file missing 'name' field: {file_path}")
@@ -125,5 +130,5 @@ def parse_skill_directory(skill_dir: Path) -> SkillDefinition:
             f"Missing SKILL.md in composite skill directory: {skill_dir}"
         )
     skill = parse_skill_file(skill_md)
-    skill.assets_dir = skill_dir
+    skill = skill.model_copy(update={"assets_dir": skill_dir})
     return skill

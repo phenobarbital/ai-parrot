@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Literal, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 import hashlib
 import uuid

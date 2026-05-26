@@ -54,6 +54,7 @@ def create_skill_trigger_middleware(
             listing = "\n".join(
                 f"- {', '.join(s.triggers)}: {s.description}"
                 for s in skills
+                if s.triggers  # skip skills with no triggers (loaded via LoadSkillTool, not /trigger)
             )
             return f"Available skills:\n{listing}"
 

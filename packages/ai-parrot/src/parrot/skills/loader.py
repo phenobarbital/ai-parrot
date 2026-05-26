@@ -81,7 +81,7 @@ class SkillsDirectoryLoader:
                     elif entry.is_dir() and (entry / "SKILL.md").exists():
                         skills.append(parse_skill_directory(entry))
                     # Non-.md files and dirs without SKILL.md are silently skipped
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001 — boot resilience: one bad skill file must not crash the loader
                     self._logger.warning(
                         "Failed to parse skill at %s: %s", entry, exc
                     )

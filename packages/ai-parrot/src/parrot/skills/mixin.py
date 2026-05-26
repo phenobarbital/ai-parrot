@@ -16,7 +16,7 @@ import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
-from .models import SkillCategory, SkillDefinition, SkillSource, Skill
+from .models import SkillCategory, SkillDefinition, Skill
 from .store import SkillRegistry, create_skill_registry
 from .tools import create_skill_tools
 
@@ -134,13 +134,18 @@ class SkillRegistryMixin:
         await self._configure_skill_file_registry()
 
         if hasattr(self, 'logger'):
-            self.logger.info(f"SkillRegistry configured: {namespace}")
+            self.logger.info("SkillRegistry configured: %s", namespace)
 
     async def _configure_skill_file_registry(self) -> None:
         """Configure file-based skill registry and trigger middleware.
 
         Resolves ``AGENTS_DIR/{agent_id}/skills/`` and loads all .md skill files.
         Registers SkillTriggerMiddleware in the bot's prompt pipeline.
+
+        When ``agents_dir`` is None the original agents-dir loading block is
+        skipped but the FEAT-188 extensions (directory discovery, prompt layer
+        injection, LoadSkillTool registration) still run whenever ``skill_paths``
+        is non-empty.
         """
         from .file_registry import SkillFileRegistry
         from .middleware import create_skill_trigger_middleware
@@ -150,42 +155,52 @@ class SkillRegistryMixin:
 
         agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
         agents_dir = self._resolve_agents_dir()
-        if not agents_dir:
-            return
-
-        skills_dir = agents_dir / agent_id / "skills"
-        learned_dir = skills_dir / "learned"
-
-        # Create directories if they don't exist
-        skills_dir.mkdir(parents=True, exist_ok=True)
-        learned_dir.mkdir(parents=True, exist_ok=True)
-
-        self._skill_file_registry = SkillFileRegistry(
-            skills_dir=skills_dir,
-            learned_dir=learned_dir,
-        )
-        await self._skill_file_registry.load()
-
-        # Register trigger middleware in prompt pipeline
-        prompt_pipeline = getattr(self, '_prompt_pipeline', None)
-        if prompt_pipeline is not None:
-            mw = create_skill_trigger_middleware(
-                registry=self._skill_file_registry,
-                bot=self,
-            )
-            prompt_pipeline.add(mw)
-
         logger = getattr(self, 'logger', logging.getLogger(__name__))
-        n_skills = len(self._skill_file_registry.list_skills())
-        logger.info(
-            "SkillFileRegistry loaded: %d skills from %s",
-            n_skills,
-            skills_dir,
-        )
 
-        # --- FEAT-188: Directory discovery ---
-        skill_paths = getattr(self, 'skill_paths', [])
+        # --- Original block: only runs when agents_dir is set ---
+        if agents_dir:
+            skills_dir = agents_dir / agent_id / "skills"
+            learned_dir = skills_dir / "learned"
+
+            # Create directories if they don't exist
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            learned_dir.mkdir(parents=True, exist_ok=True)
+
+            self._skill_file_registry = SkillFileRegistry(
+                skills_dir=skills_dir,
+                learned_dir=learned_dir,
+            )
+            await self._skill_file_registry.load()
+
+            # Register trigger middleware in prompt pipeline
+            prompt_pipeline = getattr(self, '_prompt_pipeline', None)
+            if prompt_pipeline is not None:
+                mw = create_skill_trigger_middleware(
+                    registry=self._skill_file_registry,
+                    bot=self,
+                )
+                prompt_pipeline.add(mw)
+
+            n_skills = len(self._skill_file_registry.list_skills())
+            logger.info(
+                "SkillFileRegistry loaded: %d skills from %s",
+                n_skills,
+                skills_dir,
+            )
+
+        # --- FEAT-188 extensions: run regardless of agents_dir ---
+        skill_paths = list(getattr(self, 'skill_paths', []))
         if skill_paths:
+            # Ensure a registry exists even when agents_dir is absent
+            if self._skill_file_registry is None:
+                import tempfile
+                _tmp = Path(tempfile.mkdtemp(prefix="parrot_skills_"))
+                self._skill_file_registry = SkillFileRegistry(
+                    skills_dir=_tmp,
+                    learned_dir=_tmp / "learned",
+                )
+                await self._skill_file_registry.load()
+
             from .loader import SkillsDirectoryLoader
             loader = SkillsDirectoryLoader(
                 paths=skill_paths,
@@ -199,21 +214,25 @@ class SkillRegistryMixin:
             )
 
         # --- FEAT-188: Prompt layer injection ---
-        inject = getattr(self, 'inject_skills_into_prompt', True)
-        if inject and self._skill_file_registry.list_skills():
-            prompt_builder = getattr(self, '_prompt_builder', None)
-            if prompt_builder is not None:
-                from .prompt import render_skills_prompt_layer
-                max_entries = getattr(self, 'skill_prompt_max_entries', None)
-                layer = render_skills_prompt_layer(
-                    self._skill_file_registry,
-                    max_skills=max_entries,
-                )
-                prompt_builder.add(layer)
-                logger.debug("Skills prompt layer injected (%d entries)", len(self._skill_file_registry.list_skills()))
+        if self._skill_file_registry is not None:
+            inject = getattr(self, 'inject_skills_into_prompt', True)
+            if inject and self._skill_file_registry.list_skills():
+                prompt_builder = getattr(self, '_prompt_builder', None)
+                if prompt_builder is not None:
+                    from .prompt import render_skills_prompt_layer
+                    max_entries = getattr(self, 'skill_prompt_max_entries', None)
+                    layer = render_skills_prompt_layer(
+                        self._skill_file_registry,
+                        max_skills=max_entries,
+                    )
+                    prompt_builder.add(layer)
+                    logger.debug(
+                        "Skills prompt layer injected (%d entries)",
+                        len(self._skill_file_registry.list_skills()),
+                    )
 
         # --- FEAT-188: LoadSkillTool registration ---
-        if skill_paths:
+        if skill_paths and self._skill_file_registry is not None:
             from .tools import LoadSkillTool
             load_tool = LoadSkillTool(file_registry=self._skill_file_registry)
             tool_manager = getattr(self, 'tool_manager', None)
@@ -311,8 +330,6 @@ category: {category}
         """
         if not self._skill_registry:
             return
-
-        import inspect
 
         agent_id = getattr(self, 'name', 'agent')
         tools = create_skill_tools(

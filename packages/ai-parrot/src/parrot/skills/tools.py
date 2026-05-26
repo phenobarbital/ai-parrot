@@ -8,14 +8,13 @@ Provides tools that agents can use to:
 - Update existing skills
 - Save learned skills as .md files for immediate /trigger activation
 """
-from typing import Any, Dict, List, Optional, Type
+import asyncio
+from typing import Dict, List, Optional, Type
 from pathlib import Path
 from pydantic import BaseModel, Field
 from ..tools.abstract import AbstractTool, ToolResult
 from .models import (
     SkillCategory,
-    SkillDefinition,
-    SkillSource,
 )
 from .store import SkillRegistry
 
@@ -562,9 +561,14 @@ class LoadSkillTool(AbstractTool):
 
         assets: List[str] = []
         if skill.assets_dir:
-            for p in sorted(skill.assets_dir.rglob("*")):
-                if p.is_file() and p.name != "SKILL.md":
-                    assets.append(str(p.relative_to(skill.assets_dir)))
+            def _list_assets(assets_dir: Path) -> List[str]:
+                return [
+                    p.name
+                    for p in sorted(assets_dir.iterdir())
+                    if p.is_file() and p.name != "SKILL.md"
+                ]
+
+            assets = await asyncio.to_thread(_list_assets, skill.assets_dir)
 
         return ToolResult(
             status="done",

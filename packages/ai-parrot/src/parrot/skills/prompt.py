@@ -57,6 +57,14 @@ def render_skills_prompt_layer(
           an empty string if the registry has no skills.
         - ``phase=RenderPhase.CONFIGURE``
     """
+    if max_skills == 0:
+        return PromptLayer(
+            name="available_skills",
+            priority=priority,
+            template="",
+            phase=RenderPhase.CONFIGURE,
+        )
+
     skills = registry.list_skills()
 
     if not skills:
