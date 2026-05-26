@@ -490,6 +490,16 @@ dev = [
     "ruff>=0.4",
 ]
 
+# Remote tool executors (parrot.tools.executors). Pulls the optional
+# kubernetes_asyncio client used by K8sToolExecutor. The Qworker HTTP
+# transport falls back to plain aiohttp (already a core dependency)
+# when the proprietary qclient/qworker package is not installed; the
+# Redis transport uses the existing ``redis.asyncio`` already shipped
+# via the agents extra.
+remote-tools = [
+    "kubernetes_asyncio>=29.0.0",
+]
+
 # Convenience groups
 all = [
     "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"

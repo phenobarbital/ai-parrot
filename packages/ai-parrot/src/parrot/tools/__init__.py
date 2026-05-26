@@ -142,6 +142,11 @@ from .abstract import AbstractTool, ToolResult
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
 from .registry import ToolkitRegistry, get_supported_toolkits
+from .executors import (
+    AbstractToolExecutor,
+    LocalToolExecutor,
+    ToolExecutionEnvelope,
+)
 
 # ---------------------------------------------------------------------------
 # Core tools that stay in ai-parrot (lightweight deps only)
@@ -214,6 +219,10 @@ __all__ = (
     "tool",
     "ToolkitRegistry",
     "get_supported_toolkits",
+    # Remote tool executors
+    "AbstractToolExecutor",
+    "LocalToolExecutor",
+    "ToolExecutionEnvelope",
     # Core tools
     "VectorStoreSearchTool",
     "MultiStoreSearchTool",
