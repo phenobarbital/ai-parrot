@@ -380,10 +380,17 @@ The tests ARE the test specification. See "Implementation Notes" for the test sc
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-27
+**Notes**: All 11 FEAT-193 regression tests implemented and passing.
+  - TestAskCombinedModeGate: 9 tests (combined/two-phase gate, no-schema, no-tools,
+    malformed-JSON recovery, flash-lite debug log, kwarg overrides, lifecycle events)
+  - TestAskStreamCombinedModeGate: 2 tests (combined/two-phase streaming gate)
+  Also fixed a bug introduced in TASK-1305: `ask_stream()` post-stream combined-mode
+  block was passing raw `structured_output` (Pydantic class) instead of `schema_config`
+  (StructuredOutputConfig) to `_parse_structured_output` and `_reformat_to_structured`.
+  Fixed by using `_so_config = schema_config or self._get_structured_config(...)`.
+  Pre-existing failure `test_google_ask_stream` (AIMessageFactory stub missing
+  `from_gemini`) is unrelated to FEAT-193 and left unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: …
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — all 11 cases implemented as specified.

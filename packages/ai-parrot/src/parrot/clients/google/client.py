@@ -99,6 +99,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     Only Gemini-2.5-pro works well with multi-turn function calling.
     Supports both API Key (Gemini Developer API) and Service Account (Vertex AI).
+
+    **Combined tools + structured output**: for models whose identifier starts with a prefix
+    in ``_default_combined_call_prefixes`` (default: ``gemini-3.1-pro``, ``gemini-3.5-flash``,
+    ``gemini-3.1-flash-lite``), ``ask()`` and ``ask_stream()`` send ``tools`` and
+    ``response_schema`` in a single ``GenerateContentConfig`` (no reformat round-trip).
+    For all other models (e.g. ``gemini-2.5-pro``), the legacy two-phase flow is preserved.
+    Override the whitelist per-instance via ``GoogleGenAIClient(combined_call_prefixes=...)``.
     """
     client_type: str = 'google'
     client_name: str = 'google'
@@ -106,12 +113,25 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    # Default prefixes for which tools + response_schema may be sent in a
+    # single GenerateContentConfig (FEAT-193). Override per-subclass by
+    # setting this attribute, or per-instance via the constructor kwarg
+    # ``combined_call_prefixes``. Gemini 3.x models listed here have been
+    # validated by upstream evaluation to accept both simultaneously.
+    _default_combined_call_prefixes: tuple[str, ...] = (
+        "gemini-3.1-pro",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+    )
     # Default model used to reformat tool-using responses into structured
-    # output (Gemini cannot combine tools + response_schema in one call).
-    # Override per-instance via the ``reformat_model`` constructor kwarg.
-    # DO NOT downgrade the default to a smaller model (e.g. flash-lite):
-    # small models hallucinate rows when extracting tabular data from a
-    # shape-annotated preview, corrupting `data`.
+    # output for models that cannot combine tools + response_schema in one
+    # call (e.g., gemini-2.5-pro). Override per-instance via the
+    # ``reformat_model`` constructor kwarg. DO NOT downgrade the default to
+    # a smaller model (e.g. flash-lite): small models hallucinate rows when
+    # extracting tabular data from a shape-annotated preview, corrupting
+    # ``data``. Whitelisted Gemini 3.x models (configured via
+    # ``combined_call_prefixes``) bypass this reformat step — see
+    # ``_supports_combined_tools_and_schema``.
     _default_reformat_model: str = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
     # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
     _min_cache_tokens: int = 4096
@@ -123,6 +143,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         vertexai: bool = False,
         model_garden: bool = False,
         reformat_model: Optional[Union[str, GoogleModel]] = None,
+        combined_call_prefixes: Optional[tuple[str, ...]] = None,
         **kwargs,
     ):
         _require_google_sdk()
@@ -150,6 +171,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # both ``GoogleModel`` enum members and raw strings.
         self._reformat_model: str = self._as_model_str(reformat_model) \
             or self._default_reformat_model
+        # Resolve combined_call_prefixes: explicit kwarg > class default.
+        # Coerce to tuple so callers can pass any sequence (list, tuple, generator).
+        self._combined_call_prefixes: tuple[str, ...] = (
+            tuple(combined_call_prefixes)
+            if combined_call_prefixes is not None
+            else self._default_combined_call_prefixes
+        )
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
@@ -188,6 +216,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             or model.startswith('gemini-3.1-pro')
             or model.startswith('gemini-3-pro')
         )
+
+    @staticmethod
+    def _supports_combined_tools_and_schema(
+        model: "str | GoogleModel | None",
+        prefixes: "tuple[str, ...]",
+    ) -> bool:
+        """Whether ``model`` may receive tools + response_schema in a single call.
+
+        Returns True when the normalised model identifier starts with any
+        prefix in ``prefixes``. Pattern matches ``_is_gemini3_model`` and
+        ``_requires_thinking`` for consistency.
+
+        Args:
+            model: Model identifier — accepts plain string, GoogleModel enum,
+                or None (returns False for falsy inputs).
+            prefixes: Tuple of model-name prefixes to match against. Pass an
+                empty tuple to disable combined mode entirely (documented
+                kill switch for ``combined_call_prefixes=()``).
+
+        Returns:
+            True iff ``model`` starts with any prefix in ``prefixes``.
+        """
+        model = GoogleGenAIClient._as_model_str(model)
+        if not model or not prefixes:
+            return False
+        return any(model.startswith(p) for p in prefixes)
 
     @staticmethod
     def _as_model_str(model) -> str:
@@ -769,6 +823,123 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         generation_config["response_mime_type"] = "application/json"
         generation_config["response_schema"] = fixed_schema
         return fixed_schema
+
+    async def _reformat_to_structured(
+        self,
+        text: str,
+        output_config: Union[type, Any],
+        *,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Any:
+        """Reformat a free-text model response into structured output via a second LLM call.
+
+        This is the legacy two-phase helper used by non-whitelisted models and as a
+        recovery path when combined-mode parsing fails. It calls ``self._reformat_model``
+        (a fast model without tools) and asks it to convert ``text`` into the JSON schema
+        described by ``output_config``.
+
+        Args:
+            text: The free-text model response to reformat.
+            output_config: A ``StructuredOutputConfig``, a Pydantic model class, or any
+                object supported by ``_apply_structured_output_schema``.
+            temperature: Override for the reformat call temperature.
+            max_tokens: Override for the reformat call max_output_tokens.
+
+        Returns:
+            The parsed structured output (Pydantic model, dict, etc.) on success,
+            or ``text`` unchanged if reformatting or parsing fails.
+        """
+        _max = max_tokens if max_tokens is not None else self.max_tokens
+        structured_config: Dict[str, Any] = {
+            "temperature": temperature if temperature is not None else self.temperature,
+            "response_mime_type": "application/json",
+        }
+        if _max:
+            structured_config["max_output_tokens"] = _max
+
+        # Set the schema based on the type of output_config
+        schema_config = (
+            output_config
+            if isinstance(output_config, StructuredOutputConfig)
+            else self._get_structured_config(output_config)
+        )
+        if schema_config:
+            self._apply_structured_output_schema(structured_config, schema_config)
+
+        # CRITICAL: disable thinking for the reformat call.
+        # Gemini 3 Flash defaults to thinking ON, which turns a
+        # trivial string→JSON conversion into a multi-minute
+        # reasoning exercise (observed: 10s–4min latency for
+        # ~600 chars of input). Reformat is pure mechanical
+        # schema-filling — we already pass `response_schema`
+        # via `_apply_structured_output_schema`, so the model
+        # has no structural decisions to make.
+        # `_requires_thinking` is False for flash-preview, so
+        # budget=0 is accepted. Do NOT remove this.
+        reformat_model = self._reformat_model
+        if not self._requires_thinking(reformat_model):
+            structured_config["thinking_config"] = ThinkingConfig(
+                thinking_budget=0
+            )
+
+        # Create a new client call without tools for structured output
+        format_prompt = (
+            "Convert the following response into the requested JSON structure.\n\n"
+            "RULES (STRICT — violating these produces corrupted data):\n"
+            "1. The `explanation` field MUST contain the COMPLETE original text "
+            "verbatim — do NOT summarize, truncate, rewrite, or omit any part of it.\n"
+            "2. NEVER invent, fabricate, extend, complete, infer, or 'fill in' any "
+            "row, column, or value that is not literally present in the text below. "
+            "If the text shows only N rows of a table, the `data` field must contain "
+            "AT MOST those N rows — even if the text mentions that more rows exist "
+            "(e.g. 'Shape: (21, 4)'). Do not guess the missing rows.\n"
+            "3. If the text references a pandas variable holding the full result "
+            "(e.g. `data_variable = 'foo'` or 'the full breakdown is in `foo`'), "
+            "set `data_variable` to that exact variable name and leave `data` as "
+            "null or an empty table. The caller will inject the full DataFrame "
+            "from memory — you must not try to reconstruct it from the text.\n"
+            "4. Only populate `data` from a markdown table when ALL of its rows are "
+            "literally present in the text. When in doubt, prefer `data_variable` "
+            "over `data`.\n\n"
+            f"Return only the JSON object:\n\n{text}"
+        )
+        self.logger.debug(
+            "Reformatting response as structured output using %s "
+            "(thinking=%s, input_chars=%d)...",
+            reformat_model,
+            structured_config.get("thinking_config") and "off" or "default",
+            len(format_prompt),
+        )
+        _reformat_start = time.perf_counter()
+        structured_response = await self.client.aio.models.generate_content(
+            model=reformat_model,
+            contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+            config=GenerateContentConfig(**structured_config)
+        )
+        _reformat_elapsed = time.perf_counter() - _reformat_start
+        self.logger.info(
+            "Structured output reformatting complete in %.2fs",
+            _reformat_elapsed,
+        )
+
+        # Extract and parse the structured text
+        structured_text = self._safe_extract_text(structured_response)
+        if not structured_text:
+            self.logger.warning(
+                "No structured text received, falling back to original response"
+            )
+            return text
+
+        if isinstance(output_config, StructuredOutputConfig):
+            return await self._parse_structured_output(structured_text, output_config)
+        elif isinstance(output_config, type):
+            if hasattr(output_config, 'model_validate_json'):
+                return output_config.model_validate_json(structured_text)
+            elif hasattr(output_config, 'model_validate'):
+                parsed_json = self._json.loads(structured_text)
+                return output_config.model_validate(parsed_json)
+        return self._json.loads(structured_text)
 
     def _build_tools(self, tool_type: str, filter_names: Optional[List[str]] = None) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
@@ -2031,9 +2202,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
 
         use_structured_output = bool(output_config)
-        # Google limitation: Cannot combine tools with structured output
-        # Strategy: If both are requested, use tools first, then apply structured output to final result
-        if _use_tools and use_structured_output:
+        # FEAT-193: whitelisted Gemini 3.x models can receive tools + response_schema
+        # in a single GenerateContentConfig (combined mode).  Non-whitelisted models
+        # (e.g. gemini-2.5-pro) keep the legacy two-phase reformat flow.
+        combined_mode = (
+            _use_tools
+            and use_structured_output
+            and self._supports_combined_tools_and_schema(model, self._combined_call_prefixes)
+        )
+
+        if _use_tools and use_structured_output and not combined_mode:
+            # Two-phase path: tools first, then reformat via _reformat_model.
             self.logger.info(
                 "Google Gemini doesn't support tools + structured output simultaneously. "
                 "Using tools first, then applying structured output to the final result."
@@ -2041,6 +2220,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             structured_output_for_later = output_config
             # Don't set structured output in initial config
             output_config = None
+        elif combined_mode:
+            # Combined path: apply schema to the same chat call as tools.
+            structured_output_for_later = None
+            self._apply_structured_output_schema(generation_config, output_config)
+            if model.startswith("gemini-3.1-flash-lite"):
+                self.logger.debug(
+                    "Combined tools+schema mode on %s: upstream evaluation flagged "
+                    "AFC instability — monitor latency.",
+                    model,
+                )
         else:
             structured_output_for_later = None
             # Set structured output in generation config if no tools conflict
@@ -2472,6 +2661,41 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails
                 final_output = assistant_response_text
+        elif combined_mode and assistant_response_text and output_config:
+            # FEAT-193: combined mode — the model was already sent tools + response_schema
+            # in the same call, so we only need to parse the response (no second LLM call).
+            try:
+                parsed = await self._parse_structured_output(assistant_response_text, output_config)
+                if isinstance(parsed, str):
+                    # _parse_structured_output returns the input string on parse failure.
+                    # Recovery: fall back to the legacy reformat call.
+                    self.logger.warning(
+                        "Combined-mode parse returned raw string for %s — falling back to reformat call.",
+                        model,
+                    )
+                    final_output = await self._reformat_to_structured(
+                        assistant_response_text,
+                        output_config,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                else:
+                    final_output = parsed
+            except Exception as e:
+                self.logger.warning(
+                    "Combined-mode parse raised %s — falling back to reformat call.",
+                    type(e).__name__,
+                )
+                try:
+                    final_output = await self._reformat_to_structured(
+                        assistant_response_text,
+                        output_config,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                except Exception as reformat_err:
+                    self.logger.error("Recovery reformat also failed: %s", reformat_err)
+                    final_output = assistant_response_text
         elif output_config and not use_tools:
             try:
                 final_output = await self._parse_structured_output(
@@ -2842,9 +3066,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if gemini_tools:
                 generation_config_args["tools"] = gemini_tools
 
+            # FEAT-193: whitelisted models can receive tools + response_schema together.
+            combined_mode = bool(
+                structured_output
+                and _use_tools
+                and self._supports_combined_tools_and_schema(model, self._combined_call_prefixes)
+            )
+
             # Handle structured output mapping
             schema_config = None
-            if structured_output and not _use_tools:
+            applies_schema = bool(structured_output) and (not _use_tools or combined_mode)
+            if applies_schema:
                 schema_config = (
                     structured_output
                     if isinstance(structured_output, StructuredOutputConfig)
@@ -2852,6 +3084,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 )
                 if schema_config:
                     self._apply_structured_output_schema(generation_config_args, schema_config)
+                    if combined_mode and model.startswith("gemini-3.1-flash-lite"):
+                        self.logger.debug(
+                            "Combined tools+schema mode on %s: upstream evaluation flagged "
+                            "AFC instability — monitor latency.",
+                            model,
+                        )
 
             chat = self.client.aio.chats.create(
                 model=model,
@@ -3018,7 +3256,48 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 
             final_output = None
             if structured_output and final_text:
-                if _use_tools:
+                if combined_mode:
+                    # FEAT-193: combined mode — schema was sent with tools in a single call.
+                    # No second generate_content call needed; just parse the streamed text.
+                    # Use schema_config (a StructuredOutputConfig) rather than raw structured_output
+                    # so that _parse_structured_output can access .output_type correctly.
+                    _so_config = schema_config or (
+                        structured_output
+                        if isinstance(structured_output, StructuredOutputConfig)
+                        else self._get_structured_config(structured_output)
+                    )
+                    try:
+                        parsed = await self._parse_structured_output(final_text, _so_config)
+                        if isinstance(parsed, str):
+                            # Recovery: malformed JSON despite response_schema — fall back to reformat.
+                            self.logger.warning(
+                                "Combined-mode stream parse returned raw string for %s — falling back to reformat call.",
+                                model,
+                            )
+                            final_output = await self._reformat_to_structured(
+                                final_text,
+                                _so_config,
+                                temperature=temperature,
+                                max_tokens=current_max_tokens,
+                            )
+                        else:
+                            final_output = parsed
+                    except Exception as e:
+                        self.logger.warning(
+                            "Combined-mode stream parse raised %s — falling back to reformat call.",
+                            type(e).__name__,
+                        )
+                        try:
+                            final_output = await self._reformat_to_structured(
+                                final_text,
+                                _so_config,
+                                temperature=temperature,
+                                max_tokens=current_max_tokens,
+                            )
+                        except Exception as reformat_err:
+                            self.logger.error("Recovery reformat also failed: %s", reformat_err)
+                elif _use_tools:
+                    # EXISTING two-phase path — unchanged.
                     try:
                         is_json_candidate = (
                             final_text.strip().startswith('{') or
@@ -3029,16 +3308,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             fast_parsed = await self._parse_structured_output(final_text, structured_output)
                             if not isinstance(fast_parsed, str):
                                 final_output = fast_parsed
-                        
+
                         if final_output is None:
                             struct_cfg = {"response_mime_type": "application/json"}
                             if schema_config := (structured_output if isinstance(structured_output, StructuredOutputConfig) else self._get_structured_config(structured_output)):
                                 self._apply_structured_output_schema(struct_cfg, schema_config)
-                                
+
                             reformat_model = self._reformat_model
                             if not self._requires_thinking(reformat_model):
                                 struct_cfg["thinking_config"] = ThinkingConfig(thinking_budget=0)
-                                
+
                             format_prompt = (
                                 "Convert the following response into the requested JSON structure.\n\n"
                                 "RULES (STRICT — violating these produces corrupted data):\n"

@@ -350,10 +350,8 @@ async def smoke():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-27
+**Notes**: Added `combined_mode` local variable and three-branch gate in `ask()`. Extracted the reformat logic into `_reformat_to_structured` private helper near `_apply_structured_output_schema`. Added `elif combined_mode` branch in the deferred-reformat block. The two-phase path (fast-path JSON detect + reformat call) is preserved byte-for-byte inside the existing `if structured_output_for_later` branch. 25/26 tests pass (1 pre-existing failure in `test_google_ask_stream` unrelated to this task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: …
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. The `_reformat_to_structured` helper was extracted as recommended (but not strictly required) by the spec, making the combined-mode recovery branch and future ask_stream() reuse clean.
