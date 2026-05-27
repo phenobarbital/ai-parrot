@@ -32,7 +32,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "First touch of client.py — TASK-1304 and TASK-1305 depend on the helper landing here. Within the per-spec worktree, runs first.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1303-capability-helper-and-configurable-whitelist.md"
+      "completed_at": "2026-05-27T20:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1303-capability-helper-and-configurable-whitelist.md"
     },
     {
       "id": "TASK-1304",

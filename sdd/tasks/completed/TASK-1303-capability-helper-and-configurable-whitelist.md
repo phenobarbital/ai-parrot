@@ -310,8 +310,8 @@ class TestCombinedCallPrefixesResolution:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: …
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-27
+**Notes**: Added `_default_combined_call_prefixes` class attribute, `combined_call_prefixes` constructor kwarg, and `_supports_combined_tools_and_schema` static method to GoogleGenAIClient. Also fixed pre-existing test infrastructure issue: added `InvokeResult` stub to `packages/ai-parrot/tests/conftest.py` to allow tests to run. 13 new helper tests pass. Tests must be run with PYTHONPATH pointing to worktree source (not via editable install) due to how git worktrees work with shared source directories.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Also modified `packages/ai-parrot/tests/conftest.py` (not listed in task scope) to fix a pre-existing stub ordering issue that prevented tests from running at all. The fix adds `InvokeResult` to the `parrot.models.responses` stub.
