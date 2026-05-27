@@ -259,7 +259,7 @@ class LongTermMemoryMixin:
         Returns ``None`` when the skills module is unavailable or on error.
         """
         try:
-            from parrot.memory.skills.store import SkillRegistry  # type: ignore[import]
+            from parrot.skills.store import SkillRegistry  # type: ignore[import]
 
             registry = SkillRegistry()
             return registry

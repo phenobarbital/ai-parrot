@@ -8,7 +8,6 @@ Wraps mautrix.appservice.AppService to provide:
 """
 from __future__ import annotations
 from typing import Any, Callable, Coroutine, Dict, Optional, Set
-import asyncio
 
 from navconfig.logging import logging
 
@@ -73,6 +72,7 @@ class MatrixAppService:
         self._registered_agents: Dict[str, str] = {}  # name → mxid
         self._agent_rooms: Dict[str, Set[str]] = {}  # mxid → room_ids
         self._event_callback: Optional[EventCallback] = None
+        self._custom_event_callback: Optional[Callable] = None  # for m.parrot.* events
         self.logger = logging.getLogger("parrot.matrix.appservice")
 
     # ------------------------------------------------------------------
@@ -260,11 +260,168 @@ class MatrixAppService:
         event_id = await intent.send_text(RoomID(room_id), message)
         return str(event_id)
 
+    async def send_formatted_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        body: str,
+        formatted_body: str,
+    ) -> str:
+        """Send a formatted HTML message as a specific virtual agent.
+
+        Sends a ``m.text`` event with both a plain-text ``body`` and an HTML
+        ``formatted_body``, using the ``org.matrix.custom.html`` format. Matrix
+        clients that support rich text will render the HTML; others fall back
+        to the plain-text body.
+
+        Args:
+            agent_name: Name of the registered agent.
+            room_id: Target room.
+            body: Plain-text message body (shown in non-HTML clients).
+            formatted_body: HTML-formatted message body (shown in rich clients).
+
+        Returns:
+            Event ID of the sent message.
+
+        Raises:
+            ValueError: If the agent is not registered.
+        """
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            raise ValueError(f"Agent '{agent_name}' not registered")
+
+        intent = self._get_intent(mxid)
+        from mautrix.types import (  # type: ignore
+            Format,
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=body,
+            format=Format.HTML,
+            formatted_body=formatted_body,
+        )
+        event_id = await intent.send_message(RoomID(room_id), content)
+        return str(event_id)
+
     async def send_as_bot(self, room_id: str, message: str) -> str:
         """Send a message as the bot user."""
         event_id = await self.bot_intent.send_text(
             RoomID(room_id), message
         )
+        return str(event_id)
+
+    async def send_custom_event_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        event_type: str,
+        content: dict,
+    ) -> Optional[str]:
+        """Send a custom Matrix event as a specific virtual agent.
+
+        Args:
+            agent_name: The registered agent name.
+            room_id: The Matrix room ID.
+            event_type: The Matrix event type string.
+            content: The event content dict.
+
+        Returns:
+            The event ID if sent successfully, None otherwise.
+        """
+        from mautrix.types import EventType as MxEventType, RoomID  # type: ignore
+
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            self.logger.warning(
+                "send_custom_event_as_agent: unknown agent %s", agent_name
+            )
+            return None
+        intent = self._get_intent(mxid)
+        custom_type = MxEventType.find(
+            event_type, t_class=MxEventType.Class.MESSAGE
+        )
+        event_id = await intent.send_message_event(RoomID(room_id), custom_type, content)
+        return str(event_id)
+
+    async def send_reply_as_agent(
+        self,
+        agent_name: str,
+        room_id: str,
+        message: str,
+        reply_to_event_id: str,
+    ) -> str:
+        """Send a reply-to message as a specific virtual agent.
+
+        Sets the ``m.in_reply_to`` relation so Matrix clients render the
+        message as a threaded reply to the referenced event.
+
+        Args:
+            agent_name: Name of the registered agent.
+            room_id: Target room.
+            message: Reply text.
+            reply_to_event_id: Event ID of the message being replied to.
+
+        Returns:
+            Event ID of the sent reply.
+
+        Raises:
+            ValueError: If the agent is not registered.
+        """
+        mxid = self._registered_agents.get(agent_name)
+        if not mxid:
+            raise ValueError(f"Agent '{agent_name}' not registered")
+
+        intent = self._get_intent(mxid)
+        from mautrix.types import (  # type: ignore
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=message,
+        )
+        content["m.relates_to"] = {
+            "m.in_reply_to": {"event_id": reply_to_event_id}
+        }
+        event_id = await intent.send_message(RoomID(room_id), content)
+        return str(event_id)
+
+    async def send_reply_as_bot(
+        self,
+        room_id: str,
+        message: str,
+        reply_to_event_id: str,
+    ) -> str:
+        """Send a reply-to message as the bot user.
+
+        Sets the ``m.in_reply_to`` relation so Matrix clients render the
+        message as a threaded reply to the referenced event.
+
+        Args:
+            room_id: Target room.
+            message: Reply text.
+            reply_to_event_id: Event ID of the message being replied to.
+
+        Returns:
+            Event ID of the sent reply.
+        """
+        from mautrix.types import (  # type: ignore
+            MessageType,
+            TextMessageEventContent,
+        )
+
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT,
+            body=message,
+        )
+        content["m.relates_to"] = {
+            "m.in_reply_to": {"event_id": reply_to_event_id}
+        }
+        event_id = await self.bot_intent.send_message(RoomID(room_id), content)
         return str(event_id)
 
     # ------------------------------------------------------------------
@@ -284,9 +441,35 @@ class MatrixAppService:
         """
         self._event_callback = callback
 
+    def set_custom_event_callback(self, callback: Callable) -> None:
+        """Set the callback for incoming custom ``m.parrot.*`` events.
+
+        The callback is invoked for ``m.parrot.task`` and ``m.parrot.result``
+        events with signature:
+            async def handler(event_type: str, content: dict) -> None
+
+        Args:
+            callback: Async callable accepting ``(event_type, content)``.
+        """
+        self._custom_event_callback = callback
+
     async def _handle_event(self, event: Event) -> None:
         """Process events pushed by the homeserver."""
         try:
+            event_type_str = str(event.type)
+
+            # Route custom m.parrot.* events to the custom callback
+            if event_type_str in (ParrotEventType.TASK, ParrotEventType.RESULT):
+                if self._custom_event_callback:
+                    content_dict: Dict[str, Any] = {}
+                    if hasattr(event, "content") and event.content is not None:
+                        try:
+                            content_dict = dict(event.content)
+                        except Exception:
+                            content_dict = {}
+                    await self._custom_event_callback(event_type_str, content_dict)
+                return
+
             # Only handle room messages
             if event.type != EventType.ROOM_MESSAGE:
                 return

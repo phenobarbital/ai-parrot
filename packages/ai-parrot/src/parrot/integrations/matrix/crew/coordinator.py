@@ -190,7 +190,7 @@ class MatrixCoordinator:
                 )
             elif hasattr(self._client, "client"):
                 # Direct mautrix client access
-                from mautrix.types import EventType, RoomID, EventID
+                from mautrix.types import EventType, RoomID
                 await self._client.client.send_state_event(
                     RoomID(self._room_id),
                     EventType.find(

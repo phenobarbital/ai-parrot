@@ -1,0 +1,180 @@
+{
+  "feature": "skill-registry",
+  "feature_id": "FEAT-188",
+  "spec": "sdd/specs/skill-registry.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-25T00:00:00Z",
+  "completed_at": "2026-05-26T01:21:00.006883+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1287",
+      "slug": "namespace-promotion",
+      "title": "Namespace Promotion \u2014 Move parrot.memory.skills to parrot.skills",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches every file in the module; all subsequent tasks depend on this.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1287-namespace-promotion.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1288",
+      "slug": "model-extension",
+      "title": "SkillDefinition Model Extension \u2014 Add assets_dir Field",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1287"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies models.py which TASK-1287 just moved. Sequential with TASK-1287.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1288-model-extension.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1289",
+      "slug": "composite-skill-parser",
+      "title": "Composite Skill Parser \u2014 parse_skill_directory()",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1288"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on assets_dir field from TASK-1288. Modifies parsers.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1289-composite-skill-parser.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1290",
+      "slug": "registry-get-by-name",
+      "title": "SkillFileRegistry Extension \u2014 Add get_by_name()",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1287"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Only depends on TASK-1287 (namespace move). Could theoretically parallel with TASK-1288/1289 but sequential in one worktree per spec strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1290-registry-get-by-name.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1291",
+      "slug": "directory-loader",
+      "title": "SkillsDirectoryLoader \u2014 Filesystem Discovery",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1289",
+        "TASK-1290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses parse_skill_directory (TASK-1289) and SkillFileRegistry.add (TASK-1290). Core discovery component.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1291-directory-loader.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1292",
+      "slug": "prompt-layer-factory",
+      "title": "Skills Prompt Layer Factory \u2014 render_skills_prompt_layer()",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses SkillFileRegistry.list_skills() (available after TASK-1290). Independent of TASK-1291/1293 but sequential per worktree strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1292-prompt-layer-factory.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1293",
+      "slug": "load-skill-tool",
+      "title": "LoadSkillTool \u2014 Tier 2 On-Demand Skill Retrieval",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses get_by_name() from TASK-1290. Independent of TASK-1291/1292 but sequential per worktree strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1293-load-skill-tool.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1294",
+      "slug": "mixin-wiring",
+      "title": "Mixin Wiring \u2014 Integrate Discovery, Prompt, and Tool into SkillRegistryMixin",
+      "feature_id": "FEAT-188",
+      "feature": "skill-registry",
+      "spec": "sdd/specs/skill-registry.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1291",
+        "TASK-1292",
+        "TASK-1293"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration task. Depends on all prior tasks. Wires everything into the mixin.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-05-26T01:21:00.006883+00:00",
+      "file": "sdd/tasks/completed/TASK-1294-mixin-wiring.md",
+      "verification": "verified"
+    }
+  ]
+}

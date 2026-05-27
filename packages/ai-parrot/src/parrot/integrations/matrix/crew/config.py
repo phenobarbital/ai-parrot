@@ -6,10 +6,10 @@ operating on a Matrix homeserver via the Application Service protocol.
 import logging
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,54 @@ class MatrixCrewAgentEntry(BaseModel):
     )
 
 
+class CollaborativeConfig(BaseModel):
+    """Configuration for collaborative multi-agent investigation sessions.
+
+    Controls how ``!investigate`` commands trigger collaborative sessions,
+    including round counts, timeouts, summarizer agent, and verbosity.
+
+    Attributes:
+        command_prefix: Trigger command that initiates a collaborative session.
+        max_rounds: Number of cross-pollination rounds (1-10).
+        agent_timeout: Per-agent response timeout in seconds.
+        session_timeout: Maximum total session duration in seconds.
+        summarizer_agent: Agent name for final synthesis (None = post raw results).
+        session_verbosity: 'full' posts all announcements, 'minimal' reduces them.
+        include_chat_context: Pass recent chat history to the summarizer.
+    """
+
+    command_prefix: str = Field(
+        default="!investigate",
+        description="Trigger command that initiates a collaborative session",
+    )
+    max_rounds: int = Field(
+        default=1,
+        ge=1,
+        le=10,
+        description="Number of cross-pollination rounds",
+    )
+    agent_timeout: float = Field(
+        default=120.0,
+        description="Per-agent response timeout in seconds",
+    )
+    session_timeout: float = Field(
+        default=600.0,
+        description="Maximum total session duration in seconds",
+    )
+    summarizer_agent: Optional[str] = Field(
+        default=None,
+        description="Agent name for final synthesis (None = post raw results)",
+    )
+    session_verbosity: Literal["full", "minimal", "silent"] = Field(
+        default="full",
+        description="'full' posts all announcements, 'minimal' reduces them, 'silent' suppresses all",
+    )
+    include_chat_context: bool = Field(
+        default=True,
+        description="Pass recent chat history to the summarizer",
+    )
+
+
 class MatrixCrewConfig(BaseModel):
     """Root configuration for a Matrix multi-agent crew.
 
@@ -105,6 +153,7 @@ class MatrixCrewConfig(BaseModel):
         streaming: Whether to use edit-based streaming.
         unaddressed_agent: Default agent for unmentioned messages.
         max_message_length: Chunk responses beyond this length.
+        collaborative: Optional collaborative session configuration.
     """
 
     homeserver_url: str = Field(..., description="Matrix homeserver URL")
@@ -136,6 +185,34 @@ class MatrixCrewConfig(BaseModel):
     max_message_length: int = Field(
         default=4096, description="Chunk responses beyond this length"
     )
+    collaborative: Optional[CollaborativeConfig] = Field(
+        default=None,
+        description="Collaborative session configuration (optional, backward-compatible)",
+    )
+
+    @model_validator(mode="after")
+    def validate_summarizer_agent(self) -> "MatrixCrewConfig":
+        """Ensure summarizer_agent references a known agent in the agents dict.
+
+        Validation is only enforced when ``agents`` is non-empty.  An empty
+        ``agents`` dict is allowed (e.g. minimal / test configurations), so
+        referencing a ``summarizer_agent`` before agents are declared is valid.
+
+        Returns:
+            Self after validation.
+
+        Raises:
+            ValueError: If ``collaborative.summarizer_agent`` is set, the
+                ``agents`` dict is non-empty, and the summarizer name is not a
+                key in ``agents``.
+        """
+        if self.collaborative and self.collaborative.summarizer_agent and self.agents:
+            if self.collaborative.summarizer_agent not in self.agents:
+                raise ValueError(
+                    f"summarizer_agent '{self.collaborative.summarizer_agent}' "
+                    f"not found in agents: {list(self.agents.keys())}"
+                )
+        return self
 
     @classmethod
     def from_yaml(cls, path: str) -> "MatrixCrewConfig":

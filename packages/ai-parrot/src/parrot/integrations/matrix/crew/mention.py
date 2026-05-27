@@ -80,3 +80,25 @@ def build_pill(mxid: str, display_name: str) -> str:
         ``'<a href="https://matrix.to/#/@analyst:example.com">Financial Analyst</a>'``
     """
     return f'<a href="https://matrix.to/#/{mxid}">{display_name}</a>'
+
+
+def build_reply_content(text: str, reply_to_event_id: str) -> dict:
+    """Build the ``m.relates_to`` content dict for a reply-to message.
+
+    Constructs the event content fragment needed to mark a Matrix message
+    as a threaded reply to an existing event.
+
+    Args:
+        text: Message body text.
+        reply_to_event_id: Event ID of the message being replied to.
+
+    Returns:
+        Dict with ``body`` and ``m.relates_to`` keys suitable for inclusion
+        in a Matrix event content.
+    """
+    return {
+        "body": text,
+        "m.relates_to": {
+            "m.in_reply_to": {"event_id": reply_to_event_id}
+        },
+    }
