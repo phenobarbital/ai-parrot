@@ -65,6 +65,15 @@ class UnderstandingRequest(BaseModel):
             "Used in JSON mode when no file is uploaded."
         ),
     )
+    media_urls: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "List of URLs to analyse together. Use this to pass multiple "
+            "images to image_understanding, or a single video plus reference "
+            "images to video_understanding. Merged with 'media_url' when both "
+            "are provided."
+        ),
+    )
     media_type: Optional[str] = Field(
         default=None,
         description=(
