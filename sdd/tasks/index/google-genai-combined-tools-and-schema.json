@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-27T16:50:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-27T22:42:56+00:00",
   "tasks": [
     {
       "id": "TASK-1302",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Touches only models/google.py — no overlap with the client.py refactors or the example/test files.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1302-add-gemini-3-5-flash-enum.md"
+      "completed_at": "2026-05-27T19:52:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1302-add-gemini-3-5-flash-enum.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1303",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "First touch of client.py — TASK-1304 and TASK-1305 depend on the helper landing here. Within the per-spec worktree, runs first.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1303-capability-helper-and-configurable-whitelist.md"
+      "completed_at": "2026-05-27T20:05:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1303-capability-helper-and-configurable-whitelist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1304",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Modifies client.py near the ask() gate and reformat block. Shares file with TASK-1305; runs sequentially.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1304-ask-combined-mode-refactor.md"
+      "completed_at": "2026-05-27T20:10:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1304-ask-combined-mode-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1305",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +83,9 @@
       "parallelism_notes": "Depends only on TASK-1303 (the helper); technically independent of TASK-1304 at the runtime level — but both edit client.py so they run sequentially in the per-spec worktree to avoid merge friction. If TASK-1304 extracts _reformat_to_structured, this task reuses it.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1305-ask-stream-combined-mode-refactor.md"
+      "completed_at": "2026-05-27T20:12:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1305-ask-stream-combined-mode-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1306",
@@ -90,7 +94,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -101,8 +105,9 @@
       "parallelism_notes": "Touches only examples/google/structured_with_tools.py — no file overlap with TASK-1307. Could run concurrently with TASK-1307 in a different worktree if desired.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1306-parametrize-example.md"
+      "completed_at": "2026-05-27T20:14:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1306-parametrize-example.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1307",
@@ -111,7 +116,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +127,9 @@
       "parallelism_notes": "Touches only packages/ai-parrot/tests/test_google_client.py — no overlap with TASK-1306. Adds 11 mock-only test cases.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1307-combined-mode-regression-tests.md"
+      "completed_at": "2026-05-27T20:26:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1307-combined-mode-regression-tests.md",
+      "verification": "verified"
     }
   ]
 }
