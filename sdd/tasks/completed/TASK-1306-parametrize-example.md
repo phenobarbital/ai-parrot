@@ -289,10 +289,8 @@ Prompt: What's the weather like in Madrid, Spain? ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-27
+**Notes**: Created `examples/google/structured_with_tools.py` with argparse `--model`/`--prompt` CLI. Iterates DEFAULT_MODELS tuple (3 whitelisted + gemini-2.5-pro for regression) when no `--model` is given. `WeatherReport` and `WeatherTool` kept byte-for-byte from original untracked file. Import and whitelist detection verified. File was gitignored by `examples/**/*.py` rule — force-added with `git add -f` per CLAUDE.md guidance for tracked template files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: …
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used `git add -f` because `examples/**/*.py` is in `.gitignore`. The spec explicitly requires the file to be committed as the feature's tactile demo.
