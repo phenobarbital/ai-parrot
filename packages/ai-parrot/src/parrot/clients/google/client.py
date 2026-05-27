@@ -3240,8 +3240,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 if combined_mode:
                     # FEAT-193: combined mode — schema was sent with tools in a single call.
                     # No second generate_content call needed; just parse the streamed text.
+                    # Use schema_config (a StructuredOutputConfig) rather than raw structured_output
+                    # so that _parse_structured_output can access .output_type correctly.
+                    _so_config = schema_config or (
+                        structured_output
+                        if isinstance(structured_output, StructuredOutputConfig)
+                        else self._get_structured_config(structured_output)
+                    )
                     try:
-                        parsed = await self._parse_structured_output(final_text, structured_output)
+                        parsed = await self._parse_structured_output(final_text, _so_config)
                         if isinstance(parsed, str):
                             # Recovery: malformed JSON despite response_schema — fall back to reformat.
                             self.logger.warning(
@@ -3250,7 +3257,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             )
                             final_output = await self._reformat_to_structured(
                                 final_text,
-                                structured_output,
+                                _so_config,
                                 temperature=temperature,
                                 max_tokens=current_max_tokens,
                             )
