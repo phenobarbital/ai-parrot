@@ -7,6 +7,7 @@ from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
 import asyncio
 import inspect
+import json
 import re
 import uuid
 import contextlib
@@ -1067,6 +1068,82 @@ class PandasAgent(BasicAgent):
 
         return map_response
 
+    @staticmethod
+    def _client_uses_split_structured_with_tools(client: Any) -> bool:
+        """Return True when the LLM client splits a tool-using call and a
+        structured-output call into two separate LLM invocations.
+
+        Why: Gemini refuses to combine ``tools`` with ``response_schema``
+        in a single ``generateContent`` call, so the Google client falls
+        back to a two-phase flow — first the tool loop, then a reformat
+        call to coerce the answer into the schema. The second call adds
+        ~10s of latency. Detecting this lets PandasAgent ask the LLM to
+        embed the structured JSON inline in the first answer, triggering
+        the client's fast-path parser and skipping the reformat call.
+
+        Other providers (OpenAI, Anthropic, Groq) accept tools +
+        structured output in a single call and do not benefit from the
+        in-band JSON hint.
+        """
+        return client.__class__.__name__ == 'GoogleGenAIClient'
+
+    @staticmethod
+    def _build_fast_path_json_addendum(output_type: type) -> Optional[str]:
+        """Build a prompt addendum telling the LLM to append a
+        ```json``` block matching ``output_type`` to the end of its
+        response. Returns ``None`` if no usable skeleton can be built.
+
+        The Google client's fast-path parser (``client.py:2334``) treats
+        any response containing ``\\`\\`\\`json`` as a structured-output
+        candidate and skips the second reformat LLM call when parsing
+        succeeds. This addendum is best-effort: if the LLM ignores it,
+        the existing two-call fallback still produces valid output.
+        """
+        skeleton: Optional[Dict[str, Any]] = None
+
+        cfg = getattr(output_type, 'model_config', None)
+        if isinstance(cfg, dict):
+            example = (cfg.get('json_schema_extra') or {}).get('example')
+            if isinstance(example, dict):
+                skeleton = example
+
+        if skeleton is None:
+            fields = getattr(output_type, 'model_fields', None)
+            if not fields:
+                return None
+            skeleton = {name: None for name in fields}
+
+        try:
+            skeleton_str = json.dumps(skeleton, indent=2, default=str)
+        except (TypeError, ValueError):
+            return None
+
+        return (
+            "\n\n"
+            "## FINAL RESPONSE FORMAT — APPEND JSON BLOCK (CRITICAL):\n"
+            "After your natural-language markdown explanation (including "
+            "any markdown tables), append exactly ONE fenced ```json``` "
+            "block at the very END of your response, matching this "
+            "schema:\n\n"
+            f"```json\n{skeleton_str}\n```\n\n"
+            "RULES (STRICT):\n"
+            "- The JSON block MUST be the LAST thing in your response.\n"
+            "- The `explanation` field MUST contain the COMPLETE "
+            "markdown explanation from above, verbatim — duplication "
+            "is intentional; do NOT summarize or truncate.\n"
+            "- For results with > 10 rows, set `data_variable` to the "
+            "Python variable name holding the DataFrame and leave "
+            "`data` as null. NEVER inline large tables.\n"
+            "- For results with ≤ 10 rows, populate `data` with "
+            "`{\"columns\": [...], \"rows\": [[...], ...]}` and leave "
+            "`data_variable` null.\n"
+            "- Numeric values in `rows` MUST be raw numbers — no "
+            "currency symbols, no percent signs, no thousands "
+            "separators.\n"
+            "- Including this JSON block avoids a costly second LLM "
+            "reformat call (~10s latency saved per query).\n"
+        )
+
     async def ask(
         self,
         question: str,
@@ -1256,6 +1333,25 @@ class PandasAgent(BasicAgent):
                     llm_kwargs["structured_output"] = StructuredOutputConfig(
                         output_type=PandasAgentResponse
                     )
+
+                # Fast-path optimization for clients that split tools +
+                # structured_output into two LLM calls (currently only
+                # Google's GenAI client). Asking the LLM to embed the
+                # structured JSON inline lets the client's fast-path
+                # parser skip the second reformat call.
+                structured_cfg = llm_kwargs.get("structured_output")
+                if (
+                    structured_cfg is not None
+                    and self._client_uses_split_structured_with_tools(client)
+                ):
+                    output_type = getattr(structured_cfg, 'output_type', None)
+                    if (
+                        isinstance(output_type, type)
+                        and issubclass(output_type, BaseModel)
+                    ):
+                        addendum = self._build_fast_path_json_addendum(output_type)
+                        if addendum:
+                            llm_kwargs["system_prompt"] += addendum
 
                 # Call the LLM
                 response: AIMessage = await client.ask(**llm_kwargs)
