@@ -817,6 +817,123 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         generation_config["response_schema"] = fixed_schema
         return fixed_schema
 
+    async def _reformat_to_structured(
+        self,
+        text: str,
+        output_config,
+        *,
+        temperature=None,
+        max_tokens=None,
+    ):
+        """Reformat a free-text model response into structured output via a second LLM call.
+
+        This is the legacy two-phase helper used by non-whitelisted models and as a
+        recovery path when combined-mode parsing fails. It calls ``self._reformat_model``
+        (a fast model without tools) and asks it to convert ``text`` into the JSON schema
+        described by ``output_config``.
+
+        Args:
+            text: The free-text model response to reformat.
+            output_config: A ``StructuredOutputConfig``, a Pydantic model class, or any
+                object supported by ``_apply_structured_output_schema``.
+            temperature: Override for the reformat call temperature.
+            max_tokens: Override for the reformat call max_output_tokens.
+
+        Returns:
+            The parsed structured output (Pydantic model, dict, etc.) on success,
+            or ``text`` unchanged if reformatting or parsing fails.
+        """
+        _max = max_tokens or self.max_tokens
+        structured_config: Dict[str, Any] = {
+            "temperature": temperature or self.temperature,
+            "response_mime_type": "application/json",
+        }
+        if _max:
+            structured_config["max_output_tokens"] = _max
+
+        # Set the schema based on the type of output_config
+        schema_config = (
+            output_config
+            if isinstance(output_config, StructuredOutputConfig)
+            else self._get_structured_config(output_config)
+        )
+        if schema_config:
+            self._apply_structured_output_schema(structured_config, schema_config)
+
+        # CRITICAL: disable thinking for the reformat call.
+        # Gemini 3 Flash defaults to thinking ON, which turns a
+        # trivial string→JSON conversion into a multi-minute
+        # reasoning exercise (observed: 10s–4min latency for
+        # ~600 chars of input). Reformat is pure mechanical
+        # schema-filling — we already pass `response_schema`
+        # via `_apply_structured_output_schema`, so the model
+        # has no structural decisions to make.
+        # `_requires_thinking` is False for flash-preview, so
+        # budget=0 is accepted. Do NOT remove this.
+        reformat_model = self._reformat_model
+        if not self._requires_thinking(reformat_model):
+            structured_config["thinking_config"] = ThinkingConfig(
+                thinking_budget=0
+            )
+
+        # Create a new client call without tools for structured output
+        format_prompt = (
+            "Convert the following response into the requested JSON structure.\n\n"
+            "RULES (STRICT — violating these produces corrupted data):\n"
+            "1. The `explanation` field MUST contain the COMPLETE original text "
+            "verbatim — do NOT summarize, truncate, rewrite, or omit any part of it.\n"
+            "2. NEVER invent, fabricate, extend, complete, infer, or 'fill in' any "
+            "row, column, or value that is not literally present in the text below. "
+            "If the text shows only N rows of a table, the `data` field must contain "
+            "AT MOST those N rows — even if the text mentions that more rows exist "
+            "(e.g. 'Shape: (21, 4)'). Do not guess the missing rows.\n"
+            "3. If the text references a pandas variable holding the full result "
+            "(e.g. `data_variable = 'foo'` or 'the full breakdown is in `foo`'), "
+            "set `data_variable` to that exact variable name and leave `data` as "
+            "null or an empty table. The caller will inject the full DataFrame "
+            "from memory — you must not try to reconstruct it from the text.\n"
+            "4. Only populate `data` from a markdown table when ALL of its rows are "
+            "literally present in the text. When in doubt, prefer `data_variable` "
+            "over `data`.\n\n"
+            f"Return only the JSON object:\n\n{text}"
+        )
+        self.logger.debug(
+            "Reformatting response as structured output using %s "
+            "(thinking=%s, input_chars=%d)...",
+            reformat_model,
+            structured_config.get("thinking_config") and "off" or "default",
+            len(format_prompt),
+        )
+        _reformat_start = time.perf_counter()
+        structured_response = await self.client.aio.models.generate_content(
+            model=reformat_model,
+            contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+            config=GenerateContentConfig(**structured_config)
+        )
+        _reformat_elapsed = time.perf_counter() - _reformat_start
+        self.logger.info(
+            "Structured output reformatting complete in %.2fs",
+            _reformat_elapsed,
+        )
+
+        # Extract and parse the structured text
+        structured_text = self._safe_extract_text(structured_response)
+        if not structured_text:
+            self.logger.warning(
+                "No structured text received, falling back to original response"
+            )
+            return text
+
+        if isinstance(output_config, StructuredOutputConfig):
+            return await self._parse_structured_output(structured_text, output_config)
+        elif isinstance(output_config, type):
+            if hasattr(output_config, 'model_validate_json'):
+                return output_config.model_validate_json(structured_text)
+            elif hasattr(output_config, 'model_validate'):
+                parsed_json = self._json.loads(structured_text)
+                return output_config.model_validate(parsed_json)
+        return self._json.loads(structured_text)
+
     def _build_tools(self, tool_type: str, filter_names: Optional[List[str]] = None) -> Optional[List[types.Tool]]:
         """Build tools based on the specified type."""
         if tool_type == "custom_functions":
@@ -2078,9 +2195,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         )
 
         use_structured_output = bool(output_config)
-        # Google limitation: Cannot combine tools with structured output
-        # Strategy: If both are requested, use tools first, then apply structured output to final result
-        if _use_tools and use_structured_output:
+        # FEAT-193: whitelisted Gemini 3.x models can receive tools + response_schema
+        # in a single GenerateContentConfig (combined mode).  Non-whitelisted models
+        # (e.g. gemini-2.5-pro) keep the legacy two-phase reformat flow.
+        combined_mode = (
+            _use_tools
+            and use_structured_output
+            and self._supports_combined_tools_and_schema(model, self._combined_call_prefixes)
+        )
+
+        if _use_tools and use_structured_output and not combined_mode:
+            # Two-phase path: tools first, then reformat via _reformat_model.
             self.logger.info(
                 "Google Gemini doesn't support tools + structured output simultaneously. "
                 "Using tools first, then applying structured output to the final result."
@@ -2088,6 +2213,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             structured_output_for_later = output_config
             # Don't set structured output in initial config
             output_config = None
+        elif combined_mode:
+            # Combined path: apply schema to the same chat call as tools.
+            structured_output_for_later = None
+            self._apply_structured_output_schema(generation_config, output_config)
+            if model.startswith("gemini-3.1-flash-lite"):
+                self.logger.debug(
+                    "Combined tools+schema mode on %s: upstream evaluation flagged "
+                    "AFC instability — monitor latency.",
+                    model,
+                )
         else:
             structured_output_for_later = None
             # Set structured output in generation config if no tools conflict
@@ -2518,6 +2653,29 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails
+                final_output = assistant_response_text
+        elif combined_mode and assistant_response_text and output_config:
+            # FEAT-193: combined mode — the model was already sent tools + response_schema
+            # in the same call, so we only need to parse the response (no second LLM call).
+            try:
+                parsed = await self._parse_structured_output(assistant_response_text, output_config)
+                if isinstance(parsed, str):
+                    # _parse_structured_output returns the input string on parse failure.
+                    # Recovery: fall back to the legacy reformat call.
+                    self.logger.warning(
+                        "Combined-mode parse returned raw string for %s — falling back to reformat call.",
+                        model,
+                    )
+                    final_output = await self._reformat_to_structured(
+                        assistant_response_text,
+                        output_config,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                else:
+                    final_output = parsed
+            except Exception as e:
+                self.logger.error("Combined-mode structured-output parse failed: %s", e)
                 final_output = assistant_response_text
         elif output_config and not use_tools:
             try:
