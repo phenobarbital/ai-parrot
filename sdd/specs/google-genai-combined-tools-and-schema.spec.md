@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-193
 **Date**: 2026-05-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 **Source proposal**: [`sdd/proposals/feat-193-google-genai-combined-tools-and-schema.proposal.md`](../proposals/feat-193-google-genai-combined-tools-and-schema.proposal.md)
 **Research audit**: [`sdd/state/FEAT-193/`](../state/FEAT-193/)
