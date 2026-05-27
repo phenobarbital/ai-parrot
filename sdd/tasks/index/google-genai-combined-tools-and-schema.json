@@ -111,7 +111,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -122,8 +122,8 @@
       "parallelism_notes": "Touches only packages/ai-parrot/tests/test_google_client.py — no overlap with TASK-1306. Adds 11 mock-only test cases.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1307-combined-mode-regression-tests.md"
+      "completed_at": "2026-05-27T20:26:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1307-combined-mode-regression-tests.md"
     }
   ]
 }
