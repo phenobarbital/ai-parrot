@@ -3047,9 +3047,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if gemini_tools:
                 generation_config_args["tools"] = gemini_tools
 
+            # FEAT-193: whitelisted models can receive tools + response_schema together.
+            combined_mode = bool(
+                structured_output
+                and _use_tools
+                and self._supports_combined_tools_and_schema(model, self._combined_call_prefixes)
+            )
+
             # Handle structured output mapping
             schema_config = None
-            if structured_output and not _use_tools:
+            applies_schema = bool(structured_output) and (not _use_tools or combined_mode)
+            if applies_schema:
                 schema_config = (
                     structured_output
                     if isinstance(structured_output, StructuredOutputConfig)
@@ -3057,6 +3065,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 )
                 if schema_config:
                     self._apply_structured_output_schema(generation_config_args, schema_config)
+                    if combined_mode and model.startswith("gemini-3.1-flash-lite"):
+                        self.logger.debug(
+                            "Combined tools+schema mode on %s: upstream evaluation flagged "
+                            "AFC instability — monitor latency.",
+                            model,
+                        )
 
             chat = self.client.aio.chats.create(
                 model=model,
@@ -3223,7 +3237,29 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 
             final_output = None
             if structured_output and final_text:
-                if _use_tools:
+                if combined_mode:
+                    # FEAT-193: combined mode — schema was sent with tools in a single call.
+                    # No second generate_content call needed; just parse the streamed text.
+                    try:
+                        parsed = await self._parse_structured_output(final_text, structured_output)
+                        if isinstance(parsed, str):
+                            # Recovery: malformed JSON despite response_schema — fall back to reformat.
+                            self.logger.warning(
+                                "Combined-mode stream parse returned raw string for %s — falling back to reformat call.",
+                                model,
+                            )
+                            final_output = await self._reformat_to_structured(
+                                final_text,
+                                structured_output,
+                                temperature=temperature,
+                                max_tokens=current_max_tokens,
+                            )
+                        else:
+                            final_output = parsed
+                    except Exception as e:
+                        self.logger.error("Combined-mode stream structured-output parse failed: %s", e)
+                elif _use_tools:
+                    # EXISTING two-phase path — unchanged.
                     try:
                         is_json_candidate = (
                             final_text.strip().startswith('{') or
@@ -3234,16 +3270,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             fast_parsed = await self._parse_structured_output(final_text, structured_output)
                             if not isinstance(fast_parsed, str):
                                 final_output = fast_parsed
-                        
+
                         if final_output is None:
                             struct_cfg = {"response_mime_type": "application/json"}
                             if schema_config := (structured_output if isinstance(structured_output, StructuredOutputConfig) else self._get_structured_config(structured_output)):
                                 self._apply_structured_output_schema(struct_cfg, schema_config)
-                                
+
                             reformat_model = self._reformat_model
                             if not self._requires_thinking(reformat_model):
                                 struct_cfg["thinking_config"] = ThinkingConfig(thinking_budget=0)
-                                
+
                             format_prompt = (
                                 "Convert the following response into the requested JSON structure.\n\n"
                                 "RULES (STRICT — violating these produces corrupted data):\n"
