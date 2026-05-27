@@ -361,6 +361,52 @@ def _build_pandas_prompt_builder() -> PromptBuilder:
     return builder
 
 
+# --- Map intent detection -------------------------------------------------
+# Phrase-based regex tuned to avoid false positives on "mapping", "id map",
+# "column map", etc. The `\bmap\b` boundary excludes "mapping". The verb-
+# prefix pattern uses a bounded-distance match (up to 40 non-sentence chars)
+# so it survives intervening adjectives ("create a really cool map") without
+# crossing sentence boundaries.
+_MAP_PHRASES: Tuple[re.Pattern, ...] = tuple(
+    re.compile(p, re.IGNORECASE) for p in (
+        r"\b(create|show|draw|plot|render|visualize|display|generate|build|make)"
+        r"\b[^.?!]{0,40}\bmap\b",
+        r"\b(on|in)\s+(a\s+|an\s+|the\s+)?map\b",
+    )
+)
+
+# Direct columns guarantee point-marker maps work without inference.
+_DIRECT_GEO_COLS: frozenset[str] = frozenset({
+    "lat", "latitude", "lon", "lng", "long", "longitude", "geometry", "geom",
+})
+
+# Indirect columns require >=2 hits to disambiguate from generic IDs.
+_INDIRECT_GEO_COLS: frozenset[str] = frozenset({
+    "country", "state", "region", "province", "county",
+    "city", "town", "address", "street",
+    "zip", "zipcode", "postal_code", "postcode",
+})
+
+
+def _detect_map_intent(question: str, df: Optional[pd.DataFrame]) -> bool:
+    """Return True when the question phrases a map request AND the result
+    DataFrame carries enough geographic signal to render one.
+
+    Phrase match alone is not enough — we also require either a direct
+    coordinate column (lat/lon) or at least two indirect geo columns
+    (e.g. ``city`` + ``country``) to reduce false positives from columns
+    named after generic IDs.
+    """
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return False
+    if not any(p.search(question) for p in _MAP_PHRASES):
+        return False
+    cols = {str(c).lower().strip() for c in df.columns}
+    if cols & _DIRECT_GEO_COLS:
+        return True
+    return len(cols & _INDIRECT_GEO_COLS) >= 2
+
+
 class PandasAgent(BasicAgent):
     """
     A specialized agent for data analysis using pandas DataFrames.
@@ -963,6 +1009,64 @@ class PandasAgent(BasicAgent):
 
         return response
 
+    async def _rerun_for_map(
+        self,
+        *,
+        client: Any,
+        question: str,
+        result_var: str,
+        result_df: pd.DataFrame,
+        base_llm_kwargs: Dict[str, Any],
+        prev_response: AIMessage,
+    ) -> AIMessage:
+        """Re-invoke the LLM with the Folium system prompt so it produces
+        map code referencing the result DataFrame already living in the
+        PythonPandasTool REPL.
+
+        The first ``client.ask`` call ran without ``FOLIUM_SYSTEM_PROMPT``
+        because the user did not explicitly request ``OutputMode.MAP`` —
+        auto-detection happens after the result is materialised. This
+        helper performs the second pass and preserves the original
+        ``response.data`` on the returned AIMessage so the FoliumRenderer
+        sees the same DataFrame the user asked about.
+        """
+        cols = [str(c) for c in result_df.columns]
+        augmented_prompt = (
+            f"Generate a Folium map using the DataFrame already stored "
+            f"in the variable `{result_var}` (columns: {cols}, "
+            f"rows: {len(result_df)}). Do not re-derive or filter that "
+            f"DataFrame — reference it directly. "
+            f"Original user request: {question}"
+        )
+
+        folium_addon = self.formatter.get_system_prompt(OutputMode.MAP) or ""
+        rerun_system_prompt = (
+            base_llm_kwargs["system_prompt"]
+            + OUTPUT_SYSTEM_PROMPT.format(output_mode="map")
+            + folium_addon
+        )
+
+        rerun_kwargs = dict(base_llm_kwargs)
+        rerun_kwargs["prompt"] = augmented_prompt
+        rerun_kwargs["system_prompt"] = rerun_system_prompt
+
+        map_response: AIMessage = await client.ask(**rerun_kwargs)
+
+        # Preserve the original result DataFrame — the second call's job
+        # is to produce Folium code, not to recompute the data. Pulling
+        # the live ``data_variable`` again risks the LLM truncating to a
+        # preview or fabricating rows.
+        map_response.data = result_df
+        map_response.session_id = prev_response.session_id
+        map_response.turn_id = prev_response.turn_id
+
+        if self._dataset_manager:
+            map_response.artifacts.extend(
+                self._dataset_manager.drain_artifacts()
+            )
+
+        return map_response
+
     async def ask(
         self,
         question: str,
@@ -1308,6 +1412,45 @@ class PandasAgent(BasicAgent):
                             for tc in (response.tool_calls or [])
                         ],
                     )
+
+                # Auto-switch to MAP when the caller did not explicitly
+                # pick a mode but the question phrases a map request AND
+                # the result DataFrame has the geographic signal to back
+                # it. Source DataFrames cannot be inspected for this —
+                # the DatasetManager exposes dozens of datasets, many
+                # with lat/lon, so the only honest signal is the result
+                # the LLM actually produced for this question.
+                if (
+                    output_mode == OutputMode.DEFAULT
+                    and isinstance(response.data, pd.DataFrame)
+                    and _detect_map_intent(question, response.data)
+                ):
+                    map_var = inferred_var
+                    if not map_var and data_response:
+                        map_var = data_response.data_variable
+                        if not map_var and data_response.data_variables:
+                            candidate = data_response.data_variables[0]
+                            map_var = candidate if isinstance(candidate, str) else None
+                    if map_var:
+                        self.logger.info(
+                            "Map intent detected for variable '%s' — "
+                            "re-running with FOLIUM_SYSTEM_PROMPT",
+                            map_var,
+                        )
+                        output_mode = OutputMode.MAP
+                        response = await self._rerun_for_map(
+                            client=client,
+                            question=question,
+                            result_var=map_var,
+                            result_df=response.data,
+                            base_llm_kwargs=llm_kwargs,
+                            prev_response=response,
+                        )
+                    else:
+                        self.logger.debug(
+                            "Map intent matched but no result variable "
+                            "could be resolved; skipping auto-switch."
+                        )
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
