@@ -2,15 +2,11 @@
 import argparse
 import asyncio
 import os
-import json
 import time
-from typing import List, Optional
 from pydantic import BaseModel, Field
 from parrot.clients.google.client import GoogleGenAIClient
-from parrot.models.google import GoogleModel
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.manager import ToolManager
-from parrot.models.basic import ToolCall
 
 # Default test set: 3 whitelisted + 1 known-fallback model for regression visibility.
 DEFAULT_MODELS = (
@@ -49,7 +45,6 @@ class WeatherTool(AbstractTool):
         }
 
     async def _execute(self, location: str, **kwargs):
-        print(f"DEBUG: WeatherTool._execute called for {location}")
         return {
             "location": location,
             "temperature": 25.5,

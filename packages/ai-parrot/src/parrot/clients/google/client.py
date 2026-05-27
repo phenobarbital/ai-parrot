@@ -99,6 +99,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     Only Gemini-2.5-pro works well with multi-turn function calling.
     Supports both API Key (Gemini Developer API) and Service Account (Vertex AI).
+
+    **Combined tools + structured output**: for models whose identifier starts with a prefix
+    in ``_default_combined_call_prefixes`` (default: ``gemini-3.1-pro``, ``gemini-3.5-flash``,
+    ``gemini-3.1-flash-lite``), ``ask()`` and ``ask_stream()`` send ``tools`` and
+    ``response_schema`` in a single ``GenerateContentConfig`` (no reformat round-trip).
+    For all other models (e.g. ``gemini-2.5-pro``), the legacy two-phase flow is preserved.
+    Override the whitelist per-instance via ``GoogleGenAIClient(combined_call_prefixes=...)``.
     """
     client_type: str = 'google'
     client_name: str = 'google'
@@ -820,11 +827,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     async def _reformat_to_structured(
         self,
         text: str,
-        output_config,
+        output_config: Union[type, Any],
         *,
-        temperature=None,
-        max_tokens=None,
-    ):
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> Any:
         """Reformat a free-text model response into structured output via a second LLM call.
 
         This is the legacy two-phase helper used by non-whitelisted models and as a
@@ -843,9 +850,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             The parsed structured output (Pydantic model, dict, etc.) on success,
             or ``text`` unchanged if reformatting or parsing fails.
         """
-        _max = max_tokens or self.max_tokens
+        _max = max_tokens if max_tokens is not None else self.max_tokens
         structured_config: Dict[str, Any] = {
-            "temperature": temperature or self.temperature,
+            "temperature": temperature if temperature is not None else self.temperature,
             "response_mime_type": "application/json",
         }
         if _max:
@@ -2675,8 +2682,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 else:
                     final_output = parsed
             except Exception as e:
-                self.logger.error("Combined-mode structured-output parse failed: %s", e)
-                final_output = assistant_response_text
+                self.logger.warning(
+                    "Combined-mode parse raised %s — falling back to reformat call.",
+                    type(e).__name__,
+                )
+                try:
+                    final_output = await self._reformat_to_structured(
+                        assistant_response_text,
+                        output_config,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                except Exception as reformat_err:
+                    self.logger.error("Recovery reformat also failed: %s", reformat_err)
+                    final_output = assistant_response_text
         elif output_config and not use_tools:
             try:
                 final_output = await self._parse_structured_output(
@@ -3264,7 +3283,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         else:
                             final_output = parsed
                     except Exception as e:
-                        self.logger.error("Combined-mode stream structured-output parse failed: %s", e)
+                        self.logger.warning(
+                            "Combined-mode stream parse raised %s — falling back to reformat call.",
+                            type(e).__name__,
+                        )
+                        try:
+                            final_output = await self._reformat_to_structured(
+                                final_text,
+                                _so_config,
+                                temperature=temperature,
+                                max_tokens=current_max_tokens,
+                            )
+                        except Exception as reformat_err:
+                            self.logger.error("Recovery reformat also failed: %s", reformat_err)
                 elif _use_tools:
                     # EXISTING two-phase path — unchanged.
                     try:
