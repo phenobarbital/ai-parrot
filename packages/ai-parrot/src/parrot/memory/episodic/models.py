@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EpisodeOutcome(str, Enum):
@@ -58,6 +58,8 @@ class EpisodicMemory(BaseModel):
     Captures what the agent did, what happened, and what it learned,
     with dimensional namespace fields for scoped retrieval.
     """
+
+    model_config = ConfigDict(coerce_numbers_to_str=True)
 
     # Identity
     episode_id: str = Field(
@@ -219,6 +221,8 @@ class MemoryNamespace(BaseModel):
     - Per-session: (tenant_id, agent_id, user_id, session_id)
     - Per-crew: (tenant_id, crew_id)
     """
+
+    model_config = ConfigDict(coerce_numbers_to_str=True)
 
     tenant_id: str = Field(
         default="default", description="Multi-tenant isolation"

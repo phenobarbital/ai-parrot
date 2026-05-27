@@ -26,6 +26,7 @@ from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig
+from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -1374,6 +1375,7 @@ class PandasAgent(BasicAgent):
                 data_response: Optional[PandasAgentResponse] = response.output \
                     if isinstance(response.output, PandasAgentResponse) else None
 
+                missing_data_variables: List[str] = []
                 if data_response:
                     # Extract the dataframe
                     response.data = data_response.to_dataframe()
@@ -1386,7 +1388,7 @@ class PandasAgent(BasicAgent):
                     # If data is large and stored as a variable, pull it from the Python tool context.
                     # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
                     if data_response.data_variables and len(data_response.data_variables) >= 2:
-                        await self._inject_multi_data_from_variables(
+                        missing_data_variables = await self._inject_multi_data_from_variables(
                             response,
                             data_response.data_variables,
                         )
@@ -1502,11 +1504,13 @@ class PandasAgent(BasicAgent):
                         "resolvable `data_variable`, but the turn "
                         "executed data operations (%s). The LLM must "
                         "set `data_variable` in the structured response "
-                        "to deliver the full DataFrame to the caller.",
+                        "to deliver the full DataFrame to the caller. "
+                        "Hallucinated/missing data_variables: %s",
                         [
                             getattr(tc, 'name', '?')
                             for tc in (response.tool_calls or [])
                         ],
+                        missing_data_variables or "none",
                     )
 
                 # Auto-switch to MAP when the caller did not explicitly
@@ -1624,6 +1628,35 @@ class PandasAgent(BasicAgent):
                     question,
                     answer_text,
                 )
+
+                # Persist the turn into conversation_memory so subsequent
+                # questions in the same session see prior context. Without
+                # this, build_conversation_context() always sees an empty
+                # history because PandasAgent reads from conversation_memory
+                # but ChatStorage writes to a separate Redis namespace.
+                if use_conversation_history and memory:
+                    try:
+                        turn = ConversationTurn(
+                            turn_id=response.turn_id or turn_id,
+                            user_id=user_id,
+                            user_message=question,
+                            assistant_response=answer_text or "",
+                            tools_used=[
+                                t.name for t in (response.tool_calls or [])
+                            ],
+                            metadata={
+                                'model': getattr(response, 'model', None),
+                                'response_time': getattr(response, 'response_time', None),
+                                'usage': getattr(response, 'usage', None),
+                                'finish_reason': getattr(response, 'finish_reason', None),
+                            },
+                        )
+                        await memory.add_turn(user_id, session_id, turn)
+                    except Exception as _save_exc:
+                        self.logger.debug(
+                            "Failed to persist conversation turn: %s",
+                            _save_exc,
+                        )
 
                 # Post-response: episodic / mixin-provided hook
                 _post_q, _post_resp = question, response
@@ -1985,7 +2018,7 @@ class PandasAgent(BasicAgent):
         self,
         response: AIMessage,
         data_variables: List[str],
-    ) -> None:
+    ) -> List[str]:
         """Inject multiple DataFrames from PythonPandasTool context into response.data.
 
         When the LLM declares multiple result variables via ``data_variables``,
@@ -1993,22 +2026,29 @@ class PandasAgent(BasicAgent):
         per DataFrame, and sets ``response.data`` to the assembled list.
 
         Variables that are not found or are not DataFrames are skipped with a
-        warning; the remaining valid datasets are still returned.
+        warning; the remaining valid datasets are still returned. When NO
+        variable resolves, ``response.data`` is reset to ``None`` so the
+        downstream inferred-variable fallback can take over.
 
         Args:
             response: The :class:`~parrot.models.responses.AIMessage` whose
                 ``data`` field will be populated.
             data_variables: Ordered list of Python variable names to resolve
                 from the ``PythonPandasTool`` execution context.
+
+        Returns:
+            List of variable names that could not be resolved (hallucinated
+            or never assigned). Empty when every variable was found.
         """
         pandas_tool = self._get_python_pandas_tool()
         if not pandas_tool:
             self.logger.warning(
                 "PythonPandasTool not available for multi-dataset injection"
             )
-            return
+            return list(data_variables)
 
         results: List[Dict[str, Any]] = []
+        missing: List[str] = []
         for var_name in data_variables:
             df = None
             if hasattr(pandas_tool, "locals"):
@@ -2036,6 +2076,7 @@ class PandasAgent(BasicAgent):
                     ).model_dump()
                 )
             else:
+                missing.append(var_name)
                 self.logger.warning(
                     "Multi-dataset injection: variable '%s' not found or not a DataFrame "
                     "— skipping.",
@@ -2045,10 +2086,17 @@ class PandasAgent(BasicAgent):
         if results:
             response.data = results
         else:
+            # Hallucinated/missing variables only — clear the empty-DataFrame
+            # stub from PandasAgentResponse.to_dataframe() so the downstream
+            # inferred-variable fallback can populate response.data instead
+            # of seeing a "non-empty" stub.
+            response.data = None
             self.logger.warning(
                 "Multi-dataset injection: none of the variables in %s could be resolved.",
                 data_variables,
             )
+
+        return missing
 
     def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
         """Get the ProphetForecastTool instance if registered."""

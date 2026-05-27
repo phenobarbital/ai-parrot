@@ -106,12 +106,25 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    # Default model used to reformat tool-using responses into structured
+    # output (Gemini cannot combine tools + response_schema in one call).
+    # Override per-instance via the ``reformat_model`` constructor kwarg.
+    # DO NOT downgrade the default to a smaller model (e.g. flash-lite):
+    # small models hallucinate rows when extracting tabular data from a
+    # shape-annotated preview, corrupting `data`.
+    _default_reformat_model: str = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
     # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
     _min_cache_tokens: int = 4096
     # Default TTL for CachedContent resources (5 minutes)
     _cache_ttl: str = "300s"
 
-    def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
+    def __init__(
+        self,
+        vertexai: bool = False,
+        model_garden: bool = False,
+        reformat_model: Optional[Union[str, GoogleModel]] = None,
+        **kwargs,
+    ):
         _require_google_sdk()
         self.model_garden = model_garden
         self.vertexai: bool = True if model_garden else vertexai
@@ -133,6 +146,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         super().__init__(**kwargs)
         self.max_tokens = kwargs.get('max_tokens', None)
+        # Resolve reformat_model: explicit kwarg > class default. Accepts
+        # both ``GoogleModel`` enum members and raw strings.
+        self._reformat_model: str = self._as_model_str(reformat_model) \
+            or self._default_reformat_model
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
@@ -2370,11 +2387,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if schema_config:
                         self._apply_structured_output_schema(structured_config, schema_config)
                     # Use a fast model for the reformatting call — this is
-                    # just JSON conversion, not reasoning. DO NOT downgrade
-                    # to a smaller model (e.g. flash-lite): small models
-                    # hallucinate rows when asked to extract tabular data
-                    # from a shape-annotated preview, corrupting `data`.
-                    reformat_model = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+                    # just JSON conversion, not reasoning. The default is
+                    # ``_default_reformat_model`` (GEMINI_3_FLASH_PREVIEW);
+                    # override per-instance via the ``reformat_model``
+                    # constructor kwarg. DO NOT downgrade to flash-lite:
+                    # small models hallucinate rows when extracting tabular
+                    # data from a shape-annotated preview.
+                    reformat_model = self._reformat_model
                     # CRITICAL: disable thinking for the reformat call.
                     # Gemini 3 Flash defaults to thinking ON, which turns a
                     # trivial string→JSON conversion into a multi-minute
@@ -3016,7 +3035,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             if schema_config := (structured_output if isinstance(structured_output, StructuredOutputConfig) else self._get_structured_config(structured_output)):
                                 self._apply_structured_output_schema(struct_cfg, schema_config)
                                 
-                            reformat_model = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+                            reformat_model = self._reformat_model
                             if not self._requires_thinking(reformat_model):
                                 struct_cfg["thinking_config"] = ThinkingConfig(thinking_budget=0)
                                 
