@@ -1,6 +1,7 @@
 from parrot.bots import Agent
 from parrot.registry import register_agent
 from parrot_tools.odoo import OdooToolkit
+from parrot.models.google import GoogleModel
 from parrot.conf import (
     ODOO_URL,
     ODOO_DATABASE,
@@ -36,7 +37,7 @@ class OdooAgent(Agent):
     """Odoo ERP agent powered by OdooToolkit (JSON-2 / XML-RPC auto-detect)."""
 
     agent_id: str = "odoo_agent"
-    model: str = "gemini-2.5-pro"
+    model: str = GoogleModel.GEMINI_FLASH_LATEST
 
     def __init__(self, *args, **kwargs):
         super().__init__(
