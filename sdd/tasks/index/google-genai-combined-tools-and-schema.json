@@ -50,7 +50,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Modifies client.py near the ask() gate and reformat block. Shares file with TASK-1305; runs sequentially.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1304-ask-combined-mode-refactor.md"
+      "completed_at": "2026-05-27T20:10:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1304-ask-combined-mode-refactor.md"
     },
     {
       "id": "TASK-1305",
