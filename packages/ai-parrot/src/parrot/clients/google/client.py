@@ -106,12 +106,25 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
     _lightweight_model: str = "gemini-3.1-flash-lite-preview"
+    # Default prefixes for which tools + response_schema may be sent in a
+    # single GenerateContentConfig (FEAT-193). Override per-subclass by
+    # setting this attribute, or per-instance via the constructor kwarg
+    # ``combined_call_prefixes``. Gemini 3.x models listed here have been
+    # validated by upstream evaluation to accept both simultaneously.
+    _default_combined_call_prefixes: tuple[str, ...] = (
+        "gemini-3.1-pro",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite",
+    )
     # Default model used to reformat tool-using responses into structured
-    # output (Gemini cannot combine tools + response_schema in one call).
-    # Override per-instance via the ``reformat_model`` constructor kwarg.
-    # DO NOT downgrade the default to a smaller model (e.g. flash-lite):
-    # small models hallucinate rows when extracting tabular data from a
-    # shape-annotated preview, corrupting `data`.
+    # output for models that cannot combine tools + response_schema in one
+    # call (e.g., gemini-2.5-pro). Override per-instance via the
+    # ``reformat_model`` constructor kwarg. DO NOT downgrade the default to
+    # a smaller model (e.g. flash-lite): small models hallucinate rows when
+    # extracting tabular data from a shape-annotated preview, corrupting
+    # ``data``. Whitelisted Gemini 3.x models (configured via
+    # ``combined_call_prefixes``) bypass this reformat step — see
+    # ``_supports_combined_tools_and_schema``.
     _default_reformat_model: str = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
     # FEAT-181: Gemini requires ≥4096 tokens for CachedContent resources
     _min_cache_tokens: int = 4096
@@ -123,6 +136,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         vertexai: bool = False,
         model_garden: bool = False,
         reformat_model: Optional[Union[str, GoogleModel]] = None,
+        combined_call_prefixes: Optional[tuple[str, ...]] = None,
         **kwargs,
     ):
         _require_google_sdk()
@@ -150,6 +164,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # both ``GoogleModel`` enum members and raw strings.
         self._reformat_model: str = self._as_model_str(reformat_model) \
             or self._default_reformat_model
+        # Resolve combined_call_prefixes: explicit kwarg > class default.
+        # Coerce to tuple so callers can pass any sequence (list, tuple, generator).
+        self._combined_call_prefixes: tuple[str, ...] = (
+            tuple(combined_call_prefixes)
+            if combined_call_prefixes is not None
+            else self._default_combined_call_prefixes
+        )
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
@@ -188,6 +209,32 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             or model.startswith('gemini-3.1-pro')
             or model.startswith('gemini-3-pro')
         )
+
+    @staticmethod
+    def _supports_combined_tools_and_schema(
+        model: "str | GoogleModel | None",
+        prefixes: "tuple[str, ...]",
+    ) -> bool:
+        """Whether ``model`` may receive tools + response_schema in a single call.
+
+        Returns True when the normalised model identifier starts with any
+        prefix in ``prefixes``. Pattern matches ``_is_gemini3_model`` and
+        ``_requires_thinking`` for consistency.
+
+        Args:
+            model: Model identifier — accepts plain string, GoogleModel enum,
+                or None (returns False for falsy inputs).
+            prefixes: Tuple of model-name prefixes to match against. Pass an
+                empty tuple to disable combined mode entirely (documented
+                kill switch for ``combined_call_prefixes=()``).
+
+        Returns:
+            True iff ``model`` starts with any prefix in ``prefixes``.
+        """
+        model = GoogleGenAIClient._as_model_str(model)
+        if not model or not prefixes:
+            return False
+        return any(model.startswith(p) for p in prefixes)
 
     @staticmethod
     def _as_model_str(model) -> str:

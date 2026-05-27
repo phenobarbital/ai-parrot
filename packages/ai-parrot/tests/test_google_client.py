@@ -298,3 +298,80 @@ def test_truncate_result_within_limit():
     assert isinstance(result, list)
     assert len(result) == 2
     assert result[0]["id"] == 1
+
+
+# ── FEAT-193 TASK-1303: capability helper + configurable whitelist tests ─────
+
+import inspect
+
+from parrot.models.google import GoogleModel
+
+
+class TestSupportsCombinedToolsAndSchema:
+    """Unit tests for the FEAT-193 capability helper."""
+
+    DEFAULT_PREFIXES = GoogleGenAIClient._default_combined_call_prefixes
+
+    def test_is_staticmethod(self):
+        """Helper is a @staticmethod (matches the _is_gemini3_model pattern)."""
+        descriptor = GoogleGenAIClient.__dict__["_supports_combined_tools_and_schema"]
+        assert isinstance(descriptor, staticmethod)
+
+    @pytest.mark.parametrize("model", [
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite-preview",
+        # also matches longer suffixes the API may publish later
+        "gemini-3.5-flash-001",
+    ])
+    def test_whitelisted_returns_true(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is True
+
+    @pytest.mark.parametrize("model", [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-3-flash-preview",  # NOT in the prefix list — 3-flash without the .5
+    ])
+    def test_unwhitelisted_returns_false(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is False
+
+    @pytest.mark.parametrize("model", ["", None])
+    def test_falsy_input_returns_false(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is False
+
+    def test_accepts_googlemodel_enum(self):
+        """Helper normalises GoogleModel enum members via _as_model_str."""
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            GoogleModel.GEMINI_3_PRO_PREVIEW, self.DEFAULT_PREFIXES
+        ) is True
+
+    def test_empty_prefixes_disables_combined_mode(self):
+        """Passing an empty prefix tuple is the documented kill switch."""
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            "gemini-3.5-flash", ()
+        ) is False
+
+
+class TestCombinedCallPrefixesResolution:
+    """Constructor-kwarg resolution for the configurable whitelist."""
+
+    def test_default_when_kwarg_omitted(self):
+        client = GoogleGenAIClient(api_key="fake")
+        assert client._combined_call_prefixes == GoogleGenAIClient._default_combined_call_prefixes
+
+    def test_explicit_kwarg_overrides_default(self):
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=("foo", "bar"))
+        assert client._combined_call_prefixes == ("foo", "bar")
+
+    def test_kwarg_coerced_to_tuple(self):
+        """List / generator inputs are coerced to tuple."""
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=["foo", "bar"])
+        assert client._combined_call_prefixes == ("foo", "bar")
+        assert isinstance(client._combined_call_prefixes, tuple)
