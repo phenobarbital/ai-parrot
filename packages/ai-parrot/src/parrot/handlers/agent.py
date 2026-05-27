@@ -2201,7 +2201,7 @@ class AgentTalk(BaseView):
                     for tool in getattr(response, 'tool_calls', [])
                 ] if format_kwargs.get('include_tool_calls', True) else []
             }
-            self.logger.debug('Agent response: %s', obj_response)
+            # self.logger.debug('Agent response: %s', obj_response)
 
             # Persist chat turn via ChatStorage (hot + cold)
             try:

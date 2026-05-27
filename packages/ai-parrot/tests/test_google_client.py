@@ -298,3 +298,513 @@ def test_truncate_result_within_limit():
     assert isinstance(result, list)
     assert len(result) == 2
     assert result[0]["id"] == 1
+
+
+# ── FEAT-193 TASK-1303: capability helper + configurable whitelist tests ─────
+
+from parrot.models.google import GoogleModel
+
+
+class TestSupportsCombinedToolsAndSchema:
+    """Unit tests for the FEAT-193 capability helper."""
+
+    DEFAULT_PREFIXES = GoogleGenAIClient._default_combined_call_prefixes
+
+    def test_is_staticmethod(self):
+        """Helper is a @staticmethod (matches the _is_gemini3_model pattern)."""
+        descriptor = GoogleGenAIClient.__dict__["_supports_combined_tools_and_schema"]
+        assert isinstance(descriptor, staticmethod)
+
+    @pytest.mark.parametrize("model", [
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-3.1-flash-lite-preview",
+        # also matches longer suffixes the API may publish later
+        "gemini-3.5-flash-001",
+    ])
+    def test_whitelisted_returns_true(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is True
+
+    @pytest.mark.parametrize("model", [
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-3-flash-preview",  # NOT in the prefix list — 3-flash without the .5
+    ])
+    def test_unwhitelisted_returns_false(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is False
+
+    @pytest.mark.parametrize("model", ["", None])
+    def test_falsy_input_returns_false(self, model):
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            model, self.DEFAULT_PREFIXES
+        ) is False
+
+    def test_accepts_googlemodel_enum(self):
+        """Helper normalises GoogleModel enum members via _as_model_str."""
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            GoogleModel.GEMINI_3_PRO_PREVIEW, self.DEFAULT_PREFIXES
+        ) is True
+
+    def test_empty_prefixes_disables_combined_mode(self):
+        """Passing an empty prefix tuple is the documented kill switch."""
+        assert GoogleGenAIClient._supports_combined_tools_and_schema(
+            "gemini-3.5-flash", ()
+        ) is False
+
+
+class TestCombinedCallPrefixesResolution:
+    """Constructor-kwarg resolution for the configurable whitelist."""
+
+    def test_default_when_kwarg_omitted(self):
+        client = GoogleGenAIClient(api_key="fake")
+        assert client._combined_call_prefixes == GoogleGenAIClient._default_combined_call_prefixes
+
+    def test_explicit_kwarg_overrides_default(self):
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=("foo", "bar"))
+        assert client._combined_call_prefixes == ("foo", "bar")
+
+    def test_kwarg_coerced_to_tuple(self):
+        """List / generator inputs are coerced to tuple."""
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=["foo", "bar"])
+        assert client._combined_call_prefixes == ("foo", "bar")
+        assert isinstance(client._combined_call_prefixes, tuple)
+
+
+# ── FEAT-193 TASK-1307: Combined-mode regression tests ────────────────────────
+
+import logging
+from pydantic import Field as _Field
+from parrot.core.events.lifecycle.events.client import AfterClientCallEvent
+
+
+def _make_weather_schema():
+    """Return a real Pydantic model class for structured output tests."""
+    from pydantic import BaseModel
+
+    class WeatherReport(BaseModel):
+        location: str = _Field(...)
+        temperature: float = _Field(...)
+        condition: str = _Field(...)
+
+    return WeatherReport
+
+
+def _make_fake_response(text: str):
+    """Build a minimal fake response that _safe_extract_text can pull text from."""
+    part = _FakeGeminiPart(text=text)
+    response = _FakeGeminiResponse(parts=[part], text=text)
+    # The multiturn loop checks response.function_calls; add an empty list.
+    response.function_calls = []
+    return response
+
+
+def _register_fake_tool(client):
+    """Register a minimal fake tool so _use_tools=True takes effect.
+
+    Without at least one registered tool, ask() with use_tools=True falls
+    back to _use_tools=False (line 2167-2173 in client.py).
+    """
+    from parrot.tools.abstract import AbstractTool
+
+    class _FakeTool(AbstractTool):
+        name = "fake_tool"
+        description = "Fake tool for testing"
+
+        def get_schema(self):
+            return {
+                "name": self.name,
+                "description": self.description,
+                "parameters": {"type": "object", "properties": {}, "required": []},
+            }
+
+        async def _execute(self, **kwargs):
+            return {}
+
+    client.tool_manager.register_tool(_FakeTool())
+
+
+def _build_mocked_client(combined_call_prefixes=None):
+    """Return (client, mocks_dict) with the Google GenAI SDK boundary fully mocked.
+
+    Mocks ``get_client()`` (the factory called by ``_ensure_client``) to return a
+    MagicMock SDK client. After the first ``await client.ask(...)`` call, the mock
+    is cached in the per-loop store and ``self.client`` returns it automatically.
+
+    Also registers a fake tool so that ``use_tools=True`` is not silently ignored
+    (ask() disables tools when none are registered).
+    """
+    if combined_call_prefixes is not None:
+        client = GoogleGenAIClient(api_key="fake", combined_call_prefixes=combined_call_prefixes)
+    else:
+        client = GoogleGenAIClient(api_key="fake")
+
+    _register_fake_tool(client)
+
+    chat = MagicMock()
+    chat.send_message = AsyncMock()
+    chat.send_message_stream = AsyncMock()
+    create_mock = MagicMock(return_value=chat)
+
+    reformat_mock = AsyncMock()
+    models_mock = MagicMock()
+    models_mock.generate_content = reformat_mock
+
+    aio = MagicMock()
+    aio.chats = MagicMock(create=create_mock)
+    aio.models = models_mock
+    mock_sdk_client = MagicMock(aio=aio)
+
+    # get_client() is called by _ensure_client() on a cache miss.
+    client.get_client = AsyncMock(return_value=mock_sdk_client)
+
+    return client, {
+        "chats.create": create_mock,
+        "chat": chat,
+        "chat.send_message": chat.send_message,
+        "chat.send_message_stream": chat.send_message_stream,
+        "models.generate_content": reformat_mock,
+    }
+
+
+class TestAskCombinedModeGate:
+    """ask() combined-mode gate: whitelisted model skips the reformat call."""
+
+    @pytest.mark.asyncio
+    async def test_combined_mode_single_call(self):
+        """Whitelisted model + tools + schema -> one send_message, zero reformat calls."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["chat.send_message"].return_value = _make_fake_response(json_text)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="weather?", output=json_text, response=json_text,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="weather?",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        assert m["chat.send_message"].call_count == 1
+        assert m["models.generate_content"].call_count == 0
+
+        # Schema was applied to the chat config (combined mode).
+        config = m["chat.send_message"].call_args.kwargs.get("config") or \
+                 m["chat.send_message"].call_args.args[1] if m["chat.send_message"].call_args.args else None
+        if config is None:
+            # config may be positional arg in some versions; fall back
+            all_kwargs = m["chat.send_message"].call_args
+            config = all_kwargs.kwargs.get("config") or (all_kwargs.args[1] if len(all_kwargs.args) > 1 else None)
+        assert getattr(config, "response_mime_type", None) == "application/json"
+        assert getattr(config, "response_schema", None) is not None
+
+    @pytest.mark.asyncio
+    async def test_two_phase_preserved_for_unwhitelisted(self):
+        """Non-whitelisted model + tools + schema -> send_message + reformat call."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        m["chat.send_message"].return_value = _make_fake_response(
+            "It is sunny in Madrid at 25.5 degrees Celsius."
+        )
+        reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["models.generate_content"].return_value = _make_fake_response(reformat_json)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="weather?", output=reformat_json, response=reformat_json,
+                model="gemini-2.5-pro", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="weather?",
+                model="gemini-2.5-pro",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        # Both a chat call AND a reformat call.
+        assert m["chat.send_message"].call_count == 1
+        assert m["models.generate_content"].call_count >= 1
+
+        # Schema NOT on the initial chat config (two-phase: defer schema to reformat).
+        chat_config = m["chat.send_message"].call_args.kwargs.get("config")
+        assert getattr(chat_config, "response_schema", None) is None
+
+        # Schema IS on the reformat config.
+        reformat_config = m["models.generate_content"].call_args.kwargs.get("config")
+        assert getattr(reformat_config, "response_mime_type", None) == "application/json"
+
+    @pytest.mark.asyncio
+    async def test_combined_mode_no_structured_output(self):
+        """Whitelisted + tools, no schema -> one chat call, no reformat."""
+        client, m = _build_mocked_client()
+        m["chat.send_message"].return_value = _make_fake_response("It is sunny.")
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output="It is sunny.", response="It is sunny.",
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                use_tools=True,
+            )
+
+        assert m["chat.send_message"].call_count == 1
+        assert m["models.generate_content"].call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_combined_mode_no_tools(self):
+        """Whitelisted + schema, no tools -> schema on chat config, no reformat."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+        json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["chat.send_message"].return_value = _make_fake_response(json_text)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=json_text, response=json_text,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=False,
+            )
+
+        assert m["chat.send_message"].call_count == 1
+        assert m["models.generate_content"].call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_combined_call_prefixes_kwarg_override_empty(self):
+        """Empty prefixes tuple forces two-phase even for normally-whitelisted models."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client(combined_call_prefixes=())
+
+        m["chat.send_message"].return_value = _make_fake_response(
+            "It is sunny in Madrid at 25.5 degrees."
+        )
+        reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["models.generate_content"].return_value = _make_fake_response(reformat_json)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=reformat_json, response=reformat_json,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        # Should have fallen back to two-phase because combined_call_prefixes=().
+        assert m["models.generate_content"].call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_combined_call_prefixes_kwarg_override_custom(self):
+        """Custom whitelist: only the listed prefix triggers combined mode."""
+        weather_schema = _make_weather_schema()
+
+        # Custom prefix that matches gemini-3.5-flash but NOT gemini-2.5-pro.
+        client, m = _build_mocked_client(combined_call_prefixes=("gemini-3.5-flash",))
+
+        json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["chat.send_message"].return_value = _make_fake_response(json_text)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=json_text, response=json_text,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        # gemini-3.5-flash matches custom prefix -> combined mode -> zero reformat calls.
+        assert m["models.generate_content"].call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_combined_mode_malformed_json_falls_back_to_reformat(self):
+        """Combined mode: _parse_structured_output returns str -> recovery reformat call."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        # The model returns text that fails JSON parsing.
+        m["chat.send_message"].return_value = _make_fake_response("Not valid JSON at all")
+        reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["models.generate_content"].return_value = _make_fake_response(reformat_json)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=reformat_json, response=reformat_json,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        # Chat call AND recovery reformat call.
+        assert m["chat.send_message"].call_count == 1
+        assert m["models.generate_content"].call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_flash_lite_debug_log_emitted_once(self, caplog):
+        """gemini-3.1-flash-lite-preview + combined mode -> debug log with AFC note."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["chat.send_message"].return_value = _make_fake_response(json_text)
+
+        with caplog.at_level(logging.DEBUG):
+            with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+                mock_factory.from_gemini.return_value = AIMessage(
+                    input="x", output=json_text, response=json_text,
+                    model="gemini-3.1-flash-lite-preview", provider="google_genai",
+                    usage=CompletionUsage(),
+                )
+                await client.ask(
+                    prompt="x",
+                    model="gemini-3.1-flash-lite-preview",
+                    structured_output=weather_schema,
+                    use_tools=True,
+                )
+
+        matches = [r for r in caplog.records if "AFC instability" in r.getMessage()]
+        assert len(matches) == 1
+
+    @pytest.mark.asyncio
+    async def test_lifecycle_events_fire_in_combined_mode(self):
+        """AfterClientCallEvent fires exactly once in combined mode (parity with non-combined)."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        json_text = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+        m["chat.send_message"].return_value = _make_fake_response(json_text)
+
+        events_captured = []
+
+        async def _capture(event):
+            events_captured.append(event)
+
+        client.events.subscribe(AfterClientCallEvent, _capture)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=json_text, response=json_text,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            await client.ask(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            )
+
+        assert len(events_captured) == 1
+        assert isinstance(events_captured[0], AfterClientCallEvent)
+
+
+class TestAskStreamCombinedModeGate:
+    """ask_stream() combined-mode gate: whitelisted model skips the post-stream reformat call."""
+
+    def _make_stream_chunk(self, text: str):
+        """Build a minimal async-stream chunk mock."""
+        chunk = MagicMock()
+        chunk.text = text
+        part = _FakeGeminiPart(text=text)
+        chunk.candidates = [_FakeGeminiCandidate([part])]
+        return chunk
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_combined_mode_no_reformat_call(self):
+        """Whitelisted model + tools + schema -> schema on stream config, zero reformat calls."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        # Pre-populate the per-loop client cache (ask_stream accesses self.client
+        # before the inner retry loop calls _ensure_client).
+        await client._ensure_client(model="gemini-3.5-flash")
+
+        json_chunk = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+
+        async def _stream_iter():
+            yield self._make_stream_chunk(json_chunk)
+
+        mock_stream = MagicMock()
+        mock_stream.__aiter__ = MagicMock(side_effect=_stream_iter)
+        m["chat"].send_message_stream = AsyncMock(return_value=mock_stream)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=json_chunk, response=json_chunk,
+                model="gemini-3.5-flash", provider="google_genai", usage=CompletionUsage(),
+            )
+            chunks = []
+            async for chunk in client.ask_stream(
+                prompt="x",
+                model="gemini-3.5-flash",
+                structured_output=weather_schema,
+                use_tools=True,
+            ):
+                chunks.append(chunk)
+
+        # No reformat call in combined mode.
+        assert m["models.generate_content"].call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_ask_stream_two_phase_preserved_for_unwhitelisted(self):
+        """Non-whitelisted model + tools + schema -> reformat call after streaming."""
+        weather_schema = _make_weather_schema()
+        client, m = _build_mocked_client()
+
+        # Pre-populate the per-loop client cache.
+        await client._ensure_client(model="gemini-2.5-pro")
+
+        prose_chunk = "It is sunny in Madrid at 25.5 degrees."
+        reformat_json = '{"location":"Madrid","temperature":25.5,"condition":"Sunny"}'
+
+        async def _stream_iter():
+            yield self._make_stream_chunk(prose_chunk)
+
+        mock_stream = MagicMock()
+        mock_stream.__aiter__ = MagicMock(side_effect=_stream_iter)
+        m["chat"].send_message_stream = AsyncMock(return_value=mock_stream)
+        m["models.generate_content"].return_value = _make_fake_response(reformat_json)
+
+        with patch("parrot.clients.google.client.AIMessageFactory") as mock_factory:
+            mock_factory.from_gemini.return_value = AIMessage(
+                input="x", output=reformat_json, response=reformat_json,
+                model="gemini-2.5-pro", provider="google_genai", usage=CompletionUsage(),
+            )
+            chunks = []
+            async for chunk in client.ask_stream(
+                prompt="x",
+                model="gemini-2.5-pro",
+                structured_output=weather_schema,
+                use_tools=True,
+            ):
+                chunks.append(chunk)
+
+        # Two-phase: reformat call should fire.
+        assert m["models.generate_content"].call_count >= 1

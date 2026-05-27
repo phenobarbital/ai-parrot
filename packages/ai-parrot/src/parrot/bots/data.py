@@ -7,6 +7,7 @@ from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
 import asyncio
 import inspect
+import json
 import re
 import uuid
 import contextlib
@@ -25,6 +26,7 @@ from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig
+from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..bots.prompts.builder import PromptBuilder
@@ -1067,6 +1069,82 @@ class PandasAgent(BasicAgent):
 
         return map_response
 
+    @staticmethod
+    def _client_uses_split_structured_with_tools(client: Any) -> bool:
+        """Return True when the LLM client splits a tool-using call and a
+        structured-output call into two separate LLM invocations.
+
+        Why: Gemini refuses to combine ``tools`` with ``response_schema``
+        in a single ``generateContent`` call, so the Google client falls
+        back to a two-phase flow — first the tool loop, then a reformat
+        call to coerce the answer into the schema. The second call adds
+        ~10s of latency. Detecting this lets PandasAgent ask the LLM to
+        embed the structured JSON inline in the first answer, triggering
+        the client's fast-path parser and skipping the reformat call.
+
+        Other providers (OpenAI, Anthropic, Groq) accept tools +
+        structured output in a single call and do not benefit from the
+        in-band JSON hint.
+        """
+        return client.__class__.__name__ == 'GoogleGenAIClient'
+
+    @staticmethod
+    def _build_fast_path_json_addendum(output_type: type) -> Optional[str]:
+        """Build a prompt addendum telling the LLM to append a
+        ```json``` block matching ``output_type`` to the end of its
+        response. Returns ``None`` if no usable skeleton can be built.
+
+        The Google client's fast-path parser (``client.py:2334``) treats
+        any response containing ``\\`\\`\\`json`` as a structured-output
+        candidate and skips the second reformat LLM call when parsing
+        succeeds. This addendum is best-effort: if the LLM ignores it,
+        the existing two-call fallback still produces valid output.
+        """
+        skeleton: Optional[Dict[str, Any]] = None
+
+        cfg = getattr(output_type, 'model_config', None)
+        if isinstance(cfg, dict):
+            example = (cfg.get('json_schema_extra') or {}).get('example')
+            if isinstance(example, dict):
+                skeleton = example
+
+        if skeleton is None:
+            fields = getattr(output_type, 'model_fields', None)
+            if not fields:
+                return None
+            skeleton = {name: None for name in fields}
+
+        try:
+            skeleton_str = json.dumps(skeleton, indent=2, default=str)
+        except (TypeError, ValueError):
+            return None
+
+        return (
+            "\n\n"
+            "## FINAL RESPONSE FORMAT — APPEND JSON BLOCK (CRITICAL):\n"
+            "After your natural-language markdown explanation (including "
+            "any markdown tables), append exactly ONE fenced ```json``` "
+            "block at the very END of your response, matching this "
+            "schema:\n\n"
+            f"```json\n{skeleton_str}\n```\n\n"
+            "RULES (STRICT):\n"
+            "- The JSON block MUST be the LAST thing in your response.\n"
+            "- The `explanation` field MUST contain the COMPLETE "
+            "markdown explanation from above, verbatim — duplication "
+            "is intentional; do NOT summarize or truncate.\n"
+            "- For results with > 10 rows, set `data_variable` to the "
+            "Python variable name holding the DataFrame and leave "
+            "`data` as null. NEVER inline large tables.\n"
+            "- For results with ≤ 10 rows, populate `data` with "
+            "`{\"columns\": [...], \"rows\": [[...], ...]}` and leave "
+            "`data_variable` null.\n"
+            "- Numeric values in `rows` MUST be raw numbers — no "
+            "currency symbols, no percent signs, no thousands "
+            "separators.\n"
+            "- Including this JSON block avoids a costly second LLM "
+            "reformat call (~10s latency saved per query).\n"
+        )
+
     async def ask(
         self,
         question: str,
@@ -1257,6 +1335,25 @@ class PandasAgent(BasicAgent):
                         output_type=PandasAgentResponse
                     )
 
+                # Fast-path optimization for clients that split tools +
+                # structured_output into two LLM calls (currently only
+                # Google's GenAI client). Asking the LLM to embed the
+                # structured JSON inline lets the client's fast-path
+                # parser skip the second reformat call.
+                structured_cfg = llm_kwargs.get("structured_output")
+                if (
+                    structured_cfg is not None
+                    and self._client_uses_split_structured_with_tools(client)
+                ):
+                    output_type = getattr(structured_cfg, 'output_type', None)
+                    if (
+                        isinstance(output_type, type)
+                        and issubclass(output_type, BaseModel)
+                    ):
+                        addendum = self._build_fast_path_json_addendum(output_type)
+                        if addendum:
+                            llm_kwargs["system_prompt"] += addendum
+
                 # Call the LLM
                 response: AIMessage = await client.ask(**llm_kwargs)
 
@@ -1278,6 +1375,7 @@ class PandasAgent(BasicAgent):
                 data_response: Optional[PandasAgentResponse] = response.output \
                     if isinstance(response.output, PandasAgentResponse) else None
 
+                missing_data_variables: List[str] = []
                 if data_response:
                     # Extract the dataframe
                     response.data = data_response.to_dataframe()
@@ -1290,7 +1388,7 @@ class PandasAgent(BasicAgent):
                     # If data is large and stored as a variable, pull it from the Python tool context.
                     # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
                     if data_response.data_variables and len(data_response.data_variables) >= 2:
-                        await self._inject_multi_data_from_variables(
+                        missing_data_variables = await self._inject_multi_data_from_variables(
                             response,
                             data_response.data_variables,
                         )
@@ -1406,11 +1504,13 @@ class PandasAgent(BasicAgent):
                         "resolvable `data_variable`, but the turn "
                         "executed data operations (%s). The LLM must "
                         "set `data_variable` in the structured response "
-                        "to deliver the full DataFrame to the caller.",
+                        "to deliver the full DataFrame to the caller. "
+                        "Hallucinated/missing data_variables: %s",
                         [
                             getattr(tc, 'name', '?')
                             for tc in (response.tool_calls or [])
                         ],
+                        missing_data_variables or "none",
                     )
 
                 # Auto-switch to MAP when the caller did not explicitly
@@ -1528,6 +1628,35 @@ class PandasAgent(BasicAgent):
                     question,
                     answer_text,
                 )
+
+                # Persist the turn into conversation_memory so subsequent
+                # questions in the same session see prior context. Without
+                # this, build_conversation_context() always sees an empty
+                # history because PandasAgent reads from conversation_memory
+                # but ChatStorage writes to a separate Redis namespace.
+                if use_conversation_history and memory:
+                    try:
+                        turn = ConversationTurn(
+                            turn_id=response.turn_id or turn_id,
+                            user_id=user_id,
+                            user_message=question,
+                            assistant_response=answer_text or "",
+                            tools_used=[
+                                t.name for t in (response.tool_calls or [])
+                            ],
+                            metadata={
+                                'model': getattr(response, 'model', None),
+                                'response_time': getattr(response, 'response_time', None),
+                                'usage': getattr(response, 'usage', None),
+                                'finish_reason': getattr(response, 'finish_reason', None),
+                            },
+                        )
+                        await memory.add_turn(user_id, session_id, turn)
+                    except Exception as _save_exc:
+                        self.logger.debug(
+                            "Failed to persist conversation turn: %s",
+                            _save_exc,
+                        )
 
                 # Post-response: episodic / mixin-provided hook
                 _post_q, _post_resp = question, response
@@ -1889,7 +2018,7 @@ class PandasAgent(BasicAgent):
         self,
         response: AIMessage,
         data_variables: List[str],
-    ) -> None:
+    ) -> List[str]:
         """Inject multiple DataFrames from PythonPandasTool context into response.data.
 
         When the LLM declares multiple result variables via ``data_variables``,
@@ -1897,22 +2026,29 @@ class PandasAgent(BasicAgent):
         per DataFrame, and sets ``response.data`` to the assembled list.
 
         Variables that are not found or are not DataFrames are skipped with a
-        warning; the remaining valid datasets are still returned.
+        warning; the remaining valid datasets are still returned. When NO
+        variable resolves, ``response.data`` is reset to ``None`` so the
+        downstream inferred-variable fallback can take over.
 
         Args:
             response: The :class:`~parrot.models.responses.AIMessage` whose
                 ``data`` field will be populated.
             data_variables: Ordered list of Python variable names to resolve
                 from the ``PythonPandasTool`` execution context.
+
+        Returns:
+            List of variable names that could not be resolved (hallucinated
+            or never assigned). Empty when every variable was found.
         """
         pandas_tool = self._get_python_pandas_tool()
         if not pandas_tool:
             self.logger.warning(
                 "PythonPandasTool not available for multi-dataset injection"
             )
-            return
+            return list(data_variables)
 
         results: List[Dict[str, Any]] = []
+        missing: List[str] = []
         for var_name in data_variables:
             df = None
             if hasattr(pandas_tool, "locals"):
@@ -1940,6 +2076,7 @@ class PandasAgent(BasicAgent):
                     ).model_dump()
                 )
             else:
+                missing.append(var_name)
                 self.logger.warning(
                     "Multi-dataset injection: variable '%s' not found or not a DataFrame "
                     "— skipping.",
@@ -1949,10 +2086,17 @@ class PandasAgent(BasicAgent):
         if results:
             response.data = results
         else:
+            # Hallucinated/missing variables only — clear the empty-DataFrame
+            # stub from PandasAgentResponse.to_dataframe() so the downstream
+            # inferred-variable fallback can populate response.data instead
+            # of seeing a "non-empty" stub.
+            response.data = None
             self.logger.warning(
                 "Multi-dataset injection: none of the variables in %s could be resolved.",
                 data_variables,
             )
+
+        return missing
 
     def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
         """Get the ProphetForecastTool instance if registered."""

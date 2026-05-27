@@ -3,6 +3,7 @@ import contextlib
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import pandas as pd
 from parrot._imports import lazy_import
+from .abstract import AbstractTool
 from .pythonrepl import (
     PythonREPLTool,
     PythonREPLArgs,
@@ -186,29 +187,41 @@ class PythonPandasTool(PythonREPLTool):
         """
         dm = dataset_manager or self._dataset_manager
 
-        # Build a new instance via __new__ to skip the heavy __init__
+        # Build a new instance via __new__ to skip the heavy
+        # PythonREPLTool.__init__ (matplotlib backend, optional-lib imports,
+        # _bootstrap). Call AbstractTool.__init__ directly so every base
+        # attribute (routing_meta, executor, webhook_callback_url,
+        # remote_timeout_seconds, event registry, json codecs, …) stays in
+        # sync with the parent class without manual mirroring.
         clone = object.__new__(PythonPandasTool)
+        AbstractTool.__init__(
+            clone,
+            name=self.name,
+            description=self.description,
+            output_dir=str(self.output_dir) if self.output_dir else None,
+            base_url=self.base_url,
+            static_dir=str(self.static_dir),
+            routing_meta=dict(self.routing_meta),
+            executor=getattr(self, 'executor', None),
+            webhook_callback_url=getattr(self, 'webhook_callback_url', None),
+            remote_timeout_seconds=getattr(self, 'remote_timeout_seconds', 300),
+        )
 
-        # ── Copy lightweight config ──
-        clone.name = self.name
-        clone.description = self.description
+        # ── Copy PythonPandasTool-specific config ──
         clone.args_schema = self.args_schema
         clone.df_prefix = self.df_prefix
         clone.include_sample_data = self.include_sample_data
         clone.sample_rows = self.sample_rows
         clone._dataset_manager = dm
         clone._df_guide_cache = ""
-        clone.logger = self.logger
 
-        # ── Share heavy infrastructure (read-only / thread-safe) ──
+        # ── Share PythonREPLTool infrastructure (read-only / thread-safe) ──
         clone.sanitize_input_enabled = self.sanitize_input_enabled
         clone.plt_style = self.plt_style
         clone.palette = self.palette
         clone.setup_code = self.setup_code
         clone.auto_save_plots = self.auto_save_plots
         clone.return_plot_as_base64 = self.return_plot_as_base64
-        clone.executor = self.executor          # shared ProcessPoolExecutor
-        clone.output_dir = self.output_dir
         clone.debug = self.debug
         clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
 

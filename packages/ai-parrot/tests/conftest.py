@@ -469,6 +469,13 @@ def _install_parrot_stubs() -> None:
         model: Optional[str] = None
         tool_calls: Optional[List[Any]] = None
 
+    @dataclass
+    class _InvokeResult:
+        output: Any = None
+        model: Optional[str] = None
+        provider: Optional[str] = None
+        usage: Optional[Any] = None
+
     models_responses_module = types.ModuleType("parrot.models.responses")
     models_responses_module.AIMessage = _AIMessage
     models_responses_module.AgentResponse = _AgentResponse
@@ -476,6 +483,7 @@ def _install_parrot_stubs() -> None:
     models_responses_module.AIMessageFactory = object
     models_responses_module.MessageResponse = object
     models_responses_module.StreamChunk = object
+    models_responses_module.InvokeResult = _InvokeResult
     sys.modules.setdefault("parrot.models.responses", models_responses_module)
 
     @dataclass

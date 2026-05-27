@@ -15,7 +15,6 @@ logging.getLogger(name='matplotlib').setLevel(logging.INFO)
 from pathlib import Path
 from contextlib import redirect_stdout
 from io import StringIO, BytesIO
-from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -152,8 +151,6 @@ class PythonREPLTool(AbstractTool):
         self.setup_code = setup_code or self._get_default_setup_code()
         self.auto_save_plots = auto_save_plots
         self.return_plot_as_base64 = return_plot_as_base64
-        # Add a process pool executor
-        self.executor = ProcessPoolExecutor(max_workers=4)
 
         # Initialize execution environment
         self.locals = locals_dict or {}

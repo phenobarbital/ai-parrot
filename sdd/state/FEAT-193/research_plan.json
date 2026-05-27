@@ -1,0 +1,105 @@
+{
+  "feat_id": "FEAT-193",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "read",
+      "intent": "Inspect current GoogleGenAIClient.ask() implementation — locate two-phase tool-calling + structured-output flow",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/client.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "grep",
+      "intent": "Find ask_stream implementation in the google client subpackage",
+      "params": {"pattern": "def ask_stream|async def ask_stream|response_mime_type|response_schema", "path": "packages/ai-parrot/src/parrot/clients/google/"},
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "intent": "Inspect generation.py — likely contains the GenerationConfig builder where mime_type / schema / tools are assembled",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/generation.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "read",
+      "intent": "Read the existing example to understand the test scaffold to extend",
+      "params": {"path": "examples/google/structured_with_tools.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "read",
+      "intent": "Read the test file that informed the user's analysis",
+      "params": {"path": "examples/google/test_tool_structured_output.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q006",
+      "type": "grep",
+      "intent": "Find how the client checks model name for capability gating (e.g. supports streaming, supports tools)",
+      "params": {"pattern": "self\\.model|self\\._model|gemini-|model_name|supports_tools|supports_structured", "path": "packages/ai-parrot/src/parrot/clients/google/"},
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "grep",
+      "intent": "Find any registry / capability matrix that lists Gemini model variants",
+      "params": {"pattern": "gemini-[0-9]|GEMINI_|GeminiModel", "path": "packages/ai-parrot/src/parrot/"},
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "intent": "Read clients/models.py — likely contains the model registry / capability table",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/models.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q009",
+      "type": "read",
+      "intent": "Read google client __init__.py to understand the public surface",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/__init__.py"},
+      "priority": 3
+    },
+    {
+      "id": "Q010",
+      "type": "read",
+      "intent": "Read analysis.py — may contain response-parsing logic that differs between modes",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/analysis.py"},
+      "priority": 2
+    },
+    {
+      "id": "Q011",
+      "type": "grep",
+      "intent": "Locate tests covering google client ask / ask_stream / structured output",
+      "params": {"pattern": "GoogleGenAIClient|google.*ask|google.*structured", "path": "packages/ai-parrot/tests/"},
+      "priority": 3
+    },
+    {
+      "id": "Q012",
+      "type": "git_log",
+      "intent": "Recent activity on google client — has anyone recently touched the two-phase flow?",
+      "params": {"path": "packages/ai-parrot/src/parrot/clients/google/", "since": "3.months"},
+      "priority": 3
+    },
+    {
+      "id": "Q013",
+      "type": "grep",
+      "intent": "Find where structured_output config flows through ask() / ask_stream (BaseClient or similar)",
+      "params": {"pattern": "structured_output|response_schema|response_mime", "path": "packages/ai-parrot/src/parrot/clients/"},
+      "priority": 2
+    }
+  ]
+}
