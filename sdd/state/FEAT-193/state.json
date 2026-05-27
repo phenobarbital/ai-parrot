@@ -1,0 +1,40 @@
+{
+  "feat_id": "FEAT-193",
+  "phase": "proposal_drafted",
+  "started_at": "2026-05-27T16:13:00Z",
+  "updated_at": "2026-05-27T16:25:00Z",
+  "mode": "enrichment",
+  "type": "feature",
+  "base_branch": "dev",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Allow ask()/ask_stream() to send tools+response_schema in a single GenerateContentConfig for whitelisted Gemini 3.x models, preserving the two-phase fallback for older ones."
+  },
+  "budget": {
+    "profile": "default",
+    "files_read": 40,
+    "grep_calls": 25,
+    "git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 7,
+    "grep_calls": 6,
+    "git_calls": 1
+  },
+  "phases": {
+    "plan": { "approved_by_user": true },
+    "research": { "completed": true, "queries_executed": 7, "findings": 7, "truncated": false },
+    "synthesis": { "completed": true, "overall_confidence": "high" },
+    "qa": { "questions_total": 3, "questions_answered": 3, "status": "complete" },
+    "output": {
+      "proposal_path": "sdd/proposals/feat-193-google-genai-combined-tools-and-schema.proposal.md"
+    }
+  },
+  "recommended_next_command": {
+    "command": "/sdd-spec",
+    "feat_id": "FEAT-193"
+  }
+}

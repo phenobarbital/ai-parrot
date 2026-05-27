@@ -1,0 +1,170 @@
+{
+  "feat_id": "FEAT-193",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "Enable simultaneous tool-calling + structured-output in GoogleGenAIClient.ask() and ask_stream() for a whitelist of Gemini 3.x models that the Google GenAI SDK now accepts both options in a single GenerateContentConfig. Preserve the existing two-phase fallback (tool call → reformat with response_schema) for older / incompatible models. Surface the choice via a new static capability helper (_supports_combined_call) and refactor the existing gates at client.py:2036 and client.py:2847.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient.ask",
+      "lines": "1797-2547",
+      "role": "Primary surface — contains the two-phase gate at 2036-2048 and the deferred-reformat call at 2337-2474. Must learn to skip the deferral for whitelisted models.",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient.ask_stream",
+      "lines": "2649-3131",
+      "role": "Streaming surface — has its own gate at 2847-2854 and post-loop reformat at 3020-3084. Same dual-path treatment.",
+      "evidence": ["F002"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._apply_structured_output_schema",
+      "lines": "750-771",
+      "role": "Schema-application helper. Already idempotent — reusable as-is in combined mode.",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._is_gemini3_model / _requires_thinking / _as_model_str",
+      "lines": "156-204",
+      "role": "Existing static capability helpers — pattern to follow for the new _supports_combined_call helper.",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/google.py",
+      "symbol": "GoogleModel",
+      "lines": "9-39",
+      "role": "Model registry — already contains gemini-3.1-pro-preview and gemini-3.1-flash-lite-preview. Missing gemini-3.5-flash (see U1).",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "path": "examples/google/structured_with_tools.py",
+      "symbol": "main",
+      "lines": "1-99",
+      "role": "Example to extend — currently hardcoded to gemini-2.0-flash. Needs a model loop (or CLI flag) over the whitelist for the user to exercise combined mode against each model.",
+      "evidence": ["F004"],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/tests/test_google_client.py",
+      "symbol": "test_google_ask / test_google_ask_stream",
+      "lines": "8-101",
+      "role": "Existing client unit tests — pattern to follow for combined-mode regression tests. New tests should assert the call-count difference (1 vs 2 generate_content invocations).",
+      "evidence": ["F007"],
+      "confidence": "medium"
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "Combined mode (tools + response_mime_type + response_schema in ONE GenerateContentConfig) is rejected by Gemini 2.5 Pro with a 400 error, per the user's SDK-only evaluation.",
+      "evidence": ["F001", "F004"],
+      "confidence": "high"
+    },
+    {
+      "claim": "The existing two-phase flow MUST remain the default for non-whitelisted models — the user explicitly requested 'mantener el flujo como está' for older models.",
+      "evidence": ["F001"],
+      "confidence": "high"
+    },
+    {
+      "claim": "The combined-mode branch must preserve existing integrations: FEAT-181 prompt caching (_pending_cache_segs), FEAT-176 lifecycle events (_emit_after_call), conversation memory updates, and thinking_config selection (_requires_thinking).",
+      "evidence": ["F006"],
+      "confidence": "high"
+    },
+    {
+      "claim": "Capability gating should follow the established @staticmethod + .startswith() pattern (consistent with _is_gemini3_model and _requires_thinking).",
+      "evidence": ["F003"],
+      "confidence": "high"
+    },
+    {
+      "claim": "The reformat shortcut (fast-path JSON parse + reformat_model second call) is dead code in combined mode — it must be SKIPPED when the model is whitelisted to avoid double-billing and extra latency.",
+      "evidence": ["F001", "F002"],
+      "confidence": "high"
+    },
+    {
+      "claim": "gemini-3.1-flash-lite is flagged by upstream evaluation as 'compatible but unstable' (AFC infinite-loop risk + SDK warnings on the function-call turn). Including it in the whitelist by default carries risk.",
+      "evidence": ["F004", "F005"],
+      "confidence": "medium"
+    },
+    {
+      "claim": "The user's reference whitelist names ('gemini-3.1-flash-lite', 'gemini-3.5-flash') do not exactly match the GoogleModel enum values ('gemini-3.1-flash-lite-preview', no 'gemini-3.5-flash' entry).",
+      "evidence": ["F005"],
+      "confidence": "high"
+    }
+  ],
+  "hypothesis": {
+    "statement": "Introduce a new static helper `_supports_combined_tools_and_schema(model: str) -> bool` on GoogleGenAIClient that returns True for the whitelisted prefixes (`gemini-3.1-pro`, `gemini-3.5-flash` [pending U1], optionally `gemini-3.1-flash-lite` [pending U2]). Refactor the gate at client.py:2036-2048 in `ask()` and at client.py:2847-2854 in `ask_stream()` so that when (a) tools are requested AND (b) structured output is requested AND (c) `_supports_combined_tools_and_schema(model)` is True, the schema is applied directly to the SAME GenerateContentConfig as the tools, and the deferred reformat block at client.py:2337-2474 (and 3020-3084 for stream) is bypassed. Modify `examples/google/structured_with_tools.py` to loop the whitelist (or accept `--model`) so each model can be exercised against this combined-mode path.",
+    "evidence": ["F001", "F002", "F003"],
+    "confidence": "medium",
+    "reasoning": "The change is localized to two well-defined branches in client.py and one example. The capability-gating pattern is already established. Confidence is medium (not high) primarily because of U1/U2 (whitelist composition unknowns) and because the user's underlying SDK evidence is described as 'partial acceptance — not 100% probado'. The runtime behaviour with parrot's AbstractTool / FunctionDeclaration wiring has not been exercised in combined mode end-to-end — only the raw SDK form has, in test_tool_structured_output.py."
+  },
+  "scope": {
+    "in_scope": [
+      "Add `GEMINI_3_5_FLASH = 'gemini-3.5-flash'` (and any necessary aliases) to the `GoogleModel` enum in `packages/ai-parrot/src/parrot/models/google.py` (per U1 user answer).",
+      "Introduce a configurable whitelist on `GoogleGenAIClient` — class attribute `_combined_call_prefixes: tuple = ('gemini-3.1-pro', 'gemini-3.1-flash-lite', 'gemini-3.5-flash')` with constructor kwarg `combined_call_prefixes` override (per U3 user answer).",
+      "New static helper `_supports_combined_tools_and_schema(model: str, prefixes: tuple) -> bool` (or an instance method that reads `self._combined_call_prefixes`).",
+      "Modify the gate in `ask()` (around client.py:2036) so the schema is applied in the initial GenerateContentConfig when the capability check passes; skip the deferred-reformat block at 2337-2474 in that case.",
+      "Modify the gate in `ask_stream()` (around client.py:2847) symmetrically; skip the post-loop reformat block at 3020-3084 when in combined mode.",
+      "Extend `examples/google/structured_with_tools.py` to parametrize over the whitelist (CLI `--model` flag iterating the default list).",
+      "Add unit tests covering: (i) whitelisted model uses ONE generate_content call, (ii) non-whitelisted model still uses TWO calls (regression), (iii) gemini-2.5-pro stays on two-phase path, (iv) ask_stream symmetry, (v) the override kwarg actually changes the whitelist.",
+      "Log a DEBUG-level warning when combined mode is used with gemini-3.1-flash-lite (documents the upstream 'unstable' flag, per U2)."
+    ],
+    "out_of_scope": [
+      "Changing the existing two-phase fallback logic for older models — it stays as-is.",
+      "Modifying `_reformat_model` or its default — combined mode bypasses it.",
+      "Touching `analysis.py` (its structured-output paths already use single-call mode because they don't combine with tools)."
+    ],
+    "confidence": "high"
+  },
+  "claims": [
+    {"id": "C1", "claim": "Two-phase tool+schema gate is at client.py:2033-2048 in ask().", "confidence": "high", "evidence": ["F001"]},
+    {"id": "C2", "claim": "Deferred reformat call is at client.py:2337-2474 (ask) and 3020-3084 (stream).", "confidence": "high", "evidence": ["F001", "F002"]},
+    {"id": "C3", "claim": "ask_stream's analogous gate is at client.py:2847-2854.", "confidence": "high", "evidence": ["F002"]},
+    {"id": "C4", "claim": "Existing capability helpers follow @staticmethod + .startswith pattern.", "confidence": "high", "evidence": ["F003"]},
+    {"id": "C5", "claim": "GoogleModel enum has gemini-3.1-pro-preview and gemini-3.1-flash-lite-preview but NO gemini-3.5-flash entry.", "confidence": "high", "evidence": ["F005"]},
+    {"id": "C6", "claim": "The existing example is hardcoded to gemini-2.0-flash with no model parametrization.", "confidence": "high", "evidence": ["F004"]},
+    {"id": "C7", "claim": "There are NO existing tests covering tools + structured_output combined; only individual tests for ask / ask_stream.", "confidence": "high", "evidence": ["F007"]},
+    {"id": "C8", "claim": "gemini-3.1-flash-lite is unstable in combined mode per upstream evaluation.", "confidence": "medium", "evidence": ["F004"]},
+    {"id": "C9", "claim": "Combined-mode branch must preserve cache hints, lifecycle events, conversation memory updates.", "confidence": "high", "evidence": ["F006"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Is 'gemini-3.5-flash' a real Google model identifier that should be added to the GoogleModel enum, or was the user's SDK test resolving it to a different model (e.g., gemini-3-flash-preview)?",
+      "resolves_claims": ["C5"],
+      "user_answer": "Real Google model ID — newer model, per https://ai.google.dev/gemini-api/docs/deprecations. Must be added to the GoogleModel enum and included in the combined-mode whitelist."
+    },
+    {
+      "id": "U2",
+      "question": "Should gemini-3.1-flash-lite be included in the whitelist despite being flagged as 'compatible but unstable' (AFC infinite-loop risk + SDK warnings) by upstream evaluation?",
+      "resolves_claims": ["C8"],
+      "user_answer": "Yes — include it. The combined-mode latency / SDK-warning trade-off is accepted; document the risk in code and logs."
+    },
+    {
+      "id": "U3",
+      "question": "Should the whitelist be configurable (e.g. constructor kwarg, env var) or hardcoded in the static helper?",
+      "resolves_claims": [],
+      "user_answer": "Configurable preferred — implement with hardcoded sensible defaults plus an override mechanism (class attribute and/or constructor kwarg)."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "/sdd-spec",
+    "feat_id": "FEAT-193",
+    "rationale": "Localization is high-confidence and the change is contained to two well-defined branches plus one example. Once U1 (gemini-3.5-flash identity) is resolved, the spec can pin the exact whitelist and the implementation is straightforward. /sdd-brainstorm is unnecessary — there is no architectural choice to explore."
+  },
+  "budget_status": {
+    "consumed": {
+      "files_read": 7,
+      "grep_calls": 6,
+      "git_calls": 1
+    },
+    "truncated": false,
+    "truncation_reason": null
+  }
+}
