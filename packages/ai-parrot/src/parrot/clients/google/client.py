@@ -1628,6 +1628,64 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return function_calls
 
+    def _format_function_call_args(self, fc, max_chars: int = 300) -> str:
+        """Render FunctionCall.args as a compact, truncated string for logs.
+
+        The SDK's ``types.py:8051`` warning hides the actual function_call
+        payload, so we render it ourselves at DEBUG. Truncation keeps log
+        lines bounded when tools pass large argument blobs.
+        """
+        args = getattr(fc, "args", None) or {}
+        try:
+            rendered = self._json.dumps(args, default=str, ensure_ascii=False)
+        except Exception:
+            rendered = repr(args)
+        if len(rendered) > max_chars:
+            rendered = rendered[:max_chars] + f"... (+{len(rendered) - max_chars} chars)"
+        return rendered
+
+    def _log_non_text_parts(self, response, where: str = "response") -> None:
+        """Log the non-text parts (function_call, code_execution_*) at DEBUG.
+
+        Mirrors the SDK warning at ``google.genai.types:8051`` but surfaces
+        the actual payload — name + truncated args for function calls — so
+        we can debug what the model emitted alongside or instead of text.
+        """
+        try:
+            candidates = getattr(response, "candidates", None) or []
+            if not candidates:
+                return
+            content = getattr(candidates[0], "content", None)
+            parts = getattr(content, "parts", None) or []
+            if not parts:
+                return
+            for idx, part in enumerate(parts):
+                fc = getattr(part, "function_call", None)
+                if fc:
+                    self.logger.debug(
+                        "Non-text part [%s #%d]: function_call %s(%s) id=%s",
+                        where, idx, fc.name,
+                        self._format_function_call_args(fc),
+                        getattr(fc, "id", None),
+                    )
+                    continue
+                if getattr(part, "code_execution_result", None):
+                    res = part.code_execution_result
+                    self.logger.debug(
+                        "Non-text part [%s #%d]: code_execution_result outcome=%s",
+                        where, idx, getattr(res, "outcome", None),
+                    )
+                    continue
+                if getattr(part, "executable_code", None):
+                    ec = part.executable_code
+                    code = getattr(ec, "code", "") or ""
+                    self.logger.debug(
+                        "Non-text part [%s #%d]: executable_code lang=%s code_chars=%d",
+                        where, idx, getattr(ec, "language", None), len(code),
+                    )
+        except Exception as exc:
+            self.logger.debug(f"_log_non_text_parts failed: {exc}")
+
     def _get_function_calls_from_response(self, response) -> List:
         """Get function calls from response - handles both proper calls and tool_code blocks."""
         function_calls = []
@@ -1642,7 +1700,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     if hasattr(part, 'function_call') and part.function_call:
                         function_calls.append(part.function_call)
                         self.logger.debug(
-                            f"Found proper function call: {part.function_call.name}"
+                            "Found proper function call: %s(%s)",
+                            part.function_call.name,
+                            self._format_function_call_args(part.function_call),
                         )
 
                     # Skip reasoning/thought parts. Match the SDK contract
@@ -2472,6 +2532,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.logger.debug(
             f"Initial response has function calls: {has_function_calls}"
         )
+        if has_function_calls:
+            self._log_non_text_parts(response, where="initial response")
 
         # Multi-turn function calling loop
         phase_started = time.perf_counter()

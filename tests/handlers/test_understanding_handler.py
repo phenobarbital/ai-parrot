@@ -27,6 +27,24 @@ def _make_ai_message(content: str = "Analysis result") -> MagicMock:
     return msg
 
 
+def _patch_download():
+    """Patch ``UnderstandingHandler._download_url`` to write a fake local file.
+
+    JSON-mode tests would otherwise hit the network; this stub turns each
+    URL into a small byte blob written to the supplied temp dir.
+    """
+    from pathlib import Path as _P
+    from urllib.parse import urlparse as _u
+
+    async def _fake_download(self, url, dest_dir):  # noqa: ANN001
+        name = _P(_u(url).path).name or "file"
+        dest = _P(dest_dir) / name
+        dest.write_bytes(b"\x89PNG\r\n" + b"\x00" * 50)
+        return dest
+
+    return patch.object(UnderstandingHandler, "_download_url", _fake_download)
+
+
 def _patch_client(mock_msg: MagicMock):
     """Return a context-manager patch that makes GoogleGenAIClient return *mock_msg*.
 
@@ -164,7 +182,7 @@ class TestUnderstandingHandlerPostJSON:
 
         msg = _make_ai_message("Image analysis result")
 
-        with _patch_client(msg) as ctx:
+        with _patch_client(msg) as ctx, _patch_download():
             resp = await http.post(
                 "/api/v1/google/understanding",
                 json={
@@ -190,7 +208,7 @@ class TestUnderstandingHandlerPostJSON:
 
         msg = _make_ai_message("Video analysis result")
 
-        with _patch_client(msg) as ctx:
+        with _patch_client(msg) as ctx, _patch_download():
             resp = await http.post(
                 "/api/v1/google/understanding",
                 json={
@@ -216,7 +234,7 @@ class TestUnderstandingHandlerPostJSON:
 
         msg = _make_ai_message("Auto-detected image")
 
-        with _patch_client(msg) as ctx:
+        with _patch_client(msg) as ctx, _patch_download():
             resp = await http.post(
                 "/api/v1/google/understanding",
                 json={
@@ -239,7 +257,7 @@ class TestUnderstandingHandlerPostJSON:
 
         msg = _make_ai_message("Auto-detected video")
 
-        with _patch_client(msg) as ctx:
+        with _patch_client(msg) as ctx, _patch_download():
             resp = await http.post(
                 "/api/v1/google/understanding",
                 json={
@@ -407,3 +425,191 @@ class TestUnderstandingHandlerPostMultipart:
 
         assert resp.status == 200
         ctx.instance.image_understanding.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# POST endpoint — multi-source dispatch
+# ---------------------------------------------------------------------------
+
+
+class TestUnderstandingHandlerMultiSource:
+    @pytest.mark.asyncio
+    async def test_json_media_urls_passes_all_images(self, aiohttp_client) -> None:
+        """JSON 'media_urls' list of N images → image_understanding(images=[N])."""
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        msg = _make_ai_message("Two-image analysis")
+
+        with _patch_client(msg) as ctx, _patch_download():
+            resp = await http.post(
+                "/api/v1/google/understanding",
+                json={
+                    "prompt": "Compare these",
+                    "media_urls": [
+                        "https://example.com/a.png",
+                        "https://example.com/b.png",
+                    ],
+                    "media_type": "image",
+                },
+            )
+
+        assert resp.status == 200
+        kwargs = ctx.instance.image_understanding.await_args.kwargs
+        assert len(kwargs["images"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_multipart_two_files_passes_list_to_image_understanding(
+        self, aiohttp_client
+    ) -> None:
+        """Two multipart 'file' parts → image_understanding called with 2 paths."""
+        from aiohttp import FormData
+
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        msg = _make_ai_message("Multi-file image result")
+
+        data = FormData()
+        data.add_field("prompt", "Compare these")
+        data.add_field(
+            "file",
+            b"\x89PNG\r\n\x1a\n" + b"\x00" * 50,
+            filename="a.png",
+            content_type="image/png",
+        )
+        data.add_field(
+            "file",
+            b"\x89PNG\r\n\x1a\n" + b"\x00" * 50,
+            filename="b.png",
+            content_type="image/png",
+        )
+
+        with _patch_client(msg) as ctx:
+            resp = await http.post(
+                "/api/v1/google/understanding", data=data
+            )
+
+        assert resp.status == 200
+        kwargs = ctx.instance.image_understanding.await_args.kwargs
+        assert len(kwargs["images"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_multipart_filename_collision_disambiguated(
+        self, aiohttp_client
+    ) -> None:
+        """Same-name uploads are written to distinct paths on disk."""
+        from aiohttp import FormData
+
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        msg = _make_ai_message("Collision result")
+
+        data = FormData()
+        data.add_field("prompt", "Compare")
+        for _ in range(2):
+            data.add_field(
+                "file",
+                b"\x89PNG\r\n" + b"\x00" * 50,
+                filename="same.png",
+                content_type="image/png",
+            )
+
+        with _patch_client(msg) as ctx:
+            resp = await http.post(
+                "/api/v1/google/understanding", data=data
+            )
+
+        assert resp.status == 200
+        kwargs = ctx.instance.image_understanding.await_args.kwargs
+        paths = [str(p) for p in kwargs["images"]]
+        assert len(paths) == 2
+        assert paths[0] != paths[1]
+
+    @pytest.mark.asyncio
+    async def test_multipart_video_plus_image_uses_reference_images(
+        self, aiohttp_client
+    ) -> None:
+        """1 video + 1 image → video_understanding with reference_images=[image]."""
+        from aiohttp import FormData
+
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        msg = _make_ai_message("Video+ref result")
+
+        data = FormData()
+        data.add_field("prompt", "Describe")
+        data.add_field(
+            "file",
+            b"\x00" * 200,
+            filename="clip.mp4",
+            content_type="video/mp4",
+        )
+        data.add_field(
+            "file",
+            b"\x89PNG\r\n" + b"\x00" * 50,
+            filename="ref.png",
+            content_type="image/png",
+        )
+
+        with _patch_client(msg) as ctx:
+            resp = await http.post(
+                "/api/v1/google/understanding", data=data
+            )
+
+        assert resp.status == 200
+        ctx.instance.image_understanding.assert_not_awaited()
+        ctx.instance.video_understanding.assert_awaited_once()
+        kwargs = ctx.instance.video_understanding.await_args.kwargs
+        assert kwargs["video"].name == "clip.mp4"
+        assert len(kwargs["reference_images"]) == 1
+        assert kwargs["reference_images"][0].name == "ref.png"
+
+    @pytest.mark.asyncio
+    async def test_multipart_two_videos_returns_400(self, aiohttp_client) -> None:
+        """Two videos in a single request → 400."""
+        from aiohttp import FormData
+
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        data = FormData()
+        data.add_field("prompt", "Describe")
+        for fname in ("a.mp4", "b.mp4"):
+            data.add_field(
+                "file",
+                b"\x00" * 100,
+                filename=fname,
+                content_type="video/mp4",
+            )
+
+        msg = _make_ai_message("unused")
+        with _patch_client(msg) as ctx:
+            resp = await http.post(
+                "/api/v1/google/understanding", data=data
+            )
+
+        assert resp.status == 400
+        ctx.instance.video_understanding.assert_not_awaited()
+        ctx.instance.image_understanding.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_get_catalog_documents_multi_source(self, aiohttp_client) -> None:
+        """GET response now documents multi-source dispatch rules."""
+        app = web.Application()
+        UnderstandingHandler.setup(app, route="/api/v1/google/understanding")
+        http = await aiohttp_client(app)
+
+        resp = await http.get("/api/v1/google/understanding")
+        body = await resp.json()
+        assert "multi_source" in body
+        assert "video_with_images" in body["multi_source"]
+        # Schema must advertise the new media_urls field.
+        assert "media_urls" in body["schema"]["properties"]

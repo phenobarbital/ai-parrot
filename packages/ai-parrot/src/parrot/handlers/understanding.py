@@ -73,27 +73,38 @@ class UnderstandingHandler(BaseView):
     # ------------------------------------------------------------------
 
     async def post(self) -> web.Response:
-        """Analyse an image or video and return the AI understanding result.
+        """Analyse one or more images (and optionally one video) and return the result.
 
-        Supports multipart file uploads and JSON body with a media URL.
+        Supports multipart file uploads (one or more ``file`` parts) and JSON
+        body with ``media_url`` and/or ``media_urls``. When a single video and
+        any number of images are submitted together, the video is sent as the
+        primary input and the images become ``reference_images``.
 
         Returns:
             200 JSON ``UnderstandingResponse`` on success.
-            400 JSON error when the request is invalid.
+            400 JSON error when the request is invalid (e.g. more than one
+                video, undetermined media type, missing prompt/source).
             500 JSON error when the Google GenAI client fails.
         """
         content_type: str = self.request.content_type or ""
         temp_dir: Optional[str] = None
+        prompt: Optional[str] = None
+        media_type_override: Optional[str] = None
+        model_override: Optional[str] = None
+        req_kwargs: dict[str, Any] = {}
+        sources: list[tuple[Any, Optional[str]]] = []
 
         try:
             if "multipart" in content_type:
-                prompt, file_path, media_type, temp_dir = (
-                    await self._handle_multipart()
-                )
-                model_override: Optional[str] = None
-                req_kwargs: dict[str, Any] = {}
+                (
+                    prompt,
+                    file_entries,
+                    media_type_override,
+                    model_override,
+                    temp_dir,
+                ) = await self._handle_multipart()
+                sources = list(file_entries)
             else:
-                # JSON mode
                 try:
                     body = await self.request.json()
                 except Exception:
@@ -105,8 +116,7 @@ class UnderstandingHandler(BaseView):
                     return self.error(str(exc), status=400)
 
                 prompt = req.prompt
-                file_path = None
-                media_type = req.media_type
+                media_type_override = req.media_type
                 model_override = req.model
                 req_kwargs = {
                     "detect_objects": req.detect_objects,
@@ -115,87 +125,89 @@ class UnderstandingHandler(BaseView):
                     "timeout": req.timeout,
                 }
 
-                # Resolve media type from URL when not explicit
-                if media_type is None and req.media_url:
-                    try:
-                        media_type = media_type_from_filename(req.media_url)
-                    except ValueError:
-                        return self.error(
-                            "Cannot determine media type from URL. "
-                            "Provide an explicit 'media_type' field.",
-                            status=400,
-                        )
-                elif media_type is None:
-                    return self.error(
-                        "Provide a 'file' (multipart) or 'media_url' (JSON).",
-                        status=400,
-                    )
+                urls: list[str] = []
+                if req.media_url:
+                    urls.append(req.media_url)
+                if req.media_urls:
+                    urls.extend(req.media_urls)
 
-            # ------------------------------------------------------------------
-            # Validate required fields
-            # ------------------------------------------------------------------
+                for url in urls:
+                    try:
+                        detected = media_type_from_filename(url)
+                    except ValueError:
+                        detected = None
+                    sources.append((url, detected))
+
             if not prompt:
                 return self.error(
                     "Missing required field: 'prompt'.", status=400
                 )
 
-            media_source = file_path or (
-                None if "multipart" in content_type else body.get("media_url")  # type: ignore[possibly-undefined]
-            )
-            if media_source is None:
+            if not sources:
                 return self.error(
-                    "No media provided. Upload a 'file' (multipart) or "
-                    "supply a 'media_url' (JSON).",
+                    "No media provided. Upload one or more 'file' parts "
+                    "(multipart) or supply 'media_url' / 'media_urls' (JSON).",
                     status=400,
                 )
 
-            # ------------------------------------------------------------------
-            # Handle URL-based media: download to a temp file so the
-            # Google GenAI client can process it locally.
-            # ------------------------------------------------------------------
-            if isinstance(media_source, str) and not Path(media_source).exists():
-                # Reject browser-only blob: URLs
-                if media_source.startswith("blob:"):
-                    return self.error(
-                        "blob: URLs are browser-only and cannot be fetched "
-                        "server-side. Please upload the file directly via "
-                        "multipart/form-data.",
-                        status=400,
-                    )
+            if media_type_override:
+                sources = [(s, media_type_override) for s, _ in sources]
 
-                # Download HTTP(S) URLs to a local temp file
-                if media_source.startswith(("http://", "https://")):
-                    if temp_dir is None:
-                        temp_dir = tempfile.mkdtemp(
-                            prefix="understanding_download_"
-                        )
-                    try:
-                        media_source = await self._download_url(
-                            media_source, temp_dir
-                        )
-                    except Exception as exc:
-                        self.logger.error(
-                            "Failed to download media URL: %s", exc
-                        )
+            resolved: list[tuple[Any, Optional[str]]] = []
+            for source, mt in sources:
+                if isinstance(source, str) and not Path(source).exists():
+                    if source.startswith("blob:"):
                         return self.error(
-                            f"Could not download media URL: {exc}",
+                            "blob: URLs are browser-only and cannot be fetched "
+                            "server-side. Please upload the file directly via "
+                            "multipart/form-data.",
                             status=400,
                         )
 
-            if media_type is None:
+                    if source.startswith(("http://", "https://")):
+                        if temp_dir is None:
+                            temp_dir = tempfile.mkdtemp(
+                                prefix="understanding_download_"
+                            )
+                        try:
+                            source = await self._download_url(source, temp_dir)
+                        except Exception as exc:
+                            self.logger.error(
+                                "Failed to download media URL: %s", exc
+                            )
+                            return self.error(
+                                f"Could not download media URL: {exc}",
+                                status=400,
+                            )
+                        if mt is None:
+                            try:
+                                mt = media_type_from_filename(str(source))
+                            except ValueError:
+                                pass
+                resolved.append((source, mt))
+
+            for source, mt in resolved:
+                if mt is None:
+                    return self.error(
+                        "Could not determine media type for one or more "
+                        "sources. Provide an explicit 'media_type' field.",
+                        status=400,
+                    )
+
+            images = [s for s, mt in resolved if mt == "image"]
+            videos = [s for s, mt in resolved if mt == "video"]
+
+            if len(videos) > 1:
                 return self.error(
-                    "Could not determine media type. "
-                    "Provide an explicit 'media_type' field.",
+                    "Only one video may be analysed per request. Multiple "
+                    "images may accompany a single video as reference images.",
                     status=400,
                 )
 
-            # ------------------------------------------------------------------
-            # Dispatch to Google GenAI client
-            # ------------------------------------------------------------------
             self.logger.info(
-                "Understanding request: media_type=%s source=%s",
-                media_type,
-                media_source,
+                "Understanding request: images=%d videos=%d",
+                len(images),
+                len(videos),
             )
 
             client_kwargs: dict[str, Any] = {}
@@ -205,20 +217,21 @@ class UnderstandingHandler(BaseView):
             client = GoogleGenAIClient(**client_kwargs)
             async with client:
                 try:
-                    if media_type == "image":
-                        result = await client.image_understanding(
-                            prompt=prompt,
-                            images=[media_source],
-                            detect_objects=req_kwargs.get("detect_objects", True),
-                            temperature=req_kwargs.get("temperature"),
-                            timeout=req_kwargs.get("timeout", 600),
-                        )
-                    else:  # video
+                    if videos:
                         result = await client.video_understanding(
                             prompt=prompt,
-                            video=media_source,
+                            video=videos[0],
                             as_image=req_kwargs.get("as_image", True),
                             stateless=True,
+                            timeout=req_kwargs.get("timeout", 600),
+                            reference_images=images or None,
+                        )
+                    else:
+                        result = await client.image_understanding(
+                            prompt=prompt,
+                            images=images,
+                            detect_objects=req_kwargs.get("detect_objects", True),
+                            temperature=req_kwargs.get("temperature"),
                             timeout=req_kwargs.get("timeout", 600),
                         )
                 except Exception as exc:
@@ -233,7 +246,6 @@ class UnderstandingHandler(BaseView):
             return self.json_response(response.model_dump())
 
         finally:
-            # Always clean up any temp directory that was created.
             if temp_dir:
                 try:
                     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -263,8 +275,23 @@ class UnderstandingHandler(BaseView):
                 "timeout": 600,
             },
             "modes": {
-                "multipart": "Upload a 'file' field plus a 'prompt' field.",
-                "json": "Send a JSON body with 'prompt' and 'media_url'.",
+                "multipart": (
+                    "Upload one or more 'file' parts plus a 'prompt' field. "
+                    "Multiple files may be sent in a single request."
+                ),
+                "json": (
+                    "Send a JSON body with 'prompt' and either 'media_url' "
+                    "(single) or 'media_urls' (list)."
+                ),
+            },
+            "multi_source": {
+                "images_only": "Pass N images → image_understanding(images=[...]).",
+                "one_video_only": "Pass 1 video → video_understanding(video=...).",
+                "video_with_images": (
+                    "Pass 1 video + N images → video_understanding with the "
+                    "images as reference_images."
+                ),
+                "multiple_videos": "Rejected with 400.",
             },
         }
         return self.json_response(payload)
@@ -275,22 +302,33 @@ class UnderstandingHandler(BaseView):
 
     async def _handle_multipart(
         self,
-    ) -> tuple[Optional[str], Optional[Path], Optional[str], str]:
-        """Parse a ``multipart/form-data`` request body.
+    ) -> tuple[
+        Optional[str],
+        list[tuple[Path, Optional[str]]],
+        Optional[str],
+        Optional[str],
+        str,
+    ]:
+        """Parse a ``multipart/form-data`` request body with multi-file support.
 
-        Reads the ``prompt``, ``file``, and optional ``media_type`` parts.
-        The uploaded file is saved into a temporary directory on disk.
+        Reads the ``prompt`` field, one or more ``file`` parts (also accepts
+        ``files`` / ``file[]``), an optional ``media_type`` override, and an
+        optional ``model`` override. Each uploaded file is saved into a
+        temporary directory on disk; filenames that collide are suffixed.
 
         Returns:
-            A 4-tuple ``(prompt, file_path, media_type, temp_dir)`` where
-            *temp_dir* is the path to the temporary directory that must be
+            A 5-tuple ``(prompt, file_entries, media_type_override,
+            model_override, temp_dir)`` where ``file_entries`` is a list of
+            ``(path, detected_media_type)`` tuples and ``temp_dir`` must be
             cleaned up by the caller.
         """
         reader = await self.request.multipart()
         prompt: Optional[str] = None
-        file_path: Optional[Path] = None
-        media_type: Optional[str] = None
+        file_entries: list[tuple[Path, Optional[str]]] = []
+        media_type_override: Optional[str] = None
+        model_override: Optional[str] = None
         temp_dir: str = tempfile.mkdtemp(prefix="understanding_upload_")
+        seen_filenames: dict[str, int] = {}
 
         async for part in reader:
             name = part.name or ""
@@ -299,39 +337,48 @@ class UnderstandingHandler(BaseView):
                 raw = await part.read(decode=True)
                 prompt = raw.decode("utf-8").strip()
 
-            elif name == "file":
-                filename: str = part.filename or "upload"
-                dest = Path(temp_dir) / Path(filename).name
+            elif name in ("file", "files", "file[]"):
+                filename: str = part.filename or f"upload-{len(file_entries)}"
+                base = Path(filename).name
+                # Disambiguate same-name uploads so we don't overwrite the
+                # previous part's bytes on disk.
+                count = seen_filenames.get(base, 0)
+                seen_filenames[base] = count + 1
+                if count:
+                    stem = Path(base).stem
+                    suffix = Path(base).suffix
+                    base = f"{stem}-{count}{suffix}"
+                dest = Path(temp_dir) / base
                 with open(dest, "wb") as fh:
                     while True:
                         chunk = await part.read_chunk(65536)
                         if not chunk:
                             break
                         fh.write(chunk)
-                file_path = dest
 
-                # Prefer Content-Type header for type detection.
                 ct = part.headers.get("Content-Type", "")
+                detected: Optional[str]
                 if ct.startswith("video/"):
-                    media_type = "video"
+                    detected = "video"
                 elif ct.startswith("image/"):
-                    media_type = "image"
+                    detected = "image"
                 else:
                     try:
-                        media_type = media_type_from_filename(filename)
+                        detected = media_type_from_filename(filename)
                     except ValueError:
-                        media_type = None  # Will cause a 400 later
+                        detected = None
+
+                file_entries.append((dest, detected))
 
             elif name == "media_type":
                 raw = await part.read(decode=True)
-                media_type = raw.decode("utf-8").strip() or None
+                media_type_override = raw.decode("utf-8").strip() or None
 
             elif name == "model":
-                # model override via multipart — stored implicitly on the
-                # handler; not used here, but consumed to avoid leftover parts.
-                await part.read(decode=True)
+                raw = await part.read(decode=True)
+                model_override = raw.decode("utf-8").strip() or None
 
-        return prompt, file_path, media_type, temp_dir
+        return prompt, file_entries, media_type_override, model_override, temp_dir
 
     async def _download_url(
         self, url: str, dest_dir: str

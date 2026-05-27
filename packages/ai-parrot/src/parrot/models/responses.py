@@ -191,7 +191,7 @@ class AIMessage(BaseModel):
         default_factory=list,
         description="List of detailed source documents used for context"
     )
-    structured_output: Optional[Union[BaseModel, Any]] = Field(
+    structured_output: Optional[Any] = Field(
         default=None,
         description="Immutable original structured output (BaseModel, dataclass, DataFrame)"
     )

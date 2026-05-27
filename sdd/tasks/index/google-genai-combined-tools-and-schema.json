@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-27T16:50:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-27T22:42:56+00:00",
   "tasks": [
     {
       "id": "TASK-1302",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T19:52:49+00:00",
-      "file": "sdd/tasks/completed/TASK-1302-add-gemini-3-5-flash-enum.md"
+      "file": "sdd/tasks/completed/TASK-1302-add-gemini-3-5-flash-enum.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1303",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T20:05:00+00:00",
-      "file": "sdd/tasks/completed/TASK-1303-capability-helper-and-configurable-whitelist.md"
+      "file": "sdd/tasks/completed/TASK-1303-capability-helper-and-configurable-whitelist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1304",
@@ -61,7 +63,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T20:10:43+00:00",
-      "file": "sdd/tasks/completed/TASK-1304-ask-combined-mode-refactor.md"
+      "file": "sdd/tasks/completed/TASK-1304-ask-combined-mode-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1305",
@@ -81,7 +84,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T20:12:28+00:00",
-      "file": "sdd/tasks/completed/TASK-1305-ask-stream-combined-mode-refactor.md"
+      "file": "sdd/tasks/completed/TASK-1305-ask-stream-combined-mode-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1306",
@@ -102,7 +106,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T20:14:24+00:00",
-      "file": "sdd/tasks/completed/TASK-1306-parametrize-example.md"
+      "file": "sdd/tasks/completed/TASK-1306-parametrize-example.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1307",
@@ -123,7 +128,8 @@
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
       "completed_at": "2026-05-27T20:26:15+00:00",
-      "file": "sdd/tasks/completed/TASK-1307-combined-mode-regression-tests.md"
+      "file": "sdd/tasks/completed/TASK-1307-combined-mode-regression-tests.md",
+      "verification": "verified"
     }
   ]
 }

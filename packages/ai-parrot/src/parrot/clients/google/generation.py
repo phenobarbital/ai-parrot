@@ -78,7 +78,7 @@ class GoogleGeneration:
     async def generate_images(
         self,
         prompt_data: ImageGenerationPrompt,
-        model: Union[str, GoogleModel] = GoogleModel.IMAGEN_3,
+        model: Union[str, GoogleModel] = GoogleModel.IMAGEN_4,
         reference_image: Optional[Path] = None,
         output_directory: Optional[Path] = None,
         mime_format: str = "image/jpeg",
@@ -91,12 +91,12 @@ class GoogleGeneration:
         Generates images based on a text prompt using Imagen.
         """
         if prompt_data.model:
-            model = GoogleModel.IMAGEN_3.value
+            model = GoogleModel.IMAGEN_4.value
         model = model.value if isinstance(model, GoogleModel) else model
         self.logger.info(
             f"Starting image generation with model: {model}"
         )
-        if model == GoogleModel.GEMINI_2_0_IMAGE_GENERATION.value:
+        if model == GoogleModel.GEMINI_2_5_FLASH_IMAGE.value:
             image_provider = "google_genai"
             config=types.GenerateContentConfig(
                 response_modalities=['TEXT', 'IMAGE']
@@ -1887,7 +1887,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         _valid_models = {
             GoogleModel.VEO_3_1.value,
             GoogleModel.VEO_3_1_FAST.value,
-            GoogleModel.VEO_2_0.value,
+            GoogleModel.VEO_3_1_LITE.value,
         }
         if model_str not in _valid_models:
             raise ValueError(
