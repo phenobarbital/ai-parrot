@@ -70,7 +70,7 @@
       "feature_id": "FEAT-193",
       "feature": "google-genai-combined-tools-and-schema",
       "spec": "sdd/specs/google-genai-combined-tools-and-schema.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends only on TASK-1303 (the helper); technically independent of TASK-1304 at the runtime level — but both edit client.py so they run sequentially in the per-spec worktree to avoid merge friction. If TASK-1304 extracts _reformat_to_structured, this task reuses it.",
       "assigned_to": null,
       "started_at": "2026-05-27T19:51:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1305-ask-stream-combined-mode-refactor.md"
+      "completed_at": "2026-05-27T20:12:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1305-ask-stream-combined-mode-refactor.md"
     },
     {
       "id": "TASK-1306",

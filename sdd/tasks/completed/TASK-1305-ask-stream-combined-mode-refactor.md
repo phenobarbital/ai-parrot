@@ -301,10 +301,8 @@ Detailed tests live in TASK-1307. Smoke checks only here.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-27
+**Notes**: Added `combined_mode` local variable and `applies_schema` gate in `ask_stream()`. The post-stream reformat block now has `if combined_mode: ... elif _use_tools: ... else:` branches. The two-phase path (`elif _use_tools`) is preserved byte-for-byte. The combined-mode path calls `_reformat_to_structured` (extracted in TASK-1304) for the recovery branch. 25/26 tests pass (1 pre-existing failure in `test_google_ask_stream` unrelated to this task).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: …
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.
