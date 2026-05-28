@@ -1133,3 +1133,11 @@ class TelegramHumanChannel(HumanChannel):
         ):
             text = text.replace(char, f"\\{char}")
         return text
+
+
+# Auto-register with ChannelRegistry on import
+try:
+    from parrot.human.channels import ChannelRegistry
+    ChannelRegistry.register("telegram", TelegramHumanChannel)
+except ImportError:
+    pass  # ChannelRegistry not yet available (e.g. during install)
