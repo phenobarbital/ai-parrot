@@ -78,9 +78,7 @@ dependencies = [
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
-    # Messaging / integrations (core — telegram + slack only)
-    "async-notify[default]>=1.4.2",
-    "pywa>=3.8.0",
+    # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging]
     "ddgs>=9.5.2",
     # State machine / workflow (core)
     "python-statemachine==2.5.0",
@@ -380,7 +378,7 @@ llms = [
 integrations = [
     "querysource>=4.1.11",
     "async-notify[all]>=1.5.2",
-    "azure-teambots>=0.1.1"
+    # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
 # milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
@@ -430,9 +428,11 @@ filesystem-transport-full = [
     "click>=8.0",
 ]
 
-matrix = [
-    "mautrix>=0.20",
-    "python-olm>=3.2.16",
+# matrix extra moved to ai-parrot-integrations[matrix]
+
+# Meta-extra for messaging channels (backward-compat alias)
+messaging = [
+    "ai-parrot-integrations[messaging]",
 ]
 
 # OpenTelemetry distributed tracing (FEAT-176 — lifecycle events)
@@ -478,6 +478,7 @@ remote-tools = [
 all = [
     "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling]",
     "ai-parrot-embeddings[all]",
+    "ai-parrot-integrations[all]",
 ]
 
 # all-fast: lightweight embedding stack via satellite
@@ -511,8 +512,8 @@ namespaces = true
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl"]
 "parrot.auth" = ["templates/*.html"]
-"parrot.integrations.telegram" = ["static/*.html"]
-"parrot.voice" = ["ui/*.html", "ui/*.js", "ui/*.css"]
+# parrot.integrations.telegram moved to ai-parrot-integrations
+# parrot.voice moved to ai-parrot-integrations
 "parrot.outputs.formats.assets" = ["*.js", "*.css"]
 "parrot.openapi" = ["*.yaml"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
