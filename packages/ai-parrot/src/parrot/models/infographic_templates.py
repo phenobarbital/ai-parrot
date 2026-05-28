@@ -478,3 +478,52 @@ class InfographicTemplateRegistry:
 
 # Module-level singleton registry
 infographic_registry = InfographicTemplateRegistry()
+
+
+# ── FEAT-197: financial_projection_variance template ─────────────────────────
+# Registered outside the _register_builtins() block so it can reference
+# JSBundle (added by FEAT-197) without touching the seven built-in definitions.
+
+TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
+    name="financial_projection_variance",
+    description=(
+        "4 hero cards (total revenue, total EBITDA, EBITDA margin, largest swing) "
+        "+ 2 DoD bar charts (revenue, EBITDA) + 1 cumulative line chart."
+    ),
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            min_items=4,
+            max_items=4,
+            description="4 KPI cards: total revenue, total EBITDA, EBITDA margin, largest daily swing.",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Day-over-day revenue bar chart (uses rev_daily DataFrame).",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Day-over-day EBITDA bar chart (uses ebitda_daily DataFrame).",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Cumulative revenue line chart (uses rev_cumulative DataFrame).",
+        ),
+    ],
+    default_theme="dark",
+    js_bundles=[
+        JSBundle(
+            name="echarts",
+            scope="cdn",
+            # NOTE: Replace sha384-PLACEHOLDER with the genuine hash computed via:
+            #   openssl dgst -sha384 -binary echarts.min.js | base64
+            url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
+            sri_hash="sha384-PLACEHOLDER_REPLACE_BEFORE_PRODUCTION",
+        ),
+    ],
+)
+
+infographic_registry.register(TEMPLATE_FINANCIAL_PROJECTION_VARIANCE)
