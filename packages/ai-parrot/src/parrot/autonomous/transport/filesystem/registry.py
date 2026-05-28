@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -123,7 +124,8 @@ class AgentRegistry:
         if not self._dir.exists():
             return []
         agents: List[Dict[str, Any]] = []
-        for path in self._dir.iterdir():
+        paths = await asyncio.to_thread(lambda: list(self._dir.iterdir()))
+        for path in paths:
             if path.name.startswith(".") or path.suffix != ".json":
                 continue
             data = await self._read_path(path)
@@ -167,7 +169,8 @@ class AgentRegistry:
         if not self._dir.exists():
             return []
         removed: List[str] = []
-        for path in self._dir.iterdir():
+        paths = await asyncio.to_thread(lambda: list(self._dir.iterdir()))
+        for path in paths:
             if path.name.startswith(".") or path.suffix != ".json":
                 continue
             data = await self._read_path(path)

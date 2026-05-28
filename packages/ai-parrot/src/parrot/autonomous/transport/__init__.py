@@ -1,4 +1,4 @@
-# parrot/transport — Transport layer for multi-agent communication.
+# parrot/autonomous/transport — Transport layer for multi-agent communication.
 
 from .base import AbstractTransport
 

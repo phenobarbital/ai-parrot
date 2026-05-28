@@ -1,5 +1,9 @@
 """Tests for package-level imports — all public classes must be importable."""
 
+import importlib
+
+import pytest
+
 
 class TestImports:
     def test_transport_import(self):
@@ -52,3 +56,22 @@ class TestImports:
         from parrot.autonomous.transport.filesystem import FilesystemTransport
 
         assert issubclass(FilesystemTransport, AbstractTransport)
+
+    @pytest.mark.skip(
+        reason=(
+            "Post-merge regression guard for FEAT-196. "
+            "parrot.transport still resolves pre-merge because the dev venv is an "
+            "editable install of the main repo where packages/ai-parrot/src/parrot/transport/ "
+            "has not yet been removed. Un-skip after feat-196-fix-parrot-transport is merged "
+            "into dev and the venv is refreshed to verify the old namespace is gone."
+        )
+    )
+    def test_old_import_path_raises(self):
+        """Importing from the old parrot.transport path must raise ModuleNotFoundError.
+
+        Post-merge regression guard: the parrot.transport namespace was removed in
+        FEAT-196. If it ever reappears (e.g., an accidental shim), this test will
+        catch it immediately.
+        """
+        with pytest.raises((ImportError, ModuleNotFoundError)):
+            importlib.import_module("parrot.transport")

@@ -1,4 +1,4 @@
-"""Entry point for ``python -m parrot.transport.filesystem``."""
+"""Entry point for ``python -m parrot.autonomous.transport.filesystem``."""
 
 from .cli import main
 
