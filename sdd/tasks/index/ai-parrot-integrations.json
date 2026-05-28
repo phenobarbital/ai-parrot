@@ -128,7 +128,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -138,8 +138,8 @@
       "parallelism_notes": "Small channel (7 files). Sequential with other channel moves.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1348-whatsapp-extraction.md"
+      "completed_at": "2026-05-28T15:45:14+00:00",
+      "file": "sdd/tasks/completed/TASK-1348-whatsapp-extraction.md"
     },
     {
       "id": "TASK-1349",
