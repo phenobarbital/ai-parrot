@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-196
 **Date**: 2026-05-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: implemented
 **Target version**: next minor
 **Depends on**: FEAT-134 (`flow-primitives`, merged), FEAT-143 (`flows-consolidation`, merged), FEAT-147 (`flows/core/storage/persistence.py`, merged), FEAT-163 (`agentsflow-refactor-spec3`, merged)
 **Source brainstorm**: `sdd/proposals/agentsflow-migration.brainstorm.md` (Option A, 14 resolved questions)
