@@ -1,4 +1,9 @@
 """Communication channel implementations for HITL interactions."""
+# Merge with the ai-parrot-integrations satellite, which contributes
+# parrot/human/channels/telegram.py into this same namespace.
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 # Lazy re-exports (PEP 562). TelegramHumanChannel pulls aiogram (~1.5s),
 # so defer it until the symbol is actually accessed.
 import importlib

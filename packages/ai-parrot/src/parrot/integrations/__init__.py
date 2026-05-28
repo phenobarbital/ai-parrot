@@ -12,6 +12,14 @@ Migration notes
 - OAuth2 moved: ``parrot.integrations.oauth2.*`` → ``parrot.auth.oauth2.*``
 - Zoom moved:   ``parrot.integrations.zoom.*``   → ``parrot_tools.zoom.*``
 """
+from pkgutil import extend_path
+
+# Merge this stub with the satellite ``ai-parrot-integrations`` distribution's
+# ``parrot/integrations/`` directory (PEP 420 / pkgutil namespace). Without
+# this, the stub stays a single-directory regular package and the satellite's
+# concrete modules (telegram/, slack/, msteams/, ...) are never found, so the
+# ``__getattr__`` fallback below fires even when the satellite IS installed.
+__path__ = extend_path(__path__, __name__)
 
 _CHANNEL_EXTRAS: dict[str, str] = {
     "slack": "slack",

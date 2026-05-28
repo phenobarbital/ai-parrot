@@ -15,6 +15,7 @@ dependencies = [
     "ai-parrot-tools",
     "ai-parrot-loaders",
     "ai-parrot-embeddings",
+    "ai-parrot-visualizations",
     "ai-parrot-pipelines",
     "ai-parrot-integrations",
 ]
