@@ -5,7 +5,7 @@ and status within a crew. They provide rendering methods for
 Telegram-formatted announcements and pinned registry lines.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, Field

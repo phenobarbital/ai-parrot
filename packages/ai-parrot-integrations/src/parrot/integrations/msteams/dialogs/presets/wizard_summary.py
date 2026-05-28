@@ -1,19 +1,16 @@
 """
 Wizard with Summary Dialog - Multi-step form with confirmation.
 """
-from typing import Any, Callable, Awaitable, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 from botbuilder.dialogs import (
-    WaterfallDialog,
     WaterfallStepContext,
     DialogTurnResult,
     DialogTurnStatus,
 )
-from botbuilder.core import TurnContext, MessageFactory
+from botbuilder.core import MessageFactory
 
 from .wizard import WizardFormDialog
 from parrot.forms import FormSchema, StyleSchema
-from parrot.forms.renderers import AdaptiveCardRenderer
-from parrot.forms.validators import FormValidator
 
 if TYPE_CHECKING:
     from ....bots.abstract import AbstractBot
@@ -243,7 +240,7 @@ Summary:"""
             response = await agent.ask(prompt)
             content = response.content if hasattr(response, 'content') else str(response)
             return content.strip()
-        except Exception as e:
+        except Exception:
             # Fallback to simple summary
             return self._generate_simple_summary(form_data)
 

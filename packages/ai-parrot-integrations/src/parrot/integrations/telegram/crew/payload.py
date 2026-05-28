@@ -6,7 +6,6 @@ temp file management.
 """
 import logging
 import os
-from pathlib import Path
 from typing import List, Optional
 
 from aiogram import Bot

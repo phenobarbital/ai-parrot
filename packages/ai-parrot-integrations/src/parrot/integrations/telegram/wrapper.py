@@ -33,7 +33,6 @@ from aiogram.filters import CommandStart, Command
 from parrot.integrations.core.state import IntegrationStateManager
 from navconfig.logging import logging
 from .callbacks import CallbackRegistry, CallbackContext, CallbackResult
-from .combined_callback import COMBINED_CALLBACK_PATH
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .auth import (
@@ -290,7 +289,7 @@ class TelegramAgentWrapper:
             await self._execute_agent_method(message, method_name, message.text or "")
 
         self.router.message.register(custom_handler, Command(cmd_name))
-        self.logger.info(f"Registered custom command /{cmd_name} -> {method_name}()")
+        self.logger.info("Registered custom command /%s -> %s()", cmd_name, method_name)
 
     def _add_platform_commands(self, entries: list[tuple[str, str]]) -> None:
         """Record wrapper-registered commands for menus and /commands."""
@@ -1626,7 +1625,7 @@ class TelegramAgentWrapper:
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
-            self.logger.info(f"Chat {chat_id}: Calling tool {tool_name}({args_text})")
+            self.logger.info("Chat %s: Calling tool %s(%s)", chat_id, tool_name, args_text)
             # Use agent.ask to let the LLM invoke the tool properly
             question = (
                 f"Use the tool `{tool_name}` with the following input: {args_text}"
@@ -1645,7 +1644,7 @@ class TelegramAgentWrapper:
             )
         except Exception as e:
             typing_task.cancel()
-            self.logger.error(f"Error calling tool {tool_name}: {e}", exc_info=True)
+            self.logger.error("Error calling tool %s: %s", tool_name, e, exc_info=True)
             await message.answer(f"❌ Error calling tool `{tool_name}`: {str(e)[:200]}")
         finally:
             typing_task.cancel()
@@ -1688,7 +1687,7 @@ class TelegramAgentWrapper:
 
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
         try:
-            self.logger.info(f"Chat {chat_id}: /function {method_name}({args_text})")
+            self.logger.info("Chat %s: /function %s(%s)", chat_id, method_name, args_text)
 
             kwargs = self._parse_kwargs(args_text)
 
@@ -1704,7 +1703,7 @@ class TelegramAgentWrapper:
             )
         except Exception as e:
             typing_task.cancel()
-            self.logger.error(f"Error in /function {method_name}: {e}", exc_info=True)
+            self.logger.error("Error in /function %s: %s", method_name, e, exc_info=True)
             await message.answer(f"❌ Error calling {method_name}: {str(e)[:200]}")
         finally:
             typing_task.cancel()
@@ -1734,7 +1733,7 @@ class TelegramAgentWrapper:
         try:
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
-            self.logger.info(f"Chat {chat_id}: /question {question[:50]}...")
+            self.logger.info("Chat %s: /question %s...", chat_id, question[:50])
 
             with telegram_chat_scope(chat_id):
                 response = await self.agent.ask(
@@ -1751,7 +1750,7 @@ class TelegramAgentWrapper:
             await self._send_parsed_response(message, parsed)
         except Exception as e:
             typing_task.cancel()
-            self.logger.error(f"Error in /question: {e}", exc_info=True)
+            self.logger.error("Error in /question: %s", e, exc_info=True)
             await message.answer("❌ Sorry, I encountered an error. Please try again.")
         finally:
             typing_task.cancel()
@@ -2030,7 +2029,7 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
-            self.logger.info(f"Chat {chat_id}: Calling {method_name}({args_text})")
+            self.logger.info("Chat %s: Calling %s(%s)", chat_id, method_name, args_text)
 
             # Parse arguments (simple space-separated for now)
             args = args_text.split() if args_text else []
@@ -2058,7 +2057,7 @@ class TelegramAgentWrapper:
 
         except Exception as e:
             typing_task.cancel()
-            self.logger.error(f"Error calling {method_name}: {e}", exc_info=True)
+            self.logger.error("Error calling %s: %s", method_name, e, exc_info=True)
             await message.answer(f"❌ Error calling {method_name}: {str(e)[:200]}")
         finally:
             typing_task.cancel()
@@ -2235,7 +2234,7 @@ class TelegramAgentWrapper:
                     "Please try again or simplify the question."
                 )
             else:
-                self.logger.error(f"Error processing message: {e}", exc_info=True)
+                self.logger.error("Error processing message: %s", e, exc_info=True)
                 await message.answer(
                     "❌ Sorry, I encountered an error processing your request. "
                     "Please try again."
@@ -2406,7 +2405,7 @@ class TelegramAgentWrapper:
                 )
             else:
                 typing_task.cancel()
-                self.logger.error(f"Error processing group query: {e}", exc_info=True)
+                self.logger.error("Error processing group query: %s", e, exc_info=True)
                 await message.reply(
                     "❌ Sorry, I encountered an error processing your request."
                 )
@@ -2578,7 +2577,7 @@ class TelegramAgentWrapper:
                         exc_info=True,
                     )
             else:
-                self.logger.warning(f"Failed to send message (mode={parse_mode}): {e}")
+                self.logger.warning("Failed to send message (mode=%s): %s", parse_mode, e)
                 # Non-parse error: still try bare plaintext as last resort.
                 try:
                     await send_func(safe_text, None)
@@ -2618,7 +2617,7 @@ class TelegramAgentWrapper:
                         )
                         await asyncio.sleep(0.3)
                 except Exception as e:
-                    self.logger.error(f"Failed to send chart '{chart.title}': {e}")
+                    self.logger.error("Failed to send chart '%s': %s", chart.title, e)
 
         # Send images
         for image_path in parsed.images:
@@ -2630,7 +2629,7 @@ class TelegramAgentWrapper:
                 )
                 await asyncio.sleep(0.3)
             except Exception as e:
-                self.logger.error(f"Failed to send image {image_path}: {e}")
+                self.logger.error("Failed to send image %s: %s", image_path, e)
 
         # Send documents
         for doc_path in parsed.documents:
@@ -2642,7 +2641,7 @@ class TelegramAgentWrapper:
                 )
                 await asyncio.sleep(0.3)
             except Exception as e:
-                self.logger.error(f"Failed to send document {doc_path}: {e}")
+                self.logger.error("Failed to send document %s: %s", doc_path, e)
 
         # Send media (videos, audio)
         for media_path in parsed.media:
@@ -2666,7 +2665,7 @@ class TelegramAgentWrapper:
                     )
                 await asyncio.sleep(0.3)
             except Exception as e:
-                self.logger.error(f"Failed to send media {media_path}: {e}")
+                self.logger.error("Failed to send media %s: %s", media_path, e)
 
     async def handle_photo(self, message: Message) -> None:
         """Handle photo messages.
@@ -2756,7 +2755,7 @@ class TelegramAgentWrapper:
             # Cleanup happens via OS temp directory rotation.
 
         except Exception as e:
-            self.logger.error(f"Error processing photo: {e}", exc_info=True)
+            self.logger.error("Error processing photo: %s", e, exc_info=True)
             await message.answer("❌ Sorry, I couldn't process that image.")
 
     async def handle_document(self, message: Message) -> None:
@@ -3166,7 +3165,7 @@ class TelegramAgentWrapper:
             except ImportError:
                 pass
             except Exception as e:
-                self.logger.warning(f"cairosvg failed: {e}")
+                self.logger.warning("cairosvg failed: %s", e)
 
             # Backend 2: svglib + reportlab
             try:
@@ -3186,7 +3185,7 @@ class TelegramAgentWrapper:
             except ImportError:
                 pass
             except Exception as e:
-                self.logger.warning(f"svglib failed: {e}")
+                self.logger.warning("svglib failed: %s", e)
 
             # Backend 3: wand (ImageMagick)
             try:
@@ -3199,7 +3198,7 @@ class TelegramAgentWrapper:
             except ImportError:
                 pass
             except Exception as e:
-                self.logger.warning(f"wand failed: {e}")
+                self.logger.warning("wand failed: %s", e)
 
             raise ImportError(
                 "No SVG conversion backend available. "
@@ -3212,7 +3211,7 @@ class TelegramAgentWrapper:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 return await loop.run_in_executor(executor, _do_convert)
         except ImportError as e:
-            self.logger.error(f"SVG conversion failed: {e}")
+            self.logger.error("SVG conversion failed: %s", e)
             raise
 
     async def _send_parsed_response(
@@ -3304,9 +3303,9 @@ class TelegramAgentWrapper:
                         )
                         await asyncio.sleep(0.3)  # Rate limiting
 
-                        self.logger.info(f"Sent chart to Telegram: {chart.title}")
+                        self.logger.info("Sent chart to Telegram: %s", chart.title)
                 except Exception as e:
-                    self.logger.error(f"Failed to send chart '{chart.title}': {e}")
+                    self.logger.error("Failed to send chart '%s': %s", chart.title, e)
                     # Send error message instead
                     await message.answer(f"⚠️ Could not display chart: {chart.title}")
 
@@ -3320,7 +3319,7 @@ class TelegramAgentWrapper:
                 )
                 await asyncio.sleep(0.3)  # Rate limiting
             except Exception as e:
-                self.logger.error(f"Failed to send image {image_path}: {e}")
+                self.logger.error("Failed to send image %s: %s", image_path, e)
 
         # Send documents
         for doc_path in parsed.documents:
@@ -3332,7 +3331,7 @@ class TelegramAgentWrapper:
                 )
                 await asyncio.sleep(0.3)  # Rate limiting
             except Exception as e:
-                self.logger.error(f"Failed to send document {doc_path}: {e}")
+                self.logger.error("Failed to send document %s: %s", doc_path, e)
 
         # Send media (videos, audio)
         for media_path in parsed.media:
@@ -3356,7 +3355,7 @@ class TelegramAgentWrapper:
                     )
                 await asyncio.sleep(0.3)  # Rate limiting
             except Exception as e:
-                self.logger.error(f"Failed to send media {media_path}: {e}")
+                self.logger.error("Failed to send media %s: %s", media_path, e)
 
         return first_sent
 
@@ -3476,7 +3475,7 @@ class TelegramAgentWrapper:
 
             return html.strip()
         except Exception as e:
-            self.logger.warning(f"Error converting Markdown to HTML: {e}")
+            self.logger.warning("Error converting Markdown to HTML: %s", e)
             return text
 
     def _convert_headers_to_bold(self, text: str) -> str:
@@ -3636,7 +3635,7 @@ class TelegramAgentWrapper:
                     show_alert=result.show_alert,
                 )
             except Exception as e:
-                self.logger.debug(f"Callback answer skipped: {e}")
+                self.logger.debug("Callback answer skipped: %s", e)
 
         # 2. Edit the original message if requested
         if result.edit_message and callback_query.message:
@@ -3654,7 +3653,7 @@ class TelegramAgentWrapper:
 
                 await self.bot.edit_message_text(**edit_kwargs)
             except Exception as e:
-                self.logger.warning(f"Failed to edit message: {e}")
+                self.logger.warning("Failed to edit message: %s", e)
 
         # 3. Send a new reply message if requested
         if result.reply_text and callback_query.message:
@@ -3665,7 +3664,7 @@ class TelegramAgentWrapper:
                     parse_mode=result.reply_parse_mode,
                 )
             except Exception as e:
-                self.logger.warning(f"Failed to send reply: {e}")
+                self.logger.warning("Failed to send reply: %s", e)
 
     async def send_interactive_message(
         self,

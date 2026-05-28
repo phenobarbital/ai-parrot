@@ -6,7 +6,7 @@ for rendering in different platforms (Telegram, MS Teams, etc.).
 """
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 import mimetypes
 import base64
 

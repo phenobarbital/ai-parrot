@@ -4,7 +4,6 @@ Utility functions for Telegram bot message processing.
 Provides helpers for extracting user queries from group messages.
 """
 import re
-from typing import Optional
 
 from aiogram import Bot
 from aiogram.types import Message

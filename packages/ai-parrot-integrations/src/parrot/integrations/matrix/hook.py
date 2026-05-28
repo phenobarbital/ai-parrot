@@ -93,8 +93,8 @@ class MatrixHook(BaseHook):
         await self._wrapper.start_sync()
 
         self.logger.info(
-            f"MatrixHook '{self.name}' started as "
-            f"{self._config.bot_mxid} on {self._config.homeserver}"
+            "MatrixHook '%s' started as %s on %s",
+            self.name, self._config.bot_mxid, self._config.homeserver,
         )
 
     async def stop(self) -> None:
@@ -102,7 +102,7 @@ class MatrixHook(BaseHook):
         if self._wrapper:
             await self._wrapper.disconnect()
             self._wrapper = None
-        self.logger.info(f"MatrixHook '{self.name}' stopped")
+        self.logger.info("MatrixHook '%s' stopped", self.name)
 
     async def _on_room_message(self, event: Any) -> None:
         """Handle incoming m.room.message events from the sync loop.
@@ -131,7 +131,8 @@ class MatrixHook(BaseHook):
 
         except Exception as exc:
             self.logger.error(
-                f"Error processing Matrix message: {exc}",
+                "Error processing Matrix message: %s",
+                exc,
                 exc_info=True,
             )
 
@@ -152,9 +153,7 @@ class MatrixHook(BaseHook):
         """
         # 1. Filter by allowed users
         if self._allowed_users and sender not in self._allowed_users:
-            self.logger.debug(
-                f"Ignoring message from non-allowed user: {sender}"
-            )
+            self.logger.debug("Ignoring message from non-allowed user: %s", sender)
             return
 
         # 2. Check command prefix
@@ -219,9 +218,12 @@ class MatrixHook(BaseHook):
             event.target_type = target_type
 
         self.logger.info(
-            f"\U0001f4e8 Matrix from {sender} in {room_id}: "
-            f"'{body[:50]}...' -> {target_id or 'default'} "
-            f"via {matched_route or 'default'}"
+            "Matrix from %s in %s: '%s...' -> %s via %s",
+            sender,
+            room_id,
+            body[:50],
+            target_id or "default",
+            matched_route or "default",
         )
 
         # Send event to orchestrator
@@ -253,10 +255,10 @@ class MatrixHook(BaseHook):
 
         try:
             await self._wrapper.send_text(room_id, message)
-            self.logger.info(f"✅ Reply sent to {room_id}")
+            self.logger.info("Reply sent to %s", room_id)
             return True
         except Exception as exc:
-            self.logger.error(f"Failed to send Matrix reply: {exc}")
+            self.logger.error("Failed to send Matrix reply: %s", exc)
             return False
 
 

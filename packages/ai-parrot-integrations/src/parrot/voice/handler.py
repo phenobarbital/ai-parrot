@@ -120,7 +120,7 @@ class TokenValidator:
                         raw_payload=result,
                     )
             except Exception as e:
-                self.logger.warning(f"Custom validator error: {e}")
+                self.logger.warning("Custom validator error: %s", e)
                 return None
 
         # Try navigator_auth
@@ -161,7 +161,7 @@ class TokenValidator:
                         raw_payload=payload,
                     )
                 except Exception as e:
-                    self.logger.warning(f"JWT decode error: {e}")
+                    self.logger.warning("JWT decode error: %s", e)
                     return None
 
             # Fallback for testing (accept any token)
@@ -176,7 +176,7 @@ class TokenValidator:
             )
 
         except Exception as e:
-            self.logger.warning(f"Token validation error: {e}")
+            self.logger.warning("Token validation error: %s", e)
             return None
 
 
@@ -420,13 +420,13 @@ class VoiceChatHandler:
         # WebSocket route
         ws_path = f"{prefix}{self.ws_route}"
         app.router.add_get(ws_path, self.handle_websocket)
-        self.logger.info(f"WebSocket route registered: {ws_path}")
+        self.logger.info("WebSocket route registered: %s", ws_path)
 
         # Health check
         if include_health:
             health_path = f"{prefix}{self.health_route}"
             app.router.add_get(health_path, self._handle_health)
-            self.logger.info(f"Health route registered: {health_path}")
+            self.logger.info("Health route registered: %s", health_path)
 
         # Static files
         if include_static and static_dir:
@@ -434,7 +434,7 @@ class VoiceChatHandler:
             static_path = Path(static_dir)
             if static_path.exists():
                 app.router.add_static(f"{prefix}/static", static_path)
-                self.logger.info(f"Static route registered: {prefix}/static")
+                self.logger.info("Static route registered: %s/static", prefix)
 
         # Store reference in app
         app["voice_handler"] = self
@@ -602,7 +602,7 @@ class VoiceChatHandler:
                     except json.JSONDecodeError:
                         await self._send_error(ws, "Invalid JSON")
                     except Exception as e:
-                        self.logger.error(f"Error handling message: {e}")
+                        self.logger.error("Error handling message: %s", e)
                         await self._send_error(ws, str(e))
 
                 elif msg.type == WSMsgType.BINARY:
@@ -623,15 +623,15 @@ class VoiceChatHandler:
                             connection.audio_buffer += msg.data
 
                 elif msg.type == WSMsgType.ERROR:
-                    self.logger.error(f"WebSocket error: {ws.exception()}")
+                    self.logger.error("WebSocket error: %s", ws.exception())
 
         except asyncio.CancelledError:
-            self.logger.info(f"Connection cancelled: {session_id}")
+            self.logger.info("Connection cancelled: %s", session_id)
 
         finally:
             await self._cleanup_connection(connection)
             self.connections.pop(session_id, None)
-            self.logger.info(f"Connection closed: {session_id}")
+            self.logger.info("Connection closed: %s", session_id)
 
         return ws
 
@@ -682,7 +682,7 @@ class VoiceChatHandler:
         if handler := handlers.get(msg_type):
             await handler(connection, message)
         else:
-            self.logger.warning(f"Unknown message type: {msg_type}")
+            self.logger.warning("Unknown message type: %s", msg_type)
 
     async def _handle_auth(
         self,
@@ -896,7 +896,7 @@ class VoiceChatHandler:
             "session_id": connection.session_id,
         })
 
-        self.logger.info(f"Voice session ended: {connection.session_id}")
+        self.logger.info("Voice session ended: %s", connection.session_id)
 
     async def _handle_reset_session(
         self,
@@ -918,7 +918,7 @@ class VoiceChatHandler:
             "config": connection.config.as_dict() if connection.config else {}
         })
 
-        self.logger.info(f"Voice session reset: {connection.session_id}")
+        self.logger.info("Voice session reset: %s", connection.session_id)
 
     async def _handle_start_recording(
         self,
@@ -1080,7 +1080,7 @@ class VoiceChatHandler:
                 )
 
         except Exception as e:
-            self.logger.error(f"Error processing text: {e}")
+            self.logger.error("Error processing text: %s", e)
             await self._send_error(connection.ws, str(e))
 
     async def _handle_voice_complete(
@@ -1159,7 +1159,7 @@ class VoiceChatHandler:
             )
 
         except Exception as e:
-            self.logger.error(f"Error processing voice: {e}")
+            self.logger.error("Error processing voice: %s", e)
             await self._send_error(connection.ws, str(e))
 
     async def _handle_voice_binary_complete(
@@ -1202,7 +1202,7 @@ class VoiceChatHandler:
             )
 
         except Exception as e:
-            self.logger.error(f"Error processing binary voice: {e}")
+            self.logger.error("Error processing binary voice: %s", e)
             await self._send_error(connection.ws, str(e))
 
     async def _send_complete_voice_response(
@@ -1316,7 +1316,7 @@ class VoiceChatHandler:
             except asyncio.CancelledError:
                 return
             except Exception as e:
-                self.logger.error(f"Voice session error: {e}")
+                self.logger.error("Voice session error: %s", e)
                 await self._send_error(connection.ws, str(e))
                 await asyncio.sleep(1)
 
@@ -1413,7 +1413,7 @@ class VoiceChatHandler:
         try:
             await ws.send_json(message)
         except Exception as e:
-            self.logger.error(f"Error sending message: {e}")
+            self.logger.error("Error sending message: %s", e)
 
     async def _send_error(
         self,

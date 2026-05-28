@@ -112,7 +112,7 @@ class MatrixAppService:
         for room_id in self._config.auto_join_rooms:
             try:
                 await self.bot_intent.ensure_joined(RoomID(room_id))
-                self.logger.info(f"Bot joined room {room_id}")
+                self.logger.info("Bot joined room %s", room_id)
             except Exception as exc:
                 self.logger.warning(
                     f"Failed to join room {room_id}: {exc}"
@@ -191,7 +191,7 @@ class MatrixAppService:
             except Exception:
                 pass
 
-        self.logger.info(f"Unregistered agent '{agent_name}' ({mxid})")
+        self.logger.info("Unregistered agent '%s' (%s)", agent_name, mxid)
 
     async def ensure_agent_in_room(
         self,

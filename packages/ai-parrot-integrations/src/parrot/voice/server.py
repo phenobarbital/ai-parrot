@@ -111,13 +111,13 @@ class VoiceChatServer:
                 elif msg.type == WSMsgType.BINARY:
                     await self._handle_binary(connection, msg.data)
                 elif msg.type == WSMsgType.ERROR:
-                    self.logger.error(f"WebSocket error: {ws.exception()}")
+                    self.logger.error("WebSocket error: %s", ws.exception())
                     break
 
         except asyncio.CancelledError:
-            self.logger.info(f"Connection cancelled: {session_id}")
+            self.logger.info("Connection cancelled: %s", session_id)
         except Exception as e:
-            self.logger.error(f"Connection error: {e}", exc_info=True)
+            self.logger.error("Connection error: %s", e, exc_info=True)
         finally:
             await self._cleanup(session_id)
 
@@ -190,7 +190,7 @@ class VoiceChatServer:
                     "mode": "mock"
                 }
             })
-            self.logger.info(f"Mock session started: {conn.session_id}")
+            self.logger.info("Mock session started: %s", conn.session_id)
             return
 
         try:
@@ -251,7 +251,7 @@ class VoiceChatServer:
             # Use the model from config or default to latest
             model = config.get('model', 'gemini-2.5-flash-native-audio-preview-12-2025')
 
-            self.logger.info(f"Starting session with model: {model}")
+            self.logger.info("Starting session with model: %s", model)
 
             # Reset shutdown event for new session
             conn.shutdown_event.clear()
@@ -276,7 +276,7 @@ class VoiceChatServer:
             )
 
         except Exception as e:
-            self.logger.error(f"Failed to start session: {e}", exc_info=True)
+            self.logger.error("Failed to start session: %s", e, exc_info=True)
             await self._send(conn.ws, {
                 "type": "error",
                 "message": f"Failed to start session: {str(e)}"
@@ -357,10 +357,10 @@ class VoiceChatServer:
         for _ in range(30):  # 30 * 100ms = 3 seconds max
             await asyncio.sleep(0.1)
             if conn.session_active:
-                self.logger.info(f"Session reconnected: {conn.session_id}")
+                self.logger.info("Session reconnected: %s", conn.session_id)
                 return
 
-        self.logger.warning(f"Session reconnect timeout: {conn.session_id}")
+        self.logger.warning("Session reconnect timeout: %s", conn.session_id)
 
     async def _schedule_session_restart(self, conn: VoiceConnection) -> None:
         """Schedule a session restart after receiving GoAway message.
@@ -373,7 +373,7 @@ class VoiceChatServer:
 
         # Only restart if the session is still active and not already restarting
         if conn.session_active and not conn.session_restarting:
-            self.logger.info(f"Proactive session restart due to GoAway: {conn.session_id}")
+            self.logger.info("Proactive session restart due to GoAway: %s", conn.session_id)
             conn.session_restarting = True
             try:
                 await self._restart_session(conn)
@@ -382,7 +382,7 @@ class VoiceChatServer:
                     "message": "Session reconnected successfully"
                 })
             except Exception as e:
-                self.logger.error(f"Failed to restart session: {e}")
+                self.logger.error("Failed to restart session: %s", e)
             finally:
                 conn.session_restarting = False
 
@@ -418,7 +418,7 @@ class VoiceChatServer:
             ) as session:
                 conn.session_active = True
                 conn.gemini_session = session  # Store reference for text testing
-                self.logger.info(f"Gemini session connected: {conn.session_id}")
+                self.logger.info("Gemini session connected: %s", conn.session_id)
 
                 # Send proactive welcome message to test if Gemini is working
                 # This verifies the session before any audio is sent
@@ -474,13 +474,13 @@ class VoiceChatServer:
                             try:
                                 task.result()
                             except Exception as e:
-                                self.logger.error(f"Sender task error: {e}", exc_info=True)
+                                self.logger.error("Sender task error: %s", e, exc_info=True)
                         elif task == receiver_task:
                             self.logger.warning("Response receiver task ended unexpectedly")
                             try:
                                 task.result()
                             except Exception as e:
-                                self.logger.error(f"Receiver task error: {e}", exc_info=True)
+                                self.logger.error("Receiver task error: %s", e, exc_info=True)
                         else:
                             # Shutdown event was triggered
                             self.logger.info("Shutdown event triggered, ending session")
@@ -524,7 +524,7 @@ class VoiceChatServer:
                 await asyncio.gather(sender_task, receiver_task, return_exceptions=True)
                 
         except Exception as e:
-            self.logger.error(f"Gemini session error: {e}", exc_info=True)
+            self.logger.error("Gemini session error: %s", e, exc_info=True)
             await self._send(conn.ws, {"type": "error", "message": str(e)})
         finally:
             conn.session_active = False
@@ -540,7 +540,7 @@ class VoiceChatServer:
 
         try:
             audio_stream_ended = False
-            self.logger.info(f"Audio sender started for session: {conn.session_id}")
+            self.logger.info("Audio sender started for session: %s", conn.session_id)
 
             while conn.session_active and not conn.ws.closed:
                 # Check if audio sending should stop
@@ -548,7 +548,7 @@ class VoiceChatServer:
                     if not audio_stream_ended:
                         # Send any remaining audio buffer first
                         if audio_buffer:
-                            self.logger.debug(f"Sending remaining buffer: {len(audio_buffer)} bytes")
+                            self.logger.debug("Sending remaining buffer: %s bytes", len(audio_buffer))
                             try:
                                 await session.send_realtime_input(
                                     media=types.Blob(
@@ -558,7 +558,7 @@ class VoiceChatServer:
                                 )
                                 self.logger.debug("Remaining buffer sent successfully")
                             except Exception as e:
-                                self.logger.error(f"Error sending remaining buffer: {e}", exc_info=True)
+                                self.logger.error("Error sending remaining buffer: %s", e, exc_info=True)
                             audio_buffer = b""
 
                         # Small delay to let Gemini process the last audio chunks
@@ -578,7 +578,7 @@ class VoiceChatServer:
                         except asyncio.TimeoutError:
                             self.logger.error("TIMEOUT sending audio_stream_end - this may cause Gemini to not respond!")  # noqa
                         except Exception as e:
-                            self.logger.error(f"Error sending audio_stream_end: {e}", exc_info=True)
+                            self.logger.error("Error sending audio_stream_end: %s", e, exc_info=True)
 
                         audio_stream_ended = True
 
@@ -624,7 +624,7 @@ class VoiceChatServer:
                     # Reset audio_stream_ended flag for new recording
                     audio_stream_ended = False
                     audio_buffer += audio_data
-                    self.logger.debug(f"Audio buffer now: {len(audio_buffer)} bytes")
+                    self.logger.debug("Audio buffer now: %s bytes", len(audio_buffer))
 
                     # Send in chunks of ~200ms (3200 bytes at 16kHz, 16-bit)
                     while len(audio_buffer) >= 3200 and not conn.stop_audio_sending:
@@ -644,12 +644,12 @@ class VoiceChatServer:
                         )
                         total_bytes_sent += len(chunk)
                         chunks_sent += 1
-                        self.logger.debug(f"Sent chunk to Gemini: {len(chunk)} bytes (total: {total_bytes_sent})")
+                        self.logger.debug("Sent chunk to Gemini: %s bytes (total: %s)", len(chunk), total_bytes_sent)
                 except asyncio.TimeoutError:
                     # No audio in queue, continue loop
                     continue
                 except Exception as e:
-                    self.logger.error(f"Error sending audio: {e}", exc_info=True)
+                    self.logger.error("Error sending audio: %s", e, exc_info=True)
                     break
 
         except asyncio.CancelledError:
@@ -664,7 +664,7 @@ class VoiceChatServer:
                     )
                     self.logger.debug("Flushed remaining buffer on cancel")
                 except Exception as e:
-                    self.logger.error(f"Error flushing buffer on cancel: {e}", exc_info=True)
+                    self.logger.error("Error flushing buffer on cancel: %s", e, exc_info=True)
             raise
 
     def _identify_response_type(self, response) -> str:
@@ -704,29 +704,29 @@ class VoiceChatServer:
             )
             async for response in session.receive():
                 message_count += 1
-                self.logger.debug(f"Received response from Gemini: {conn.session_id}")
+                self.logger.debug("Received response from Gemini: %s", conn.session_id)
                 # Clear the waiting flag since we got a response
                 conn.responses_received = message_count
                 conn.waiting_for_response = False
                 response_type = self._identify_response_type(response)
-                self.logger.info(f"📩 Message #{message_count}: {response_type}")
+                self.logger.info("📩 Message #%s: %s", message_count, response_type)
                 conn.last_gemini_message = response_type
 
                 # Debug full response structure
                 try:
                     # import pprint
-                    # self.logger.debug(f"Gemini raw response: {pprint.pformat(response)}")
+                    # self.logger.debug("Gemini raw response: %s", pprint.pformat(response))
                     pass
                 except Exception:
-                    self.logger.debug(f"Gemini response: {response}")
+                    self.logger.debug("Gemini response: %s", response)
                 if conn.ws.closed or not conn.session_active:
-                    self.logger.debug(f"Breaking receive loop: ws.closed={conn.ws.closed}, session_active={conn.session_active}")
+                    self.logger.debug("Breaking receive loop: ws.closed=%s, session_active=%s", conn.ws.closed, conn.session_active)
                     break
 
                 # Handle GoAway message - session will disconnect soon
                 if hasattr(response, 'go_away') and response.go_away:
                     time_left = getattr(response.go_away, 'time_left', 'unknown')
-                    self.logger.warning(f"Gemini GoAway received, {time_left} until disconnect: {conn.session_id}")
+                    self.logger.warning("Gemini GoAway received, %s until disconnect: %s", time_left, conn.session_id)
                     # Notify frontend that we need to reconnect soon
                     await self._send(conn.ws, {
                         "type": "session_warning",
@@ -743,7 +743,7 @@ class VoiceChatServer:
                     update = response.session_resumption_update
                     if getattr(update, 'resumable', False) and getattr(update, 'new_handle', None):
                         conn.gemini_session_handle = update.new_handle
-                        self.logger.info(f"Session resumption handle updated: {conn.session_id}")
+                        self.logger.info("Session resumption handle updated: %s", conn.session_id)
 
                 # Handle server content (audio responses)
                 if hasattr(response, 'server_content') and response.server_content:
@@ -751,11 +751,11 @@ class VoiceChatServer:
 
                     # Check for generation_complete (model finished generating)
                     if getattr(sc, 'generation_complete', False):
-                        self.logger.info(f"Generation complete for session: {conn.session_id}")
+                        self.logger.info("Generation complete for session: %s", conn.session_id)
 
                     # Check for interruption
                     if getattr(sc, 'interrupted', False):
-                        self.logger.info(f"Turn interrupted. Audio: {len(current_audio)} bytes")
+                        self.logger.info("Turn interrupted. Audio: %s bytes", len(current_audio))
                         conn.gemini_responding = False  # Reset on interruption
                         await self._send(conn.ws, {
                             "type": "response_complete",
@@ -774,9 +774,9 @@ class VoiceChatServer:
                             debug_path = f"/tmp/gemini_audio_{conn.session_id}.pcm"
                             # with open(debug_path, "wb") as f:
                             #    f.write(current_audio)
-                            # self.logger.info(f"DEBUG: Saved audio to {debug_path} ({len(current_audio)} bytes)")
+                            # self.logger.info("DEBUG: Saved audio to %s (%s bytes)", debug_path, len(current_audio))
 
-                        self.logger.info(f"Turn complete. Total audio: {len(current_audio)} bytes, Text: {len(current_text)} chars")
+                        self.logger.info("Turn complete. Total audio: %s bytes, Text: %s chars", len(current_audio), len(current_text))
                         await self._send(conn.ws, {
                             "type": "response_complete",
                             "text": current_text,
@@ -803,7 +803,7 @@ class VoiceChatServer:
                             if hasattr(part, 'text') and part.text:
                                 # IGNORE generated text for Native Audio since it might be thoughts
                                 # We only want the transcription of what was said
-                                self.logger.debug(f"Ignored text part (reasoning): {part.text[:100]}...")
+                                self.logger.debug("Ignored text part (reasoning): %s...", part.text[:100])
 
                             # Audio output
                             if hasattr(part, 'inline_data') and part.inline_data:
@@ -813,7 +813,7 @@ class VoiceChatServer:
                                 if not conn.gemini_responding:
                                     conn.gemini_responding = True
                                     self.logger.info("Gemini started responding (VAD triggered)")
-                                self.logger.debug(f"Received audio chunk: {len(audio_chunk)} bytes")
+                                self.logger.debug("Received audio chunk: %s bytes", len(audio_chunk))
                                 await self._send(conn.ws, {
                                     "type": "response_chunk",
                                     "text": "",
@@ -826,7 +826,7 @@ class VoiceChatServer:
                     if hasattr(sc, 'input_transcription') and sc.input_transcription:
                         transcription = getattr(sc.input_transcription, 'text', '')
                         if transcription:
-                            self.logger.info(f"User transcription: {transcription}")
+                            self.logger.info("User transcription: %s", transcription)
                             await self._send(conn.ws, {
                                 "type": "transcription",
                                 "text": transcription,
@@ -837,8 +837,8 @@ class VoiceChatServer:
                     if hasattr(sc, 'output_transcription') and sc.output_transcription:
                         transcription = getattr(sc.output_transcription, 'text', '')
                         if transcription:
-                            self.logger.info(f"Model transcription received: '{transcription}' (User ID: {conn.user_id}, Session: {conn.session_id})")
-                            self.logger.debug(f"Full transcription object: {sc.output_transcription}")
+                            self.logger.info("Model transcription received: '%s' (User ID: %s, Session: %s)", transcription, conn.user_id, conn.session_id)
+                            self.logger.debug("Full transcription object: %s", sc.output_transcription)
                             current_text += transcription  # Accumulate transcription
                             await self._send(conn.ws, {
                                 "type": "transcription",
@@ -853,7 +853,7 @@ class VoiceChatServer:
             )
             raise
         except ConnectionClosedOK:
-            self.logger.info(f"Gemini session closed normally: {conn.session_id}")
+            self.logger.info("Gemini session closed normally: %s", conn.session_id)
         except ConnectionClosedError as e:
             if e.code == 1011:
                 self.logger.warning(
@@ -865,7 +865,7 @@ class VoiceChatServer:
                     "message": "Session timed out due to inactivity."
                 })
             else:
-                self.logger.error(f"Gemini connection error: {e}")
+                self.logger.error("Gemini connection error: %s", e)
                 await self._send(conn.ws, {
                     "type": "error",
                     "message": f"Connection error: {e}"
@@ -907,7 +907,7 @@ class VoiceChatServer:
 
             # Detect new recording start - reset flags
             if not conn.is_recording:
-                self.logger.debug(f"New recording started: {conn.session_id}")
+                self.logger.debug("New recording started: %s", conn.session_id)
                 conn.stop_audio_sending = False  # Reset FIRST
                 conn.gemini_responding = False  # Reset responding flag for new turn
                 conn.recording_start_time = datetime.now()
@@ -919,7 +919,7 @@ class VoiceChatServer:
             # Use session_restarting flag to prevent concurrent restart attempts
             if not conn.session_active and not conn.session_restarting and self.client:
                 conn.session_restarting = True
-                self.logger.info(f"Restarting Gemini session for new recording: {conn.session_id}")
+                self.logger.info("Restarting Gemini session for new recording: %s", conn.session_id)
                 try:
                     await self._restart_session(conn)
                 finally:
@@ -928,7 +928,7 @@ class VoiceChatServer:
             if conn.session_active and not conn.stop_audio_sending:
                 # Queue audio for the sender task
                 await conn.audio_queue.put(audio_bytes)
-                self.logger.debug(f"Audio queued: {len(audio_bytes)} bytes, queue size: {conn.audio_queue.qsize()}")
+                self.logger.debug("Audio queued: %s bytes, queue size: %s", len(audio_bytes), conn.audio_queue.qsize())
             else:
                 # Debug why audio isn't being queued
                 self.logger.warning(
@@ -937,7 +937,7 @@ class VoiceChatServer:
                 )
 
         except Exception as e:
-            self.logger.error(f"Error processing audio: {e}")
+            self.logger.error("Error processing audio: %s", e)
 
     async def _handle_stop_recording(self, conn: VoiceConnection, message: Dict) -> None:
         """Handle end of user speech."""
@@ -972,7 +972,7 @@ class VoiceChatServer:
         # Don't clear the queue here - let the audio sender flush remaining audio
         # and send audio_stream_end to Gemini
 
-        self.logger.info(f"Recording stopped: {conn.session_id}")
+        self.logger.info("Recording stopped: %s", conn.session_id)
 
         await self._send(conn.ws, {
             "type": "recording_stopped",
@@ -1002,7 +1002,7 @@ class VoiceChatServer:
         """DEBUG: Send a test text message to Gemini to verify session works."""
         test_text = message.get('text', 'Hello, please respond with just the word OK')
 
-        self.logger.info(f"Testing Gemini session with text: '{test_text}'")
+        self.logger.info("Testing Gemini session with text: '%s'", test_text)
 
         if not conn.session_active:
             await self._send(conn.ws, {
@@ -1038,7 +1038,7 @@ class VoiceChatServer:
                 "message": f"Sent test text to Gemini: '{test_text}'. Waiting for response..."
             })
         except Exception as e:
-            self.logger.error(f"Error sending test text: {e}", exc_info=True)
+            self.logger.error("Error sending test text: %s", e, exc_info=True)
             await self._send(conn.ws, {
                 "type": "error",
                 "message": f"Failed to send text: {e}"
@@ -1060,11 +1060,11 @@ class VoiceChatServer:
         conn.session_active = False
         conn.stop_audio_sending = True
 
-        self.logger.info(f"Session ended by client: {conn.session_id}")
+        self.logger.info("Session ended by client: %s", conn.session_id)
 
     async def _handle_reset_session(self, conn: VoiceConnection, message: Dict) -> None:
         """Reset the current Gemini session to clear stuck state."""
-        self.logger.info(f"Client requested session reset: {conn.session_id}")
+        self.logger.info("Client requested session reset: %s", conn.session_id)
         await self._restart_session(conn)
 
         # Confirm reset to client
@@ -1079,7 +1079,7 @@ class VoiceChatServer:
             try:
                 await ws.send_str(json.dumps(message))
             except Exception as e:
-                self.logger.error(f"Error sending message: {e}")
+                self.logger.error("Error sending message: %s", e)
 
     async def _cleanup(self, session_id: str) -> None:
         """Clean up connection resources."""
@@ -1097,7 +1097,7 @@ class VoiceChatServer:
             if not conn.ws.closed:
                 await conn.ws.close()
 
-        self.logger.info(f"Connection cleaned up: {session_id}")
+        self.logger.info("Connection cleaned up: %s", session_id)
 
 
 async def create_app() -> web.Application:

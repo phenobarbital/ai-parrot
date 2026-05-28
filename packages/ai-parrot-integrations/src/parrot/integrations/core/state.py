@@ -15,16 +15,36 @@ class InMemoryStateStore:
     """Simple in-memory key-value store with TTL support.
 
     Used as a fallback when no persistent store (e.g., Redis) is available.
+
+    .. warning::
+        **Memory leak risk** — this store holds all keys in memory indefinitely
+        unless they are explicitly deleted or their TTL is checked on access.
+        Entries with an ``expire`` value are evicted lazily on ``get()`` and
+        swept proactively (via :meth:`_sweep_expired`) whenever the store
+        exceeds ``_SWEEP_THRESHOLD`` entries.  For production workloads with
+        high message volumes, replace this with a real Redis-backed store.
     """
+
+    _SWEEP_THRESHOLD: int = 1000
 
     def __init__(self):
         self._data: Dict[str, Any] = {}
         self._expiry: Dict[str, float] = {}
 
+    def _sweep_expired(self) -> None:
+        """Remove all expired keys. Called automatically when store grows large."""
+        now = time.monotonic()
+        expired = [k for k, t in self._expiry.items() if now > t]
+        for k in expired:
+            self._data.pop(k, None)
+            self._expiry.pop(k, None)
+
     async def set(self, key: str, value: str, expire: int = 0) -> None:
         self._data[key] = value
         if expire > 0:
             self._expiry[key] = time.monotonic() + expire
+        if len(self._data) > self._SWEEP_THRESHOLD:
+            self._sweep_expired()
 
     async def get(self, key: str) -> Optional[str]:
         if key in self._expiry and time.monotonic() > self._expiry[key]:
@@ -101,10 +121,13 @@ class IntegrationStateManager:
             # Note: TTL handling depends on the store implementation
             # We enforce a TTL of 10 minutes (600 seconds)
             await self.store.set(key, json.dumps(data), expire=int(self.DEFAULT_TTL.total_seconds()))
-            logger.debug(f"Set suspended state for {integration_id}:{chat_id}:{user_id} -> Session {session_id}")
+            logger.debug(
+                "Set suspended state for %s:%s:%s -> Session %s",
+                integration_id, chat_id, user_id, session_id,
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to set suspended state: {e}")
+            logger.error("Failed to set suspended state: %s", e)
             return False
             
     async def get_suspended_session(
@@ -130,8 +153,8 @@ class IntegrationStateManager:
             if state_str:
                 return json.loads(state_str)
         except Exception as e:
-            logger.error(f"Failed to get suspended session from store: {e}")
-            
+            logger.error("Failed to get suspended session from store: %s", e)
+
         return None
             
     async def clear_suspended_state(
@@ -156,8 +179,11 @@ class IntegrationStateManager:
         
         try:
             await self.store.delete(key)
-            logger.debug(f"Cleared suspended state for {integration_id}:{chat_id}:{user_id}")
+            logger.debug(
+                "Cleared suspended state for %s:%s:%s",
+                integration_id, chat_id, user_id,
+            )
             return True
         except Exception as e:
-            logger.error(f"Failed to clear suspended state: {e}")
+            logger.error("Failed to clear suspended state: %s", e)
             return False

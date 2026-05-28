@@ -98,21 +98,21 @@ class IntegrationBotManager:
             errors = config.validate()
             if errors:
                 for error in errors:
-                    self.logger.error(f"Config Error: {error}")
+                    self.logger.error("Config Error: %s", error)
                 return None
                 
             self._config = config
             return config
             
         except Exception as e:
-            self.logger.error(f"Error loading integration config: {e}", exc_info=True)
+            self.logger.error("Error loading integration config: %s", e, exc_info=True)
             return None
 
     async def _get_agent(self, chatbot_id: str, system_prompt_override: Optional[str] = None) -> Optional['AbstractBot']:
         """Get agent instance from BotManager."""
         agent = await self.bot_manager.get_bot(chatbot_id)
         if not agent:
-            self.logger.error(f"Agent '{chatbot_id}' not found.")
+            self.logger.error("Agent '%s' not found.", chatbot_id)
             return None
             
         if system_prompt_override and hasattr(agent, 'system_prompt'):
@@ -149,7 +149,7 @@ class IntegrationBotManager:
                 elif isinstance(agent_config, SlackAgentConfig):
                     await self._start_slack_bot(name, agent_config)
             except Exception as e:
-                self.logger.error(f"Failed to start bot {name}: {e}", exc_info=True)
+                self.logger.error("Failed to start bot %s: %s", name, e, exc_info=True)
 
     async def _ensure_human_manager(self) -> HumanInteractionManager:
         """Lazily create the shared HumanInteractionManager + its Redis client."""
@@ -217,7 +217,7 @@ class IntegrationBotManager:
         )
         self._polling_tasks.append(task)
         self.logger.info(
-            f"✅ Started Telegram bot '{name}' (HITL channel registered as '{name}')"
+            "Started Telegram bot '%s' (HITL channel registered as '%s')", name, name
         )
 
     async def _run_polling(self, name: str, dp: Dispatcher, bot: Bot):
@@ -231,7 +231,7 @@ class IntegrationBotManager:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            self.logger.error(f"Polling error for {name}: {e}")
+            self.logger.error("Polling error for %s: %s", name, e)
 
     async def _start_msteams_bot(self, name: str, config: MSTeamsAgentConfig):
         agent = await self._get_agent(config.chatbot_id)
@@ -247,7 +247,7 @@ class IntegrationBotManager:
             forms_directory=config.forms_directory or AGENTS_DIR / "forms",
         )
         self.msteams_bots[name] = wrapper
-        self.logger.info(f"✅ Started MS Teams bot '{name}'")
+        self.logger.info("Started MS Teams bot '%s'", name)
 
     async def _start_whatsapp_bot(self, name: str, config: WhatsAppAgentConfig):
         agent = await self._get_agent(config.chatbot_id, config.system_prompt_override)
@@ -262,7 +262,7 @@ class IntegrationBotManager:
             app=self.bot_manager.get_app(),
         )
         self.whatsapp_bots[name] = wrapper
-        self.logger.info(f"✅ Started WhatsApp bot '{name}'")
+        self.logger.info("Started WhatsApp bot '%s'", name)
 
 
     async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
@@ -296,9 +296,9 @@ class IntegrationBotManager:
                 name=f"slack_socket_{name}",
             )
             self._polling_tasks.append(task)
-            self.logger.info(f"✅ Started Slack bot '{name}' (Socket Mode)")
+            self.logger.info("Started Slack bot '%s' (Socket Mode)", name)
         else:
-            self.logger.info(f"✅ Started Slack bot '{name}' (Webhook Mode)")
+            self.logger.info("Started Slack bot '%s' (Webhook Mode)", name)
     async def _start_matrix_crew(self, config_path: str) -> None:
         """Start a Matrix multi-agent crew from a YAML config file.
 
@@ -337,27 +337,27 @@ class IntegrationBotManager:
             except asyncio.TimeoutError:
                 self.logger.warning("Timeout waiting for polling tasks to cancel")
             except Exception as e:
-                self.logger.error(f"Error while cancelling polling tasks: {e}")
+                self.logger.error("Error while cancelling polling tasks: %s", e)
         
         # Now close bot sessions
         for name, (bot, dp, _) in self.telegram_bots.items():
             try:
-                self.logger.debug(f"Closing session for bot '{name}'")
+                self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
             except Exception as e:
-                self.logger.error(f"Error closing bot session for '{name}': {e}")
+                self.logger.error("Error closing bot session for '%s': %s", name, e)
 
         # Stop Slack bots (including Socket Mode handlers)
         for name, wrapper in self.slack_bots.items():
             try:
-                self.logger.debug(f"Stopping Slack bot '{name}'")
+                self.logger.debug("Stopping Slack bot '%s'", name)
                 # Stop Socket Mode handler if present
                 if hasattr(wrapper, "_socket_handler") and wrapper._socket_handler:
                     await wrapper._socket_handler.stop()
                 # Stop the wrapper
                 await wrapper.stop()
             except Exception as e:
-                self.logger.error(f"Error stopping Slack bot '{name}': {e}")
+                self.logger.error("Error stopping Slack bot '%s': %s", name, e)
         
         # Stop Matrix crew transport (FEAT-044)
         if self.matrix_crew is not None:
@@ -375,14 +375,14 @@ class IntegrationBotManager:
             try:
                 await self.human_manager.close()
             except Exception as exc:
-                self.logger.warning(f"Error closing HumanInteractionManager: {exc}")
+                self.logger.warning("Error closing HumanInteractionManager: %s", exc)
             self.human_manager = None
             set_default_human_manager(None)
         if self._human_redis is not None:
             try:
                 await self._human_redis.close()
             except Exception as exc:
-                self.logger.warning(f"Error closing HITL Redis client: {exc}")
+                self.logger.warning("Error closing HITL Redis client: %s", exc)
             self._human_redis = None
 
         # Clear data structures

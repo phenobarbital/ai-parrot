@@ -6,19 +6,17 @@ Integrates:
 - Form dialog management
 - Post-form tool execution
 """
-from typing import Dict, List, Any, Optional, Callable, Awaitable, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 import logging
 import asyncio
 import json
 from botbuilder.core import TurnContext
-from botbuilder.dialogs import DialogSet, DialogTurnStatus
 
 from parrot.forms.tools import RequestFormTool
-from parrot.forms import FormSchema, StyleSchema
+from parrot.forms import FormSchema
 from parrot.forms.extractors.tool import ToolExtractor
 from .factory import FormDialogFactory
-from parrot.forms.renderers import AdaptiveCardRenderer
 from parrot.forms import FormCache
 from ....models.outputs import OutputMode
 
@@ -30,7 +28,6 @@ FormDefinition = FormSchema
 FormDefinitionCache = FormCache
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
-    from parrot.tools.manager import ToolManager
     from parrot.tools.abstract import ToolResult
 
 
@@ -150,9 +147,9 @@ class FormOrchestrator:
         # Verify registration
         registered_tools = self.agent.tool_manager.list_tools()
         if 'request_form' in registered_tools:
-            logger.info(f"✅ Registered request_form tool with agent. Total tools: {len(registered_tools)}")
+            logger.info("✅ Registered request_form tool with agent. Total tools: %s", len(registered_tools))
         else:
-            logger.error(f"❌ request_form tool NOT found in tool manager! Available: {registered_tools[:10]}...")
+            logger.error("❌ request_form tool NOT found in tool manager! Available: %s...", registered_tools[:10])
 
     def _check_trigger_phrases(self, message: str) -> Optional[FormSchema]:
         """
@@ -351,7 +348,7 @@ class FormOrchestrator:
             )
 
         except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
+            logger.error("Error processing message: %s", e, exc_info=True)
             return ProcessResult(
                 error=f"Error processing your request: {str(e)}"
             )
@@ -567,7 +564,7 @@ class FormOrchestrator:
         pending = self._pending.pop(conversation_id, None)
 
         if not pending:
-            logger.warning(f"No pending execution for conversation {conversation_id}")
+            logger.warning("No pending execution for conversation %s", conversation_id)
             return "✅ Form submitted successfully."
 
         # Merge known values with form data
@@ -606,7 +603,7 @@ class FormOrchestrator:
             result = await tool.execute(**form_data)
             return self._format_tool_result(result, tool)
         except Exception as e:
-            logger.error(f"Error executing {tool_name}: {e}", exc_info=True)
+            logger.error("Error executing %s: %s", tool_name, e, exc_info=True)
             return f"❌ Error executing {tool_name}: {str(e)}"
 
     async def _execute_function(
@@ -641,18 +638,18 @@ class FormOrchestrator:
             parts = func_path.rsplit(".", 1)
             module_path, func_name = parts[0], parts[1]
 
-            logger.info(f"Executing function: {module_path}.{func_name}")
+            logger.info("Executing function: %s.%s", module_path, func_name)
 
             # Import module dynamically
             try:
                 module = importlib.import_module(module_path)
-            except ModuleNotFoundError as e:
-                logger.error(f"Module not found: {module_path}")
+            except ModuleNotFoundError:
+                logger.error("Module not found: %s", module_path)
                 return f"❌ Module not found: '{module_path}'"
 
             # Get function from module
             if not hasattr(module, func_name):
-                logger.error(f"Function not found: {func_name} in {module_path}")
+                logger.error("Function not found: %s in %s", func_name, module_path)
                 return f"❌ Function '{func_name}' not found in module '{module_path}'"
 
             func = getattr(module, func_name)
@@ -690,7 +687,7 @@ class FormOrchestrator:
                 return f"✅ Result: {result}"
 
         except Exception as e:
-            logger.error(f"Error executing function {func_path}: {e}", exc_info=True)
+            logger.error("Error executing function %s: %s", func_path, e, exc_info=True)
             return f"❌ Error executing function: {str(e)}"
 
     # Adaptive Card constants for the success/error status cards emitted
@@ -854,7 +851,7 @@ class FormOrchestrator:
         """Handle form cancellation."""
         # Remove pending execution
         self._pending.pop(conversation_id, None)
-        logger.info(f"Form cancelled for conversation {conversation_id}")
+        logger.info("Form cancelled for conversation %s", conversation_id)
 
     # =========================================================================
     # Utilities
@@ -882,4 +879,4 @@ class FormOrchestrator:
             del self._pending[conv_id]
 
         if stale:
-            logger.info(f"Cleaned up {len(stale)} stale pending executions")
+            logger.info("Cleaned up %s stale pending executions", len(stale))

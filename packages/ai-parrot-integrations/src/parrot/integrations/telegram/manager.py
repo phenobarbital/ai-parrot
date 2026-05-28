@@ -91,7 +91,7 @@ class TelegramBotManager:
                 data = yaml.safe_load(f)
 
             if not data:
-                self.logger.warning(f"Empty config file: {config_path}")
+                self.logger.warning("Empty config file: %s", config_path)
                 return None
 
             telegram_config = TelegramBotsConfig.from_dict(data)
@@ -100,17 +100,17 @@ class TelegramBotManager:
             errors = telegram_config.validate()
             if errors:
                 for error in errors:
-                    self.logger.error(f"Config validation error: {error}")
+                    self.logger.error("Config validation error: %s", error)
                 return None
 
             self._config = telegram_config
             return telegram_config
 
         except yaml.YAMLError as e:
-            self.logger.error(f"YAML parsing error in {config_path}: {e}")
+            self.logger.error("YAML parsing error in %s: %s", config_path, e)
             return None
         except Exception as e:
-            self.logger.error(f"Error loading Telegram config: {e}", exc_info=True)
+            self.logger.error("Error loading Telegram config: %s", e, exc_info=True)
             return None
 
     async def _get_agent(
@@ -139,7 +139,7 @@ class TelegramBotManager:
         if agent_config.system_prompt_override and hasattr(agent, 'system_prompt'):
             agent.system_prompt = agent_config.system_prompt_override
 
-        self.logger.info(f"Using agent: {agent_config.chatbot_id}")
+        self.logger.info("Using agent: %s", agent_config.chatbot_id)
         return agent
 
     async def _start_bot(
@@ -158,7 +158,7 @@ class TelegramBotManager:
             True if started successfully
         """
         if not agent_config.bot_token:
-            self.logger.error(f"No bot token for {name}")
+            self.logger.error("No bot token for %s", name)
             return False
 
         try:
@@ -225,7 +225,7 @@ class TelegramBotManager:
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to start bot {name}: {e}", exc_info=True)
+            self.logger.error("Failed to start bot %s: %s", name, e, exc_info=True)
             return False
 
     async def _register_bot_menu(
@@ -340,7 +340,7 @@ class TelegramBotManager:
     ) -> None:
         """Run polling for a single bot."""
         try:
-            self.logger.info(f"Starting polling for bot: {name}")
+            self.logger.info("Starting polling for bot: %s", name)
 
             # Clear any stale webhook registration before polling. If a webhook
             # is set on the same token, getUpdates returns 409/flood errors in
@@ -364,10 +364,10 @@ class TelegramBotManager:
                 allowed_updates=allowed_updates
             )
         except asyncio.CancelledError:
-            self.logger.info(f"Polling cancelled for bot: {name}")
+            self.logger.info("Polling cancelled for bot: %s", name)
             raise
         except Exception as e:
-            self.logger.error(f"Polling error for bot {name}: {e}", exc_info=True)
+            self.logger.error("Polling error for bot %s: %s", name, e, exc_info=True)
 
     async def startup(self) -> None:
         """
@@ -382,7 +382,7 @@ class TelegramBotManager:
             self.logger.info("No Telegram bots configured")
             return
 
-        self.logger.info(f"Found {len(config.agents)} agent(s) to expose via Telegram")
+        self.logger.info("Found %s agent(s) to expose via Telegram", len(config.agents))
 
         started = 0
         for name, agent_config in config.agents.items():
@@ -411,9 +411,9 @@ class TelegramBotManager:
         for name, (bot, dp, wrapper) in self.bots.items():
             try:
                 await dp.stop_polling()
-                self.logger.debug(f"Stopped polling for bot: {name}")
+                self.logger.debug("Stopped polling for bot: %s", name)
             except Exception as e:
-                self.logger.warning(f"Error stopping polling for {name}: {e}")
+                self.logger.warning("Error stopping polling for %s: %s", name, e)
 
         # Cancel any remaining polling tasks
         for task in self._polling_tasks:
@@ -429,15 +429,15 @@ class TelegramBotManager:
                     return_when=asyncio.ALL_COMPLETED
                 )
             except Exception as e:
-                self.logger.warning(f"Error waiting for tasks: {e}")
+                self.logger.warning("Error waiting for tasks: %s", e)
 
         # Close bot sessions
         for name, (bot, dp, wrapper) in self.bots.items():
             try:
                 await bot.session.close()
-                self.logger.debug(f"Closed bot session: {name}")
+                self.logger.debug("Closed bot session: %s", name)
             except Exception as e:
-                self.logger.warning(f"Error closing bot {name}: {e}")
+                self.logger.warning("Error closing bot %s: %s", name, e)
 
         self.bots.clear()
         self._polling_tasks.clear()

@@ -1,15 +1,14 @@
 """
 Base Form Dialog with common functionality.
 """
-from typing import Any, Callable, Awaitable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional
 from botbuilder.dialogs import (
     ComponentDialog,
-    WaterfallDialog,
     WaterfallStepContext,
     DialogTurnResult,
     DialogTurnStatus,
 )
-from botbuilder.core import MessageFactory, CardFactory, TurnContext
+from botbuilder.core import MessageFactory, CardFactory
 from parrot.forms import FormSchema, StyleSchema
 from parrot.forms.renderers import AdaptiveCardRenderer
 from parrot.forms.validators import FormValidator

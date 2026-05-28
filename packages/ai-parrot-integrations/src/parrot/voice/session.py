@@ -16,12 +16,10 @@ from google.genai import types
 from navconfig.logging import logging
 from .models import (
     VoiceConfig,
-    VoiceChunk,
     VoiceMessage,
     VoiceResponse,
     AudioFormat,
-    SessionState,
-    VoiceProvider
+    SessionState
 )
 
 
@@ -145,7 +143,7 @@ class VoiceSession:
             state=SessionState.CONNECTING
         )
 
-        self.logger.info(f"Starting voice session {self.context.session_id}")
+        self.logger.info("Starting voice session %s", self.context.session_id)
 
         live_config = self._build_live_config()
         self._running = True
@@ -158,7 +156,7 @@ class VoiceSession:
                 config=live_config
             ) as session:
                 self.context.state = SessionState.ACTIVE
-                self.logger.info(f"Voice session {self.context.session_id} connected")
+                self.logger.info("Voice session %s connected", self.context.session_id)
 
                 # Start audio sender task
                 sender_task = asyncio.create_task(
@@ -181,16 +179,16 @@ class VoiceSession:
                         await sender_task
 
         except asyncio.CancelledError:
-            self.logger.info(f"Voice session {self.context.session_id} cancelled")
+            self.logger.info("Voice session %s cancelled", self.context.session_id)
             raise
         except Exception as e:
             self.context.state = SessionState.ERROR
-            self.logger.error(f"Voice session error: {e}")
+            self.logger.error("Voice session error: %s", e)
             raise
         finally:
             self._running = False
             self.context.state = SessionState.CLOSED
-            self.logger.info(f"Voice session {self.context.session_id} ended")
+            self.logger.info("Voice session %s ended", self.context.session_id)
 
     async def run_with_queue(self) -> AsyncIterator[VoiceResponse]:
         """
@@ -276,7 +274,7 @@ class VoiceSession:
                     )
             raise
         except Exception as e:
-            self.logger.error(f"Error sending audio: {e}")
+            self.logger.error("Error sending audio: %s", e)
 
     async def _receive_responses(self, session) -> AsyncIterator[VoiceResponse]:
         """Receive responses from Gemini session."""
@@ -367,7 +365,7 @@ class VoiceSession:
                                 result = await self.tool_executor(fc.name, dict(fc.args))
                                 await self._send_tool_response(session, fc.id, fc.name, result)
                             except Exception as e:
-                                self.logger.error(f"Tool execution error: {e}")
+                                self.logger.error("Tool execution error: %s", e)
                                 await self._send_tool_response(
                                     session, fc.id, fc.name,
                                     {"error": str(e)}
@@ -394,7 +392,7 @@ class VoiceSession:
             self.logger.info("Response stream cancelled")
             raise
         except Exception as e:
-            self.logger.error(f"Error in response stream: {e}")
+            self.logger.error("Error in response stream: %s", e)
             self.context.state = SessionState.ERROR
             raise
 
@@ -450,7 +448,7 @@ class VoiceSessionManager:
             tool_executor=tool_executor
         )
         self.sessions[session_id] = session
-        self.logger.info(f"Created voice session: {session_id}")
+        self.logger.info("Created voice session: %s", session_id)
         return session
 
     async def get_session(self, session_id: str) -> Optional[VoiceSession]:
@@ -461,7 +459,7 @@ class VoiceSessionManager:
         """Close and remove a session."""
         if session := self.sessions.pop(session_id, None):
             await session.close()
-            self.logger.info(f"Closed voice session: {session_id}")
+            self.logger.info("Closed voice session: %s", session_id)
 
     async def close_all(self) -> None:
         """Close all active sessions."""

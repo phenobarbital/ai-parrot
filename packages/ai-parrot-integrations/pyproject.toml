@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 slack = [
-    "slack-sdk>=3.0",
+    "slack-sdk>=3.27",
     "slack-bolt>=1.18",
 ]
 telegram = [
@@ -49,9 +49,15 @@ matrix = [
     "mautrix>=0.20",
     "python-olm>=3.2.16",
 ]
-voice = [
+voice-local = [
     "faster-whisper",
-    "openai",
+]
+voice-openai = [
+    "openai>=1.0",
+]
+voice = [
+    "ai-parrot-integrations[voice-local]",
+    "ai-parrot-integrations[voice-openai]",
 ]
 messaging = [
     "ai-parrot-integrations[slack]",
@@ -64,6 +70,10 @@ all = [
     "ai-parrot-integrations[matrix]",
     "ai-parrot-integrations[voice]",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

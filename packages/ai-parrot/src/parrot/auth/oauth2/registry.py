@@ -36,7 +36,7 @@ class OAuth2Provider(ABC):
     provider_id: str
     display_name: str
     icon: Optional[str] = None
-    default_scopes: List[str] = []  # subclasses MUST override with their own list instance
+    default_scopes: ClassVar[List[str]] = []  # subclasses MUST override with their own list instance
     pbac_action_namespace: str = "integration"
 
     @property

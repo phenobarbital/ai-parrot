@@ -14,7 +14,7 @@ Supports:
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING
 
 from aiohttp import web
 from pywa import WhatsApp
@@ -29,7 +29,6 @@ from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
-    from ...memory import ConversationMemory
 
 
 _executor = ThreadPoolExecutor(max_workers=4)
@@ -89,12 +88,12 @@ class WhatsAppAgentWrapper:
         app.router.add_get(self.route, self._handle_verify)
         # POST for incoming message webhooks
         app.router.add_post(self.route, self._handle_webhook)
-        self.logger.info(f"Registered WhatsApp webhook at {self.route}")
+        self.logger.info("Registered WhatsApp webhook at %s", self.route)
 
         # Exclude route from auth middleware (same pattern as MS Teams)
         if auth := app.get("auth"):
             auth.add_exclude_list(self.route)
-            self.logger.info(f"Excluded {self.route} from auth middleware")
+            self.logger.info("Excluded %s from auth middleware", self.route)
 
     # =========================================================================
     # Webhook Handlers (aiohttp routes)
@@ -111,7 +110,7 @@ class WhatsAppAgentWrapper:
         """
         vt = request.query.get("hub.verify_token")
         ch = request.query.get("hub.challenge")
-        self.logger.info(f"Webhook verification request: verify_token={'***' if vt else 'None'}")
+        self.logger.info("Webhook verification request: verify_token=%s", '***' if vt else 'None')
 
         response_text, status_code = self.wa.webhook_challenge_handler(vt=vt, ch=ch)
         return web.Response(
@@ -186,12 +185,12 @@ class WhatsAppAgentWrapper:
         # Extract text content based on message type
         text = self._extract_text(message)
         if not text:
-            self.logger.debug(f"Ignoring non-text message from {sender} (type: {msg_type})")
+            self.logger.debug("Ignoring non-text message from %s (type: %s)", sender, msg_type)
             return
 
         # Authorization check
         if not self._is_authorized(sender):
-            self.logger.info(f"Unauthorized message from {sender}")
+            self.logger.info("Unauthorized message from %s", sender)
             return
 
         # Get or create user session
@@ -204,10 +203,10 @@ class WhatsAppAgentWrapper:
                 _executor, message.mark_as_read
             )
         except Exception as e:
-            self.logger.debug(f"Failed to mark message as read: {e}")
+            self.logger.debug("Failed to mark message as read: %s", e)
 
         try:
-            self.logger.info(f"Processing message from {sender}: {text[:50]}...")
+            self.logger.info("Processing message from %s: %s...", sender, text[:50])
 
             # Call the AI-Parrot agent
             response = await self.agent.ask(
@@ -282,7 +281,7 @@ class WhatsAppAgentWrapper:
                         lambda c=chunk: client.send_message(to=to, text=c)
                     )
                 except Exception as e:
-                    self.logger.error(f"Failed to send text message to {to}: {e}")
+                    self.logger.error("Failed to send text message to %s: %s", to, e)
 
         # Send images
         for image_path in parsed.images:
@@ -294,7 +293,7 @@ class WhatsAppAgentWrapper:
                     )
                 )
             except Exception as e:
-                self.logger.error(f"Failed to send image to {to}: {e}")
+                self.logger.error("Failed to send image to %s: %s", to, e)
 
         # Send charts as images
         if parsed.has_charts:
@@ -310,7 +309,7 @@ class WhatsAppAgentWrapper:
                         )
                     )
                 except Exception as e:
-                    self.logger.error(f"Failed to send chart to {to}: {e}")
+                    self.logger.error("Failed to send chart to %s: %s", to, e)
 
         # Send documents
         for doc_path in parsed.documents:
@@ -324,7 +323,7 @@ class WhatsAppAgentWrapper:
                     )
                 )
             except Exception as e:
-                self.logger.error(f"Failed to send document to {to}: {e}")
+                self.logger.error("Failed to send document to %s: %s", to, e)
 
     # =========================================================================
     # Helpers

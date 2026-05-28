@@ -26,7 +26,6 @@ from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
-    from ...memory import ConversationMemory
 
 
 class WhatsAppBridgeWrapper:
@@ -264,7 +263,7 @@ class WhatsAppBridgeWrapper:
                     )
                     return False
         except Exception as exc:
-            self.logger.error(f"Failed to send WhatsApp message: {exc}")
+            self.logger.error("Failed to send WhatsApp message: %s", exc)
             return False
 
     async def _send_help(

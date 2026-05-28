@@ -1,9 +1,11 @@
 """Integrations stub — actual implementations are in ai-parrot-integrations.
 
 This stub provides helpful error messages when the satellite package is not
-installed.  If ``ai-parrot-integrations`` is installed, its own
-``__init__.py`` (at the same namespace path) wins via PEP 420 namespace
-extension, and this stub is never reached.
+installed.  When ``ai-parrot-integrations`` is installed, Python's implicit
+namespace package mechanism (``pkgutil.extend_path`` / PEP 328 implicit
+namespaces) merges both distributions' ``parrot/integrations/`` directories
+into a single logical package; the satellite's concrete modules are imported
+directly and this stub's ``__getattr__`` is bypassed for those names.
 
 Migration notes
 ---------------
@@ -28,6 +30,7 @@ _CHANNEL_EXTRAS: dict[str, str] = {
 
 _MOVED_SYMBOLS: dict[str, str] = {
     "oauth2": "parrot.auth.oauth2",
+    "zoom": "parrot_tools.zoom",
 }
 
 

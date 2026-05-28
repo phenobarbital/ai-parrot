@@ -310,3 +310,12 @@ class TestLazyImport:
     def test_hook_type_enum(self):
         from parrot.core.hooks import HookType
         assert hasattr(HookType, "MATRIX")
+
+
+class TestMatrixHookAutoRegistration:
+    """Verify MatrixHook auto-registers with HookRegistry on import."""
+
+    def test_auto_registration(self):
+        import parrot.integrations.matrix.hook  # trigger import and auto-registration
+        from parrot.core.hooks.base import HookRegistry
+        assert HookRegistry.get("matrix") is not None

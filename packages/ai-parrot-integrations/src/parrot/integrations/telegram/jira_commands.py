@@ -16,7 +16,7 @@ route can push a confirmation message back to the originating chat.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from aiogram import Router
 from aiogram.filters import Command

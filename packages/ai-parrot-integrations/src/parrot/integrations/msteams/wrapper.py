@@ -18,24 +18,17 @@ from botbuilder.core import (
     ConversationState,
     MemoryStorage,
     UserState,
-    MessageFactory,
-    CardFactory,
 )
 import jsonpickle
-from botbuilder.core import MemoryStorage
-from botbuilder.core.teams import TeamsInfo
 from botbuilder.schema import Activity, ActivityTypes, ChannelAccount, Attachment
 from botbuilder.dialogs import DialogSet, DialogTurnStatus
 from .models import MSTeamsAgentConfig
 from .adapter import Adapter
 from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
-from ...models.outputs import OutputMode
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
-from parrot.forms import FormSchema, StyleSchema
-from parrot.forms.renderers import AdaptiveCardRenderer
-from parrot.forms.validators import FormValidator
+from parrot.forms import FormSchema
 from parrot.forms import FormCache
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
@@ -47,7 +40,7 @@ class DebugMemoryStorage(MemoryStorage):
         for k, v in changes.items():
             try:
                 jsonpickle.encode(v)
-            except Exception as e:
+            except Exception:
                 print("\n=== JSONPICKLE FAILED ===")
                 print("storage key:", k)
                 print("value type:", type(v))
@@ -210,7 +203,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if turn_context:
             await self.conversation_state.save_changes(turn_context)
 
-        self.logger.info(f"Started form dialog: {form.form_id}")
+        self.logger.info("Started form dialog: %s", form.form_id)
 
     async def _on_form_complete(
         self,
@@ -219,7 +212,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         conversation_id: str,
     ):
         """Handle form completion."""
-        self.logger.info(f"Form completed with data: {list(form_data.keys())}")
+        self.logger.info("Form completed with data: %s", list(form_data.keys()))
 
         # Delegate to orchestrator for tool execution
         response = await self.form_orchestrator.handle_form_completion(
@@ -296,7 +289,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await turn_context.send_activity("You are not authorized to use this bot.")
             return
 
-        self.logger.info(f"Card submission: {submitted_data}")
+        self.logger.info("Card submission: %s", submitted_data)
 
         # Check for action type
         action = submitted_data.get('_action', 'submit')
@@ -314,7 +307,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # The dialog's waterfall will pick up the data from activity.value
         results = await dialog_context.continue_dialog()
 
-        self.logger.info(f"Dialog continue result: status={results.status}")
+        self.logger.info("Dialog continue result: status=%s", results.status)
 
         if results.status == DialogTurnStatus.Complete:
             # Dialog finished - handle completion
@@ -359,7 +352,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return web.Response(status=HTTPStatus.OK)
 
         except Exception as e:
-            self.logger.error(f"Error processing request: {e}", exc_info=True)
+            self.logger.error("Error processing request: %s", e, exc_info=True)
             return web.Response(status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
     async def on_turn(self, turn_context: TurnContext):
@@ -386,18 +379,21 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             return
 
         # DEBUG: Log activity details
-        self.logger.info(f"🔍 on_message_activity: type={turn_context.activity.type}, "
-                         f"has_value={turn_context.activity.value is not None}, "
-                         f"text={turn_context.activity.text[:50] if turn_context.activity.text else 'None'}")
+        self.logger.info(
+            "on_message_activity: type=%s, has_value=%s, text=%s",
+            turn_context.activity.type,
+            turn_context.activity.value is not None,
+            turn_context.activity.text[:50] if turn_context.activity.text else "None",
+        )
         if turn_context.activity.value:
-            self.logger.info(f"🔍 Activity value: {turn_context.activity.value}")
+            self.logger.info("🔍 Activity value: %s", turn_context.activity.value)
 
         # Create dialog context
         dialog_context = await self.dialogs.create_context(turn_context)
         conversation_id = turn_context.activity.conversation.id
 
         # DEBUG: Check dialog stack
-        self.logger.info(f"🔍 Dialog stack size: {len(dialog_context.stack) if dialog_context.stack else 0}")
+        self.logger.info("🔍 Dialog stack size: %s", len(dialog_context.stack) if dialog_context.stack else 0)
 
         # Handle Adaptive Card submissions
         if turn_context.activity.value:
@@ -454,7 +450,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Sanitize text (normalize unicode characters like NBSP from French keyboards)
         text = self._sanitize_text(text)
 
-        self.logger.info(f"Received message: {text}")
+        self.logger.info("Received message: %s", text)
 
         # Send typing indicator
         await self.send_typing(turn_context)
@@ -502,7 +498,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 if parsed.documents:
                     for i, doc in enumerate(parsed.documents[:3]):
                         doc_preview = str(doc)[:80] if isinstance(doc, str) else str(doc)
-                        self.logger.debug(f"  📄 Document[{i}]: {doc_preview}...")
+                        self.logger.debug("  📄 Document[%s]: %s...", i, doc_preview)
             await self._send_parsed_response(parsed, turn_context)
         elif result.response_text:
             # Fallback to plain text if no raw response
@@ -520,7 +516,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     #     # remove mentions if any
     #     text = self._remove_mentions(turn_context.activity, text)
 
-    #     self.logger.info(f"Received message: {text}")
+    #     self.logger.info("Received message: %s", text)
 
     #     # Send typing indicator
     #     await self.send_typing(turn_context)
@@ -538,7 +534,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     #         await self._send_parsed_response(parsed, turn_context)
 
     #     except Exception as e:
-    #         self.logger.error(f"Agent error: {e}", exc_info=True)
+    #         self.logger.error("Agent error: %s", e, exc_info=True)
     #         await self.send_text(
     #             "I encountered an error processing your request.",
     #             turn_context
@@ -720,14 +716,14 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
         except ValueError as e:
             # Duration limit exceeded or other validation error
-            self.logger.warning(f"Voice note validation error: {e}")
+            self.logger.warning("Voice note validation error: %s", e)
             await self.send_text(
                 f"Voice note too long. Please keep it under "
                 f"{self._voice_config.max_audio_duration_seconds} seconds.",
                 turn_context
             )
         except Exception as e:
-            self.logger.error(f"Voice transcription error: {e}", exc_info=True)
+            self.logger.error("Voice transcription error: %s", e, exc_info=True)
             await self.send_text(
                 "Sorry, I couldn't process your voice note. Please try typing your message.",
                 turn_context
@@ -757,7 +753,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                         return token_response.token
             return None
         except Exception as e:
-            self.logger.debug(f"Could not get attachment token: {e}")
+            self.logger.debug("Could not get attachment token: %s", e)
             return None
 
     async def _process_transcribed_message(
@@ -1021,7 +1017,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                         "isSubtle": True
                     })
 
-            except Exception as e:
+            except Exception:
                 # Fallback to markdown table
                 if parsed.table_markdown:
                     card_body.append({
@@ -1077,10 +1073,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                             "horizontalAlignment": "Center"
                         })
                     
-                    self.logger.info(f"Added chart to Adaptive Card: {chart.title}")
+                    self.logger.info("Added chart to Adaptive Card: %s", chart.title)
                     
                 except Exception as e:
-                    self.logger.error(f"Failed to embed chart '{chart.title}': {e}")
+                    self.logger.error("Failed to embed chart '%s': %s", chart.title, e)
                     # Add error placeholder
                     card_body.append({
                         "type": "TextBlock",
@@ -1093,7 +1089,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         media_added = False
         for image_path in parsed.images[:3]:  # Limit to 3 images in card
             image_str = str(image_path) if hasattr(image_path, '__str__') else image_path
-            self.logger.debug(f"🖼️ Processing image: {image_str[:80] if isinstance(image_str, str) else image_str}")
+            self.logger.debug("🖼️ Processing image: %s", image_str[:80] if isinstance(image_str, str) else image_str)
             # Check if it's a URL (http/https) - can be displayed directly
             if isinstance(image_str, str) and image_str.startswith(('http://', 'https://')):
                 if not media_added:
@@ -1111,7 +1107,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     "spacing": "Medium",
                     "altText": "Generated Image"
                 })
-                self.logger.info(f"✅ Added URL image to card")
+                self.logger.info("✅ Added URL image to card")
             elif hasattr(image_path, 'name'):
                 # Local file path - show as text placeholder
                 card_body.append({
@@ -1124,7 +1120,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Add document mentions - handle base64 data URIs as inline images
         for doc in parsed.documents[:5]:
             doc_str = str(doc) if hasattr(doc, '__str__') else doc
-            self.logger.debug(f"📄 Processing document: {doc_str[:80] if isinstance(doc_str, str) else 'Path object'}...")
+            self.logger.debug("📄 Processing document: %s...", doc_str[:80] if isinstance(doc_str, str) else 'Path object')
             # Check if it's a base64 data URI (image)
             if isinstance(doc_str, str) and doc_str.startswith('data:image/'):
                 if not media_added:
@@ -1142,7 +1138,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     "spacing": "Medium",
                     "altText": "Generated Chart"
                 })
-                self.logger.info(f"✅ Added base64 image to card (length: {len(doc_str)} chars)")
+                self.logger.info("✅ Added base64 image to card (length: %s chars)", len(doc_str))
             elif hasattr(doc, 'name'):
                 # It's a Path object - show as document mention
                 card_body.append({
@@ -1353,7 +1349,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 "spacing": "Medium"
             }
         except Exception as e:
-            self.logger.warning(f"Error parsing markdown table: {e}")
+            self.logger.warning("Error parsing markdown table: %s", e)
             return None
 
     async def _send_parsed_response(
@@ -1391,11 +1387,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             try:
                 await self.send_file_attachment(doc_path, turn_context)
             except Exception as e:
-                self.logger.error(f"Failed to send document {doc_path}: {e}")
+                self.logger.error("Failed to send document %s: %s", doc_path, e)
 
         # Send media attachments
         for media_path in parsed.media:
             try:
                 await self.send_file_attachment(media_path, turn_context)
             except Exception as e:
-                self.logger.error(f"Failed to send media {media_path}: {e}")
+                self.logger.error("Failed to send media %s: %s", media_path, e)

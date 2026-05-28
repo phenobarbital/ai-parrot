@@ -1,4 +1,4 @@
-from typing import Any, Callable, Awaitable, Dict, Optional, TYPE_CHECKING
+from typing import Any, Callable, Awaitable, Dict, Optional
 from botbuilder.dialogs import ComponentDialog
 
 from parrot.forms import FormSchema, StyleSchema, LayoutType
