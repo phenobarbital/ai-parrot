@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-199",
+  "feature_slug": "remove-parrot-forms-shim",
+  "started_at": "2026-05-28T13:11:03+02:00",
+  "updated_at": "2026-05-28T13:11:03+02:00",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-199/source.md",
+    "fetched_at": "2026-05-28T13:11:03+02:00",
+    "summary_oneline": "Remove parrot.forms shim — migration to parrot-formdesigner is complete"
+  },
+  "mode": "auto",
+  "detected_mode": "enrichment",
+  "phase": "proposal_drafted",
+  "phases": {
+    "source": {"status": "completed", "started_at": "2026-05-28T13:11:03+02:00", "completed_at": "2026-05-28T13:11:03+02:00"},
+    "plan": {"status": "completed", "queries_total": 6, "approved_by_user": false, "edited_by_user": false, "plan_path": "sdd/state/FEAT-199/research_plan.json"},
+    "research": {"status": "completed", "queries_executed": 6, "queries_skipped": 0, "depth_reached": 0, "files_read": 4, "grep_calls": 5, "git_calls": 1, "truncated": false, "truncation_reason": null},
+    "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-199/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 8, "claims_high_conf": 7, "claims_medium_conf": 1, "claims_low_conf": 0, "unknowns_count": 2, "lint_passed": true, "lint_iterations": 0},
+    "qa": {"status": "skipped", "questions_total": 2, "questions_answered": 0, "skipped_reason": "Two unknowns left for resolution in /sdd-spec phase (auditoría de tests + ubicación de dep)"},
+    "output": {"status": "completed", "proposal_path": "sdd/proposals/remove-parrot-forms-shim.proposal.md", "commit_sha": null, "next_command_recommended": "sdd-spec", "next_command_rationale": "Localización 100% confirmada, alcance enriquecido y bien acotado; unknowns operativos resolubles en el spec."}
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 4,
+    "grep_calls": 5,
+    "git_calls": 1,
+    "wall_seconds": 180
+  }
+}
