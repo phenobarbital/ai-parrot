@@ -213,7 +213,7 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,8 +223,8 @@
       "parallelism_notes": "Independent namespace — parallel with other moves",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1375-move-autonomous.md"
+      "completed_at": "2026-05-28T23:38:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1375-move-autonomous.md"
     },
     {
       "id": "TASK-1376",
