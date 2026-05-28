@@ -6,8 +6,8 @@ Step 2 (heavy model): structured markdown generation grounded on the
 Step-1 analysis and the original content.
 
 The resulting :class:`IngestedMarkdown` can then be fed to
-:func:`parrot.pageindex.md_builder.md_to_tree` to produce a subtree
-ready for :func:`parrot.pageindex.tree_ops.splice_subtree`.
+:func:`parrot.knowledge.pageindex.md_builder.md_to_tree` to produce a subtree
+ready for :func:`parrot.knowledge.pageindex.tree_ops.splice_subtree`.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from .prompts import (
 )
 
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 
 # Step-1 content is fed to a small/cheap model so we cap it aggressively.

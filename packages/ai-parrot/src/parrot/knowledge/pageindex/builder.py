@@ -48,7 +48,7 @@ from .utils import (
     create_clean_structure_for_description,
 )
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 
 # ======================== Bounded LLM Concurrency ========================

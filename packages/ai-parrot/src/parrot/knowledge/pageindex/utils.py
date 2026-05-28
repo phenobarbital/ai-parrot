@@ -25,7 +25,7 @@ try:
 except ImportError:
     pymupdf = None  # type: ignore[assignment]
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 
 # --- Token Counting ---

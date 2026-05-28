@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 _TREE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 

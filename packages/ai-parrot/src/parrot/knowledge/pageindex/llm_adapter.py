@@ -6,10 +6,10 @@ import json
 import logging
 from typing import Any, Optional, Union
 
-from ..clients.base import AbstractClient
-from ..models.outputs import StructuredOutputConfig
+from parrot.clients.base import AbstractClient
+from parrot.models.outputs import StructuredOutputConfig
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 
 def extract_json(content: str) -> Any:

@@ -2,9 +2,9 @@
 
 A thin, opinionated wrapper around
 ``pymupdf4llm.to_markdown(path, page_chunks=True)`` so the result lines
-up with :func:`parrot.pageindex.utils.get_page_tokens` (1-based, every
+up with :func:`parrot.knowledge.pageindex.utils.get_page_tokens` (1-based, every
 physical page represented). The output is consumed by
-:func:`parrot.pageindex.builder.build_page_index` to emit per-node
+:func:`parrot.knowledge.pageindex.builder.build_page_index` to emit per-node
 markdown via ``start_index``/``end_index`` slicing.
 
 Choice of extractor: PageIndex already uses ``pymupdf4llm`` indirectly
@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover — pyproject pins pymupdf4llm.
     pymupdf4llm = None  # type: ignore[assignment]
 
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 
 def extract_markdown_per_page(pdf_path: str | Path) -> list[tuple[int, str]]:
@@ -101,7 +101,7 @@ def build_node_markdown_map(
     """Walk a node tree and return ``{node_id: concatenated_markdown}``.
 
     Uses ``start_index``/``end_index`` semantics identical to
-    :func:`parrot.pageindex.utils.add_node_text` (1-based, inclusive
+    :func:`parrot.knowledge.pageindex.utils.add_node_text` (1-based, inclusive
     range). Folder/synthetic nodes without page ranges contribute the
     empty string.
     """

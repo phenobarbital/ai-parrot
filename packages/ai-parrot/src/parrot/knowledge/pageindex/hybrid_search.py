@@ -19,13 +19,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Optional
 
-from .._imports import lazy_import
+from parrot._imports import lazy_import
 from .llm_adapter import PageIndexLLMAdapter
 from .retriever import PageIndexRetriever
 from .utils import find_node_by_id, get_nodes
 
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 # bm25s pulls in ``jax.lax`` for its top-k selection, which emits noisy
 # DEBUG/INFO/WARNING messages about TPU/CUDA backend probing and every
@@ -246,7 +246,7 @@ class HybridPageIndexSearch:
         top_k: int,
     ) -> list[dict[str, Any]]:
         try:
-            from ..stores.models import SearchResult
+            from parrot.stores.models import SearchResult
         except Exception as exc:
             logger.warning("Reranker unavailable: %s", exc)
             return candidates[:top_k]

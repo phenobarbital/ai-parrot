@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from ..tools.toolkit import AbstractToolkit
+from parrot.tools.toolkit import AbstractToolkit
 from .builder import build_page_index
 from .content_store import NodeContentStore
 from .hybrid_search import HybridPageIndexSearch
@@ -42,7 +42,7 @@ from .tree_ops import (
 from .utils import find_node_by_id
 
 
-logger = logging.getLogger("parrot.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex")
 
 _MAX_TREES_HARD_CAP = 10
 
