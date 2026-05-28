@@ -8,9 +8,9 @@ import yaml
 import click
 from navconfig.logging import logging
 from .server import MCPServer, MCPServerConfig
-from ..tools.abstract import AbstractTool
-from ..tools.toolkit import AbstractToolkit
-from ..services.mcp.server import ParrotMCPServer, TransportConfig
+from parrot.tools.abstract import AbstractTool
+from parrot.tools.toolkit import AbstractToolkit
+from .parrot_server import ParrotMCPServer, TransportConfig
 
 
 @click.group(invoke_without_command=True)

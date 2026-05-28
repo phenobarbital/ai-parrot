@@ -4,7 +4,7 @@ import importlib
 import logging
 import yaml
 from navconfig import config as nav_config
-from parrot.services.mcp.simple import SimpleMCPServer, _resolve_env_value
+from parrot.mcp.simple_server import SimpleMCPServer, _resolve_env_value
 
 
 def resolve_config_value(tool_name: str, key: str, value: Any) -> Any:

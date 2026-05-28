@@ -7,7 +7,7 @@ import inspect
 from importlib import import_module
 from aiohttp import web
 from navconfig.logging import logging
-from ...conf import (
+from parrot.conf import (
     MCP_SERVER_DESCRIPTION,
     MCP_SERVER_HOST,
     MCP_SERVER_LOG_LEVEL,
@@ -16,10 +16,10 @@ from ...conf import (
     MCP_SERVER_TRANSPORT,
     MCP_STARTED_TOOLS,
 )
-from ...mcp.server import MCPServer, MCPServerConfig, HttpMCPServer, SseMCPServer
-from ...tools.abstract import AbstractTool
-from ...tools.toolkit import AbstractToolkit
-from .config import TransportConfig
+from parrot.mcp.server import MCPServer, MCPServerConfig, HttpMCPServer, SseMCPServer
+from parrot.tools.abstract import AbstractTool
+from parrot.tools.toolkit import AbstractToolkit
+from parrot.mcp.config import TransportConfig
 
 
 class ParrotMCPServer:

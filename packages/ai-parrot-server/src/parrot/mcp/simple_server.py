@@ -7,14 +7,14 @@ import re
 import ssl
 from aiohttp import web
 from navconfig import config as nav_config
-from ...mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
-from ...mcp.transports.unix import UnixMCPServer
-from ...mcp.transports.stdio import StdioMCPServer
-from ...mcp.transports.quic import QuicMCPServer, QuicMCPConfig
-from ...mcp.config import AuthMethod
-from ...tools.abstract import AbstractTool
-from ...tools.toolkit import AbstractToolkit
-from ...mcp.resources import MCPResource
+from parrot.mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
+from parrot.mcp.transports.unix import UnixMCPServer
+from parrot.mcp.transports.stdio import StdioMCPServer
+from parrot.mcp.transports.quic import QuicMCPServer, QuicMCPConfig
+from parrot.mcp.config import AuthMethod
+from parrot.tools.abstract import AbstractTool
+from parrot.tools.toolkit import AbstractToolkit
+from parrot.mcp.resources import MCPResource
 
 
 _logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class SimpleMCPServer:
         self.api_key_store = None
 
         if self.auth_method == AuthMethod.API_KEY and api_key:
-            from parrot.mcp.oauth import APIKeyStore  # noqa: C0415
+            from parrot.mcp.oauth_server import APIKeyStore  # noqa: C0415
             resolved_key = _resolve_env_value(api_key)
             self.api_key_store = APIKeyStore()
             self.api_key_store.add_key(resolved_key, "simple-mcp-user")
