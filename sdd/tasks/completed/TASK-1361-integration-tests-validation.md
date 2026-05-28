@@ -208,4 +208,24 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+Created two test files:
+- `tests/outputs/formats/test_pep420_integration.py` (49 tests) — verifies PEP 420 namespace
+  merging, all OutputMode renderer resolution, prompt functions, no direct imports ✅
+- `tests/outputs/formats/test_renderer_registry.py` (13 tests) — registry integrity,
+  OutputFormatter integration, satellite renderers ✅
+
+Test results:
+- 62 new tests all PASSED ✅
+- Pre-existing failures in test_jinja2.py and test_template_report.py (AttributeError on
+  `OutputFormatter.format_async`) — these pre-date FEAT-200 and are NOT our changes.
+
+Known pre-existing issues discovered during testing:
+- `OutputMode.TERMINAL` has no registered renderer (TerminalGenerator in generators/ is not
+  a Renderer; the dispatch `import_module('.terminal', ...)` was always broken)
+- `OutputMode.CHART` has no registered renderer (chart.py is only a base class; the original
+  dispatch tried `.charts` which doesn't exist — fixed to `.chart` but still no renderer)
+
+Full test suite `packages/ai-parrot/tests/outputs/formats/` results:
+- 65 passed, 8 failed (all 8 failures are pre-existing, unrelated to FEAT-200)
