@@ -112,7 +112,7 @@
       "feature_id": "FEAT-200",
       "feature": "ai-parrot-visualizations",
       "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Depends on both move tasks completing first",
       "assigned_to": null,
       "started_at": "2026-05-28T15:51:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1360-refactor-core-dependencies.md"
+      "completed_at": "2026-05-28T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1360-refactor-core-dependencies.md"
     },
     {
       "id": "TASK-1361",
