@@ -1,4 +1,4 @@
-from typing import Any, List, Union
+from typing import Any, List, Optional, Union
 import numpy as np
 from navconfig import config
 # This file is part of Parrot, an open-source project.

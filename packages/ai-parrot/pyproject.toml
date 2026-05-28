@@ -168,10 +168,8 @@ scheduler = [
     "apscheduler==3.11.2",
 ]
 
-# ArangoDB graph database
-arango = [
-    "python-arango-async==1.2.0",
-]
+# ArangoDB graph database — MOVED to ai-parrot-embeddings[arango]
+# arango extra removed in FEAT-201; use ai-parrot-embeddings[arango] instead
 
 # Reddit API
 reddit = [
@@ -283,29 +281,9 @@ agents-lite = [
     "opensearch-py==3.1.0",
 ]
 
-# Lightweight embeddings for RAG (fast install)
-embeddings = [
-    "sentence-transformers>=5.0.0",
-    "faiss-cpu>=1.9.0",
-    "rank_bm25==0.2.2",
-    "sentencepiece==0.2.1",
-    "tiktoken==0.9.0",
-    "chromadb==0.6.3",
-    "bm25s[full]==0.2.14",
-    "simsimd>=4.3.1",
-    "tokenizers>=0.20.0,<=0.22.2",
-    "safetensors>=0.4.3",
-    # Required by HF custom-code models (e.g. nomic-ai/nomic-embed-text-v1.5
-    # uses it inside modeling_hf_nomic.py).
-    "einops>=0.7.0",
-    # Optional but commonly required by HF models loaded with
-    # trust_remote_code=True: accelerate enables device_map / efficient
-    # loading; peft is needed by LoRA-adapted models; xformers provides
-    # memory-efficient attention used by several retrieval models.
-    "accelerate>=0.30.0",
-    "peft>=0.10.0",
-    "xformers>=0.0.27",
-]
+# Embeddings extra MOVED to ai-parrot-embeddings (FEAT-201).
+# Use: pip install ai-parrot-embeddings[huggingface,faiss,pgvector,chroma]
+# embeddings extra removed from host in FEAT-201.
 
 mcp = [
     "google-genai>=2.6.0",
@@ -349,7 +327,7 @@ images = [
     "albumentations==2.0.6",
     "filetype==1.2.0",
     "imagehash==4.3.1",
-    "pgvector==0.4.1",
+    # pgvector moved to ai-parrot-embeddings[pgvector] in FEAT-201
     "pyheif==0.8.0",
     "exif==1.6.1",
     "pillow-avif-plugin==1.5.2",
@@ -405,14 +383,8 @@ integrations = [
     "azure-teambots>=0.1.1"
 ]
 
-milvus = [
-    "pymilvus==2.4.8",
-    "milvus-lite>=2.4.0",
-]
-
-chroma = [
-    "chroma==0.2.0",
-]
+# milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
+# chroma extra MOVED to ai-parrot-embeddings[chroma] in FEAT-201.
 
 eda = [
     # ydata-profiling removed: 4.16.x pins numpy<2.2 (clashes with loaders),
@@ -501,12 +473,17 @@ remote-tools = [
 ]
 
 # Convenience groups
+# Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
+# ai-parrot-embeddings[all] covers all moved backends.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling]",
+    "ai-parrot-embeddings[all]",
 ]
 
+# all-fast: lightweight embedding stack via satellite
 all-fast = [
-    "ai-parrot[agents-lite,llms,embeddings,integrations]"
+    "ai-parrot[agents-lite,llms,integrations]",
+    "ai-parrot-embeddings[huggingface,faiss,pgvector]",
 ]
 
 [project.urls]
