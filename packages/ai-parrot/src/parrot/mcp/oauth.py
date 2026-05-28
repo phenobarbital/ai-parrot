@@ -11,7 +11,7 @@ import secrets
 import json
 from urllib.parse import urlencode
 from aiohttp import web, ClientSession
-from parrot.handlers.vault_utils import (
+from parrot.security.vault_utils import (
     store_vault_credential,
     retrieve_vault_credential,
     delete_vault_credential,
