@@ -148,4 +148,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+- Added `extend_path()` to `parrot/outputs/__init__.py` (after docstring, before imports)
+- Added `extend_path()` to `parrot/outputs/formats/__init__.py` (before all other imports)
+- Removed debug `print()` on line 25 of `formats/__init__.py`
+- Verified `__path__` merges both core and satellite directories ✅
+- Verified `parrot.outputs.formats.version.__version__` is now discoverable ✅
+
+PEP 420 namespace merging confirmed working — both paths appear in `__path__`:
+- `.../ai-parrot/src/parrot/outputs/formats`
+- `.../ai-parrot-visualizations/src/parrot/outputs/formats`

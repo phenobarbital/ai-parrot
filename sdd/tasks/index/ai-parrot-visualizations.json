@@ -32,7 +32,7 @@
       "feature_id": "FEAT-200",
       "feature": "ai-parrot-visualizations",
       "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Modifies only core __init__.py files; no overlap with TASK-1355",
       "assigned_to": null,
       "started_at": "2026-05-28T15:51:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1356-enable-pep420-core.md"
+      "completed_at": "2026-05-28T16:04:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1356-enable-pep420-core.md"
     },
     {
       "id": "TASK-1357",
