@@ -46,7 +46,7 @@ from parrot.knowledge.graphindex.communities import (
 )
 from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
-from parrot.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 logger = logging.getLogger(__name__)
 

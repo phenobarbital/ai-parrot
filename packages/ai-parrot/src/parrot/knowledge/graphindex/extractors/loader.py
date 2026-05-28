@@ -36,7 +36,7 @@ from parrot.knowledge.graphindex.schema import (
 )
 
 if TYPE_CHECKING:
-    from parrot.pageindex.toolkit import PageIndexToolkit
+    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 logger = logging.getLogger(__name__)
 
@@ -348,7 +348,7 @@ class LoaderExtractor:
         edges: list[UniversalEdge] = []
 
         try:
-            from parrot.pageindex import md_to_tree
+            from parrot.knowledge.pageindex import md_to_tree
 
             tree = await md_to_tree(full_text, self.llm_adapter)
             page_index_nodes = tree.get("structure") or tree.get("nodes") or []

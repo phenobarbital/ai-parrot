@@ -33,8 +33,8 @@ from parrot.bots.mixins.intent_router import IntentRouterMixin
 from parrot.advisors import ProductAdvisorMixin, ProductCatalog
 from parrot.memory.episodic.mixin import EpisodicMemoryMixin
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
-from parrot.pageindex.retriever import PageIndexRetriever
-from parrot.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.pageindex.retriever import PageIndexRetriever
+from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.registry.capabilities.models import (
     CapabilityEntry,
     IntentRouterConfig,
