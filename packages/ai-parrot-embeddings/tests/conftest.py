@@ -1,9 +1,15 @@
 """Shared fixtures for the ai-parrot-embeddings test suite."""
+import importlib.util
 import subprocess
 import zipfile
 from pathlib import Path
 
 import pytest
+
+
+def _package_available(name: str) -> bool:
+    """Return True if the given package is importable."""
+    return importlib.util.find_spec(name) is not None
 
 
 def pytest_configure(config):
@@ -24,6 +30,20 @@ def pytest_configure(config):
         "markers",
         "requires_milvus: requires the milvus extra",
     )
+
+
+def pytest_runtest_setup(item):
+    """Auto-skip tests that require unavailable extras."""
+    markers = {m.name for m in item.iter_markers()}
+    if "requires_huggingface" in markers:
+        if not _package_available("sentence_transformers"):
+            pytest.skip("requires huggingface extra (sentence-transformers)")
+    if "requires_milvus" in markers:
+        if not _package_available("pymilvus"):
+            pytest.skip("requires milvus extra (pymilvus)")
+    if "requires_pgvector" in markers:
+        if not _package_available("pgvector"):
+            pytest.skip("requires pgvector extra")
 
 
 @pytest.fixture(scope="session")
