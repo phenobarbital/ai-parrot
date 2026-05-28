@@ -108,7 +108,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -119,8 +119,8 @@
       "parallelism_notes": "Imports JSBundle (1319) and ArtifactStore.get_public_url (1321). Single file but ~500 LoC + extensive tests.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1323-infographic-toolkit-core.md"
+      "completed_at": "2026-05-28T11:17:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1323-infographic-toolkit-core.md"
     },
     {
       "id": "TASK-1324",
