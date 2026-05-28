@@ -1,3 +1,6 @@
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 import contextlib
 from typing import Protocol, Dict, Type, Any, Optional
 from importlib import import_module
@@ -13,6 +16,33 @@ class Renderer(Protocol):
 RENDERERS: Dict[OutputMode, Type[Renderer]] = {}
 _PROMPTS: Dict[OutputMode, str] = {}
 
+# Module-level dispatch table — maps OutputMode → module name(s) to import
+_MODULE_MAP: dict = {
+    OutputMode.TERMINAL:        ('.terminal',),          # no renderer; TerminalGenerator is in generators/
+    OutputMode.HTML:            ('.html',),
+    OutputMode.JSON:            ('.json',),
+    OutputMode.MARKDOWN:        ('.markdown',),
+    OutputMode.YAML:            ('.yaml',),
+    OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
+    OutputMode.MAP:             ('.map',),
+    OutputMode.ALTAIR:          ('.altair',),
+    OutputMode.JINJA2:          ('.jinja2',),
+    OutputMode.TEMPLATE_REPORT: ('.template_report',),
+    OutputMode.BOKEH:           ('.bokeh',),
+    OutputMode.PLOTLY:          ('.plotly',),
+    OutputMode.MATPLOTLIB:      ('.matplotlib',),
+    OutputMode.D3:              ('.d3',),
+    OutputMode.ECHARTS:         ('.echarts',),
+    OutputMode.SEABORN:         ('.seaborn',),
+    OutputMode.HOLOVIEWS:       ('.holoviews',),
+    OutputMode.TABLE:           ('.table',),
+    OutputMode.APPLICATION:     ('.application',),
+    OutputMode.CARD:            ('.card',),
+    OutputMode.WHATSAPP:        ('.whatsapp',),
+    OutputMode.SLACK:           ('.slack',),
+    OutputMode.INFOGRAPHIC:     ('.infographic', '.infographic_html'),
+}
+
 
 def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
     """
@@ -22,7 +52,6 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
         mode: OutputMode enum value
         system_prompt: Optional system prompt to inject when using this mode
     """
-    print(':::: Registering renderer for mode:', mode)
     def decorator(cls):
         RENDERERS[mode] = cls
         if system_prompt:
@@ -33,55 +62,10 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
 def get_renderer(mode: OutputMode) -> Type[Renderer]:
     """Get the renderer class for the given output mode."""
     if mode not in RENDERERS:
-        # Lazy load the module to register the renderer
+        modules = _MODULE_MAP.get(mode, ())
         with contextlib.suppress(ImportError):
-            if mode == OutputMode.TERMINAL:
-                import_module('.terminal', 'parrot.outputs.formats')
-            elif mode == OutputMode.HTML:
-                import_module('.html', 'parrot.outputs.formats')
-            elif mode == OutputMode.JSON:
-                import_module('.json', 'parrot.outputs.formats')
-            elif mode == OutputMode.MARKDOWN:
-                import_module('.markdown', 'parrot.outputs.formats')
-            elif mode == OutputMode.YAML:
-                import_module('.yaml', 'parrot.outputs.formats')
-            elif mode == OutputMode.CHART:
-                import_module('.charts', 'parrot.outputs.formats')
-            elif mode == OutputMode.MAP:
-                import_module('.map', 'parrot.outputs.formats')
-            elif mode == OutputMode.ALTAIR:
-                import_module('.altair', 'parrot.outputs.formats')
-            elif mode == OutputMode.JINJA2:
-                import_module('.jinja2', 'parrot.outputs.formats')
-            elif mode == OutputMode.TEMPLATE_REPORT:
-                import_module('.template_report', 'parrot.outputs.formats')
-            elif mode == OutputMode.BOKEH:
-                import_module('.bokeh', 'parrot.outputs.formats')
-            elif mode == OutputMode.PLOTLY:
-                import_module('.plotly', 'parrot.outputs.formats')
-            elif mode == OutputMode.MATPLOTLIB:
-                import_module('.matplotlib', 'parrot.outputs.formats')
-            elif mode == OutputMode.D3:
-                import_module('.d3', 'parrot.outputs.formats')
-            elif mode == OutputMode.ECHARTS:
-                import_module('.echarts', 'parrot.outputs.formats')
-            elif mode == OutputMode.SEABORN:
-                import_module('.seaborn', 'parrot.outputs.formats')
-            elif mode == OutputMode.HOLOVIEWS:
-                import_module('.holoviews', 'parrot.outputs.formats')
-            elif mode == OutputMode.TABLE:
-                import_module('.table', 'parrot.outputs.formats')
-            elif mode == OutputMode.APPLICATION:
-                import_module('.application', 'parrot.outputs.formats')
-            elif mode == OutputMode.CARD:
-                import_module('.card', 'parrot.outputs.formats')
-            elif mode == OutputMode.WHATSAPP:
-                import_module('.whatsapp', 'parrot.outputs.formats')
-            elif mode == OutputMode.SLACK:
-                import_module('.slack', 'parrot.outputs.formats')
-            elif mode == OutputMode.INFOGRAPHIC:
-                import_module('.infographic', 'parrot.outputs.formats')
-                import_module('.infographic_html', 'parrot.outputs.formats')
+            for mod in modules:
+                import_module(mod, 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
@@ -105,6 +89,22 @@ def has_system_prompt(mode: OutputMode) -> bool:
     return mode in _PROMPTS
 
 
+def get_infographic_html_renderer():
+    """Return ``InfographicHTMLRenderer`` with its concrete type preserved.
+
+    Use this instead of ``get_renderer(OutputMode.INFOGRAPHIC)`` when you
+    need to call ``render_to_html()``, which is not part of the base
+    ``Renderer`` Protocol.
+
+    Returns:
+        Type[InfographicHTMLRenderer]: The concrete renderer class.
+    """
+    from .infographic_html import InfographicHTMLRenderer  # noqa: F401 — ensure registered
+    get_renderer(OutputMode.INFOGRAPHIC)  # trigger lazy-load + registration
+    from .infographic_html import InfographicHTMLRenderer as _Cls
+    return _Cls
+
+
 from .base import RenderResult, RenderError
 
 __all__ = (
@@ -114,6 +114,7 @@ __all__ = (
     'Renderer',
     'get_output_prompt',
     'has_system_prompt',
+    'get_infographic_html_renderer',
     'RenderResult',
     'RenderError',
 )

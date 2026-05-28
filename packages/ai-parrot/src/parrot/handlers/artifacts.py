@@ -511,9 +511,10 @@ def _extract_html_from_artifact(artifact: "Artifact") -> str:
     if blocks_envelope:
         try:
             from ..models.infographic import InfographicResponse
-            from ..outputs.formats.infographic_html import InfographicHTMLRenderer
+            from ..outputs.formats import get_infographic_html_renderer
             response = InfographicResponse.model_validate(blocks_envelope)
             theme = definition.get("theme")
+            InfographicHTMLRenderer = get_infographic_html_renderer()
             return InfographicHTMLRenderer().render_to_html(response, theme=theme)
         except Exception:
             pass

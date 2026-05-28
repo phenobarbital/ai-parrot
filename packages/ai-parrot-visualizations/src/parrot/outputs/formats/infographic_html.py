@@ -16,7 +16,16 @@ import markdown_it
 import orjson
 from markupsafe import escape
 
+try:
+    import nh3 as _nh3
+    _NH3_AVAILABLE = True
+except ImportError:
+    _nh3 = None
+    _NH3_AVAILABLE = False
+
 from .base import BaseRenderer
+from . import register_renderer
+from ...models.outputs import OutputMode
 from ...models.infographic import (
     BlockType,
     BulletListBlock,
@@ -579,6 +588,7 @@ function toggleAccordion(el) {
 </script>"""
 
 
+@register_renderer(OutputMode.INFOGRAPHIC)
 class InfographicHTMLRenderer(BaseRenderer):
     """Renders InfographicResponse as a self-contained HTML5 document.
 
@@ -634,10 +644,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         Returns:
             Tuple of (html_string, html_string).
         """
-        from .infographic import InfographicRenderer
+        from .infographic import extract_infographic_data
 
-        extractor = InfographicRenderer()
-        data = extractor._extract_infographic_data(response)
+        data = extract_infographic_data(response)
         theme = kwargs.get("theme")
         html = self.render_to_html(data, theme=theme)
         return html, html
@@ -1401,12 +1410,6 @@ class InfographicHTMLRenderer(BaseRenderer):
         Returns:
             HTML string with accordion structure and JS-togglable sections.
         """
-        try:
-            import nh3
-            _has_nh3 = True
-        except ImportError:
-            _has_nh3 = False
-
         _ALLOWED_TAGS = {
             "p", "br", "strong", "em", "ul", "ol", "li", "a", "span",
             "div", "h3", "h4", "code", "pre", "table", "tr", "td", "th",
@@ -1470,8 +1473,8 @@ class InfographicHTMLRenderer(BaseRenderer):
                 body_html = "\n".join(inner_parts)
             elif item.html_content:
                 # Sanitize via nh3 if available
-                if _has_nh3:
-                    safe_html = nh3.clean(item.html_content, tags=_ALLOWED_TAGS)
+                if _NH3_AVAILABLE:
+                    safe_html = _nh3.clean(item.html_content, tags=_ALLOWED_TAGS)
                 else:
                     # Fallback: escape everything (safe but lossy)
                     safe_html = str(escape(item.html_content))
