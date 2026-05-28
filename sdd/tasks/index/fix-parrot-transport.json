@@ -72,7 +72,7 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Must run last — depends on all prior tasks; touches 14 test files with overlapping imports",
       "assigned_to": null,
       "started_at": "2026-05-28T12:01:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1336-update-test-imports.md"
+      "completed_at": "2026-05-28T12:09:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1336-update-test-imports.md"
     }
   ]
 }
