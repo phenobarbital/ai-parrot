@@ -14,7 +14,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "First task — no parallelism possible; all subsequent tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1308-agentsflow-migration-subpackage-skeleton.md"
+      "completed_at": "2026-05-28T01:05:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1308-agentsflow-migration-subpackage-skeleton.md"
     },
     {
       "id": "TASK-1309",
