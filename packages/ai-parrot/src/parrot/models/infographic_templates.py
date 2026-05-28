@@ -371,6 +371,62 @@ TEMPLATE_MINIMAL = InfographicTemplate(
 )
 
 
+TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
+    name="financial_variance",
+    description=(
+        "Financial projection variance dashboard: 4 KPI hero cards, 2 day-over-day "
+        "bar charts side-by-side, 1 cumulative trend line chart full-width, and an "
+        "executive summary. Ideal for daily/period financial tracking where the "
+        "reader needs both per-period deltas and a cumulative view."
+    ),
+    default_theme="light",
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.TITLE,
+            description="Report title and the date range covered (e.g. 'May 14 – 27, 2026')",
+        ),
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            description=(
+                "Exactly 4 KPI cards in this order: (1) headline metric current value, "
+                "(2) period variance with trend, (3) secondary metric current value, "
+                "(4) day-over-day delta with trend"
+            ),
+            min_items=4,
+            max_items=4,
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            description=(
+                "Two bar charts side-by-side showing day-over-day change for the two "
+                "headline metrics. BOTH charts MUST set layout='half' so the frontend "
+                "renders them in a 2-column grid. Use chart_type='bar' and one series each."
+            ),
+            min_items=2,
+            max_items=2,
+            constraints={"chart_type": "bar", "layout": "half"},
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            description=(
+                "Cumulative trend line chart across the same date range, full width "
+                "(layout='full' or omitted). Single series, smooth line."
+            ),
+            min_items=1,
+            max_items=1,
+            constraints={"chart_type": "line", "layout": "full"},
+        ),
+        BlockSpec(
+            block_type=BlockType.SUMMARY,
+            description=(
+                "Executive summary (2-4 sentences) that ties the 4 KPIs and the trend "
+                "together. Call out the largest delta and its likely driver."
+            ),
+        ),
+    ],
+)
+
+
 TEMPLATE_MULTI_TAB = InfographicTemplate(
     name="multi_tab",
     description=(
@@ -424,6 +480,7 @@ class InfographicTemplateRegistry:
             TEMPLATE_TIMELINE_REPORT,
             TEMPLATE_MINIMAL,
             TEMPLATE_MULTI_TAB,
+            TEMPLATE_FINANCIAL_VARIANCE,
         ):
             self._templates[tpl.name] = tpl
 

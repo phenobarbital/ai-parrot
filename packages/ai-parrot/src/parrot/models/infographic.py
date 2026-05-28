@@ -419,6 +419,14 @@ class ChartBlock(BaseModel):
     y_axis_label: Optional[str] = Field(None, description="Y-axis label")
     stacked: Optional[bool] = Field(False, description="Whether series are stacked")
     show_legend: Optional[bool] = Field(True, description="Whether to show the legend")
+    layout: Optional[Literal["full", "half"]] = Field(
+        None,
+        description=(
+            "Layout hint for the frontend renderer. 'half' marks the chart as "
+            "half-width so consecutive half-width charts render side-by-side in "
+            "a 2-column grid. Omit or set to 'full' for full-width rendering."
+        ),
+    )
 
 
 class BulletListBlock(BaseModel):
