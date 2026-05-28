@@ -126,6 +126,7 @@ ai-parrot = { workspace = true }
 ai-parrot-tools = { workspace = true }
 ai-parrot-loaders = { workspace = true }
 ai-parrot-embeddings = { workspace = true }
+ai-parrot-visualizations = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }

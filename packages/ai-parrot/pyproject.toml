@@ -90,8 +90,6 @@ dependencies = [
     "pandas>=2.0.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
-    "matplotlib==3.10.0",
-    "seaborn==0.13.2",
     "numexpr==2.10.2",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
@@ -212,7 +210,6 @@ agents = [
     "undetected-chromedriver==3.5.5",
     "selenium==4.35.0",
     "playwright==1.52.0",
-    "streamlit==1.54.0",
     "jira==3.10.5",
     "arxiv==2.2.0",
     "docker==7.1.0",
@@ -220,12 +217,9 @@ agents = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "webdriver-manager==4.0.2",
     "prophet==1.2.1",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
-    "cairosvg>=2.7",
     "python-pptx==1.0.2",
     "markdownify>=1.2.2",
     "python-docx==1.1.2",
@@ -246,10 +240,7 @@ agents = [
 ]
 
 charts = [
-    "matplotlib>=3.7",
-    "cairosvg>=2.7",
-    "svglib>=1.5",
-    "reportlab>=4.0",
+    "ai-parrot-visualizations[charts,infographic]",
 ]
 
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
@@ -277,7 +268,6 @@ agents-lite = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
 ]
 
@@ -311,7 +301,6 @@ mcp = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
 ]
 
@@ -336,12 +325,7 @@ images = [
     "exifread==3.5.1",
     "transformers>=4.48.0,<5.0",
     "ffmpeg==1.4",
-    "holoviews==1.21.0",
-    "bokeh==3.8.2",
-    "pandas-bokeh==0.5.5",
-    "plotly==5.22.0",
     "ipywidgets==8.1.0",
-    "altair==5.5.0",
 ]
 
 anthropic = [
@@ -472,11 +456,18 @@ remote-tools = [
     "kubernetes_asyncio>=29.0.0",
 ]
 
+# Visualizations satellite — heavy chart/infographic renderers (FEAT-200)
+# Use: pip install ai-parrot[visualizations] to pull the satellite with all renderers.
+visualizations = [
+    "ai-parrot-visualizations[all]",
+]
+
 # Convenience groups
 # Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
 # ai-parrot-embeddings[all] covers all moved backends.
+# Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling,visualizations]",
     "ai-parrot-embeddings[all]",
 ]
 
