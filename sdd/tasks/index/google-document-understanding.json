@@ -14,14 +14,14 @@
       "feature_id": "FEAT-203",
       "feature": "google-document-understanding",
       "spec": "sdd/specs/google-document-understanding.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — all other tasks depend on this implementation.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T16:19:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1362-document-understanding-method.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-203",
       "feature": "google-document-understanding",
       "spec": "sdd/specs/google-document-understanding.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1362"],
+      "depends_on": [
+        "TASK-1362"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-1362 — tests the method implemented there.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T16:19:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1363-document-understanding-unit-tests.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-203",
       "feature": "google-document-understanding",
       "spec": "sdd/specs/google-document-understanding.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1362", "TASK-1363"],
+      "depends_on": [
+        "TASK-1362",
+        "TASK-1363"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on both implementation and unit tests being complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T16:19:11+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1364-document-understanding-integration-test.md"
     }
