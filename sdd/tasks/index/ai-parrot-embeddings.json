@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T14:40:19+00:00",
   "tasks": [
     {
       "id": "TASK-1333",
@@ -181,7 +181,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -194,8 +194,8 @@
       "parallelism_notes": "Last task — needs the final install surface from TASK-1337 and test outcomes from TASK-1338-1340 stabilized before docs are written.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1341-docs-and-migration-notes.md"
+      "completed_at": "2026-05-28T14:40:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1341-docs-and-migration-notes.md"
     }
   ]
 }
