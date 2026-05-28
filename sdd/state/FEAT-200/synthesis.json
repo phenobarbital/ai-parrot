@@ -1,0 +1,142 @@
+{
+  "feat_id": "FEAT-200",
+  "summary_oneline": "Extraer parrot/outputs/formats a ai-parrot-visualizations con extras granulares por renderer",
+  "detected_mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/outputs/formats/", "symbol": "29 archivos (22 renderers + base + registry + generators/ + mixins/ + assets/)", "lines": "—", "role": "Implementación a extraer", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py", "symbol": "registry + lazy import switch", "lines": "33-91", "role": "Switch hardcoded a reemplazar por descubrimiento", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/formatter.py", "symbol": "OutputFormatter, OutputRetryConfig, DEFAULT_RETRY_PROMPTS", "lines": "—", "role": "Queda en core; consulta registry vía get_renderer", "evidence": ["F001", "F002"]},
+    {"path": "packages/ai-parrot/src/parrot/models/outputs.py", "symbol": "OutputMode enum (31 valores)", "lines": "37-71", "role": "Queda en core; nuevo paquete depende de él", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/abstract.py", "symbol": "import InfographicHTMLRenderer", "lines": "3877", "role": "Consumidor directo de renderer (a migrar a registry)", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/handlers/artifacts.py", "symbol": "import InfographicHTMLRenderer", "lines": "—", "role": "Consumidor directo de renderer (a migrar a registry)", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py", "symbol": "import InfographicHTMLRenderer", "lines": "—", "role": "Consumidor directo de renderer (a migrar a registry)", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "matplotlib y seaborn en BASE deps", "lines": "93-94", "role": "Fuga directa al core — extraer a extra granular", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "extra `agents` agrupa plotly/altair/bokeh/holoviews/streamlit/folium", "lines": "215-367", "role": "Granularidad nula — viz mezclada con scraping/finance", "evidence": ["F005"]}
+  ],
+  "constraints": [
+    {
+      "claim": "OutputMode enum es central a todo el codebase y NO puede moverse",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "implication": "ai-parrot-visualizations debe declarar ai-parrot como dep (al menos para el enum) y para el registry."
+    },
+    {
+      "claim": "OutputFormatter es el orquestador usado por bots/abstract.py:477 — debe quedar en core",
+      "evidence": ["F002", "F004"],
+      "confidence": "high",
+      "implication": "Solo se extraen los renderers concretos; el formatter y el registry quedan en ai-parrot."
+    },
+    {
+      "claim": "El switch hardcoded en formats/__init__.py:33-91 lista 23 ramas con import_module() de submódulos locales",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "implication": "Hay que reemplazarlo por un mecanismo de descubrimiento que tolere renderers en paquetes externos (entry-points de setuptools o un registro vía import on side-effect del paquete extras)."
+    },
+    {
+      "claim": "Solo 3 archivos de producción importan renderers directamente (todos InfographicHTMLRenderer)",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "implication": "Migración trivial: reemplazar por get_renderer(OutputMode.INFOGRAPHIC) o re-export desde shim. Resto del codebase ya usa el registry."
+    },
+    {
+      "claim": "matplotlib y seaborn están en BASE deps; plotly/altair/bokeh/holoviews/streamlit/folium en extra agents (mezclados con scraping/finance)",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "implication": "Extracción aporta: (a) sacar matplotlib/seaborn del core, (b) desacoplar viz de agents/scraping, (c) ofrecer extras granulares por renderer."
+    },
+    {
+      "claim": "infographic_html está en desarrollo activo (multi-tab-infographic, infographic-html-output) — el resto está dormante",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "implication": "Fasear: extraer primero renderers estables (plotly, altair, bokeh, holoviews, matplotlib, seaborn, d3, echarts, map, application, markdown, chart), dejar infographic/infographic_html para fase final."
+    },
+    {
+      "claim": "Asset echarts.min.js (1MB) es el peso principal del módulo formats/",
+      "evidence": ["F001"],
+      "confidence": "high",
+      "implication": "Mover junto con echarts.py como package-data del extra echarts en el nuevo paquete."
+    }
+  ],
+  "scope": {
+    "what_new": [
+      "Paquete `packages/ai-parrot-visualizations/` (workspace member) con pyproject propio.",
+      "Mecanismo de descubrimiento de renderers en `ai-parrot` (entry-points o import-on-install): reemplaza el switch hardcoded de formats/__init__.py:33-91."
+    ],
+    "what_changes": [
+      "packages/ai-parrot/src/parrot/outputs/formats/__init__.py: reemplazar lazy-switch hardcoded por descubrimiento dinámico (entry-points group `parrot.renderers` recomendado).",
+      "packages/ai-parrot/src/parrot/bots/abstract.py:3877, handlers/artifacts.py, tools/infographic_toolkit.py: reemplazar import directo de InfographicHTMLRenderer por get_renderer(OutputMode.INFOGRAPHIC).",
+      "packages/ai-parrot/pyproject.toml: eliminar matplotlib==3.10.0 y seaborn==0.13.2 de BASE deps (líneas 93-94); eliminar plotly/altair/bokeh/holoviews/streamlit/folium del extra `agents`; añadir nuevo extra `visualizations = [\"ai-parrot-visualizations[charts]\"]` (o similar)."
+    ],
+    "what_moved": [
+      "packages/ai-parrot/src/parrot/outputs/formats/{altair,bokeh,holoviews,matplotlib,seaborn,plotly,d3,echarts,map,infographic,infographic_html,application,markdown,chart}.py → packages/ai-parrot-visualizations/src/parrot_visualizations/renderers/*.py",
+      "packages/ai-parrot/src/parrot/outputs/formats/assets/echarts.min.js → packages/ai-parrot-visualizations/src/parrot_visualizations/assets/echarts.min.js (package-data del extra echarts)",
+      "packages/ai-parrot/src/parrot/outputs/formats/generators/ (panel, streamlit, terminal) → packages/ai-parrot-visualizations/src/parrot_visualizations/generators/",
+      "packages/ai-parrot/src/parrot/outputs/formats/mixins/emaps.py → packages/ai-parrot-visualizations/src/parrot_visualizations/mixins/emaps.py"
+    ],
+    "what_stays_in_core": [
+      "OutputMode + OutputType enums (parrot/models/outputs.py).",
+      "OutputFormatter, OutputRetryConfig, DEFAULT_RETRY_PROMPTS (parrot/outputs/formatter.py).",
+      "Registry: Renderer Protocol, RENDERERS dict, register_renderer, get_renderer, get_output_prompt, has_system_prompt (parrot/outputs/formats/__init__.py — reescrito para descubrimiento).",
+      "RenderResult, RenderError (parrot/outputs/formats/base.py).",
+      "Renderers ligeros sin deps adicionales: json, yaml, html, table, card, slack, whatsapp, jinja2, template_report (decisión a confirmar en U2)."
+    ],
+    "non_goals": [
+      "No reescribir la API de OutputFormatter ni cambiar la firma de los renderers.",
+      "No tocar el enum OutputMode (estable).",
+      "No bloquear el feature en curso `infographic-html-output` / `multi-tab-infographic` (faseado: extraer infographic en última fase)."
+    ],
+    "patterns": [
+      "Mismo modelo de extras granulares ya planteado para ai-parrot-embeddings (FEAT-198 propuesto en el chat) y consistente con la guía del workspace.",
+      "Descubrimiento de renderers vía entry-points (`[project.entry-points.\"parrot.renderers\"]`) — patrón estándar para plugin discovery."
+    ],
+    "integration_risks": [
+      "Si un usuario externo instaló ai-parrot y dependía implícitamente de matplotlib o seaborn (transitively), tras la extracción el import fallará. Mitigar con guía en CHANGELOG: `pip install ai-parrot-visualizations[matplotlib]`.",
+      "El switch hardcoded en formats/__init__.py es leído por get_renderer en runtime — un bug en el descubrimiento dinámico haría que get_renderer devuelva None para modos que antes funcionaban. Mitigar con tests de integración por cada OutputMode importante.",
+      "infographic_html tiene desarrollo activo — coordinar con el equipo antes de mover; idealmente extraer DESPUÉS de que cierren los tasks pendientes.",
+      "Algunos generadores de prompts (DEFAULT_RETRY_PROMPTS en formatter.py) referencian OutputMode.ECHARTS y otros modos — verificar que get_output_prompt sigue funcionando tras el desacople."
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "formats/ contiene 29 archivos extraíbles + asset de 1MB", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "El registry está diseñado para extracción (lazy import + decorator)", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "Solo 3 consumidores de producción importan renderers directamente; todos el mismo (InfographicHTMLRenderer)", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C4", "claim": "matplotlib y seaborn están en BASE deps del core (fuga)", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C5", "claim": "plotly/altair/bokeh/holoviews/streamlit/folium están solo en extra agents (sin granularidad)", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C6", "claim": "OutputMode es estable y central — debe quedar en core", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C7", "claim": "OutputFormatter debe quedar en core (consumidor central en bots/abstract.py)", "evidence": ["F002", "F004"], "confidence": "high"},
+    {"id": "C8", "claim": "infographic_html está en desarrollo activo; el resto está dormante (faseable)", "evidence": ["F007"], "confidence": "high"},
+    {"id": "C9", "claim": "Descubrimiento vía entry-points es el patrón estándar; el switch hardcoded actual hay que reemplazarlo", "evidence": ["F002"], "confidence": "medium"},
+    {"id": "C10", "claim": "Renderers ligeros (json, yaml, html, table, card, slack, whatsapp) pueden quedarse en core", "evidence": ["F003"], "confidence": "medium"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "¿Qué mecanismo de descubrimiento de renderers usar? (a) entry-points de setuptools, (b) import on package install vía side-effect, (c) registro explícito desde ai-parrot-visualizations.__init__",
+      "blocks_claims": ["C9"],
+      "plausible_answers": ["Entry-points de setuptools (estándar, soporta múltiples paquetes)", "Side-effect en import-time (más simple, requiere que se importe el paquete)", "Registro explícito desde la app del usuario (más control, menos automágico)"]
+    },
+    {
+      "id": "U2",
+      "question": "¿Qué renderers ligeros dejar en core y cuáles mover? (json/yaml/html/table/card/slack/whatsapp claramente ligeros; markdown/jinja2/template_report borderline)",
+      "blocks_claims": ["C10"],
+      "plausible_answers": ["Solo dejar en core los puramente sin deps (json, yaml, html, table, card, slack, whatsapp). Mover markdown/jinja2/template_report al paquete con extras ligeras.", "Dejar todos los ligeros + jinja2/template_report; mover solo los pesados (plotly, altair, bokeh, holoviews, matplotlib, seaborn, map, d3, echarts, infographic, application).", "Mover TODOS los renderers (incluso json/yaml) al paquete; core solo tiene registry."]
+    },
+    {
+      "id": "U3",
+      "question": "¿Cómo fasear la extracción? (a) Big-bang en un PR, (b) por renderer en PRs separados, (c) crear paquete vacío primero + entry-points + ir migrando 1 renderer por PR",
+      "blocks_claims": ["C8"],
+      "plausible_answers": ["Big-bang (rápido pero arriesgado por infographic_html en desarrollo activo)", "Por renderer en PRs separados (lento pero auditado)", "Paquete vacío + descubrimiento + migración 1-a-1 (recomendado: permite empezar a usar el descubrimiento mientras los renderers viejos aún funcionan)"]
+    },
+    {
+      "id": "U4",
+      "question": "¿Cómo nombrar el paquete y el namespace Python? Opciones: ai-parrot-visualizations / parrot_visualizations, ai-parrot-viz / parrot_viz, ai-parrot-charts / parrot_charts",
+      "blocks_claims": [],
+      "plausible_answers": ["ai-parrot-visualizations / parrot_visualizations (descriptivo, alineado con la solicitud original)", "ai-parrot-charts / parrot_charts (más corto, pero impreciso — incluye map e infographic que no son charts)", "ai-parrot-renderers / parrot_renderers (técnico — describe el rol arquitectónico)"]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-brainstorm",
+    "rationale": "Hay 4 unknowns que afectan arquitectura: descubrimiento de plugins (U1), qué renderers dejar en core (U2), faseo de la extracción (U3), nombre del paquete (U4). Un brainstorm permite ventilar opciones (entry-points vs side-effect; big-bang vs faseado) antes de escribir un spec rígido. Si el equipo prefiere ir directo, /sdd-spec con las decisiones tomadas en U1-U4 también funciona."
+  }
+}
