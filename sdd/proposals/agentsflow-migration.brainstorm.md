@@ -104,12 +104,15 @@ dependency order. Each layer commits independently; nothing is half-done
 between layers.
 
 **Layer 1 — Move-only relocations (no behaviour change):**
+Convert `parrot/bots/flows/flow.py` (single file) into the
+`parrot/bots/flows/flow/` **subpackage** — mirroring the existing
+`parrot/bots/flows/crew/` layout. The AgentsFlow class moves to
+`flows/flow/flow.py`; supporting modules land alongside as siblings.
 Move `actions.py`, `cel_evaluator.py`, `definition.py`, `loader.py`,
-`svelteflow.py` into `parrot/bots/flows/` (placement curated — likely
-`flows/dsl/{definition,loader,svelteflow}.py`,
-`flows/actions/{actions,registry}.py`,
-`flows/core/predicates/cel.py` or `flows/transitions/cel.py`).
-Pick the homes during task decomposition.
+`svelteflow.py` into `parrot/bots/flows/flow/` (flat at first; split
+later only if a file grows). `cel_evaluator.py` lives here as an internal
+module — it is **not** re-exported at `parrot/bots/flows/__init__.py`
+(Round-3 answer: only used by transitions today).
 
 **Layer 2 — Storage reconciliation:**
 Diff `flow/storage/{memory,mixin,synthesis}.py` against
@@ -124,23 +127,38 @@ Reimplement `DecisionFlowNode`, `DecisionResult`, `DecisionMode`,
 `DecisionType`, `BinaryDecision`, `ApprovalDecision`, `MultiChoiceDecision`,
 `EscalationPolicy`, `VoteWeight`, and `InteractiveDecisionNode` as
 subclasses of `flows/core/node.AgentNode` (or `Node` for non-agent
-decisions). Public symbol names preserved; internals adopt `NodeResult`,
-`FlowContext.shared_data`, and `build_node_metadata`. Old
-`decision_node.py` and `interactive_node.py` deleted.
+decisions). All decision/interactive node types land in a single
+`flows/flow/nodes.py` module (Round-3 answer: keep node types together,
+no per-decision-type file split). This mirrors `flows/crew/nodes.py`
+which holds `CrewAgentNode`. Public symbol names preserved; internals
+adopt `NodeResult`, `FlowContext.shared_data`, and `build_node_metadata`.
+Old `decision_node.py` and `interactive_node.py` deleted.
 
 **Layer 4 — Internal repointing:**
-Update `parrot/bots/flows/flow.py` to import from `flows.*` only. Drop the
-four cross-package imports at lines 42, 45, 51, 508.
+Update `parrot/bots/flows/flow/flow.py` (post-L1 location of the
+AgentsFlow class) to import from `parrot.bots.flows.*` only. The four
+cross-package imports at the current `flows/flow.py` lines 42, 45, 51,
+and 508 collapse into intra-subpackage imports (e.g.,
+`from .nodes import DecisionFlowNode, ...`,
+`from .definition import FlowDefinition`,
+`from .cel_evaluator import CELPredicateEvaluator`).
 
-**Layer 5 — External consumer repointing:**
-Update `parrot/flows/dev_loop/{flow,nodes/*}.py` (8 files) and all 31 test
-files to import from `parrot.bots.flows.*`.
+**Layer 5 — External consumer repointing + test refactor:**
+Update `parrot/flows/dev_loop/{flow,nodes/*}.py` (8 files) to import from
+`parrot.bots.flows.*`. **Refactor** (not just repoint) the 31 test files
+that depend on `parrot.bots.flow.*` — several already break at HEAD
+because they import `parrot.bots.flow.fsm` (deleted by FEAT-163). Those
+tests get rewritten against the new node + result models in the same
+PR (Round-3 answer: refactor, not quarantine).
 
 **Layer 6 — Cleanup + curated public API:**
 Delete `parrot/bots/flow/` entirely. Rewrite
 `parrot/bots/flows/__init__.py` to expose only the deliberate primitives
-(curated, not verbatim). Update any docstrings/examples that reference the
-old path.
+(curated, not verbatim). `CELPredicateEvaluator`, action-registry
+internals, and other transition/runtime plumbing remain accessible only
+via their submodules (e.g., `from parrot.bots.flows.flow.cel_evaluator
+import CELPredicateEvaluator`). Update any docstrings/examples that
+reference the old path.
 
 ✅ **Pros:**
 - Clean dependency order — each layer leaves the tree in a consistent state.
@@ -344,8 +362,9 @@ implementation now:
 ### Edge Cases & Error Handling
 
 - **Out-of-tree consumers (Navigator)**: this PR breaks any external
-  import. A coordinated commit/PR on Navigator is required *before or
-  alongside* the merge of this feature. Open question — see §Open Questions.
+  import. A pre-`/sdd-spec` grep of the Navigator repo decides whether
+  a coordinated Navigator-side PR is needed; if Navigator does not
+  import `parrot.bots.flow.*`, no coordination is required.
 - **Decision-node behavioural diff**: if a current
   `DecisionFlowNode` test relies on a specific attribute layout (e.g.,
   `result.confidence` shape, `_validate_decision` hook signature), the
@@ -582,15 +601,18 @@ packages/ai-parrot/tests/test_flow_primitives/test_{contract,init_reexports}.py
   (L6). Every layer touches shared files (`flows/flow.py`,
   `flows/__init__.py`, or the test suite).
 - **Cross-feature independence**:
-  - Conflicts with **FEAT-009 (agentsflow-persistency, approved, not yet
-    shipped)**: that spec presumably operates on `flow/storage/*` or
-    `flows/core/storage/*`. Coordination required — either FEAT-009 lands
-    first, this brainstorm absorbs it, or this brainstorm waits.
+  - **FEAT-009 (agentsflow-persistency)**: superseded by FEAT-147's
+    `flows/core/storage/persistence.py`. `/sdd-spec` should mark
+    FEAT-009 obsolete with a pointer to this migration. **No
+    coordination needed.**
   - No conflict with **FEAT-157 (agentcrew-hooks, shipped)** — touches
     `flows/crew/*`.
   - No conflict with **FEAT-177 (otel-observability, shipped)** — touches
     `parrot/observability/*`; benefits from this migration via uniform
     `NodeExecutionInfo`.
+  - **Navigator project (out-of-tree)**: pre-`/sdd-spec` check — grep
+    Navigator for `parrot.bots.flow.*` imports. If found, coordinate a
+    lockstep Navigator-side PR; if not, proceed independently.
 - **Recommended isolation**: **per-spec** (single worktree, all tasks
   sequential).
 - **Rationale**: Atomic PR per the Round-1 answer; topological task graph
@@ -624,31 +646,40 @@ packages/ai-parrot/tests/test_flow_primitives/test_{contract,init_reexports}.py
 - [x] Public re-export surface of `bots/flows/__init__.py` — *Resolved
   in Round 2*: curate; only deliberate primitives at the package root.
   Submodule placement decided per-symbol during `/sdd-spec`.
-- [ ] **Submodule layout for moved files** — *Owner: Jesus*. Where do
-  `definition.py`, `loader.py`, `svelteflow.py` land? Candidates:
-  `flows/dsl/`, `flows/definition/`, or flat at `flows/`. Where do
-  `actions.py` + action classes go? `flows/actions/` package or single
-  `flows/actions.py`? Where does `cel_evaluator.py` land — `flows/core/predicates/`
-  (next to transitions) or `flows/cel.py`? Decide during `/sdd-spec`.
-- [ ] **Decision-node module organisation** — *Owner: Jesus*. Is the
-  1,140-LoC `decision_node.py` split into per-decision-type modules
-  (`flows/nodes/decision/{base,binary,approval,multichoice}.py`) or kept
-  as a single file? Splitting is friendlier to navigation but adds extra
-  task scope. Decide during `/sdd-spec`.
-- [ ] **CELPredicateEvaluator: public or private?** — *Owner: Jesus*.
-  Only used by transitions today. If we expose it for downstream flow
-  authors writing custom predicates, it goes in `__init__.py`; otherwise
-  it lives in `flows/core/predicates/` and is internal.
-- [ ] **Coordination with FEAT-009 (agentsflow-persistency, approved
-  not-shipped)** — *Owner: Jesus*. Does FEAT-009 still apply? If so,
-  does it land before/with/after this migration? If the persistence work
-  has been superseded by `flows/core/storage/persistence.py` (FEAT-147),
-  mark FEAT-009 obsolete during `/sdd-spec`.
-- [ ] **External-consumer coordination (Navigator)** — *Owner: Jesus*.
-  Are there `parrot.bots.flow.*` imports in the Navigator project (or any
-  other downstream repo)? If yes, a Navigator-side PR must merge before
-  or alongside this feature. Verify before `/sdd-task`.
-- [ ] **Test-suite repair surface** — *Owner: Jesus + first executor
-  agent*. Several tests already import `parrot.bots.flow.fsm` (deleted by
-  FEAT-163) — they may have unrelated bitrot. During L5, decide per-test
-  whether to repoint, rewrite, or quarantine.
+- [x] **Submodule layout for moved files** — *Resolved in Round 3*:
+  mirror the `parrot/bots/flows/crew/` shape. Convert `flows/flow.py`
+  (single file) into a `flows/flow/` **subpackage**. The AgentsFlow
+  class lands at `flows/flow/flow.py`; `definition.py`, `loader.py`,
+  `svelteflow.py`, `actions.py`, `cel_evaluator.py` move flat into
+  `flows/flow/` as siblings. No `flows/dsl/`, no `flows/actions/`
+  subpackage — flat layout under `flows/flow/`. Split later only if a
+  file grows beyond reason.
+- [x] **Decision-node module organisation** — *Resolved in Round 3*:
+  single `flows/flow/nodes.py` module holds all decision + interactive
+  node types (`DecisionFlowNode`, `BinaryDecision`, `ApprovalDecision`,
+  `MultiChoiceDecision`, `InteractiveDecisionNode`, etc.). No
+  per-decision-type file split. Mirrors `flows/crew/nodes.py`.
+- [x] **CELPredicateEvaluator: public or private?** — *Resolved in
+  Round 3*: **internal for now**. Lives at
+  `parrot/bots/flows/flow/cel_evaluator.py`. Not re-exported at
+  `parrot/bots/flows/__init__.py`. Consumers needing it import directly
+  from the submodule path. Promotion to public can happen later if a
+  real external use case appears.
+- [x] **Coordination with FEAT-009 (agentsflow-persistency)** —
+  *Resolved in Round 3*: **superseded by FEAT-147**. FEAT-009 is
+  obsolete; the persistence layer at
+  `parrot/bots/flows/core/storage/persistence.py` (delivered by
+  FEAT-147) replaces it. `/sdd-spec` should mark FEAT-009's spec
+  superseded with a pointer to this migration. No blocking coordination
+  required.
+- [x] **External-consumer coordination (Navigator)** — *Resolved in
+  Round 3*: **check first**. Before `/sdd-task`, grep the Navigator
+  project for `parrot.bots.flow.*` imports. If found, open a coordinated
+  Navigator-side PR that merges in lockstep with this feature. If none,
+  proceed without coordination. This is a pre-`/sdd-spec` action item
+  for the spec author, not a runtime concern.
+- [x] **Test-suite repair surface** — *Resolved in Round 3*: **refactor
+  the existing tests** as part of L5. Tests that already break at HEAD
+  (those importing `parrot.bots.flow.fsm`) are rewritten against
+  `flows/core/` primitives in the same PR. No quarantine; no
+  test-deferral follow-up.
