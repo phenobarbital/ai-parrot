@@ -1,0 +1,234 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "The repo already ships specs and code for infographic HTML output, multi-tab infographics, dataset-support-agenttalk, the agent-skill-system, and a skill-registry. The request is to compose these existing primitives into a single-step OutputMode (or alternative) rather than greenfield design. Research must map the current OutputMode enum, the Infographic templates, the Skill payload, the dataset-retention path, and the two-step infographic handler so the proposal can decide between OutputMode / Toolkit / template-name routing.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Discover the OutputMode enum and how it is consumed by AgentTalk / agent handler",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/models/outputs.py"}
+    },
+    {
+      "id": "Q002",
+      "intent": "Read the current Infographic output format to see how the LLM is steered today",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/outputs/formats/infographic.py"}
+    },
+    {
+      "id": "Q003",
+      "intent": "Read the InfographicHTML output format — most likely the existing analogue of what the user wants",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/outputs/formats/infographic_html.py"}
+    },
+    {
+      "id": "Q004",
+      "intent": "Inspect the outputs/formats package entry point to see how a format is registered",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py"}
+    },
+    {
+      "id": "Q005",
+      "intent": "Read the infographic template registry — the user proposes 'name a template'",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/models/infographic_templates.py"}
+    },
+    {
+      "id": "Q006",
+      "intent": "Read the infographic Pydantic model to understand the layout/data contract",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/models/infographic.py"}
+    },
+    {
+      "id": "Q007",
+      "intent": "Read the infographic helpers used by the current 2-step rendering flow",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/helpers/infographics.py"}
+    },
+    {
+      "id": "Q008",
+      "intent": "Read the infographic handler — this IS the current 2-step (follow-up) endpoint",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/infographic.py"}
+    },
+    {
+      "id": "Q009",
+      "intent": "Read the agent handler (likely the AgentTalk entrypoint) to see how output_mode is selected",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/agent.py"}
+    },
+    {
+      "id": "Q010",
+      "intent": "Read the artifact handler — HTML infographic artifacts probably persist through it",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/handlers/artifacts.py"}
+    },
+    {
+      "id": "Q011",
+      "intent": "Read the AgentTalk envelope test to learn the response contract",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "tests/unit/integrations/oauth2/test_agenttalk_envelope.py"}
+    },
+    {
+      "id": "Q012",
+      "intent": "Read the output_generation prompt — this is where output_mode steers LLM behavior",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/bots/prompts/output_generation.py"}
+    },
+    {
+      "id": "Q013",
+      "intent": "Read the Skill model to see what a Skill currently carries (instructions, templates, datasets?)",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/skills/models.py"}
+    },
+    {
+      "id": "Q014",
+      "intent": "Read the Skill mixin to learn how a Skill is invoked at bot runtime",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "packages/ai-parrot/src/parrot/skills/mixin.py"}
+    },
+    {
+      "id": "Q015",
+      "intent": "Read the Skill loader to learn how skills are discovered / registered",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/skills/loader.py"}
+    },
+    {
+      "id": "Q016",
+      "intent": "Read the Skill tools layer — this is where the LLM-facing tool wrappers live",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/src/parrot/skills/tools.py"}
+    },
+    {
+      "id": "Q017",
+      "intent": "Read the prior brainstorm 'infographic-html-output' — earlier thinking on this exact axis",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "sdd/proposals/infographic-html-output.brainstorm.md"}
+    },
+    {
+      "id": "Q018",
+      "intent": "Read the prior brainstorm 'multi-tab-infographic' — same problem space, multi-section layout",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "sdd/proposals/multi-tab-infographic.brainstorm.md"}
+    },
+    {
+      "id": "Q019",
+      "intent": "Read the prior 'dataset-support-agenttalk' spec — datasets-in-response is the missing link",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "sdd/specs/dataset-support-agenttalk.spec.md"}
+    },
+    {
+      "id": "Q020",
+      "intent": "Read the existing infographic-html-output spec — what is already shipped today",
+      "type": "read",
+      "priority": 1,
+      "params": {"path": "sdd/specs/infographic-html-output.spec.md"}
+    },
+    {
+      "id": "Q021",
+      "intent": "Read the skill-registry spec — interplay with the Skill that drives the layout",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "sdd/specs/skill-registry.spec.md"}
+    },
+    {
+      "id": "Q022",
+      "intent": "Read the integration test for agent + dataset path — proves dataset retention shape",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/tests/handlers/test_agent_dataset_integration.py"}
+    },
+    {
+      "id": "Q023",
+      "intent": "Read the infographic handler test to confirm the 2-step flow is still active",
+      "type": "read",
+      "priority": 2,
+      "params": {"path": "packages/ai-parrot/tests/handlers/test_infographic_handler.py"}
+    },
+    {
+      "id": "Q024",
+      "intent": "Grep for OutputMode call sites so we know everywhere the new mode must integrate",
+      "type": "grep",
+      "priority": 1,
+      "params": {
+        "pattern": "OutputMode|output_mode",
+        "path": "packages/ai-parrot/src",
+        "include": "*.py",
+        "max_results": 80
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Recent git activity on the outputs package — what is in flight right now",
+      "type": "git_log",
+      "priority": 2,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/outputs",
+        "since": "60.days.ago",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "Recent git activity on the skills package — current state of Skill primitives",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/skills",
+        "since": "60.days.ago",
+        "max_results": 20
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Recent git activity on infographic handler — was the 2-step flow recently changed?",
+      "type": "git_log",
+      "priority": 3,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/handlers/infographic.py",
+        "since": "90.days.ago",
+        "max_results": 15
+      }
+    }
+  ],
+  "expected_findings": [
+    "OutputMode is a Pydantic Enum / Literal with at least: text, json, markdown, infographic (or similar). Adding a new mode requires changes here + in handlers/agent.py + in outputs/formats registry.",
+    "outputs/formats/infographic_html.py already produces HTML — likely the building block, but it is invoked from the post-answer follow-up path, not from the primary answer.",
+    "The Skill model carries an instruction template + dataset declarations, but does NOT yet route into a one-shot infographic OutputMode.",
+    "handlers/infographic.py is a separate POST endpoint (the 2-step flow): existing infographic generation runs after the agent's text answer.",
+    "dataset-support-agenttalk has already made multiple datasets returnable in the AgentTalk envelope — but they are not yet wired into the infographic post-step.",
+    "The skill-registry and Skill primitives can already carry a 'template name' — Option C (skill names a template) is mostly a wiring change, not a new architecture.",
+    "Real open question: where the LLM gets instructed to bind generated datasets to the named template's slots (cards, charts) — this is the gap the proposal must close."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["AgentTalk", "OutputMode", "Skill", "Infographic", "Toolkit", "HTML artifact", "revenue", "EBITDA", "hero-cards", "Bar Chart", "Cumulative chart", "template"],
+      "verbs": ["genera", "rellena", "instruye", "retorna", "diseña", "fill in", "design"],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {
+      "files_read": 23,
+      "grep_calls": 1,
+      "git_calls": 3
+    }
+  }
+}

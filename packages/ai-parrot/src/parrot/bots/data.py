@@ -35,6 +35,23 @@ from ..bots.prompts.domain_layers import DATAFRAME_CONTEXT_LAYER, STRICT_GROUNDI
 from parrot_tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
 from parrot_tools.prophetforecast import ProphetForecastTool
 
+# FEAT-197: InfographicRenderResult is imported lazily inside the method
+# to avoid circular imports at module load time.
+_InfographicRenderResult: Optional[type] = None
+
+
+def _get_infographic_result_class() -> Optional[type]:
+    """Lazy import of InfographicRenderResult (avoids circular deps).
+
+    Does NOT cache the class to avoid stale class-identity issues in test
+    environments where sys.modules may be patched between test files.
+    """
+    try:
+        from ..tools.infographic_toolkit import InfographicRenderResult as _cls
+        return _cls
+    except ImportError:
+        return None
+
 
 Scalar = Union[str, int, float, bool, None]
 
@@ -1011,6 +1028,34 @@ class PandasAgent(BasicAgent):
 
         return response
 
+    def _extract_last_infographic_result(
+        self, tool_calls: Optional[List[Any]],
+    ) -> Optional[Any]:
+        """Return the last ``InfographicRenderResult`` from the tool calls list.
+
+        Placed adjacent to ``_rerun_for_map`` for reviewability (FEAT-197).
+
+        When multiple ``infographic_render`` calls occurred in the same turn,
+        only the LAST one is returned (spec §7 documents this design).
+
+        Args:
+            tool_calls: List of ``ToolCall`` objects from the AIMessage.
+
+        Returns:
+            The last ``InfographicRenderResult`` instance, or ``None`` when no
+            infographic render was performed.
+        """
+        if not tool_calls:
+            return None
+        cls = _get_infographic_result_class()
+        if cls is None:
+            return None
+        for tc in reversed(tool_calls):
+            result = getattr(tc, "result", None)
+            if isinstance(result, cls):
+                return result
+        return None
+
     async def _rerun_for_map(
         self,
         *,
@@ -1551,6 +1596,44 @@ class PandasAgent(BasicAgent):
                             "Map intent matched but no result variable "
                             "could be resolved; skipping auto-switch."
                         )
+
+                # FEAT-197: Post-loop branch for InfographicRenderResult.
+                # Pattern mirrors _rerun_for_map: isinstance check on the last
+                # tool result → mutate response in place → return early,
+                # bypassing the formatter and structured-output reformat.
+                infographic_envelope = self._extract_last_infographic_result(
+                    response.tool_calls
+                )
+                if infographic_envelope is not None:
+                    await self._inject_multi_data_from_variables(
+                        response, infographic_envelope.data_variables,
+                    )
+                    response.output = (
+                        infographic_envelope.html_inline
+                        or infographic_envelope.html_url
+                    )
+                    response.output_mode = OutputMode.INFOGRAPHIC
+                    response.artifact_id = infographic_envelope.artifact_id
+                    # Surface URL + flags via response.metadata so the HTTP
+                    # formatter (_format_infographic_response) can pass them
+                    # through to the JSON envelope.
+                    meta = dict(getattr(response, "metadata", None) or {})
+                    meta.update({
+                        "html_url": infographic_envelope.html_url,
+                        "html_inline_omitted": infographic_envelope.html_inline is None,
+                        "enhanced": infographic_envelope.enhanced,
+                        "template_name": infographic_envelope.template_name,
+                        "theme": infographic_envelope.theme,
+                    })
+                    if hasattr(response, "metadata"):
+                        response.metadata = meta
+                    self.logger.info(
+                        "InfographicRenderResult detected — bypassing formatter: "
+                        "artifact_id=%s enhanced=%s",
+                        infographic_envelope.artifact_id,
+                        infographic_envelope.enhanced,
+                    )
+                    return response   # skip formatter + structured reformat
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:

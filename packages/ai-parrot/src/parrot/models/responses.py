@@ -211,6 +211,14 @@ class AIMessage(BaseModel):
         default=OutputMode.DEFAULT,
         description="The output mode used for rendering (markdown, html, json, etc.)"
     )
+    artifact_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "ID of a single rendered artifact (e.g. infographic HTML) produced "
+            "during this turn.  Independent of the generic artifacts: List[Dict] "
+            "field. (FEAT-197)"
+        ),
+    )
 
     class Config:
         """Pydantic configuration for AIMessage."""

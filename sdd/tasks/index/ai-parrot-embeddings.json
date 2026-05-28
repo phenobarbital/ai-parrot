@@ -1,0 +1,201 @@
+{
+  "feature": "ai-parrot-embeddings",
+  "feature_id": "FEAT-201",
+  "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-28T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1333",
+      "slug": "satellite-package-scaffold",
+      "title": "Scaffold the ai-parrot-embeddings satellite package (PEP 420)",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Spec uses per-spec isolation (worktree-shared); all tasks run sequentially in the same worktree per spec §Worktree Strategy. This task is the gate every other depends on.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1333-satellite-package-scaffold.md"
+    },
+    {
+      "id": "TASK-1334",
+      "slug": "move-embedding-backends",
+      "title": "Move embedding backends (google / huggingface / openai) to satellite",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1333"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Logically independent of TASK-1335 / TASK-1336 (different dirs), but all three edit the SAME satellite pyproject.toml extras block. Per-spec sequential isolation avoids the conflict.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1334-move-embedding-backends.md"
+    },
+    {
+      "id": "TASK-1335",
+      "slug": "move-store-backends",
+      "title": "Move vector-store backends (6 files) to satellite",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1333"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same as TASK-1334: shares the satellite pyproject; sequential per spec.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1335-move-store-backends.md"
+    },
+    {
+      "id": "TASK-1336",
+      "slug": "move-reranker-backends",
+      "title": "Move reranker backends (local / llm) to satellite",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1333"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same as TASK-1334: shares the satellite pyproject; sequential per spec.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1336-move-reranker-backends.md"
+    },
+    {
+      "id": "TASK-1337",
+      "slug": "host-pyproject-redistribute-extras",
+      "title": "Redistribute host pyproject extras after the move",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the host pyproject; depends on all backend moves landing first (extras to remove reference what moved). Inherently sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1337-host-pyproject-redistribute-extras.md"
+    },
+    {
+      "id": "TASK-1338",
+      "slug": "wheel-content-verification-test",
+      "title": "Add wheel-content verification test (lock pure PEP 420 into CI)",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could run in parallel with TASK-1339 / TASK-1340 (no file overlap), but per-spec policy keeps them sequential to simplify worktree review.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1338-wheel-content-verification-test.md"
+    },
+    {
+      "id": "TASK-1339",
+      "slug": "namespace-resolution-test-suite",
+      "title": "Cross-distribution namespace-resolution test suite",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Logically independent of TASK-1338 / TASK-1340. Sequential per spec.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1339-namespace-resolution-test-suite.md"
+    },
+    {
+      "id": "TASK-1340",
+      "slug": "cross-dist-regression-tests",
+      "title": "Matryoshka + contextual augmentation cross-distribution regression suite",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1334",
+        "TASK-1335"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Independent of TASK-1336 / TASK-1337 / TASK-1338 / TASK-1339, but per-spec sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1340-cross-dist-regression-tests.md"
+    },
+    {
+      "id": "TASK-1341",
+      "slug": "docs-and-migration-notes",
+      "title": "Documentation, migration notes, CONTEXT.md update",
+      "feature_id": "FEAT-201",
+      "feature": "ai-parrot-embeddings",
+      "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1337",
+        "TASK-1338",
+        "TASK-1339",
+        "TASK-1340"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Last task — needs the final install surface from TASK-1337 and test outcomes from TASK-1338-1340 stabilized before docs are written.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T14:23:43+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1341-docs-and-migration-notes.md"
+    }
+  ]
+}
