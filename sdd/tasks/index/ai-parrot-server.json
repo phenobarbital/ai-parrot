@@ -111,7 +111,7 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Parallel with TASK-1369 — different namespace dirs",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1370-move-a2a-server.md"
+      "completed_at": "2026-05-28T23:36:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1370-move-a2a-server.md"
     },
     {
       "id": "TASK-1371",
