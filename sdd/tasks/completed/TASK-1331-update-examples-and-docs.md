@@ -194,3 +194,15 @@ grep -c 'parrot\.knowledge\.pageindex' docs/pageindex.md
 # Should be ≥ 9 (the rewritten code blocks); exact count may be higher if prose
 # references existed.
 ```
+
+---
+
+### Completion Note
+
+Completed by sdd-worker 2026-05-28.
+
+Updated 4 example scripts (5 import statements) using `sed -i 's/from parrot.pageindex/from parrot.knowledge.pageindex/g'` plus a separate pass for the docstring `:class:` ref in `pageindex_compliance_agent.py`. Updated `docs/pageindex.md` (9 sites, all code blocks).
+
+File `examples/graphindex/graphindex_corpus_agent.py` is NOT tracked by git (untracked in main repo) and therefore absent from the worktree — skipped. The spec listed it as a site to update but it has no git-tracked file.
+
+`grep -rn 'parrot.pageindex' examples/ docs/pageindex.md` returns zero matches. `python -m py_compile` on 4 example files passed. `grep -c 'parrot.knowledge.pageindex' docs/pageindex.md` = 9.
