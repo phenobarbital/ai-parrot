@@ -6,6 +6,7 @@ All public symbols are re-exported from sub-packages:
 - ``crew``: ``AgentCrew``, ``CrewAgentNode``
 - ``agents``: orchestrator agents
 - ``tools``: ``ResultRetrievalTool``
+- ``flow``: ``AgentsFlow``, flow definition models, decision nodes
 
 Usage::
 
@@ -15,7 +16,16 @@ Usage::
         AgentCrew, CrewAgentNode,
         OrchestratorAgent,
         ResultRetrievalTool,
+        AgentsFlow,
+        FlowDefinition, NodeDefinition, EdgeDefinition,
+        DecisionFlowNode, BinaryDecision,
     )
+
+Demoted (submodule-only — not exported at root):
+- ``CELPredicateEvaluator``  → ``parrot.bots.flows.flow.cel_evaluator``
+- ``ACTION_REGISTRY``, action classes → ``parrot.bots.flows.flow.actions``
+- ``FlowLoader`` → ``parrot.bots.flows.flow.loader``
+- ``from_svelteflow``, ``to_svelteflow`` → ``parrot.bots.flows.flow.svelteflow``
 """
 from .core import (
     # Types & protocols
@@ -38,8 +48,6 @@ from .core import (
     FlowResult,
     NodeExecutionInfo,
     NodeResult,
-    build_node_metadata,
-    determine_run_status,
     # Context
     FlowContext,
     # Transitions
@@ -58,18 +66,29 @@ from .crew import AgentCrew, CrewAgentNode
 from .agents import (
     OrchestratorAgent,
     A2AOrchestratorAgent,
-    ListAvailableA2AAgentsTool,
-    DiscoverA2AAgentsInput,
-    HRAgentFactory,
-    RAGHRAgent,
-    EmployeeDataAgent,
 )
 
 # Flow tools
 from .tools import ResultRetrievalTool
 
-# New AgentsFlow executor (FEAT-163)
+# AgentsFlow executor (FEAT-163)
 from .flow import AgentsFlow, NODE_REGISTRY, register_node, CompletionEvent
+
+# Flow definition models (FEAT-196)
+from .flow.definition import (
+    FlowDefinition,
+    NodeDefinition,
+    EdgeDefinition,
+)
+
+# Decision node primitives (FEAT-196)
+from .flow import (
+    DecisionFlowNode,
+    InteractiveDecisionNode,
+    BinaryDecision,
+    ApprovalDecision,
+    MultiChoiceDecision,
+)
 
 __all__ = [
     # Types & protocols
@@ -90,10 +109,8 @@ __all__ = [
     "EndNode",
     # Result models
     "FlowResult",
-    "NodeExecutionInfo",
     "NodeResult",
-    "build_node_metadata",
-    "determine_run_status",
+    "NodeExecutionInfo",
     # Context
     "FlowContext",
     # Transitions
@@ -109,16 +126,21 @@ __all__ = [
     # Orchestrator agents
     "OrchestratorAgent",
     "A2AOrchestratorAgent",
-    "ListAvailableA2AAgentsTool",
-    "DiscoverA2AAgentsInput",
-    "HRAgentFactory",
-    "RAGHRAgent",
-    "EmployeeDataAgent",
     # Tools
     "ResultRetrievalTool",
-    # AgentsFlow executor (FEAT-163)
+    # AgentsFlow executor
     "AgentsFlow",
     "NODE_REGISTRY",
     "register_node",
     "CompletionEvent",
+    # Flow definition
+    "FlowDefinition",
+    "NodeDefinition",
+    "EdgeDefinition",
+    # Decision nodes
+    "DecisionFlowNode",
+    "InteractiveDecisionNode",
+    "BinaryDecision",
+    "ApprovalDecision",
+    "MultiChoiceDecision",
 ]
