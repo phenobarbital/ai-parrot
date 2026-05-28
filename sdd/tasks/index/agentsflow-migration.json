@@ -179,7 +179,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -196,8 +196,8 @@
       "parallelism_notes": "Final deletion step — depends on ALL prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1316-agentsflow-migration-delete-legacy-package.md"
+      "completed_at": "2026-05-28T11:42:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1316-agentsflow-migration-delete-legacy-package.md"
     },
     {
       "id": "TASK-1317",
