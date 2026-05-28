@@ -336,17 +336,64 @@ class InfographicToolkit(AbstractToolkit):
         data_context: Dict[str, Any],
         js_bundles_available: List[JSBundle],
     ) -> Tuple[str, bool]:
-        """Placeholder enhance pass.  TASK-1325 implements the real enhance.
+        """Run the optional LLM enhance pass (FEAT-197, TASK-1325).
 
-        Until TASK-1325 lands, this always returns the deterministic skeleton
-        unchanged with ``enhanced=False``.
+        Returns the enhanced HTML (``enhanced=True``) when the bot has
+        ``enhance_infographic`` and the returned HTML passes the SRI whitelist
+        check.  Falls back silently to the skeleton (``enhanced=False``) on
+        any failure, logging a WARNING-level security event.
+
+        Args:
+            skeleton: Deterministic HTML from the render pass.
+            brief: User-provided enhancement brief (required for enhance mode).
+            mode: ``"deterministic"`` or ``"enhance"``.
+            data_context: DataFrames serialised as records dicts.
+            js_bundles_available: SRI-whitelist from the template.
+
+        Returns:
+            ``(html, enhanced)`` tuple.
         """
-        if mode == "enhance":
-            self.logger.info(
-                "Enhance requested but not yet wired (TASK-1325). "
-                "Returning deterministic skeleton.",
+        if mode != "enhance":
+            return skeleton, False
+
+        if not brief:
+            self.logger.warning(
+                "enhance requested without a brief — falling back to skeleton."
             )
-        return skeleton, False
+            return skeleton, False
+
+        bot = getattr(self, "_bot", None)
+        if bot is None or not hasattr(bot, "enhance_infographic"):
+            self.logger.warning(
+                "Bound bot lacks enhance_infographic method — falling back."
+            )
+            return skeleton, False
+
+        try:
+            from parrot.tools._enhance_html_check import validate_enhanced_html
+
+            enhanced_html = await bot.enhance_infographic(
+                skeleton=skeleton,
+                brief=brief,
+                data_context=data_context,
+                js_bundles_available=js_bundles_available,
+            )
+            validate_enhanced_html(enhanced_html, js_bundles_available)
+            return enhanced_html, True
+
+        except InfographicValidationError as exc:
+            self.logger.warning(
+                "Enhanced HTML rejected (%s) — falling back to deterministic skeleton: %s",
+                exc.code,
+                exc.detail,
+            )
+            return skeleton, False
+        except Exception as exc:
+            self.logger.warning(
+                "Enhance pass failed (%s) — falling back to deterministic skeleton.",
+                exc,
+            )
+            return skeleton, False
 
     # ------------------------------------------------------------------
     # Validation helpers
