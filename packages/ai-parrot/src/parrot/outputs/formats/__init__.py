@@ -1,3 +1,6 @@
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 import contextlib
 from typing import Protocol, Dict, Type, Any, Optional
 from importlib import import_module
@@ -22,7 +25,6 @@ def register_renderer(mode: OutputMode, system_prompt: Optional[str] = None):
         mode: OutputMode enum value
         system_prompt: Optional system prompt to inject when using this mode
     """
-    print(':::: Registering renderer for mode:', mode)
     def decorator(cls):
         RENDERERS[mode] = cls
         if system_prompt:
