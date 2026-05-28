@@ -15,14 +15,14 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {"status": "completed", "started_at": "2026-05-28T13:11:03+02:00", "completed_at": "2026-05-28T13:11:03+02:00"},
     "plan": {"status": "completed", "queries_total": 8, "approved_by_user": false, "edited_by_user": false, "plan_path": "sdd/state/FEAT-200/research_plan.json"},
     "research": {"status": "completed", "queries_executed": 8, "queries_skipped": 0, "depth_reached": 0, "files_read": 6, "grep_calls": 7, "git_calls": 1, "truncated": false, "truncation_reason": null},
     "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-200/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 10, "claims_high_conf": 8, "claims_medium_conf": 2, "claims_low_conf": 0, "unknowns_count": 4, "lint_passed": true, "lint_iterations": 0},
     "qa": {"status": "skipped", "questions_total": 4, "questions_answered": 0, "skipped_reason": "Four unknowns son decisiones arquitectónicas que merecen brainstorm — diferidas a /sdd-brainstorm FEAT-200"},
-    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-visualizations.proposal.md", "commit_sha": null, "next_command_recommended": "sdd-brainstorm", "next_command_rationale": "Cuatro unknowns arquitectónicos (descubrimiento de plugins, scope de extracción, faseo, naming) ameritan brainstorm antes de spec."}
+    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-visualizations.proposal.md", "commit_sha": "5572209192490c4485184d49bcd6cf010b155a5e", "next_command_recommended": "sdd-brainstorm", "next_command_rationale": "Cuatro unknowns arquitectónicos (descubrimiento de plugins, scope de extracción, faseo, naming) ameritan brainstorm antes de spec."}
   },
   "budget": {
     "profile": "default",
