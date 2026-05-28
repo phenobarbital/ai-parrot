@@ -189,9 +189,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-28
+**Notes**: Created `tests/handlers/test_document_understanding_integration.py` with 2
+integration tests: `test_real_pdf_analysis` (basic PDF → AIMessage) and
+`test_real_structured_output` (PDF → DocumentSummary Pydantic model). Both marked with
+`@pytest.mark.integration`. Used an inline minimal-PDF fixture (~1 KB) to avoid
+external file dependencies and minimize API cost. Requires GOOGLE_API_KEY env var.
+Skips gracefully when key is absent. Tests collect cleanly.
 
-**Completed by**: <session or agent ID>
+**Completed by**: sdd-worker agent
 **Date**: YYYY-MM-DD
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
