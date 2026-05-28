@@ -11,8 +11,8 @@ import asyncio
 import pytest
 from typing import Any
 
-from parrot.bots.flow.fsm import AgentsFlow
-from parrot.bots.flow.storage import ExecutionMemory  # AgentsFlow uses flow.storage (singular)
+from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.core.storage import ExecutionMemory  # canonical storage
 from parrot.bots.flows import ResultRetrievalTool
 
 
