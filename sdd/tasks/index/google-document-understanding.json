@@ -14,7 +14,7 @@
       "feature_id": "FEAT-203",
       "feature": "google-document-understanding",
       "spec": "sdd/specs/google-document-understanding.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on this implementation.",
       "assigned_to": null,
       "started_at": "2026-05-28T16:19:11+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1362-document-understanding-method.md"
+      "completed_at": "2026-05-28T16:36:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1362-document-understanding-method.md"
     },
     {
       "id": "TASK-1363",
