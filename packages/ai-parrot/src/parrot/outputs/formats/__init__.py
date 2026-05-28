@@ -48,7 +48,7 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
             elif mode == OutputMode.YAML:
                 import_module('.yaml', 'parrot.outputs.formats')
             elif mode == OutputMode.CHART:
-                import_module('.charts', 'parrot.outputs.formats')
+                import_module('.chart', 'parrot.outputs.formats')
             elif mode == OutputMode.MAP:
                 import_module('.map', 'parrot.outputs.formats')
             elif mode == OutputMode.ALTAIR:

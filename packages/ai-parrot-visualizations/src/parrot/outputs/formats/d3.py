@@ -5,7 +5,7 @@ import json
 import html
 import re
 import uuid
-from .base import BaseChart
+from .chart import BaseChart
 from . import register_renderer
 from ...models.outputs import OutputMode
 
