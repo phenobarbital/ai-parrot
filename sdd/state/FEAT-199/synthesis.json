@@ -85,17 +85,24 @@
       "id": "U1",
       "question": "¿Los 19 tests legacy en tests/unit/forms/ tienen ya equivalente en packages/parrot-formdesigner/tests/? Si sí → borrar; si no → portar.",
       "blocks_claims": ["C8"],
-      "plausible_answers": ["Borrar tras auditar 1:1", "Portar a parrot-formdesigner antes de borrar local", "Mantener algunos como tests de integración del shim hasta deprecación final"]
+      "plausible_answers": ["Borrar tras auditar 1:1 (probable — tests son contra fallback que también desaparece)", "Portar a parrot-formdesigner antes de borrar local", "Mantener algunos como tests de integración en ai-parrot-integrations (msteams + formdesigner end-to-end)"]
     },
     {
       "id": "U2",
-      "question": "¿Dónde declarar la dep obligatoria a parrot-formdesigner: nuevo extra `forms` en ai-parrot, dentro del extra `integrations`, o dejar pendiente hasta que se cree ai-parrot-integrations?",
+      "question": "¿Dónde declarar la dep obligatoria a parrot-formdesigner?",
       "blocks_claims": ["C5"],
-      "plausible_answers": ["Añadir al extra existente `integrations`", "Crear extra dedicado `forms`", "Diferir y resolver en la propuesta de ai-parrot-integrations"]
+      "user_answer": "Resuelto: msteams se moverá a ai-parrot-integrations (paquete futuro). La dep a parrot-formdesigner viaja con msteams y se declara solo allí. ai-parrot core NO necesita conocer a parrot-formdesigner. Re-verificación grep confirmó cero consumidores fuera de msteams + tests legacy — no hay nada 'común' que deba quedarse en ai-parrot.",
+      "plausible_answers": ["Añadir al extra existente `integrations` en ai-parrot", "Crear extra dedicado `forms` en ai-parrot", "Diferir hasta extraer ai-parrot-integrations (RESUELTO)"]
+    },
+    {
+      "id": "U3",
+      "question": "¿Cómo secuenciar FEAT-199 con la extracción de ai-parrot-integrations?",
+      "blocks_claims": [],
+      "plausible_answers": ["Después de extraer ai-parrot-integrations (recomendado, riesgo mínimo)", "Bundle con la extracción de integrations (un solo PR)", "Antes (declarando dep temporal en ai-parrot — contradice U2, no recomendado)"]
     }
   ],
   "recommended_next_command": {
     "command": "sdd-spec",
-    "rationale": "Localización 100% confirmada (high confidence en C1-C7), alcance enriquecido y bien acotado, dos unknowns operativos resolubles en el spec (U1 = auditoría de tests, U2 = ubicación de la dep). No requiere brainstorm porque no hay bifurcación arquitectónica."
+    "rationale": "U2 resuelto: la dep viaja con msteams a ai-parrot-integrations. Pre-requisito: este FEAT depende temporalmente de la extracción de ai-parrot-integrations (U3). Si U3.a (después): /sdd-task FEAT-199 es suficiente (3 ops triviales). Si U3.b (bundle): fusionar con spec de integrations. Si U3.c (antes): /sdd-spec FEAT-199 con dep temporal — no recomendado."
   }
 }

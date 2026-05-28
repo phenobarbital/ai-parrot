@@ -4,7 +4,7 @@ title: Cerrar migración parrot.forms → parrot-formdesigner (eliminar shim, te
 slug: remove-parrot-forms-shim
 type: feature
 mode: enrichment
-status: discussion
+status: review
 source:
   kind: inline
   jira_key: null
@@ -59,10 +59,17 @@ en `parrot/integrations/msteams/` usan mayormente imports de submódulos
 re-export del `__init__.py` y resuelven directamente al fallback local.
 Hay además 19 tests legacy en `tests/unit/forms/` que validan ese
 fallback, y una entrada de `package-data` en `pyproject.toml:542`.
-Recomendado: añadir `parrot-formdesigner` como dep obligatoria, migrar
-los imports de msteams a `parrot_formdesigner.*` (mapeo 1:1 documentado
-en F001), auditar los tests legacy contra cobertura existente en
-`parrot-formdesigner`, y borrar el directorio + la línea de package-data.
+
+**Decisión de scope (resuelve U2)**: msteams se moverá a un futuro
+`ai-parrot-integrations`, así que la dep a `parrot-formdesigner` viaja
+**con msteams** a ese paquete; `ai-parrot` core no necesita conocerla.
+Re-verificación con grep sobre todo el workspace confirma **cero
+consumidores de `parrot.forms` fuera de los 8 archivos de msteams + 19
+tests legacy** — no hay nada "común" que deba quedarse. El trabajo neto
+en ai-parrot core se reduce a: eliminar el directorio `parrot/forms/`,
+eliminar la línea de package-data, y eliminar los tests legacy. La
+migración de imports en msteams ocurre como parte de la extracción de
+`ai-parrot-integrations` (FEAT futuro), no aquí.
 
 ---
 
@@ -226,7 +233,21 @@ Distribución: **7** high, **1** medium, **0** low.
 
 ### Resolved (during proposal phase)
 
-*(ninguna — se difieren al spec)*
+- [x] **U2: ¿Dónde declarar `parrot-formdesigner` como dep obligatoria?**
+  — *Resuelto*: msteams se moverá a `ai-parrot-integrations` (paquete
+  futuro). La dep a `parrot-formdesigner` viaja con msteams y se declara
+  **solo allí**. `ai-parrot` core no necesita conocer a
+  `parrot-formdesigner`.
+  *Resuelve*: C5
+  *Implicación de scheduling*: FEAT-199 queda **acoplado temporalmente**
+  a la extracción de `ai-parrot-integrations`. Ver §6 para alternativas
+  de secuenciación.
+  *Verificación adicional*: re-corrió grep sobre todo el workspace —
+  cero consumidores de `parrot.forms` fuera de los 8 archivos de msteams
+  + 19 tests legacy. **No hay nada "común" que deba quedarse en
+  ai-parrot**; todo el código de `parrot/forms/` se elimina y la
+  funcionalidad la provee `parrot-formdesigner` desde
+  `ai-parrot-integrations`.
 
 ### Unresolved (defer to spec / implementation)
 
@@ -234,37 +255,63 @@ Distribución: **7** high, **1** medium, **0** low.
   equivalente en `packages/parrot-formdesigner/tests/`?** — *Owner*: tbd
   *Bloquea*: C8
   *Respuestas plausibles*:
-  a) Borrar tras auditar 1:1.
+  a) Borrar tras auditar 1:1 (probable — los tests son contra el
+     fallback local que también desaparece).
   b) Portar a `parrot-formdesigner` antes de borrar local.
-  c) Mantener algunos como tests de integración hasta deprecación final.
+  c) Mantener algunos como tests de integración en
+     `ai-parrot-integrations` (msteams + formdesigner end-to-end).
 
-- [ ] **U2: ¿Dónde declarar `parrot-formdesigner` como dep obligatoria?**
+- [ ] **U3 (nueva): ¿Cómo secuenciar FEAT-199 con la extracción de
+  `ai-parrot-integrations`?**
   — *Owner*: tbd
-  *Bloquea*: C5
+  *Bloquea*: ejecución de FEAT-199
   *Respuestas plausibles*:
-  a) Añadir al extra existente `integrations` en `ai-parrot/pyproject.toml`.
-  b) Crear extra dedicado `forms` en `ai-parrot/pyproject.toml`.
-  c) Diferir hasta extraer `ai-parrot-integrations` y declararla solo allí.
+  a) Hacer FEAT-199 **después** de extraer `ai-parrot-integrations`:
+     msteams ya vive en su paquete con la dep a `parrot-formdesigner`,
+     los imports ya están migrados a `parrot_formdesigner.*`, y
+     FEAT-199 solo borra el directorio + package-data + tests legacy
+     (trivial, sin riesgo).
+  b) Hacer FEAT-199 **al mismo tiempo** que la extracción de
+     `ai-parrot-integrations` (bundle): un solo PR mueve msteams +
+     migra imports + borra `parrot/forms/`. Más coordinado pero más
+     grande.
+  c) Hacer FEAT-199 **antes**: migrar los imports de msteams a
+     `parrot_formdesigner.*` in-situ en ai-parrot (declarando la dep
+     temporalmente en el extra `integrations` de ai-parrot), borrar
+     `parrot/forms/`, y luego mover msteams. **Coste**: ai-parrot
+     adquiere temporalmente la dep a `parrot-formdesigner` (justo lo
+     que se quería evitar). *No recomendado*.
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-199`** — *Rationale*: localización 100% confirmada
-(7/8 claims `high`, 1 `medium`), alcance enriquecido y bien acotado.
-No hay bifurcación arquitectónica que requiera brainstorm. Los dos
-unknowns son decisiones operativas resolubles en el spec con una
-auditoría rápida (U1) y una elección de política de extras (U2).
+**Pre-requisito**: este FEAT-199 está **acoplado temporalmente** a la
+extracción futura de `ai-parrot-integrations` (decisión U2). La
+recomendación depende del path elegido en U3:
+
+- **Si U3.a (FEAT-199 después de extraer `ai-parrot-integrations`)** —
+  *recomendado por riesgo mínimo*: esperar. Cuando msteams ya viva en
+  su paquete con sus imports migrados a `parrot_formdesigner.*`,
+  `/sdd-task FEAT-199` es suficiente — el trabajo se reduce a 3
+  operaciones triviales (borrar `parrot/forms/`, borrar línea 542 de
+  `pyproject.toml`, borrar `tests/unit/forms/`).
+
+- **Si U3.b (bundle con la extracción de integrations)** — fusionar el
+  spec de FEAT-199 con el de `ai-parrot-integrations` (una propuesta
+  separada todavía no abierta).
+
+- **Si U3.c (FEAT-199 antes)** — `/sdd-spec FEAT-199` para tratar la
+  dep temporal en el extra `[integrations]`. **No recomendado** porque
+  contradice la decisión U2 de no acoplar ai-parrot core con
+  formdesigner.
 
 ### Alternatives
 
-- **`/sdd-task FEAT-199`** — viable si U1 y U2 se resuelven inmediatamente
-  por el equipo (escenario: "borrar todos los tests legacy + añadir la
-  dep al extra `integrations`"). La cantidad de archivos a tocar (8
-  msteams + pyproject + cleanup) está al borde de lo trivial pero amerita
-  spec por la decisión de extras.
 - **`/sdd-brainstorm FEAT-199`** — no recomendado; no hay arquitectura
   por explorar.
+- **Esperar** y revisar este proposal cuando se abra la propuesta de
+  `ai-parrot-integrations`.
 
 ---
 

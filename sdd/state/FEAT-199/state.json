@@ -20,8 +20,8 @@
     "source": {"status": "completed", "started_at": "2026-05-28T13:11:03+02:00", "completed_at": "2026-05-28T13:11:03+02:00"},
     "plan": {"status": "completed", "queries_total": 6, "approved_by_user": false, "edited_by_user": false, "plan_path": "sdd/state/FEAT-199/research_plan.json"},
     "research": {"status": "completed", "queries_executed": 6, "queries_skipped": 0, "depth_reached": 0, "files_read": 4, "grep_calls": 5, "git_calls": 1, "truncated": false, "truncation_reason": null},
-    "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-199/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 8, "claims_high_conf": 7, "claims_medium_conf": 1, "claims_low_conf": 0, "unknowns_count": 2, "lint_passed": true, "lint_iterations": 0},
-    "qa": {"status": "skipped", "questions_total": 2, "questions_answered": 0, "skipped_reason": "Two unknowns left for resolution in /sdd-spec phase (auditoría de tests + ubicación de dep)"},
+    "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-199/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 8, "claims_high_conf": 7, "claims_medium_conf": 1, "claims_low_conf": 0, "unknowns_count": 3, "lint_passed": true, "lint_iterations": 0},
+    "qa": {"status": "partial", "questions_total": 3, "questions_answered": 1, "skipped_reason": "U2 resuelto por usuario (la dep viaja a ai-parrot-integrations con msteams; ai-parrot core no la necesita). U1 (auditoría de tests) y U3 (secuenciación con extracción de integrations) quedan para spec/sdd-task."},
     "output": {"status": "completed", "proposal_path": "sdd/proposals/remove-parrot-forms-shim.proposal.md", "commit_sha": "d9b3df14e472efe07eff1bccfa17bd440919d4d8", "next_command_recommended": "sdd-spec", "next_command_rationale": "Localización 100% confirmada, alcance enriquecido y bien acotado; unknowns operativos resolubles en el spec."}
   },
   "budget": {
