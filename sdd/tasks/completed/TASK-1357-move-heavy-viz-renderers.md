@@ -183,4 +183,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+Moved 10 renderer files + assets directory to satellite via `git mv`:
+- matplotlib.py, seaborn.py, plotly.py, altair.py, bokeh.py, holoviews.py
+- d3.py, echarts.py, map.py, chart.py
+- assets/echarts.min.js, assets/__init__.py
+
+Bug fixes during move:
+- `d3.py`: Fixed pre-existing bug `from .base import BaseChart` → `from .chart import BaseChart` (BaseChart is in chart.py not base.py)
+- `formats/__init__.py`: Fixed dispatch `import_module('.charts', ...)` → `import_module('.chart', ...)` (file is chart.py not charts.py)
+
+All 9 renderers (matplotlib, seaborn, plotly, altair, bokeh, holoviews, d3, echarts, map) resolve via `get_renderer()` ✅
+Note: `OutputMode.CHART` has no renderer class (chart.py is only a base class) — pre-existing issue.
+Pre-existing lint errors (bare except, undefined forward refs) noted but not fixed — same issues exist in core package.
