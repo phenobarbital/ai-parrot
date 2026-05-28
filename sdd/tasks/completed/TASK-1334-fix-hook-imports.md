@@ -142,10 +142,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-28
+**Notes**: Changed exactly 2 lines in hook.py (lines 8-9):
+- `from parrot.autonomous.hooks.base import BaseHook` -> `from parrot.core.hooks.base import BaseHook`
+- `from parrot.autonomous.hooks.models import FilesystemHookConfig, HookType` -> `from parrot.core.hooks.models import FilesystemHookConfig, HookType`
+All other file content unchanged.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

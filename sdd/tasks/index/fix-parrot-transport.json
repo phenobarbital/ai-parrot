@@ -32,7 +32,7 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Must run after package move; modifies file that was just moved",
       "assigned_to": null,
       "started_at": "2026-05-28T12:01:38+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1334-fix-hook-imports.md"
+      "completed_at": "2026-05-28T12:03:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1334-fix-hook-imports.md"
     },
     {
       "id": "TASK-1335",
