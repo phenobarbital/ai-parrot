@@ -241,10 +241,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-28
+**Notes**: Replaced all 4 legacy `parrot.bots.flow.*` imports in `flows/flow/flow.py` with
+relative imports from `.definition`, `.nodes`, `.cel_evaluator`. Also removed 3 pre-existing
+unused imports (NodeExecutionInfo, `dataclasses.field`, `import time as _time`). Updated
+`DecisionNode.execute()` to use `node_id=` (new canonical ctor) instead of `name=`. Updated
+`InteractiveDecisionNode.execute()` to delegate to `nodes.InteractiveDecisionNode` instead of
+legacy class. All 7 TASK-1312 acceptance tests pass.
 
 **Deviations from spec**: none
