@@ -1,0 +1,486 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-201",
+  "mode": "enrichment",
+  "summary_oneline": "Move parrot.embeddings/stores/rerankers concrete backends into a new ai-parrot-embeddings sibling package; keep Registries + Abstracts + dispatch maps in core; preserve all existing imports via namespace extension.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/__init__.py",
+      "symbol": "extend_path(__path__, __name__)",
+      "lines": "1-31",
+      "role": "Host top-level package. Already opts into pkgutil-style namespace extension so sibling distributions can contribute submodules under parrot.*",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "[tool.setuptools.packages.find]",
+      "lines": "529-532",
+      "role": "Host package-discovery config. Already declares namespaces = true and include = ['parrot*'] — no host-side blocker to namespace contribution.",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/",
+      "symbol": "embeddings sub-package",
+      "lines": null,
+      "role": "Embeddings subsystem. 9 files; 3 concrete backends (google/huggingface/openai) move; base/registry/catalog/matryoshka/processor stay.",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/registry.py",
+      "symbol": "EmbeddingRegistry._build_model",
+      "lines": "149-178",
+      "role": "Singleton dispatcher. Resolves backends by importlib.import_module(f'parrot.embeddings.{model_type}') — string-based, so backends can ship from any distribution that lands at the same import path.",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/base.py",
+      "symbol": "EmbeddingModel (ABC)",
+      "lines": "15-228",
+      "role": "Abstract base for embedding backends. Stays in core (per user directive).",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/embeddings/__init__.py",
+      "symbol": "supported_embeddings",
+      "lines": "14-18",
+      "role": "Dispatch table: {'huggingface', 'google', 'openai'} → class names. Stays in core; Registry depends on it at init.",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/",
+      "symbol": "stores sub-package",
+      "lines": null,
+      "role": "Vector-store subsystem. 28 files; 6 concrete backends move; abstract, models, sub-packages (kb/, parents/, utils/) likely stay.",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/__init__.py",
+      "symbol": "supported_stores",
+      "lines": "1-10",
+      "role": "Dispatch table re-exporting AbstractStore + {postgres, milvus, kb, faiss_store, arango, bigquery} → class names. Stays in core.",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/abstract.py",
+      "symbol": "AbstractStore",
+      "lines": null,
+      "role": "Abstract base for vector stores. Stays in core.",
+      "evidence": ["F004", "F012"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/models.py",
+      "symbol": "Document, SearchResult, StoreConfig, DistanceStrategy",
+      "lines": null,
+      "role": "Shared types consumed by rerankers/bots/handlers/manager/knowledge. Must stay in core.",
+      "evidence": ["F012"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/postgres.py",
+      "symbol": "PgVectorStore",
+      "lines": "49",
+      "role": "PgVector concrete store. Moves → ai-parrot-embeddings[pgvector].",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/milvus.py",
+      "symbol": "MilvusStore",
+      "lines": "67",
+      "role": "Milvus concrete store. Moves → ai-parrot-embeddings[milvus].",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/arango.py",
+      "symbol": "ArangoDBStore",
+      "lines": "28",
+      "role": "Arango concrete store. Moves → ai-parrot-embeddings[arango].",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/bigquery.py",
+      "symbol": "BigQueryStore",
+      "lines": "23",
+      "role": "BigQuery concrete store. Moves → ai-parrot-embeddings[bigquery].",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/stores/faiss_store.py",
+      "symbol": "FAISSStore",
+      "lines": null,
+      "role": "FAISS concrete store. Moves → ai-parrot-embeddings[faiss] (Python lib faiss-cpu stays in core deps for episodic memory).",
+      "evidence": ["F004", "F008"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/rerankers/",
+      "symbol": "rerankers sub-package",
+      "lines": null,
+      "role": "Reranker subsystem. 6 files; 2 concrete rerankers (local, llm) move; abstract/models/factory/__init__ stay.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/rerankers/__init__.py",
+      "symbol": "__getattr__ (lazy)",
+      "lines": "30-50",
+      "role": "Module-level __getattr__ already lazy-imports LocalCrossEncoderReranker / LLMReranker. Stays in core; resolution works unchanged after move.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/rerankers/factory.py",
+      "symbol": "create_reranker",
+      "lines": "26-83",
+      "role": "Factory dispatch with local imports for concrete reranker classes. Stays in core.",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/rerankers/local.py",
+      "symbol": "LocalCrossEncoderReranker",
+      "lines": null,
+      "role": "Local cross-encoder reranker. Moves → ai-parrot-embeddings[reranker-local].",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/rerankers/llm.py",
+      "symbol": "LLMReranker",
+      "lines": null,
+      "role": "LLM-based reranker. Moves → ai-parrot-embeddings[reranker-llm].",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/pyproject.toml",
+      "symbol": "embeddings/bigquery/arango/milvus/chroma extras + meta-extras",
+      "lines": "287-308, 124-126, 172-174, 408-411, 413-415, 503-510",
+      "role": "Existing extras tied to embeddings/stores/rerankers. embeddings, milvus, chroma, bigquery, arango move; pgvector currently lives under images extra (line 352) and must be extracted. all / all-fast meta-extras must re-target the new package.",
+      "evidence": ["F008"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/pyproject.toml",
+      "symbol": "per-backend extras + workspace dep",
+      "lines": "33-72, 81-92",
+      "role": "Closest analog: per-backend extras, depends on ai-parrot core, uv workspace dev. Reuse build-system + project + uv.sources shape; diverge on [tool.setuptools.packages.find] to use parrot* + namespaces=true instead of parrot_tools*.",
+      "evidence": ["F009"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/__init__.py",
+      "symbol": "_ParrotToolsRedirector",
+      "lines": "50-65",
+      "role": "Existing precedent for satellite-to-core bridging via sys.meta_path. FEAT-201 deliberately does NOT use this pattern — no redirector needed because the satellite ships modules under the same parrot.* namespace.",
+      "evidence": ["F010"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/stores/",
+      "symbol": "handlers/stores tree",
+      "lines": null,
+      "role": "HTTP handlers for vector stores. Stay in core; import supported_stores, AbstractStore, supported_embeddings — all of which stay in core.",
+      "evidence": ["F014"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/registry/routing/store_router.py",
+      "symbol": "StoreRouter",
+      "lines": "32-33",
+      "role": "Routing layer that wires AbstractStore + MultiStoreSearchTool.StoreType. Stays in core.",
+      "evidence": ["F014"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/__init__.py",
+      "symbol": "VectorStoreSearchTool, MultiStoreSearchTool",
+      "lines": "243-244",
+      "role": "Core RAG-primitive tools that wrap stores. Stay in core (per FEAT-057 explicit decision).",
+      "evidence": ["F014"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "lazy stores/embeddings imports",
+      "lines": "82-85, 1436",
+      "role": "AbstractBot already uses lazy local imports for stores backends + EmbeddingRegistry. Pattern preserved after the move.",
+      "evidence": ["F012"]
+    },
+    {
+      "path": "sdd/specs/monorepo-migration.spec.md",
+      "symbol": "FEAT-057 decision: proxy modules, NOT PEP 420",
+      "lines": "34, 116-120",
+      "role": "Prior precedent. Explicitly rejected PEP 420 in favor of __getattr__/meta_path proxies. FEAT-201 deliberately breaks with this precedent at the user's direction.",
+      "evidence": ["F011"]
+    },
+    {
+      "path": "sdd/specs/formdesigner-package.spec.md",
+      "symbol": "FEAT-079 decision: PEP 420 (spec)",
+      "lines": "371-384",
+      "role": "Newer precedent. Spec called for PEP 420 namespace package but actual implementation shipped under parrot_formdesigner.* top-level. FEAT-201 aligns with this spec's stated intent but is the first real exercise of namespace-extension in the repo.",
+      "evidence": ["F011"]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "Host parrot/__init__.py already calls extend_path(__path__, __name__) (pkgutil namespace extension). To make sub-package modules from the satellite distribution discoverable, the SAME extension must be added to parrot/embeddings/__init__.py, parrot/stores/__init__.py, parrot/rerankers/__init__.py — they do not call it today.",
+      "evidence": ["F001"],
+      "implication": "FEAT-201 must include a tiny mechanical change to each of the three core sub-package __init__.py files (one-line import + one-line assignment) so the new package's modules become reachable via the existing namespace."
+    },
+    {
+      "statement": "EmbeddingRegistry, Reranker factory, and store dispatch all resolve concrete classes by import-string (importlib.import_module / local imports) — no compile-time coupling between dispatchers and concrete backends.",
+      "evidence": ["F006", "F005", "F007"],
+      "implication": "The split is functionally transparent at runtime; no dispatcher code in core needs to change."
+    },
+    {
+      "statement": "parrot.stores.models (Document, SearchResult, StoreConfig, DistanceStrategy) is consumed by rerankers, bots, handlers, manager, knowledge, scraper — it is a shared-types module.",
+      "evidence": ["F012"],
+      "implication": "models.py MUST stay in core. Any concrete backend that moves will continue to import from parrot.stores.models at runtime, which works under namespace extension."
+    },
+    {
+      "statement": "faiss-cpu is a core dependency of ai-parrot (line 98 of host pyproject) because episodic memory requires FAISS as the default fallback backend.",
+      "evidence": ["F008"],
+      "implication": "Moving the FAISSStore backend out is fine, but the faiss-cpu Python library MUST remain in core dependencies (not relegated to an extra of the new package)."
+    },
+    {
+      "statement": "pgvector==0.4.1 is currently bundled inside the images extra of the host pyproject (line 352) because PgVector is used for image embeddings — there is no dedicated pgvector extra today.",
+      "evidence": ["F008"],
+      "implication": "The new ai-parrot-embeddings[pgvector] extra must carry pgvector; the host's images extra should be amended (either drop pgvector or depend on ai-parrot-embeddings[pgvector]) — a small cross-package migration step."
+    },
+    {
+      "statement": "Meta-extras all and all-fast (lines 505 and 509 of host pyproject) reference the embeddings extra of ai-parrot.",
+      "evidence": ["F008"],
+      "implication": "After the split, both meta-extras must be rewritten to pull from ai-parrot-embeddings[...] to preserve the legacy install one-liner UX."
+    },
+    {
+      "statement": "All existing sibling packages (ai-parrot-tools / -loaders / -pipelines / parrot-formdesigner) ship under separate top-levels (parrot_tools.*, etc.) bridged via sys.meta_path redirectors in core. The TASK-548 / FEAT-079 plan to use PEP 420 was approved but reverted to the separate-top-level pattern in implementation.",
+      "evidence": ["F010", "F011"],
+      "implication": "FEAT-201 is the first real exercise of namespace extension in this repo. Acceptance tests must verify byte-identical imports and editable-install coexistence in a clean environment — small but real risk that should be flagged for QA."
+    },
+    {
+      "statement": "All three subsystems have active recent work (matryoshka FEAT-150, contextual embedding FEAT-127/128, PgVector metadata_filters, parent-child retrieval factory FEAT-128/133, reranker factory FEAT-133) — but no in-flight SDD spec touches packaging.",
+      "evidence": ["F013"],
+      "implication": "No collision risk on namespace boundaries, but FEAT-201 must integrate cleanly with recent features (Matryoshka, contextual embedding) — re-test the AbstractStore.create_embedding matryoshka forwarding after the SentenceTransformer move."
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "scope": "Create a new sibling distribution ai-parrot-embeddings under packages/. Move the concrete backend files from parrot/embeddings/, parrot/stores/, parrot/rerankers/ into the new package, leaving Registries / Abstracts / dispatch maps / shared models / public __init__.py files in core. Use pkgutil-style namespace extension (extending the existing host opt-in) so all existing imports stay byte-identical. Introduce one extra per backend on the new package; rewrite the host's meta-extras (all, all-fast) to re-target the new package; extract pgvector from the host's images extra into its proper place.",
+    "what_new": [
+      "packages/ai-parrot-embeddings/pyproject.toml — name='ai-parrot-embeddings', dependencies=['ai-parrot>=...'], per-backend extras (pgvector, milvus, arango, bigquery, faiss, chroma, openai, google, huggingface, reranker-local, reranker-llm, all)",
+      "packages/ai-parrot-embeddings/src/parrot/embeddings/{google,huggingface,openai}.py — concrete embedding backends",
+      "packages/ai-parrot-embeddings/src/parrot/stores/{postgres,milvus,arango,bigquery,faiss_store,pgvector}.py — concrete vector-store backends",
+      "packages/ai-parrot-embeddings/src/parrot/rerankers/{local,llm}.py — concrete rerankers",
+      "Per-backend pytest markers in the new package's tests (mirroring per-backend extras)",
+      "Workspace registration: root pyproject.toml [tool.uv.workspace] gains the new member"
+    ],
+    "what_modified": [
+      "packages/ai-parrot/src/parrot/embeddings/__init__.py — add extend_path call (1 line) so satellite-supplied modules are reachable; supported_embeddings map stays",
+      "packages/ai-parrot/src/parrot/stores/__init__.py — add extend_path call; supported_stores map stays",
+      "packages/ai-parrot/src/parrot/rerankers/__init__.py — add extend_path call; lazy __getattr__ stays",
+      "packages/ai-parrot/pyproject.toml — remove the embeddings, milvus, chroma, arango, bigquery extras (or replace with ai-parrot-embeddings[...] deps); extract pgvector from images extra; rewrite all and all-fast meta-extras to reference ai-parrot-embeddings; keep faiss-cpu in core deps",
+      "Delete the moved files from packages/ai-parrot/src/parrot/{embeddings,stores,rerankers}/ once the new package builds and tests pass"
+    ],
+    "what_untouched": [
+      "Public API surface — every from parrot.{embeddings,stores,rerankers}.X import Y site stays byte-identical (the load-bearing user requirement)",
+      "EmbeddingRegistry, AbstractEmbeddingModel, AbstractStore, AbstractReranker — all stay in core unchanged",
+      "Dispatch tables (supported_embeddings, supported_stores) and rerankers/__init__ lazy __getattr__ — stay in core unchanged",
+      "Shared types: parrot.stores.models (Document, SearchResult, StoreConfig, DistanceStrategy) — stays in core",
+      "Higher-level orchestration sub-packages: parrot.stores.kb, parrot.stores.parents, parrot.stores.utils — likely stay in core (revisit in spec)",
+      "Core RAG-primitive tools: parrot.tools.vectorstoresearch, parrot.tools.multistoresearch — stay in core (per FEAT-057 explicit decision)",
+      "HTTP handlers parrot.handlers.stores — stay in core",
+      "Routing layer parrot.registry.routing — stays in core",
+      "Existing sibling packages (ai-parrot-tools, -loaders, -pipelines, parrot-formdesigner) and their parrot_<name>.* + redirector machinery — not touched; FEAT-201 introduces a new convention alongside, not a retrofit"
+    ],
+    "patterns_to_follow": [
+      "uv-workspace + setuptools src/ layout mirroring packages/ai-parrot-tools/ (F009)",
+      "Per-backend optional-dependencies block with an all aggregator (F009)",
+      "[tool.uv.sources] ai-parrot = { workspace = true } for editable workspace dev (F009)",
+      "Dispatch-by-import-string idiom already used by EmbeddingRegistry (F006) — no change needed",
+      "Lazy / circular-avoiding local imports for heavy backends already idiomatic in bots/handlers/manager (F012)"
+    ],
+    "integration_risks": [
+      "Risk: namespace extension is a first-of-its-kind in this repo (TASK-548's plan reverted to parrot_<name>.*). Mitigation: explicit pytest covering 'from parrot.stores.pgvector import PgVectorStore' both with the satellite installed and not installed (the latter must produce a clear, actionable ImportError). Evidence: F010, F011.",
+      "Risk: the host pyproject's images extra depends on pgvector (entangling vision and vector-store deps). Mitigation: extract pgvector to ai-parrot-embeddings[pgvector] and amend images to declare ai-parrot-embeddings[pgvector] as a dependency. Evidence: F008.",
+      "Risk: meta-extra UX regression — users who run pip install ai-parrot[all] must still get the full functional stack. Mitigation: rewrite all to ai-parrot[...] + ai-parrot-embeddings[all]; document the change in the release notes. Evidence: F008.",
+      "Risk: Matryoshka kwarg forwarding (TASK-1037) and contextual augmentation (FEAT-127/128) wiring through AbstractStore.create_embedding and SentenceTransformerModel — must be re-validated after the move. Mitigation: keep the existing matryoshka/contextual test suite and run it against the satellite-installed environment. Evidence: F013.",
+      "Risk: editable installs in a uv workspace where both ai-parrot and ai-parrot-embeddings contribute to the same parrot.* namespace can be tricky in IDEs / PyCharm. Mitigation: document the dev workflow (uv sync --all-packages) and verify import resolution in CI. Evidence: F010."
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "The user wants the new package to host three subsystems: stores, embeddings, rerankers.",
+      "evidence": [],
+      "confidence": "high",
+      "reasoning": "Explicit user clarification: 'move stores, embeddings, rerankers to new package ai-parrot-embedding'."
+    },
+    {
+      "id": "C2",
+      "statement": "The user wants imports to stay byte-identical (e.g. from parrot.stores import ... continues to work).",
+      "evidence": [],
+      "confidence": "high",
+      "reasoning": "Explicit user question + decision: 'my decision is PEP 420 (namespace package)'."
+    },
+    {
+      "id": "C3",
+      "statement": "Host parrot/__init__.py already opts into pkgutil namespace extension via extend_path.",
+      "evidence": ["F001"],
+      "confidence": "high",
+      "reasoning": "Direct read of the file (31 lines, line 12)."
+    },
+    {
+      "id": "C4",
+      "statement": "Host pyproject already declares namespaces = true under setuptools.packages.find.",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "Direct read; lines 529-532."
+    },
+    {
+      "id": "C5",
+      "statement": "EmbeddingRegistry resolves backends by import-string (importlib.import_module(f'parrot.embeddings.{model_type}')) — no compile-time coupling to concrete classes.",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "Direct read of registry.py:149-178."
+    },
+    {
+      "id": "C6",
+      "statement": "parrot.stores follows the same string-dispatch idiom via supported_stores in __init__.py.",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "Direct read of stores/__init__.py:1-10."
+    },
+    {
+      "id": "C7",
+      "statement": "parrot.rerankers uses module-level __getattr__ for lazy backend loading.",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Direct read of rerankers/__init__.py:30-50 and factory.py:54-83."
+    },
+    {
+      "id": "C8",
+      "statement": "Embeddings subsystem has 3 concrete backends (google, huggingface, openai) and 5 base files (base, registry, catalog, matryoshka, processor + __init__).",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Direct tree enumeration."
+    },
+    {
+      "id": "C9",
+      "statement": "Stores subsystem has 6 concrete top-level backends (postgres, milvus, arango, bigquery, faiss_store, pgvector) and 3 sub-packages (kb/, parents/, utils/) plus abstract, models, empty, cache.",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Direct tree enumeration; backend class names confirmed by grep (F004 citations)."
+    },
+    {
+      "id": "C10",
+      "statement": "Sub-packages parrot.stores.kb, .parents, .utils stay in core (higher-level orchestration, not backend-specific).",
+      "evidence": ["F004", "F012"],
+      "confidence": "medium",
+      "reasoning": "Strong signal from imports (parents/__init__ depends on abstract; kb/store.py imports EmbeddingRegistry; utils/ are chunking helpers) — but the boundary deserves explicit confirmation at spec time, since some might arguably move."
+    },
+    {
+      "id": "C11",
+      "statement": "Rerankers subsystem has 2 concrete backends (local, llm) and 4 base files (abstract, models, factory + __init__).",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "Direct tree enumeration + read of __init__/factory."
+    },
+    {
+      "id": "C12",
+      "statement": "parrot.stores.models (Document, SearchResult, StoreConfig, DistanceStrategy) is consumed across rerankers, bots, handlers, manager, knowledge, scraper — must stay in core.",
+      "evidence": ["F012"],
+      "confidence": "high",
+      "reasoning": "Direct grep evidence — multiple cross-subsystem imports."
+    },
+    {
+      "id": "C13",
+      "statement": "faiss-cpu must remain a core dependency (episodic memory) even though FAISSStore moves out.",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Direct read of host pyproject lines 96-99 with explicit code comment."
+    },
+    {
+      "id": "C14",
+      "statement": "pgvector currently lives inside the images extra (line 352 of host pyproject), not its own extra.",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Direct read of host pyproject."
+    },
+    {
+      "id": "C15",
+      "statement": "Existing sibling packages (ai-parrot-tools/loaders/pipelines/formdesigner) all ship under separate top-levels (parrot_<name>.*) bridged by sys.meta_path redirectors in core — never under shared parrot.* namespace.",
+      "evidence": ["F010", "F011"],
+      "confidence": "high",
+      "reasoning": "Direct reads of parrot/tools/__init__.py:1-65, parrot/loaders/__init__.py:1-16, parrot-formdesigner/src/parrot_formdesigner/__init__.py, and ai-parrot-tools/pyproject.toml include-pattern."
+    },
+    {
+      "id": "C16",
+      "statement": "FEAT-079 (formdesigner) approved spec called for PEP 420 but actual implementation reverted to parrot_formdesigner.* — FEAT-201 is the first real exercise of namespace extension in this repo.",
+      "evidence": ["F011"],
+      "confidence": "high",
+      "reasoning": "Cross-reference of spec (lines 371-384) vs actual layout (parrot_formdesigner/__init__.py exists)."
+    },
+    {
+      "id": "C17",
+      "statement": "ai-parrot-tools is the closest precedent for per-backend extras + workspace shape and will be reused (except for the namespace-discovery clause).",
+      "evidence": ["F009"],
+      "confidence": "high",
+      "reasoning": "Direct read of ai-parrot-tools/pyproject.toml structure."
+    },
+    {
+      "id": "C18",
+      "statement": "To make satellite modules discoverable at the sub-package level, parrot.{embeddings,stores,rerankers}/__init__.py must each call extend_path(__path__, __name__) — currently none do.",
+      "evidence": ["F001", "F003", "F005", "F007"],
+      "confidence": "medium",
+      "reasoning": "F001 confirms top-level extension; sub-packages were read (no extend_path lines) but the precise mechanics of how namespace extension propagates without explicit calls at sub-package level should be verified at spec/implementation time. An alternative implementation (omit __init__.py in the satellite, rely on host's existing __init__.py + extend_path at root) may also work depending on setuptools wheel layout — needs empirical check."
+    },
+    {
+      "id": "C19",
+      "statement": "Three subsystems have active recent work but no in-flight SDD spec touches packaging — no merge collision.",
+      "evidence": ["F013"],
+      "confidence": "high",
+      "reasoning": "git log shows Matryoshka, contextual embedding, PgVector metadata, parent-child retrieval, reranker factory — all about runtime behavior, not packaging."
+    },
+    {
+      "id": "C20",
+      "statement": "Three meta-extras (all, all-fast) currently reference embeddings; they will need rewrites after the split.",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "reasoning": "Direct read of host pyproject lines 503-510."
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Confirm the package name: ai-parrot-embeddings (plural, matches sibling convention) or ai-parrot-embedding (singular, as in the user's clarification)?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "ai-parrot-embeddings (plural — recommended; matches ai-parrot-tools / -loaders / -pipelines)",
+        "ai-parrot-embedding (singular — as literally typed in the clarification)"
+      ],
+      "ask_user": true,
+      "user_answer": "ai-parrot-embeddings (plural) — matches sibling convention. Singular form in clarification treated as typo."
+    },
+    {
+      "id": "U2",
+      "question": "Should the sub-packages parrot.stores.kb, .parents, .utils stay in core or move to the new package?",
+      "blocks_claims": ["C10"],
+      "plausible_answers": [
+        "All three stay in core (they are higher-level orchestration over AbstractStore; safest default)",
+        "parrot.stores.kb moves (it's specifically the knowledge-base abstraction) and parents + utils stay",
+        "All three move (treat parrot.stores as a single moving unit, accepting a slightly larger satellite)"
+      ],
+      "ask_user": true,
+      "user_answer": "All three stay in core. Rationale: higher-level orchestration over AbstractStore; keeps satellite minimal."
+    },
+    {
+      "id": "U3",
+      "question": "Should the satellite distribution include its own src/parrot/__init__.py + src/parrot/{embeddings,stores,rerankers}/__init__.py (each calling extend_path), or omit __init__.py files entirely (pure PEP 420) and rely on the host's existing __init__.py for any package-level setup?",
+      "blocks_claims": ["C18"],
+      "plausible_answers": [
+        "Omit __init__.py at parrot/, parrot/embeddings/, parrot/stores/, parrot/rerankers/ in the satellite (purest PEP 420; host owns the __init__.py)",
+        "Provide minimal extend_path stubs at every level (defensive; ensures discovery under both pkgutil and PEP 420 import paths)",
+        "Hybrid: omit at parrot/ (let host's __init__ extend), provide extend_path stubs at the three sub-package levels"
+      ],
+      "ask_user": true,
+      "user_answer": "Pure PEP 420 — omit __init__.py at all four levels in the satellite. Host retains existing __init__.py. Spec must add a wheel-content test asserting absence."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence across 14 findings, the scope is well-bounded (3 subsystems, ~11 backend files, known extras to redistribute), and the user has already resolved the load-bearing architectural choices (3-subsystem scope + namespace-extension strategy). Remaining unknowns are implementation details that fit in §8 of a spec."
+  },
+  "overall_confidence": "high",
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009", "F010", "F011", "F012", "F013", "F014"],
+    "findings_unused": [],
+    "notes": "Two user clarifications during the plan-gate phase resolved what would have been the largest unknowns (subsystem scope + namespace strategy). The remaining U1-U3 are details the spec phase should pin down. C10 and C18 are explicitly medium because the spec's empirical check (does namespace extension propagate cleanly without sub-package extend_path calls?) will resolve them."
+  }
+}

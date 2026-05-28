@@ -1,0 +1,381 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "investigation",
+  "rationale": "Packaging refactor that moves three subsystems (stores, embeddings, rerankers) into a new sibling package. User has decided the strategy: Option B (PEP 420 namespace package) — the new dist contributes modules under parrot.* so existing imports stay byte-identical. The plan now focuses on (a) verifying PEP 420 feasibility on the host (parrot/__init__.py shape, host pyproject package-discovery config), (b) inventorying the three subsystems' base-vs-concrete split, (c) enumerating extras that move, (d) mapping Registry resolution strategy per subsystem, and (e) finding every coupling site that has to keep working under the new namespace.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Read the host parrot package __init__.py to determine whether it can act as a PEP 420 namespace package (empty/missing) or whether it has side effects that block satellite distributions from contributing submodules.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/__init__.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q002",
+      "intent": "Map the existing sibling-package top-levels (loaders/tools/pipelines). User has explicitly waived the precedent for ai-parrot-embeddings, but the tree is still useful to verify they don't accidentally shadow parrot/* names that would conflict with the new namespace-package layout.",
+      "type": "tree",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages",
+        "max_depth": 4
+      }
+    },
+    {
+      "id": "Q003",
+      "intent": "Enumerate the parrot.embeddings module tree to map base/abstract/registry vs concrete backends.",
+      "type": "tree",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q004",
+      "intent": "Enumerate the parrot.stores module tree (the vector-store subsystem).",
+      "type": "tree",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/stores",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q005",
+      "intent": "Enumerate the parrot.rerankers module tree.",
+      "type": "tree",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/rerankers",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q006",
+      "intent": "Read the ai-parrot pyproject in full — enumerate every extra and meta-extra tied to stores/embeddings/rerankers and every dependency block that will move with them.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/pyproject.toml",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q007",
+      "intent": "Read the embeddings public surface (__init__.py) — dictates what callers see.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings/__init__.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q008",
+      "intent": "Read the embeddings Registry — verify whether resolution is direct import, string import, or entry-point based.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings/registry.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q009",
+      "intent": "Read the embeddings Abstract base — the contract that stays in core.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings/base.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q010",
+      "intent": "Read the embeddings catalog — extras-key to concrete-class map.",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings/catalog.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q011",
+      "intent": "Read the parrot.stores public surface (__init__.py).",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/stores/__init__.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q012",
+      "intent": "Read the parrot.rerankers public surface (__init__.py).",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/rerankers/__init__.py",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q013",
+      "intent": "Inspect ai-parrot-loaders pyproject — the canonical sibling-package precedent (deps, optional-deps, ai-parrot core dep).",
+      "type": "read",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-loaders/pyproject.toml",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q014",
+      "intent": "Inspect ai-parrot-tools pyproject — second precedent, likely the one with per-backend extras (closest analog).",
+      "type": "read",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-tools/pyproject.toml",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q015",
+      "intent": "Inspect ai-parrot-pipelines pyproject — third precedent, useful for entry-point patterns.",
+      "type": "read",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot-pipelines/pyproject.toml",
+        "lines": null
+      }
+    },
+    {
+      "id": "Q016",
+      "intent": "Find every consumer of the three subsystems inside ai-parrot core (handlers, RAG pipelines, agents, tools) — sizes downstream impact and identifies imports that must keep working under either Option A or Option B.",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "from parrot\\.(embeddings|stores|rerankers)|import parrot\\.(embeddings|stores|rerankers)",
+        "path": "packages/ai-parrot/src",
+        "include": "*.py",
+        "max_results": 120
+      }
+    },
+    {
+      "id": "Q017",
+      "intent": "Identify the coupling sites pre-flagged in the source: handlers/stores, tools/vectorstoresearch, tools/multistoresearch, plus any others tying ai-parrot core to stores/embeddings/rerankers.",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "(vectorstoresearch|multistoresearch|VectorStoreRegistry|RerankerRegistry)",
+        "path": "packages/ai-parrot/src",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q018",
+      "intent": "Locate the concrete backends mentioned by the user (pgvector, milvus, arangodb, bigquery, faiss) — confirm they live in parrot/stores and not embeddings, and whether their deps are isolated behind extras today.",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "(class\\s+\\w*(Pgvector|Milvus|Arango|BigQuery|Faiss)\\w*|register.*['\\\"](pgvector|milvus|arangodb|bigquery|faiss)['\\\"])",
+        "path": "packages/ai-parrot/src",
+        "include": "*.py",
+        "max_results": 60
+      }
+    },
+    {
+      "id": "Q019",
+      "intent": "Find entry-point definitions in any sibling pyproject — the cleanest mechanism for a satellite package to register classes back into a Registry that lives in the host package.",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "\\[project\\.entry-points|entry_points",
+        "path": "packages",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q020",
+      "intent": "Check namespace/package configuration in the host ai-parrot pyproject (find_packages vs find_namespace_packages, [tool.setuptools.packages.find], where = src). Decides whether Option B works as-is or whether the host config must be amended before the new package can contribute submodules.",
+      "type": "grep",
+      "priority": 1,
+      "depth": 0,
+      "params": {
+        "pattern": "(namespace_packages|find_namespace_packages|\\[tool\\.setuptools|^packages\\s*=|^where\\s*=)",
+        "path": "packages/ai-parrot/pyproject.toml",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q021",
+      "intent": "Find recent activity on the three subsystem trees (embeddings, stores, rerankers) to avoid colliding with an in-flight refactor.",
+      "type": "git_log",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/embeddings",
+        "since": "90.days.ago",
+        "max_results": 15,
+        "with_diff": false
+      }
+    },
+    {
+      "id": "Q022",
+      "intent": "Recent activity on parrot/stores.",
+      "type": "git_log",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/stores",
+        "since": "90.days.ago",
+        "max_results": 15,
+        "with_diff": false
+      }
+    },
+    {
+      "id": "Q023",
+      "intent": "Recent activity on parrot/rerankers.",
+      "type": "git_log",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/rerankers",
+        "since": "90.days.ago",
+        "max_results": 15,
+        "with_diff": false
+      }
+    },
+    {
+      "id": "Q024",
+      "intent": "Recent activity on packages/ as a whole — captures the latest sibling-package decisions / conventions.",
+      "type": "git_log",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "path": "packages",
+        "since": "180.days.ago",
+        "max_results": 25,
+        "with_diff": false
+      }
+    },
+    {
+      "id": "Q025",
+      "intent": "Search prior SDD work for any existing decision on embeddings/stores/packaging splits or namespace-package strategy.",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "(ai-parrot-embeddings|ai-parrot-stores|ai-parrot-vectorstores|namespace.?package|PEP.?420|embeddings.*split|stores.*split)",
+        "path": "sdd",
+        "include": "*.md",
+        "max_results": 30
+      }
+    },
+    {
+      "id": "Q026",
+      "intent": "Look for the agents-lite profile and embeddings meta-extra definitions in the host pyproject — they'll need migration aliases.",
+      "type": "grep",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "pattern": "(agents-lite|^embeddings\\s*=|^stores\\s*=|^rerankers\\s*=)",
+        "path": "packages/ai-parrot/pyproject.toml",
+        "max_results": 40
+      }
+    },
+    {
+      "id": "Q027",
+      "intent": "Confirm whether parrot/bots/stores and parrot/handlers/stores are actually vector-store related (and thus subject to move) or unrelated state stores (stay in core).",
+      "type": "tree",
+      "priority": 2,
+      "depth": 0,
+      "params": {
+        "path": "packages/ai-parrot/src/parrot/handlers/stores",
+        "max_depth": 2
+      }
+    },
+    {
+      "id": "Q028",
+      "intent": "Check top-level docs (CONTEXT.md, README, roadmap) for stated direction on the embeddings/packaging split — avoid contradicting documented plans.",
+      "type": "grep",
+      "priority": 3,
+      "depth": 0,
+      "params": {
+        "pattern": "(ai-parrot-embeddings|split.*embeddings|split.*stores|namespace.?package)",
+        "path": ".",
+        "include": "*.md",
+        "exclude": "sdd/proposals/*",
+        "max_results": 25
+      }
+    }
+  ],
+  "expected_findings": [
+    "Verification that Option B (PEP 420 namespace package) is technically feasible: parrot/__init__.py is absent or namespace-compatible, and the host pyproject uses find_namespace_packages (or equivalent) for discovery.",
+    "Inventory of every extra tied to stores/embeddings/rerankers in the host pyproject, classified as moves vs stays.",
+    "Resolution mechanism for each of the three Registries (direct, string, entry points) — drives the registration strategy of the new package.",
+    "Concrete file list per subsystem (embeddings/stores/rerankers): which files are base/Registry/Abstract (stay) vs concrete backend (move).",
+    "Downstream import sites in ai-parrot core that must keep working byte-identically under the new namespace.",
+    "Recent commit signals confirming no in-flight refactor collision on any of the three subsystems."
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": [
+        "ai-parrot-embeddings",
+        "ai-parrot-embedding",
+        "EmbeddingsRegistry",
+        "VectorStoreRegistry",
+        "RerankerRegistry",
+        "parrot.stores",
+        "parrot.embeddings",
+        "parrot.rerankers",
+        "parrot_loaders",
+        "PEP 420",
+        "namespace package",
+        "pgvector",
+        "milvus",
+        "arangodb",
+        "bigquery",
+        "faiss"
+      ],
+      "verbs": [
+        "split",
+        "move",
+        "extract",
+        "keep",
+        "install",
+        "import"
+      ],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": {
+      "files_read": 14,
+      "grep_calls": 11,
+      "git_calls": 4
+    }
+  }
+}
