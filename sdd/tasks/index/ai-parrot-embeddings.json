@@ -14,7 +14,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Spec uses per-spec isolation (worktree-shared); all tasks run sequentially in the same worktree per spec §Worktree Strategy. This task is the gate every other depends on.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1333-satellite-package-scaffold.md"
+      "completed_at": "2026-05-28T14:25:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1333-satellite-package-scaffold.md"
     },
     {
       "id": "TASK-1334",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1333"],
+      "depends_on": [
+        "TASK-1333"
+      ],
       "parallel": false,
       "parallelism_notes": "Logically independent of TASK-1335 / TASK-1336 (different dirs), but all three edit the SAME satellite pyproject.toml extras block. Per-spec sequential isolation avoids the conflict.",
       "assigned_to": null,
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1333"],
+      "depends_on": [
+        "TASK-1333"
+      ],
       "parallel": false,
       "parallelism_notes": "Same as TASK-1334: shares the satellite pyproject; sequential per spec.",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1333"],
+      "depends_on": [
+        "TASK-1333"
+      ],
       "parallel": false,
       "parallelism_notes": "Same as TASK-1334: shares the satellite pyproject; sequential per spec.",
       "assigned_to": null,
@@ -89,7 +95,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1334", "TASK-1335", "TASK-1336"],
+      "depends_on": [
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
       "parallel": false,
       "parallelism_notes": "Edits the host pyproject; depends on all backend moves landing first (extras to remove reference what moved). Inherently sequential.",
       "assigned_to": null,
@@ -107,7 +117,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1333", "TASK-1334", "TASK-1335", "TASK-1336"],
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
       "parallel": false,
       "parallelism_notes": "Could run in parallel with TASK-1339 / TASK-1340 (no file overlap), but per-spec policy keeps them sequential to simplify worktree review.",
       "assigned_to": null,
@@ -125,7 +140,12 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1333", "TASK-1334", "TASK-1335", "TASK-1336"],
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335",
+        "TASK-1336"
+      ],
       "parallel": false,
       "parallelism_notes": "Logically independent of TASK-1338 / TASK-1340. Sequential per spec.",
       "assigned_to": null,
@@ -143,7 +163,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1334", "TASK-1335"],
+      "depends_on": [
+        "TASK-1334",
+        "TASK-1335"
+      ],
       "parallel": false,
       "parallelism_notes": "Independent of TASK-1336 / TASK-1337 / TASK-1338 / TASK-1339, but per-spec sequential.",
       "assigned_to": null,
@@ -161,7 +184,12 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1337", "TASK-1338", "TASK-1339", "TASK-1340"],
+      "depends_on": [
+        "TASK-1337",
+        "TASK-1338",
+        "TASK-1339",
+        "TASK-1340"
+      ],
       "parallel": false,
       "parallelism_notes": "Last task — needs the final install surface from TASK-1337 and test outcomes from TASK-1338-1340 stabilized before docs are written.",
       "assigned_to": null,
