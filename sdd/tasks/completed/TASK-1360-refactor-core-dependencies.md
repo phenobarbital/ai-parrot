@@ -166,4 +166,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+Changes to `packages/ai-parrot/pyproject.toml`:
+- Removed `matplotlib==3.10.0` and `seaborn==0.13.2` from BASE dependencies ✅
+- Removed from `[agents]`: streamlit, folium (duplicate), cairosvg ✅
+- Removed from `[agents-lite]`: folium ✅
+- Removed from `[mcp]`: folium ✅
+- Removed from `[images]`: holoviews, bokeh, pandas-bokeh, plotly, altair ✅
+- Redirected `[charts]` extra to `ai-parrot-visualizations[charts,infographic]` ✅
+- Added `[visualizations]` meta-extra: `ai-parrot-visualizations[all]` ✅
+- Updated `[all]` meta-extra to include `visualizations` ✅
+
+Also modified root `pyproject.toml`:
+- Added `ai-parrot-visualizations = { workspace = true }` to `[tool.uv.sources]`
+  (required for uv workspace dependency resolution)
+
+Installation verified:
+- `uv pip install -e packages/ai-parrot` succeeds without viz deps ✅
+- `uv pip install -e "packages/ai-parrot[visualizations]"` pulls satellite ✅
+- `import parrot` works without matplotlib installed ✅
