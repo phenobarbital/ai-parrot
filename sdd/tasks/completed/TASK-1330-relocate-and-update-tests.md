@@ -237,3 +237,19 @@ grep -n 'logger="parrot.knowledge.pageindex"' \
 ! grep -rn 'parrot\.pageindex' packages/ai-parrot/tests/ \
   && echo "all test references updated"
 ```
+
+---
+
+### Completion Note
+
+Completed by sdd-worker 2026-05-28.
+
+All 16 entries (14 test files + `__init__.py` + `fixtures/` directory) moved via `git mv`. sed replaced all 65 `parrot.pageindex` occurrences across moved test files including monkeypatch target strings and the `caplog.at_level(logger="parrot.pageindex")` at test_toolkit.py:947.
+
+Cross-subsystem test `test_loader_extractor.py` updated (3 sites: line 144 import, lines 164-165 monkeypatch strings).
+
+Pre-move baseline (from main repo): **2 failed, 167 passed** — same 2 pre-existing failures in `test_adapter.py::TestPageIndexLLMAdapter` (test_ask_structured_native, test_ask_structured_fallback_to_json). Post-move suite with PYTHONPATH override: **2 failed, 167 passed** — identical counts, confirming no new failures.
+
+Cross-subsystem test `test_loader_extractor.py`: **22 passed**.
+
+ruff check: 12 pre-existing errors (same 12 in original location, all F401 unused imports). Not fixed — out of scope.

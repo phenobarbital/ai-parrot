@@ -52,7 +52,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of TASK-1329/TASK-1331 (different file sets) but runs sequentially per worktree strategy. Captures the pre-move pytest baseline so the post-move suite can be diffed exactly.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1330-relocate-and-update-tests.md"
+      "completed_at": "2026-05-28T11:11:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1330-relocate-and-update-tests.md"
     },
     {
       "id": "TASK-1331",
