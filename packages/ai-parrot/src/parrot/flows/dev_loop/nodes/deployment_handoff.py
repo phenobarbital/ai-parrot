@@ -21,12 +21,11 @@ The node does NOT raise on the *blocked* path — it returns a structured
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import shutil
 from typing import Any, Dict, Optional
 
-from parrot.bots.flow.node import Node
+from parrot.bots.flows.core.node import Node
 from parrot.flows.dev_loop.models import (
     BugBrief,
     DevelopmentOutput,
@@ -63,21 +62,20 @@ class DeploymentHandoffNode(Node):
         base_branch: str = "dev",
         name: str = "deployment_handoff",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._jira = jira_toolkit
-        self._git = git_toolkit
-        self._gh_cli_path = gh_cli_path
-        self._target_repo = target_repo or os.environ.get(
-            "GITHUB_REPOSITORY", ""
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_jira", jira_toolkit)
+        object.__setattr__(self, "_git", git_toolkit)
+        object.__setattr__(self, "_gh_cli_path", gh_cli_path)
+        object.__setattr__(
+            self,
+            "_target_repo",
+            target_repo or os.environ.get("GITHUB_REPOSITORY", ""),
         )
-        self._base_branch = base_branch
-        self.logger = logging.getLogger(__name__)
+        object.__setattr__(self, "_base_branch", base_branch)
 
     @property
     def name(self) -> str:
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute

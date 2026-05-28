@@ -15,7 +15,7 @@ Users can also define custom templates programmatically.
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 
-from .infographic import BlockType
+from .infographic import BlockType, JSBundle  # JSBundle added by FEAT-197
 
 
 class BlockSpec(BaseModel):
@@ -55,6 +55,15 @@ class InfographicTemplate(BaseModel):
     default_theme: Optional[str] = Field(
         None,
         description="Default color theme for this template"
+    )
+    js_bundles: Optional[List[JSBundle]] = Field(
+        default=None,
+        description=(
+            "Optional list of JavaScript bundles this template may use.  "
+            "Consumed by the enhance pipeline (SRI whitelist) and the "
+            "HTML-serving CSP builder.  Built-in templates leave this None. "
+            "(FEAT-197)"
+        ),
     )
 
     def to_prompt_instruction(self) -> str:
@@ -362,6 +371,62 @@ TEMPLATE_MINIMAL = InfographicTemplate(
 )
 
 
+TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
+    name="financial_variance",
+    description=(
+        "Financial projection variance dashboard: 4 KPI hero cards, 2 day-over-day "
+        "bar charts side-by-side, 1 cumulative trend line chart full-width, and an "
+        "executive summary. Ideal for daily/period financial tracking where the "
+        "reader needs both per-period deltas and a cumulative view."
+    ),
+    default_theme="light",
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.TITLE,
+            description="Report title and the date range covered (e.g. 'May 14 – 27, 2026')",
+        ),
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            description=(
+                "Exactly 4 KPI cards in this order: (1) headline metric current value, "
+                "(2) period variance with trend, (3) secondary metric current value, "
+                "(4) day-over-day delta with trend"
+            ),
+            min_items=4,
+            max_items=4,
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            description=(
+                "Two bar charts side-by-side showing day-over-day change for the two "
+                "headline metrics. BOTH charts MUST set layout='half' so the frontend "
+                "renders them in a 2-column grid. Use chart_type='bar' and one series each."
+            ),
+            min_items=2,
+            max_items=2,
+            constraints={"chart_type": "bar", "layout": "half"},
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            description=(
+                "Cumulative trend line chart across the same date range, full width "
+                "(layout='full' or omitted). Single series, smooth line."
+            ),
+            min_items=1,
+            max_items=1,
+            constraints={"chart_type": "line", "layout": "full"},
+        ),
+        BlockSpec(
+            block_type=BlockType.SUMMARY,
+            description=(
+                "Executive summary (2-4 sentences) that ties the 4 KPIs and the trend "
+                "together. Call out the largest delta and its likely driver."
+            ),
+        ),
+    ],
+)
+
+
 TEMPLATE_MULTI_TAB = InfographicTemplate(
     name="multi_tab",
     description=(
@@ -415,6 +480,7 @@ class InfographicTemplateRegistry:
             TEMPLATE_TIMELINE_REPORT,
             TEMPLATE_MINIMAL,
             TEMPLATE_MULTI_TAB,
+            TEMPLATE_FINANCIAL_VARIANCE,
         ):
             self._templates[tpl.name] = tpl
 
@@ -469,3 +535,53 @@ class InfographicTemplateRegistry:
 
 # Module-level singleton registry
 infographic_registry = InfographicTemplateRegistry()
+
+
+# ── FEAT-197: financial_projection_variance template ─────────────────────────
+# Registered outside the _register_builtins() block so it can reference
+# JSBundle (added by FEAT-197) without touching the seven built-in definitions.
+
+TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
+    name="financial_projection_variance",
+    description=(
+        "4 hero cards (total revenue, total EBITDA, EBITDA margin, largest swing) "
+        "+ 2 DoD bar charts (revenue, EBITDA) + 1 cumulative line chart."
+    ),
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            min_items=4,
+            max_items=4,
+            description="4 KPI cards: total revenue, total EBITDA, EBITDA margin, largest daily swing.",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Day-over-day revenue bar chart (uses rev_daily DataFrame).",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Day-over-day EBITDA bar chart (uses ebitda_daily DataFrame).",
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            required=True,
+            description="Cumulative revenue line chart (uses rev_cumulative DataFrame).",
+        ),
+    ],
+    default_theme="dark",
+    js_bundles=[
+        JSBundle(
+            name="echarts",
+            scope="cdn",
+            url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
+            # Hash computed via:
+            #   curl -sL "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js" | \
+            #     openssl dgst -sha384 -binary | base64 | tr -d '\n'
+            sri_hash="sha384-BQKzmHvQLMCAnL3UtDBA1Al5tFjsCz1wrMlIUA1wkzo14DYkRWjywW+p9pCj0cwd",
+        ),
+    ],
+)
+
+infographic_registry.register(TEMPLATE_FINANCIAL_PROJECTION_VARIANCE)

@@ -6,6 +6,9 @@
 **Status**: approved
 **Target version**: 0.6.x (`ai-parrot`, post-FEAT-129)
 
+> **Note (FEAT-196, 2026-05-28)**: Code examples reference `parrot.bots.flow` (singular,
+> deleted). Use `parrot.bots.flows` instead.
+
 ---
 
 ## 1. Motivation & Business Requirements

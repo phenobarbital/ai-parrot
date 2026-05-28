@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-from parrot.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
 
 
 class TestFilesystemTransportConfig:
@@ -63,5 +63,5 @@ class TestFilesystemTransportConfig:
 
     def test_import_from_package(self):
         """Import works from the package __init__."""
-        from parrot.transport.filesystem import FilesystemTransportConfig as Cfg
+        from parrot.autonomous.transport.filesystem import FilesystemTransportConfig as Cfg
         assert Cfg is FilesystemTransportConfig

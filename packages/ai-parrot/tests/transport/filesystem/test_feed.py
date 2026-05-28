@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from parrot.transport.filesystem.config import FilesystemTransportConfig
-from parrot.transport.filesystem.feed import ActivityFeed
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.feed import ActivityFeed
 
 
 @pytest.fixture

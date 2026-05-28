@@ -12,7 +12,7 @@ Tests verify:
 import pytest
 from pydantic import ValidationError
 
-from parrot.bots.flow.definition import (
+from parrot.bots.flows.flow.definition import (
     EdgeDefinition,
     FlowDefinition,
     NodeDefinition,

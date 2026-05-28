@@ -1,0 +1,69 @@
+{
+  "feature_id": "FEAT-203",
+  "feature": "ai-parrot-server",
+  "title": "Extract server infrastructure into ai-parrot-server PEP 420 namespace package",
+  "type": "feature",
+  "base_branch": "dev",
+  "started_at": "2026-05-29T00:00:00Z",
+  "updated_at": "2026-05-29T00:00:00Z",
+  "phase": "committed",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "loose",
+    "files_read": 100,
+    "grep_calls": 60,
+    "git_calls": 20,
+    "depth": 3,
+    "wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 85,
+    "grep_calls": 50,
+    "git_calls": 5,
+    "depth_reached": 2,
+    "wall_seconds": 120
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Extract server infrastructure into ai-parrot-server PEP 420 namespace package"
+  },
+  "phases": {
+    "plan": {
+      "status": "completed",
+      "approved_by_user": true
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-05-29T00:00:00Z",
+      "completed_at": "2026-05-29T00:05:00Z",
+      "files_read": 85,
+      "grep_calls": 50,
+      "git_calls": 5,
+      "queries_executed": 6,
+      "queries_skipped": 0
+    },
+    "synthesis": {
+      "status": "completed"
+    },
+    "review_gate": {
+      "status": "completed",
+      "user_refinement": "Move BotManager to satellite as well"
+    },
+    "qa": {
+      "status": "completed",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/ai-parrot-server.proposal.md",
+      "commit_sha": null
+    }
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Commit proposal and state files"
+  }
+}

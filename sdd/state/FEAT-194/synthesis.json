@@ -1,0 +1,197 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-194",
+  "feature_slug": "agentalk-infographic-mode",
+  "detected_mode": "enrichment",
+  "overall_confidence": "high",
+  "synthesis_summary": "AgentTalk + infographic + Skill primitives already exist as fully-shipped pieces; FEAT-194 is a wiring + envelope feature, not a greenfield build. `OutputMode.INFOGRAPHIC` is a first-class enum member with both a structured-JSON renderer (`InfographicRenderer`) and a full HTML5+ECharts renderer (`InfographicHTMLRenderer`). `bot.get_infographic()` already implements the one-shot flow: auto-detect template → instruct LLM with `to_prompt_instruction()` → call `bot.ask(structured_output=InfographicResponse, output_mode=INFOGRAPHIC)` → render HTML. The 2-step UX the user wants to eliminate is a HANDLER-LAYER artifact: `bot.get_infographic()` is only exposed via the dedicated `POST /api/v1/agents/infographic/{agent_id}` route, not via the main `POST /api/v1/agents/chat/{agent_id}`. AgentTalk's `bot.ask(output_mode=INFOGRAPHIC)` path gets the LLM system prompt but never runs the HTML render step. The Skill primitive (FEAT-188, shipped) is the right vehicle for the user's 'instruir al LLM con un template' goal — Skills are token-budgeted markdown files with triggers that get prompt-injected at configure() time. The genuine new work is therefore: (1) collapse the 2-step in AgentTalk by routing `output_mode=infographic` through the same template-detection + HTML-render pipeline as `get_infographic()`, (2) surface generated datasets in the AIMessage envelope (today only `artifacts: List[Dict]` exists and is used for SQL/code, not datasets), and (3) author the convention for finance-flavoured Skills that name an existing or custom-registered InfographicTemplate.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/models/outputs.py",
+      "symbol": "OutputMode.INFOGRAPHIC",
+      "lines": "70",
+      "role": "Mode that triggers the infographic system prompt + renderer dispatch",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/formats/infographic.py",
+      "symbol": "InfographicRenderer",
+      "lines": "49-78",
+      "role": "Registered renderer for INFOGRAPHIC mode; emits structured JSON",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/formats/infographic_html.py",
+      "symbol": "InfographicHTMLRenderer.render_to_html",
+      "lines": "647-711",
+      "role": "Self-contained HTML5+ECharts renderer (currently invoked imperatively, NOT registered)",
+      "evidence": ["F001", "F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/infographic_templates.py",
+      "symbol": "InfographicTemplate.to_prompt_instruction / infographic_registry",
+      "lines": "47-152, 398-471",
+      "role": "Named templates that generate per-slot LLM prompt instructions; pluggable via register()",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/abstract.py",
+      "symbol": "AbstractBot.get_infographic / _detect_infographic_template",
+      "lines": "3743-3893",
+      "role": "Existing one-shot orchestrator: auto-detect template → ask(INFOGRAPHIC) → render HTML",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/infographic.py",
+      "symbol": "InfographicTalk._generate_infographic",
+      "lines": "135-242",
+      "role": "Dedicated 2-step POST endpoint that calls bot.get_infographic(); auto-saves Artifact",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/agent.py",
+      "symbol": "AgentTalk.post (bot.ask call site)",
+      "lines": "1550-1563",
+      "role": "Main chat POST — calls bot.ask(output_mode=...); does NOT route INFOGRAPHIC through the HTML render step",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/handlers/agent.py",
+      "symbol": "AgentTalk.post (followup branch)",
+      "lines": "1533-1547",
+      "role": "Current 2-step mechanism (followup_turn_id + followup_data) — the UX the user wants to eliminate",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/mixin.py",
+      "symbol": "SkillRegistryMixin._configure_skill_file_registry",
+      "lines": "139-249",
+      "role": "FEAT-188 prompt-injection of <available_skills> + LoadSkillTool + SkillTriggerMiddleware",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/skills/models.py",
+      "symbol": "SkillDefinition",
+      "lines": "53-84",
+      "role": "Markdown + YAML-frontmatter skill primitive, ≤1000 tokens, with triggers",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/responses.py",
+      "symbol": "AIMessage.artifacts / add_artifact",
+      "lines": "206-208, 271-281",
+      "role": "Only structured envelope slot for generated artefacts today — no `datasets` field",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/formats/application.py",
+      "symbol": "OutputMode.APPLICATION / ApplicationRenderer",
+      "lines": "19-87",
+      "role": "Reference: APPLICATION mode produces Streamlit/Panel CODE, not HTML — wrong vehicle for FEAT-194",
+      "evidence": ["F007"]
+    }
+  ],
+  "constraints": [
+    {
+      "constraint": "Skills cap at 1000 tokens (`SkillDefinition.MAX_TOKENS = 1000`). A finance-dashboard Skill body must fit within that budget — likely 'when the user asks for a finance dashboard, fetch revenue/EBITDA per day via <named query tool>, then return an InfographicResponse using template <X>' — short and pointy.",
+      "evidence": ["F005"],
+      "confidence": "high"
+    },
+    {
+      "constraint": "`InfographicHTMLRenderer` is NOT registered via `@register_renderer` — it's invoked imperatively in `get_infographic()`. If the goal is to make the main `bot.ask()` path also render HTML, either register it for a content-negotiated variant or hoist the render step into the OutputFormatter pipeline.",
+      "evidence": ["F001", "F004"],
+      "confidence": "high"
+    },
+    {
+      "constraint": "AgentTalk POST's `bot.ask(output_mode, structured_output, ...)` does not pass a `template` argument. The auto-detect-template pre-pass currently only runs inside `get_infographic()`. If AgentTalk takes over the one-shot flow, the template-detection step must move (or `bot.ask` must accept template/theme directly).",
+      "evidence": ["F003", "F004"],
+      "confidence": "high"
+    },
+    {
+      "constraint": "PBAC gates apply: `agent:chat` for the conversation route, `agent:configure` for template registration (`POST /infographic/templates`), `dataset:query` for DatasetManager filtering. A new flow must respect them.",
+      "evidence": ["F003", "F006"],
+      "confidence": "high"
+    },
+    {
+      "constraint": "Auto-save of generated infographics as `Artifact(type=INFOGRAPHIC)` is fire-and-forget today and lives in the dedicated handler (`InfographicTalk._auto_save_infographic_artifact`). If AgentTalk absorbs the flow, the same auto-save must run there or be lifted to the bot level.",
+      "evidence": ["F003"],
+      "confidence": "medium"
+    },
+    {
+      "constraint": "Datasets currently flow IN via `DatasetManager` (session-scoped, PBAC-filtered, table sources evicted per turn) but are NOT echoed back in `AIMessage`. The user's 'datasets must be available' requirement is unmet today.",
+      "evidence": ["F006"],
+      "confidence": "high"
+    }
+  ],
+  "recent_history": [
+    {"summary": "FEAT-188 skill-registry mixin tasks (TASK-1287 through TASK-1294) shipped in the last sprint — namespace promotion, directory loader, prompt layer, LoadSkillTool, mixin wiring.", "evidence": ["F005"], "confidence": "high"},
+    {"summary": "FEAT-095 InfographicTalk handler (TASK-650) was the most recent infographic-handler change — it introduced the dedicated POST endpoint and content negotiation that the user now wants to fold back into AgentTalk.", "evidence": ["F003"], "confidence": "high"},
+    {"summary": "Multi-tab infographic renderer updates (TASK-661-664) and HTML block renderers (TASK-645/646) shipped before FEAT-095 — the renderer is mature.", "evidence": ["F001"], "confidence": "medium"},
+    {"summary": "FEAT-103 (agent-artifact-persistency) wired auto-save Artifacts to handlers (commit `12749bce`); the infographic handler reuses that machinery.", "evidence": ["F003"], "confidence": "high"}
+  ],
+  "hypotheses": [
+    {
+      "id": "H1",
+      "statement": "Make `OutputMode.INFOGRAPHIC` a first-class one-shot output of AgentTalk's main POST (Option A) — hoist the template-detect + ask + HTML-render pipeline from `get_infographic()` into a bot-level method that AgentTalk dispatches when `output_mode=infographic`. Pair with: (a) a registered Skill (FEAT-188 markdown file) that activates on the user's trigger and instructs the LLM which template to use and which datasets to fetch via existing tools; (b) extend `AIMessage` with a `datasets: List[DatasetEnvelope]` field (or formalise `artifacts` with `type='dataset'`) so the generated data flows back to the caller.",
+      "confidence": "high",
+      "supporting": ["F001", "F002", "F003", "F004", "F005", "F006"],
+      "reasoning": "All four primitives already exist and ship in production (OutputMode, renderers, templates, get_infographic flow, Skills). The actual gap is a thin orchestration layer in AgentTalk plus a structured envelope slot for datasets. This avoids inventing a new abstraction and reuses the existing render+autosave pipeline. The user's three options collapse: 'new OutputMode' is already true (just not dispatched from the main route); 'Skill names a template' is already supported by `_detect_infographic_template` + the registry's `register_template()`; 'Toolkit that receives N datasets and invokes the system' is over-engineered because rendering is not a tool — it is post-LLM output formatting, which OutputMode already covers."
+    },
+    {
+      "id": "H2",
+      "statement": "Build a new `InfographicToolkit` (Option B) that the agent calls inside its ReAct loop with explicit datasets to populate a template, returning HTML as a tool-call result that becomes the final answer.",
+      "confidence": "low",
+      "supporting": ["F007"],
+      "reasoning": "This conflates two concerns: rendering (post-LLM output formatting, which is what OutputMode is for) with tool calls (interaction with the world inside the ReAct loop). The existing `OutputMode.APPLICATION` shows the framework already separates the two cleanly: tools fetch/compute, an OutputMode renders. Adding a toolkit would duplicate `InfographicHTMLRenderer` behind a tool wrapper for no architectural gain, while losing the existing `structured_output=InfographicResponse` validation. Recommended against — but listed because the user explicitly asked it."
+    },
+    {
+      "id": "H3",
+      "statement": "Keep the dual endpoints (status quo): the user keeps invoking `POST /infographic/{agent_id}` as today (Option C interpreted minimally — 'Skill simply names a pre-existing template').",
+      "confidence": "low",
+      "supporting": ["F003"],
+      "reasoning": "This preserves the 2-step UX the user wants to eliminate. It also keeps two divergent routes, two PBAC paths, two auto-save callsites, and two content-negotiation implementations. The user's brief explicitly says 'no tener que realizarla en dos pasos como ahora' — H3 contradicts that goal."
+    }
+  ],
+  "confidence_map": [
+    {"claim": "OutputMode.INFOGRAPHIC, InfographicRenderer, and InfographicHTMLRenderer already ship", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "Named templates with per-slot LLM prompt generation and a programmatic registry already ship", "confidence": "high", "evidence": ["F002"]},
+    {"claim": "bot.get_infographic() is already a one-shot template-detect → ask → render-HTML pipeline; only the route exposing it is dedicated, not main chat", "confidence": "high", "evidence": ["F003", "F004"]},
+    {"claim": "AgentTalk's main POST does NOT dispatch OutputMode.INFOGRAPHIC to the HTML renderer; it only injects the system prompt via the renderer registry", "confidence": "high", "evidence": ["F003"]},
+    {"claim": "Skills (FEAT-188) inject as prompt context with triggers + ≤1000 tokens — the right vehicle for 'instruct the LLM to fetch finance datasets and use the dashboard template'", "confidence": "high", "evidence": ["F005"]},
+    {"claim": "AIMessage has no first-class datasets field; only `artifacts: List[Dict]` (loose) is available, today used for SQL/code", "confidence": "high", "evidence": ["F006"]},
+    {"claim": "OutputMode.APPLICATION produces Streamlit/Panel code, not HTML — not the right vehicle", "confidence": "high", "evidence": ["F007"]},
+    {"claim": "Auto-save of Artifact(INFOGRAPHIC) is fire-and-forget in the dedicated handler; lifting it into the bot or AgentTalk is a small refactor", "confidence": "medium", "evidence": ["F003"]},
+    {"claim": "The user's 'finance dashboard' mockup is approximately covered by the existing `dashboard` template; a custom template registered via `register_template()` would tailor it", "confidence": "medium", "evidence": ["F002"]}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "When AgentTalk receives `output_mode=infographic` on the main `/chat/` endpoint, should it auto-render HTML (matching `get_infographic()` behaviour) — or keep structured JSON and let the frontend negotiate via Accept header?",
+      "resolves_claims": ["agent.py dispatch shape"]
+    },
+    {
+      "id": "U2",
+      "question": "Multi-dataset return ALREADY works for PandasAgent/DatabaseAgent via `data_variables: List[str]` → `_inject_multi_data_from_variables` → `response.data = List[DatasetResult]` (see F008). Question: should FEAT-194 promote `DatasetResult` to a typed `AIMessage.datasets: List[DatasetResult]` field for cross-agent use, or keep relying on PandasAgent's pipeline (which means the infographic flow must inherit from PandasAgent)?",
+      "resolves_claims": ["F006 — datasets envelope", "F008 — opt-in mechanism"]
+    },
+    {
+      "id": "U3",
+      "question": "Should the finance-flavoured Skill carry an `InfographicTemplate` payload inline (so the Skill ships its own custom layout) — or only reference an already-registered template name (e.g. `dashboard` or a separately-registered `finance-dashboard`)?",
+      "resolves_claims": ["F002 — template scope"]
+    },
+    {
+      "id": "U4",
+      "question": "Is the 4-hero-cards + 2-charts + 1-cumulative-chart layout in the attached image a one-off for finance, or the first of N domain-specific templates that should be batch-registered (e.g. `finance-dashboard`, `ops-dashboard`, `marketing-dashboard`)?",
+      "resolves_claims": ["scope of template additions"]
+    },
+    {
+      "id": "U5",
+      "question": "Should auto-save of `Artifact(INFOGRAPHIC)` (today in `InfographicTalk._auto_save_infographic_artifact`) move into AgentTalk for the new path, or be lifted to a bot-level hook so both routes share it?",
+      "resolves_claims": ["F003 — auto-save"]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization confidence is high (12 verified citations across 7 findings), constraints are concrete, and H1 is well-supported by existing primitives. The work is wiring + envelope, not greenfield. A spec — with U1/U2/U3/U5 resolved during Q&A and U4 treated as P2 — is the right next step. /sdd-brainstorm would be redundant: H2 and H3 are already discounted by the research."
+  }
+}

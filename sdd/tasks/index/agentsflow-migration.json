@@ -1,0 +1,223 @@
+{
+  "feature": "agentsflow-migration",
+  "feature_id": "FEAT-196",
+  "spec": "sdd/specs/agentsflow-migration.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-28T00:59:57+00:00",
+  "completed_at": "2026-05-28T14:57:57.648659+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1308",
+      "slug": "agentsflow-migration-subpackage-skeleton",
+      "title": "flows/flow/ subpackage skeleton (L1 \u2014 Module 1)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "First task \u2014 no parallelism possible; all subsequent tasks depend on this.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:05:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1308-agentsflow-migration-subpackage-skeleton.md"
+    },
+    {
+      "id": "TASK-1309",
+      "slug": "agentsflow-migration-move-only-files",
+      "title": "Move-only relocations \u2014 5 files (L1 \u2014 Module 2)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1308"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on subpackage skeleton; can run in parallel with TASK-1311.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:07:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1309-agentsflow-migration-move-only-files.md"
+    },
+    {
+      "id": "TASK-1310",
+      "slug": "agentsflow-migration-storage-reconciliation",
+      "title": "Storage reconciliation (L2 \u2014 Module 3)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1308",
+        "TASK-1309"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1309 (move-only files must be in place). Can run in parallel with TASK-1311.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:09:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1310-agentsflow-migration-storage-reconciliation.md"
+    },
+    {
+      "id": "TASK-1311",
+      "slug": "agentsflow-migration-decision-nodes",
+      "title": "flows/flow/nodes.py \u2014 decision + interactive nodes (L3 \u2014 Module 4)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1308"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-1308 only; can run in parallel with TASK-1309 and TASK-1310.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1311-agentsflow-migration-decision-nodes.md"
+    },
+    {
+      "id": "TASK-1312",
+      "slug": "agentsflow-migration-internal-repointing",
+      "title": "AgentsFlow class internal repointing (L4 \u2014 Module 5)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1308",
+        "TASK-1309",
+        "TASK-1310",
+        "TASK-1311"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Critical decoupling step \u2014 must follow all L1-L3 tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:20:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1312-agentsflow-migration-internal-repointing.md"
+    },
+    {
+      "id": "TASK-1313",
+      "slug": "agentsflow-migration-devloop-repointing",
+      "title": "parrot/flows/dev_loop/ consumer repointing (L5 \u2014 Module 6)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1312"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Can run in parallel with TASK-1314 (both depend on TASK-1312).",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T01:22:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1313-agentsflow-migration-devloop-repointing.md"
+    },
+    {
+      "id": "TASK-1314",
+      "slug": "agentsflow-migration-test-suite-repointing",
+      "title": "Test suite repointing + broken-test refactor (L5 \u2014 Module 7)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-1312",
+        "TASK-1313"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Largest single task; depends on TASK-1312 and TASK-1313.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T11:30:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1314-agentsflow-migration-test-suite-repointing.md"
+    },
+    {
+      "id": "TASK-1315",
+      "slug": "agentsflow-migration-curate-flows-init",
+      "title": "Curate parrot/bots/flows/__init__.py (L5 \u2014 Module 8)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1312",
+        "TASK-1313",
+        "TASK-1314"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final L5 step; must follow test suite repointing.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T11:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1315-agentsflow-migration-curate-flows-init.md"
+    },
+    {
+      "id": "TASK-1316",
+      "slug": "agentsflow-migration-delete-legacy-package",
+      "title": "Delete parrot/bots/flow/ entirely (L6 \u2014 Module 9)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1308",
+        "TASK-1309",
+        "TASK-1310",
+        "TASK-1311",
+        "TASK-1312",
+        "TASK-1313",
+        "TASK-1314",
+        "TASK-1315"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final deletion step \u2014 depends on ALL prior tasks.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T11:42:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1316-agentsflow-migration-delete-legacy-package.md"
+    },
+    {
+      "id": "TASK-1317",
+      "slug": "agentsflow-migration-docs-and-feat009-obsolete",
+      "title": "Mark FEAT-009 obsolete + docs sweep (L6 \u2014 Module 10)",
+      "feature_id": "FEAT-196",
+      "feature": "agentsflow-migration",
+      "spec": "sdd/specs/agentsflow-migration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1316"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final bookkeeping; depends on deletion task.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T01:01:35+00:00",
+      "completed_at": "2026-05-28T11:45:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1317-agentsflow-migration-docs-and-feat009-obsolete.md"
+    }
+  ]
+}

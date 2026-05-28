@@ -1,0 +1,151 @@
+{
+  "feature": "ai-parrot-visualizations",
+  "feature_id": "FEAT-200",
+  "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-28T19:00:00+02:00",
+  "completed_at": "2026-05-28T18:37:25+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1355",
+      "slug": "scaffold-satellite-package",
+      "title": "Scaffold ai-parrot-visualizations satellite package",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No file overlap with TASK-1356; can run in parallel",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T15:59:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1355-scaffold-satellite-package.md"
+    },
+    {
+      "id": "TASK-1356",
+      "slug": "enable-pep420-core",
+      "title": "Enable PEP 420 namespace merging in core outputs package",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Modifies only core __init__.py files; no overlap with TASK-1355",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T16:04:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1356-enable-pep420-core.md"
+    },
+    {
+      "id": "TASK-1357",
+      "slug": "move-heavy-viz-renderers",
+      "title": "Move heavy visualization renderers to satellite",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1355",
+        "TASK-1356"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Moves different files than TASK-1358; could run in parallel after deps met",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T16:13:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1357-move-heavy-viz-renderers.md"
+    },
+    {
+      "id": "TASK-1358",
+      "slug": "move-infographic-messaging-utility",
+      "title": "Move infographic, messaging, and utility renderers to satellite",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1355",
+        "TASK-1356"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Moves different files than TASK-1357; could run in parallel after deps met",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T16:18:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1358-move-infographic-messaging-utility.md"
+    },
+    {
+      "id": "TASK-1359",
+      "slug": "migrate-direct-imports",
+      "title": "Migrate direct InfographicHTMLRenderer imports to registry",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1358"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies files that depend on infographic_html being in satellite",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T16:21:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1359-migrate-direct-imports.md"
+    },
+    {
+      "id": "TASK-1360",
+      "slug": "refactor-core-dependencies",
+      "title": "Refactor core pyproject.toml dependencies",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1357",
+        "TASK-1358"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both move tasks completing first",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T16:46:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1360-refactor-core-dependencies.md"
+    },
+    {
+      "id": "TASK-1361",
+      "slug": "integration-tests-validation",
+      "title": "Integration tests and full validation",
+      "feature_id": "FEAT-200",
+      "feature": "ai-parrot-visualizations",
+      "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1359",
+        "TASK-1360"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after all code changes are complete",
+      "assigned_to": null,
+      "started_at": "2026-05-28T15:51:50+00:00",
+      "completed_at": "2026-05-28T18:37:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1361-integration-tests-validation.md"
+    }
+  ]
+}

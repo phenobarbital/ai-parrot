@@ -1,0 +1,84 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-194",
+  "feature_slug": "agentalk-infographic-mode",
+  "started_at": "2026-05-28T00:34:40Z",
+  "updated_at": "2026-05-28T00:34:40Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-194/source.md",
+    "fetched_at": "2026-05-28T00:34:40Z",
+    "summary_oneline": "New AgentTalk OutputMode (or Toolkit) that produces an HTML infographic artifact directly from agent response, fed by skill-defined datasets and a layout template"
+  },
+  "mode": "auto",
+  "phase": "synthesis_complete",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-05-28T00:34:40Z",
+      "completed_at": "2026-05-28T00:34:40Z",
+      "duration_seconds": 0
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-05-28T00:35:00Z",
+      "completed_at": "2026-05-28T00:36:30Z",
+      "duration_seconds": 90,
+      "queries_total": 27,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-194/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-05-28T00:36:30Z",
+      "completed_at": "2026-05-28T00:50:00Z",
+      "duration_seconds": 810,
+      "queries_executed": 17,
+      "queries_skipped": 10,
+      "depth_reached": 1,
+      "files_read": 16,
+      "grep_calls": 4,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-05-28T00:50:00Z",
+      "completed_at": "2026-05-28T00:55:00Z",
+      "duration_seconds": 300,
+      "synthesis_path": "sdd/state/FEAT-194/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 9,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 0,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 0
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 16,
+    "grep_calls": 4,
+    "git_calls": 1,
+    "wall_seconds": 900
+  },
+  "resume_hint": {
+    "next_phase": "plan_approved",
+    "next_action": "Await user approval (y / edit / abort) on the 27-query research plan"
+  }
+}

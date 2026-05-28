@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from aiohttp import web
 
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
-from parrot.integrations.oauth2.service import IntegrationsService
+from parrot.auth.oauth2.service import IntegrationsService
 
 if TYPE_CHECKING:  # pragma: no cover - type-checking only
     from .jira_oauth import JiraOAuthManager, JiraTokenSet

@@ -1,0 +1,112 @@
+{
+  "feature": "move-pageindex-kb",
+  "feature_id": "FEAT-198",
+  "spec": "sdd/specs/move-pageindex-kb.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-28T00:00:00Z",
+  "completed_at": "2026-05-28T11:15:57+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1328",
+      "slug": "move-pageindex-package",
+      "title": "Move pageindex package directory and rewrite internal references",
+      "feature_id": "FEAT-198",
+      "feature": "move-pageindex-kb",
+      "spec": "sdd/specs/move-pageindex-kb.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — must land before any other FEAT-198 task. Sequential within the feature worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T11:03:36+00:00",
+      "completed_at": "2026-05-28T11:07:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1328-move-pageindex-package.md"
+    },
+    {
+      "id": "TASK-1329",
+      "slug": "update-production-importers",
+      "title": "Update production source-code importers to parrot.knowledge.pageindex",
+      "feature_id": "FEAT-198",
+      "feature": "move-pageindex-kb",
+      "spec": "sdd/specs/move-pageindex-kb.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches files disjoint from TASK-1330 and TASK-1331 — could in theory run concurrently after TASK-1328, but per FEAT-198 worktree strategy all tasks run sequentially in the single feature worktree.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T11:03:36+00:00",
+      "completed_at": "2026-05-28T11:09:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1329-update-production-importers.md"
+    },
+    {
+      "id": "TASK-1330",
+      "slug": "relocate-and-update-tests",
+      "title": "Relocate tests/test_pageindex/ to tests/knowledge/pageindex/ and update references",
+      "feature_id": "FEAT-198",
+      "feature": "move-pageindex-kb",
+      "spec": "sdd/specs/move-pageindex-kb.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Independent of TASK-1329/TASK-1331 (different file sets) but runs sequentially per worktree strategy. Captures the pre-move pytest baseline so the post-move suite can be diffed exactly.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T11:03:36+00:00",
+      "completed_at": "2026-05-28T11:11:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1330-relocate-and-update-tests.md"
+    },
+    {
+      "id": "TASK-1331",
+      "slug": "update-examples-and-docs",
+      "title": "Update examples and documentation imports to new path",
+      "feature_id": "FEAT-198",
+      "feature": "move-pageindex-kb",
+      "spec": "sdd/specs/move-pageindex-kb.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Doc-only changes — could parallel-run with TASK-1329/TASK-1330 in different worktrees, but FEAT-198 uses a single worktree so this stays sequential.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T11:03:36+00:00",
+      "completed_at": "2026-05-28T11:13:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1331-update-examples-and-docs.md"
+    },
+    {
+      "id": "TASK-1332",
+      "slug": "verification-lint-and-cleanup",
+      "title": "Repo-wide verification, lint, full suite, and cleanup",
+      "feature_id": "FEAT-198",
+      "feature": "move-pageindex-kb",
+      "spec": "sdd/specs/move-pageindex-kb.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1328",
+        "TASK-1329",
+        "TASK-1330",
+        "TASK-1331"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Verification gate — must run last. Depends on every other FEAT-198 task.",
+      "assigned_to": null,
+      "started_at": "2026-05-28T11:03:36+00:00",
+      "completed_at": "2026-05-28T11:15:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1332-verification-lint-and-cleanup.md"
+    }
+  ]
+}

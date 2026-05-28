@@ -6,16 +6,16 @@ import tempfile
 import pytest
 import pytest_asyncio
 
-from parrot.autonomous.hooks.base import BaseHook
-from parrot.autonomous.hooks.manager import HookManager
-from parrot.autonomous.hooks.models import (
+from parrot.core.hooks.base import BaseHook
+from parrot.core.hooks.manager import HookManager
+from parrot.core.hooks.models import (
     HookEvent,
     HookType,
     SchedulerHookConfig,
     FileWatchdogHookConfig,
 )
-from parrot.autonomous.hooks.scheduler import SchedulerHook
-from parrot.autonomous.hooks.file_watchdog import FileWatchdogHook
+from parrot.core.hooks.scheduler import SchedulerHook
+from parrot.core.hooks.file_watchdog import FileWatchdogHook
 
 
 # ---------------------------------------------------------------------------

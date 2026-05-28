@@ -8,9 +8,14 @@ base_branch: dev
 **Feature ID**: FEAT-163
 **Date**: 2026-05-11
 **Author**: Jesus
-**Status**: approved
+**Status**: implemented
 **Target version**: next minor
 **Depends on**: FEAT-134 (`flow-primitives`, merged), FEAT-143 (`agent-crew-primitives-migration`, merged)
+
+> **Note (FEAT-196, 2026-05-28)**: Code examples in this spec reference `parrot.bots.flow`
+> (singular, deleted in FEAT-196). The new canonical paths are `parrot.bots.flows` (plural).
+> This spec describes the FEAT-163 design work; the actual deletion of `parrot.bots.flow/`
+> was completed by FEAT-196.
 **Source**: `sdd/proposals/agentsflow-refactor-spec3.brainstorm.md` (Option C, 15 resolved questions; B-lite reconciliation for the `core.node.AgentNode` reuse)
 
 ---

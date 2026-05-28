@@ -4,6 +4,13 @@ Human-in-the-Loop (HITL) Architecture for AI-Parrot.
 Provides agent-level (HumanTool) and flow-level (HumanDecisionNode)
 human interaction capabilities with pluggable communication channels.
 """
+# Merge with the ai-parrot-integrations satellite, which contributes
+# parrot/human/channels/telegram.py. Without extend_path this stays a
+# single-directory package and the satellite's channel modules (resolved
+# lazily below, e.g. TelegramHumanChannel) are never found.
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 import importlib
 from typing import TYPE_CHECKING, Optional
 

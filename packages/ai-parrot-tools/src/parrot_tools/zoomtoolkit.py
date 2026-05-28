@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from navconfig import config
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.tools.decorators import tool_schema
-from parrot.integrations.zoom.client import ZoomUsInterface
+from parrot_tools.zoom.client import ZoomUsInterface
 
 
 class GetAccountSettingsInput(BaseModel):

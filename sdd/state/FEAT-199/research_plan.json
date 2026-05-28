@@ -1,0 +1,48 @@
+{
+  "feat_id": "FEAT-199",
+  "generated_at": "2026-05-28T13:11:03+02:00",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Confirm parrot.forms shim shape and fallback branch",
+      "type": "read",
+      "params": {"path": "packages/ai-parrot/src/parrot/forms/__init__.py"},
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "intent": "Inventory remaining files under parrot/forms/",
+      "type": "tree",
+      "params": {"path": "packages/ai-parrot/src/parrot/forms"},
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "intent": "Find all internal consumers of parrot.forms (msteams + others)",
+      "type": "grep",
+      "params": {"pattern": "parrot\\.forms", "path": "packages/"},
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "intent": "Verify parrot-formdesigner is/isn't a hard dependency of ai-parrot",
+      "type": "grep",
+      "params": {"pattern": "formdesigner", "path": "packages/ai-parrot/pyproject.toml"},
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "intent": "Audit docs/examples/configs for residual parrot.forms references",
+      "type": "grep",
+      "params": {"pattern": "parrot\\.forms", "globs": ["docs/", "examples/", "*.toml", "*.md"]},
+      "priority": 2
+    },
+    {
+      "id": "Q006",
+      "intent": "Check recent activity on forms vs parrot-formdesigner",
+      "type": "git_log",
+      "params": {"paths": ["packages/ai-parrot/src/parrot/forms/", "packages/parrot-formdesigner/"]},
+      "priority": 2
+    }
+  ]
+}

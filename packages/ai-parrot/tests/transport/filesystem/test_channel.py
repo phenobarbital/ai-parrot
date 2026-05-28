@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from parrot.transport.filesystem.channel import ChannelManager
-from parrot.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.channel import ChannelManager
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
 
 
 @pytest.fixture

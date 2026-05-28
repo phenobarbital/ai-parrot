@@ -19,7 +19,7 @@ from parrot.bots.flows.flow import (
     InteractiveDecisionNode,
     SynthesisNode,
 )
-from parrot.bots.flow.decision_node import (
+from parrot.bots.flows.flow.nodes import (
     DecisionMode,
     DecisionNodeConfig,
     DecisionResult,
@@ -138,7 +138,7 @@ class TestDecisionNode:
         node = DecisionNode(node_id="d1", decision_config=decision_config)
 
         with patch(
-            "parrot.bots.flows.flow.DecisionFlowNode"
+            "parrot.bots.flows.flow.flow.DecisionFlowNode"
         ) as MockDecisionFlowNode:
             instance = AsyncMock()
             instance.ask = AsyncMock(return_value=fake_result)

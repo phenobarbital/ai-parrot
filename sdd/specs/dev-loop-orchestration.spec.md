@@ -6,6 +6,13 @@
 **Status**: approved
 **Target version**: 0.6.x (`ai-parrot`, post-FEAT-124)
 
+> **Note (FEAT-196, 2026-05-28)**: Import paths in code examples below reference
+> `parrot.bots.flow` (singular, deleted). Use `parrot.bots.flows` (plural) instead:
+> - `from parrot.bots.flow import AgentsFlow` → `from parrot.bots.flows import AgentsFlow`
+> - `from parrot.bots.flow import FlowTransition` → `from parrot.bots.flows import FlowTransition`
+> - `from parrot.bots.flow.node import Node` → `from parrot.bots.flows.core.node import Node`
+> - `from parrot.bots.flow import InteractiveDecisionNode` → `from parrot.bots.flows import InteractiveDecisionNode`
+
 ---
 
 ## 1. Motivation & Business Requirements

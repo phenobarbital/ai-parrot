@@ -22,7 +22,7 @@ class ResultRetrievalTool(AbstractTool):
     - ``list_agents``: List all agents with available results.
     - ``get_agent_result``: Retrieve the full result text for a specific agent.
     - ``search_results``: Semantic search across stored results (requires
-      FAISS to be configured on the ``ExecutionMemory``).
+        FAISS to be configured on the ``ExecutionMemory``).
 
     Args:
         memory: The ``ExecutionMemory`` instance to query.

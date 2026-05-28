@@ -1,0 +1,106 @@
+{
+  "feat_id": "FEAT-200",
+  "summary_oneline": "Extract parrot/outputs/formats to ai-parrot-visualizations using PEP 420 namespace merging (same pattern as ai-parrot-embeddings)",
+  "detected_mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/outputs/formats/", "symbol": "29 files (renderers + base + registry + generators/ + mixins/ + assets/)", "lines": "—", "role": "Extraction target", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py", "symbol": "registry + lazy import switch (get_renderer)", "lines": "33-91", "role": "Works as-is with extend_path(); add extend_path at top", "evidence": ["F002", "F008"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/__init__.py", "symbol": "outputs package init", "lines": "1-43", "role": "Needs extend_path() for PEP 420", "evidence": ["F008"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/formatter.py", "symbol": "OutputFormatter, OutputRetryConfig, DEFAULT_RETRY_PROMPTS", "lines": "—", "role": "Stays in core; uses registry via get_renderer", "evidence": ["F001", "F002"]},
+    {"path": "packages/ai-parrot/src/parrot/models/outputs.py", "symbol": "OutputMode enum (23 values)", "lines": "39-72", "role": "Stays in core; satellite depends on it", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/abstract.py", "symbol": "import InfographicHTMLRenderer", "lines": "3877", "role": "Direct consumer — migrate to get_renderer()", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/handlers/artifacts.py", "symbol": "import InfographicHTMLRenderer", "lines": "—", "role": "Direct consumer — migrate to get_renderer()", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/src/parrot/tools/infographic_toolkit.py", "symbol": "import InfographicHTMLRenderer", "lines": "—", "role": "Direct consumer — migrate to get_renderer()", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "matplotlib and seaborn in BASE deps", "lines": "93-94", "role": "Leaking into core — extract to satellite", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot-embeddings/pyproject.toml", "symbol": "namespaces=true, include=[\"parrot*\"]", "lines": "95-98", "role": "PEP 420 reference pattern to replicate", "evidence": ["F008"]},
+    {"path": "packages/ai-parrot/src/parrot/embeddings/__init__.py", "symbol": "extend_path(__path__, __name__)", "lines": "1-2", "role": "Reference pattern for namespace merging", "evidence": ["F008"]}
+  ],
+  "constraints": [
+    {
+      "claim": "OutputMode enum is central and CANNOT move",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "implication": "ai-parrot-visualizations declares ai-parrot as dependency"
+    },
+    {
+      "claim": "OutputFormatter stays in core (orchestrator in bots/abstract.py:477)",
+      "evidence": ["F002", "F004"],
+      "confidence": "high",
+      "implication": "Only concrete renderers are extracted"
+    },
+    {
+      "claim": "import_module switch works with PEP 420 + extend_path() — no entry-points needed",
+      "evidence": ["F002", "F008"],
+      "confidence": "high",
+      "implication": "Existing get_renderer() logic is unchanged"
+    },
+    {
+      "claim": "Only 3 production files import renderers directly (all InfographicHTMLRenderer)",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "implication": "Trivial migration to get_renderer()"
+    },
+    {
+      "claim": "matplotlib + seaborn in BASE deps; plotly/altair/bokeh/holoviews in [agents]",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "implication": "Extraction removes heavy deps from core"
+    },
+    {
+      "claim": "ai-parrot-embeddings PEP 420 pattern is proven and directly replicable",
+      "evidence": ["F008"],
+      "confidence": "high",
+      "implication": "Use identical build config: namespaces=true, .gitkeep at namespace levels, extend_path in core"
+    }
+  ],
+  "scope": {
+    "what_new": [
+      "Package packages/ai-parrot-visualizations/ (workspace member) with pyproject.toml",
+      "extend_path() calls in parrot/outputs/__init__.py and parrot/outputs/formats/__init__.py",
+      "parrot/outputs/formats/version.py in satellite for dynamic version discovery"
+    ],
+    "what_changes": [
+      "parrot/outputs/__init__.py: add extend_path()",
+      "parrot/outputs/formats/__init__.py: add extend_path()",
+      "parrot/bots/abstract.py, handlers/artifacts.py, tools/infographic_toolkit.py: replace direct InfographicHTMLRenderer import with get_renderer()",
+      "packages/ai-parrot/pyproject.toml: remove matplotlib/seaborn from BASE, refactor extras, add visualizations meta-extra"
+    ],
+    "what_moved": [
+      "All non-zero-dep renderers to packages/ai-parrot-visualizations/src/parrot/outputs/formats/",
+      "generators/, mixins/, assets/ subdirectories to satellite",
+      "card.py, slack.py, whatsapp.py, jinja2.py, template_report.py, markdown.py to satellite"
+    ],
+    "what_stays_in_core": [
+      "OutputMode + OutputType enums",
+      "OutputFormatter, OutputRetryConfig, DEFAULT_RETRY_PROMPTS",
+      "Registry: Renderer Protocol, RENDERERS, register_renderer, get_renderer, get_output_prompt, has_system_prompt",
+      "RenderResult, RenderError, BaseRenderer (base.py)",
+      "Zero-dep renderers: json.py, yaml.py, html.py, table.py"
+    ],
+    "non_goals": [
+      "No OutputFormatter API changes",
+      "No OutputMode changes",
+      "No entry-points or plugin discovery"
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "formats/ has 29 extractable files + 1MB asset", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "Registry designed for extraction (lazy import + decorator)", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "import_module switch works with PEP 420 + extend_path()", "evidence": ["F002", "F008"], "confidence": "high"},
+    {"id": "C4", "claim": "Only 3 production consumers import renderers directly", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C5", "claim": "matplotlib and seaborn in BASE deps", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C6", "claim": "plotly/altair/bokeh/holoviews in [agents] without granularity", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C7", "claim": "OutputMode is stable — stays in core", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C8", "claim": "OutputFormatter stays in core", "evidence": ["F002", "F004"], "confidence": "high"},
+    {"id": "C9", "claim": "infographic_html active, rest dormant", "evidence": ["F007"], "confidence": "high"},
+    {"id": "C10", "claim": "ai-parrot-embeddings PEP 420 pattern proven and replicable", "evidence": ["F008"], "confidence": "high"},
+    {"id": "C11", "claim": "base.py importable from satellite via shared namespace", "evidence": ["F008"], "confidence": "high"},
+    {"id": "C12", "claim": "Zero-dep renderers (json/yaml/html/table) can stay in core", "evidence": ["F003"], "confidence": "high"}
+  ],
+  "unknowns": [],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "All unknowns resolved with high confidence. Architecture mirrors proven ai-parrot-embeddings PEP 420 pattern. Spec can proceed directly to task decomposition."
+  }
+}

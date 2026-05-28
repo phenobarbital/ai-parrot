@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from parrot.autonomous.hooks.models import FilesystemHookConfig
-from parrot.transport.filesystem.feed import ActivityFeed
-from parrot.transport.filesystem.hook import FilesystemHook
-from parrot.transport.filesystem.transport import FilesystemTransport
+from parrot.core.hooks.models import FilesystemHookConfig
+from parrot.autonomous.transport.filesystem.feed import ActivityFeed
+from parrot.autonomous.transport.filesystem.hook import FilesystemHook
+from parrot.autonomous.transport.filesystem.transport import FilesystemTransport
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -196,7 +196,7 @@ class TestHookDispatch:
         await hook.start()
 
         # Send a message from a separate transport.
-        from parrot.transport.filesystem.config import FilesystemTransportConfig
+        from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
 
         sender_cfg = FilesystemTransportConfig(
             root_dir=tmp_path, use_inotify=False
@@ -232,7 +232,7 @@ class TestHookDispatch:
 
         await hook.start()
 
-        from parrot.transport.filesystem.config import FilesystemTransportConfig
+        from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
 
         sender_cfg = FilesystemTransportConfig(
             root_dir=tmp_path, use_inotify=False

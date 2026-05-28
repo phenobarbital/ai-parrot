@@ -24,7 +24,7 @@ from parrot.bots.flows.agents import OrchestratorAgent  # noqa: E402
 from parrot.models.responses import AIMessage  # noqa: E402
 from parrot.models.basic import CompletionUsage  # noqa: E402
 from parrot.models.crew import AgentResult  # noqa: E402
-from parrot.bots.flow.storage.memory import ExecutionMemory  # noqa: E402
+from parrot.bots.flows.core.storage.memory import ExecutionMemory  # noqa: E402
 from parrot.tools.agent import AgentTool  # noqa: E402
 
 

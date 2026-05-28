@@ -1,0 +1,95 @@
+{
+  "feature": "fix-parrot-transport",
+  "feature_id": "FEAT-196",
+  "spec": "sdd/specs/fix-parrot-transport.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-28T00:00:00Z",
+  "completed_at": "2026-05-28T12:09:00+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1333",
+      "slug": "move-transport-package",
+      "title": "Move transport/ package into autonomous/transport/",
+      "feature_id": "FEAT-196",
+      "feature": "fix-parrot-transport",
+      "spec": "sdd/specs/fix-parrot-transport.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — all other tasks depend on this move completing first",
+      "assigned_to": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
+      "completed_at": "2026-05-28T12:03:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1333-move-transport-package.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1334",
+      "slug": "fix-hook-imports",
+      "title": "Fix broken hook imports in filesystem/hook.py",
+      "feature_id": "FEAT-196",
+      "feature": "fix-parrot-transport",
+      "spec": "sdd/specs/fix-parrot-transport.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1333"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after package move; modifies file that was just moved",
+      "assigned_to": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
+      "completed_at": "2026-05-28T12:03:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1334-fix-hook-imports.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1335",
+      "slug": "remove-shims-update-entrypoints",
+      "title": "Remove hook shims and update entry points",
+      "feature_id": "FEAT-196",
+      "feature": "fix-parrot-transport",
+      "spec": "sdd/specs/fix-parrot-transport.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1333"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on package move; deletes shims that hook.py no longer references",
+      "assigned_to": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
+      "completed_at": "2026-05-28T12:04:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1335-remove-shims-update-entrypoints.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-1336",
+      "slug": "update-test-imports",
+      "title": "Update all test imports to new paths",
+      "feature_id": "FEAT-196",
+      "feature": "fix-parrot-transport",
+      "spec": "sdd/specs/fix-parrot-transport.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run last — depends on all prior tasks; touches 14 test files with overlapping imports",
+      "assigned_to": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
+      "completed_at": "2026-05-28T12:09:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1336-update-test-imports.md",
+      "verification": "verified"
+    }
+  ]
+}

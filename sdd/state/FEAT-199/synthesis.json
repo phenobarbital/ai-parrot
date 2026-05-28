@@ -1,0 +1,108 @@
+{
+  "feat_id": "FEAT-199",
+  "summary_oneline": "Cerrar migración parrot.forms → parrot-formdesigner (hard dep + eliminar shim y tests legacy)",
+  "detected_mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/forms/__init__.py", "symbol": "shim try/except", "lines": "1-90", "role": "shim con fallback local", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/forms/", "symbol": "—", "lines": "—", "role": "implementación local legacy (25 archivos)", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/msteams/wrapper.py", "symbol": "imports", "lines": "36-39", "role": "consumidor msteams (4 imports parrot.forms.*)", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/msteams/dialogs/orchestrator.py", "symbol": "imports", "lines": "17-22, 208", "role": "consumidor msteams (6 imports incluyendo submódulos)", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/msteams/dialogs/factory.py", "symbol": "imports", "lines": "4", "role": "consumidor msteams", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/msteams/dialogs/presets/", "symbol": "—", "lines": "—", "role": "5 preset dialogs importan parrot.forms.*", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/tests/unit/forms/", "symbol": "—", "lines": "—", "role": "19 tests legacy contra parrot.forms local", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "package-data", "lines": "542", "role": "registra parrot.forms.renderers templates como package-data", "evidence": ["F004", "F005"]}
+  ],
+  "constraints": [
+    {
+      "claim": "parrot-formdesigner NO es dependency declarada de ai-parrot",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "implication": "Eliminar el fallback local requiere añadir formdesigner como dep (en un extra de ai-parrot o en ai-parrot-integrations cuando se extraiga msteams)."
+    },
+    {
+      "claim": "msteams usa submódulos (.renderers, .validators, .extractors.tool, .tools) que bypassan el shim de __init__.py",
+      "evidence": ["F001", "F003"],
+      "confidence": "high",
+      "implication": "Hoy esos imports resuelven SIEMPRE al fallback local. Migrarlos uno por uno a parrot_formdesigner.* es obligatorio antes de borrar el directorio."
+    },
+    {
+      "claim": "parrot/forms/ está dormante; toda la actividad reciente (incluido FEAT-188 lifecycle-events) ocurre en parrot-formdesigner",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "implication": "El fallback local está stale; cualquier consumidor que caiga ahí está corriendo código viejo silenciosamente."
+    },
+    {
+      "claim": "Hay 19 tests legacy en tests/unit/forms/ que validan el fallback local, no parrot-formdesigner",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "implication": "Si parrot-formdesigner ya tiene tests equivalentes, los legacy pueden borrarse. Si no, mover o reescribir antes de eliminar el código que prueban."
+    },
+    {
+      "claim": "Existe un solo activo no-código (template Jinja2 form.html.j2) registrado como package-data en pyproject.toml:542",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "implication": "Eliminar la línea de package-data como parte de la limpieza."
+    }
+  ],
+  "scope": {
+    "what_new": [
+      "Declarar parrot-formdesigner como dependency obligatoria en el extra de ai-parrot que use msteams (o en el futuro ai-parrot-integrations)."
+    ],
+    "what_changes": [
+      "8 archivos en parrot/integrations/msteams/: reemplazar `from parrot.forms[.*]` por `from parrot_formdesigner.{core,renderers,services,extractors,tools}` (mapeo 1:1 según el try-branch del shim F001).",
+      "packages/ai-parrot/pyproject.toml: eliminar la línea `\"parrot.forms.renderers\" = [\"templates/*.j2\"]` (línea 542).",
+      "packages/ai-parrot/tests/unit/forms/: decidir destino (borrar si parrot-formdesigner ya tiene cobertura equivalente; portar en otro caso)."
+    ],
+    "what_removed": [
+      "packages/ai-parrot/src/parrot/forms/ completo (25 archivos: schema, validators, cache, storage, registry, constraints, options, style, types, extractors/, renderers/, tools/)."
+    ],
+    "non_goals": [
+      "No tocar parrot-formdesigner ni su API.",
+      "No cambiar el comportamiento funcional para consumidores que ya importan de parrot_formdesigner.",
+      "No reorganizar msteams ni extraerlo a un paquete aparte (eso es trabajo separado de la propuesta de ai-parrot-integrations)."
+    ],
+    "patterns": [
+      "Mapeo de import directo según el try-branch del shim (F001 cita el mapeo completo)."
+    ],
+    "integration_risks": [
+      "Consumidores externos a este repo que importen `parrot.forms.*` se romperán. Mitigar con nota en CHANGELOG y verificación previa en repos cliente conocidos.",
+      "Si algún test o handler indirectamente cargaba el fallback local (por ausencia de parrot-formdesigner instalado), pasará a fallar con ImportError. Mitigar instalando formdesigner por defecto en el extra que cubre msteams."
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "parrot.forms es un shim con fallback local activo", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "parrot/forms/ contiene 25 archivos de implementación local", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "Solo msteams (8 archivos) y tests/unit/forms (19 archivos) importan parrot.forms en el repo", "evidence": ["F003"], "confidence": "high"},
+    {"id": "C4", "claim": "msteams importa submódulos directos que bypassan el shim y siempre resuelven al fallback", "evidence": ["F001", "F003"], "confidence": "high"},
+    {"id": "C5", "claim": "parrot-formdesigner no es dependency declarada de ai-parrot", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C6", "claim": "Toda actividad reciente (incluyendo FEAT-188) ocurre en parrot-formdesigner; parrot/forms está dormante", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C7", "claim": "Solo un activo no-código (template Jinja2) requiere limpieza en pyproject", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C8", "claim": "Los 19 tests legacy validan el fallback local; necesitan auditoría de cobertura equivalente en parrot-formdesigner antes de borrarse", "evidence": ["F003", "F006"], "confidence": "medium"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "¿Los 19 tests legacy en tests/unit/forms/ tienen ya equivalente en packages/parrot-formdesigner/tests/? Si sí → borrar; si no → portar.",
+      "blocks_claims": ["C8"],
+      "plausible_answers": ["Borrar tras auditar 1:1 (probable — tests son contra fallback que también desaparece)", "Portar a parrot-formdesigner antes de borrar local", "Mantener algunos como tests de integración en ai-parrot-integrations (msteams + formdesigner end-to-end)"]
+    },
+    {
+      "id": "U2",
+      "question": "¿Dónde declarar la dep obligatoria a parrot-formdesigner?",
+      "blocks_claims": ["C5"],
+      "user_answer": "Resuelto: msteams se moverá a ai-parrot-integrations (paquete futuro). La dep a parrot-formdesigner viaja con msteams y se declara solo allí. ai-parrot core NO necesita conocer a parrot-formdesigner. Re-verificación grep confirmó cero consumidores fuera de msteams + tests legacy — no hay nada 'común' que deba quedarse en ai-parrot.",
+      "plausible_answers": ["Añadir al extra existente `integrations` en ai-parrot", "Crear extra dedicado `forms` en ai-parrot", "Diferir hasta extraer ai-parrot-integrations (RESUELTO)"]
+    },
+    {
+      "id": "U3",
+      "question": "¿Cómo secuenciar FEAT-199 con la extracción de ai-parrot-integrations?",
+      "blocks_claims": [],
+      "plausible_answers": ["Después de extraer ai-parrot-integrations (recomendado, riesgo mínimo)", "Bundle con la extracción de integrations (un solo PR)", "Antes (declarando dep temporal en ai-parrot — contradice U2, no recomendado)"]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "U2 resuelto: la dep viaja con msteams a ai-parrot-integrations. Pre-requisito: este FEAT depende temporalmente de la extracción de ai-parrot-integrations (U3). Si U3.a (después): /sdd-task FEAT-199 es suficiente (3 ops triviales). Si U3.b (bundle): fusionar con spec de integrations. Si U3.c (antes): /sdd-spec FEAT-199 con dep temporal — no recomendado."
+  }
+}

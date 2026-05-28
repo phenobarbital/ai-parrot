@@ -1,0 +1,197 @@
+{
+  "feat_id": "FEAT-202",
+  "summary_oneline": "Extraer parrot/integrations/ a ai-parrot-integrations con extras por canal; BotManager queda en core",
+  "detected_mode": "enrichment",
+  "overall_confidence": "high",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/integrations/", "symbol": "6 canales + 5 comunes", "lines": "—", "role": "Conjunto a extraer (~1.6MB)", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/__init__.py", "symbol": "lazy PEP 562 __getattr__", "lines": "14-50", "role": "Re-export lazy ya existente (facilita extracción)", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/manager.py", "symbol": "IntegrationBotManager", "lines": "1-25", "role": "Loader de integrations_bots.yaml — mueve con integrations", "evidence": ["F002", "F005"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/models.py", "symbol": "IntegrationBotConfig", "lines": "1-15", "role": "Config raíz agregando configs por canal — mueve", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/parser.py", "symbol": "ResponseParser", "lines": "1-15", "role": "Parser unificado AIMessage para canales — mueve", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/core/state.py", "symbol": "InMemoryStateStore", "lines": "12-30", "role": "Utility genérica TTL — decisión (queda o se vuelve interno)", "evidence": ["F002"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/oauth2/", "symbol": "registry, service, persistence, jira_provider, o365_provider", "lines": "—", "role": "OAuth2 infra — consumida por core auth/handlers (decisión)", "evidence": ["F002", "F004"]},
+    {"path": "packages/ai-parrot/src/parrot/manager/manager.py", "symbol": "BotManager", "lines": "—", "role": "QUEDA EN ai-parrot (decisión del usuario 2026-05-28)", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/matrix/crew/crew_wrapper.py", "symbol": "import BotManager", "lines": "—", "role": "Única ref integrations → BotManager; sigue funcionando vía dep al core", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot/src/parrot/integrations/manager.py", "symbol": "from ..human import HumanInteractionManager, TelegramHumanChannel", "lines": "18-21", "role": "Acoplamiento runtime a parrot.human", "evidence": ["F002", "F006"]},
+    {"path": "packages/ai-parrot/src/parrot/human/channels/telegram.py", "symbol": "TelegramHumanChannel", "lines": "—", "role": "Channel-específico — debe moverse con integrations", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/voice/", "symbol": "—", "lines": "—", "role": "Solo consumido por integrations (msteams/voice + telegram); candidato a moverse", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "pywa en BASE deps", "lines": "83", "role": "FUGA — WhatsApp SDK en core", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "async-notify[default] en BASE deps", "lines": "82", "role": "Trae transitivos de canales al core; revisar", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "extra `matrix` con mautrix + python-olm", "lines": "461", "role": "Mover al nuevo paquete", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/pyproject.toml", "symbol": "extra `integrations` con azure-teambots", "lines": "404", "role": "Mover al nuevo paquete", "evidence": ["F003"]}
+  ],
+  "constraints": [
+    {
+      "claim": "BotManager (parrot/manager) QUEDA en ai-parrot por decisión explícita del usuario — lo usan ~22 sitios en handlers/autonomous/auth/bots/core",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "implication": "El paquete nuevo declara dep a ai-parrot e importa BotManager normalmente. No hay que mover ese código."
+    },
+    {
+      "claim": "Tres FEAT en curso son pre-requisitos o coordinaciones necesarias",
+      "evidence": ["F003", "F006", "F007"],
+      "confidence": "high",
+      "implication": "FEAT-199 (forms): el extra `[msteams]` debe declarar parrot-formdesigner. FEAT-200 (visualizations): slack/whatsapp tienen renderers ligeros que probablemente quedan en core. FEAT-201 (embeddings): no afecta directamente integrations."
+    },
+    {
+      "claim": "matrix está en desarrollo MUY activo (matrix-collaborative-crew, TASKs 1295-1300 con commits recientes)",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "implication": "matrix NO debe moverse en la primera fase. Faseo: empezar por dormantes (slack, whatsapp, zoom), seguir con telegram y msteams, dejar matrix para final."
+    },
+    {
+      "claim": "OAuth2 (integrations/oauth2/) es consumido por 5 archivos de PRODUCCIÓN fuera de integrations (auth/{routes,oauth2_routes}, handlers/{integrations,user_objects}, manager)",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "implication": "Decisión arquitectónica: (a) oauth2/ queda en core y este paquete depende de core, (b) oauth2/ mueve con integrations y core declara dep al nuevo paquete en extra `integrations`. (a) parece más limpio porque OAuth2 trasciende canales de mensajería."
+    },
+    {
+      "claim": "Acoplamiento integrations → bots es solo type hints (TYPE_CHECKING); integrations → human y voice es RUNTIME",
+      "evidence": ["F004", "F006"],
+      "confidence": "high",
+      "implication": "El paquete nuevo puede importar AbstractBot solo bajo TYPE_CHECKING. Para human/voice hay que decidir si mueven parcialmente."
+    },
+    {
+      "claim": "parrot.voice tiene cero consumidores fuera de integrations (msteams/voice + telegram)",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "implication": "Candidato fuerte a moverse al nuevo paquete. Alternativa: split solo transcriber/."
+    },
+    {
+      "claim": "parrot.human.channels.telegram (TelegramHumanChannel) es inherentemente canal-específico; el resto de parrot.human es genérico",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "implication": "Mover channels/* al nuevo paquete; mantener el core (manager, models, events, actions, escalation) en ai-parrot. Patrón de registry para que canales registren sus HumanChannel."
+    },
+    {
+      "claim": "El __init__.py de integrations YA es lazy (PEP 562 __getattr__) → arquitectura ya pensada para split",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "implication": "Si se usa PEP 420 (namespace package, como FEAT-201 decidió), los imports `from parrot.integrations import ...` siguen funcionando sin cambio en consumidores."
+    },
+    {
+      "claim": "pywa (WhatsApp) está en BASE deps; aiogram (Telegram) viene transitivo vía async-notify[default] en BASE deps",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "implication": "Beneficio directo del split: sacar pywa de BASE; revisar si async-notify[default] puede degradarse a un set más minimalista."
+    },
+    {
+      "claim": "zoom es la integración más ligera (8K, sin SDK propio — solo aiohttp); no es realmente un 'bot' sino una integración API",
+      "evidence": ["F001", "F003"],
+      "confidence": "high",
+      "implication": "Plantear: ¿zoom debería ir a ai-parrot-tools en lugar de a ai-parrot-integrations? Su consumidor principal es zoomtoolkit.py en ai-parrot-tools."
+    }
+  ],
+  "scope": {
+    "what_new": [
+      "Paquete `packages/ai-parrot-integrations/` (workspace member) con extras granulares por canal.",
+      "PEP 420 namespace package (como FEAT-201): el nuevo paquete contribuye submódulos bajo `parrot.integrations.*` sin tocar imports de consumidores."
+    ],
+    "what_moves": [
+      "Todos los 6 canales (slack, telegram, msteams, whatsapp, matrix, zoom) — pero matrix en fase final.",
+      "Piezas comunes: __init__.py (lazy), manager.py (IntegrationBotManager), models.py (IntegrationBotConfig), parser.py.",
+      "parrot/human/channels/* (channel-específico HITL implementations).",
+      "parrot/voice/* (cero consumidores fuera de integrations) — recomendado.",
+      "Extras pyproject: `azure-teambots` (del extra `integrations`), `mautrix` + `python-olm` (del extra `matrix`)."
+    ],
+    "what_stays_in_core": [
+      "BotManager (parrot/manager/manager.py) — decisión usuario.",
+      "parrot.human top-level (manager, models, events, actions, escalation, node, cli_companion, tool) — HITL es concepto core.",
+      "parrot.bots.* — base de bots/agentes, integrations solo usa type hints.",
+      "parrot.conf, parrot.core, parrot.models — infra core."
+    ],
+    "what_changes_in_core": [
+      "packages/ai-parrot/pyproject.toml: eliminar `pywa>=3.8.0` de BASE (l.83), evaluar `async-notify[default]` (l.82); eliminar extras `matrix` y partes de `integrations` ya provistas por el nuevo paquete.",
+      "parrot/manager/manager.py + parrot/autonomous/orchestrator.py: import lazy de IntegrationBotManager sigue funcionando vía PEP 420 (sin cambio de string).",
+      "parrot/core/hooks/matrix.py: import de MatrixClientWrapper sigue funcionando vía PEP 420 (si matrix se mueve), o se difiere a fase final.",
+      "parrot/bots/jira_specialist.py: TelegramOAuthNotifier — sigue funcionando vía PEP 420.",
+      "parrot/handlers/agent.py: import telegram.combined_callback — vía PEP 420.",
+      "ai-parrot-tools/zoomtoolkit.py: declarar dep a `ai-parrot-integrations[zoom]` o (si zoom se mueve a ai-parrot-tools) self-import."
+    ],
+    "what_oauth2_decision_pending": [
+      "Opción A: oauth2/ queda en core (parrot/oauth2/ o parrot/auth/oauth2/) — auth/handlers/manager lo importan directo; nuevo paquete depende de core.",
+      "Opción B: oauth2/ mueve con integrations; core declara dep al nuevo paquete en el extra `integrations`; auth/handlers cambian imports a parrot_integrations.oauth2 (o vía PEP 420)."
+    ],
+    "non_goals": [
+      "No mover BotManager (decisión usuario).",
+      "No reescribir wrappers de canales (extracción puramente de packaging).",
+      "No bloquear matrix-collaborative-crew (matrix se difiere a fase final).",
+      "No tocar parrot.bots ni parrot.conf."
+    ],
+    "patterns": [
+      "PEP 420 namespace package (consistente con FEAT-201).",
+      "Extras granulares por canal (consistente con FEAT-200 y FEAT-201).",
+      "Lazy registration de HumanChannels desde el nuevo paquete (similar al patrón propuesto en FEAT-200 para renderers)."
+    ],
+    "integration_risks": [
+      "Consumidores externos al repo que dependan de `pywa` o `aiogram` transitivamente tras `pip install ai-parrot` se rompen. Mitigar con nota en CHANGELOG y guía `pip install ai-parrot-integrations[whatsapp]`.",
+      "FEAT-199 introduce dependencia secuencial: msteams no puede extraerse limpio hasta cerrar forms (idealmente FEAT-199 ejecuta justo después).",
+      "matrix-collaborative-crew sigue abriendo tasks — coordinar con `/sdd-status` antes de fasear matrix.",
+      "parrot/core/hooks/matrix.py es coupling inverso del core a un canal específico; matrix-aware code en el core que conviene refactorizar a hook pluggable.",
+      "Sub-decisión OAuth2 afecta auth (componente central); cualquier cambio requiere coordinación con dueño de auth."
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "6 canales + 5 archivos/dir comunes = ~1.6MB", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "__init__.py ya es lazy PEP 562 (split-friendly)", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "BotManager queda en core (decisión usuario)", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C4", "claim": "IntegrationBotManager mueve con integrations; sus 2 callers lazy ya están preparados", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C5", "claim": "OAuth2 lo consumen 5 archivos de prod fuera de integrations — decisión arquitectónica pendiente", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C6", "claim": "Acoplamiento a bots es solo TYPE_CHECKING; a human y voice es runtime", "evidence": ["F004", "F006"], "confidence": "high"},
+    {"id": "C7", "claim": "parrot.voice tiene cero consumidores fuera de integrations", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C8", "claim": "TelegramHumanChannel es canal-específico; channels/ debe moverse", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C9", "claim": "pywa en BASE deps; aiogram transitivo vía async-notify[default] en BASE", "evidence": ["F003"], "confidence": "high"},
+    {"id": "C10", "claim": "matrix está en desarrollo activo; resto estable", "evidence": ["F007"], "confidence": "high"},
+    {"id": "C11", "claim": "zoom no es bot — es integración API y su único caller real está en ai-parrot-tools", "evidence": ["F001", "F003"], "confidence": "medium"},
+    {"id": "C12", "claim": "FEAT-199 (forms) y FEAT-201 (embeddings) tienen dependencias temporales con esta extracción", "evidence": ["F003"], "confidence": "high"}
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "¿Dónde queda integrations/oauth2/? (consumido por core auth/handlers/manager — 5 archivos)",
+      "blocks_claims": ["C5"],
+      "plausible_answers": ["A. Mover oauth2/ a parrot/oauth2/ o parrot/auth/oauth2/ en core (recomendado: trasciende canales)", "B. Oauth2 mueve con integrations; auth/handlers cambian imports vía PEP 420", "C. Crear paquete propio ai-parrot-oauth2 (separado de integrations)"]
+    },
+    {
+      "id": "U2",
+      "question": "¿Qué hacer con parrot.voice?",
+      "blocks_claims": ["C7"],
+      "plausible_answers": ["A. Mover todo parrot.voice al nuevo paquete (recomendado: cero consumidores fuera)", "B. Mover solo voice/transcriber/ (parte pesada con whisper)", "C. Dejar parrot.voice en core (no mover)"]
+    },
+    {
+      "id": "U3",
+      "question": "¿Mover parrot/human/channels/ al nuevo paquete?",
+      "blocks_claims": ["C8"],
+      "plausible_answers": ["A. Sí, mover channels/ (telegram.py y futuros) al nuevo paquete; registry para auto-discovery", "B. Dejar channels/ en core pero hacer cada implementación opcional (try/except import)", "C. Mover parrot.human completo (no recomendado: HITL es core)"]
+    },
+    {
+      "id": "U4",
+      "question": "¿zoom va a ai-parrot-integrations o a ai-parrot-tools (donde vive su único consumer real, zoomtoolkit.py)?",
+      "blocks_claims": ["C11"],
+      "plausible_answers": ["A. Mover zoom/ a ai-parrot-tools (consistente: zoom es API integration, no bot de mensajería)", "B. Dejar zoom en ai-parrot-integrations[zoom] y ai-parrot-tools declara dep", "C. Mantener una copia mínima en ambos sitios (mala práctica)"]
+    },
+    {
+      "id": "U5",
+      "question": "¿Cómo fasear la extracción de canales?",
+      "blocks_claims": ["C10"],
+      "plausible_answers": ["A. Fase 1: slack + whatsapp + zoom (dormantes). Fase 2: telegram + msteams (estables tras FEAT-199). Fase 3: matrix (cuando matrix-collaborative-crew cierre)", "B. Big-bang: todos los canales en un PR (rápido, alto riesgo por matrix)", "C. Paquete vacío + PEP 420 + migración 1-a-1 (más seguro pero más PRs)"]
+    },
+    {
+      "id": "U6",
+      "question": "¿Estrategia de import-stability: PEP 420 (como FEAT-201) o top-level diferente (parrot_integrations.*, como ai-parrot-loaders)?",
+      "blocks_claims": [],
+      "plausible_answers": ["A. PEP 420 (consistente con FEAT-201; cero cambios en imports)", "B. parrot_integrations.* (consistente con ai-parrot-loaders/-tools/-pipelines; explícito; requiere migrar imports)"]
+    },
+    {
+      "id": "U7",
+      "question": "¿Qué hacer con parrot/core/hooks/matrix.py? (coupling inverso del core a un canal específico)",
+      "blocks_claims": [],
+      "plausible_answers": ["A. Refactorizar a hook pluggable: core declara interface, matrix se registra desde el nuevo paquete", "B. Dejar el import; sigue funcionando vía PEP 420 (acoplamiento sigue existiendo pero compila)", "C. Mover el hook completo al nuevo paquete (core no debe conocer canales)"]
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-brainstorm",
+    "rationale": "7 unknowns arquitectónicos importantes (oauth2, voice, human/channels, zoom, faseo, namespace strategy, hook matrix). Cada uno tiene 2-3 caminos legítimos. Brainstorm permite ventilar opciones, traer aprendizajes de FEAT-200/201 (mismo tipo de extracción), y producir un mapa de decisiones antes de spec. Si las decisiones ya están claras (e.g. PEP 420 por consistencia con FEAT-201; faseo A por minimizar riesgo), /sdd-spec también es viable."
+  }
+}

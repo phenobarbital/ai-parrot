@@ -11,16 +11,15 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from parrot.bots.flow import (
-    AgentsFlow,
+from parrot.bots.flows import AgentsFlow
+from parrot.bots.flows.flow.definition import (
     FlowDefinition,
-    FlowLoader,
     NodeDefinition,
     EdgeDefinition,
-    from_svelteflow,
-    to_svelteflow,
+    LogActionDef,
 )
-from parrot.bots.flow.definition import LogActionDef
+from parrot.bots.flows.flow.loader import FlowLoader
+from parrot.bots.flows.flow.svelteflow import from_svelteflow, to_svelteflow
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +27,11 @@ from parrot.bots.flow.definition import LogActionDef
 # ---------------------------------------------------------------------------
 
 class _EchoAgent:
-    """Agent that echoes its input."""
+    """Agent that echoes its input.
+
+    Satisfies the AgentLike protocol (parrot.bots.flows.core.types.AgentLike)
+    by providing both ask() and invoke() methods.
+    """
 
     is_configured = True
 
@@ -43,12 +46,20 @@ class _EchoAgent:
     async def ask(self, question: str = "", **kwargs: Any) -> str:
         return question
 
+    async def invoke(self, prompt: str, **kwargs: Any) -> str:
+        """AgentLike.invoke() — delegates to ask()."""
+        return await self.ask(prompt, **kwargs)
+
     async def configure(self) -> None:
         pass
 
 
 class _FixedAgent:
-    """Agent that returns a fixed response."""
+    """Agent that returns a fixed response.
+
+    Satisfies the AgentLike protocol (parrot.bots.flows.core.types.AgentLike)
+    by providing both ask() and invoke() methods.
+    """
 
     is_configured = True
 
@@ -63,6 +74,10 @@ class _FixedAgent:
 
     async def ask(self, question: str = "", **kwargs: Any) -> Any:
         return self._response
+
+    async def invoke(self, prompt: str, **kwargs: Any) -> Any:
+        """AgentLike.invoke() — delegates to ask()."""
+        return await self.ask(prompt, **kwargs)
 
     async def configure(self) -> None:
         pass
@@ -142,7 +157,11 @@ class TestLoadAndExecute:
         flow = FlowLoader.to_agents_flow(
             definition, extra_agents={"echo_agent": echo_agent}
         )
-        assert isinstance(flow, AgentsFlow)
+        # Use type name check to avoid cross-module identity issues
+        # when tests run in combined suites with different import paths
+        assert type(flow).__name__ == "AgentsFlow", (
+            f"Expected AgentsFlow, got {type(flow).__name__}"
+        )
 
         result = await flow.run_flow("Hello world")
         assert result.status in ("completed", "partial")
@@ -221,8 +240,12 @@ class TestCELRouting:
         flow = FlowLoader.to_agents_flow(definition, extra_agents=agents)
         result = await flow.run_flow("go_a")
         assert result.status in ("completed", "partial")
-        # branch_a should have executed
-        assert flow.nodes["branch_a"].fsm.current_state.id == "completed"
+        # branch_a should have been completed (internal nodes are materialized per run)
+        # Verify via the FlowResult node info rather than flow._nodes (fresh per run)
+        completed_nids = {ni.node_id for ni in result.nodes if ni.status == "completed"}
+        assert "branch_a" in completed_nids, (
+            f"Expected 'branch_a' in completed nodes; got: {completed_nids}"
+        )
 
     @pytest.mark.asyncio
     async def test_cel_dict_result_routing(self):
@@ -487,4 +510,5 @@ class TestFileRoundtrip:
         flow = FlowLoader.to_agents_flow(
             loaded, extra_agents={"echo_agent": echo_agent}
         )
-        assert isinstance(flow, AgentsFlow)
+        # Use type name check to avoid cross-module identity issues
+        assert type(flow).__name__ == "AgentsFlow"

@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from parrot.bots.flow.actions import (
+from parrot.bots.flows.flow.actions import (
     ACTION_REGISTRY,
     BaseAction,
     register_action,
@@ -271,8 +271,8 @@ class TestWebhookAction:
 
 class TestImports:
     def test_import_from_package(self):
-        from parrot.bots.flow import ACTION_REGISTRY as AR
-        from parrot.bots.flow import BaseAction as BA
+        from parrot.bots.flows.flow.actions import ACTION_REGISTRY as AR
+        from parrot.bots.flows.flow.actions import BaseAction as BA
 
         assert AR is ACTION_REGISTRY
         assert BA is BaseAction

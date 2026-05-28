@@ -1,0 +1,14 @@
+{
+  "feat_id": "FEAT-200",
+  "generated_at": "2026-05-28T13:11:03+02:00",
+  "queries": [
+    {"id": "Q001", "intent": "Inventario completo de parrot/outputs/ (formats, generators, templates, assets, formatter)", "type": "tree", "params": {"path": "packages/ai-parrot/src/parrot/outputs"}, "priority": 1},
+    {"id": "Q002", "intent": "Identificar la arquitectura de registro (lazy renderers, OutputMode enum)", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/outputs/formats/__init__.py"}, "priority": 1},
+    {"id": "Q003", "intent": "Mapear deps de terceros por archivo de formato (plotly, altair, bokeh, etc.)", "type": "grep", "params": {"pattern": "^import |^from ", "path": "parrot/outputs/formats/"}, "priority": 1},
+    {"id": "Q004", "intent": "Consumidores externos a outputs/ (qué importa de formats/* o de outputs.*)", "type": "grep", "params": {"pattern": "parrot\\.outputs\\.formats|from \\.\\.outputs\\.formats|from \\.\\.\\.outputs\\.formats", "path": "packages/"}, "priority": 1},
+    {"id": "Q005", "intent": "Estado actual de extras de visualización en ai-parrot/pyproject.toml (charts, agents, all)", "type": "grep", "params": {"pattern": "plotly|altair|bokeh|holoviews|seaborn|folium|matplotlib", "path": "packages/ai-parrot/pyproject.toml"}, "priority": 2},
+    {"id": "Q006", "intent": "Comprobar qué deps de viz están en BASE deps (no extras) — el problema raíz", "type": "read", "params": {"path": "packages/ai-parrot/pyproject.toml", "lines": "1-100"}, "priority": 1},
+    {"id": "Q007", "intent": "OutputMode enum: ubicación y valores que un renderer extraído debe seguir conociendo", "type": "read", "params": {"path": "packages/ai-parrot/src/parrot/models/outputs.py"}, "priority": 2},
+    {"id": "Q008", "intent": "Historial reciente del módulo formats — qué se está desarrollando activamente", "type": "git_log", "params": {"path": "packages/ai-parrot/src/parrot/outputs/formats/"}, "priority": 3}
+  ]
+}

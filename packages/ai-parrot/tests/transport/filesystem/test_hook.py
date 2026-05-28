@@ -5,10 +5,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from parrot.autonomous.hooks.models import FilesystemHookConfig, HookType
-from parrot.transport.filesystem.config import FilesystemTransportConfig
-from parrot.transport.filesystem.hook import FilesystemHook
-from parrot.transport.filesystem.transport import FilesystemTransport
+from parrot.core.hooks.models import FilesystemHookConfig, HookType
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.hook import FilesystemHook
+from parrot.autonomous.transport.filesystem.transport import FilesystemTransport
 
 
 class TestFilesystemHookConfig:
@@ -183,7 +183,7 @@ class TestFilesystemHook:
     @pytest.mark.asyncio
     async def test_hook_extends_basehook(self):
         """FilesystemHook is a BaseHook subclass."""
-        from parrot.autonomous.hooks.base import BaseHook
+        from parrot.core.hooks.base import BaseHook
         config = FilesystemHookConfig(target_id="TestAgent")
         hook = FilesystemHook(config=config)
         assert isinstance(hook, BaseHook)

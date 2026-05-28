@@ -5,7 +5,7 @@ TASK-012: CEL compilation, evaluation, Pydantic coercion, fail-safe.
 import pytest
 from pydantic import BaseModel
 
-from parrot.bots.flow.cel_evaluator import CELPredicateEvaluator
+from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator
 
 
 class DecisionResult(BaseModel):
@@ -152,6 +152,6 @@ class TestErrorHandling:
 
 class TestImports:
     def test_import_from_package(self):
-        from parrot.bots.flow import CELPredicateEvaluator as CEL
+        from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator as CEL
 
         assert CEL is CELPredicateEvaluator

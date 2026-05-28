@@ -78,9 +78,7 @@ dependencies = [
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
-    # Messaging / integrations (core — telegram + slack only)
-    "async-notify[default]>=1.4.2",
-    "pywa>=3.8.0",
+    # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging]
     "ddgs>=9.5.2",
     # State machine / workflow (core)
     "python-statemachine==2.5.0",
@@ -90,8 +88,6 @@ dependencies = [
     "pandas>=2.0.0",
     # SQL validation for DatabaseToolkit (FEAT-062)
     "sqlglot>=20.0",
-    "matplotlib==3.10.0",
-    "seaborn==0.13.2",
     "numexpr==2.10.2",
     # Episodic memory default backend (FAISS) — required whenever an agent
     # enables episodic memory without an explicit pgvector DSN.
@@ -100,7 +96,7 @@ dependencies = [
 
 [project.scripts]
 parrot = "parrot.cli:cli"
-parrot-fs = "parrot.transport.filesystem.cli:main"
+parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
 
 [project.optional-dependencies]
 # ---------------------------------------------------------------------------
@@ -168,10 +164,8 @@ scheduler = [
     "apscheduler==3.11.2",
 ]
 
-# ArangoDB graph database
-arango = [
-    "python-arango-async==1.2.0",
-]
+# ArangoDB graph database — MOVED to ai-parrot-embeddings[arango]
+# arango extra removed in FEAT-201; use ai-parrot-embeddings[arango] instead
 
 # Reddit API
 reddit = [
@@ -214,7 +208,6 @@ agents = [
     "undetected-chromedriver==3.5.5",
     "selenium==4.35.0",
     "playwright==1.52.0",
-    "streamlit==1.54.0",
     "jira==3.10.5",
     "arxiv==2.2.0",
     "docker==7.1.0",
@@ -222,12 +215,9 @@ agents = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "webdriver-manager==4.0.2",
     "prophet==1.2.1",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
-    "cairosvg>=2.7",
     "python-pptx==1.0.2",
     "markdownify>=1.2.2",
     "python-docx==1.1.2",
@@ -248,10 +238,7 @@ agents = [
 ]
 
 charts = [
-    "matplotlib>=3.7",
-    "cairosvg>=2.7",
-    "svglib>=1.5",
-    "reportlab>=4.0",
+    "ai-parrot-visualizations[charts,infographic]",
 ]
 
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
@@ -279,33 +266,12 @@ agents-lite = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
 ]
 
-# Lightweight embeddings for RAG (fast install)
-embeddings = [
-    "sentence-transformers>=5.0.0",
-    "faiss-cpu>=1.9.0",
-    "rank_bm25==0.2.2",
-    "sentencepiece==0.2.1",
-    "tiktoken==0.9.0",
-    "chromadb==0.6.3",
-    "bm25s[full]==0.2.14",
-    "simsimd>=4.3.1",
-    "tokenizers>=0.20.0,<=0.22.2",
-    "safetensors>=0.4.3",
-    # Required by HF custom-code models (e.g. nomic-ai/nomic-embed-text-v1.5
-    # uses it inside modeling_hf_nomic.py).
-    "einops>=0.7.0",
-    # Optional but commonly required by HF models loaded with
-    # trust_remote_code=True: accelerate enables device_map / efficient
-    # loading; peft is needed by LoRA-adapted models; xformers provides
-    # memory-efficient attention used by several retrieval models.
-    "accelerate>=0.30.0",
-    "peft>=0.10.0",
-    "xformers>=0.0.27",
-]
+# Embeddings extra MOVED to ai-parrot-embeddings (FEAT-201).
+# Use: pip install ai-parrot-embeddings[huggingface,faiss,pgvector,chroma]
+# embeddings extra removed from host in FEAT-201.
 
 mcp = [
     "google-genai>=2.6.0",
@@ -333,7 +299,6 @@ mcp = [
     "rq==2.6.0",
     "zeep[async]==4.3.2",
     "branca==0.8.2",
-    "folium==0.20.0",
     "opensearch-py==3.1.0",
 ]
 
@@ -349,7 +314,7 @@ images = [
     "albumentations==2.0.6",
     "filetype==1.2.0",
     "imagehash==4.3.1",
-    "pgvector==0.4.1",
+    # pgvector moved to ai-parrot-embeddings[pgvector] in FEAT-201
     "pyheif==0.8.0",
     "exif==1.6.1",
     "pillow-avif-plugin==1.5.2",
@@ -358,16 +323,11 @@ images = [
     "exifread==3.5.1",
     "transformers>=4.48.0,<5.0",
     "ffmpeg==1.4",
-    "holoviews==1.21.0",
-    "bokeh==3.8.2",
-    "pandas-bokeh==0.5.5",
-    "plotly==5.22.0",
     "ipywidgets==8.1.0",
-    "altair==5.5.0",
 ]
 
 anthropic = [
-    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+    "anthropic[aiohttp]>=0.105.0,<1.0.0",
 ]
 
 claude-agent = [
@@ -383,7 +343,7 @@ google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
     "google-genai>=2.6.0",
-    "google-cloud-aiplatform==1.133.0",
+    "google-cloud-aiplatform>=1.153.0",
 ]
 
 groq = [
@@ -394,7 +354,7 @@ llms = [
     "google-genai>=2.6.0",
     "openai==2.8.1",
     "groq==0.33.0",
-    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+    "anthropic[aiohttp]>=0.105.0,<1.0.0",
     "claude-agent-sdk>=0.1.68",
     "xai-sdk>=0.1.0",
 ]
@@ -402,17 +362,11 @@ llms = [
 integrations = [
     "querysource>=4.1.11",
     "async-notify[all]>=1.5.2",
-    "azure-teambots>=0.1.1"
+    # azure-teambots moved to ai-parrot-integrations[msteams]
 ]
 
-milvus = [
-    "pymilvus==2.4.8",
-    "milvus-lite>=2.4.0",
-]
-
-chroma = [
-    "chroma==0.2.0",
-]
+# milvus extra MOVED to ai-parrot-embeddings[milvus] in FEAT-201.
+# chroma extra MOVED to ai-parrot-embeddings[chroma] in FEAT-201.
 
 eda = [
     # ydata-profiling removed: 4.16.x pins numpy<2.2 (clashes with loaders),
@@ -458,9 +412,11 @@ filesystem-transport-full = [
     "click>=8.0",
 ]
 
-matrix = [
-    "mautrix>=0.20",
-    "python-olm>=3.2.16",
+# matrix extra moved to ai-parrot-integrations[matrix]
+
+# Meta-extra for messaging channels (backward-compat alias)
+messaging = [
+    "ai-parrot-integrations[messaging]",
 ]
 
 # OpenTelemetry distributed tracing (FEAT-176 — lifecycle events)
@@ -478,8 +434,12 @@ observability = [
 ]
 
 # Optional OpenLIT auto-instrumentation (FEAT-177 — opt-in via enable_openlit=True)
+# NOTE: floor pinned to 1.40 — older openlit releases pin tiktoken<0.7 and
+# xmltodict<0.13, which conflict with the core deps (tiktoken>=0.9.0,
+# xmltodict>=0.14.2) and the flowtask extra. 1.40+ drops the tiktoken pin and
+# accepts xmltodict<1.0.
 observability-openlit = [
-    "openlit>=1.0",
+    "openlit>=1.40.0",
 ]
 
 # Developer / CI tooling (not shipped to end users)
@@ -500,13 +460,26 @@ remote-tools = [
     "kubernetes_asyncio>=29.0.0",
 ]
 
-# Convenience groups
-all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
+# Visualizations satellite — heavy chart/infographic renderers (FEAT-200)
+# Use: pip install ai-parrot[visualizations] to pull the satellite with all renderers.
+visualizations = [
+    "ai-parrot-visualizations[all]",
 ]
 
+# Convenience groups
+# Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
+# ai-parrot-embeddings[all] covers all moved backends.
+# Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
+all = [
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling,visualizations]",
+    "ai-parrot-embeddings[all]",
+    "ai-parrot-integrations[all]",
+]
+
+# all-fast: lightweight embedding stack via satellite
 all-fast = [
-    "ai-parrot[agents-lite,llms,embeddings,integrations]"
+    "ai-parrot[agents-lite,llms,integrations]",
+    "ai-parrot-embeddings[huggingface,faiss,pgvector]",
 ]
 
 [project.urls]
@@ -534,9 +507,9 @@ namespaces = true
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl"]
 "parrot.auth" = ["templates/*.html"]
-"parrot.integrations.telegram" = ["static/*.html"]
-"parrot.voice" = ["ui/*.html", "ui/*.js", "ui/*.css"]
-"parrot.outputs.formats.assets" = ["*.js", "*.css"]
+# parrot.integrations.telegram moved to ai-parrot-integrations
+# parrot.voice moved to ai-parrot-integrations
+# parrot.outputs.formats.assets moved to ai-parrot-visualizations (FEAT-200)
 "parrot.openapi" = ["*.yaml"]
 "parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
 "parrot.forms.renderers" = ["templates/*.j2"]

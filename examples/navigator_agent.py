@@ -18,7 +18,7 @@ import logging
 from parrot.bots.agent import BasicAgent
 from parrot.bots.prompts import PromptBuilder
 from parrot.clients.google import GoogleGenAIClient
-from parrot.pageindex import PageIndexLLMAdapter
+from parrot.knowledge.pageindex import PageIndexLLMAdapter
 
 from parrot_tools.navigator import NavigatorToolkit
 from parrot_tools.navigator.prompt import NavigatorPageIndex, get_navigator_layers

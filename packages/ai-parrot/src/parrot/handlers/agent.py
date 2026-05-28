@@ -43,7 +43,7 @@ from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
-from ..integrations.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.oauth2.models import AuthRequiredEnvelope
 if TYPE_CHECKING:
     from ..manager import BotManager
 
@@ -1382,6 +1382,11 @@ class AgentTalk(BaseView):
             with contextlib.suppress(ValueError):
                 output_mode = OutputMode(data.pop('output_mode'))
 
+        # FEAT-197: Infographic mode is not compatible with streaming — the
+        # final envelope must carry the signed URL atomically.
+        if output_mode == OutputMode.INFOGRAPHIC:
+            use_stream = False  # force-disable streaming for this mode
+
         # Prepare ask() parameters
         format_kwargs = data.pop('format_kwargs', {})
         response = None
@@ -2133,6 +2138,20 @@ class AgentTalk(BaseView):
         if isinstance(response, AgentResponse):
             response = response.response
 
+        # FEAT-197: Infographic mode — return the documented JSON envelope
+        # (or text/html for Accept: text/html / ?format=html requests).
+        if getattr(response, "output_mode", None) == OutputMode.INFOGRAPHIC:
+            return self._format_infographic_response(
+                response=response,
+                format_kwargs=format_kwargs,
+                user_id=user_id,
+                user_session=user_session,
+                response_time_ms=response_time_ms,
+                agent_name=agent_name,
+                session_id=session_id,
+                client_message_id=client_message_id,
+            )
+
         output = response.output
         if output_format == 'json':
             # Return structured JSON response
@@ -2340,6 +2359,89 @@ class AgentTalk(BaseView):
             )
 
         return output
+
+    def _format_infographic_response(
+        self,
+        response: "AIMessage",
+        format_kwargs: Dict[str, Any],
+        user_id: str = None,
+        user_session: str = None,
+        response_time_ms: int = None,
+        agent_name: str = None,
+        session_id: str = None,
+        client_message_id: str = None,
+    ) -> web.Response:
+        """Return the INFOGRAPHIC JSON envelope or text/html for Accept: text/html.
+
+        JSON envelope shape:
+        ```json
+        {
+            "input": "...",
+            "output": "<html_url or html_inline>",
+            "output_mode": "infographic",
+            "artifact_id": "...",
+            "data": [ ... List[DatasetResult] ... ],
+            "metadata": {
+                "html_url": "...",
+                "html_inline_omitted": false,
+                "enhanced": false,
+                "template_name": "...",
+                "theme": "...",
+                ...
+            }
+        }
+        ```
+        ``Accept: text/html`` or ``?format=html`` returns the raw HTML body.
+        """
+        # Accept: text/html content-negotiation
+        accept_header = self.request.headers.get("Accept", "")
+        fmt_param = self.request.query.get("format", "")
+        want_html = accept_header.startswith("text/html") or fmt_param == "html"
+
+        if want_html:
+            # Serve the artifact HTML directly.
+            html_body = (
+                response.output
+                if isinstance(response.output, str)
+                else str(response.output or "")
+            )
+            from parrot.handlers.csp import build_csp_headers, frame_ancestors_from_env
+            from parrot.models.infographic import JSBundle
+            meta = dict(getattr(response, "metadata", None) or {})
+            raw_bundles = meta.get("js_bundles", [])
+            bundles = [JSBundle.model_validate(b) if isinstance(b, dict) else b for b in raw_bundles]
+            csp_headers = build_csp_headers(js_bundles=bundles, frame_ancestors=frame_ancestors_from_env())
+            return web.Response(
+                text=html_body,
+                content_type="text/html",
+                charset="utf-8",
+                headers=csp_headers,
+            )
+
+        # Default: structured JSON envelope
+        metadata = dict(getattr(response, "metadata", None) or {})
+        artifact_id = getattr(response, "artifact_id", None)
+
+        obj_response = {
+            "input": response.input,
+            "output": response.output,
+            "output_mode": "infographic",
+            "artifact_id": artifact_id,
+            "data": response.data,
+            "metadata": {
+                **metadata,
+                "model": getattr(response, "model", None),
+                "provider": getattr(response, "provider", None),
+                "session_id": str(getattr(response, "session_id", "") or ""),
+                "turn_id": str(getattr(response, "turn_id", "") or ""),
+                "response_time": response_time_ms,
+            },
+            "sources": [],
+            "tool_calls": [],
+        }
+        return web.json_response(
+            obj_response, dumps=json_encoder, content_type="application/json",
+        )
 
     def _serve_panel_dashboard(self, response: AIMessage) -> web.Response:
         """

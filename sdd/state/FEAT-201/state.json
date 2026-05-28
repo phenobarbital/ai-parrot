@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-201",
+  "feature_slug": "ai-parrot-embeddings",
+  "started_at": "2026-05-28T00:00:00Z",
+  "updated_at": "2026-05-28T00:00:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-201/source.md",
+    "fetched_at": "2026-05-28T00:00:00Z",
+    "summary_oneline": "Split embeddings (and related vector-store) extras out of ai-parrot into a new ai-parrot-embeddings package; keep base Registry/Abstract in ai-parrot"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z"
+    },
+    "plan": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z",
+      "queries_total": 28,
+      "approved_by_user": true,
+      "edited_by_user": true,
+      "plan_path": "sdd/state/FEAT-201/research_plan.json"
+    },
+    "research": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z",
+      "queries_executed": 28,
+      "queries_skipped": 0,
+      "findings_written": 14
+    },
+    "synthesis": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z",
+      "synthesis_path": "sdd/state/FEAT-201/synthesis.json",
+      "overall_confidence": "high",
+      "detected_mode": "enrichment",
+      "claims_total": 20,
+      "claims_high": 20,
+      "claims_medium": 0,
+      "claims_low": 0
+    },
+    "qa": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z",
+      "questions_total": 3,
+      "questions_answered": 3
+    },
+    "output": {
+      "status": "complete",
+      "started_at": "2026-05-28T00:00:00Z",
+      "completed_at": "2026-05-28T00:00:00Z",
+      "proposal_path": "sdd/proposals/ai-parrot-embeddings.proposal.md",
+      "commit_sha": "22cd263cb5365f0984df3d18e811c21c66475f5b"
+    }
+  },
+  "budget": {
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300,
+    "profile": "default"
+  },
+  "consumed": {
+    "files_read": 11,
+    "grep_calls": 8,
+    "git_calls": 4,
+    "depth_reached": 0,
+    "wall_seconds": 0,
+    "queries_executed": 28,
+    "queries_skipped": 0,
+    "truncated": false,
+    "truncation_reason": null
+  }
+}

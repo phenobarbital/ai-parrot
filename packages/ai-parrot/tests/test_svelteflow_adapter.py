@@ -4,14 +4,14 @@ TASK-014: to_svelteflow / from_svelteflow conversion and roundtrip.
 """
 import pytest
 
-from parrot.bots.flow.definition import (
+from parrot.bots.flows.flow.definition import (
     EdgeDefinition,
     FlowDefinition,
     LogActionDef,
     NodeDefinition,
     NodePosition,
 )
-from parrot.bots.flow.svelteflow import from_svelteflow, to_svelteflow
+from parrot.bots.flows.flow.svelteflow import from_svelteflow, to_svelteflow
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +285,8 @@ class TestRoundtrip:
 
 class TestImports:
     def test_import_from_package(self):
-        from parrot.bots.flow import from_svelteflow as fs
-        from parrot.bots.flow import to_svelteflow as ts
+        from parrot.bots.flows.flow.svelteflow import from_svelteflow as fs
+        from parrot.bots.flows.flow.svelteflow import to_svelteflow as ts
 
         assert ts is to_svelteflow
         assert fs is from_svelteflow

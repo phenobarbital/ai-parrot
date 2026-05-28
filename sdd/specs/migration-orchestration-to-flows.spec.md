@@ -8,10 +8,13 @@ base_branch: dev
 **Feature ID**: FEAT-155
 **Date**: 2026-05-11
 **Author**: Jesus
-**Status**: approved
+**Status**: implemented
 **Target version**: next minor
 **Proposal**: `sdd/proposals/migration-orchestration-to-flows.proposal.md`
 **Prior specs**: FEAT-134 (flow-primitives), FEAT-137 (agentcrew-primitives) — both completed
+
+> **Note (FEAT-196, 2026-05-28)**: `parrot.bots.flow` (singular) has been deleted.
+> References to it in this spec are historical.
 
 ---
 

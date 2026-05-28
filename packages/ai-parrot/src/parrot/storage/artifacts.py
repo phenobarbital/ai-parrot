@@ -9,14 +9,19 @@ Removed the leaky ConversationDynamoDB-specific abstraction (FEAT-116).
 See docs/storage-backends.md for backend configuration.
 """
 
+import os
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Literal, Optional, Union
 
 from navconfig.logging import logging
 
 from .backends.base import ConversationBackend
 from .models import Artifact, ArtifactSummary, ArtifactType
 from .overflow import OverflowStore
+
+# Presigned URL expiry in seconds (default 7 days).
+# Override via INFOGRAPHIC_URL_EXPIRY_SECONDS environment variable.
+_URL_EXPIRY_SECONDS: int = int(os.environ.get("INFOGRAPHIC_URL_EXPIRY_SECONDS", "604800"))
 
 
 class ArtifactStore:
@@ -168,6 +173,63 @@ class ArtifactStore:
             await self._overflow.delete(ref)
         await self._db.delete_artifact(user_id, agent_id, session_id, artifact_id)
         return True
+
+    async def get_public_url(
+        self,
+        user_id: Union[str, int],
+        agent_id: str,
+        session_id: str,
+        artifact_id: str,
+        *,
+        format: Literal["html", "json"] = "html",  # noqa: A002
+    ) -> str:
+        """Return a presigned URL for the artifact's overflow object.
+
+        Generates an S3 sigv4 presigned URL (max 7 days / 604 800 s) so that
+        the artifact can be fetched by any caller with the URL — no session or
+        auth required.  The URL does NOT embed ``user_id``; signature alone
+        authorises access.
+
+        For the ``"html"`` format the URL points to the same overflow JSON
+        object that ``save_artifact`` uploaded (which contains the full
+        definition including the ``html`` field).  TASK-1322's public route
+        provides the HTML-specific serving endpoint on top of this.
+
+        Args:
+            user_id: Owning user identifier (used to locate the artifact).
+            agent_id: Agent that produced the artifact.
+            session_id: Session that owns the artifact.
+            artifact_id: Unique artifact identifier.
+            format: ``"html"`` (default) or ``"json"``.  v1 treats both
+                identically; both return a presigned URL to the overflow JSON.
+                ``"json"`` is kept for future use; raises ``NotImplementedError``
+                if distinct JSON-only storage is requested.
+
+        Returns:
+            A presigned URL string starting with ``https://``.
+
+        Raises:
+            KeyError: When the artifact does not exist.
+            ValueError: When the artifact has no overflow reference (stored
+                inline, i.e. small enough to skip S3).
+        """
+        artifact = await self.get_artifact(user_id, agent_id, session_id, artifact_id)
+        if artifact is None:
+            raise KeyError(f"Artifact {artifact_id!r} not found")
+
+        ref = artifact.definition_ref
+        if not ref:
+            raise ValueError(
+                f"Artifact {artifact_id!r} has no overflow reference; "
+                "cannot generate a presigned URL for an inline artifact."
+            )
+
+        self.logger.info(
+            "Issuing presigned URL for artifact=%s format=%s", artifact_id, format,
+        )
+        return await self._overflow.generate_presigned_url(
+            ref, expires_in=_URL_EXPIRY_SECONDS,
+        )
 
     @staticmethod
     def _deserialize(raw: dict, resolved_definition: Optional[dict]) -> Artifact:

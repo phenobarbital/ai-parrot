@@ -188,7 +188,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from parrot.tools.agent import AgentTool
 from parrot.models.responses import AIMessage, AgentResponse
 from parrot.models.basic import CompletionUsage
-from parrot.bots.flow.storage.memory import ExecutionMemory
+from parrot.bots.flows.core.storage import ExecutionMemory  # updated: parrot.bots.flow deleted in FEAT-196
 
 
 def _make_ai_message(**overrides) -> AIMessage:
@@ -568,7 +568,7 @@ Append to `packages/ai-parrot/tests/test_orchestrator_agent.py`:
 
 ```python
 from parrot.models.crew import AgentResult
-from parrot.bots.flow.storage.memory import ExecutionMemory
+from parrot.bots.flows.core.storage import ExecutionMemory  # updated: parrot.bots.flow deleted in FEAT-196
 
 
 class TestPassthroughMode:

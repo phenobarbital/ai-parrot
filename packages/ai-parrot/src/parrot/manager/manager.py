@@ -1656,8 +1656,8 @@ Available documentation UIs:
         is guaranteed to be available before registration.
         """
         try:
-            from parrot.integrations.oauth2.jira_provider import JiraOAuth2Provider
-            from parrot.integrations.oauth2.registry import register_oauth2_provider
+            from parrot.auth.oauth2.jira_provider import JiraOAuth2Provider
+            from parrot.auth.oauth2.registry import register_oauth2_provider
 
             jira_manager = app.get("jira_oauth_manager")
             if jira_manager is not None:

@@ -43,8 +43,9 @@ for _name in [
     "parrot.utils.types",
     "parrot.bots",
     "parrot.bots.base",
-    "parrot.bots.flow",
-    "parrot.bots.flow.node",
+    "parrot.bots.flows",
+    "parrot.bots.flows.core",
+    "parrot.bots.flows.core.node",
     "parrot.clients",
     "parrot.clients.factory",
     "parrot.flows",
@@ -64,7 +65,7 @@ for _name in [
         _STUBS[_name] = _stub
 
 # Make Node a plain Python class so ResearchNode can inherit from it.
-sys.modules["parrot.bots.flow.node"].Node = object
+sys.modules["parrot.bots.flows.core.node"].Node = object
 
 # Provide the symbols research.py imports from parrot.flows.dev_loop.models
 _models = sys.modules["parrot.flows.dev_loop.models"]
