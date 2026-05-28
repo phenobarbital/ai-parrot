@@ -70,7 +70,7 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on vault_utils relocation",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1368-split-mcp-oauth.md"
+      "completed_at": "2026-05-28T23:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1368-split-mcp-oauth.md"
     },
     {
       "id": "TASK-1369",
