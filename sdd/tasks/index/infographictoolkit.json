@@ -129,7 +129,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,8 +139,8 @@
       "parallelism_notes": "Same file as TASK-1323; must merge after the core lands.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1324-infographic-toolkit-aux-tools.md"
+      "completed_at": "2026-05-28T11:18:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1324-infographic-toolkit-aux-tools.md"
     },
     {
       "id": "TASK-1325",
