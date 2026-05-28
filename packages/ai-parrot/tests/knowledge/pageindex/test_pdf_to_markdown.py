@@ -1,4 +1,4 @@
-"""Tests for parrot.pageindex.pdf_to_markdown."""
+"""Tests for parrot.knowledge.pageindex.pdf_to_markdown."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from parrot.pageindex.pdf_to_markdown import (
+from parrot.knowledge.pageindex.pdf_to_markdown import (
     build_node_markdown_map,
     extract_markdown_per_page,
 )
@@ -54,7 +54,7 @@ def test_extract_markdown_per_page_count_mismatch_raises(tmp_path: Path):
     pdf = _make_pdf(tmp_path / "tiny.pdf", n_pages=3)
     # Force pymupdf4llm to return fewer chunks than the real page count.
     with patch(
-        "parrot.pageindex.pdf_to_markdown.pymupdf4llm.to_markdown",
+        "parrot.knowledge.pageindex.pdf_to_markdown.pymupdf4llm.to_markdown",
         return_value=[{"text": "only one"}],
     ):
         with pytest.raises(ValueError):

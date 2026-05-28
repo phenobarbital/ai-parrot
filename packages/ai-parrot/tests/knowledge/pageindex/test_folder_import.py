@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.pageindex.ingest import IngestedMarkdown
-from parrot.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.ingest import IngestedMarkdown
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 
 def _adapter() -> MagicMock:
@@ -50,8 +50,8 @@ def _struct_factory():
 def _stub_tiktoken(monkeypatch):
     def _approx(text: str, model: str = "gpt-4o") -> int:
         return max(1, len(text or ""))
-    monkeypatch.setattr("parrot.pageindex.utils.count_tokens", _approx)
-    monkeypatch.setattr("parrot.pageindex.md_builder.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", _approx)
 
 
 @pytest.fixture

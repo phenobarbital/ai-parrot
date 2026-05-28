@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.pageindex.llm_adapter import PageIndexLLMAdapter, extract_json
-from parrot.pageindex.schemas import TocDetectionResult
+from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter, extract_json
+from parrot.knowledge.pageindex.schemas import TocDetectionResult
 
 
 def _make_mock_client(output: str = "test output", structured: object = None):

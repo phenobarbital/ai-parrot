@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from parrot.pageindex.utils import (
+from parrot.knowledge.pageindex.utils import (
     add_preface_if_needed,
     calculate_page_offset,
     convert_physical_index_to_int,

@@ -1,4 +1,4 @@
-"""Tests for parrot.pageindex.store.JSONTreeStore."""
+"""Tests for parrot.knowledge.pageindex.store.JSONTreeStore."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from parrot.pageindex.store import JSONTreeStore
+from parrot.knowledge.pageindex.store import JSONTreeStore
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def test_delete(store: JSONTreeStore):
 
 def test_atomic_write_cleans_temp_on_failure(store: JSONTreeStore, tmp_path: Path):
     boom = RuntimeError("simulated replace failure")
-    with patch("parrot.pageindex.store.os.replace", side_effect=boom):
+    with patch("parrot.knowledge.pageindex.store.os.replace", side_effect=boom):
         with pytest.raises(RuntimeError):
             store.save("docs", {"structure": []})
     leftover = [p.name for p in tmp_path.iterdir()]

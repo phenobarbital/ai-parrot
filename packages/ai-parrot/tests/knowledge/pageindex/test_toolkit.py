@@ -1,4 +1,4 @@
-"""Tests for parrot.pageindex.toolkit.PageIndexToolkit (in-toolkit surface)."""
+"""Tests for parrot.knowledge.pageindex.toolkit.PageIndexToolkit (in-toolkit surface)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.pageindex.ingest import IngestedMarkdown
-from parrot.pageindex.schemas import TreeSearchResult
-from parrot.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.ingest import IngestedMarkdown
+from parrot.knowledge.pageindex.schemas import TreeSearchResult
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 
 def _adapter() -> MagicMock:
@@ -50,8 +50,8 @@ def _stub_tiktoken(monkeypatch):
     def _approx(text: str, model: str = "gpt-4o") -> int:
         # Use char count so even short snippets clear thin_tree's 50-token gate.
         return max(1, len(text or ""))
-    monkeypatch.setattr("parrot.pageindex.utils.count_tokens", _approx)
-    monkeypatch.setattr("parrot.pageindex.md_builder.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", _approx)
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ async def test_insert_markdown_then_search(monkeypatch, toolkit: PageIndexToolki
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
     await toolkit.create_tree("kb")
     md = (
@@ -197,7 +197,7 @@ async def test_import_pdf_splices_into_tree(monkeypatch, toolkit: PageIndexToolk
         }
 
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.build_page_index", fake_build_page_index,
+        "parrot.knowledge.pageindex.toolkit.build_page_index", fake_build_page_index,
     )
 
     await toolkit.create_tree("compliance")
@@ -247,7 +247,7 @@ def _fake_build_pdf(monkeypatch):
                 "0002": "# Article 32\nVERBATIM_BODY_OF_ARTICLE_32.\n",
             },
         }
-    monkeypatch.setattr("parrot.pageindex.toolkit.build_page_index", _build)
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _build)
 
 
 @pytest.mark.asyncio
@@ -283,7 +283,7 @@ async def test_toolkit_retrieve_returns_markdown_not_summary(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -304,7 +304,7 @@ async def test_toolkit_retrieve_falls_back_to_summary_when_no_content(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -386,7 +386,7 @@ async def test_toolkit_search_filters_by_categories(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -422,7 +422,7 @@ async def test_toolkit_search_filters_by_metadata(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     await toolkit.create_tree("compliance")
@@ -479,7 +479,7 @@ async def test_insert_markdown_persists_sidecar_and_strips_text(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -528,7 +528,7 @@ async def test_insert_markdown_retrieve_returns_body(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -554,7 +554,7 @@ async def test_import_folder_persists_sidecars(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     src = tmp_path / "src"
@@ -607,7 +607,7 @@ async def test_add_node_creates_root_leaf_atomically(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -649,7 +649,7 @@ async def test_add_node_under_existing_parent(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -686,7 +686,7 @@ async def test_add_node_then_retrieve_returns_body(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -714,7 +714,7 @@ async def test_update_node_content_overwrites_sidecar(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -737,7 +737,7 @@ async def test_update_node_content_marks_bm25_dirty(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -771,7 +771,7 @@ async def test_update_node_renames_and_resummarizes(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -799,7 +799,7 @@ async def test_update_node_partial_update(
     async def fake_retriever_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search",
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search",
         fake_retriever_search,
     )
     await toolkit.create_tree("kb")
@@ -872,7 +872,7 @@ async def _seed_scoped_tree(
                 "0001": f"# Section B\n{body_token}_B\n",
             },
         }
-    monkeypatch.setattr("parrot.pageindex.toolkit.build_page_index", _build)
+    monkeypatch.setattr("parrot.knowledge.pageindex.toolkit.build_page_index", _build)
     await toolkit.create_tree(tree_name, doc_name=doc_name)
     await toolkit.import_pdf(tree_name, str(pdf))
 
@@ -894,7 +894,7 @@ async def test_search_documents_scoped_single_tree(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="found it", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
     result = await toolkit.search_documents_scoped(
         tree_names=["kb1"], query="anything",
@@ -921,7 +921,7 @@ async def test_search_documents_scoped_multiple_trees_fan_out(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="t", node_list=["0001"])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
     result = await toolkit.search_documents_scoped(
         tree_names=["kb1", "kb3"], query="q",
@@ -940,11 +940,11 @@ async def test_search_documents_scoped_missing_tree_skipped(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="t", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
 
     import logging
-    with caplog.at_level(logging.WARNING, logger="parrot.pageindex"):
+    with caplog.at_level(logging.WARNING, logger="parrot.knowledge.pageindex"):
         result = await toolkit.search_documents_scoped(
             tree_names=["real", "ghost"], query="q",
         )
@@ -972,7 +972,7 @@ async def test_search_documents_scoped_include_tree_context(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
     result = await toolkit.search_documents_scoped(
         tree_names=["kb"], query="q", include_tree_context=True,
@@ -994,7 +994,7 @@ async def test_search_documents_scoped_respects_max_trees(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=[])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
     result = await toolkit.search_documents_scoped(
         tree_names=[f"kb{i}" for i in range(5)], query="q", max_trees=2,
@@ -1015,7 +1015,7 @@ async def test_search_documents_scoped_falls_back_to_summary_when_no_sidecar(
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0000"])
     monkeypatch.setattr(
-        "parrot.pageindex.toolkit.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.toolkit.PageIndexRetriever.search", fake_search,
     )
     result = await toolkit.search_documents_scoped(tree_names=["kb"], query="q")
     entry = result["scoped_results"][0]

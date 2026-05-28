@@ -1,11 +1,11 @@
-"""Tests for parrot.pageindex.content_store.NodeContentStore."""
+"""Tests for parrot.knowledge.pageindex.content_store.NodeContentStore."""
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 
-from parrot.pageindex.content_store import NodeContentStore
+from parrot.knowledge.pageindex.content_store import NodeContentStore
 
 
 @pytest.fixture

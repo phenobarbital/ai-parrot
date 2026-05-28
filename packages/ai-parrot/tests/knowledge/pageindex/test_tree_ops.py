@@ -1,15 +1,15 @@
-"""Tests for parrot.pageindex.tree_ops splice / delete / reindex helpers."""
+"""Tests for parrot.knowledge.pageindex.tree_ops splice / delete / reindex helpers."""
 from __future__ import annotations
 
 import pytest
 
-from parrot.pageindex.tree_ops import (
+from parrot.knowledge.pageindex.tree_ops import (
     delete_node,
     make_folder_node,
     reindex_node_ids,
     splice_subtree,
 )
-from parrot.pageindex.utils import find_node_by_id, get_nodes
+from parrot.knowledge.pageindex.utils import find_node_by_id, get_nodes
 
 
 def _sample_tree() -> dict:

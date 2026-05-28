@@ -1,12 +1,12 @@
-"""Tests for parrot.pageindex.hybrid_search.HybridPageIndexSearch."""
+"""Tests for parrot.knowledge.pageindex.hybrid_search.HybridPageIndexSearch."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.pageindex.hybrid_search import HybridPageIndexSearch
-from parrot.pageindex.schemas import TreeSearchResult
+from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
+from parrot.knowledge.pageindex.schemas import TreeSearchResult
 
 
 def _fixture_tree() -> dict:
@@ -66,7 +66,7 @@ async def test_llm_only_returns_walk_order(monkeypatch):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0002", "0001"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
     engine = HybridPageIndexSearch(tree=_fixture_tree(), adapter=_adapter())
     results = await engine.search(
@@ -81,7 +81,7 @@ async def test_fused_combines_both_signals(monkeypatch):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0003", "0001"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
     engine = HybridPageIndexSearch(
         tree=_fixture_tree(), adapter=_adapter(), default_bm25_k=5,
@@ -183,7 +183,7 @@ async def test_hybrid_search_no_loader_matches_baseline():
     ids, texts = engine._flatten_corpus()
     # Pre-feature baseline: text reads node["text"].
     for nid, text in zip(ids, texts):
-        from parrot.pageindex.utils import find_node_by_id
+        from parrot.knowledge.pageindex.utils import find_node_by_id
         node = find_node_by_id(tree["structure"], nid)
         assert node is not None
         title = node.get("title") or ""
@@ -202,7 +202,7 @@ async def test_hybrid_search_content_loader_enriches_reranker(monkeypatch):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0001"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     captured: dict = {}
@@ -237,7 +237,7 @@ async def test_reranker_invoked_when_requested(monkeypatch):
     async def fake_search(self, query):
         return TreeSearchResult(thinking="", node_list=["0001", "0002"])
     monkeypatch.setattr(
-        "parrot.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
+        "parrot.knowledge.pageindex.hybrid_search.PageIndexRetriever.search", fake_search,
     )
 
     reranker = MagicMock()

@@ -141,7 +141,7 @@ import json
 from pathlib import Path
 
 from parrot.knowledge.graphindex.extractors.loader import _content_ref, _make_node_id
-from parrot.pageindex.toolkit import PageIndexToolkit
+from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 
 
 def _stub_adapter() -> MagicMock:
@@ -161,8 +161,8 @@ def _stub_tiktoken(monkeypatch):
     # tiny fixture body as "large enough".
     def _approx(text: str, model: str = "gpt-4o") -> int:
         return max(1, len(text or ""))
-    monkeypatch.setattr("parrot.pageindex.utils.count_tokens", _approx)
-    monkeypatch.setattr("parrot.pageindex.md_builder.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.utils.count_tokens", _approx)
+    monkeypatch.setattr("parrot.knowledge.pageindex.md_builder.count_tokens", _approx)
     return _approx
 
 

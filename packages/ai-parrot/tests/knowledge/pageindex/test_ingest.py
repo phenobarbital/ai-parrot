@@ -1,11 +1,11 @@
-"""Tests for parrot.pageindex.ingest.TwoStepIngester."""
+"""Tests for parrot.knowledge.pageindex.ingest.TwoStepIngester."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.pageindex.ingest import IngestedMarkdown, TwoStepIngester
+from parrot.knowledge.pageindex.ingest import IngestedMarkdown, TwoStepIngester
 
 
 def _adapter(*, ask_return: str = "", structured: IngestedMarkdown | dict | None = None):

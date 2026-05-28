@@ -4,7 +4,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from parrot.pageindex.schemas import (
+from parrot.knowledge.pageindex.schemas import (
     DocDescription,
     GeneratedTocItem,
     PageIndexDetection,

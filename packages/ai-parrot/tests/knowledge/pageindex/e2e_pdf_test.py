@@ -22,9 +22,9 @@ OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "fixtures", "docling_struc
 
 async def main():
     from parrot.clients.google.client import GoogleGenAIClient
-    from parrot.pageindex.llm_adapter import PageIndexLLMAdapter
-    from parrot.pageindex.builder import build_page_index
-    from parrot.pageindex.retriever import PageIndexRetriever
+    from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+    from parrot.knowledge.pageindex.builder import build_page_index
+    from parrot.knowledge.pageindex.retriever import PageIndexRetriever
 
     # ── Step 1: Build the PageIndex tree ──
     logger.info("=" * 60)
