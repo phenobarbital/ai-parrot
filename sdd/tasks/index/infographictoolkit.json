@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T14:23:05+00:00",
   "tasks": [
     {
       "id": "TASK-1318",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Single-field addition to AIMessage; no other task touches this region of responses.py.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1318-aimessage-artifact-id-field.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1318-aimessage-artifact-id-field.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1319",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "New model + optional template field; independent of other tasks until TASK-1323 consumes it.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1319-jsbundle-and-template-js-bundles.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1319-jsbundle-and-template-js-bundles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1320",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +62,9 @@
       "parallelism_notes": "Modifies handlers/agent.py and prompts/__init__.py; shares the handler file with TASK-1326 (downstream consumer).",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1320-output-mode-infographic.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1320-output-mode-infographic.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1321",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +81,9 @@
       "parallelism_notes": "Storage-layer only; isolated from the bots/handlers paths.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1321-artifactstore-public-url.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1321-artifactstore-public-url.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1322",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -98,17 +102,18 @@
       "parallelism_notes": "Touches handlers/artifacts.py and adds a route; sequential to TASK-1321 which provides the URL primitive.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1322-public-artifact-html-serving.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1322-public-artifact-html-serving.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1323",
       "slug": "infographic-toolkit-core",
-      "title": "InfographicToolkit core — envelopes, validation pipeline, render",
+      "title": "InfographicToolkit core \u2014 envelopes, validation pipeline, render",
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -119,8 +124,9 @@
       "parallelism_notes": "Imports JSBundle (1319) and ArtifactStore.get_public_url (1321). Single file but ~500 LoC + extensive tests.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1323-infographic-toolkit-core.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1323-infographic-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1324",
@@ -129,7 +135,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,8 +145,9 @@
       "parallelism_notes": "Same file as TASK-1323; must merge after the core lands.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1324-infographic-toolkit-aux-tools.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1324-infographic-toolkit-aux-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1325",
@@ -149,7 +156,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -160,8 +167,9 @@
       "parallelism_notes": "Wires the _maybe_enhance hook in TASK-1323; shares the toolkit module so sequential merge required.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1325-enhance-pipeline-and-sri-validator.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1325-enhance-pipeline-and-sri-validator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1326",
@@ -170,7 +178,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,8 +190,9 @@
       "parallelism_notes": "Modifies bots/data.py. Coordinate with FEAT-196 (agentsflow-migration) which also touches PandasAgent.ask.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1326-pandasagent-infographic-post-loop.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1326-pandasagent-infographic-post-loop.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1327",
@@ -192,7 +201,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +215,9 @@
       "parallelism_notes": "Final integration task; validates the full pipeline end-to-end and adds the example skill + docs.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1327-example-skill-and-e2e.md"
+      "completed_at": "2026-05-28T14:23:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1327-example-skill-and-e2e.md",
+      "verification": "verified"
     }
   ]
 }
