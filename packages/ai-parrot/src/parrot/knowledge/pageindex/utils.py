@@ -8,7 +8,6 @@ import math
 import os
 import re
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace as config
 from typing import Any, Optional
 
@@ -25,7 +24,7 @@ try:
 except ImportError:
     pymupdf = None  # type: ignore[assignment]
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.utils")
 
 
 # --- Token Counting ---

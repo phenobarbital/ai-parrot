@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover — pyproject pins pymupdf4llm.
     pymupdf4llm = None  # type: ignore[assignment]
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.pdf_to_markdown")
 
 
 def extract_markdown_per_page(pdf_path: str | Path) -> list[tuple[int, str]]:

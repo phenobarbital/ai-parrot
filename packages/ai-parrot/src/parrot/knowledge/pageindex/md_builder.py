@@ -15,7 +15,7 @@ from .utils import (
 )
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.md_builder")
 
 # --- Markdown Header Regex ---
 _HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)")

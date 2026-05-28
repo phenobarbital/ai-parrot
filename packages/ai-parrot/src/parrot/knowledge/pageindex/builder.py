@@ -6,7 +6,6 @@ import contextvars
 import copy
 import json
 import logging
-import math
 import re
 from io import BytesIO
 from types import SimpleNamespace as config
@@ -15,15 +14,12 @@ from typing import Any, Awaitable, Iterable, Optional
 from .llm_adapter import PageIndexLLMAdapter
 from .pdf_to_markdown import build_node_markdown_map, extract_markdown_per_page
 from .schemas import (
-    GeneratedTocItem,
     PageIndexDetection,
     PhysicalIndexFix,
     TitleAppearanceCheck,
     TitleStartCheck,
     TocCompletionCheck,
     TocDetectionResult,
-    TocItem,
-    TocJson,
 )
 from .utils import (
     ConfigLoader,
@@ -38,7 +34,6 @@ from .utils import (
     get_json_content,
     get_page_tokens,
     get_pdf_name,
-    list_to_tree,
     page_list_to_group_text,
     post_processing,
     remove_page_number,
@@ -48,7 +43,7 @@ from .utils import (
     create_clean_structure_for_description,
 )
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.builder")
 
 
 # ======================== Bounded LLM Concurrency ========================

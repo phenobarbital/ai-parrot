@@ -36,13 +36,12 @@ from .store import JSONTreeStore
 from .tree_ops import (
     delete_node as _delete_node,
     make_folder_node,
-    reindex_node_ids,
     splice_subtree,
 )
 from .utils import find_node_by_id
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
 _MAX_TREES_HARD_CAP = 10
 

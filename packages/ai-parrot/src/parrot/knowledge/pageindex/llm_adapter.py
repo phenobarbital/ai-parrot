@@ -9,7 +9,7 @@ from typing import Any, Optional, Union
 from parrot.clients.base import AbstractClient
 from parrot.models.outputs import StructuredOutputConfig
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.llm_adapter")
 
 
 def extract_json(content: str) -> Any:

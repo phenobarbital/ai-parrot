@@ -33,7 +33,7 @@ class PageIndexRetriever:
         if model and getattr(self.adapter, "model", None) != model:
             self.adapter.model = model
         self.expert_knowledge = expert_knowledge
-        self.logger = logging.getLogger("parrot.knowledge.pageindex")
+        self.logger = logging.getLogger("parrot.knowledge.pageindex.retriever")
 
     async def search(self, query: str) -> TreeSearchResult:
         """Execute LLM tree search to find relevant nodes."""

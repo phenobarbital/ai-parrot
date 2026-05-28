@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.content_store")
 
 _TREE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")

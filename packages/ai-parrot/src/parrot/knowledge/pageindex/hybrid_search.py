@@ -25,7 +25,7 @@ from .retriever import PageIndexRetriever
 from .utils import find_node_by_id, get_nodes
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.hybrid_search")
 
 # bm25s pulls in ``jax.lax`` for its top-k selection, which emits noisy
 # DEBUG/INFO/WARNING messages about TPU/CUDA backend probing and every

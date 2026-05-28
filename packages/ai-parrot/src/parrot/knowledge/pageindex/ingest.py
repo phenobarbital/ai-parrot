@@ -25,7 +25,7 @@ from .prompts import (
 )
 
 
-logger = logging.getLogger("parrot.knowledge.pageindex")
+logger = logging.getLogger("parrot.knowledge.pageindex.ingest")
 
 
 # Step-1 content is fed to a small/cheap model so we cap it aggressively.
