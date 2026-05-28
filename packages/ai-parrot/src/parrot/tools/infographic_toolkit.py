@@ -33,7 +33,8 @@ from parrot.models.infographic_templates import (
     InfographicTemplate,
     infographic_registry,
 )
-from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
+from parrot.outputs.formats import get_renderer
+from parrot.models.outputs import OutputMode
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
 
@@ -133,7 +134,7 @@ class InfographicToolkit(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self._artifact_store = artifact_store
-        self._renderer = InfographicHTMLRenderer()
+        self._renderer = get_renderer(OutputMode.INFOGRAPHIC)()
         self.logger = logging.getLogger(__name__)
         # Ensure the class-level return_direct=True is set as an instance
         # attribute so AbstractToolkit._generate_tool can read it correctly.

@@ -17,6 +17,8 @@ import orjson
 from markupsafe import escape
 
 from .base import BaseRenderer
+from . import register_renderer
+from ...models.outputs import OutputMode
 from ...models.infographic import (
     BlockType,
     BulletListBlock,
@@ -579,6 +581,7 @@ function toggleAccordion(el) {
 </script>"""
 
 
+@register_renderer(OutputMode.INFOGRAPHIC)
 class InfographicHTMLRenderer(BaseRenderer):
     """Renders InfographicResponse as a self-contained HTML5 document.
 
