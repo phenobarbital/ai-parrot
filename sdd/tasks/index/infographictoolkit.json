@@ -170,7 +170,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -182,8 +182,8 @@
       "parallelism_notes": "Modifies bots/data.py. Coordinate with FEAT-196 (agentsflow-migration) which also touches PandasAgent.ask.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1326-pandasagent-infographic-post-loop.md"
+      "completed_at": "2026-05-28T11:27:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1326-pandasagent-infographic-post-loop.md"
     },
     {
       "id": "TASK-1327",
