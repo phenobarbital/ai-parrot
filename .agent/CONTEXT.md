@@ -101,11 +101,40 @@ parrot/
 │   └── orchestration/  # AgentCrew, DAG execution
 ├── tools/            # Tool definitions and toolkits
 ├── loaders/          # Document loaders for RAG
-├── vectorstores/     # PgVector, ArangoDB
+├── embeddings/       # base/registry/catalog/matryoshka (base classes stay in core)
+│                     #   concrete backends (google/huggingface/openai) ship from
+│                     #   ai-parrot-embeddings via PEP 420 namespace merging;
+│                     #   import paths are unchanged: from parrot.embeddings.X import Y
+├── stores/           # AbstractStore + dispatch (supported_stores) + shared models
+│                     #   (Document, SearchResult, StoreConfig, DistanceStrategy) —
+│                     #   concrete vector-store backends (pgvector/milvus/arango/
+│                     #   bigquery/faiss_store) ship from ai-parrot-embeddings.
+│                     #   Sub-packages kb/, parents/, utils/ stay in core.
+│                     #   Import paths unchanged: from parrot.stores.X import Y
+├── rerankers/        # AbstractReranker + factory + lazy __getattr__ (core)
+│                     #   concrete rerankers (local/llm) ship from
+│                     #   ai-parrot-embeddings; import paths unchanged.
 ├── handlers/         # HTTP handlers (aiohttp-based)
 ├── memory/           # Conversation memory (Redis-backed)
 └── integrations/     # Telegram, MS Teams, Slack, MCP
 ```
+
+### ai-parrot-embeddings (satellite package — FEAT-201)
+
+Concrete backend implementations live in a sibling distribution that
+contributes to the same `parrot.*` namespace via **PEP 420 implicit
+namespace packages**:
+
+```
+packages/ai-parrot-embeddings/src/parrot/
+├── embeddings/   google.py, huggingface.py, openai.py
+├── stores/       postgres.py, pgvector.py, milvus.py, arango.py, bigquery.py, faiss_store.py
+└── rerankers/    local.py, llm.py
+```
+
+Install with: `pip install ai-parrot-embeddings[pgvector,milvus,huggingface]`
+or via the rewritten host meta-extra: `pip install ai-parrot[all]`.
+See `docs/migration/feat-201-ai-parrot-embeddings.md` for migration details.
 
 ---
 
