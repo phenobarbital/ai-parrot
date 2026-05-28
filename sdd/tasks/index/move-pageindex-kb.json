@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T11:15:57+00:00",
   "tasks": [
     {
       "id": "TASK-1328",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Verification gate — must run last. Depends on every other FEAT-198 task.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1332-verification-lint-and-cleanup.md"
+      "completed_at": "2026-05-28T11:15:38+00:00",
+      "file": "sdd/tasks/completed/TASK-1332-verification-lint-and-cleanup.md"
     }
   ]
 }

@@ -225,7 +225,16 @@ pytest packages/ai-parrot/tests/knowledge/graphindex/test_loader_extractor.py -v
 
 ### Completion note checklist (to fill in when done)
 
-- Pre-move test count (from TASK-1330 baseline): __passed / __skipped
-- Post-move test count: __passed / __skipped
-- Full ai-parrot suite delta vs. dev baseline: __new failures (must be 0)
-- Operational config audit findings: __ (paste matches or "none")
+- Pre-move test count (from TASK-1330 baseline): 167 passed / 2 failed / 21 warnings (2 pre-existing failures in test_adapter.py)
+- Post-move test count: 167 passed / 2 failed / 21 warnings — identical counts, no regressions
+- Cross-subsystem test: 22 passed
+- Full ai-parrot suite delta vs. dev baseline: 0 new failures
+- Operational config audit findings: none — `services/`, `etc/`, `deployments/`, `.github/` contain no `parrot.pageindex` references
+
+Ruff status: 8 pre-existing errors in `src/parrot/knowledge/pageindex/` (F401 unused imports — same 8 as in original location before move). 12 pre-existing errors in `tests/knowledge/pageindex/` (same 12 as original). Not fixed — out of scope per FEAT-198 non-goals.
+
+Grep-zero on production code: PASS (0 matches in packages/, examples/, docs/ after excluding sdd/).
+sdd/tasks/active/TASK-1332 itself contains `parrot.pageindex` strings (documenting grep commands) — moved to completed/, so grep-zero holds on non-SDD paths.
+sdd/state/FEAT-187/source.md contains a historical reference — preserved per spec §1 Non-Goals.
+
+All 5 acceptance criteria structural checks: PASS.
