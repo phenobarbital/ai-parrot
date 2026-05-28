@@ -30,8 +30,28 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Per-backend extras are added by TASK-1334/1335/1336.
-# `all` will aggregate them once backends arrive.
+# Embedding backends (TASK-1334)
+huggingface = [
+    "sentence-transformers>=5.0.0",
+    "tokenizers>=0.20.0,<=0.22.2",
+    "safetensors>=0.4.3",
+    "einops>=0.7.0",
+    "accelerate>=0.30.0",
+    "peft>=0.10.0",
+    "xformers>=0.0.27",
+    "simsimd>=4.3.1",
+    "bm25s[full]==0.2.14",
+    "rank_bm25==0.2.2",
+    "sentencepiece==0.2.1",
+]
+google = [
+    "google-genai>=2.6.0",
+    "google-cloud-aiplatform==1.133.0",
+]
+openai = [
+    "openai==2.8.1",
+    "tiktoken>=0.9.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

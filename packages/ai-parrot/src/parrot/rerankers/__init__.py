@@ -5,6 +5,10 @@ retrieval pipeline.  Rerankers sit between the vector-store retrieval step
 and the LLM prompt assembly step, scoring ``(query, passage)`` pairs jointly
 to produce a more accurate relevance ranking than cosine similarity alone.
 
+PEP 420 namespace merging: ``extend_path`` allows satellite distributions
+(e.g. ai-parrot-embeddings) to contribute concrete backend modules to the
+``parrot.rerankers`` namespace (local.py, llm.py).
+
 Public API:
 
     >>> from parrot.rerankers import (
@@ -22,6 +26,8 @@ Lazy imports:
     ``AbstractReranker``, ``RerankedDocument``, and ``RerankerConfig`` are
     imported eagerly because they are lightweight (Pydantic + ABC only).
 """
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
 
 from parrot.rerankers.abstract import AbstractReranker
 from parrot.rerankers.models import RerankedDocument, RerankerConfig
