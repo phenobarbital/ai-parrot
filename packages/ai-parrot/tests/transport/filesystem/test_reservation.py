@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from parrot.transport.filesystem.reservation import ReservationManager
+from parrot.autonomous.transport.filesystem.reservation import ReservationManager
 
 
 @pytest.fixture

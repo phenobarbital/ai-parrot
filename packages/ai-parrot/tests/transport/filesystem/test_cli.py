@@ -2,9 +2,9 @@
 
 import pytest
 
-from parrot.transport.filesystem.cli import CrewCLI
-from parrot.transport.filesystem.config import FilesystemTransportConfig
-from parrot.transport.filesystem.transport import FilesystemTransport
+from parrot.autonomous.transport.filesystem.cli import CrewCLI
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.transport import FilesystemTransport
 
 
 class TestCrewCLI:

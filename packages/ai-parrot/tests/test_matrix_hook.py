@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 
-from parrot.autonomous.hooks.base import BaseHook
-from parrot.autonomous.hooks.models import (
+from parrot.core.hooks.base import BaseHook
+from parrot.core.hooks.models import (
     HookEvent,
     HookType,
     MatrixHookConfig,
@@ -134,7 +134,7 @@ class TestMatrixHook:
 
     def _make_hook(self, config):
         """Import and instantiate MatrixHook."""
-        from parrot.autonomous.hooks.matrix import MatrixHook
+        from parrot.core.hooks.matrix import MatrixHook
         return MatrixHook(config)
 
     def test_hook_type(self, matrix_config):
@@ -304,9 +304,9 @@ class TestLazyImport:
     """Test that MatrixHook can be imported from hooks package."""
 
     def test_import_config(self):
-        from parrot.autonomous.hooks import MatrixHookConfig
+        from parrot.core.hooks import MatrixHookConfig
         assert MatrixHookConfig is not None
 
     def test_hook_type_enum(self):
-        from parrot.autonomous.hooks import HookType
+        from parrot.core.hooks import HookType
         assert hasattr(HookType, "MATRIX")
