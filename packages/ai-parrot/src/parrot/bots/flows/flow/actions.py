@@ -12,8 +12,8 @@ Actions are executed as pre/post hooks on flow nodes and can:
 - Transform results
 
 Example:
-    >>> from parrot.bots.flow.actions import ACTION_REGISTRY, LogAction
-    >>> from parrot.bots.flow.definition import LogActionDef
+    >>> from parrot.bots.flows.flow.actions import ACTION_REGISTRY, LogAction
+    >>> from parrot.bots.flows.flow.definition import LogActionDef
     >>>
     >>> config = LogActionDef(level="info", message="Node {node_name} completed")
     >>> action = LogAction(config)

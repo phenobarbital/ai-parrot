@@ -7,7 +7,6 @@ Acceptance criteria:
 - parrot.bots.flows imports cleanly after deletion
 """
 import pathlib
-import subprocess
 
 
 def test_legacy_package_directory_deleted():
@@ -50,38 +49,48 @@ def _find_repo_root() -> pathlib.Path:
 
 
 def _grep_for_legacy_imports(search_dir: str) -> list:
-    """Run grep and return lines with actual legacy import statements."""
-    repo_root = _find_repo_root()
-    target = str(repo_root / search_dir)
+    """Pure-Python scan for actual legacy import statements (no subprocess grep).
 
-    result = subprocess.run(
-        ["grep", "-rn", r"parrot\.bots\.flow\b", target],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0 and not result.stdout:
-        return []
+    Returns a list of 'file:line:content' strings for any line that contains
+    a real ``from parrot.bots.flow`` or ``import parrot.bots.flow`` import
+    (singular ``flow``, not the canonical plural ``flows``).
+    """
+    repo_root = _find_repo_root()
+    target = repo_root / search_dir
 
     bad_lines = []
-    for line in result.stdout.splitlines():
-        if "parrot.bots.flows" in line:
+    for py_file in sorted(target.rglob("*.py")):
+        if "__pycache__" in py_file.parts:
             continue
-        if "__pycache__" in line:
+        try:
+            source = py_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
-        content = line.split(":", 2)[-1].strip() if ":" in line else line
-        if content.startswith("#") or ">>>" in content:
-            continue
-        # Skip string literals (assertions checking for absence of legacy import)
-        if "assert " in content and '"from parrot.bots.flow' in content:
-            continue
-        if "assert " in content and "'from parrot.bots.flow" in content:
-            continue
-        # Skip other string-literal contexts
-        if 'not in src' in content or 'not in source' in content:
-            continue
-        # Only flag actual import statements (at start of statement)
-        stripped = content.lstrip()
-        if stripped.startswith("from parrot.bots.flow") or stripped.startswith("import parrot.bots.flow"):
-            bad_lines.append(line)
+        for lineno, line in enumerate(source.splitlines(), 1):
+            # Skip lines that reference the canonical plural package.
+            if "parrot.bots.flows" in line:
+                continue
+            # Skip lines that don't mention the legacy singular package at all.
+            if "parrot.bots.flow" not in line:
+                continue
+            stripped = line.strip()
+            # Skip comments and docstring examples.
+            if stripped.startswith("#") or ">>>" in stripped:
+                continue
+            # Skip string literals used in test assertions about the absence
+            # of legacy imports (e.g. assert "..." not in src).
+            if ("assert " in stripped and (
+                '"from parrot.bots.flow' in stripped
+                or "'from parrot.bots.flow" in stripped
+                or '"parrot.bots.flow' in stripped
+                or "'parrot.bots.flow" in stripped
+            )):
+                continue
+            if "not in src" in stripped or "not in source" in stripped:
+                continue
+            # Only flag actual import statements.
+            if stripped.startswith("from parrot.bots.flow") or stripped.startswith("import parrot.bots.flow"):
+                bad_lines.append(f"{py_file}:{lineno}:{line}")
     return bad_lines
 
 
