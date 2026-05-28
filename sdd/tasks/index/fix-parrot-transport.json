@@ -14,14 +14,14 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task — all other tasks depend on this move completing first",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1333-move-transport-package.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1333"],
+      "depends_on": [
+        "TASK-1333"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run after package move; modifies file that was just moved",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1334-fix-hook-imports.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1333"],
+      "depends_on": [
+        "TASK-1333"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on package move; deletes shims that hook.py no longer references",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1335-remove-shims-update-entrypoints.md"
     },
@@ -68,14 +72,18 @@
       "feature_id": "FEAT-196",
       "feature": "fix-parrot-transport",
       "spec": "sdd/specs/fix-parrot-transport.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1333", "TASK-1334", "TASK-1335"],
+      "depends_on": [
+        "TASK-1333",
+        "TASK-1334",
+        "TASK-1335"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run last — depends on all prior tasks; touches 14 test files with overlapping imports",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-28T12:01:38+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1336-update-test-imports.md"
     }
