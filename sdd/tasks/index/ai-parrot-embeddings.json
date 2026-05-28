@@ -92,7 +92,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Edits the host pyproject; depends on all backend moves landing first (extras to remove reference what moved). Inherently sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1337-host-pyproject-redistribute-extras.md"
+      "completed_at": "2026-05-28T14:34:10+00:00",
+      "file": "sdd/tasks/completed/TASK-1337-host-pyproject-redistribute-extras.md"
     },
     {
       "id": "TASK-1338",
