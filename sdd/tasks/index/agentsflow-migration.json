@@ -32,7 +32,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on subpackage skeleton; can run in parallel with TASK-1311.",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1309-agentsflow-migration-move-only-files.md"
+      "completed_at": "2026-05-28T01:07:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1309-agentsflow-migration-move-only-files.md"
     },
     {
       "id": "TASK-1310",
