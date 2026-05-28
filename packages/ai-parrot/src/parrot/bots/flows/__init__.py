@@ -84,6 +84,7 @@ from .flow.definition import (
 # Decision node primitives (FEAT-196)
 from .flow import (
     DecisionFlowNode,
+    InteractiveDecisionFlowNode,
     InteractiveDecisionNode,
     BinaryDecision,
     ApprovalDecision,
@@ -139,7 +140,8 @@ __all__ = [
     "EdgeDefinition",
     # Decision nodes
     "DecisionFlowNode",
-    "InteractiveDecisionNode",
+    "InteractiveDecisionFlowNode",
+    "InteractiveDecisionNode",  # backward-compatible alias for InteractiveDecisionFlowNode
     "BinaryDecision",
     "ApprovalDecision",
     "MultiChoiceDecision",
