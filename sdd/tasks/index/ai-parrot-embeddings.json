@@ -137,7 +137,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -150,8 +150,8 @@
       "parallelism_notes": "Logically independent of TASK-1338 / TASK-1340. Sequential per spec.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1339-namespace-resolution-test-suite.md"
+      "completed_at": "2026-05-28T14:37:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1339-namespace-resolution-test-suite.md"
     },
     {
       "id": "TASK-1340",
