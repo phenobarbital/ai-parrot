@@ -85,10 +85,3 @@ from parrot.integrations import MSTeamsAgentConfig  # __init__.py lazy (line 20)
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved all 22 msteams Python files including dialogs/, dialogs/presets/, tools/, and voice/ subdirectories to satellite. Moved 12 test files from tests/integrations/msteams/. No import changes needed.
-**Deviations from spec**: none

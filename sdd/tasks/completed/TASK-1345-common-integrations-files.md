@@ -180,10 +180,3 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved `__init__.py`, `manager.py`, `models.py`, `parser.py`, `core/state.py` from core to satellite. Updated `manager.py` relative imports (`..conf`, `..human`, `..manager`, `..bots.abstract`) to absolute (`parrot.conf`, `parrot.human`, `parrot.manager`, `parrot.bots.abstract`). Created `core/__init__.py` in satellite. Created error-guía stub `__init__.py` in core.
-**Deviations from spec**: none

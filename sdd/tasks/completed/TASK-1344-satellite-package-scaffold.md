@@ -188,10 +188,3 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Created `packages/ai-parrot-integrations/` with `pyproject.toml` (all 8 extras: slack/telegram/msteams/whatsapp/matrix/voice/messaging/all), `README.md`, directory structure with `.gitkeep` placeholders for `src/parrot/integrations/`, `src/parrot/voice/`, `src/parrot/human/channels/`, and `tests/__init__.py`. Updated workspace root `pyproject.toml` with new dependency and `[tool.uv.sources]` entry. No `src/parrot/__init__.py` created.
-**Deviations from spec**: Version set to `0.0.1` per spec open questions resolution.

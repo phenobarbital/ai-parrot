@@ -68,10 +68,3 @@ from parrot.integrations import WhatsAppAgentConfig  # __init__.py lazy (line 21
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved all 7 whatsapp Python files from core to satellite using `git mv`. No test files found specifically for whatsapp. No import changes needed.
-**Deviations from spec**: none

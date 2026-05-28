@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": "2026-05-28T15:52:04+00:00",
+  "completed_at": "2026-05-28T16:45:54+00:00",
   "tasks": [
     {
       "id": "TASK-1342",
@@ -23,7 +23,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:39:21+00:00",
-      "file": "sdd/tasks/completed/TASK-1342-oauth2-relocation.md"
+      "file": "sdd/tasks/completed/1342-oauth2-relocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1343",
@@ -41,7 +42,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:40:33+00:00",
-      "file": "sdd/tasks/completed/TASK-1343-pluggable-hooks-refactor.md"
+      "file": "sdd/tasks/completed/1343-pluggable-hooks-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1344",
@@ -59,7 +61,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:41:50+00:00",
-      "file": "sdd/tasks/completed/TASK-1344-satellite-package-scaffold.md"
+      "file": "sdd/tasks/completed/1344-satellite-package-scaffold.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1345",
@@ -79,7 +82,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:43:21+00:00",
-      "file": "sdd/tasks/completed/TASK-1345-common-integrations-files.md"
+      "file": "sdd/tasks/completed/1345-common-integrations-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1346",
@@ -99,7 +103,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:44:04+00:00",
-      "file": "sdd/tasks/completed/TASK-1346-slack-extraction.md"
+      "file": "sdd/tasks/completed/1346-slack-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1347",
@@ -119,7 +124,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:44:54+00:00",
-      "file": "sdd/tasks/completed/TASK-1347-telegram-extraction.md"
+      "file": "sdd/tasks/completed/1347-telegram-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1348",
@@ -139,7 +145,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:45:14+00:00",
-      "file": "sdd/tasks/completed/TASK-1348-whatsapp-extraction.md"
+      "file": "sdd/tasks/completed/1348-whatsapp-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1349",
@@ -159,7 +166,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:45:43+00:00",
-      "file": "sdd/tasks/completed/TASK-1349-msteams-extraction.md"
+      "file": "sdd/tasks/completed/1349-msteams-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1350",
@@ -180,7 +188,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:49:22+00:00",
-      "file": "sdd/tasks/completed/TASK-1350-matrix-extraction.md"
+      "file": "sdd/tasks/completed/1350-matrix-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1351",
@@ -200,7 +209,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:46:24+00:00",
-      "file": "sdd/tasks/completed/TASK-1351-voice-extraction.md"
+      "file": "sdd/tasks/completed/1351-voice-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1352",
@@ -220,7 +230,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:47:19+00:00",
-      "file": "sdd/tasks/completed/TASK-1352-human-channels-extraction.md"
+      "file": "sdd/tasks/completed/1352-human-channels-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1353",
@@ -238,7 +249,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:48:04+00:00",
-      "file": "sdd/tasks/completed/TASK-1353-zoom-relocation.md"
+      "file": "sdd/tasks/completed/1353-zoom-relocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1354",
@@ -265,7 +277,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:50:47+00:00",
-      "file": "sdd/tasks/completed/TASK-1354-core-pyproject-cleanup.md"
+      "file": "sdd/tasks/completed/1354-core-pyproject-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1355",
@@ -285,7 +298,8 @@
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
       "completed_at": "2026-05-28T15:52:04+00:00",
-      "file": "sdd/tasks/completed/TASK-1355-changelog-and-docs.md"
+      "file": "sdd/tasks/completed/1355-changelog-and-docs.md",
+      "verification": "verified"
     }
   ]
 }

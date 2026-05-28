@@ -97,10 +97,3 @@ from parrot.integrations import SlackAgentConfig     # via __init__.py lazy
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved all 9 slack Python files from core to satellite using `git mv`. Moved 4 test files from `tests/integrations/slack/` and `tests/test_slack_integration.py` to satellite. Created `tests/integrations/__init__.py`. Slack internal imports use relative paths within the same package, no changes needed.
-**Deviations from spec**: none

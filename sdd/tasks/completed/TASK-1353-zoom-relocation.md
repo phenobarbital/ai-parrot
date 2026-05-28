@@ -84,10 +84,3 @@ from parrot.integrations.zoom.client import ZoomUsInterface  # parrot_tools/zoom
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved `integrations/zoom/__init__.py` and `client.py` to `ai-parrot-tools/src/parrot_tools/zoom/`. Updated `zoomtoolkit.py` line 6 import from `parrot.integrations.zoom.client` to `parrot_tools.zoom.client`. Moved `test_zoom_interface.py` to `ai-parrot-tools/tests/`.
-**Deviations from spec**: none

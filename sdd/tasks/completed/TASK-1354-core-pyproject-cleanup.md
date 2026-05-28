@@ -116,10 +116,3 @@ Implements **Spec Module 13**.
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Removed `pywa>=3.8.0` and `async-notify[default]>=1.4.2` from BASE deps. Removed `azure-teambots>=0.1.1` from `[integrations]` extra. Removed `[matrix]` extra (replaced with comment). Added `messaging = ["ai-parrot-integrations[messaging]"]` meta-extra. Updated `[all]` to include `ai-parrot-integrations[all]`. Updated `[tool.setuptools.package-data]` to remove moved telegram static and voice ui assets. Workspace root `pyproject.toml` was updated in TASK-1344. Core integrations directory now only has the stub `__init__.py`.
-**Deviations from spec**: `[all-fast]` extra not updated (out of spec scope). `async-notify[all]>=1.5.2` in `[integrations]` extra kept (some notification backends still valid there).

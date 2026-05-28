@@ -64,10 +64,3 @@ Implements **Spec Module 14**.
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Created `CHANGELOG.md` at repo root with breaking changes, new features, and non-breaking changes. Created `docs/migration/feat-202-ai-parrot-integrations.md` with detailed upgrade instructions covering oauth2 path changes, zoom path changes, extras reference, matrix hook changes, ChannelRegistry usage, and CI/CD changes. The satellite README.md already had full install instructions from TASK-1344.
-**Deviations from spec**: none

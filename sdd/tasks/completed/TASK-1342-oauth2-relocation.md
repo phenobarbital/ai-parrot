@@ -193,10 +193,3 @@ When you pick up this task:
 **Date**:
 **Notes**:
 **Deviations from spec**: none | describe if any
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved all 7 oauth2 files from `parrot/integrations/oauth2/` to `parrot/auth/oauth2/` using `git mv` to preserve history. Updated internal imports within moved files (absolute paths replacing `parrot.integrations.oauth2.*`). Updated 6 consumer files (auth/routes.py, auth/oauth2_routes.py, handlers/integrations.py, handlers/agent.py, handlers/user_objects.py, manager/manager.py). Empty old directory removed.
-**Deviations from spec**: handlers/agent.py and handlers/user_objects.py were also updated (not listed in original task scope but verified via grep). Spec listed 5 consumers but grep revealed 6 (agent.py uses relative import to oauth2.models).

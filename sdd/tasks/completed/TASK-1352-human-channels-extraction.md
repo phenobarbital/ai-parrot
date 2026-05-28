@@ -143,10 +143,3 @@ ChannelRegistry.register("telegram", TelegramHumanChannel)
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved `telegram.py` to satellite, added self-registration at end of file. Created `ChannelRegistry` class in core `channels/__init__.py` with `register()`, `get()`, `available()` methods. Updated `__all__` to include `ChannelRegistry`. `base.py`, `cli.py`, `web.py` remain in core untouched.
-**Deviations from spec**: `parrot/human/__init__.py` was not modified because the lazy export already works via PEP 420 (satellite's telegram.py is at the same namespace path, no import path change needed).

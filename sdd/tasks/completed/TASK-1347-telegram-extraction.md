@@ -111,10 +111,3 @@ from satellite. Either way PEP 420 handles it — just verify.
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved all 22 Python files + crew/ subdirectory (9 files) + static/ (3 HTML files) = 29+ files from core to satellite. Moved all telegram tests (integrations/telegram/, test_telegram_crew/, test_telegram_integration.py). No oauth2 references found in telegram files. No internal import changes needed.
-**Deviations from spec**: none

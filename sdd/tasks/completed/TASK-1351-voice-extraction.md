@@ -92,10 +92,3 @@ Implements **Spec Module 8**.
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved 11 Python files including transcriber/ subdirectory from core to satellite. Also moved ui/ assets (JS/HTML). Moved voice tests. Old voice/ directory removed from core.
-**Deviations from spec**: none

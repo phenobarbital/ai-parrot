@@ -126,10 +126,3 @@ HookRegistry.register("matrix", MatrixHook)
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Moved 18 matrix Python files (including crew/ subdirectory) to satellite. Created `hook.py` in satellite with the full `MatrixHook` implementation (moved from core's `matrix.py`) that auto-registers with `HookRegistry.register("matrix", MatrixHook)` at module level. Moved 10 matrix test files. Core's `matrix.py` is now only a thin shim (from TASK-1343).
-**Deviations from spec**: Core's `matrix.py` is not deleted as per the task spec — it's kept as a compatibility shim pointing to HookRegistry. The spec says "DELETE" but the shim provides backward compatibility for any code that imports from `parrot.core.hooks.matrix`.

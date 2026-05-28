@@ -181,10 +181,3 @@ When you pick up this task:
 ## Completion Note
 
 *(Agent fills this in when done)*
-
----
-
-**Completed by**: SDD Worker (Claude Sonnet 4.6)
-**Date**: 2026-05-28
-**Notes**: Added `MessagingHook` Protocol and `HookRegistry` class to `parrot/core/hooks/base.py`. Refactored `matrix.py` to a thin shim that delegates to the `HookRegistry` — the concrete implementation will live in the satellite (TASK-1350). Updated `__init__.py` to export `MessagingHook` and `HookRegistry`. MatrixHook in core raises `ImportError` with guidance if satellite not installed.
-**Deviations from spec**: none
