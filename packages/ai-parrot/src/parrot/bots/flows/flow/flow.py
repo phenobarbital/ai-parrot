@@ -17,7 +17,7 @@ See sdd/specs/agentsflow-refactor-spec3.spec.md for the full design.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Type
 
 from pydantic import Field as PydanticField
@@ -30,7 +30,6 @@ from ..core.context import FlowContext
 from ..core.fsm import AgentTaskMachine
 from ..core.result import (
     FlowResult,
-    NodeExecutionInfo,
     build_node_metadata,
     determine_run_status,
 )
@@ -38,18 +37,14 @@ from ..core.storage import PersistenceMixin
 from ..core.storage.synthesis import synthesize_results
 from ..core.types import DependencyResults
 
-# Declarative layer (read-only; type annotation only in __init__)
-from parrot.bots.flow.definition import FlowDefinition  # type: ignore[import-untyped]
+# Declarative layer (intra-subpackage)
+from .definition import FlowDefinition
 
-# Decision-node legacy wrappers
-from parrot.bots.flow.decision_node import (  # type: ignore[import-untyped]
+# Decision-node canonical implementations (TASK-1311)
+from .nodes import (
     DecisionFlowNode,
-    DecisionMode,
     DecisionNodeConfig,
     DecisionResult,
-)
-from parrot.bots.flow.interactive_node import (  # type: ignore[import-untyped]
-    InteractiveDecisionNode as LegacyInteractiveDecisionNode,
 )
 
 # AgentRegistry (type annotation only)
@@ -416,8 +411,6 @@ class AgentsFlow(PersistenceMixin):
         Returns:
             Populated FlowResult.
         """
-        import time as _time
-
         node_infos = []
         for nid in completed | failed:
             node = nodes[nid]
@@ -505,7 +498,7 @@ class AgentsFlow(PersistenceMixin):
         Returns:
             Aggregated ``FlowResult`` describing the run.
         """
-        from parrot.bots.flow.cel_evaluator import CELPredicateEvaluator
+        from .cel_evaluator import CELPredicateEvaluator  # noqa: PLC0415
 
         ctx = ctx or FlowContext(
             initial_task="",
@@ -734,9 +727,9 @@ class DecisionNode(Node):
         """
         await self.run_pre_actions(prompt="", **kwargs)
 
-        # Build a fresh legacy node per execute() — no shared per-run state.
+        # Build a fresh canonical DecisionFlowNode per execute() — no shared per-run state.
         legacy = DecisionFlowNode(
-            name=self.node_id,
+            node_id=self.node_id,
             agents=self.agents,
             config=self.decision_config,
         )
@@ -751,11 +744,11 @@ class DecisionNode(Node):
 
 @register_node("interactive_decision")
 class InteractiveDecisionNode(Node):
-    """Wraps the legacy CLI-blocking InteractiveDecisionNode as a Pydantic Node.
+    """CLI-blocking interactive decision node (canonical implementation).
 
     Presents a multiple-choice question in the terminal at decision time.
-    The underlying implementation uses ``questionary`` and is intentionally
-    blocking — HITL improvements are a future spec.
+    Uses ``questionary`` and intentionally blocks via ``run_in_executor`` —
+    HITL improvements are a future spec.
 
     Args:
         node_id: Unique identifier within the graph.
@@ -793,26 +786,30 @@ class InteractiveDecisionNode(Node):
     ) -> DecisionResult:
         """Present a CLI menu and return the user's selection as a DecisionResult.
 
-        Constructs a fresh legacy LegacyInteractiveDecisionNode per call so
-        per-run state is isolated (B-lite contract).
+        Uses the canonical nodes.InteractiveDecisionNode implementation via
+        delegation — constructs a fresh node per execute() call so per-run
+        state is isolated.
 
         Args:
             ctx: The current flow execution context.
             deps: Results from completed dependencies.
-            **kwargs: Extra execution context forwarded to the legacy node.
+            **kwargs: Extra execution context forwarded to the node.
 
         Returns:
             DecisionResult with the user's selection in final_decision.
         """
+        from .nodes import (  # noqa: PLC0415
+            InteractiveDecisionNode as _InteractiveDecisionNode,
+        )
+
         await self.run_pre_actions(prompt=self.question, **kwargs)
 
-        legacy = LegacyInteractiveDecisionNode(
-            name=self.node_id,
+        canonical = _InteractiveDecisionNode(
+            node_id=self.node_id,
             question=self.question,
             options=self.options,
         )
-
-        result: DecisionResult = await legacy.ask(question=self.question, **kwargs)
+        result: DecisionResult = await canonical.ask(question=self.question, **kwargs)
         await self.run_post_actions(result=result, **kwargs)
         return result
 
