@@ -28,7 +28,9 @@ claude-agent = ["ai-parrot[claude-agent]"]
 groq = ["ai-parrot[groq]"]
 xai = ["ai-parrot[xai]"]
 llms = ["ai-parrot[llms]"]
-embeddings = ["ai-parrot[embeddings]"]
+# embeddings extra moved from core to the ai-parrot-embeddings satellite
+# package (FEAT-201); re-export the package directly (like `pipelines`).
+embeddings = ["ai-parrot-embeddings"]
 pipelines = ["ai-parrot-pipelines"]
 
 [build-system]
