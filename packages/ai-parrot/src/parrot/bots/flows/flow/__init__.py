@@ -21,6 +21,7 @@ from .flow import (
     register_node,
     CompletionEvent,
     DecisionNode,
+    InteractiveDecisionFlowNode,
     InteractiveDecisionNode,
     SynthesisNode,
 )
@@ -44,7 +45,8 @@ __all__ = [
     "CompletionEvent",
     # DAG-executor node wrappers (registered in NODE_REGISTRY)
     "DecisionNode",
-    "InteractiveDecisionNode",
+    "InteractiveDecisionFlowNode",
+    "InteractiveDecisionNode",  # backward-compatible alias for InteractiveDecisionFlowNode
     "SynthesisNode",
     # Decision primitive types (from nodes.py)
     "DecisionMode",

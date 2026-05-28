@@ -753,12 +753,15 @@ class DecisionNode(Node):
 
 
 @register_node("interactive_decision")
-class InteractiveDecisionNode(Node):
-    """CLI-blocking interactive decision node (canonical implementation).
+class InteractiveDecisionFlowNode(Node):
+    """DAG-executor wrapper for the CLI-blocking interactive decision node.
 
-    Presents a multiple-choice question in the terminal at decision time.
-    Uses ``questionary`` and intentionally blocks via ``run_in_executor`` —
-    HITL improvements are a future spec.
+    Registered in NODE_REGISTRY under ``"interactive_decision"``.  The
+    canonical implementation (with the interactive prompt logic) lives in
+    :class:`parrot.bots.flows.flow.nodes.InteractiveDecisionNode`.
+
+    This wrapper delegates ``execute()`` to a fresh canonical node per
+    invocation so per-run state is isolated.
 
     Args:
         node_id: Unique identifier within the graph.
@@ -824,6 +827,10 @@ class InteractiveDecisionNode(Node):
         return result
 
 
+# Backward-compatible alias: existing imports and NODE_REGISTRY checks use this name.
+InteractiveDecisionNode = InteractiveDecisionFlowNode
+
+
 @register_node("synthesis")
 class SynthesisNode(Node):
     """In-graph result synthesis using the ``synthesize_results`` util.
@@ -835,9 +842,9 @@ class SynthesisNode(Node):
     The ``ctx.synthesis_client`` attribute must be set before the scheduler
     runs this node (or a RuntimeError is raised).
 
-    TODO (TASK-1067 integration): Once the scheduler exposes a partial
-    ``FlowResult`` on the context, pass it directly to ``synthesize_results``
-    instead of constructing a minimal view from ``deps``.
+    NOTE: FEAT-196 deferred — once the scheduler exposes a partial FlowResult
+    on the context, pass it directly to ``synthesize_results`` instead of
+    constructing a minimal view from ``deps``. Tracked as tech debt post-migration.
 
     Args:
         node_id: Unique identifier within the graph.
@@ -887,7 +894,7 @@ class SynthesisNode(Node):
         await self.run_pre_actions(prompt="synthesis", **kwargs)
 
         # Build a minimal FlowResult-like object from the dependency results.
-        # Once TASK-1067 ships, the scheduler may expose ctx.partial_result instead.
+        # FEAT-196 deferred: once the scheduler exposes ctx.partial_result, use it directly.
         class _PartialResult:
             """Minimal FlowResult duck-type for synthesize_results."""
 
@@ -919,6 +926,7 @@ __all__ = [
     "register_node",
     # Node subclasses (TASK-1066)
     "DecisionNode",
-    "InteractiveDecisionNode",
+    "InteractiveDecisionFlowNode",
+    "InteractiveDecisionNode",  # backward-compatible alias for InteractiveDecisionFlowNode
     "SynthesisNode",
 ]
