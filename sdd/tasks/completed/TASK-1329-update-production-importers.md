@@ -147,3 +147,20 @@ import parrot_tools.navigator.prompt  # noqa: F401
 print('production importers ok')
 "
 ```
+
+---
+
+### Completion Note
+
+Completed by sdd-worker 2026-05-28.
+
+All 6 production-source import sites rewritten to `parrot.knowledge.pageindex.*`:
+- `graphindex/builder.py:49` — `from parrot.pageindex.toolkit import PageIndexToolkit` updated
+- `graphindex/extractors/loader.py:39` — TYPE_CHECKING block updated
+- `graphindex/extractors/loader.py:351` — lazy import inside method body updated (kept lazy)
+- `parrot_tools/navigator/prompt.py:24-25` — two consecutive top-level imports updated together
+- `parrot_tools/navigator/prompt.py:235` — lazy import inside method body updated (kept lazy)
+
+Syntax check via `python -m py_compile` passed for all 3 files. `grep -rn 'parrot.pageindex' packages/.../src/ --include='*.py'` returns zero matches.
+
+Pre-existing ruff issue noted: `loader.py` has an F401 for unused import of `Provenance` from graphindex schema (present in main repo before this PR). Not fixed here — out of scope per FEAT-198 cardinal rules.
