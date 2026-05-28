@@ -1,0 +1,16 @@
+{
+  "feat_id": "FEAT-202",
+  "generated_at": "2026-05-28T13:40:35+02:00",
+  "queries": [
+    {"id": "Q001", "intent": "Inventario completo de parrot/integrations/", "type": "tree", "params": {"path": "packages/ai-parrot/src/parrot/integrations"}, "priority": 1},
+    {"id": "Q002", "intent": "Tamaños por canal y archivos comunes", "type": "tree", "params": {"path": "packages/ai-parrot/src/parrot/integrations", "sizes": true}, "priority": 1},
+    {"id": "Q003", "intent": "Inspeccionar piezas comunes (core/, oauth2/, manager.py, parser.py, models.py, __init__.py)", "type": "read", "params": {"paths": ["integrations/__init__.py", "integrations/manager.py", "integrations/models.py", "integrations/parser.py", "integrations/core/state.py"]}, "priority": 1},
+    {"id": "Q004", "intent": "Deps de terceros por canal", "type": "grep", "params": {"pattern": "^import |^from ", "globs": ["integrations/{slack,telegram,msteams,whatsapp,matrix,zoom}/*.py"]}, "priority": 1},
+    {"id": "Q005", "intent": "Consumidores externos a parrot.integrations en todo el workspace", "type": "grep", "params": {"pattern": "from parrot\\.integrations|from \\.\\.integrations|from \\.\\.\\.integrations"}, "priority": 1},
+    {"id": "Q006", "intent": "Coupling de integrations con bots/, tools/, human/, voice/, forms/", "type": "grep", "params": {"pattern": "from parrot\\.(bots|tools|human|voice|forms)|from \\.\\.+(bots|tools|human|voice|forms)"}, "priority": 1},
+    {"id": "Q007", "intent": "Deps de mensajería en pyproject.toml (¿en base o en extras?)", "type": "grep", "params": {"pattern": "aiogram|botbuilder|pywa|slack-sdk|azure-teambots|mautrix|async-notify"}, "priority": 1},
+    {"id": "Q008", "intent": "BotManager (parrot/manager) vs IntegrationBotManager (integrations/manager.py) — distinguir", "type": "read", "params": {"paths": ["parrot/manager/manager.py", "integrations/manager.py"]}, "priority": 1},
+    {"id": "Q009", "intent": "Subsistema voice — ¿se usa solo en integrations o también en core?", "type": "grep", "params": {"pattern": "from parrot\\.voice|from \\.\\.voice"}, "priority": 2},
+    {"id": "Q010", "intent": "Historial reciente por canal (¿quién está en desarrollo activo?)", "type": "git_log", "params": {"paths": ["integrations/{slack,telegram,msteams,whatsapp,matrix,zoom}/"]}, "priority": 2}
+  ]
+}
