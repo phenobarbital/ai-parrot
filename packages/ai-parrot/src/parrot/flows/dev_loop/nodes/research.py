@@ -27,7 +27,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from parrot import conf
-from parrot.bots.flow.node import Node
+from parrot.bots.flows.core.node import Node
 from parrot.clients.factory import LLMFactory
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import (

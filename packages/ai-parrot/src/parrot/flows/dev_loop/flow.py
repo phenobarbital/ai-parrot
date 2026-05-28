@@ -9,7 +9,7 @@ Implements **Module 10**. Topology (FEAT-132):
                                                                    └─(passed=False)→ FailureHandler
                                                                    ↑(any node hard-error)
 
-The factory adapts each ``parrot.bots.flow.node.Node`` subclass into the
+The factory adapts each ``parrot.bots.flows.core.node.Node`` subclass into the
 ``BasicAgent``-shaped interface that :class:`AgentsFlow.add_agent`
 expects (specifically: ``name`` attribute, ``is_configured=True`` so
 :meth:`AgentsFlow._ensure_agent_ready` short-circuits, and
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Protocol, runtime_checkable
 
-from parrot.bots.flow import AgentsFlow
+from parrot.bots.flows import AgentsFlow
 from parrot.flows.dev_loop.dispatcher import ClaudeCodeDispatcher
 from parrot.flows.dev_loop.models import WorkBrief
 from parrot.flows.dev_loop.nodes.bug_intake import BugIntakeNode
@@ -46,9 +46,9 @@ from parrot.flows.dev_loop.nodes.research import ResearchNode
 class _ExecutableNode(Protocol):
     """Structural type the adapter accepts — every dev-loop node matches.
 
-    Mirrors :class:`parrot.bots.flow.node.Node`'s public surface plus the
+    Mirrors :class:`parrot.bots.flows.core.node.Node`'s public surface plus the
     ``execute(prompt, ctx)`` contract used by ``FlowNode.execute``
-    (``parrot/bots/flow/fsm.py:266``).
+    (``parrot/bots/flows/flow/flow.py:266``).
     """
 
     name: str
