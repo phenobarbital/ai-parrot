@@ -12,10 +12,10 @@ Each template specifies:
 
 Users can also define custom templates programmatically.
 """
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
-from .infographic import BlockType
+from .infographic import BlockType, JSBundle  # JSBundle added by FEAT-197
 
 
 class BlockSpec(BaseModel):
@@ -55,6 +55,15 @@ class InfographicTemplate(BaseModel):
     default_theme: Optional[str] = Field(
         None,
         description="Default color theme for this template"
+    )
+    js_bundles: Optional[List[JSBundle]] = Field(
+        default=None,
+        description=(
+            "Optional list of JavaScript bundles this template may use.  "
+            "Consumed by the enhance pipeline (SRI whitelist) and the "
+            "HTML-serving CSP builder.  Built-in templates leave this None. "
+            "(FEAT-197)"
+        ),
     )
 
     def to_prompt_instruction(self) -> str:

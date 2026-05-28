@@ -745,6 +745,77 @@ InfographicResponse.model_rebuild()
 
 
 # ──────────────────────────────────────────────
+# Asset Declarations (FEAT-197)
+# ──────────────────────────────────────────────
+
+
+class JSBundle(BaseModel):
+    """Declarative JavaScript bundle attached to an InfographicTemplate.
+
+    When ``scope='cdn'``, the ``url`` and ``sri_hash`` fields are required so
+    the HTML-serving CSP can whitelist the origin and SRI hash.  When
+    ``scope='inline'``, the ``inline`` field must contain the JavaScript
+    source verbatim.
+
+    The enhance prompt lists the allowed bundles to the LLM; the
+    ``build_csp_headers`` helper (parrot/handlers/csp.py) uses the ``url``
+    origins to build the ``script-src`` directive.
+
+    Example (CDN)::
+
+        JSBundle(
+            name="echarts",
+            scope="cdn",
+            url="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js",
+            sri_hash="sha384-AAAA...",
+        )
+
+    Example (inline)::
+
+        JSBundle(name="sparkline", scope="inline", inline="/* sparkline js */")
+    """
+
+    name: str = Field(
+        ..., description="Stable bundle identifier (e.g. 'echarts')."
+    )
+    url: Optional[str] = Field(
+        default=None,
+        description="CDN URL — required when scope='cdn'.",
+    )
+    inline: Optional[str] = Field(
+        default=None,
+        description="Inline JavaScript source — required when scope='inline'.",
+    )
+    sri_hash: Optional[str] = Field(
+        default=None,
+        description="'sha384-…' integrity hash — required when scope='cdn'.",
+    )
+    scope: Literal["inline", "cdn"] = Field(
+        default="inline",
+        description="Delivery mechanism: 'inline' (embedded) or 'cdn' (external URL).",
+    )
+
+    @model_validator(mode="after")
+    def _validate_scope_consistency(self) -> "JSBundle":
+        """Enforce cross-field consistency based on ``scope``."""
+        if self.scope == "cdn":
+            if not self.url or not self.sri_hash:
+                raise ValueError(
+                    "scope='cdn' requires both 'url' and 'sri_hash'"
+                )
+            if self.inline is not None:
+                raise ValueError("scope='cdn' must not set 'inline'")
+        else:  # inline
+            if self.inline is None:
+                raise ValueError("scope='inline' requires 'inline' source")
+            if self.url is not None or self.sri_hash is not None:
+                raise ValueError(
+                    "scope='inline' must not set 'url' or 'sri_hash'"
+                )
+        return self
+
+
+# ──────────────────────────────────────────────
 # Theme System
 # ──────────────────────────────────────────────
 
