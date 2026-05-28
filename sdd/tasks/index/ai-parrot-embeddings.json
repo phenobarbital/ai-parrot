@@ -52,7 +52,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Same as TASK-1334: shares the satellite pyproject; sequential per spec.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1335-move-store-backends.md"
+      "completed_at": "2026-05-28T14:31:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1335-move-store-backends.md"
     },
     {
       "id": "TASK-1336",
