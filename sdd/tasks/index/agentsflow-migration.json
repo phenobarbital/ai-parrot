@@ -73,7 +73,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -83,8 +83,8 @@
       "parallelism_notes": "Depends on TASK-1308 only; can run in parallel with TASK-1309 and TASK-1310.",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1311-agentsflow-migration-decision-nodes.md"
+      "completed_at": "2026-05-28T01:17:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1311-agentsflow-migration-decision-nodes.md"
     },
     {
       "id": "TASK-1312",

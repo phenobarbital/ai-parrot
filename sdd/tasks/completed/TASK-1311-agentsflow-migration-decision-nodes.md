@@ -293,10 +293,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-05-28
+**Notes**: Created `flows/flow/nodes.py` (1,170 LoC) with all 11 public types rewritten as
+frozen Pydantic subclasses of `parrot.bots.flows.core.node.Node`. `DecisionFlowNode`
+implements CIO, BALLOT, and CONSENSUS decision modes with escalation to HITL.
+`InteractiveDecisionNode` wraps questionary CLI prompt. Fixed `build_node_metadata` return
+value to use `.to_dict()` before passing to `NodeResult.metadata: Dict[str, Any]`. Removed
+3 unused imports caught by ruff. All 19 contract tests pass.
 
 **Deviations from spec**: none
