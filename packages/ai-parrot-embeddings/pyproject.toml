@@ -53,6 +53,25 @@ openai = [
     "tiktoken>=0.9.0",
 ]
 
+# Vector-store backends (TASK-1335)
+pgvector = [
+    "pgvector==0.4.1",
+]
+milvus = [
+    "pymilvus==2.4.8",
+    "milvus-lite>=2.4.0",
+]
+arango = [
+    "python-arango-async==1.2.0",
+]
+bigquery = [
+    "google-cloud-bigquery>=3.30.0",
+]
+faiss = []  # faiss-cpu stays in core ai-parrot deps; this extra is a name-only opt-in
+chroma = [
+    "chromadb==0.6.3",
+]
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
