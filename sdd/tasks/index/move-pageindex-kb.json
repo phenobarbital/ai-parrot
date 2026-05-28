@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T11:50:17+00:00",
   "tasks": [
     {
       "id": "TASK-1328",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — must land before any other FEAT-198 task. Sequential within the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1328-move-pageindex-package.md"
+      "completed_at": "2026-05-28T11:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1328-move-pageindex-package.md"
     },
     {
       "id": "TASK-1329",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Touches files disjoint from TASK-1330 and TASK-1331 — could in theory run concurrently after TASK-1328, but per FEAT-198 worktree strategy all tasks run sequentially in the single feature worktree.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1329-update-production-importers.md"
+      "completed_at": "2026-05-28T11:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1329-update-production-importers.md"
     },
     {
       "id": "TASK-1330",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Independent of TASK-1329/TASK-1331 (different file sets) but runs sequentially per worktree strategy. Captures the pre-move pytest baseline so the post-move suite can be diffed exactly.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1330-relocate-and-update-tests.md"
+      "completed_at": "2026-05-28T11:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1330-relocate-and-update-tests.md"
     },
     {
       "id": "TASK-1331",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Doc-only changes — could parallel-run with TASK-1329/TASK-1330 in different worktrees, but FEAT-198 uses a single worktree so this stays sequential.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1331-update-examples-and-docs.md"
+      "completed_at": "2026-05-28T11:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1331-update-examples-and-docs.md"
     },
     {
       "id": "TASK-1332",
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -105,8 +105,8 @@
       "parallelism_notes": "Verification gate — must run last. Depends on every other FEAT-198 task.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1332-verification-lint-and-cleanup.md"
+      "completed_at": "2026-05-28T11:50:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1332-verification-lint-and-cleanup.md"
     }
   ]
 }
