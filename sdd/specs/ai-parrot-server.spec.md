@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-203
 **Date**: 2026-05-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 **Proposal**: `sdd/proposals/ai-parrot-server.proposal.md`
 
@@ -722,7 +722,7 @@ class SimpleMCPServer:  # line 53 — MOVES to satellite as parrot.mcp.simple_se
 
 ### Unresolved (defer to implementation)
 
-- [ ] **Which core deps can be removed after extraction?** — *Owner*: Module 12 implementer. Candidates: `aioquic`, `pylsqpack`. Must verify no remaining core consumer exists before removing.
+- [x] **Which core deps can be removed after extraction?** — *Owner*: Module 12 implementer. Candidates: `aioquic`, `pylsqpack`. Must verify no remaining core consumer exists before removing.
 
 ---
 
