@@ -21,12 +21,11 @@ from navconfig.logging import logging
 
 from .actions import create_action
 from .cel_evaluator import CELPredicateEvaluator
-from .definition import EdgeDefinition, FlowDefinition, NodeDefinition
+from .definition import FlowDefinition
 # FEAT-163 TASK-1069: retargeted from legacy .fsm (deleted) to new package locations.
-# NOTE: AgentsFlow is imported lazily inside to_agents_flow() to avoid circular import:
-#   parrot.bots.flows.flow → parrot.bots.flow.definition → parrot.bots.flow (init)
-#   → parrot.bots.flow.loader → parrot.bots.flows.flow  (circular)
-from parrot.bots.flows.core.fsm import TransitionCondition
+# NOTE: AgentsFlow is imported lazily inside to_agents_flow() to avoid a circular import:
+#   parrot.bots.flows.flow → parrot.bots.flows.flow.definition → parrot.bots.flows.flow (init)
+#   → parrot.bots.flows.flow.loader → parrot.bots.flows.flow  (circular)
 
 
 REDIS_KEY_PREFIX = "parrot:flow:"

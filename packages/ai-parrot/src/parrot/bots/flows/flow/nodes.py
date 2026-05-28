@@ -386,12 +386,10 @@ class DecisionFlowNode(Node):
         Returns:
             NodeResult wrapping the DecisionResult.
         """
-        import time as _time  # noqa: PLC0415
-
-        start = _time.time()
+        start = time.time()
         question = getattr(ctx, "initial_task", "") or ""
         decision_result = await self.ask(question=question, **kwargs)
-        elapsed = _time.time() - start
+        elapsed = time.time() - start
 
         return NodeResult(
             node_id=self.node_id,
@@ -1119,11 +1117,9 @@ class InteractiveDecisionNode(Node):
         Returns:
             NodeResult wrapping the DecisionResult.
         """
-        import time as _time  # noqa: PLC0415
-
-        start = _time.time()
+        start = time.time()
         decision_result = await self.ask(question=self.question, **kwargs)
-        elapsed = _time.time() - start
+        elapsed = time.time() - start
 
         return NodeResult(
             node_id=self.node_id,

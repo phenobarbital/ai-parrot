@@ -151,10 +151,10 @@ class VectorStoreMixin:
             query_embedding = query_embedding.reshape(1, -1)
 
         k = min(top_k, self._faiss_index.ntotal)
-        D, I = self._faiss_index.search(query_embedding, k)
+        distances, indices = self._faiss_index.search(query_embedding, k)
 
         results: List[Tuple[str, NodeResult, float]] = []
-        for idx, distance in zip(I[0], D[0]):
+        for idx, distance in zip(indices[0], distances[0]):
             if 0 <= idx < len(self._vector_chunks):
                 chunk_text, node_id = self._vector_chunks[idx]
                 if node_result := self.results.get(node_id):  # type: ignore[attr-defined]

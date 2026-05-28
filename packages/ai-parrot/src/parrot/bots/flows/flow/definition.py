@@ -9,7 +9,7 @@ workflows as JSON. The schema supports:
 - SvelteFlow-compatible position data
 
 Example:
-    >>> from parrot.bots.flow.definition import FlowDefinition
+    >>> from parrot.bots.flows.flow.definition import FlowDefinition
     >>> definition = FlowDefinition.model_validate(json_data)
     >>> json_str = definition.model_dump_json(by_alias=True)
 """

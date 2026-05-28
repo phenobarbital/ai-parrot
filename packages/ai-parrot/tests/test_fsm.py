@@ -1,7 +1,7 @@
 """Unit Tests for canonical FSM primitives (FEAT-196 TASK-1314 rewrite).
 
 Rewrites the legacy test_fsm.py (which imported from the deleted
-parrot.bots.flow.fsm) against the canonical canonical components:
+parrot.bots.flow.fsm) against the canonical components:
   - parrot.bots.flows.core.fsm.AgentTaskMachine
   - parrot.bots.flows.core.fsm.TransitionCondition
   - parrot.bots.flows.core.transition.FlowTransition
