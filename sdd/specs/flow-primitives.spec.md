@@ -3,8 +3,11 @@
 **Feature ID**: FEAT-134
 **Date**: 2026-04-29
 **Author**: Jesus
-**Status**: approved
+**Status**: implemented
 **Target version**: next minor
+
+> **Note (FEAT-196, 2026-05-28)**: Code examples in this spec reference `parrot.bots.flow`
+> (singular, deleted in FEAT-196). Use `parrot.bots.flows` (plural) for all new code.
 
 ---
 

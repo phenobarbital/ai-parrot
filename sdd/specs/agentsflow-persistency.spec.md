@@ -3,8 +3,18 @@
 **Feature ID**: FEAT-009
 **Date**: 2026-02-22
 **Author**: Claude
-**Status**: approved
+**Status**: obsolete
 **Target version**: next
+
+> **SUPERSEDED** — This spec is obsolete as of FEAT-196 (AgentsFlow Migration,
+> 2026-05-28).
+>
+> - The persistence implementation described here was delivered by
+>   **FEAT-147** (`parrot/bots/flows/core/storage/persistence.py`).
+> - The package-level cleanup (removing `parrot/bots/flow/`) was completed
+>   by **FEAT-196** (`sdd/specs/agentsflow-migration.spec.md`).
+>
+> No further work is required from this spec.
 
 ---
 

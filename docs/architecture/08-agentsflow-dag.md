@@ -286,17 +286,20 @@ data, not code.
 ## 8.8 Recipe — a conditional flow with HITL fallback
 
 ```python
-from parrot.bots.flow import (
+# Updated import paths after FEAT-196 (parrot.bots.flow deleted):
+from parrot.bots.flows import (
     AgentsFlow,
     TransitionCondition,
     DecisionFlowNode,
+    BinaryDecision,
+)
+from parrot.bots.flows.flow.nodes import (
     DecisionNodeConfig,
     DecisionMode,
     DecisionType,
-    BinaryDecision,
     EscalationPolicy,
-    CELPredicateEvaluator,
 )
+from parrot.bots.flows.flow.cel_evaluator import CELPredicateEvaluator
 
 flow = AgentsFlow(name="Refund-Approval", llm="google", default_max_retries=2)
 
