@@ -152,7 +152,7 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -162,8 +162,8 @@
       "parallelism_notes": "BotManager imports handlers — must move after handlers",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1372-move-manager.md"
+      "completed_at": "2026-05-28T23:36:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1372-move-manager.md"
     },
     {
       "id": "TASK-1373",
