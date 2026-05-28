@@ -88,7 +88,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -98,8 +98,8 @@
       "parallelism_notes": "Touches handlers/artifacts.py and adds a route; sequential to TASK-1321 which provides the URL primitive.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1322-public-artifact-html-serving.md"
+      "completed_at": "2026-05-28T11:11:29+00:00",
+      "file": "sdd/tasks/completed/TASK-1322-public-artifact-html-serving.md"
     },
     {
       "id": "TASK-1323",
