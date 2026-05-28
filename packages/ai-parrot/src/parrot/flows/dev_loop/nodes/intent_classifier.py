@@ -19,7 +19,7 @@ import logging
 import time
 from typing import Any, Dict
 
-from parrot.bots.flow.node import Node
+from parrot.bots.flows.core.node import Node
 from parrot.conf import ACCEPTANCE_CRITERION_ALLOWLIST
 from parrot.flows.dev_loop.models import (
     FlowtaskCriterion,

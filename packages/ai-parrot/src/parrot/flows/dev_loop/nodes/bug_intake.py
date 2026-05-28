@@ -18,7 +18,7 @@ import logging
 import time
 from typing import Any, Dict
 
-from parrot.bots.flow.node import Node
+from parrot.bots.flows.core.node import Node
 from parrot.flows.dev_loop.models import BugBrief
 
 
