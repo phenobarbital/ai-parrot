@@ -29,7 +29,7 @@ import hashlib
 import hmac
 import os
 import time
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+from base64 import urlsafe_b64encode
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -350,8 +350,14 @@ class ArtifactDetailView(BaseView):
         fmt = self.request.query.get("format", "")
         if accept.startswith("text/html") or fmt == "html":
             html = _extract_html_from_artifact(artifact)
+            raw_bundles = (artifact.definition or {}).get("js_bundles", [])
+            try:
+                from ..models.infographic import JSBundle
+                bundles = [JSBundle.model_validate(b) if isinstance(b, dict) else b for b in raw_bundles]
+            except Exception:
+                bundles = []
             csp_headers = build_csp_headers(
-                js_bundles=(artifact.definition or {}).get("js_bundles", []),
+                js_bundles=bundles,
                 frame_ancestors=frame_ancestors_from_env(),
             )
             return web.Response(
@@ -547,10 +553,11 @@ class ArtifactPublicHTMLView(web.View):
 
     _logger_name: str = "Parrot.ArtifactPublicHTMLView"
 
-    @property
-    def logger(self):
-        import logging
-        return logging.getLogger(self._logger_name)
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialise the view with a standard logger."""
+        import logging as _logging
+        super().__init__(*args, **kwargs)
+        self.logger = _logging.getLogger(self._logger_name)
 
     def _get_artifact_store(self):
         try:
@@ -563,7 +570,9 @@ class ArtifactPublicHTMLView(web.View):
         signing_key = _get_signing_key()
         if signing_key == b"dev-insecure-key-change-in-prod":
             self.logger.warning(
-                "INFOGRAPHIC_SIGNING_KEY is not set — using insecure fallback key."
+                "INFOGRAPHIC_SIGNING_KEY env var not set — using insecure dev key. "
+                "Set INFOGRAPHIC_SIGNING_KEY to a random 32+ byte secret before "
+                "deploying to production."
             )
 
         signature = self.request.match_info.get("signature", "")
@@ -597,11 +606,27 @@ class ArtifactPublicHTMLView(web.View):
         # or by using sentinels.  In this v1 implementation we look it up via
         # the scan path in the backend.  If the backend doesn't support a
         # global scan, we require the URL to carry agent/session params
+        #
+        # NOTE: The _public sentinel only works if the backend supports artifact
+        # lookup by artifact_id alone. On scoped backends (DynamoDB, Redis), the
+        # caller must supply user_id, agent_id, and session_id as query params.
+        # Embedding these in the URL leaks session scope — use a GSI / secondary
+        # index for production deployments that need public sharing without query
+        # param leakage.
         # (documented limitation).
         qs = dict(self.request.query)
         agent_id = qs.get("agent_id", "")
         session_id = qs.get("session_id", "")
         user_id = qs.get("user_id", "")
+
+        if not all([user_id, agent_id, session_id]):
+            self.logger.warning(
+                "Public artifact request for artifact_id=%s is missing scope params "
+                "(user_id, agent_id, session_id). On scoped backends this will fall "
+                "back to '_public' sentinels which may return 404 if unsupported. "
+                "Pass scope params as query params for reliable lookup.",
+                artifact_id,
+            )
 
         # Try to fetch the artifact.  If the backend requires user/agent/session
         # context we need them; client may pass them as query params.

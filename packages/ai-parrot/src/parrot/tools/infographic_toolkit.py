@@ -25,7 +25,6 @@ from parrot.tools.toolkit import AbstractToolkit
 from parrot.models.infographic import (
     InfographicBlock,
     InfographicResponse,
-    BlockType,
     theme_registry,
     JSBundle,
 )
@@ -44,6 +43,10 @@ from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
 # ---------------------------------------------------------------------------
 
 _INLINE_THRESHOLD: int = 50_000
+
+# Maximum number of DataFrame rows serialised into the LLM enhance context.
+# Larger DataFrames are truncated with a warning to avoid excessive token usage.
+MAX_ENHANCE_ROWS: int = 50
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +122,7 @@ class InfographicToolkit(AbstractToolkit):
     return_direct: bool = True          # bypass LLM re-summarisation
     tool_prefix: Optional[str] = "infographic"
     prefix_separator: str = "_"
-    exclude_tools: tuple[str, ...] = ()
+    exclude_tools: Tuple[str, ...] = ()
 
     def __init__(self, *, artifact_store: ArtifactStore, **kwargs) -> None:
         """Initialise the toolkit.
@@ -145,6 +148,18 @@ class InfographicToolkit(AbstractToolkit):
             if not getattr(tool, "return_direct", False):
                 tool.return_direct = True
         return tools
+
+    def set_bot(self, bot: Any) -> None:
+        """Bind this toolkit to a bot instance for enhance-mode support.
+
+        Args:
+            bot: Bot instance that must implement
+                ``_get_repl_locals() -> Dict[str, Any]`` and optionally
+                ``enhance_infographic(...)``.  The bot is stored as
+                ``self._bot`` and accessed by ``_maybe_enhance`` and
+                ``_get_repl_locals``.
+        """
+        self._bot = bot
 
     # ------------------------------------------------------------------
     # Public tool methods
@@ -208,15 +223,24 @@ class InfographicToolkit(AbstractToolkit):
         skeleton = self._renderer.render_to_html(infographic_response, theme=validated_theme)
 
         # --- Optional enhance pass (TASK-1325 wires this) ---
+        # Build data_context, truncating large DataFrames to avoid token bloat.
+        data_context: Dict[str, Any] = {}
+        for name in data_variables:
+            if name in repl_locals and isinstance(repl_locals[name], pd.DataFrame):
+                df = repl_locals[name]
+                if len(df) > MAX_ENHANCE_ROWS:
+                    self.logger.warning(
+                        "DataFrame '%s' truncated from %d to %d rows for LLM context",
+                        name, len(df), MAX_ENHANCE_ROWS,
+                    )
+                    df = df.head(MAX_ENHANCE_ROWS)
+                data_context[name] = df.to_dict("records")
+
         html, enhanced = await self._maybe_enhance(
             skeleton=skeleton,
             brief=enhance_brief,
             mode=mode,
-            data_context={
-                name: repl_locals[name].to_dict("records")
-                for name in data_variables
-                if name in repl_locals and isinstance(repl_locals[name], pd.DataFrame)
-            },
+            data_context=data_context,
             js_bundles_available=list(template.js_bundles or []),
         )
 

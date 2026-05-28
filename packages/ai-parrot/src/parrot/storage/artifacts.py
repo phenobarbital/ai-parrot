@@ -9,6 +9,7 @@ Removed the leaky ConversationDynamoDB-specific abstraction (FEAT-116).
 See docs/storage-backends.md for backend configuration.
 """
 
+import os
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Literal, Optional, Union
 
@@ -17,6 +18,10 @@ from navconfig.logging import logging
 from .backends.base import ConversationBackend
 from .models import Artifact, ArtifactSummary, ArtifactType
 from .overflow import OverflowStore
+
+# Presigned URL expiry in seconds (default 7 days).
+# Override via INFOGRAPHIC_URL_EXPIRY_SECONDS environment variable.
+_URL_EXPIRY_SECONDS: int = int(os.environ.get("INFOGRAPHIC_URL_EXPIRY_SECONDS", "604800"))
 
 
 class ArtifactStore:
@@ -223,7 +228,7 @@ class ArtifactStore:
             "Issuing presigned URL for artifact=%s format=%s", artifact_id, format,
         )
         return await self._overflow.generate_presigned_url(
-            ref, expires_in=604_800,
+            ref, expires_in=_URL_EXPIRY_SECONDS,
         )
 
     @staticmethod

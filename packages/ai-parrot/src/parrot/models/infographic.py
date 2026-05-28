@@ -34,8 +34,34 @@ from typing import (
     Union,
 )
 import json
+import re
 from enum import Enum
 from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
+
+
+# ──────────────────────────────────────────────
+# CSS color validator (reusable)
+# ──────────────────────────────────────────────
+
+_CSS_COLOR_RE = re.compile(
+    r'^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+(?:\s*,\s*[\d.]+)?\s*\)'
+    r'|hsla?\(\s*[\d.]+\s*,\s*[\d.%]+\s*,\s*[\d.%]+(?:\s*,\s*[\d.]+)?\s*\)'
+    r'|[a-zA-Z][-a-zA-Z]*|var\(--[-\w]+\))$'
+)
+
+
+def _validate_css_color(v: Any) -> Any:
+    """Validator for CSS color fields — silently drops invalid values.
+
+    Args:
+        v: Value to validate.
+
+    Returns:
+        The original value if valid, ``None`` otherwise.
+    """
+    if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
+        return None
+    return v
 
 
 # ──────────────────────────────────────────────
@@ -125,6 +151,12 @@ class ColumnDef(BaseModel):
         None, description="Accent color for the column header"
     )
 
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
+
 
 class AccordionItem(BaseModel):
     """A single collapsible item within an AccordionBlock."""
@@ -144,6 +176,12 @@ class AccordionItem(BaseModel):
         description="Raw HTML content (escape hatch). Sanitized via nh3 before render.",
     )
     expanded: bool = Field(False, description="Whether the section is expanded by default")
+
+    @field_validator("badge_color", "number_color", mode="before")
+    @classmethod
+    def _validate_colors(cls, v: Any) -> Any:
+        """Validate CSS color values — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 class ChecklistItem(BaseModel):
@@ -175,7 +213,7 @@ class TabPane(BaseModel):
 class TitleBlock(BaseModel):
     """Main title/subtitle header block."""
     type: Literal["title"] = "title"
-    title: str = Field(..., description="Main heading text")
+    title: str = Field(..., max_length=200, description="Main heading text")
     subtitle: Optional[str] = Field(None, description="Secondary heading or tagline")
     author: Optional[str] = Field(None, description="Author or source attribution")
     date: Optional[str] = Field(None, description="Date or time period covered")
@@ -210,6 +248,12 @@ class HeroCardBlock(BaseModel):
         None,
         description="Accent color for this card (CSS color value)"
     )
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
     @field_validator("trend", mode="before")
     @classmethod
@@ -324,6 +368,7 @@ class SummaryBlock(BaseModel):
     title: Optional[str] = Field(None, description="Section heading")
     content: str = Field(
         ...,
+        max_length=2000,
         description="Summary text content. Supports markdown formatting."
     )
     highlight: Optional[bool] = Field(
@@ -348,6 +393,12 @@ class ChartDataSeries(BaseModel):
         description="Data values corresponding to labels"
     )
     color: Optional[str] = Field(None, description="Series color")
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 class ChartBlock(BaseModel):
@@ -374,9 +425,9 @@ class BulletListBlock(BaseModel):
     """Ordered or unordered list of items."""
     type: Literal["bullet_list"] = "bullet_list"
     title: Optional[str] = Field(None, description="List heading")
-    items: List[str] = Field(
+    items: List[Annotated[str, Field(max_length=500)]] = Field(
         ...,
-        description="List items. Each item supports markdown formatting."
+        description="List items (max 500 chars each). Each item supports markdown formatting."
     )
     ordered: Optional[bool] = Field(False, description="Numbered list if True")
     icon: Optional[str] = Field(
@@ -398,6 +449,12 @@ class BulletListBlock(BaseModel):
         None,
         description="Visual style variant for the list"
     )
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 class TableBlock(BaseModel):
@@ -542,6 +599,12 @@ class TimelineEvent(BaseModel):
     icon: Optional[str] = Field(None, description="Event icon")
     color: Optional[str] = Field(None, description="Event accent color")
 
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
+
 
 class TimelineBlock(BaseModel):
     """Chronological sequence of events."""
@@ -569,6 +632,12 @@ class ProgressItem(BaseModel):
         le=100.0,
         description="Target value to display as reference"
     )
+
+    @field_validator("color", mode="before")
+    @classmethod
+    def _validate_color(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 class ProgressBlock(BaseModel):
@@ -795,6 +864,26 @@ class JSBundle(BaseModel):
         description="Delivery mechanism: 'inline' (embedded) or 'cdn' (external URL).",
     )
 
+    @field_validator("sri_hash", mode="before")
+    @classmethod
+    def _validate_sri_format(cls, v: Any) -> Any:
+        """Validate SRI hash format (sha256/384/512-<base64>).
+
+        Args:
+            v: Incoming value for ``sri_hash``.
+
+        Returns:
+            The value unchanged if valid or ``None``.
+
+        Raises:
+            ValueError: When the value is present but not a valid SRI hash.
+        """
+        if v is not None and not re.match(r'^sha(256|384|512)-[A-Za-z0-9+/]+=*$', str(v)):
+            raise ValueError(
+                f"sri_hash must be a valid SRI hash (sha256/384/512-<base64>), got: {v!r}"
+            )
+        return v
+
     @model_validator(mode="after")
     def _validate_scope_consistency(self) -> "JSBundle":
         """Enforce cross-field consistency based on ``scope``."""
@@ -843,6 +932,23 @@ class ThemeConfig(BaseModel):
         'Helvetica, Arial, sans-serif',
         description="CSS font-family stack",
     )
+
+    @field_validator(
+        "primary", "primary_dark", "primary_light",
+        "accent_green", "accent_amber", "accent_red",
+        "neutral_bg", "neutral_border", "neutral_muted",
+        "neutral_text", "body_bg",
+        mode="before",
+    )
+    @classmethod
+    def _validate_color_fields(cls, v: Any) -> Any:
+        """Validate CSS color values — raises ValueError on invalid input."""
+        if v is not None and not _CSS_COLOR_RE.match(str(v).strip()):
+            raise ValueError(
+                f"Invalid CSS color value: {v!r}. "
+                "Expected a hex, rgb(), rgba(), hsl(), hsla(), or named color."
+            )
+        return v
 
     def to_css_variables(self) -> str:
         """Generate a CSS ``:root`` block with custom properties.

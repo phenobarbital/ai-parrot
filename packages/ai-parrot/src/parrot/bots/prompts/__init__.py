@@ -83,13 +83,18 @@ Follow these steps IN ORDER:
    is the final answer — do NOT add any text after calling it.
 """
 
-# ── FEAT-197: Enhance prompt template (placeholders for .format()) ──────────
+# ── FEAT-197: Enhance prompt template (placeholders for str.replace()) ──────────
+# IMPORTANT: use str.replace(), NOT str.format(), to substitute these placeholders.
+# The skeleton HTML may contain curly braces (CSS, JS) that would break str.format().
+# See abstract.py enhance_infographic() for the substitution call.
 INFOGRAPHIC_ENHANCE_PROMPT = """
 You are enhancing a deterministic HTML infographic skeleton with interactive
 JavaScript.
 
 ## Skeleton HTML
+<skeleton>
 {skeleton}
+</skeleton>
 
 ## Enhancement brief
 {brief}

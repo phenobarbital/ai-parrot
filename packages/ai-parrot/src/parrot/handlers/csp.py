@@ -7,6 +7,9 @@ artifact-HTML endpoint (TASK-1322).  The policy is:
     script-src 'self' 'unsafe-inline' [<cdn origins from js_bundles>];
     style-src 'self' 'unsafe-inline';
     img-src 'self' data:;
+    object-src 'none';
+    base-uri 'self';
+    form-action 'none';
     frame-ancestors [<INFOGRAPHIC_FRAME_ANCESTORS env var or 'self'>];
 
 Plus the non-negotiable security headers:
@@ -20,6 +23,26 @@ entries whose ``scope == 'cdn'``.
 
 CSP MUST be set via HTTP *response header*, not via ``<meta http-equiv>`` —
 this is the only way to ensure the policy is enforced before the page parses.
+
+Design note on ``'unsafe-inline'`` in ``script-src``:
+    ECharts requires inline JavaScript for chart initialisation (the
+    ``echarts.init()`` call and dataset binding). ``'unsafe-inline'`` is
+    intentionally included in ``script-src`` to allow this. As a consequence,
+    hash-based inline script allowlisting cannot be used as an additional
+    enforcement mechanism — any inline ``<script>`` block present in the
+    rendered HTML will execute without restriction.
+
+Mitigations in place:
+    - External scripts are restricted to an explicit CDN allowlist enforced by SRI.
+    - The ``validate_enhanced_html`` checker in ``_enhance_html_check.py`` blocks
+      any external script source not present in the ``JSBundle`` whitelist.
+    - ``object-src 'none'`` prevents plugin-based execution vectors.
+    - ``base-uri 'self'`` prevents base-tag hijacking.
+    - ``form-action 'none'`` prevents cross-origin form submission from the infographic.
+
+Known limitation:
+    CSS injection via LLM-generated ``color`` attributes is mitigated by
+    ``_validate_css_color`` validators on all block models, but not fully eliminated.
 """
 from __future__ import annotations
 
@@ -78,6 +101,9 @@ def build_csp_headers(
         f"script-src {script_src}; "
         f"style-src 'self' 'unsafe-inline'; "
         f"img-src 'self' data:; "
+        f"object-src 'none'; "
+        f"base-uri 'self'; "
+        f"form-action 'none'; "
         f"frame-ancestors {frame_ancestors}; "
     )
     return {

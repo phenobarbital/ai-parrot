@@ -12,7 +12,7 @@ Each template specifies:
 
 Users can also define custom templates programmatically.
 """
-from typing import List, Optional, Dict, TYPE_CHECKING
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 
 from .infographic import BlockType, JSBundle  # JSBundle added by FEAT-197
@@ -518,10 +518,11 @@ TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
         JSBundle(
             name="echarts",
             scope="cdn",
-            # NOTE: Replace sha384-PLACEHOLDER with the genuine hash computed via:
-            #   openssl dgst -sha384 -binary echarts.min.js | base64
             url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
-            sri_hash="sha384-PLACEHOLDER_REPLACE_BEFORE_PRODUCTION",
+            # Hash computed via:
+            #   curl -sL "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js" | \
+            #     openssl dgst -sha384 -binary | base64 | tr -d '\n'
+            sri_hash="sha384-BQKzmHvQLMCAnL3UtDBA1Al5tFjsCz1wrMlIUA1wkzo14DYkRWjywW+p9pCj0cwd",
         ),
     ],
 )
