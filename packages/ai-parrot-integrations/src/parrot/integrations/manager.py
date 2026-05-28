@@ -14,8 +14,8 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
 from navconfig.logging import logging
-from ..conf import AGENTS_DIR, REDIS_URL
-from ..human import (
+from parrot.conf import AGENTS_DIR, REDIS_URL
+from parrot.human import (
     HumanInteractionManager,
     TelegramHumanChannel,
     set_default_human_manager,
@@ -32,8 +32,8 @@ if TYPE_CHECKING:
     from .msteams.wrapper import MSTeamsAgentWrapper
     from .whatsapp.wrapper import WhatsAppAgentWrapper
     from .slack.wrapper import SlackAgentWrapper
-    from ..manager import BotManager
-    from ..bots.abstract import AbstractBot
+    from parrot.manager import BotManager
+    from parrot.bots.abstract import AbstractBot
 
 
 ENV_DIR = BASE_DIR.joinpath('env')
