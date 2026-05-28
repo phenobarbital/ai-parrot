@@ -16,7 +16,6 @@ returns a structured ``dict`` describing the outcome.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, Optional
 
 from parrot.bots.flows.core.node import Node
@@ -36,15 +35,12 @@ class FailureHandlerNode(Node):
         jira_toolkit: Any,
         name: str = "failure_handler",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._jira = jira_toolkit
-        self.logger = logging.getLogger(__name__)
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_jira", jira_toolkit)
 
     @property
     def name(self) -> str:
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute

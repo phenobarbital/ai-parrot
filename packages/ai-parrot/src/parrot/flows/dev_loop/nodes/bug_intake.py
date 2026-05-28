@@ -14,7 +14,6 @@ expensive thing it does is one ``XADD`` to the flow event stream.
 from __future__ import annotations
 
 import json
-import logging
 import time
 from typing import Any, Dict
 
@@ -43,17 +42,14 @@ class BugIntakeNode(Node):
         redis_url: str,
         name: str = "bug_intake",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._redis_url = redis_url
-        self._redis: Any = None
-        self.logger = logging.getLogger(__name__)
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_redis_url", redis_url)
+        object.__setattr__(self, "_redis", None)
 
     @property
     def name(self) -> str:
         """Node identifier used by the flow router."""
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute
