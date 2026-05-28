@@ -116,6 +116,33 @@ class OverflowStore:
             )
             return None
 
+    async def generate_presigned_url(
+        self,
+        key: str,
+        *,
+        expires_in: int = 604800,
+    ) -> str:
+        """Generate a presigned URL for an overflow object.
+
+        Delegates to the underlying ``FileManagerInterface.get_file_url``
+        implementation.  The expiry is silently capped at 604 800 seconds
+        (7 days) — the maximum allowed by S3 sigv4.
+
+        If the underlying file manager does not support presigned URLs
+        (e.g. ``LocalFileManager`` or ``TempFileManager``) it will raise
+        ``NotImplementedError`` or a provider-specific exception.
+
+        Args:
+            key: S3 (or storage-backend) object key.
+            expires_in: Desired URL validity in seconds.  Capped at 604 800.
+
+        Returns:
+            A presigned URL string.
+        """
+        effective_expiry = min(int(expires_in), 604_800)
+        self.logger.info("Issuing presigned URL for key=%s expiry=%ds", key, effective_expiry)
+        return await self._fm.get_file_url(key, expiry=effective_expiry)
+
     async def delete(self, definition_ref: Optional[str]) -> bool:
         """Delete the file for ``definition_ref`` if it exists.
 
