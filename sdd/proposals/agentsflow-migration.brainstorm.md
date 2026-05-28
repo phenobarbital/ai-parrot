@@ -1,0 +1,654 @@
+---
+# SDD flow type and base branch (FEAT-145).
+type: feature
+base_branch: dev
+---
+
+# Brainstorm: AgentsFlow Migration — finish moving `bots/flow/` into `bots/flows/`
+
+**Date**: 2026-05-28
+**Author**: Jesus Lara
+**Status**: exploration
+**Recommended Option**: A
+
+---
+
+## Problem Statement
+
+FEAT-163 (`agentsflow-refactor-spec3`, merged on `dev` 2026-05-11) moved the
+**FSM engine** of AgentsFlow out of `parrot/bots/flow/fsm.py` and into
+`parrot/bots/flows/core/` + `parrot/bots/flows/flow.py`. The legacy
+`fsm.py` was deleted (TASK-1069). FEAT-143 (`flows-consolidation`) had
+previously moved `AgentCrew` to `parrot/bots/flows/crew/` and introduced the
+canonical result/context models (`FlowResult`, `NodeResult`,
+`FlowContext.shared_data`, `build_node_metadata`, `NodeExecutionInfo`).
+
+**The migration is half-done.** The legacy `parrot/bots/flow/` (singular)
+still hosts 17 files (~3,456 LoC) that the new world depends on:
+
+- `parrot/bots/flows/flow.py` itself imports `FlowDefinition`,
+  `DecisionFlowNode`/`DecisionResult`/`DecisionMode`/...,
+  `InteractiveDecisionNode`, and (lazily) `CELPredicateEvaluator` from
+  `parrot.bots.flow.*` — see verified line numbers in §Code Context.
+- `parrot/flows/dev_loop/*` (8 production files, the dev-loop flow PoC)
+  imports `AgentsFlow` and `Node` from `parrot.bots.flow.*`.
+- 31 test files reference `parrot.bots.flow.*` directly.
+- `parrot/bots/flow/__init__.py` is a hybrid re-exporter (some symbols
+  forwarded to `flows/core/*`, others still living in `flow/*`).
+
+The remaining files split into three behavioural groups:
+
+1. **Already-canonicalised siblings** — `flow/storage/{memory,mixin,synthesis}.py`
+   and `flow/tools.py` have richer/newer counterparts in
+   `flows/core/storage/*` and `flows/tools.py`. The old copies are
+   redundant duplicates kept alive only by stale imports.
+2. **Move-only files** — `actions.py`, `cel_evaluator.py`, `definition.py`,
+   `loader.py`, `svelteflow.py`. Self-contained primitives with no
+   counterpart in `flows/`. They just need to relocate.
+3. **Re-architecture targets** — `decision_node.py` (1,140 LoC) and
+   `interactive_node.py` (99 LoC). These predate `flows/core/node.AgentNode`
+   (the FEAT-137 / FEAT-163 rich node with `execute()`, hooks, timeout,
+   FSM). They should be rewritten as subclasses of `AgentNode` (or `Node`)
+   rather than straight-moved, so the public `DecisionNode` surface is
+   homologated with the rest of the node hierarchy.
+
+Without this migration:
+- `parrot/bots/flows/` cannot be deleted-and-recreated independently of
+  `parrot/bots/flow/` — they are bidirectionally coupled.
+- The dev-loop PoC and 31 test files document the "wrong" import path
+  as canonical, perpetuating the duplication.
+- New contributors cannot tell which package is current.
+
+---
+
+## Constraints & Requirements
+
+- **End-state**: `parrot/bots/flow/` is deleted in its entirety. No
+  back-compat shim. (Round-1 answer.)
+- **Atomic delivery**: one feature branch, one PR. Library code, dev-loop
+  consumers, and test files are repointed in the same PR. (Round-1 answer.)
+- **No behaviour regression** in the four AgentsFlow execution modes
+  (parallel DAG `run_flow`, sequential, parallel-fanout, loop).
+- **Storage reconciliation**: when behaviours diverge between
+  `flow/storage/*` and `flows/core/storage/*`, the new world wins; salvage
+  any missing semantics from the old code into the canonical implementation
+  before deletion. (Round-2 answer.)
+- **Node hierarchy**: keep the existing `flows/core/node.Node` (lightweight
+  base) + `AgentNode` (subclass). `DecisionNode` and `InteractiveDecisionNode`
+  must subclass `Node` or `AgentNode` — no parallel base class. (Round-2
+  answer.)
+- **AgentCrew model adoption**: AgentsFlow must use `FlowResult` as its
+  `run()` return type, `NodeResult` for per-node output, `FlowContext`
+  (with `shared_data`) as the shared run state, and
+  `build_node_metadata` / `NodeExecutionInfo` for telemetry. (Round-2
+  answer; aligns AgentsFlow with AgentCrew so FEAT-177 OTel subscribers
+  see identical events from both engines.)
+- **Curated public API**: `parrot/bots/flows/__init__.py` re-exports only
+  deliberate primitives. Internals (e.g., `CELPredicateEvaluator` if used
+  only by transitions, action-registry internals) stay in their submodules.
+  (Round-2 answer.)
+- **No new external dependencies.** This is pure refactor.
+- All existing tests must still pass after import repointing — including
+  the FEAT-163 contract tests
+  (`tests/test_flow_primitives/test_init_reexports.py`,
+  `tests/test_flow_primitives/test_contract.py`).
+
+---
+
+## Options Explored
+
+### Option A: Layered atomic migration (recommended)
+
+Single feature branch with a layered task graph that respects the import
+dependency order. Each layer commits independently; nothing is half-done
+between layers.
+
+**Layer 1 — Move-only relocations (no behaviour change):**
+Move `actions.py`, `cel_evaluator.py`, `definition.py`, `loader.py`,
+`svelteflow.py` into `parrot/bots/flows/` (placement curated — likely
+`flows/dsl/{definition,loader,svelteflow}.py`,
+`flows/actions/{actions,registry}.py`,
+`flows/core/predicates/cel.py` or `flows/transitions/cel.py`).
+Pick the homes during task decomposition.
+
+**Layer 2 — Storage reconciliation:**
+Diff `flow/storage/{memory,mixin,synthesis}.py` against
+`flows/core/storage/*`. Port any unique semantics from the old code into
+the canonical files. Delete `flow/storage/`. Repoint stragglers
+(`tools.py` already uses `flows.core.storage`, but
+`test_orchestrator_agent.py`, `test_execution_memory_integration.py`, etc.
+still import from the old path).
+
+**Layer 3 — Node rewrites (behaviour-preserving):**
+Reimplement `DecisionFlowNode`, `DecisionResult`, `DecisionMode`,
+`DecisionType`, `BinaryDecision`, `ApprovalDecision`, `MultiChoiceDecision`,
+`EscalationPolicy`, `VoteWeight`, and `InteractiveDecisionNode` as
+subclasses of `flows/core/node.AgentNode` (or `Node` for non-agent
+decisions). Public symbol names preserved; internals adopt `NodeResult`,
+`FlowContext.shared_data`, and `build_node_metadata`. Old
+`decision_node.py` and `interactive_node.py` deleted.
+
+**Layer 4 — Internal repointing:**
+Update `parrot/bots/flows/flow.py` to import from `flows.*` only. Drop the
+four cross-package imports at lines 42, 45, 51, 508.
+
+**Layer 5 — External consumer repointing:**
+Update `parrot/flows/dev_loop/{flow,nodes/*}.py` (8 files) and all 31 test
+files to import from `parrot.bots.flows.*`.
+
+**Layer 6 — Cleanup + curated public API:**
+Delete `parrot/bots/flow/` entirely. Rewrite
+`parrot/bots/flows/__init__.py` to expose only the deliberate primitives
+(curated, not verbatim). Update any docstrings/examples that reference the
+old path.
+
+✅ **Pros:**
+- Clean dependency order — each layer leaves the tree in a consistent state.
+- Single PR, single review, single CI green check.
+- Task graph maps 1:1 onto `/sdd-task` decomposition (6 layers → 8–10 tasks).
+- Behaviour preservation is checkable per-layer (storage tests after L2,
+  decision-node tests after L3, full suite after L5).
+
+❌ **Cons:**
+- Final PR diff is large (~3.5k LoC moved/rewritten + ~40 consumer files
+  repointed). Review burden front-loaded.
+- Layer-3 rewrite of `decision_node.py` (1,140 LoC) is non-trivial — needs
+  careful behavioural diff against current `DecisionFlowNode`.
+
+📊 **Effort:** High (~6–8 tasks; ~2-week estimate).
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pydantic` ≥2 | Existing Node/AgentNode are `BaseModel(frozen=True)` | Already in use throughout `flows/core/` |
+| `transitions` | FSM (already used by `AgentTaskMachine`) | No change |
+| `ruff` / `mypy` | Lint + type-check during repointing | Already wired in CI |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/bots/flows/core/node.py` — Node + AgentNode + StartNode +
+  EndNode hierarchy (canonical).
+- `parrot/bots/flows/core/result.py` — FlowResult, NodeResult,
+  NodeExecutionInfo, build_node_metadata.
+- `parrot/bots/flows/core/context.py` — FlowContext with shared_data +
+  AgentRegistry resolution.
+- `parrot/bots/flows/core/storage/` — backends, memory, mixin, persistence,
+  synthesis (canonical storage layer).
+- `parrot/bots/flows/tools.py` — ResultRetrievalTool already migrated
+  (canonical; old `flow/tools.py` is the duplicate to delete).
+
+---
+
+### Option B: Vertical slices (one slice per leftover file)
+
+Decompose by file rather than by layer. Each slice is a task that
+(a) moves/rewrites one file, (b) updates every consumer that imports it,
+(c) deletes the old file. Each slice ends with the tree in a working state
+and a passing test suite.
+
+Slice list: `actions.py`, `cel_evaluator.py`, `definition.py`, `loader.py`,
+`svelteflow.py`, `storage/*`, `decision_node.py`, `interactive_node.py`,
+`node.py`, `tools.py`, `nodes/{start,end}.py`. Final slice deletes
+`__init__.py` + the now-empty package directory.
+
+✅ **Pros:**
+- Each task is small and independently bisectable.
+- A failing CI on one slice does not block the others.
+- Easier to mentally model "this PR's diff is just decision_node".
+
+❌ **Cons:**
+- Decision-node rewrite spans many consumers (`flows/flow.py` line 45 +
+  several tests) — vertical slicing doesn't reduce its surface area.
+- More commits, more review cycles, more merge conflicts if multiple
+  slices touch `__init__.py` or `flows/flow.py`.
+- Total work is identical to Option A; only the bookkeeping differs.
+- Violates the user's "atomic, one PR" constraint unless we still
+  bundle all slices into one feature branch — at which point the only
+  difference vs Option A is the task-graph shape.
+
+📊 **Effort:** High (~10–12 tasks).
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| (same as Option A) | | |
+
+🔗 **Existing Code to Reuse:**
+- (same as Option A)
+
+---
+
+### Option C: Codemod-driven mass rewrite
+
+Write a Python codemod (using `libcst` or `bowler`) that auto-rewrites
+every `from parrot.bots.flow.X import Y` → `from parrot.bots.flows.X' import Y`
+across the entire repo. Run the codemod, then manually handle the
+behavioural work that can't be automated:
+- File moves (still manual, but trivial).
+- `decision_node.py` / `interactive_node.py` rewrites on `AgentNode`
+  (manual — codemod can't redesign class hierarchies).
+- Storage reconciliation (manual).
+- `__init__.py` curation (manual).
+
+✅ **Pros:**
+- The ~40 consumer-file repointing collapses into a single codemod run.
+- Codemod is itself a reviewable artefact and can be re-run if more
+  imports leak in during the PR cycle.
+- The diff for consumer files is mechanical, low cognitive load.
+
+❌ **Cons:**
+- Building the codemod is a task in itself (~½ day to ¾ day for libcst
+  setup + correctness tests).
+- Codemod cannot handle the hard parts: storage merge, decision-node
+  redesign, `__init__.py` curation. Those still take Option-A effort.
+- Codemod adds a dev-tool to the repo that needs its own ongoing
+  maintenance / removal.
+- Risk of subtly wrong rewrites (e.g., `from parrot.bots.flow import
+  ACTION_REGISTRY` requires picking which new module owns
+  `ACTION_REGISTRY` — not a 1:1 path swap).
+
+📊 **Effort:** High (~6–8 tasks + ½–1 day for codemod).
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `libcst` ≥1.4 | Concrete-syntax-tree codemod for Python | Mature; Meta-maintained |
+| `bowler` | Alternative codemod framework | Lighter than libcst, fluent API |
+
+🔗 **Existing Code to Reuse:**
+- Same as Option A, plus any codemod helpers in `scripts/sdd/` if applicable
+  (likely none — codemod would be a new artefact).
+
+---
+
+## Recommendation
+
+**Option A (Layered atomic migration)** is recommended.
+
+**Reasoning:**
+- The user's constraints fix Option A as the natural shape: atomic PR,
+  full deletion, full repointing. Option B reorganises tasks but does not
+  reduce the surface area and breaks the cohesion of layered cleanup.
+  Option C invests in tooling that pays back only on the cheapest 30% of
+  the work (consumer imports) and leaves the expensive 70% (decision-node
+  rewrite, storage merge, `__init__.py` curation) untouched.
+- The dependency order is already linear: storage must reconcile before
+  consumers can repoint; decision-node rewrites need the curated `Node`
+  base in place; `flows/flow.py`'s four legacy imports cannot be dropped
+  until L3 finishes. Option A's layering follows that order; Option B
+  fights it.
+- Layered phases give natural test-suite checkpoints:
+  - After L2: `tests/test_execution_memory_integration.py` + storage tests pass.
+  - After L3: `tests/test_decision_node.py` + `tests/bots/flows/test_flow_node_subclasses.py` pass.
+  - After L5: `tests/flows/dev_loop/*` + the full FEAT-163 contract tests
+    (`test_init_reexports.py`, `test_contract.py`) pass.
+- A codemod (Option C) would still leave the L3 rewrite as the dominant
+  cost. The leverage is not large enough to justify the tooling.
+
+What we're trading off:
+- A large final-PR diff (Option A) vs. many small PRs (Option B). The
+  user explicitly chose atomic delivery.
+- Manual import edits (Option A) vs. codemod-automated edits (Option C).
+  We accept the manual edits because `ruff --fix` and IDE-driven
+  "Update Imports" on file moves handle most of it for free.
+
+---
+
+## Feature Description
+
+### User-Facing Behavior
+
+For end-users of `parrot.bots.flows.*`:
+- All previously documented public symbols continue to be importable —
+  but only from `parrot.bots.flows`, never from `parrot.bots.flow`.
+- A breaking-change note in the next release: any code that imports
+  `from parrot.bots.flow ...` must change to
+  `from parrot.bots.flows ...` (single character — plural). No back-compat
+  shim is provided; the migration is expected to be a single sed-style
+  pass for downstream repos (Navigator, internal consumers).
+- The public `parrot.bots.flows.__init__` re-export list is **curated**:
+  only deliberate primitives are exposed. Some symbols that used to be
+  importable from the top-level `parrot.bots.flow` (e.g.,
+  `ACTION_REGISTRY`, `CELPredicateEvaluator`) may need to be imported
+  from their submodules going forward. The PR description will list
+  every breaking re-export change with the new submodule path.
+
+For developers inside `ai-parrot`:
+- `parrot/bots/flow/` no longer exists. The only flow package is
+  `parrot/bots/flows/`.
+- `AgentsFlow.run()` returns a `FlowResult` (aligned with
+  `AgentCrew.run_*()`), so OTel subscribers (FEAT-177), persistence
+  layers, and result-retrieval tools see identical event shapes from
+  both orchestration engines.
+
+### Internal Behavior
+
+Layered execution (see Option A above for the canonical layer list).
+Each layer leaves the repo in a green-test state. Between layers, a
+mid-PR commit summarises which legacy paths have been retired.
+
+The `flows/__init__.py` curation rule: a symbol is re-exported at the
+package root **only if it is part of the documented agent-developer API**
+(building flows, registering nodes, inspecting results). Implementation
+details (CEL evaluation internals, action-registry plumbing, FSM internals
+that are only used by `AgentsFlow`'s own scheduler) stay accessible via
+submodule import but are not at the root.
+
+The `DecisionNode` rewrite preserves the public symbol names
+(`DecisionFlowNode`, `DecisionResult`, `DecisionMode`, etc.) but the
+implementation now:
+- Subclasses `flows/core/node.AgentNode` (or `Node` for non-agent decisions).
+- Uses `NodeResult` for per-decision output.
+- Reads/writes via `FlowContext.shared_data` instead of ad-hoc state.
+- Emits telemetry via `build_node_metadata` for uniform OTel surfacing.
+
+### Edge Cases & Error Handling
+
+- **Out-of-tree consumers (Navigator)**: this PR breaks any external
+  import. A coordinated commit/PR on Navigator is required *before or
+  alongside* the merge of this feature. Open question — see §Open Questions.
+- **Decision-node behavioural diff**: if a current
+  `DecisionFlowNode` test relies on a specific attribute layout (e.g.,
+  `result.confidence` shape, `_validate_decision` hook signature), the
+  rewrite must preserve that contract. Approach: capture every public
+  attribute/method touched by a test before L3 starts; treat the test
+  surface as the rewrite's behavioural contract.
+- **Storage backend semantics**: if `flow/storage/memory.ExecutionMemory`
+  has a quirk that `flows/core/storage/memory.ExecutionMemory` lacks,
+  L2 must port it before the deletion in L6. A diff harness comparing
+  both `ExecutionMemory` classes against the same `NodeResult` stream is
+  the recommended check.
+- **Circular import resilience**: the current
+  `parrot/bots/flow/__init__.py` uses `__getattr__` to lazily import
+  `AgentsFlow` and break a circular dependency. After the migration,
+  `parrot/bots/flows/__init__.py` may need its own laziness if
+  `flows/flow.py` imports from `flows/dsl/definition` and
+  `flows/dsl/definition` happens to import anything from `flows/`. Test
+  this with a clean `python -c "import parrot.bots.flows; print('ok')"`
+  after L6.
+- **Tests that import from the singular path**: 31 files. Some may also
+  import from `parrot.bots.flow.fsm` (which no longer exists — already
+  broken at HEAD). Verify these tests run today before assuming the L5
+  rewrite is sufficient; some may need deeper repair.
+
+---
+
+## Capabilities
+
+### New Capabilities
+- `agentsflow-migration`: the cleanup feature itself (this brainstorm).
+
+### Modified Capabilities
+- `agentsflow-refactor-spec3` (FEAT-163): this feature completes the
+  unfinished cleanup half of FEAT-163.
+- `flows-consolidation` (FEAT-143): this feature retires the last
+  cross-package coupling that FEAT-143 documented as a goal.
+
+---
+
+## Impact & Integration
+
+| Affected Component | Impact Type | Notes |
+|---|---|---|
+| `parrot/bots/flow/` | **deletes** | Entire package removed in L6. |
+| `parrot/bots/flows/` | extends | New submodules for moved files (dsl, actions registry, predicates, decision nodes); curated `__init__.py`. |
+| `parrot/bots/flows/flow.py` | modifies | Drops four cross-package imports (lines 42, 45, 51, 508). |
+| `parrot/bots/flows/core/storage/` | extends | Receives any missing semantics ported from `flow/storage/`. |
+| `parrot/flows/dev_loop/` | modifies | 8 files repointed to `parrot.bots.flows.*`. |
+| 31 test files | modifies | Imports updated; possibly contract tests adjusted. |
+| `parrot/bots/orchestration/` | unaffected | Already migrated by FEAT-143. |
+| External: Navigator project | breaks (out-of-tree) | Requires coordinated update; out of this repo's scope but flagged. |
+| FEAT-177 OTel observability | indirectly benefits | Uniform `NodeExecutionInfo` from both engines → cleaner subscriber surface. |
+
+---
+
+## Code Context
+
+### User-Provided Code
+
+```python
+# Source: user, illustrating the unfinished migration
+# parrot/bots/flows/flow.py:508 — new code STILL imports from singular
+from parrot.bots.flow.cel_evaluator import CELPredicateEvaluator
+```
+
+### Verified Codebase References
+
+#### Singular `parrot/bots/flow/` — what's left to migrate (verified 2026-05-28)
+
+```
+parrot/bots/flow/actions.py          552 LoC   ACTION_REGISTRY, BaseAction, LogAction, NotifyAction, WebhookAction, MetricAction, SetContextAction, ValidateAction, TransformAction, register_action, create_action
+parrot/bots/flow/cel_evaluator.py    140 LoC   CELPredicateEvaluator
+parrot/bots/flow/decision_node.py   1140 LoC   DecisionFlowNode, DecisionMode, DecisionType, DecisionNodeConfig, DecisionResult, BinaryDecision, ApprovalDecision, MultiChoiceDecision, EscalationPolicy, VoteWeight
+parrot/bots/flow/definition.py       433 LoC   FlowDefinition, FlowMetadata, NodeDefinition, NodePosition, EdgeDefinition, ActionDefinition, LogActionDef, NotifyActionDef, WebhookActionDef, MetricActionDef, SetContextActionDef, ValidateActionDef, TransformActionDef
+parrot/bots/flow/interactive_node.py  99 LoC   InteractiveDecisionNode
+parrot/bots/flow/loader.py           364 LoC   FlowLoader, REDIS_KEY_PREFIX
+parrot/bots/flow/node.py             106 LoC   Node (old base — superseded by flows/core/node.Node; DELETE)
+parrot/bots/flow/nodes/start.py       —       StartNode (old — superseded by flows/core/node.StartNode; DELETE)
+parrot/bots/flow/nodes/end.py         —       EndNode (old — superseded by flows/core/node.EndNode; DELETE)
+parrot/bots/flow/storage/memory.py   102 LoC   ExecutionMemory (old — superseded by flows/core/storage/memory.ExecutionMemory)
+parrot/bots/flow/storage/mixin.py    141 LoC   VectorStoreMixin (old — check delta vs flows/core/storage/mixin)
+parrot/bots/flow/storage/synthesis.py 108 LoC  SynthesisMixin (old — check delta vs flows/core/storage/synthesis)
+parrot/bots/flow/svelteflow.py       192 LoC   from_svelteflow, to_svelteflow
+parrot/bots/flow/tools.py             79 LoC   ResultRetrievalTool (old DUPLICATE — flows/tools.py is canonical; DELETE)
+parrot/bots/flow/__init__.py          —       Hybrid re-export (lazy AgentsFlow via __getattr__)
+```
+
+Total: ~3,456 LoC across 17 files.
+
+#### Canonical replacements in `parrot/bots/flows/` (verified 2026-05-28)
+
+```python
+# parrot/bots/flows/core/node.py
+class Node(BaseModel, ABC):                        # frozen, arbitrary_types_allowed
+    node_id: str                                   # unique per graph instance
+    # _pre_actions, _post_actions: PrivateAttr lists
+class AgentNode(Node):                             # rich: execute(ctx, deps, **kwargs) → Any
+class StartNode(Node):                             # name='__start__'
+class EndNode(Node):                               # name='__end__'
+
+# parrot/bots/flows/core/result.py
+@dataclass
+class NodeResult:                                  # replaces AgentResult
+    node_id: str
+    node_name: str
+    task: str
+    result: Any
+    ai_message: Optional[Any] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
+    timestamp: datetime = ...
+    parent_execution_id: Optional[str] = None
+    execution_id: str = ...
+    # @property agent_id (alias node_id), agent_name (alias node_name)
+class FlowResult: ...                              # replaces CrewResult
+class NodeExecutionInfo: ...                       # replaces AgentExecutionInfo
+def build_node_metadata(...) -> dict: ...
+
+# parrot/bots/flows/core/context.py
+@dataclass
+class FlowContext:
+    node_metadata: Dict[str, NodeExecutionInfo]    # primary
+    shared_data: Dict[str, Any]                    # FEAT-143
+    agent_registry: Optional[AgentRegistry]        # FEAT-163
+    # alias property: agent_metadata
+    # methods: get_input_for_node, get_input_for_agent (alias), resolve_agent
+class AgentNotFoundError(LookupError): ...
+
+# parrot/bots/flows/core/fsm.py
+class AgentTaskMachine: ...                        # the FSM
+class TransitionCondition: ...
+
+# parrot/bots/flows/core/transition.py
+class FlowTransition: ...
+
+# parrot/bots/flows/core/storage/
+backends/{base.py, postgres.py, redis.py, documentdb.py, factory.py}
+memory.py                                          # canonical ExecutionMemory
+mixin.py                                           # canonical VectorStoreMixin
+persistence.py                                     # canonical PersistenceMixin (FEAT-147)
+synthesis.py                                       # canonical SynthesisMixin
+
+# parrot/bots/flows/tools.py
+class ResultRetrievalTool(AbstractTool):           # canonical — old flow/tools.py is the duplicate to delete
+    # imports ExecutionMemory from flows.core.storage.memory (already migrated)
+```
+
+#### Verified Imports
+
+```python
+# Cross-package legacy imports inside the new world — to be removed in L4:
+# parrot/bots/flows/flow.py:42
+from parrot.bots.flow.definition import FlowDefinition
+
+# parrot/bots/flows/flow.py:45
+from parrot.bots.flow.decision_node import (
+    DecisionFlowNode, DecisionResult, DecisionMode, ...
+)
+
+# parrot/bots/flows/flow.py:51
+from parrot.bots.flow.interactive_node import (
+    InteractiveDecisionNode,
+)
+
+# parrot/bots/flows/flow.py:508 (inside a method, lazy)
+from parrot.bots.flow.cel_evaluator import CELPredicateEvaluator
+
+# parrot/bots/flow/__init__.py — lazy AgentsFlow getattr (to break cycle):
+def __getattr__(name):
+    if name == "AgentsFlow":
+        from parrot.bots.flows.flow import AgentsFlow
+        return AgentsFlow
+    ...
+
+# Production consumers (out-of-package, in-tree):
+parrot/flows/dev_loop/flow.py:26                          from parrot.bots.flow import AgentsFlow
+parrot/flows/dev_loop/nodes/{bug_intake,deployment_handoff,development,failure_handler,intent_classifier,qa,research}.py
+                                                          from parrot.bots.flow.node import Node
+
+# Tests (in-tree, 31 files — full list captured during /sdd-task):
+packages/ai-parrot/tests/{test_agent_crew_examples,test_agentsflow_branch,test_cel_evaluator,test_decision_node,test_endnode,test_execution_memory_integration,test_flow_actions,test_flow_definition,test_flow_integration,test_flow_loader,test_flow_mixins,test_fsm,test_orchestrator_agent,test_svelteflow_adapter}.py
+packages/ai-parrot/tests/bots/flow/test_definition_cycle.py
+packages/ai-parrot/tests/bots/flows/test_{agents_flow,flow_node_subclasses,from_definition}.py
+packages/ai-parrot/tests/flows/dev_loop/test_flow.py
+packages/ai-parrot/tests/test_flow_primitives/test_{contract,init_reexports}.py
+```
+
+#### Key Attributes & Constants
+
+- `parrot/bots/flow/__init__.py` re-export list (Lazy-AgentsFlow + 50+ symbols)
+  — full inventory in §Code Context above; curation decisions deferred to
+  the spec.
+- `parrot/bots/flows/__init__.py.__all__` — 38 entries (current). Needs
+  expansion for `FlowDefinition`, `NodeDefinition`, `EdgeDefinition`,
+  `from_svelteflow`, `to_svelteflow`, `FlowLoader`, `ACTION_REGISTRY` (if
+  kept public), `CELPredicateEvaluator` (if kept public), `DecisionFlowNode`
+  + family, `InteractiveDecisionNode` — but with curation rules applied.
+- `parrot/bots/flow/storage/__init__.py` already redacted in FEAT-147:
+  only re-exports `ExecutionMemory` + `SynthesisMixin`;
+  `PersistenceMixin` was already pulled out.
+- `parrot/bots/flows/core/__init__.py` (read at brainstorm time — see
+  `flows/__init__.py` import list) exports the full Node hierarchy +
+  result models + context + transitions + storage primitives.
+
+### Does NOT Exist (Anti-Hallucination)
+
+- ~~`parrot.bots.flow.fsm`~~ — deleted in FEAT-163 TASK-1069. Some tests
+  still import from it (`tests/test_fsm.py`, `tests/test_agentsflow_branch.py`,
+  `tests/test_agent_crew_examples.py`, `tests/test_execution_memory_integration.py`).
+  These imports are **broken at HEAD** and must be repointed in L5
+  (some may have additional bitrot beyond the path change).
+- ~~`parrot.bots.flow.FlowNode`~~ — explicitly noted as "not re-exported
+  — removed in FEAT-163" in `flow/__init__.py`. Use
+  `parrot.bots.flows.core.node.AgentNode` instead.
+- ~~`parrot.bots.flow.storage.persistence`~~ — already deleted by FEAT-147.
+- ~~Backwards-compatibility shim at `parrot/bots/flow/__init__.py`~~ —
+  explicitly rejected in Round-1. Consumers must hard-cut to
+  `parrot.bots.flows`.
+- ~~`flows.tools.ResultRetrievalTool` vs `flow.tools.ResultRetrievalTool`
+  both surviving~~ — the old `flow/tools.py` is the duplicate that will
+  be deleted; `flows/tools.py` already supersedes it (verified by header
+  comment: "Moved from parrot.bots.flow.tools to the canonical flows/
+  location").
+
+---
+
+## Parallelism Assessment
+
+- **Internal parallelism**: **None possible.** Layers 1–6 have a strict
+  topological dependency: storage reconciliation (L2) must finish before
+  consumers can repoint storage imports; the `Node`/`AgentNode` rewrites
+  (L3) must finish before `flows/flow.py` drops its decision-node imports
+  (L4); L4 must finish before the singular `__init__.py` can be deleted
+  (L6). Every layer touches shared files (`flows/flow.py`,
+  `flows/__init__.py`, or the test suite).
+- **Cross-feature independence**:
+  - Conflicts with **FEAT-009 (agentsflow-persistency, approved, not yet
+    shipped)**: that spec presumably operates on `flow/storage/*` or
+    `flows/core/storage/*`. Coordination required — either FEAT-009 lands
+    first, this brainstorm absorbs it, or this brainstorm waits.
+  - No conflict with **FEAT-157 (agentcrew-hooks, shipped)** — touches
+    `flows/crew/*`.
+  - No conflict with **FEAT-177 (otel-observability, shipped)** — touches
+    `parrot/observability/*`; benefits from this migration via uniform
+    `NodeExecutionInfo`.
+- **Recommended isolation**: **per-spec** (single worktree, all tasks
+  sequential).
+- **Rationale**: Atomic PR per the Round-1 answer; topological task graph
+  per the layered Option A; every task touches files that the next task
+  reads. Splitting into per-task worktrees would force constant rebases.
+
+---
+
+## Open Questions
+
+- [x] Flow type / base branch — *Resolved in Round 0*: `feature` / `dev`.
+- [x] End-state for `parrot/bots/flow/` — *Resolved in Round 1*: delete
+  entirely; no back-compat shim.
+- [x] Files needing real homologation (not just moves) — *Resolved in
+  Round 1*: decision_node + interactive_node rewritten on AgentNode;
+  storage/ folded into flows/core/storage/; definition + loader +
+  svelteflow + actions + cel_evaluator move only.
+- [x] Repointing aggression — *Resolved in Round 1*: atomic, everything
+  in one PR (library + dev_loop + tests).
+- [x] Storage reconciliation when behaviour diverges — *Resolved in
+  Round 2*: new `flows/core/storage/` wins; salvage any missing semantics
+  from old code before deletion.
+- [x] Node hierarchy — *Resolved in Round 2*: `flows/core/node.Node`
+  lightweight base + `AgentNode` subclasses it (already implemented in
+  FEAT-163). Decision/Interactive nodes subclass `Node` or `AgentNode`,
+  not a parallel base.
+- [x] AgentCrew/FEAT-143 model adoption — *Resolved in Round 2*:
+  `FlowResult`, `NodeResult`, `FlowContext.shared_data`,
+  `build_node_metadata` + `NodeExecutionInfo` all adopted by
+  AgentsFlow's run path.
+- [x] Public re-export surface of `bots/flows/__init__.py` — *Resolved
+  in Round 2*: curate; only deliberate primitives at the package root.
+  Submodule placement decided per-symbol during `/sdd-spec`.
+- [ ] **Submodule layout for moved files** — *Owner: Jesus*. Where do
+  `definition.py`, `loader.py`, `svelteflow.py` land? Candidates:
+  `flows/dsl/`, `flows/definition/`, or flat at `flows/`. Where do
+  `actions.py` + action classes go? `flows/actions/` package or single
+  `flows/actions.py`? Where does `cel_evaluator.py` land — `flows/core/predicates/`
+  (next to transitions) or `flows/cel.py`? Decide during `/sdd-spec`.
+- [ ] **Decision-node module organisation** — *Owner: Jesus*. Is the
+  1,140-LoC `decision_node.py` split into per-decision-type modules
+  (`flows/nodes/decision/{base,binary,approval,multichoice}.py`) or kept
+  as a single file? Splitting is friendlier to navigation but adds extra
+  task scope. Decide during `/sdd-spec`.
+- [ ] **CELPredicateEvaluator: public or private?** — *Owner: Jesus*.
+  Only used by transitions today. If we expose it for downstream flow
+  authors writing custom predicates, it goes in `__init__.py`; otherwise
+  it lives in `flows/core/predicates/` and is internal.
+- [ ] **Coordination with FEAT-009 (agentsflow-persistency, approved
+  not-shipped)** — *Owner: Jesus*. Does FEAT-009 still apply? If so,
+  does it land before/with/after this migration? If the persistence work
+  has been superseded by `flows/core/storage/persistence.py` (FEAT-147),
+  mark FEAT-009 obsolete during `/sdd-spec`.
+- [ ] **External-consumer coordination (Navigator)** — *Owner: Jesus*.
+  Are there `parrot.bots.flow.*` imports in the Navigator project (or any
+  other downstream repo)? If yes, a Navigator-side PR must merge before
+  or alongside this feature. Verify before `/sdd-task`.
+- [ ] **Test-suite repair surface** — *Owner: Jesus + first executor
+  agent*. Several tests already import `parrot.bots.flow.fsm` (deleted by
+  FEAT-163) — they may have unrelated bitrot. During L5, decide per-test
+  whether to repoint, rewrite, or quarantine.
