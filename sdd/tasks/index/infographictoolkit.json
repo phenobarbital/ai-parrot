@@ -14,7 +14,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Single-field addition to AIMessage; no other task touches this region of responses.py.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1318-aimessage-artifact-id-field.md"
+      "completed_at": "2026-05-28T10:55:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1318-aimessage-artifact-id-field.md"
     },
     {
       "id": "TASK-1319",
