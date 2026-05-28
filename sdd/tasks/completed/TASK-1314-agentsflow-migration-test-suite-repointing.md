@@ -234,10 +234,21 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-28
 **Notes**:
+- All 21 test files repointed from `parrot.bots.flow.*` to `parrot.bots.flows.*`
+- `test_fsm.py` rewritten against `AgentTaskMachine` / `FlowTransition` (was 897 lines, now ~350)
+- `test_agentsflow_branch.py` rewritten against new AgentsFlow API (88% rewrite)
+- `test_decision_node.py` updated: `name=` → `node_id=`, validation tests call `_validate_config()`, FSM contract test updated to new fields
+- `test_endnode.py` updated: `tool_manager` assertion replaced with `node_id` assertion
+- `test_flow_loader.py` updated: `flow.nodes` → `flow._nodes`, `outgoing_transitions` replaced with `node.successors`
+- `test_flow_integration.py` updated: added `invoke()` to mocks (AgentLike), fixed `flow.nodes` → result, fixed `run_flow(str)` compatibility
+- Production fixes needed to make tests work:
+  - `core/node.py`: Added `successors`, `dependencies`, `execute()` to `StartNode` and `EndNode`
+  - `flow/flow.py`: `run_flow()` now accepts `Union[FlowContext, str]` (str → FlowContext auto-wrap), added `Union` import
+  - `flow/loader.py`: Fixed `StartNode`/`EndNode` constructor (removed bogus `dependencies`/`successors` params, then re-added after fixing core/node.py)
+- 518 tests pass in the TASK-1314 scope, 0 failures, 17 xfailed
+- Pre-existing broken tests (`test_chat_storage.py`, `tests/interfaces/`, `tests/storage/`) excluded — not related to agentsflow-migration
 
-**Deviations from spec**: none
+**Deviations from spec**: Production code in `core/node.py` and `flow/flow.py` was also modified (not listed in task scope) because `StartNode`/`EndNode` lacked `execute()`, `successors`, and `dependencies` fields required by the flow scheduler. These are minimal compatibility fixes needed to make the test suite pass with the new `to_agents_flow()` materialization path.

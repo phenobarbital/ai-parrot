@@ -136,7 +136,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -147,8 +147,8 @@
       "parallelism_notes": "Largest single task; depends on TASK-1312 and TASK-1313.",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1314-agentsflow-migration-test-suite-repointing.md"
+      "completed_at": "2026-05-28T11:30:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1314-agentsflow-migration-test-suite-repointing.md"
     },
     {
       "id": "TASK-1315",
