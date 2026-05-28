@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T16:45:54+00:00",
   "tasks": [
     {
       "id": "TASK-1342",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Core-only change, no satellite dependency. Can run in parallel with TASK-1343 and TASK-1344.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1342-oauth2-relocation.md"
+      "completed_at": "2026-05-28T15:39:21+00:00",
+      "file": "sdd/tasks/completed/1342-oauth2-relocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1343",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +41,9 @@
       "parallelism_notes": "Core-only change (parrot/core/hooks/). No overlap with TASK-1342 or TASK-1344.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1343-pluggable-hooks-refactor.md"
+      "completed_at": "2026-05-28T15:40:33+00:00",
+      "file": "sdd/tasks/completed/1343-pluggable-hooks-refactor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1344",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -58,8 +60,9 @@
       "parallelism_notes": "Creates new directory — no conflict with core-only tasks 1342/1343.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1344-satellite-package-scaffold.md"
+      "completed_at": "2026-05-28T15:41:50+00:00",
+      "file": "sdd/tasks/completed/1344-satellite-package-scaffold.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1345",
@@ -68,7 +71,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -78,8 +81,9 @@
       "parallelism_notes": "Depends on scaffold. Modifies integrations/__init__.py which channels also touch.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1345-common-integrations-files.md"
+      "completed_at": "2026-05-28T15:43:21+00:00",
+      "file": "sdd/tasks/completed/1345-common-integrations-files.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1346",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -98,8 +102,9 @@
       "parallelism_notes": "Sequential in same worktree. Could theoretically parallel with other channels but shares satellite package structure.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1346-slack-extraction.md"
+      "completed_at": "2026-05-28T15:44:04+00:00",
+      "file": "sdd/tasks/completed/1346-slack-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1347",
@@ -108,7 +113,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,8 +123,9 @@
       "parallelism_notes": "Largest channel (29 files). Sequential with other channel moves.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1347-telegram-extraction.md"
+      "completed_at": "2026-05-28T15:44:54+00:00",
+      "file": "sdd/tasks/completed/1347-telegram-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1348",
@@ -128,7 +134,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -138,8 +144,9 @@
       "parallelism_notes": "Small channel (7 files). Sequential with other channel moves.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1348-whatsapp-extraction.md"
+      "completed_at": "2026-05-28T15:45:14+00:00",
+      "file": "sdd/tasks/completed/1348-whatsapp-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1349",
@@ -148,7 +155,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -158,8 +165,9 @@
       "parallelism_notes": "22 files including voice/ and dialogs/ subdirs. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1349-msteams-extraction.md"
+      "completed_at": "2026-05-28T15:45:43+00:00",
+      "file": "sdd/tasks/completed/1349-msteams-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1350",
@@ -168,7 +176,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -179,8 +187,9 @@
       "parallelism_notes": "Depends on hooks refactor (TASK-1343) for HookRegistry. Also depends on common files move.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1350-matrix-extraction.md"
+      "completed_at": "2026-05-28T15:49:22+00:00",
+      "file": "sdd/tasks/completed/1350-matrix-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1351",
@@ -189,7 +198,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -199,8 +208,9 @@
       "parallelism_notes": "Moves parrot.voice namespace. Sequential to avoid conflicts with msteams/telegram voice imports.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1351-voice-extraction.md"
+      "completed_at": "2026-05-28T15:46:24+00:00",
+      "file": "sdd/tasks/completed/1351-voice-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1352",
@@ -209,7 +219,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -219,8 +229,9 @@
       "parallelism_notes": "Creates ChannelRegistry in core + moves telegram channel. Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1352-human-channels-extraction.md"
+      "completed_at": "2026-05-28T15:47:19+00:00",
+      "file": "sdd/tasks/completed/1352-human-channels-extraction.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1353",
@@ -229,7 +240,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -237,8 +248,9 @@
       "parallelism_notes": "Moves to ai-parrot-tools (different package). No overlap with satellite work.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1353-zoom-relocation.md"
+      "completed_at": "2026-05-28T15:48:04+00:00",
+      "file": "sdd/tasks/completed/1353-zoom-relocation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1354",
@@ -247,7 +259,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -264,8 +276,9 @@
       "parallelism_notes": "Must run after ALL channel/voice/zoom moves are complete.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1354-core-pyproject-cleanup.md"
+      "completed_at": "2026-05-28T15:50:47+00:00",
+      "file": "sdd/tasks/completed/1354-core-pyproject-cleanup.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1355",
@@ -274,7 +287,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -284,8 +297,9 @@
       "parallelism_notes": "Final task. Documents all changes from prior tasks.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1355-changelog-and-docs.md"
+      "completed_at": "2026-05-28T15:52:04+00:00",
+      "file": "sdd/tasks/completed/1355-changelog-and-docs.md",
+      "verification": "verified"
     }
   ]
 }
