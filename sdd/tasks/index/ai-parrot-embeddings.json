@@ -114,7 +114,7 @@
       "feature_id": "FEAT-201",
       "feature": "ai-parrot-embeddings",
       "spec": "sdd/specs/ai-parrot-embeddings.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -127,8 +127,8 @@
       "parallelism_notes": "Could run in parallel with TASK-1339 / TASK-1340 (no file overlap), but per-spec policy keeps them sequential to simplify worktree review.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1338-wheel-content-verification-test.md"
+      "completed_at": "2026-05-28T14:35:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1338-wheel-content-verification-test.md"
     },
     {
       "id": "TASK-1339",
