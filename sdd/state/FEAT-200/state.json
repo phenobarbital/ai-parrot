@@ -15,14 +15,14 @@
   },
   "mode": "enrichment",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {"status": "completed", "started_at": "2026-05-28T13:11:03+02:00", "completed_at": "2026-05-28T13:11:03+02:00"},
     "plan": {"status": "completed", "queries_total": 12, "approved_by_user": true, "edited_by_user": false, "plan_path": "sdd/state/FEAT-200/research_plan.json"},
     "research": {"status": "completed", "queries_executed": 12, "queries_skipped": 0, "depth_reached": 2, "files_read": 12, "grep_calls": 8, "git_calls": 2, "truncated": false, "truncation_reason": null},
     "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-200/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 12, "claims_high_conf": 12, "claims_medium_conf": 0, "claims_low_conf": 0, "unknowns_count": 0, "lint_passed": true, "lint_iterations": 0},
     "qa": {"status": "completed", "questions_total": 2, "questions_answered": 2, "skipped_reason": null},
-    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-visualizations.proposal.md", "commit_sha": null, "next_command_recommended": "sdd-spec", "next_command_rationale": "All unknowns resolved with high confidence. Architecture mirrors proven ai-parrot-embeddings PEP 420 pattern."}
+    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-visualizations.proposal.md", "commit_sha": "54aa4686e9d287cc1414b2fafe1e4458e47e3f10", "next_command_recommended": "sdd-spec", "next_command_rationale": "All unknowns resolved with high confidence. Architecture mirrors proven ai-parrot-embeddings PEP 420 pattern."}
   },
   "budget": {
     "profile": "default",
