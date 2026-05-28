@@ -149,7 +149,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -160,8 +160,8 @@
       "parallelism_notes": "Wires the _maybe_enhance hook in TASK-1323; shares the toolkit module so sequential merge required.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1325-enhance-pipeline-and-sri-validator.md"
+      "completed_at": "2026-05-28T11:22:24+00:00",
+      "file": "sdd/tasks/completed/TASK-1325-enhance-pipeline-and-sri-validator.md"
     },
     {
       "id": "TASK-1326",
