@@ -26,12 +26,12 @@ from parrot.bots.flows.core.context import FlowContext
 from parrot.bots.flows.core.node import AgentNode, Node
 from parrot.bots.flows.core.result import FlowResult
 from parrot.bots.flows.core.types import FlowStatus, DependencyResults
-from parrot.bots.flow.definition import (
+from parrot.bots.flows.flow.definition import (
     EdgeDefinition,
     FlowDefinition,
     NodeDefinition,
 )
-from parrot.bots.flow.decision_node import (
+from parrot.bots.flows.flow.nodes import (
     DecisionMode,
     DecisionNodeConfig,
     DecisionResult,
@@ -461,7 +461,7 @@ class TestDecisionNodeRouting:
 
         from unittest.mock import patch
 
-        with patch("parrot.bots.flows.flow.DecisionFlowNode") as MockDecisionFlowNode:
+        with patch("parrot.bots.flows.flow.flow.DecisionFlowNode") as MockDecisionFlowNode:
             instance = AsyncMock()
             instance.ask = AsyncMock(return_value=fake_result)
             MockDecisionFlowNode.return_value = instance

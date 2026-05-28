@@ -88,15 +88,16 @@ class TestExistingImportsNotBroken:
         assert AgentExecutionInfo is not None
 
     def test_flow_node_still_importable(self):
-        from parrot.bots.flow import Node, StartNode, EndNode
+        from parrot.bots.flows.core.node import Node, StartNode, EndNode  # noqa: PLC0415
         assert Node is not None
 
     def test_agents_flow_still_importable(self):
-        from parrot.bots.flow import AgentsFlow, FlowNode
+        from parrot.bots.flows import AgentsFlow  # noqa: PLC0415
+        from parrot.bots.flows.core.node import AgentNode as FlowNode  # noqa: PLC0415
         assert AgentsFlow is not None
 
     def test_flow_storage_still_importable(self):
-        from parrot.bots.flow.storage import ExecutionMemory
+        from parrot.bots.flows.core.storage import ExecutionMemory
         from parrot.bots.flows.core.storage import PersistenceMixin
         assert ExecutionMemory is not None
         assert PersistenceMixin is not None
