@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
-from parrot.pageindex import PageIndexLLMAdapter, PageIndexRetriever, md_to_tree
-from parrot.pageindex.utils import write_node_id
+from parrot.knowledge.pageindex import PageIndexLLMAdapter, PageIndexRetriever, md_to_tree
+from parrot.knowledge.pageindex.utils import write_node_id
 
 logger = logging.getLogger("parrot.navigator")
 
@@ -232,7 +232,7 @@ class NavigatorPageIndex:
         if not search_result.node_list:
             return {"thinking": search_result.thinking, "context": "", "node_list": []}
         # Extract content from matched nodes directly
-        from parrot.pageindex.utils import find_node_by_id
+        from parrot.knowledge.pageindex.utils import find_node_by_id
         context_parts = []
         for node_id in search_result.node_list:
             node = find_node_by_id(self._retriever.structure, node_id)
