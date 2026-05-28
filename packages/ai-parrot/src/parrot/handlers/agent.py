@@ -43,7 +43,7 @@ from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
-from ..integrations.oauth2.models import AuthRequiredEnvelope
+from parrot.auth.oauth2.models import AuthRequiredEnvelope
 if TYPE_CHECKING:
     from ..manager import BotManager
 

@@ -5,7 +5,7 @@ transitive dependencies (asyncpg, watchdog, apscheduler, aioimaplib,
 azure-identity, etc.) at package import time.
 """
 import importlib
-from .base import BaseHook
+from .base import BaseHook, HookRegistry, MessagingHook
 from .manager import HookManager
 from .mixins import HookableAgent
 from .models import (
@@ -63,6 +63,8 @@ def __getattr__(name: str):
 __all__ = [
     # Core
     "BaseHook",
+    "HookRegistry",
+    "MessagingHook",
     "HookManager",
     "HookableAgent",
     "HookEvent",

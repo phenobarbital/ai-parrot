@@ -24,7 +24,7 @@ from navigator_auth.decorators import is_authenticated, user_session  # type: ig
 from navigator_session import get_session  # type: ignore[import]
 
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
-from parrot.integrations.oauth2.service import IntegrationsService
+from parrot.auth.oauth2.service import IntegrationsService
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,7 @@ class IntegrationsHandler(BaseView):
             logger.exception("Error enabling integration for user=%s provider=%s", user_id, provider)
             return web.json_response({"error": str(exc)}, status=500)
 
-        from parrot.integrations.oauth2.models import EnableResponse
+        from parrot.auth.oauth2.models import EnableResponse
 
         return web.json_response(
             EnableResponse(integration=descriptor).model_dump(mode="json")
