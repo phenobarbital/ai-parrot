@@ -210,3 +210,18 @@ python -c "import parrot.pageindex" 2>&1 | grep -q ModuleNotFoundError && echo "
 ```
 
 Do NOT run `pytest packages/ai-parrot/tests/test_pageindex/` here — those tests still reference the old path and will fail. TASK-1330 fixes them.
+
+---
+
+### Completion Note
+
+Completed by sdd-worker 2026-05-28.
+
+All 15 files moved via `git mv` preserving blame history. Logger strings rewritten at 11 sites (10 module-level `logging.getLogger("parrot.pageindex")` + 1 instance-level in `retriever.py`). Docstring path refs rewritten in `ingest.py` (lines 9-10) and `pdf_to_markdown.py` (lines 5, 7, 104). `PageIndexToolkit.name` and `tool_prefix` left as `"pageindex"` (user-facing identifiers, unchanged).
+
+Contract update: the spec's "Internal relative imports require no edits" applied to single-dot intra-package imports. Three files had double-dot (`..`) imports that changed meaning at the new package depth (`parrot.knowledge.pageindex` vs `parrot.pageindex`). These were converted to absolute imports:
+- `llm_adapter.py`: `from ..clients.base` → `from parrot.clients.base`; `from ..models.outputs` → `from parrot.models.outputs`
+- `hybrid_search.py`: `from .._imports` → `from parrot._imports`; lazy `from ..stores.models` → `from parrot.stores.models`
+- `toolkit.py`: `from ..tools.toolkit` → `from parrot.tools.toolkit`
+
+Import smoke check `from parrot.knowledge.pageindex import PageIndexToolkit, ...` passed (PYTHONPATH override on worktree src). Old path `import parrot.pageindex` still resolves from main repo's editable install namespace — will fail correctly once PR is merged to dev.

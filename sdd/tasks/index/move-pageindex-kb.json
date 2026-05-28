@@ -14,7 +14,7 @@
       "feature_id": "FEAT-198",
       "feature": "move-pageindex-kb",
       "spec": "sdd/specs/move-pageindex-kb.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — must land before any other FEAT-198 task. Sequential within the feature worktree.",
       "assigned_to": null,
       "started_at": "2026-05-28T11:03:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1328-move-pageindex-package.md"
+      "completed_at": "2026-05-28T11:07:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1328-move-pageindex-package.md"
     },
     {
       "id": "TASK-1329",
