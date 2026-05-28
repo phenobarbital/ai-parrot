@@ -12,7 +12,6 @@ The node returns the report regardless of ``passed`` — the flow factory
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -58,16 +57,13 @@ class QANode(Node):
         lint_command: Optional[str] = None,
         name: str = "qa",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._dispatcher = dispatcher
-        self._lint_command = lint_command or _DEFAULT_LINT_COMMAND
-        self.logger = logging.getLogger(__name__)
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_dispatcher", dispatcher)
+        object.__setattr__(self, "_lint_command", lint_command or _DEFAULT_LINT_COMMAND)
 
     @property
     def name(self) -> str:
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute

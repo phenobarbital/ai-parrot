@@ -22,7 +22,6 @@ fails fast if the directory exists; recovery is the human's job.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -108,21 +107,18 @@ class ResearchNode(Node):
         plan_llm: Optional[str] = None,
         name: str = "research",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._dispatcher = dispatcher
-        self._jira = jira_toolkit
-        self._log_toolkits = log_toolkits or {}
-        self._summarizer_llm = summarizer_llm or _summarizer_llm_default()
-        self._summarizer_client: Any = None  # lazy
-        self._plan_llm = plan_llm or _plan_llm_default()  # FEAT-132
-        self._plan_client: Any = None  # lazy — FEAT-132
-        self.logger = logging.getLogger(__name__)
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_dispatcher", dispatcher)
+        object.__setattr__(self, "_jira", jira_toolkit)
+        object.__setattr__(self, "_log_toolkits", log_toolkits or {})
+        object.__setattr__(self, "_summarizer_llm", summarizer_llm or _summarizer_llm_default())
+        object.__setattr__(self, "_summarizer_client", None)
+        object.__setattr__(self, "_plan_llm", plan_llm or _plan_llm_default())
+        object.__setattr__(self, "_plan_client", None)
 
     @property
     def name(self) -> str:
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute

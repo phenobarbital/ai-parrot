@@ -13,7 +13,6 @@ duplicate it.
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Dict
 
 from parrot.bots.flows.core.node import Node
@@ -34,15 +33,12 @@ class DevelopmentNode(Node):
         dispatcher: ClaudeCodeDispatcher,
         name: str = "development",
     ) -> None:
-        super().__init__()
-        self._name = name
-        self._init_node(name)
-        self._dispatcher = dispatcher
-        self.logger = logging.getLogger(__name__)
+        super().__init__(node_id=name)
+        object.__setattr__(self, "_dispatcher", dispatcher)
 
     @property
     def name(self) -> str:
-        return self._name
+        return self.node_id
 
     # ------------------------------------------------------------------
     # Execute
