@@ -4,6 +4,7 @@ import os
 import logging
 import asyncio
 import json
+import mimetypes
 import time
 from pathlib import Path
 import base64
@@ -33,6 +34,7 @@ from ...models import (
     AIMessage,
     AIMessageFactory,
     CompletionUsage,
+    StructuredOutputConfig,
 )
 from ...models.google import (
     GoogleModel,
@@ -666,6 +668,214 @@ class GoogleAnalysis:
             
         except Exception as e:
             self.logger.error(f"Image understanding failed: {e}")
+            raise
+
+    async def document_understanding(
+        self,
+        prompt: str,
+        documents: Union[str, Path, List[Union[str, Path]]],
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        prompt_instruction: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        timeout: Optional[int] = 600,
+        temperature: Optional[float] = None,
+        structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> AIMessage:
+        """Analyze and extract information from one or more documents.
+
+        Supports all Gemini-compatible document types: PDF, TXT, HTML, CSS,
+        JS, PY, MD, CSV, XML, RTF, DOCX, XLSX, PPTX, etc.
+
+        Files are uploaded via the Google GenAI Files API. Files larger than
+        50 MB are rejected with a ``ValueError``.
+
+        Note: The 50 MB limit is a user-configured guardrail, not a Gemini API
+        restriction. The Files API supports files up to 2 GB, but this method
+        enforces a smaller cap to prevent accidental upload of very large files.
+
+        Args:
+            prompt: The question or instruction about the document(s).
+            documents: Path(s) to local document file(s). Accepts a single path
+                (str or Path) or a list of paths.
+            model: Gemini model to use.
+            prompt_instruction: Optional system instruction for the model.
+            user_id: Optional user ID for conversation memory (stateful mode).
+            session_id: Optional session ID for conversation memory (stateful mode).
+            stateless: If True, skip conversation memory (default True).
+            timeout: Timeout in seconds for the API call (default 600).
+            temperature: Sampling temperature. Defaults to 0.0 for deterministic
+                document analysis.
+            structured_output: Optional Pydantic model class or
+                :class:`StructuredOutputConfig` for typed response parsing.
+                When provided, ``AIMessage.structured_output`` is populated
+                with the parsed object.
+            max_output_tokens: Optional maximum number of output tokens.
+
+        Returns:
+            :class:`AIMessage` with the model's response. If ``structured_output``
+            is provided, ``AIMessage.structured_output`` contains the parsed object.
+
+        Raises:
+            ValueError: If any file exceeds 50 MB or a document upload fails.
+            FileNotFoundError: If any document path does not exist.
+        """
+        model_name = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(f"Starting document analysis with model: {model_name}")
+
+        await self._ensure_client(model=model_name)
+
+        # Normalize documents to a list of Path objects
+        if not isinstance(documents, list):
+            documents = [documents]
+
+        doc_paths: List[Path] = []
+        for doc in documents:
+            path = Path(doc).resolve()
+            if not path.exists():
+                raise FileNotFoundError(f"Document file not found: {path}")
+            size_mb = path.stat().st_size / (1024 * 1024)
+            if size_mb > 50:
+                raise ValueError(
+                    f"File {path} is {size_mb:.1f} MB, exceeding the 50 MB limit"
+                )
+            doc_paths.append(path)
+
+        # Upload all documents via Files API
+        doc_parts: List[Part] = []
+        for doc_path in doc_paths:
+            self.logger.info(f"Uploading document: {doc_path.name}")
+            part = await self._upload_document(doc_path)
+            doc_parts.append(part)
+
+        # Build content: text prompt followed by all document parts
+        content: List[Part] = [Part(text=prompt)] + doc_parts
+
+        # Build GenerateContentConfig
+        config_args: Dict[str, Any] = {
+            "response_modalities": ["TEXT"],
+            "temperature": temperature if temperature is not None else 0.0,
+        }
+        if prompt_instruction:
+            config_args["system_instruction"] = prompt_instruction
+        if max_output_tokens is not None:
+            config_args["max_output_tokens"] = max_output_tokens
+
+        # Apply structured output schema if requested
+        output_config = self._get_structured_config(structured_output)
+        if output_config:
+            self._apply_structured_output_schema(config_args, output_config)
+
+        config = types.GenerateContentConfig(**config_args)
+
+        # Prepare conversation context for stateful mode
+        conversation_history = None
+        history: List[Any] = []
+        messages: List[Any] = []
+        if not stateless:
+            messages, conversation_history, prompt_instruction = await self._prepare_conversation_context(
+                prompt, None, user_id, session_id, prompt_instruction, stateless=stateless
+            )
+            # Convert to Google GenAI history format
+            for msg in messages[:-1]:  # exclude the current user message (last)
+                role = msg["role"].lower()
+                msg_parts = []
+                for part_content in msg.get("content", []):
+                    if isinstance(part_content, dict) and part_content.get("type") == "text":
+                        msg_parts.append(Part(text=part_content.get("text", "")))
+                if not msg_parts:
+                    continue
+                if role == "user":
+                    history.append(UserContent(parts=msg_parts))
+                elif role in ("assistant", "model"):
+                    history.append(ModelContent(parts=msg_parts))
+
+        try:
+            start_time = time.time()
+
+            if stateless:
+                user_msg = types.UserContent(parts=content)
+                response = await self._await_with_progress(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=[user_msg],
+                        config=config,
+                    ),
+                    label=f"generate_content({model_name})",
+                    timeout=timeout,
+                )
+            else:
+                chat = self.client.aio.chats.create(
+                    model=model_name,
+                    history=history,
+                    config=config,
+                )
+                response = await self._await_with_progress(
+                    chat.send_message(message=content),
+                    label=f"chat.send_message({model_name})",
+                    timeout=timeout,
+                )
+
+            execution_time = time.time() - start_time
+            final_response = response.text
+
+            # Parse structured output if requested
+            final_output: Any = None
+            if output_config:
+                try:
+                    final_output = await self._parse_structured_output(final_response, output_config)
+                except Exception as parse_exc:
+                    self.logger.warning(
+                        f"Failed to parse structured output from document model: {parse_exc}"
+                    )
+
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id,
+                    session_id,
+                    conversation_history,
+                    messages + [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"[Document Analysis]: {prompt}"}
+                            ],
+                        }
+                    ],
+                    None,
+                    turn_id,
+                    prompt,
+                    final_response,
+                    [],
+                )
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model_name,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=final_output,
+                text_response=final_response,
+                conversation_history=conversation_history,
+            )
+
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+
+            ai_message.provider = "google_genai"
+
+            return ai_message
+
+        except Exception as e:
+            self.logger.error(f"Document understanding failed: {e}")
             raise
 
     async def image_identification(
@@ -1384,6 +1594,97 @@ class GoogleAnalysis:
         # Return as a Part referencing the uploaded file uri
         return types.Part(
             file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type)
+        )
+
+    async def _upload_document(self, doc_path: Union[str, Path]) -> types.Part:
+        """Upload a document to the Google GenAI Files API.
+
+        Uploads the file and polls until the file state transitions from
+        ``PROCESSING`` to ``ACTIVE``. Raises ``ValueError`` if the file
+        reaches the ``FAILED`` state.
+
+        Args:
+            doc_path: Local path to the document file.
+
+        Returns:
+            A :class:`types.Part` with ``file_data`` referencing the uploaded
+            file's URI and MIME type.
+
+        Raises:
+            ValueError: If the document upload or processing fails.
+        """
+        if isinstance(doc_path, str):
+            doc_path = Path(doc_path).resolve()
+
+        # Detect MIME type; fall back to octet-stream if unknown
+        mime_type, _ = mimetypes.guess_type(str(doc_path))
+        if not mime_type:
+            mime_type = "application/octet-stream"
+
+        self.logger.debug(
+            f"Starting upload of document {doc_path.name} (mime_type={mime_type})..."
+        )
+
+        try:
+            upload_start = time.monotonic()
+            if hasattr(self.client.aio, "files"):
+                doc_file = await self.client.aio.files.upload(file=doc_path)
+            else:
+                # Fallback: sync upload in thread if aio.files is missing
+                self.logger.warning(
+                    "client.aio.files not found, using sync upload in executor"
+                )
+                loop = asyncio.get_running_loop()
+                doc_file = await loop.run_in_executor(
+                    None, lambda: self.client.files.upload(file=doc_path)
+                )
+        except Exception as e:
+            self.logger.error(f"Document upload failed: {e}")
+            raise
+
+        upload_elapsed = time.monotonic() - upload_start
+        self.logger.debug(
+            f"Document upload finished in {upload_elapsed:.2f}s. "
+            f"File: {doc_file.name}, State: {doc_file.state}"
+        )
+
+        processing_start = time.monotonic()
+        poll_count = 0
+        while doc_file.state == "PROCESSING":
+            poll_count += 1
+            elapsed = time.monotonic() - processing_start
+            self.logger.debug(
+                f"Document processing in progress "
+                f"(poll={poll_count}, elapsed={elapsed:.1f}s, state={doc_file.state})"
+            )
+            await asyncio.sleep(2)
+            if hasattr(self.client.aio, "files"):
+                doc_file = await self.client.aio.files.get(name=doc_file.name)
+            else:
+                loop = asyncio.get_running_loop()
+                doc_file = await loop.run_in_executor(
+                    None, lambda: self.client.files.get(name=doc_file.name)
+                )
+
+        processing_elapsed = time.monotonic() - processing_start
+        self.logger.debug(
+            f"Document processing completed in {processing_elapsed:.1f}s "
+            f"with state={doc_file.state}"
+        )
+
+        if doc_file.state == "FAILED":
+            self.logger.error(f"Document processing failed: {doc_file.name}")
+            raise ValueError(
+                f"Document processing failed with state: {doc_file.state} "
+                f"for file: {doc_file.name}"
+            )
+
+        self.logger.debug(f"Uploaded document file ready: {doc_file.uri}")
+
+        return types.Part(
+            file_data=types.FileData(
+                file_uri=doc_file.uri, mime_type=doc_file.mime_type
+            )
         )
 
     def _extract_frames_from_video(
