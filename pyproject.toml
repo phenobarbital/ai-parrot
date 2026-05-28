@@ -14,6 +14,7 @@ dependencies = [
     "ai-parrot",
     "ai-parrot-tools",
     "ai-parrot-loaders",
+    "ai-parrot-embeddings",
     "ai-parrot-pipelines",
 ]
 
@@ -124,6 +125,7 @@ override-dependencies = [
 ai-parrot = { workspace = true }
 ai-parrot-tools = { workspace = true }
 ai-parrot-loaders = { workspace = true }
+ai-parrot-embeddings = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }

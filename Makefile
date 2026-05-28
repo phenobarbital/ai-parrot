@@ -394,6 +394,7 @@ VERSION_FILE := packages/ai-parrot/src/parrot/version.py
 TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
 LOADERS_VERSION_FILE := packages/ai-parrot-loaders/src/parrot_loaders/version.py
 PIPELINES_VERSION_FILE := packages/ai-parrot-pipelines/src/parrot_pipelines/version.py
+EMBEDDINGS_VERSION_FILE := packages/ai-parrot-embeddings/src/parrot/embeddings/version.py
 FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot_formdesigner/version.py
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
@@ -445,6 +446,16 @@ bump-minor-loaders:
 bump-major-loaders:
 	$(call _bump,$(LOADERS_VERSION_FILE),0)
 
+# --- Embeddings package (ai-parrot-embeddings) ---
+bump-patch-embeddings:
+	$(call _bump,$(EMBEDDINGS_VERSION_FILE),2)
+
+bump-minor-embeddings:
+	$(call _bump,$(EMBEDDINGS_VERSION_FILE),1)
+
+bump-major-embeddings:
+	$(call _bump,$(EMBEDDINGS_VERSION_FILE),0)
+
 # --- Pipelines package (ai-parrot-pipelines) ---
 bump-patch-pipelines:
 	$(call _bump,$(PIPELINES_VERSION_FILE),2)
@@ -470,6 +481,7 @@ bump-all:
 	$(call _bump,$(VERSION_FILE),2)
 	$(call _bump,$(TOOLS_VERSION_FILE),2)
 	$(call _bump,$(LOADERS_VERSION_FILE),2)
+	$(call _bump,$(EMBEDDINGS_VERSION_FILE),2)
 	$(call _bump,$(PIPELINES_VERSION_FILE),2)
 	$(call _bump,$(FORMDESIGNER_VERSION_FILE),2)
 	@$(MAKE) _sync-core-dep
@@ -649,6 +661,7 @@ help:
 	@echo "    bump-major          - Bump core major version + sync dependency"
 	@echo "    bump-patch-tools    - Bump tools patch version"
 	@echo "    bump-patch-loaders  - Bump loaders patch version"
+	@echo "    bump-patch-embeddings - Bump embeddings patch version"
 	@echo "    bump-patch-pipelines- Bump pipelines patch version"
 	@echo "    bump-all            - Bump patch on ALL packages"
 	@echo ""

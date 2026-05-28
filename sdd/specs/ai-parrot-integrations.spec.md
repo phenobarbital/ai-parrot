@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-202
 **Date**: 2026-05-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.1.0
 
 ---
@@ -593,27 +593,27 @@ class ZoomUsInterface:                              # ~4.5KB file
 
 ### Unresolved (defer to implementation)
 
-- [ ] **Reducir `async-notify[default]` en BASE deps**: ¿sustituir por
+- [x] **Reducir `async-notify[default]` en BASE deps**: ¿sustituir por
   variante minimalista, o eliminar del core y declarar en extra
-  `[messaging]`? — *Owner: J. Lara*
-- [ ] **Mecanismo concreto del `HumanChannelRegistry`**: decorator +
+  `[messaging]`? — *Owner: J. Lara*: declarar en extra messaging.
+- [x] **Mecanismo concreto del `HumanChannelRegistry`**: decorator +
   import-on-side-effect, o entry-points de setuptools
   (`[project.entry-points."parrot.human.channels"]`)? Mismo dilema
-  para `MessagingHook` registry. — *Owner: J. Lara*
-- [ ] **Ubicación final de `zoom/` dentro de `ai-parrot-tools`**:
+  para `MessagingHook` registry. — *Owner: J. Lara*: acepto sugerencias
+- [x] **Ubicación final de `zoom/` dentro de `ai-parrot-tools`**:
   `parrot_tools/zoom/` (top-level) o
-  `parrot_tools/integrations/zoom/`? — *Owner: J. Lara*
-- [ ] **¿Mantener `parrot.integrations.__init__.py` mínimo en core
-  como guía de errores?** — *Owner: J. Lara*
-- [ ] **Layout exacto de tests**: `packages/ai-parrot-integrations/tests/`
-  (estándar) o similar? — *Owner: J. Lara*
-- [ ] **Buscar repos cliente externos** que importen
+  `parrot_tools/integrations/zoom/`? — *Owner: J. Lara*: si es un tool deberia ir en `parrot_tools/zoom/`
+- [x] **¿Mantener `parrot.integrations.__init__.py` mínimo en core
+  como guía de errores?** — *Owner: J. Lara*: ok
+- [x] **Layout exacto de tests**: `packages/ai-parrot-integrations/tests/`
+  (estándar) o similar? — *Owner: J. Lara*: estandar
+- [x] **Buscar repos cliente externos** que importen
   `parrot.integrations.zoom` o consuman `pywa`/`aiogram`
-  transitivamente. — *Owner: J. Lara*
-- [ ] **Versioning policy**: ¿`0.1.0`, `0.0.1`, o alinear con versión
-  actual de `ai-parrot`? — *Owner: J. Lara*
-- [ ] **CI pipeline**: ¿mismo pipeline que `ai-parrot` o uno separado
-  para el nuevo paquete? — *Owner: J. Lara*
+  transitivamente. — *Owner: J. Lara*: listo.
+- [x] **Versioning policy**: ¿`0.1.0`, `0.0.1`, o alinear con versión
+  actual de `ai-parrot`? — *Owner: J. Lara*: `0.0.1` y agregarla a un archivo version.py
+- [x] **CI pipeline**: ¿mismo pipeline que `ai-parrot` o uno separado
+  para el nuevo paquete? — *Owner: J. Lara*: mismo.
 
 ---
 
