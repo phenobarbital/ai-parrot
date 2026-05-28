@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=67.6.1", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-server"
+dynamic = ["version"]
+description = "Server infrastructure (handlers, MCP/A2A transports, scheduler, autonomous) for AI-Parrot"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+keywords = ["ai", "agents", "server", "mcp", "a2a", "handlers", "scheduler", "autonomous"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+dependencies = [
+    "ai-parrot",
+]
+
+[project.optional-dependencies]
+# APScheduler runtime (for AgentSchedulerManager)
+scheduler = [
+    "apscheduler==3.11.2",
+]
+
+# MCP server transports (QUIC, gRPC, etc.)
+mcp = [
+    "aioquic==1.3.0",
+    "pylsqpack==0.3.23",
+    "click>=8.1.7",
+    "PyYAML>=6.0.2",
+]
+
+# A2A server (optional JWT auth)
+a2a = [
+    "PyJWT>=2.8.0",
+]
+
+# Autonomous orchestrator (file transport)
+autonomous = [
+    "aiofiles>=23.0",
+]
+
+# Aggregator: all server extras
+all = [
+    "ai-parrot-server[scheduler,mcp,a2a,autonomous]",
+]
+
+[project.scripts]
+parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Source = "https://github.com/phenobarbital/ai-parrot"
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot.version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot*"]
+namespaces = true
+
+[tool.uv.sources]
+ai-parrot = { workspace = true }
