@@ -25,18 +25,18 @@ from navconfig.logging import logging
 
 # ─── flows.core primitives (import, do not redefine) ────────────────────────
 
-from .core.node import AgentNode, EndNode, Node, StartNode
-from .core.context import FlowContext
-from .core.fsm import AgentTaskMachine
-from .core.result import (
+from ..core.node import AgentNode, EndNode, Node, StartNode
+from ..core.context import FlowContext
+from ..core.fsm import AgentTaskMachine
+from ..core.result import (
     FlowResult,
     NodeExecutionInfo,
     build_node_metadata,
     determine_run_status,
 )
-from .core.storage import PersistenceMixin
-from .core.storage.synthesis import synthesize_results
-from .core.types import DependencyResults
+from ..core.storage import PersistenceMixin
+from ..core.storage.synthesis import synthesize_results
+from ..core.types import DependencyResults
 
 # Declarative layer (read-only; type annotation only in __init__)
 from parrot.bots.flow.definition import FlowDefinition  # type: ignore[import-untyped]
@@ -221,7 +221,7 @@ class AgentsFlow(PersistenceMixin):
             AgentNotFoundError: If any ``NodeDefinition.agent_ref`` cannot be
                 resolved in ``agent_registry``.
         """
-        from .core.context import AgentNotFoundError  # noqa: PLC0415
+        from ..core.context import AgentNotFoundError  # noqa: PLC0415
 
         if agent_registry is None:
             raise ValueError(
@@ -465,7 +465,7 @@ class AgentsFlow(PersistenceMixin):
                     output_map[nid] = lr["output"] if isinstance(lr, dict) and "output" in lr else lr
             output = output_map
 
-        from .core.types import FlowStatus
+        from ..core.types import FlowStatus
 
         status_str = determine_run_status(len(completed), len(failed))
         flow_status = FlowStatus(status_str)
