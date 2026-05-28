@@ -72,6 +72,19 @@ chroma = [
     "chromadb==0.6.3",
 ]
 
+# Reranker backends (TASK-1336)
+reranker-local = [
+    "sentence-transformers>=5.0.0",
+    "tokenizers>=0.20.0,<=0.22.2",
+    "safetensors>=0.4.3",
+]
+reranker-llm = []  # uses existing LLM clients (anthropic/openai/etc.) declared elsewhere
+
+# Aggregator extra (TASK-1334/1335/1336)
+all = [
+    "ai-parrot-embeddings[huggingface,google,openai,pgvector,milvus,arango,bigquery,faiss,chroma,reranker-local,reranker-llm]",
+]
+
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
