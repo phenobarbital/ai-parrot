@@ -26,7 +26,7 @@ PageIndex builds a **hierarchical semantic tree** from PDF and Markdown document
 ```python
 import asyncio
 from parrot.clients.google.client import GoogleGenAIClient
-from parrot.pageindex import (
+from parrot.knowledge.pageindex import (
     PageIndexLLMAdapter,
     PageIndexRetriever,
     build_page_index,
@@ -110,7 +110,7 @@ The output is a JSON tree where each node represents a document section:
 ### Creating an Adapter
 
 ```python
-from parrot.pageindex import PageIndexLLMAdapter
+from parrot.knowledge.pageindex import PageIndexLLMAdapter
 
 # With Google Gemini
 from parrot.clients.google.client import GoogleGenAIClient
@@ -163,7 +163,7 @@ Returns `(text, finish_reason)` where `finish_reason` is `"finished"` or `"max_o
 ### Basic Usage
 
 ```python
-from parrot.pageindex import build_page_index, PageIndexLLMAdapter
+from parrot.knowledge.pageindex import build_page_index, PageIndexLLMAdapter
 from parrot.clients.google.client import GoogleGenAIClient
 
 client = GoogleGenAIClient()
@@ -222,7 +222,7 @@ with open("tree.json") as f:
 For Markdown documents, use `md_to_tree` which parses headers into a hierarchical structure:
 
 ```python
-from parrot.pageindex import md_to_tree, PageIndexLLMAdapter
+from parrot.knowledge.pageindex import md_to_tree, PageIndexLLMAdapter
 from parrot.clients.google.client import GoogleGenAIClient
 
 client = GoogleGenAIClient()
@@ -255,7 +255,7 @@ The Markdown builder:
 ### Basic Retrieval
 
 ```python
-from parrot.pageindex import PageIndexRetriever
+from parrot.knowledge.pageindex import PageIndexRetriever
 
 retriever = PageIndexRetriever(tree, adapter)
 
@@ -286,7 +286,7 @@ context = await retriever.retrieve("What OCR options are available?")
 When you need the full page text from matched nodes, pass the original PDF pages:
 
 ```python
-from parrot.pageindex.utils import get_page_tokens
+from parrot.knowledge.pageindex.utils import get_page_tokens
 
 pdf_pages = get_page_tokens("document.pdf")
 context = await retriever.retrieve(
@@ -338,7 +338,7 @@ Combine tree search with the conversational pipeline:
 
 ```python
 from parrot.bots.base import BaseBot
-from parrot.pageindex import PageIndexLLMAdapter, PageIndexRetriever
+from parrot.knowledge.pageindex import PageIndexLLMAdapter, PageIndexRetriever
 
 class DocumentQABot(BaseBot):
     """Bot that answers questions using a PageIndex tree."""
@@ -451,7 +451,7 @@ Options passed to `build_page_index` or `md_to_tree`:
 ### Public Imports
 
 ```python
-from parrot.pageindex import (
+from parrot.knowledge.pageindex import (
     build_page_index,       # PDF → tree pipeline
     md_to_tree,             # Markdown → tree pipeline
     PageIndexLLMAdapter,    # LLM adapter wrapper
@@ -506,7 +506,7 @@ class TreeSearchResult(BaseModel):
 ### Utility Functions
 
 ```python
-from parrot.pageindex.utils import (
+from parrot.knowledge.pageindex.utils import (
     get_page_tokens,        # Extract (text, token_count) per PDF page
     get_text_of_pages,      # Get text from a page range
     count_tokens,           # Count tokens in a string

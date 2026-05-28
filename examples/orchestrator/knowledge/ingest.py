@@ -46,7 +46,7 @@ async def _build_pageindex() -> tuple[object, list[str], object]:
     """
     from parrot.clients.google.client import GoogleGenAIClient
     from parrot.models.google import GoogleModel
-    from parrot.pageindex import PageIndexLLMAdapter, PageIndexToolkit
+    from parrot.knowledge.pageindex import PageIndexLLMAdapter, PageIndexToolkit
 
     PAGEINDEX_DIR.mkdir(parents=True, exist_ok=True)
     heavy = GoogleModel.GEMINI_3_FLASH_PREVIEW.value

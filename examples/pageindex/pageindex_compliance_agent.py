@@ -1,7 +1,7 @@
 """End-to-end demo: a regulatory-compliance agent built on PageIndexToolkit.
 
 The script exercises every public tool surfaced by
-:class:`parrot.pageindex.PageIndexToolkit` against a real PDF and a
+:class:`parrot.knowledge.pageindex.PageIndexToolkit` against a real PDF and a
 :class:`parrot.bots.agent.BasicAgent`:
 
 * ``import_pdf``        — ingest a large regulatory PDF into a named tree
@@ -43,7 +43,7 @@ from pathlib import Path
 from parrot.bots.agent import BasicAgent
 from parrot.clients.google.client import GoogleGenAIClient
 from parrot.models.google import GoogleModel
-from parrot.pageindex import (
+from parrot.knowledge.pageindex import (
     PageIndexLLMAdapter,
     PageIndexRetriever,
     PageIndexToolkit,
