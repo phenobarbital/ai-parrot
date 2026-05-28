@@ -2405,10 +2405,17 @@ class AgentTalk(BaseView):
                 if isinstance(response.output, str)
                 else str(response.output or "")
             )
+            from parrot.handlers.csp import build_csp_headers, frame_ancestors_from_env
+            from parrot.models.infographic import JSBundle
+            meta = dict(getattr(response, "metadata", None) or {})
+            raw_bundles = meta.get("js_bundles", [])
+            bundles = [JSBundle.model_validate(b) if isinstance(b, dict) else b for b in raw_bundles]
+            csp_headers = build_csp_headers(js_bundles=bundles, frame_ancestors=frame_ancestors_from_env())
             return web.Response(
                 text=html_body,
                 content_type="text/html",
                 charset="utf-8",
+                headers=csp_headers,
             )
 
         # Default: structured JSON envelope

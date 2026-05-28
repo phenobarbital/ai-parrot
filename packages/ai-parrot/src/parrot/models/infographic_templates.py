@@ -481,6 +481,8 @@ infographic_registry = InfographicTemplateRegistry()
 
 
 # ── FEAT-197: financial_projection_variance template ─────────────────────────
+# Registered outside the _register_builtins() block so it can reference
+# JSBundle (added by FEAT-197) without touching the seven built-in definitions.
 
 TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
     name="financial_projection_variance",
@@ -517,7 +519,10 @@ TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
             name="echarts",
             scope="cdn",
             url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
-            sri_hash="sha384-PLACEHOLDER_REPLACE_BEFORE_PRODUCTION",
+            # Hash computed via:
+            #   curl -sL "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js" | \
+            #     openssl dgst -sha384 -binary | base64 | tr -d '\n'
+            sri_hash="sha384-BQKzmHvQLMCAnL3UtDBA1Al5tFjsCz1wrMlIUA1wkzo14DYkRWjywW+p9pCj0cwd",
         ),
     ],
 )

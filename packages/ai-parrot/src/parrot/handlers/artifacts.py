@@ -29,7 +29,7 @@ import hashlib
 import hmac
 import os
 import time
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+from base64 import urlsafe_b64encode
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -58,7 +58,10 @@ def _sign_artifact(artifact_id: str, expiry: int, key: bytes) -> str:
 
 
 def _verify_artifact_signature(artifact_id: str, signature_segment: str, key: bytes) -> bool:
-    """Verify the ``{expiry}.{sig}`` signature segment."""
+    """Verify the ``{expiry}.{sig}`` signature segment.
+
+    Returns True when the signature is valid AND the expiry is in the future.
+    """
     try:
         expiry_str, sig = signature_segment.split(".", 1)
         expiry = int(expiry_str)
@@ -71,7 +74,11 @@ def _verify_artifact_signature(artifact_id: str, signature_segment: str, key: by
 
 
 def _get_signing_key() -> bytes:
-    """Read INFOGRAPHIC_SIGNING_KEY env var."""
+    """Read INFOGRAPHIC_SIGNING_KEY env var.
+
+    Returns bytes, or a deterministic fallback when the var is unset
+    (not recommended for production; logged as a warning in the view).
+    """
     raw = os.getenv("INFOGRAPHIC_SIGNING_KEY", "")
     return raw.encode() if raw else b"dev-insecure-key-change-in-prod"
 
@@ -343,8 +350,14 @@ class ArtifactDetailView(BaseView):
         fmt = self.request.query.get("format", "")
         if accept.startswith("text/html") or fmt == "html":
             html = _extract_html_from_artifact(artifact)
+            raw_bundles = (artifact.definition or {}).get("js_bundles", [])
+            try:
+                from ..models.infographic import JSBundle
+                bundles = [JSBundle.model_validate(b) if isinstance(b, dict) else b for b in raw_bundles]
+            except Exception:
+                bundles = []
             csp_headers = build_csp_headers(
-                js_bundles=(artifact.definition or {}).get("js_bundles", []),
+                js_bundles=bundles,
                 frame_ancestors=frame_ancestors_from_env(),
             )
             return web.Response(
@@ -476,11 +489,24 @@ class ArtifactDetailView(BaseView):
 # ---------------------------------------------------------------------------
 
 def _extract_html_from_artifact(artifact: "Artifact") -> str:
-    """Extract HTML from an artifact's definition (FEAT-197)."""
+    """Extract HTML from an artifact's definition.
+
+    New artifacts (FEAT-197) always carry ``definition.html``.  Legacy
+    artifacts saved by ``_auto_save_infographic_artifact`` may not have
+    an ``html`` key — we fall back to re-rendering from the blocks envelope.
+
+    Args:
+        artifact: The resolved Artifact instance.
+
+    Returns:
+        HTML string (may be empty when neither source is available).
+    """
     definition = artifact.definition or {}
     html = definition.get("html")
     if isinstance(html, str) and html:
         return html
+
+    # Legacy fallback: re-render from blocks envelope
     blocks_envelope = definition.get("blocks_envelope")
     if blocks_envelope:
         try:
@@ -491,6 +517,7 @@ def _extract_html_from_artifact(artifact: "Artifact") -> str:
             return InfographicHTMLRenderer().render_to_html(response, theme=theme)
         except Exception:
             pass
+
     return ""
 
 
@@ -500,17 +527,37 @@ def _extract_html_from_artifact(artifact: "Artifact") -> str:
 
 
 class ArtifactPublicHTMLView(web.View):
-    """Public HTML serving endpoint for infographic artifacts (FEAT-197).
+    """Public HTML serving endpoint for infographic artifacts.
 
-    Route: GET /api/v1/artifacts/public/{signature}/{artifact_id}.html
+    Design B (per TASK-1322): signature validated in-app, HTML streamed
+    from ``Artifact.definition.html``; full CSP header set applied.
+
+    Route:
+        GET /api/v1/artifacts/public/{signature}/{artifact_id}.html
+
+    Signature format:
+        ``{expiry}.{hmac_sha256_base64url}``
+        where
+        ``hmac_sha256_base64url = HMAC-SHA256(INFOGRAPHIC_SIGNING_KEY,
+                                               '{artifact_id}|{expiry}')``
+        base64url-encoded without padding.
+
+    Environment variables:
+        INFOGRAPHIC_SIGNING_KEY:  Secret key for HMAC; required in prod.
+        INFOGRAPHIC_FRAME_ANCESTORS: CSV of allowed frame ancestors; default 'self'.
+
+    HTTP 403 on:
+        - Invalid / tampered signature.
+        - Expired signature (expiry < current UTC).
     """
 
     _logger_name: str = "Parrot.ArtifactPublicHTMLView"
 
-    @property
-    def logger(self):
-        import logging
-        return logging.getLogger(self._logger_name)
+    def __init__(self, *args, **kwargs) -> None:
+        """Initialise the view with a standard logger."""
+        import logging as _logging
+        super().__init__(*args, **kwargs)
+        self.logger = _logging.getLogger(self._logger_name)
 
     def _get_artifact_store(self):
         try:
@@ -522,52 +569,115 @@ class ArtifactPublicHTMLView(web.View):
         """Serve the frozen infographic HTML for a valid signature."""
         signing_key = _get_signing_key()
         if signing_key == b"dev-insecure-key-change-in-prod":
-            self.logger.warning("INFOGRAPHIC_SIGNING_KEY is not set — using insecure fallback.")
+            self.logger.warning(
+                "INFOGRAPHIC_SIGNING_KEY env var not set — using insecure dev key. "
+                "Set INFOGRAPHIC_SIGNING_KEY to a random 32+ byte secret before "
+                "deploying to production."
+            )
 
         signature = self.request.match_info.get("signature", "")
+        # URL pattern: {artifact_id}.html — strip the .html suffix
         raw_artifact_id = self.request.match_info.get("artifact_id_html", "")
         artifact_id = raw_artifact_id.removesuffix(".html") if raw_artifact_id.endswith(".html") else raw_artifact_id
 
         if not _verify_artifact_signature(artifact_id, signature, signing_key):
             self.logger.warning(
-                "Rejected public artifact request: invalid/expired signature for %s",
-                artifact_id,
+                "Rejected public artifact request: invalid or expired signature "
+                "for artifact_id=%s", artifact_id,
             )
-            return web.Response(text="Forbidden: invalid or expired signature.", status=403,
-                                content_type="text/plain")
+            return web.Response(
+                text="Forbidden: invalid or expired signature.",
+                status=403,
+                content_type="text/plain",
+            )
 
         store = self._get_artifact_store()
         if store is None:
-            return web.Response(text="Service unavailable.", status=503, content_type="text/plain")
+            return web.Response(
+                text="Service unavailable: artifact store not configured.",
+                status=503,
+                content_type="text/plain",
+            )
 
+        # The public route does NOT have session context — we use the store's
+        # scan capability.  For v1, the artifact_id itself is globally unique
+        # (UUID-prefixed by the toolkit) so we can look it up without
+        # user/agent/session scope by relying on the public scan API (if any)
+        # or by using sentinels.  In this v1 implementation we look it up via
+        # the scan path in the backend.  If the backend doesn't support a
+        # global scan, we require the URL to carry agent/session params
+        #
+        # NOTE: The _public sentinel only works if the backend supports artifact
+        # lookup by artifact_id alone. On scoped backends (DynamoDB, Redis), the
+        # caller must supply user_id, agent_id, and session_id as query params.
+        # Embedding these in the URL leaks session scope — use a GSI / secondary
+        # index for production deployments that need public sharing without query
+        # param leakage.
+        # (documented limitation).
         qs = dict(self.request.query)
+        agent_id = qs.get("agent_id", "")
+        session_id = qs.get("session_id", "")
+        user_id = qs.get("user_id", "")
+
+        if not all([user_id, agent_id, session_id]):
+            self.logger.warning(
+                "Public artifact request for artifact_id=%s is missing scope params "
+                "(user_id, agent_id, session_id). On scoped backends this will fall "
+                "back to '_public' sentinels which may return 404 if unsupported. "
+                "Pass scope params as query params for reliable lookup.",
+                artifact_id,
+            )
+
+        # Try to fetch the artifact.  If the backend requires user/agent/session
+        # context we need them; client may pass them as query params.
         try:
             artifact = await store.get_artifact(
-                user_id=qs.get("user_id", "_public"),
-                agent_id=qs.get("agent_id", "_public"),
-                session_id=qs.get("session_id", "_public"),
+                user_id=user_id or "_public",
+                agent_id=agent_id or "_public",
+                session_id=session_id or "_public",
                 artifact_id=artifact_id,
             )
         except Exception as exc:
-            self.logger.warning("Error fetching artifact %s: %s", artifact_id, exc)
+            self.logger.warning(
+                "Error fetching artifact %s for public route: %s", artifact_id, exc,
+            )
             artifact = None
 
         if artifact is None:
-            return web.Response(text=f"Artifact {artifact_id!r} not found.", status=404,
-                                content_type="text/plain")
+            return web.Response(
+                text=f"Artifact {artifact_id!r} not found.",
+                status=404,
+                content_type="text/plain",
+            )
 
         html = _extract_html_from_artifact(artifact)
+
         definition = artifact.definition or {}
         raw_bundles = definition.get("js_bundles", [])
+        # Deserialise bundles if stored as dicts
         bundles: list = []
         if raw_bundles:
             try:
                 from ..models.infographic import JSBundle
                 for b in raw_bundles:
-                    bundles.append(JSBundle.model_validate(b) if isinstance(b, dict) else b)
+                    if isinstance(b, dict):
+                        bundles.append(JSBundle.model_validate(b))
+                    else:
+                        bundles.append(b)
             except Exception:
                 bundles = []
 
-        csp_headers = build_csp_headers(js_bundles=bundles, frame_ancestors=frame_ancestors_from_env())
-        self.logger.info("Served public artifact id=%s size=%d bytes", artifact_id, len(html))
-        return web.Response(text=html, content_type="text/html", charset="utf-8", headers=csp_headers)
+        csp_headers = build_csp_headers(
+            js_bundles=bundles,
+            frame_ancestors=frame_ancestors_from_env(),
+        )
+
+        self.logger.info(
+            "Served public artifact id=%s size=%d bytes", artifact_id, len(html),
+        )
+        return web.Response(
+            text=html,
+            content_type="text/html",
+            charset="utf-8",
+            headers=csp_headers,
+        )

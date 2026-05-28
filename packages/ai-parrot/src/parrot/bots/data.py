@@ -1031,7 +1031,20 @@ class PandasAgent(BasicAgent):
     def _extract_last_infographic_result(
         self, tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
-        """Return the last InfographicRenderResult from tool calls (FEAT-197)."""
+        """Return the last ``InfographicRenderResult`` from the tool calls list.
+
+        Placed adjacent to ``_rerun_for_map`` for reviewability (FEAT-197).
+
+        When multiple ``infographic_render`` calls occurred in the same turn,
+        only the LAST one is returned (spec §7 documents this design).
+
+        Args:
+            tool_calls: List of ``ToolCall`` objects from the AIMessage.
+
+        Returns:
+            The last ``InfographicRenderResult`` instance, or ``None`` when no
+            infographic render was performed.
+        """
         if not tool_calls:
             return None
         cls = _get_infographic_result_class()
@@ -1585,6 +1598,9 @@ class PandasAgent(BasicAgent):
                         )
 
                 # FEAT-197: Post-loop branch for InfographicRenderResult.
+                # Pattern mirrors _rerun_for_map: isinstance check on the last
+                # tool result → mutate response in place → return early,
+                # bypassing the formatter and structured-output reformat.
                 infographic_envelope = self._extract_last_infographic_result(
                     response.tool_calls
                 )
@@ -1598,6 +1614,9 @@ class PandasAgent(BasicAgent):
                     )
                     response.output_mode = OutputMode.INFOGRAPHIC
                     response.artifact_id = infographic_envelope.artifact_id
+                    # Surface URL + flags via response.metadata so the HTTP
+                    # formatter (_format_infographic_response) can pass them
+                    # through to the JSON envelope.
                     meta = dict(getattr(response, "metadata", None) or {})
                     meta.update({
                         "html_url": infographic_envelope.html_url,
@@ -1614,7 +1633,7 @@ class PandasAgent(BasicAgent):
                         infographic_envelope.artifact_id,
                         infographic_envelope.enhanced,
                     )
-                    return response  # skip formatter + structured reformat
+                    return response   # skip formatter + structured reformat
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
