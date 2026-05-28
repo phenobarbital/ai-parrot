@@ -50,6 +50,9 @@ from ...models.outputs import (
     ProductReview
 )
 
+_DOCUMENT_POLL_TIMEOUT_S: int = 300  # 5 minutes max wait for Files API processing
+
+
 class GoogleAnalysis:
     """
     Mixin class for Google Generative AI analysis capabilities.
@@ -680,7 +683,7 @@ class GoogleAnalysis:
         session_id: Optional[str] = None,
         stateless: bool = True,
         timeout: Optional[int] = 600,
-        temperature: Optional[float] = None,
+        temperature: float = 0.0,
         structured_output: Optional[Union[type, StructuredOutputConfig]] = None,
         max_output_tokens: Optional[int] = None,
     ) -> AIMessage:
@@ -725,54 +728,31 @@ class GoogleAnalysis:
         model_name = model.value if isinstance(model, GoogleModel) else model
         turn_id = str(uuid.uuid4())
 
-        self.logger.info(f"Starting document analysis with model: {model_name}")
+        self.logger.info("Starting document analysis with model: %s", model_name)
 
-        await self._ensure_client(model=model_name)
-
-        # Normalize documents to a list of Path objects
+        # 1. Normalize documents to a list of Path objects
         if not isinstance(documents, list):
             documents = [documents]
 
+        # 2. Validate file sizes / build doc_paths (async I/O to avoid blocking the event loop)
         doc_paths: List[Path] = []
         for doc in documents:
             path = Path(doc).resolve()
-            if not path.exists():
+            path_exists = await asyncio.to_thread(path.exists)
+            if not path_exists:
                 raise FileNotFoundError(f"Document file not found: {path}")
-            size_mb = path.stat().st_size / (1024 * 1024)
+            stat = await asyncio.to_thread(path.stat)
+            size_mb = stat.st_size / (1024 * 1024)
             if size_mb > 50:
                 raise ValueError(
                     f"File {path} is {size_mb:.1f} MB, exceeding the 50 MB limit"
                 )
             doc_paths.append(path)
 
-        # Upload all documents via Files API
-        doc_parts: List[Part] = []
-        for doc_path in doc_paths:
-            self.logger.info(f"Uploading document: {doc_path.name}")
-            part = await self._upload_document(doc_path)
-            doc_parts.append(part)
+        # 3. Ensure client is ready
+        await self._ensure_client(model=model_name)
 
-        # Build content: text prompt followed by all document parts
-        content: List[Part] = [Part(text=prompt)] + doc_parts
-
-        # Build GenerateContentConfig
-        config_args: Dict[str, Any] = {
-            "response_modalities": ["TEXT"],
-            "temperature": temperature if temperature is not None else 0.0,
-        }
-        if prompt_instruction:
-            config_args["system_instruction"] = prompt_instruction
-        if max_output_tokens is not None:
-            config_args["max_output_tokens"] = max_output_tokens
-
-        # Apply structured output schema if requested
-        output_config = self._get_structured_config(structured_output)
-        if output_config:
-            self._apply_structured_output_schema(config_args, output_config)
-
-        config = types.GenerateContentConfig(**config_args)
-
-        # Prepare conversation context for stateful mode
+        # 4. Prepare conversation context for stateful mode (BEFORE building config)
         conversation_history = None
         history: List[Any] = []
         messages: List[Any] = []
@@ -794,9 +774,37 @@ class GoogleAnalysis:
                 elif role in ("assistant", "model"):
                     history.append(ModelContent(parts=msg_parts))
 
+        # 5. Upload all documents in parallel via Files API
+        self.logger.info("Uploading %d document(s) in parallel...", len(doc_paths))
+        doc_parts: List[Part] = list(
+            await asyncio.gather(*[self._upload_document(p) for p in doc_paths])
+        )
+
+        # 6. Build content: text prompt followed by all document parts
+        content: List[Part] = [Part(text=prompt)] + doc_parts
+
+        # 7. Build GenerateContentConfig (uses potentially-updated prompt_instruction)
+        config_args: Dict[str, Any] = {
+            "response_modalities": ["TEXT"],
+            "temperature": temperature,
+        }
+        if prompt_instruction:
+            config_args["system_instruction"] = prompt_instruction
+        if max_output_tokens is not None:
+            config_args["max_output_tokens"] = max_output_tokens
+
+        # 8. Apply structured output schema if requested
+        output_config = self._get_structured_config(structured_output)
+        if output_config:
+            self._apply_structured_output_schema(config_args, output_config)
+
+        # 9. Build config
+        config = types.GenerateContentConfig(**config_args)
+
         try:
             start_time = time.time()
 
+            # 10. Call generate_content / chat.send_message
             if stateless:
                 user_msg = types.UserContent(parts=content)
                 response = await self._await_with_progress(
@@ -805,7 +813,7 @@ class GoogleAnalysis:
                         contents=[user_msg],
                         config=config,
                     ),
-                    label=f"generate_content({model_name})",
+                    label="generate_content(%s)" % model_name,
                     timeout=timeout,
                 )
             else:
@@ -816,36 +824,30 @@ class GoogleAnalysis:
                 )
                 response = await self._await_with_progress(
                     chat.send_message(message=content),
-                    label=f"chat.send_message({model_name})",
+                    label="chat.send_message(%s)" % model_name,
                     timeout=timeout,
                 )
 
             execution_time = time.time() - start_time
             final_response = response.text
 
-            # Parse structured output if requested
+            # 11. Parse structured output if requested
             final_output: Any = None
             if output_config:
                 try:
                     final_output = await self._parse_structured_output(final_response, output_config)
                 except Exception as parse_exc:
                     self.logger.warning(
-                        f"Failed to parse structured output from document model: {parse_exc}"
+                        "Failed to parse structured output from document model: %s", parse_exc
                     )
 
+            # 12. Update memory (stateful) — use messages as-is (no duplicate user turn)
             if not stateless:
                 await self._update_conversation_memory(
                     user_id,
                     session_id,
                     conversation_history,
-                    messages + [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"[Document Analysis]: {prompt}"}
-                            ],
-                        }
-                    ],
+                    messages,
                     None,
                     turn_id,
                     prompt,
@@ -853,6 +855,7 @@ class GoogleAnalysis:
                     [],
                 )
 
+            # 13. Parse response and return AIMessage
             ai_message = AIMessageFactory.from_gemini(
                 response=response,
                 input_text=prompt,
@@ -875,7 +878,7 @@ class GoogleAnalysis:
             return ai_message
 
         except Exception as e:
-            self.logger.error(f"Document understanding failed: {e}")
+            self.logger.error("Document understanding failed: %s", e)
             raise
 
     async def image_identification(
@@ -1601,7 +1604,8 @@ class GoogleAnalysis:
 
         Uploads the file and polls until the file state transitions from
         ``PROCESSING`` to ``ACTIVE``. Raises ``ValueError`` if the file
-        reaches the ``FAILED`` state.
+        reaches the ``FAILED`` state or if polling exceeds
+        ``_DOCUMENT_POLL_TIMEOUT_S`` seconds.
 
         Args:
             doc_path: Local path to the document file.
@@ -1611,7 +1615,8 @@ class GoogleAnalysis:
             file's URI and MIME type.
 
         Raises:
-            ValueError: If the document upload or processing fails.
+            ValueError: If the document upload or processing fails, or if
+                polling times out.
         """
         if isinstance(doc_path, str):
             doc_path = Path(doc_path).resolve()
@@ -1622,7 +1627,7 @@ class GoogleAnalysis:
             mime_type = "application/octet-stream"
 
         self.logger.debug(
-            f"Starting upload of document {doc_path.name} (mime_type={mime_type})..."
+            "Starting upload of document %s (mime_type=%s)...", doc_path.name, mime_type
         )
 
         try:
@@ -1639,23 +1644,28 @@ class GoogleAnalysis:
                     None, lambda: self.client.files.upload(file=doc_path)
                 )
         except Exception as e:
-            self.logger.error(f"Document upload failed: {e}")
+            self.logger.error("Document upload failed: %s", e)
             raise
 
         upload_elapsed = time.monotonic() - upload_start
         self.logger.debug(
-            f"Document upload finished in {upload_elapsed:.2f}s. "
-            f"File: {doc_file.name}, State: {doc_file.state}"
+            "Document upload finished in %.2fs. File: %s, State: %s",
+            upload_elapsed, doc_file.name, doc_file.state,
         )
 
         processing_start = time.monotonic()
         poll_count = 0
         while doc_file.state == "PROCESSING":
-            poll_count += 1
             elapsed = time.monotonic() - processing_start
+            if elapsed > _DOCUMENT_POLL_TIMEOUT_S:
+                raise ValueError(
+                    "Document processing timed out after %ds for file: %s"
+                    % (_DOCUMENT_POLL_TIMEOUT_S, doc_file.name)
+                )
+            poll_count += 1
             self.logger.debug(
-                f"Document processing in progress "
-                f"(poll={poll_count}, elapsed={elapsed:.1f}s, state={doc_file.state})"
+                "Document processing in progress (poll=%d, elapsed=%.1fs, state=%s)",
+                poll_count, elapsed, doc_file.state,
             )
             await asyncio.sleep(2)
             if hasattr(self.client.aio, "files"):
@@ -1663,23 +1673,23 @@ class GoogleAnalysis:
             else:
                 loop = asyncio.get_running_loop()
                 doc_file = await loop.run_in_executor(
-                    None, lambda: self.client.files.get(name=doc_file.name)
+                    None, lambda f=doc_file: self.client.files.get(name=f.name)
                 )
 
         processing_elapsed = time.monotonic() - processing_start
         self.logger.debug(
-            f"Document processing completed in {processing_elapsed:.1f}s "
-            f"with state={doc_file.state}"
+            "Document processing completed in %.1fs with state=%s",
+            processing_elapsed, doc_file.state,
         )
 
         if doc_file.state == "FAILED":
-            self.logger.error(f"Document processing failed: {doc_file.name}")
+            self.logger.error("Document processing failed: %s", doc_file.name)
             raise ValueError(
-                f"Document processing failed with state: {doc_file.state} "
-                f"for file: {doc_file.name}"
+                "Document processing failed with state: %s for file: %s"
+                % (doc_file.state, doc_file.name)
             )
 
-        self.logger.debug(f"Uploaded document file ready: {doc_file.uri}")
+        self.logger.debug("Uploaded document file ready: %s", doc_file.uri)
 
         return types.Part(
             file_data=types.FileData(

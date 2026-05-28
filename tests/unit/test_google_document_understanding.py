@@ -90,7 +90,7 @@ def _make_google_client(mock_sdk: MagicMock) -> Any:
     # Manually initialize attributes that __init__ would normally set.
     client.__name__ = "GoogleGenAIClient"
     client.model = "gemini-2.5-flash"
-    client._lightweight_model = "gemini-3-flash-lite"
+    client._lightweight_model = "gemini-2.5-flash-lite"
     client._fallback_model = None
     client.logger = MagicMock()
     client._tool_manager = MagicMock()
@@ -163,6 +163,8 @@ def large_file(tmp_path: Path) -> Path:
 
 class TestDocumentUnderstanding:
     """Tests for GoogleAnalysis.document_understanding()."""
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_single_pdf_returns_aimessage(
         self, google_client: Any, sample_pdf: Path
@@ -400,6 +402,8 @@ class TestUploadDocument:
     invoking ``_upload_document()`` directly, because the loop-local SDK
     client is only stored after ``_ensure_client()`` runs.
     """
+
+    pytestmark = pytest.mark.asyncio
 
     async def test_upload_returns_part(
         self, google_client: Any, sample_pdf: Path
