@@ -14,7 +14,7 @@
     "summary_oneline": "Split embeddings (and related vector-store) extras out of ai-parrot into a new ai-parrot-embeddings package; keep base Registry/Abstract in ai-parrot"
   },
   "mode": "auto",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {
       "status": "complete",
@@ -61,7 +61,8 @@
       "status": "complete",
       "started_at": "2026-05-28T00:00:00Z",
       "completed_at": "2026-05-28T00:00:00Z",
-      "proposal_path": "sdd/proposals/ai-parrot-embeddings.proposal.md"
+      "proposal_path": "sdd/proposals/ai-parrot-embeddings.proposal.md",
+      "commit_sha": "22cd263cb5365f0984df3d18e811c21c66475f5b"
     }
   },
   "budget": {
