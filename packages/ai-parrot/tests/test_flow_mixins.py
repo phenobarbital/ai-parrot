@@ -1,20 +1,23 @@
 """Tests for PersistenceMixin, SynthesisMixin, and AgentsFlow integration.
 
 Validates that the shared mixins work correctly and that AgentsFlow
-properly integrates on_agent_complete, synthesis, persistence, and ask().
+properly integrates on_complete callbacks, persistence, and the new run_flow API.
+
+Rewritten for FEAT-196 TASK-1314 to use the canonical APIs:
+  - PersistenceMixin._save_result now delegates to ResultStorage.save() (not DocumentDb)
+  - AgentsFlow.run_flow() takes an optional FlowContext; uses on_complete hooks
+  - add_node(Node) replaces add_agent(agent)
 """
 import asyncio
+import logging
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from parrot.bots.flow.fsm import (
-    AgentsFlow,
-    AgentTaskMachine,
-    TransitionCondition,
-)
-from parrot.bots.flow.nodes import StartNode, EndNode
+from parrot.bots.flows.flow.flow import AgentsFlow
+from parrot.bots.flows.core.fsm import AgentTaskMachine, TransitionCondition
+from parrot.bots.flows.core.node import StartNode, EndNode
 from parrot.bots.flows.core.storage import PersistenceMixin
-from parrot.bots.flow.storage.synthesis import SynthesisMixin
+from parrot.bots.flows.core.storage.synthesis import SynthesisMixin
 
 
 # ---------------------------------------------------------------------------
@@ -22,34 +25,10 @@ from parrot.bots.flow.storage.synthesis import SynthesisMixin
 # ---------------------------------------------------------------------------
 
 
-class FakeAgent:
-    """Minimal duck-typed agent for testing."""
-
-    is_configured: bool = True
-
-    def __init__(self, name: str, response: str = "ok"):
-        self._name = name
-        self._response = response
-        self.tool_manager = MagicMock()
-        self.tool_manager.list_tools.return_value = []
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    async def ask(self, question: str = "", **ctx) -> str:
-        return self._response
-
-    async def configure(self) -> None:
-        pass
-
-
 class _PersistenceHost(PersistenceMixin):
     """Concrete host for PersistenceMixin tests."""
 
     def __init__(self, name: str = "test"):
-        import logging
-
         self.name = name
         self.logger = logging.getLogger("test")
 
@@ -58,8 +37,6 @@ class _SynthesisHost(SynthesisMixin):
     """Concrete host for SynthesisMixin tests."""
 
     def __init__(self):
-        import logging
-
         self.logger = logging.getLogger("test")
 
 
@@ -72,23 +49,24 @@ class TestPersistenceMixin:
     """Tests for the PersistenceMixin."""
 
     @pytest.mark.asyncio
-    async def test_save_result_calls_documentdb(self):
-        """_save_result writes to DocumentDB with correct collection and data."""
+    async def test_save_result_calls_backend(self):
+        """_save_result writes to the ResultStorage backend with correct fields."""
         host = _PersistenceHost(name="my_crew")
-        mock_db = AsyncMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=False)
+
+        mock_storage = AsyncMock()
+        mock_storage.save = AsyncMock()
 
         with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            return_value=mock_db,
+            "parrot.bots.flows.core.storage.persistence.PersistenceMixin._ensure_result_storage",
+            return_value=mock_storage,
         ):
             await host._save_result("result_str", "run_flow", user_id="u1")
 
-        mock_db.write.assert_called_once()
-        args = mock_db.write.call_args
-        assert args[0][0] == "crew_executions"  # default collection
-        data = args[0][1]
+        mock_storage.save.assert_called_once()
+        call_args = mock_storage.save.call_args
+        collection = call_args[0][0]
+        data = call_args[0][1]
+        assert collection == "crew_executions"  # default collection
         assert data["crew_name"] == "my_crew"
         assert data["method"] == "run_flow"
         assert data["user_id"] == "u1"
@@ -97,20 +75,21 @@ class TestPersistenceMixin:
     async def test_save_result_custom_collection(self):
         """_save_result uses the provided collection name."""
         host = _PersistenceHost()
-        mock_db = AsyncMock()
-        mock_db.__aenter__ = AsyncMock(return_value=mock_db)
-        mock_db.__aexit__ = AsyncMock(return_value=False)
+
+        mock_storage = AsyncMock()
+        mock_storage.save = AsyncMock()
 
         with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            return_value=mock_db,
+            "parrot.bots.flows.core.storage.persistence.PersistenceMixin._ensure_result_storage",
+            return_value=mock_storage,
         ):
             await host._save_result(
                 "result", "run_flow", collection="flow_executions"
             )
 
-        mock_db.write.assert_called_once()
-        assert mock_db.write.call_args[0][0] == "flow_executions"
+        mock_storage.save.assert_called_once()
+        call_args = mock_storage.save.call_args
+        assert call_args[0][0] == "flow_executions"
 
     @pytest.mark.asyncio
     async def test_save_result_silences_exceptions(self):
@@ -118,11 +97,28 @@ class TestPersistenceMixin:
         host = _PersistenceHost()
 
         with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
+            "parrot.bots.flows.core.storage.persistence.PersistenceMixin._ensure_result_storage",
             side_effect=RuntimeError("connection lost"),
         ):
             # Should NOT raise
             await host._save_result("data", "run_flow")
+
+    @pytest.mark.asyncio
+    async def test_save_result_skips_when_persist_disabled(self):
+        """_save_result returns early when _persist_results is False."""
+        host = _PersistenceHost()
+        host._persist_results = False  # type: ignore[attr-defined]
+
+        mock_storage = AsyncMock()
+        mock_storage.save = AsyncMock()
+
+        with patch(
+            "parrot.bots.flows.core.storage.persistence.PersistenceMixin._ensure_result_storage",
+            return_value=mock_storage,
+        ):
+            await host._save_result("data", "run_flow")
+
+        mock_storage.save.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -190,102 +186,72 @@ class TestSynthesisMixin:
 
 
 # ---------------------------------------------------------------------------
-# AgentsFlow on_agent_complete tests
+# AgentsFlow integration tests (new DAG executor API)
 # ---------------------------------------------------------------------------
 
 
-class TestAgentsFlowOnAgentComplete:
-    """Tests for on_agent_complete callback integration."""
+class TestAgentsFlowNodeRegistration:
+    """Tests for the new AgentsFlow.add_node() API."""
+
+    def test_flow_starts_empty(self):
+        """AgentsFlow initialises with no nodes."""
+        flow = AgentsFlow(name="test")
+        assert len(flow._nodes) == 0
+
+    def test_add_node_registers_by_node_id(self):
+        """add_node() registers a Node by its node_id."""
+        flow = AgentsFlow(name="test")
+        flow.add_node(StartNode(node_id="s1"))
+        assert "s1" in flow._nodes
+
+    def test_add_multiple_nodes(self):
+        """add_node() handles multiple distinct nodes."""
+        flow = AgentsFlow(name="test")
+        flow.add_node(StartNode(node_id="s1"))
+        flow.add_node(EndNode(node_id="e1"))
+        assert len(flow._nodes) == 2
+
+    def test_duplicate_node_raises(self):
+        """add_node() raises ValueError for a duplicate node_id."""
+        flow = AgentsFlow(name="test")
+        flow.add_node(StartNode(node_id="dup"))
+        with pytest.raises(ValueError, match="already added"):
+            flow.add_node(StartNode(node_id="dup"))
+
+
+class TestAgentsFlowRunFlow:
+    """Tests for AgentsFlow.run_flow() with the new API."""
 
     @pytest.mark.asyncio
-    async def test_callback_called_after_agent_completes(self):
-        """on_agent_complete is invoked with (agent_name, result, context)."""
-        flow = AgentsFlow(name="test", enable_execution_memory=False)
-        a = FakeAgent("A", response="hello")
-        flow.add_agent(a)
-
-        callback = AsyncMock()
-
-        with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            side_effect=RuntimeError("skip"),
-        ):
-            result = await flow.run_flow(
-                "test task", on_agent_complete=callback
-            )
-
-        # Callback should have been called for agent A
-        callback.assert_called_once()
-        call_args = callback.call_args[0]
-        assert call_args[0] == "A"  # agent_name
-        assert call_args[1] == "hello"  # result
+    async def test_run_empty_flow_returns_flowresult(self):
+        """run_flow() returns a FlowResult even for an empty flow."""
+        from parrot.bots.flows.core.result import FlowResult  # noqa: PLC0415
+        flow = AgentsFlow(name="test")
+        result = await flow.run_flow()
+        assert isinstance(result, FlowResult)
 
     @pytest.mark.asyncio
-    async def test_callback_not_called_when_none(self):
-        """No errors when on_agent_complete is None."""
-        flow = AgentsFlow(name="test", enable_execution_memory=False)
-        a = FakeAgent("A")
-        flow.add_agent(a)
+    async def test_on_complete_callback_invoked(self):
+        """on_complete callbacks are called after run_flow() finishes."""
+        flow = AgentsFlow(name="test")
+        called_with: list = []
 
-        with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            side_effect=RuntimeError("skip"),
-        ):
-            result = await flow.run_flow("test task")
+        async def my_hook(ctx, result):
+            called_with.append((ctx, result))
 
-        assert result.status in ("completed", "partial")
-
-
-# ---------------------------------------------------------------------------
-# AgentsFlow synthesis integration
-# ---------------------------------------------------------------------------
-
-
-class TestAgentsFlowSynthesis:
-    """Tests for synthesis integration in run_flow."""
+        result = await flow.run_flow(on_complete=(my_hook,))
+        assert len(called_with) == 1
+        assert called_with[0][1] is result
 
     @pytest.mark.asyncio
-    async def test_run_flow_with_synthesis(self):
-        """run_flow populates result.summary when generate_summary=True."""
-        # LLM mock
-        llm_response = MagicMock()
-        llm_response.content = "flow summary"
+    async def test_on_complete_exception_does_not_propagate(self):
+        """Exceptions in on_complete hooks are caught — run_flow still returns."""
+        flow = AgentsFlow(name="test")
 
-        mock_client = AsyncMock()
-        mock_client.ask = AsyncMock(return_value=llm_response)
+        async def bad_hook(ctx, result):
+            raise RuntimeError("hook failure")
 
-        mock_llm = MagicMock()
-        mock_llm.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_llm.__aexit__ = AsyncMock(return_value=False)
-
-        flow = AgentsFlow(
-            name="synth_test",
-            enable_execution_memory=False,
-            llm=mock_llm,
-        )
-        flow.add_agent(FakeAgent("worker", response="done"))
-
-        with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            side_effect=RuntimeError("skip"),
-        ):
-            result = await flow.run_flow(
-                "test task", generate_summary=True
-            )
-
-        assert result.summary == "flow summary"
-        assert result.metadata.get("synthesized") is True
-
-    @pytest.mark.asyncio
-    async def test_last_crew_result_is_set(self):
-        """run_flow stores last_crew_result for use by ask()."""
-        flow = AgentsFlow(name="test", enable_execution_memory=False)
-        flow.add_agent(FakeAgent("A"))
-
-        with patch(
-            "parrot.interfaces.documentdb.DocumentDb",
-            side_effect=RuntimeError("skip"),
-        ):
-            result = await flow.run_flow("task")
-
-        assert flow.last_crew_result is result
+        # Should not raise
+        result = await flow.run_flow(on_complete=(bad_hook,))
+        from parrot.bots.flows.core.result import FlowResult  # noqa: PLC0415
+        assert isinstance(result, FlowResult)

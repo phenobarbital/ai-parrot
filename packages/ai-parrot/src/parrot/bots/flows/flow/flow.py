@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 from pydantic import Field as PydanticField
 from navconfig.logging import logging
@@ -473,7 +473,7 @@ class AgentsFlow(PersistenceMixin):
 
     async def run_flow(
         self,
-        ctx: Optional[FlowContext] = None,
+        ctx: Optional[Union[FlowContext, str]] = None,
         *,
         on_complete: Tuple[Callable[[FlowContext, FlowResult], Awaitable[None]], ...] = (),
     ) -> FlowResult:
@@ -489,8 +489,10 @@ class AgentsFlow(PersistenceMixin):
         ``AgentsFlow`` instance do NOT share FSM state (B-lite contract).
 
         Args:
-            ctx: Optional pre-built ``FlowContext``. If ``None``, a new one is
-                created with the bound ``agent_registry``.
+            ctx: Optional pre-built ``FlowContext`` or a string prompt.
+                If a string is provided, a FlowContext is created with
+                ``initial_task`` set to that string.
+                If ``None``, a new FlowContext is created with an empty task.
             on_complete: Tuple of async callables invoked after the main loop.
                 Each receives ``(ctx, result)``; exceptions are caught and logged
                 but do NOT affect ``FlowResult.status``.
@@ -499,6 +501,14 @@ class AgentsFlow(PersistenceMixin):
             Aggregated ``FlowResult`` describing the run.
         """
         from .cel_evaluator import CELPredicateEvaluator  # noqa: PLC0415
+
+        # Accept a plain string as the initial task prompt.
+        if isinstance(ctx, str):
+            ctx = FlowContext(
+                initial_task=ctx,
+                agent_registry=self._agent_registry,
+                synthesis_client=getattr(self, "_synthesis_client", None),
+            )
 
         ctx = ctx or FlowContext(
             initial_task="",

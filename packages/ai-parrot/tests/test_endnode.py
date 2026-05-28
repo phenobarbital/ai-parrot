@@ -4,7 +4,7 @@ TASK-010: EndNode as first-class FSM citizen alongside StartNode.
 """
 import pytest
 
-from parrot.bots.flow import EndNode, StartNode
+from parrot.bots.flows.core.node import EndNode, StartNode
 
 
 class TestEndNodeConstruction:
@@ -28,9 +28,11 @@ class TestEndNodeConstruction:
         node = EndNode()
         assert node.is_configured is True
 
-    def test_has_tool_manager(self):
+    def test_has_node_id(self):
+        """EndNode exposes node_id (new API — tool_manager was legacy)."""
         node = EndNode()
-        assert hasattr(node, "tool_manager")
+        assert hasattr(node, "node_id")
+        assert node.node_id == "__end__"
 
 
 class TestEndNodeAsk:
@@ -111,11 +113,11 @@ class TestEndNodeSameInterfaceAsStartNode:
 
 class TestEndNodeImports:
     def test_import_from_package(self):
-        from parrot.bots.flow import EndNode as EN
+        from parrot.bots.flows.core.node import EndNode as EN
 
         assert EN is EndNode
 
     def test_import_from_nodes(self):
-        from parrot.bots.flow.nodes import EndNode as EN
+        from parrot.bots.flows.core.node import EndNode as EN
 
         assert EN is EndNode

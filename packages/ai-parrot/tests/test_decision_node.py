@@ -1,9 +1,9 @@
 """Unit tests for DecisionFlowNode component."""
 from typing import Any
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
 
-from parrot.bots.flow.decision_node import (
+
+from parrot.bots.flows.flow.nodes import (
     BinaryDecision,
     ApprovalDecision,
     DecisionFlowNode,
@@ -62,7 +62,7 @@ async def test_cio_mode_basic():
 
     # Create decision node
     node = DecisionFlowNode(
-        name="test_cio",
+        node_id="test_cio",
         agents={"checker": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CIO,
@@ -91,7 +91,7 @@ async def test_cio_mode_with_no_decision():
     agent = MockAgent("checker", no_decision)
 
     node = DecisionFlowNode(
-        name="test_cio",
+        node_id="test_cio",
         agents={"checker": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CIO,
@@ -113,7 +113,7 @@ async def test_cio_mode_low_confidence_escalation():
     agent = MockAgent("checker", low_conf_decision)
 
     node = DecisionFlowNode(
-        name="test_cio",
+        node_id="test_cio",
         agents={"checker": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CIO,
@@ -147,7 +147,7 @@ async def test_cio_mode_explicit_escalate():
     agent = MockAgent("checker", escalate_decision)
 
     node = DecisionFlowNode(
-        name="test_cio",
+        node_id="test_cio",
         agents={"checker": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CIO,
@@ -184,7 +184,7 @@ async def test_ballot_mode_unanimous():
     }
 
     node = DecisionFlowNode(
-        name="test_ballot",
+        node_id="test_ballot",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -215,7 +215,7 @@ async def test_ballot_mode_majority():
     }
 
     node = DecisionFlowNode(
-        name="test_ballot",
+        node_id="test_ballot",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -243,7 +243,7 @@ async def test_ballot_mode_custom_weights():
     }
 
     node = DecisionFlowNode(
-        name="test_ballot",
+        node_id="test_ballot",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -272,7 +272,7 @@ async def test_ballot_mode_split_vote_escalation():
     }
 
     node = DecisionFlowNode(
-        name="test_ballot",
+        node_id="test_ballot",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -303,7 +303,7 @@ async def test_ballot_mode_quorum_not_met():
     }
 
     node = DecisionFlowNode(
-        name="test_ballot",
+        node_id="test_ballot",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -339,7 +339,7 @@ async def test_consensus_mode_basic():
     }
 
     node = DecisionFlowNode(
-        name="test_consensus",
+        node_id="test_consensus",
         agents=analysts,
         config=DecisionNodeConfig(
             mode=DecisionMode.CONSENSUS,
@@ -375,7 +375,7 @@ async def test_consensus_mode_multi_round():
     }
 
     node = DecisionFlowNode(
-        name="test_consensus",
+        node_id="test_consensus",
         agents=analysts,
         config=DecisionNodeConfig(
             mode=DecisionMode.CONSENSUS,
@@ -398,62 +398,66 @@ async def test_consensus_mode_multi_round():
 
 
 def test_cio_mode_validation_multiple_agents():
-    """Test that CIO mode rejects multiple agents."""
+    """Test that CIO mode rejects multiple agents via _validate_config."""
     agents = {
         "agent1": MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes")),
         "agent2": MockAgent("agent2", BinaryDecision(decision="NO", confidence=0.8, reasoning="No")),
     }
 
+    node = DecisionFlowNode(
+        node_id="invalid",
+        agents=agents,
+        config=DecisionNodeConfig(mode=DecisionMode.CIO, decision_type=DecisionType.BINARY),
+    )
     with pytest.raises(ValueError, match="CIO mode requires exactly 1 agent"):
-        DecisionFlowNode(
-            name="invalid",
-            agents=agents,
-            config=DecisionNodeConfig(mode=DecisionMode.CIO, decision_type=DecisionType.BINARY),
-        )
+        node._validate_config()
 
 
 def test_consensus_mode_validation_no_coordinator():
-    """Test that CONSENSUS mode requires coordinator."""
+    """Test that CONSENSUS mode requires coordinator via _validate_config."""
     agents = {"agent1": MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))}
 
+    node = DecisionFlowNode(
+        node_id="invalid",
+        agents=agents,
+        config=DecisionNodeConfig(mode=DecisionMode.CONSENSUS, decision_type=DecisionType.BINARY),
+    )
     with pytest.raises(ValueError, match="CONSENSUS mode requires coordinator_agent_name"):
-        DecisionFlowNode(
-            name="invalid",
-            agents=agents,
-            config=DecisionNodeConfig(mode=DecisionMode.CONSENSUS, decision_type=DecisionType.BINARY),
-        )
+        node._validate_config()
 
 
 def test_consensus_mode_validation_coordinator_not_in_agents():
-    """Test that CONSENSUS mode coordinator must be in agents."""
+    """Test that CONSENSUS mode coordinator must be in agents via _validate_config."""
     agents = {"agent1": MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))}
 
+    node = DecisionFlowNode(
+        node_id="invalid",
+        agents=agents,
+        config=DecisionNodeConfig(
+            mode=DecisionMode.CONSENSUS,
+            decision_type=DecisionType.BINARY,
+            coordinator_agent_name="nonexistent",
+        ),
+    )
     with pytest.raises(ValueError, match="Coordinator .* not in agents"):
-        DecisionFlowNode(
-            name="invalid",
-            agents=agents,
-            config=DecisionNodeConfig(
-                mode=DecisionMode.CONSENSUS,
-                decision_type=DecisionType.BINARY,
-                coordinator_agent_name="nonexistent",
-            ),
-        )
+        node._validate_config()
 
 
 def test_custom_weights_validation():
-    """Test that CUSTOM weight strategy requires custom_weights."""
+    """Test that CUSTOM weight strategy requires custom_weights via _validate_config."""
     agents = {"agent1": MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))}
 
+    node = DecisionFlowNode(
+        node_id="invalid",
+        agents=agents,
+        config=DecisionNodeConfig(
+            mode=DecisionMode.BALLOT,
+            decision_type=DecisionType.BINARY,
+            vote_weight_strategy=VoteWeight.CUSTOM,
+        ),
+    )
     with pytest.raises(ValueError, match="CUSTOM weight strategy requires custom_weights"):
-        DecisionFlowNode(
-            name="invalid",
-            agents=agents,
-            config=DecisionNodeConfig(
-                mode=DecisionMode.BALLOT,
-                decision_type=DecisionType.BINARY,
-                vote_weight_strategy=VoteWeight.CUSTOM,
-            ),
-        )
+        node._validate_config()
 
 
 # =============================================================================
@@ -462,23 +466,23 @@ def test_custom_weights_validation():
 
 
 def test_fsm_contract_properties():
-    """Test that DecisionFlowNode satisfies FSM contract."""
+    """Test that DecisionFlowNode satisfies the new flows API contract."""
     agent = MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))
 
     node = DecisionFlowNode(
-        name="test_node",
+        node_id="test_node",
         agents={"agent1": agent},
         config=DecisionNodeConfig(mode=DecisionMode.CIO, decision_type=DecisionType.BINARY),
     )
 
-    # Check FSM contract
+    # Check new API contract (parrot.bots.flows.flow.nodes.DecisionFlowNode)
     assert hasattr(node, "name")
     assert hasattr(node, "ask")
-    assert hasattr(node, "tool_manager")
-    assert hasattr(node, "is_configured")
+    assert hasattr(node, "fsm")
+    assert hasattr(node, "node_id")
 
     assert node.name == "test_node"
-    assert node.is_configured is True
+    assert node.node_id == "test_node"
     assert callable(node.ask)
 
 
@@ -488,7 +492,7 @@ async def test_decision_result_in_predicate():
     agent = MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))
 
     node = DecisionFlowNode(
-        name="test_node",
+        node_id="test_node",
         agents={"agent1": agent},
         config=DecisionNodeConfig(mode=DecisionMode.CIO, decision_type=DecisionType.BINARY),
     )
@@ -520,7 +524,7 @@ def test_vote_aggregation_equal_weights():
     agent = MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))
 
     node = DecisionFlowNode(
-        name="test",
+        node_id="test",
         agents={"agent1": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CIO,
@@ -546,7 +550,7 @@ def test_vote_aggregation_seniority_weights():
     }
 
     node = DecisionFlowNode(
-        name="test",
+        node_id="test",
         agents=agents,
         config=DecisionNodeConfig(
             mode=DecisionMode.BALLOT,
@@ -572,7 +576,7 @@ def test_build_decision_prompt():
     agent = MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))
 
     node = DecisionFlowNode(
-        name="test",
+        node_id="test",
         agents={"agent1": agent},
         config=DecisionNodeConfig(mode=DecisionMode.CIO, decision_type=DecisionType.BINARY),
     )
@@ -590,7 +594,7 @@ def test_build_revision_prompt():
     agent = MockAgent("agent1", BinaryDecision(decision="YES", confidence=0.9, reasoning="Yes"))
 
     node = DecisionFlowNode(
-        name="test",
+        node_id="test",
         agents={"agent1": agent},
         config=DecisionNodeConfig(
             mode=DecisionMode.CONSENSUS,

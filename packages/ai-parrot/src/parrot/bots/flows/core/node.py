@@ -341,6 +341,10 @@ class StartNode(Node):
     node_id: str = Field(default="__start__")
     is_configured: bool = True
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    dependencies: Set[str] = Field(default_factory=set)
+    """Node IDs that must complete before this node can run."""
+    successors: Set[str] = Field(default_factory=set)
+    """Node IDs to dispatch after this node completes."""
 
     # Allow StartNode(name="entry") for backward compat with the old
     # __init__(self, name="__start__", ...) signature.  The value is stored
@@ -375,6 +379,23 @@ class StartNode(Node):
         await self.run_post_actions(result=result, **ctx)
         return result
 
+    async def execute(self, ctx: Any, deps: Any, **kwargs: Any) -> Any:
+        """Execute start node -- forwards initial task from context.
+
+        Returns the initial task as a plain string so CEL predicates on
+        outgoing edges can compare ``result == "..."`` directly.
+
+        Args:
+            ctx: FlowContext or any context object.
+            deps: Dependency results (empty for start nodes).
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            The initial task string from ctx, or empty string.
+        """
+        task = getattr(ctx, "initial_task", "") or ""
+        return task
+
     async def configure(self) -> None:
         """No-op -- nothing to configure."""
 
@@ -402,6 +423,10 @@ class EndNode(Node):
     node_id: str = Field(default="__end__")
     is_configured: bool = True
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    dependencies: Set[str] = Field(default_factory=set)
+    """Node IDs that must complete before this node can run."""
+    successors: Set[str] = Field(default_factory=set)
+    """Node IDs to dispatch after this node completes (typically empty)."""
 
     def __init__(self, **data: Any) -> None:
         # Accept positional-ish "name" kwarg and re-route it to node_id.
@@ -430,6 +455,26 @@ class EndNode(Node):
         result = question
         await self.run_post_actions(result=result, **ctx)
         return result
+
+    async def execute(self, ctx: Any, deps: Any, **kwargs: Any) -> Any:
+        """Execute end node -- collects final output from dependencies.
+
+        Args:
+            ctx: FlowContext or any context object.
+            deps: Dependency results from upstream nodes.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            The last dependency result or empty string.
+        """
+        dep_values = list(deps.values())
+        if dep_values:
+            last = dep_values[-1]
+            # Unwrap dict results from AgentNode.execute()
+            if isinstance(last, dict) and "output" in last:
+                return last["output"]
+            return last
+        return ""
 
     async def configure(self) -> None:
         """No-op -- nothing to configure."""

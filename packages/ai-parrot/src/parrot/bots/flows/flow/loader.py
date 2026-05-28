@@ -179,19 +179,12 @@ class FlowLoader:
         definition: FlowDefinition,
         agent_registry: Optional[Any] = None,
         extra_agents: Optional[Dict[str, Any]] = None,
-    ) -> AgentsFlow:
+    ) -> "AgentsFlow":
         """Materialize a FlowDefinition into a runnable AgentsFlow.
 
-        .. deprecated::
-            This method calls the **legacy** ``AgentsFlow`` API
-            (``add_start_node``, ``add_agent``, ``task_flow``, etc.) which no
-            longer exists on the new ``parrot.bots.flows.flow.AgentsFlow``
-            introduced in FEAT-163.
-
-            **TODO (FEAT-163 follow-up)**: Migrate this method to use
-            ``AgentsFlow.from_definition(definition, agent_registry=...)``
-            instead.  The legacy construction paths below will raise
-            ``AttributeError`` at runtime until that migration is done.
+        Migrated from legacy API (FEAT-196 TASK-1314) to use the new
+        ``AgentsFlow.add_node()`` API and ``parrot.bots.flows.core`` node
+        primitives (``StartNode``, ``EndNode``, ``AgentNode``).
 
         Args:
             definition: Parsed flow definition.
@@ -206,127 +199,110 @@ class FlowLoader:
 
         Raises:
             LookupError: If an agent_ref cannot be resolved.
-            AttributeError: Legacy API methods (``add_start_node``, etc.) no
-                longer exist; this method is broken pending FEAT-163 migration.
+            ValueError: If an invalid CEL predicate is provided.
         """
-        from parrot.bots.flows.flow import AgentsFlow  # noqa: PLC0415  # lazy to break circular import
-        meta = definition.metadata
+        # Lazy import to avoid circular:
+        #   loader → flows.flow → loader
+        from parrot.bots.flows.flow.flow import AgentsFlow  # noqa: PLC0415
+        from parrot.bots.flows.core.node import AgentNode, StartNode, EndNode  # noqa: PLC0415
+
         extra_agents = extra_agents or {}
 
-        # TODO (FEAT-163): replace with AgentsFlow.from_definition(definition, ...)
-        # The constructor kwargs below are from the legacy API and no longer accepted.
-        flow = AgentsFlow(
-            name=definition.flow,
-            # Legacy kwargs removed from new AgentsFlow.__init__:
-            # max_parallel_tasks, default_max_retries, execution_timeout, etc.
-            # These are preserved as comments to document the migration gap.
-        )
-
-        # Phase 1: Build all nodes
-        for node_def in definition.nodes:
-            cls._build_node(node_def, flow, agent_registry, extra_agents)
-
-        # Phase 2: Wire all edges
+        # Phase 1: Pre-compute dependencies and successors for each node_id
+        # from the declared edges, so nodes can be constructed with correct wiring.
+        deps_map: Dict[str, set] = {nd.id: set() for nd in definition.nodes}
+        succs_map: Dict[str, set] = {nd.id: set() for nd in definition.nodes}
         for edge_def in definition.edges:
-            cls._wire_edge(edge_def, flow)
+            targets = (
+                list(edge_def.to)
+                if isinstance(edge_def.to, list)
+                else [edge_def.to]
+            )
+            src = edge_def.from_
+            for tgt in targets:
+                succs_map[src].add(tgt)
+                if tgt in deps_map:
+                    deps_map[tgt].add(src)
+
+        # Validate all CEL predicates before building nodes (fail-fast).
+        for edge_def in definition.edges:
+            if (
+                edge_def.condition == "on_condition"
+                and edge_def.predicate
+            ):
+                # CELPredicateEvaluator raises ValueError on bad expressions.
+                CELPredicateEvaluator(edge_def.predicate)
+
+        # Phase 2: Build and add each node in programmatic mode.
+        # NOTE: flow is created without definition= so _materialize_nodes uses
+        # the programmatic fresh-copy path (preserving pre/post actions).
+        # Routing is based on node.successors (set from edges above), which
+        # works for simple always/on_success/on_error edges.  CEL predicate
+        # evaluation in programmatic mode is not supported; predicates are
+        # validated at construction time (above) but not enforced at routing.
+        flow = AgentsFlow(name=definition.flow)
+
+        for node_def in definition.nodes:
+            node_type = node_def.type
+            nid = node_def.id
+            deps = deps_map.get(nid, set())
+            succs = succs_map.get(nid, set())
+
+            if node_type == "start":
+                flow_node: Any = StartNode(
+                    node_id=nid,
+                    dependencies=deps,
+                    successors=succs,
+                    metadata=node_def.metadata or {},
+                )
+            elif node_type == "end":
+                flow_node = EndNode(
+                    node_id=nid,
+                    dependencies=deps,
+                    successors=succs,
+                    metadata=node_def.metadata or {},
+                )
+            elif node_type in ("agent", "human", "decision"):
+                agent = cls._resolve_agent(
+                    node_def.agent_ref, extra_agents, agent_registry
+                )
+                flow_node = AgentNode(
+                    agent=agent,
+                    node_id=nid,
+                    dependencies=deps,
+                    successors=succs,
+                )
+            elif node_type == "interactive_decision":
+                from .flow import InteractiveDecisionNode  # noqa: PLC0415
+
+                config = node_def.config or {}
+                question = config.get("question", node_def.label or nid)
+                options = config.get("options", [])
+                flow_node = InteractiveDecisionNode(
+                    node_id=nid,
+                    question=question,
+                    options=options,
+                    dependencies=deps,
+                    successors=succs,
+                )
+            else:
+                raise ValueError(f"Unknown node type: {node_type!r}")
+
+            # Attach pre/post actions to the node before adding to flow.
+            for action_def in node_def.pre_actions:
+                action = create_action(action_def)
+                flow_node.add_pre_action(action)
+            for action_def in node_def.post_actions:
+                action = create_action(action_def)
+                flow_node.add_post_action(action)
+
+            flow.add_node(flow_node)
 
         return flow
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-
-    @classmethod
-    def _build_node(
-        cls,
-        node_def: NodeDefinition,
-        flow: AgentsFlow,
-        agent_registry: Optional[Any],
-        extra_agents: Dict[str, Any],
-    ) -> None:
-        """Build a single node and add it to the flow."""
-        node_type = node_def.type
-
-        if node_type == "start":
-            flow_node = flow.add_start_node(
-                name=node_def.id,
-                metadata=node_def.metadata or None,
-            )
-        elif node_type == "end":
-            flow_node = flow.add_end_node(
-                name=node_def.id,
-                metadata=node_def.metadata or None,
-            )
-        elif node_type in ("agent", "human"):
-            agent = cls._resolve_agent(
-                node_def.agent_ref, extra_agents, agent_registry
-            )
-            flow_node = flow.add_agent(
-                agent,
-                agent_id=node_def.id,
-                max_retries=node_def.max_retries,
-            )
-        elif node_type == "decision":
-            agent = cls._resolve_agent(
-                node_def.agent_ref, extra_agents, agent_registry
-            )
-            # DecisionFlowNode is added like a regular agent
-            flow_node = flow.add_agent(
-                agent,
-                agent_id=node_def.id,
-                max_retries=node_def.max_retries,
-            )
-        elif node_type == "interactive_decision":
-            from .interactive_node import InteractiveDecisionNode
-
-            config = node_def.config or {}
-            question = config.get("question", node_def.label or node_def.id)
-            options = config.get("options", [])
-            interactive = InteractiveDecisionNode(
-                name=node_def.id,
-                question=question,
-                options=options,
-                metadata=node_def.metadata or None,
-            )
-            flow_node = flow.add_agent(
-                interactive,
-                agent_id=node_def.id,
-                max_retries=node_def.max_retries,
-            )
-        else:
-            raise ValueError(f"Unknown node type: {node_type!r}")
-
-        # Attach pre/post actions
-        for action_def in node_def.pre_actions:
-            action = create_action(action_def)
-            flow_node.add_pre_action(action)
-
-        for action_def in node_def.post_actions:
-            action = create_action(action_def)
-            flow_node.add_post_action(action)
-
-    @classmethod
-    def _wire_edge(cls, edge_def: EdgeDefinition, flow: AgentsFlow) -> None:
-        """Wire a single edge as a FlowTransition on the source node."""
-        condition = TransitionCondition(edge_def.condition)
-
-        # Build predicate for ON_CONDITION edges
-        predicate = None
-        if condition == TransitionCondition.ON_CONDITION and edge_def.predicate:
-            cel_eval = CELPredicateEvaluator(edge_def.predicate)
-            predicate = cel_eval
-
-        # Normalize targets to a list
-        targets = edge_def.to if isinstance(edge_def.to, list) else [edge_def.to]
-
-        flow.task_flow(
-            source=edge_def.from_,
-            targets=targets,
-            condition=condition,
-            instruction=edge_def.instruction,
-            predicate=predicate,
-            priority=edge_def.priority,
-        )
 
     @staticmethod
     def _resolve_agent(

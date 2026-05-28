@@ -1,9 +1,29 @@
-"""parrot.bots.flows.flow — AgentsFlow sub-package.
+"""parrot.bots.flows.flow -- AgentsFlow sub-package.
 
 Exports the AgentsFlow executor and its registry utilities.
 Mirrors the layout of parrot.bots.flows.crew.
+
+Node types from flow.py (@register_node decorated):
+  DecisionNode, InteractiveDecisionNode, SynthesisNode
+  -- these are the DAG-executor node wrappers (use NODE_REGISTRY keys).
+
+Decision primitive types from nodes.py (canonical decision logic):
+  DecisionFlowNode, InteractiveDecisionNode (canonical), plus config/result types.
+
+Note: InteractiveDecisionNode exported here is from flow.py
+(the @register_node('interactive_decision') wrapper). The canonical
+InteractiveDecisionNode from nodes.py is available as:
+  from parrot.bots.flows.flow.nodes import InteractiveDecisionNode
 """
-from .flow import AgentsFlow, NODE_REGISTRY, register_node, CompletionEvent
+from .flow import (
+    AgentsFlow,
+    NODE_REGISTRY,
+    register_node,
+    CompletionEvent,
+    DecisionNode,
+    InteractiveDecisionNode,
+    SynthesisNode,
+)
 from .nodes import (
     DecisionMode,
     DecisionType,
@@ -15,7 +35,6 @@ from .nodes import (
     EscalationPolicy,
     DecisionNodeConfig,
     DecisionFlowNode,
-    InteractiveDecisionNode,
 )
 
 __all__ = [
@@ -23,7 +42,11 @@ __all__ = [
     "NODE_REGISTRY",
     "register_node",
     "CompletionEvent",
-    # Decision node types
+    # DAG-executor node wrappers (registered in NODE_REGISTRY)
+    "DecisionNode",
+    "InteractiveDecisionNode",
+    "SynthesisNode",
+    # Decision primitive types (from nodes.py)
     "DecisionMode",
     "DecisionType",
     "VoteWeight",
@@ -34,5 +57,4 @@ __all__ = [
     "EscalationPolicy",
     "DecisionNodeConfig",
     "DecisionFlowNode",
-    "InteractiveDecisionNode",
 ]

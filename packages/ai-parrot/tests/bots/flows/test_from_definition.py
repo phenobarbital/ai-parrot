@@ -13,7 +13,7 @@ import pytest
 
 from parrot.bots.flows.flow import AgentsFlow, NODE_REGISTRY
 from parrot.bots.flows.core.context import AgentNotFoundError
-from parrot.bots.flow.definition import (
+from parrot.bots.flows.flow.definition import (
     FlowDefinition,
     NodeDefinition,
     EdgeDefinition,

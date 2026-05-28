@@ -7,7 +7,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from parrot.bots.flow.definition import (
+from parrot.bots.flows.flow.definition import (
     ActionDefinition,
     EdgeDefinition,
     FlowDefinition,
@@ -369,9 +369,9 @@ class TestFlowDefinition:
 
 class TestImports:
     def test_import_from_package(self):
-        from parrot.bots.flow import FlowDefinition as FD
-        from parrot.bots.flow import NodeDefinition as ND
-        from parrot.bots.flow import EdgeDefinition as ED
+        from parrot.bots.flows.flow.definition import FlowDefinition as FD
+        from parrot.bots.flows.flow.definition import NodeDefinition as ND
+        from parrot.bots.flows.flow.definition import EdgeDefinition as ED
 
         assert FD is FlowDefinition
         assert ND is NodeDefinition
