@@ -15,14 +15,14 @@
   },
   "mode": "auto",
   "detected_mode": "enrichment",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "phases": {
     "source": {"status": "completed", "started_at": "2026-05-28T13:40:35+02:00", "completed_at": "2026-05-28T13:40:35+02:00"},
     "plan": {"status": "completed", "queries_total": 10, "approved_by_user": false, "edited_by_user": false, "plan_path": "sdd/state/FEAT-202/research_plan.json"},
     "research": {"status": "completed", "queries_executed": 10, "queries_skipped": 0, "depth_reached": 0, "files_read": 8, "grep_calls": 10, "git_calls": 2, "truncated": false, "truncation_reason": null},
     "synthesis": {"status": "completed", "synthesis_path": "sdd/state/FEAT-202/synthesis.json", "thinking_path": null, "overall_confidence": "high", "claims_total": 12, "claims_high_conf": 11, "claims_medium_conf": 1, "claims_low_conf": 0, "unknowns_count": 5, "lint_passed": true, "lint_iterations": 0},
     "qa": {"status": "skipped", "questions_total": 7, "questions_answered": 1, "skipped_reason": "Una clarificación del usuario in-stream resolvió BotManager (queda en core). 6 unknowns arquitectónicos restantes se difieren a /sdd-brainstorm."},
-    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-integrations.proposal.md", "commit_sha": null, "next_command_recommended": "sdd-brainstorm", "next_command_rationale": "7 unknowns arquitectónicos (oauth2, voice, human/channels, zoom, faseo, namespace, hook matrix) cada uno con 2-3 caminos legítimos."}
+    "output": {"status": "completed", "proposal_path": "sdd/proposals/ai-parrot-integrations.proposal.md", "commit_sha": "d28b8a583a9394bae537af5ed6524d45d40691ec", "next_command_recommended": "sdd-brainstorm", "next_command_rationale": "7 unknowns arquitectónicos (oauth2, voice, human/channels, zoom, faseo, namespace, hook matrix) cada uno con 2-3 caminos legítimos."}
   },
   "budget": {
     "profile": "default",
