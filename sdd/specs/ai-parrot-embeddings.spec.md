@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-201
 **Date**: 2026-05-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 **Proposal**: `sdd/proposals/ai-parrot-embeddings.proposal.md`
 
@@ -879,7 +879,7 @@ move dependencies from the host to the satellite, they do not add new ones.
     a) Remove host `bigquery` extra entirely (cleaner; relies on
        `db`'s asyncdb extra for non-vector usage).
     b) Keep host `bigquery` for non-vector-store usage; satellite
-       gets its own `bigquery` extra for `BigQueryStore`.
+       gets its own `bigquery` extra for `BigQueryStore`.: keep it
 
 - [ ] **Should existing tests for moved backends move with them or
   remain in `packages/ai-parrot/tests/`?** Following the FEAT-079

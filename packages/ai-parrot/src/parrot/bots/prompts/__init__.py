@@ -49,6 +49,71 @@ from .agents import AGENT_PROMPT, AGENT_PROMPT_SUFFIX, FORMAT_INSTRUCTIONS
 from .output_generation import OUTPUT_SYSTEM_PROMPT
 
 
+# ── FEAT-197: Infographic output mode prompt addon ──────────────────────────
+INFOGRAPHIC_SYSTEM_PROMPT_ADDON = """
+## Infographic Generation Mode
+
+You are producing a multi-dataset interactive HTML infographic for the user.
+
+Follow these steps IN ORDER:
+
+1. **Fetch / compute DataFrames** using `python_repl_pandas` or `fetch_dataset`
+   as needed.  Store each result in a clearly-named variable (e.g. `rev_daily`,
+   `ebitda_daily`).
+
+2. **Discover available templates** by calling `infographic_list_templates` when
+   you are unsure which template to use, and `infographic_get_template_contract`
+   to fetch the exact positional block contract before building `blocks`.
+
+3. **Validate your blocks** (optional but recommended) with
+   `infographic_validate_blocks` before rendering to avoid hard errors.
+
+4. **Close the turn** by calling:
+
+       infographic_render(
+           template_name=<template>,
+           theme=<theme or null>,
+           mode="deterministic",   # or "enhance" for JS interactivity
+           blocks=[...],           # MUST match the template's positional contract
+           data_variables=[...],   # names of the DataFrames you computed above
+           enhance_brief=<brief>,  # required when mode="enhance"
+       )
+
+5. **Do NOT summarise** the result of `infographic_render`.  Its return value
+   is the final answer — do NOT add any text after calling it.
+"""
+
+# ── FEAT-197: Enhance prompt template (placeholders for .format()) ──────────
+INFOGRAPHIC_ENHANCE_PROMPT = """
+You are enhancing a deterministic HTML infographic skeleton with interactive
+JavaScript.
+
+## Skeleton HTML
+{skeleton}
+
+## Enhancement brief
+{brief}
+
+## Data context (JSON)
+{data_context_json}
+
+## Allowed JavaScript bundles
+Only reference scripts from this whitelist.  Any other external `<script src>`
+or `<link rel="stylesheet" href>` will be rejected.
+
+{js_bundles}
+
+## Rules
+- You MAY add inline `<script>` blocks and inline `<style>` blocks.
+- You MUST NOT add `<script src="...">` whose URL is not in the whitelist above.
+- You MUST NOT add `<link rel="stylesheet" href="...">` whose URL is not in the
+  whitelist above.
+- When referencing a CDN bundle from the whitelist you MUST include the
+  `integrity="<sri_hash>"` attribute exactly as listed.
+- Return ONLY the complete, self-contained HTML document — no markdown fences,
+  no explanation, just the raw HTML starting with `<!DOCTYPE html>` or `<html`.
+"""
+
 # Deprecated: use PromptBuilder.default() instead
 BASIC_SYSTEM_PROMPT = """
 Your name is $name Agent.
