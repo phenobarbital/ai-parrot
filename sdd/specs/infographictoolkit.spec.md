@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-197
 **Date**: 2026-05-28
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.0
 
 > Source brainstorm: `sdd/proposals/infographictoolkit.brainstorm.md`
