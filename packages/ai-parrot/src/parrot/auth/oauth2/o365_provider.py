@@ -5,8 +5,8 @@ Wraps :class:`parrot.auth.o365_oauth.O365OAuthManager` and the
 once at application startup, after the manager is constructed::
 
     from parrot.auth.o365_oauth import O365OAuthManager
-    from parrot.integrations.oauth2.registry import register_oauth2_provider
-    from parrot.integrations.oauth2.o365_provider import O365OAuth2Provider
+    from parrot.auth.oauth2.registry import register_oauth2_provider
+    from parrot.auth.oauth2.o365_provider import O365OAuth2Provider
 
     manager = O365OAuthManager(client_id=..., client_secret=..., redirect_uri=...,
                                tenant_id=..., app=app)
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List
 
-from parrot.integrations.oauth2.registry import OAuth2Provider
+from parrot.auth.oauth2.registry import OAuth2Provider
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.auth.credentials import CredentialResolver

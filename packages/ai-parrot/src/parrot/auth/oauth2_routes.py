@@ -25,7 +25,7 @@ from typing import Any, Dict
 from aiohttp import web
 
 from parrot.conf import WEB_OAUTH_ALLOWED_ORIGINS
-from parrot.integrations.oauth2.service import IntegrationsService
+from parrot.auth.oauth2.service import IntegrationsService
 
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"

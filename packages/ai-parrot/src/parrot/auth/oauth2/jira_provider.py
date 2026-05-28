@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, List
 
-from parrot.integrations.oauth2.registry import OAuth2Provider
+from parrot.auth.oauth2.registry import OAuth2Provider
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.auth.credentials import CredentialResolver

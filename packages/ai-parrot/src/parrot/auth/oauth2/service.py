@@ -22,18 +22,18 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from navconfig.logging import logging  # noqa: F811
 
-from parrot.integrations.oauth2 import _WEB_CHANNEL
+from parrot.auth.oauth2 import _WEB_CHANNEL
 
 if TYPE_CHECKING:  # pragma: no cover
     from parrot.auth.jira_oauth import JiraTokenSet
-from parrot.integrations.oauth2.models import (
+from parrot.auth.oauth2.models import (
     ConnectInitResponse,
     DisconnectResponse,
     IntegrationDescriptor,
     UserAgentToolkitRow,
     UsersIntegrationRow,
 )
-from parrot.integrations.oauth2.persistence import (
+from parrot.auth.oauth2.persistence import (
     delete_user_agent_toolkits_by_provider,
     delete_users_integration,
     get_users_integration,
@@ -41,7 +41,7 @@ from parrot.integrations.oauth2.persistence import (
     upsert_user_agent_toolkit,
     upsert_users_integration,
 )
-from parrot.integrations.oauth2.registry import OAuth2ProviderRegistry
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
 
 logger = logging.getLogger(__name__)
 

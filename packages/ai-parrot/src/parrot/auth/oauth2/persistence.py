@@ -22,7 +22,7 @@ from typing import List, Optional
 from navconfig.logging import logging  # noqa: F811 (navconfig logger replaces stdlib)
 
 from parrot.interfaces.documentdb import DocumentDb
-from parrot.integrations.oauth2.models import UserAgentToolkitRow, UsersIntegrationRow
+from parrot.auth.oauth2.models import UserAgentToolkitRow, UsersIntegrationRow
 
 logger = logging.getLogger(__name__)
 

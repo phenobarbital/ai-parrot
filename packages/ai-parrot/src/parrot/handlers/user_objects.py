@@ -14,8 +14,8 @@ from ..tools.manager import ToolManager
 from ..tools.dataset_manager import DatasetManager
 from ..models import ToolConfig
 from ..mcp.integration import MCPServerConfig
-from ..integrations.oauth2.registry import OAuth2ProviderRegistry
-from ..integrations.oauth2.persistence import list_user_agent_toolkits
+from parrot.auth.oauth2.registry import OAuth2ProviderRegistry
+from parrot.auth.oauth2.persistence import list_user_agent_toolkits
 from ..auth.credentials import OAuthCredentialResolver
 
 if TYPE_CHECKING:
