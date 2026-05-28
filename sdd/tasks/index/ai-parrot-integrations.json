@@ -229,7 +229,7 @@
       "feature_id": "FEAT-202",
       "feature": "ai-parrot-integrations",
       "spec": "sdd/specs/ai-parrot-integrations.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -237,8 +237,8 @@
       "parallelism_notes": "Moves to ai-parrot-tools (different package). No overlap with satellite work.",
       "assigned_to": null,
       "started_at": "2026-05-28T15:37:42+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1353-zoom-relocation.md"
+      "completed_at": "2026-05-28T15:48:04+00:00",
+      "file": "sdd/tasks/completed/TASK-1353-zoom-relocation.md"
     },
     {
       "id": "TASK-1354",
