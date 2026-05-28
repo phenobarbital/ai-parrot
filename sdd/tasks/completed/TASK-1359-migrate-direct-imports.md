@@ -156,4 +156,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+Additional change needed (not in original scope but required for correctness):
+- Added `@register_renderer(OutputMode.INFOGRAPHIC)` to `InfographicHTMLRenderer` in satellite
+  `infographic_html.py`, since the class was previously not registered in the registry.
+  This makes `get_renderer(OutputMode.INFOGRAPHIC)` return `InfographicHTMLRenderer` as expected.
+
+Migrations completed:
+1. `bots/abstract.py:3884` — replaced with `from ..outputs.formats import get_renderer; InfographicHTMLRenderer = get_renderer(OutputMode.INFOGRAPHIC)`
+2. `handlers/artifacts.py:514` — replaced with registry call + `from ..models.outputs import OutputMode`
+3. `tools/infographic_toolkit.py:36,136` — replaced module-level import with `from parrot.outputs.formats import get_renderer; from parrot.models.outputs import OutputMode` and `get_renderer(OutputMode.INFOGRAPHIC)()`
+
+`grep -r "from.*infographic_html import" packages/ai-parrot/src/` returns empty ✅
+`get_renderer(OutputMode.INFOGRAPHIC).__name__ == 'InfographicHTMLRenderer'` ✅

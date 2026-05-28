@@ -92,7 +92,7 @@
       "feature_id": "FEAT-200",
       "feature": "ai-parrot-visualizations",
       "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Modifies files that depend on infographic_html being in satellite",
       "assigned_to": null,
       "started_at": "2026-05-28T15:51:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1359-migrate-direct-imports.md"
+      "completed_at": "2026-05-28T16:21:21+00:00",
+      "file": "sdd/tasks/completed/TASK-1359-migrate-direct-imports.md"
     },
     {
       "id": "TASK-1360",
