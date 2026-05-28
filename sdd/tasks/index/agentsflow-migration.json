@@ -116,7 +116,7 @@
       "feature_id": "FEAT-196",
       "feature": "agentsflow-migration",
       "spec": "sdd/specs/agentsflow-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Can run in parallel with TASK-1314 (both depend on TASK-1312).",
       "assigned_to": null,
       "started_at": "2026-05-28T01:01:35+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1313-agentsflow-migration-devloop-repointing.md"
+      "completed_at": "2026-05-28T01:22:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1313-agentsflow-migration-devloop-repointing.md"
     },
     {
       "id": "TASK-1314",
