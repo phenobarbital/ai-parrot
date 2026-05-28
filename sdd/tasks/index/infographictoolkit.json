@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-28T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T11:32:11+00:00",
   "tasks": [
     {
       "id": "TASK-1318",
@@ -192,7 +192,7 @@
       "feature_id": "FEAT-197",
       "feature": "infographictoolkit",
       "spec": "sdd/specs/infographictoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,8 @@
       "parallelism_notes": "Final integration task; validates the full pipeline end-to-end and adds the example skill + docs.",
       "assigned_to": null,
       "started_at": "2026-05-28T10:45:02+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1327-example-skill-and-e2e.md"
+      "completed_at": "2026-05-28T11:32:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1327-example-skill-and-e2e.md"
     }
   ]
 }
