@@ -46,6 +46,70 @@ Rules:
 """
 
 
+def extract_infographic_data(response: Any) -> dict:
+    """Extract infographic data from the AIMessage response.
+
+    Module-level extraction shared by both infographic renderers.
+
+    Handles multiple scenarios:
+    1. response.structured_output is an InfographicResponse
+    2. response.output is an InfographicResponse
+    3. response.output is a dict with blocks
+    4. Raw dict/string fallback
+
+    Args:
+        response: The AIMessage or raw data.
+
+    Returns:
+        Dict representation of the InfographicResponse.
+    """
+    # Try structured_output first (immutable original)
+    output = None
+    if hasattr(response, 'structured_output') and response.structured_output:
+        output = response.structured_output
+    elif hasattr(response, 'output') and response.output:
+        output = response.output
+    elif hasattr(response, 'data') and response.data:
+        output = response.data
+    else:
+        output = response
+
+    # Already an InfographicResponse model
+    if isinstance(output, InfographicResponse):
+        return output.model_dump(exclude_none=True)
+
+    # Dict with blocks key
+    if isinstance(output, dict) and 'blocks' in output:
+        return output
+
+    # Try parsing as InfographicResponse
+    if isinstance(output, dict):
+        try:
+            parsed = InfographicResponse.model_validate(output)
+            return parsed.model_dump(exclude_none=True)
+        except Exception:
+            pass
+
+    # String fallback - try JSON parse
+    if isinstance(output, str):
+        try:
+            parsed_dict = orjson.loads(output)
+            if isinstance(parsed_dict, dict) and 'blocks' in parsed_dict:
+                return parsed_dict
+        except Exception:
+            pass
+
+    # Last resort: wrap raw content as a single summary block
+    return {
+        "blocks": [
+            {
+                "type": "summary",
+                "content": str(output),
+            }
+        ]
+    }
+
+
 @register_renderer(OutputMode.INFOGRAPHIC, system_prompt=INFOGRAPHIC_SYSTEM_PROMPT)
 class InfographicRenderer(BaseRenderer):
     """Renderer for structured infographic output.
@@ -80,11 +144,8 @@ class InfographicRenderer(BaseRenderer):
     def _extract_infographic_data(self, response: Any) -> dict:
         """Extract infographic data from the AIMessage response.
 
-        Handles multiple scenarios:
-        1. response.structured_output is an InfographicResponse
-        2. response.output is an InfographicResponse
-        3. response.output is a dict with blocks
-        4. Raw dict/string fallback
+        Thin wrapper around the module-level ``extract_infographic_data``
+        function for backwards compatibility.
 
         Args:
             response: The AIMessage or raw data.
@@ -92,51 +153,7 @@ class InfographicRenderer(BaseRenderer):
         Returns:
             Dict representation of the InfographicResponse.
         """
-        # Try structured_output first (immutable original)
-        output = None
-        if hasattr(response, 'structured_output') and response.structured_output:
-            output = response.structured_output
-        elif hasattr(response, 'output') and response.output:
-            output = response.output
-        elif hasattr(response, 'data') and response.data:
-            output = response.data
-        else:
-            output = response
-
-        # Already an InfographicResponse model
-        if isinstance(output, InfographicResponse):
-            return output.model_dump(exclude_none=True)
-
-        # Dict with blocks key
-        if isinstance(output, dict) and 'blocks' in output:
-            return output
-
-        # Try parsing as InfographicResponse
-        if isinstance(output, dict):
-            try:
-                parsed = InfographicResponse.model_validate(output)
-                return parsed.model_dump(exclude_none=True)
-            except Exception:
-                pass
-
-        # String fallback - try JSON parse
-        if isinstance(output, str):
-            try:
-                parsed_dict = orjson.loads(output)
-                if isinstance(parsed_dict, dict) and 'blocks' in parsed_dict:
-                    return parsed_dict
-            except Exception:
-                pass
-
-        # Last resort: wrap raw content as a single summary block
-        return {
-            "blocks": [
-                {
-                    "type": "summary",
-                    "content": str(output),
-                }
-            ]
-        }
+        return extract_infographic_data(response)
 
     def _wrap_output(self, json_string: str, data: dict, environment: str) -> Any:
         """Wrap JSON output for the target environment.

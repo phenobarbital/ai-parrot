@@ -6,9 +6,16 @@ correctly merge the parrot.outputs.formats namespace via extend_path(),
 making all 23 OutputMode renderers discoverable through a single
 get_renderer() API.
 """
+import importlib.util
 import pytest
 from parrot.models.outputs import OutputMode
 from parrot.outputs.formats import get_renderer, get_output_prompt, has_system_prompt
+
+# Skip satellite-dependent tests when ai-parrot-visualizations is not installed
+satellite_available = pytest.mark.skipif(
+    importlib.util.find_spec("parrot.outputs.formats.version") is None,
+    reason="ai-parrot-visualizations not installed"
+)
 
 # ---------------------------------------------------------------------------
 # Mode categorisation
@@ -66,6 +73,7 @@ def test_outputs_namespace_merging():
     assert len(parrot.outputs.__path__) >= 1
 
 
+@satellite_available
 def test_version_module_discoverable():
     """Satellite version.py is discoverable via namespace merging."""
     from parrot.outputs.formats.version import __version__
@@ -88,6 +96,7 @@ def test_core_renderer_always_available(mode):
 # Satellite renderer tests (require ai-parrot-visualizations)
 # ---------------------------------------------------------------------------
 
+@satellite_available
 @pytest.mark.parametrize("mode", SATELLITE_MODES)
 def test_satellite_renderer_resolves(mode):
     """Satellite renderers resolve when ai-parrot-visualizations is installed."""
@@ -96,6 +105,7 @@ def test_satellite_renderer_resolves(mode):
     assert hasattr(cls, 'render'), f"{mode}: renderer missing 'render' method"
 
 
+@satellite_available
 def test_infographic_html_renderer_via_registry():
     """InfographicHTMLRenderer resolves through get_renderer(INFOGRAPHIC)."""
     cls = get_renderer(OutputMode.INFOGRAPHIC)
@@ -104,6 +114,7 @@ def test_infographic_html_renderer_via_registry():
         f"Expected InfographicHTMLRenderer, got {cls.__name__}"
 
 
+@satellite_available
 def test_infographic_html_direct_import():
     """InfographicHTMLRenderer is importable from its original path."""
     from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer
@@ -130,24 +141,37 @@ def test_output_prompt_functions():
 
 def test_no_direct_infographic_imports_in_core():
     """No direct InfographicHTMLRenderer imports remain in core package."""
-    import subprocess
-    import os
-    # Run from repo root — adjust path if needed
-    repo_root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), '../../../../..')
-    )
-    result = subprocess.run(
-        ['grep', '-r', 'from.*infographic_html import', 'packages/ai-parrot/src/'],
-        capture_output=True, text=True, cwd=repo_root,
-    )
-    assert result.stdout.strip() == '', \
-        f"Found direct imports:\n{result.stdout}"
+    import pathlib
+    import re
+    src_root = pathlib.Path(__file__).parents[4] / "packages" / "ai-parrot" / "src"
+    found = []
+    for py_file in src_root.rglob("*.py"):
+        text = py_file.read_text(encoding="utf-8", errors="ignore")
+        if "from" in text and "infographic_html" in text and "import" in text:
+            if re.search(r'from\s+[.\w]*infographic_html\s+import', text):
+                found.append(str(py_file.relative_to(src_root)))
+    assert found == [], f"Found direct infographic_html imports in core:\n" + "\n".join(found)
 
 
 # ---------------------------------------------------------------------------
 # Specific renderer name checks
 # ---------------------------------------------------------------------------
 
+@pytest.mark.parametrize("mode,expected_name", [
+    (OutputMode.JSON, "JSONRenderer"),
+    (OutputMode.YAML, "YAMLRenderer"),
+    (OutputMode.HTML, "HTMLRenderer"),
+    (OutputMode.TABLE, "TableRenderer"),
+    # Note: TERMINAL mode has no registered renderer (TerminalGenerator is not a Renderer)
+])
+def test_renderer_class_name(mode, expected_name):
+    """Each core renderer resolves to the expected class name."""
+    cls = get_renderer(mode)
+    assert cls.__name__ == expected_name, \
+        f"Expected {expected_name} for {mode}, got {cls.__name__}"
+
+
+@satellite_available
 @pytest.mark.parametrize("mode,expected_name", [
     (OutputMode.MATPLOTLIB, "MatplotlibRenderer"),
     (OutputMode.SEABORN, "SeabornRenderer"),
@@ -166,14 +190,9 @@ def test_no_direct_infographic_imports_in_core():
     (OutputMode.WHATSAPP, "WhatsAppRenderer"),
     (OutputMode.SLACK, "SlackRenderer"),
     (OutputMode.MARKDOWN, "MarkdownRenderer"),
-    (OutputMode.JSON, "JSONRenderer"),
-    (OutputMode.YAML, "YAMLRenderer"),
-    (OutputMode.HTML, "HTMLRenderer"),
-    (OutputMode.TABLE, "TableRenderer"),
-    # Note: TERMINAL mode has no registered renderer (TerminalGenerator is not a Renderer)
 ])
-def test_renderer_class_name(mode, expected_name):
-    """Each renderer resolves to the expected class name."""
+def test_satellite_renderer_class_name(mode, expected_name):
+    """Each satellite renderer resolves to the expected class name."""
     cls = get_renderer(mode)
     assert cls.__name__ == expected_name, \
         f"Expected {expected_name} for {mode}, got {cls.__name__}"

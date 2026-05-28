@@ -119,3 +119,20 @@ def test_satellite_renderers_have_render_method():
         cls = get_renderer(mode)
         assert hasattr(cls, 'render'), \
             f"{mode}: {cls.__name__} missing 'render' method"
+
+
+def test_infographic_system_prompt_survives_html_override():
+    """InfographicRenderer's system prompt must survive InfographicHTMLRenderer registration.
+
+    The INFOGRAPHIC dispatch imports infographic.py first (registers the prompt),
+    then infographic_html.py (registers the renderer class, no prompt arg).
+    The prompt from the first registration must NOT be lost.
+    """
+    cls = get_renderer(OutputMode.INFOGRAPHIC)
+    assert cls.__name__ == "InfographicHTMLRenderer"
+    assert has_system_prompt(OutputMode.INFOGRAPHIC) is True
+    prompt = get_output_prompt(OutputMode.INFOGRAPHIC)
+    assert prompt is not None
+    assert len(prompt) > 0
+    # Verify the prompt comes from InfographicRenderer (structured output prompt)
+    assert "INFOGRAPHIC" in prompt.upper()
