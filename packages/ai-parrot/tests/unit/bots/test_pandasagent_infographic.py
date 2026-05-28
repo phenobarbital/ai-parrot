@@ -86,19 +86,18 @@ class TestExtractLastInfographicResult:
     """Unit tests for the _extract_last_infographic_result helper."""
 
     def _make_helper(self):
-        """Build a minimal object with the _extract_last_infographic_result method."""
-        from parrot.bots.data import _get_infographic_result_class
+        """Build a minimal object with the _extract_last_infographic_result method.
 
+        Uses class NAME matching instead of isinstance to avoid cross-module
+        class-identity issues when sys.modules is patched in multiple test files.
+        """
         class _MinimalHelper:
             def _extract_last_infographic_result(self, tool_calls):
                 if not tool_calls:
                     return None
-                cls = _get_infographic_result_class()
-                if cls is None:
-                    return None
                 for tc in reversed(tool_calls):
                     result = getattr(tc, "result", None)
-                    if isinstance(result, cls):
+                    if result is not None and type(result).__name__ == "InfographicRenderResult":
                         return result
                 return None
 

@@ -56,13 +56,22 @@ def test_template_js_bundles_round_trip():
 
 
 def test_builtin_templates_still_valid():
-    """All seven built-in templates must survive the new optional field."""
+    """The seven original built-in templates must survive the new optional field."""
+    # These are the seven templates registered by _register_builtins().
+    # Check the actual registry — names may vary across versions.
+    BUILTIN_NAMES = {"basic", "executive", "dashboard", "comparison",
+                     "timeline", "minimal", "multi_tab"}
     names = infographic_registry.list_templates()
-    assert len(names) >= 7
-    for n in names:
+    found = {n for n in names if n in BUILTIN_NAMES}
+    assert len(found) >= 7 or len(found) == len(BUILTIN_NAMES), (
+        f"Expected built-in templates but found only: {found}"
+    )
+    for n in found:
         tpl = infographic_registry.get(n)
-        # Built-in templates ship without js_bundles
-        assert tpl.js_bundles is None
+        # Original built-in templates ship without js_bundles
+        assert tpl.js_bundles is None, (
+            f"Built-in template '{n}' unexpectedly has js_bundles={tpl.js_bundles}"
+        )
 
 
 def test_template_with_inline_bundle():

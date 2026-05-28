@@ -41,15 +41,16 @@ _InfographicRenderResult: Optional[type] = None
 
 
 def _get_infographic_result_class() -> Optional[type]:
-    """Lazy import of InfographicRenderResult (avoids circular deps)."""
-    global _InfographicRenderResult
-    if _InfographicRenderResult is None:
-        try:
-            from ..tools.infographic_toolkit import InfographicRenderResult as _cls
-            _InfographicRenderResult = _cls
-        except ImportError:
-            pass
-    return _InfographicRenderResult
+    """Lazy import of InfographicRenderResult (avoids circular deps).
+
+    Does NOT cache the class to avoid stale class-identity issues in test
+    environments where sys.modules may be patched between test files.
+    """
+    try:
+        from ..tools.infographic_toolkit import InfographicRenderResult as _cls
+        return _cls
+    except ImportError:
+        return None
 
 
 Scalar = Union[str, int, float, bool, None]
