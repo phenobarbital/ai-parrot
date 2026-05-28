@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-177
 **Date**: 2026-05-18
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (minor release after FEAT-176)
 **Source brainstorm**: `sdd/proposals/FEAT-177-otel-observability-brainstorm.md` (v0.2, 2026-05-15)
 **Hard dependency**: FEAT-176 (Lifecycle Events System) — **already merged on `dev` as of 2026-05-16**
@@ -789,9 +789,9 @@ These MUST appear as enforced acceptance criteria, not recommendations:
 
 ### Unresolved (deferred to implementation — not blocking the spec)
 
-- [ ] Exact bundled-pricing values for OpenAI / Anthropic / Google / Groq / NVIDIA models at ship time — *Owner: implementer*, sourced from each provider's pricing page; `pricing.last_updated` must reflect the source date.
-- [ ] Whether to ship a starter Prometheus `prometheus.yml` alongside the OpenLIT compose stack — *Owner: implementer (Phase 6)*.
-- [ ] Whether the FEAT-176 stub bug at `subscribers/opentelemetry.py:237` (`event.source_name`) warrants an opportunistic micro-PR alongside TASK-000 — *Owner: reviewer to decide before merge*.
+- [x] Exact bundled-pricing values for OpenAI / Anthropic / Google / Groq / NVIDIA models at ship time — *Owner: implementer*, sourced from each provider's pricing page; `pricing.last_updated` must reflect the source date.: correct
+- [x] Whether to ship a starter Prometheus `prometheus.yml` alongside the OpenLIT compose stack — *Owner: implementer (Phase 6)*.: yes
+- [x] Whether the FEAT-176 stub bug at `subscribers/opentelemetry.py:237` (`event.source_name`) warrants an opportunistic micro-PR alongside TASK-000 — *Owner: reviewer to decide before merge*.
 
 ---
 

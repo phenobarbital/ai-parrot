@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Dict, List
-
+from pydantic import TypeAdapter
 from .definition import (
     ActionDefinition,
     EdgeDefinition,
@@ -187,7 +187,6 @@ def from_svelteflow(
 
 def _parse_actions(raw: List[Dict[str, Any]]) -> List[ActionDefinition]:
     """Re-hydrate action dicts into their typed Pydantic models."""
-    from pydantic import TypeAdapter
 
     adapter = TypeAdapter(ActionDefinition)
     return [adapter.validate_python(d) for d in raw]
