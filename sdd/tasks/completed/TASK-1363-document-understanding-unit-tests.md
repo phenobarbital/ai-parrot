@@ -246,10 +246,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent
+**Date**: 2026-05-28
+**Notes**: Created `tests/unit/test_google_document_understanding.py` with 19 passing tests
+covering: single PDF, multiple files, string paths, StructuredOutputConfig, bare Pydantic
+class, stateful mode, file-too-large, file-not-found, upload polling (PROCESSING→ACTIVE),
+upload FAILED state, MIME type detection, and model enum acceptance. Used `get_client()`
+patching (via `AsyncMock`) to inject mock SDK without the deprecated `client` setter.
+All 19 tests pass: `pytest tests/unit/test_google_document_understanding.py -v`.
 
 **Deviations from spec**: none | describe if any
