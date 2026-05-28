@@ -94,8 +94,8 @@ from aiohttp import web
 import aiohttp
 from navconfig.logging import logging
 if TYPE_CHECKING:
-    from .server import A2AServer
-    from .client import A2AClient
+    from parrot.a2a.server import A2AServer
+    from parrot.a2a.client import A2AClient
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1829,7 +1829,7 @@ class SecureA2AClient:
         Returns:
             Connected A2AClient with authentication configured
         """
-        from .client import A2AClient  # pylint: disable=C0415
+        from parrot.a2a.client import A2AClient  # pylint: disable=C0415
 
         # Get base headers
         headers = self._get_auth_headers()

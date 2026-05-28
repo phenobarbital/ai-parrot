@@ -10,7 +10,7 @@ import contextlib
 import asyncio
 from aiohttp import web
 from navconfig.logging import logging
-from .models import (
+from parrot.a2a.models import (
     AgentCard,
     AgentSkill,
     AgentCapabilities,
@@ -24,8 +24,8 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from ..bots.abstract import AbstractBot
-    from ..tools.abstract import AbstractTool
+    from parrot.bots.abstract import AbstractBot
+    from parrot.tools.abstract import AbstractTool
 
 
 class A2AServer:
