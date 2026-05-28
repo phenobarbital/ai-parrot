@@ -160,10 +160,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-28
+**Notes**: Removed `parrot/autonomous/hooks/__init__.py` and `parrot/autonomous/hooks/brokers/__init__.py`
+via `git rm -r`. Updated pyproject.toml line 103 from `parrot.transport.filesystem.cli:main` to
+`parrot.autonomous.transport.filesystem.cli:main`. The root-level `parrot/transport/` bytecode directory
+was already absent from the worktree (never committed to git) — no action needed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

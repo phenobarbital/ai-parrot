@@ -215,7 +215,7 @@ class InboxManager:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             self._watcher_event = asyncio.Event()
             event = self._watcher_event
 

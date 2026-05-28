@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-from parrot.transport.filesystem.config import FilesystemTransportConfig
-from parrot.transport.filesystem.registry import AgentRegistry
+from parrot.autonomous.transport.filesystem.config import FilesystemTransportConfig
+from parrot.autonomous.transport.filesystem.registry import AgentRegistry
 
 
 @pytest.fixture

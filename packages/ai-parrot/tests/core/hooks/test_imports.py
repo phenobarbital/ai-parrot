@@ -99,8 +99,3 @@ class TestCoreHooksImport:
         }
         assert expected.issubset(set(hooks_pkg.__all__))
 
-    def test_backward_compat_shim(self):
-        """parrot.autonomous.hooks re-exports everything from parrot.core.hooks."""
-        from parrot.autonomous.hooks import BaseHook, HookManager, HookEvent  # noqa: F401
-
-        assert BaseHook is not None

@@ -2,7 +2,7 @@
 
 import pytest
 
-from parrot.transport.base import AbstractTransport
+from parrot.autonomous.transport.base import AbstractTransport
 
 
 class TestAbstractTransport:
@@ -117,5 +117,5 @@ class TestAbstractTransport:
 
     def test_import_from_package(self):
         """Import works from the expected path."""
-        from parrot.transport.base import AbstractTransport as AT
+        from parrot.autonomous.transport.base import AbstractTransport as AT
         assert AT is AbstractTransport

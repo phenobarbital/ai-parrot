@@ -237,10 +237,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-05-28
+**Notes**: Updated all 14 files listed in the task spec. Additionally fixed 2 files not listed in the
+spec (`test_cli.py` and `test_transport.py`) that also had stale `parrot.transport.*` imports — these
+were needed to satisfy the acceptance criterion "No remaining references to `parrot.transport` in test files".
+Removed `test_backward_compat_shim` method from `tests/core/hooks/test_imports.py`.
+All tests pass: 116 transport tests + 53 hook/matrix/core tests = 169 total.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Updated `test_cli.py` and `test_transport.py` in addition to the listed 14 files
+— both had stale transport imports and are necessary for the acceptance criteria to pass.
