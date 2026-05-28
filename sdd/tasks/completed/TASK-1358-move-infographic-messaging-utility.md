@@ -183,4 +183,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker on 2026-05-28.
+
+Moved 9 renderer files + generators/ and mixins/ sub-packages via `git mv`:
+- infographic.py, infographic_html.py, application.py, card.py, slack.py,
+  whatsapp.py, jinja2.py, template_report.py, markdown.py
+- generators/(__init__.py, abstract.py, panel.py, streamlit.py, terminal.py)
+- mixins/(__init__.py, emaps.py)
+
+All moved renderers resolve correctly via `get_renderer()` ✅:
+- INFOGRAPHIC→InfographicRenderer, JINJA2→Jinja2Renderer,
+  TEMPLATE_REPORT→TemplateReportRenderer, APPLICATION→ApplicationRenderer,
+  CARD→CardRenderer, WHATSAPP→WhatsAppRenderer, SLACK→SlackRenderer,
+  MARKDOWN→MarkdownRenderer
+- `from parrot.outputs.formats.infographic_html import InfographicHTMLRenderer` works ✅

@@ -71,7 +71,7 @@
       "feature_id": "FEAT-200",
       "feature": "ai-parrot-visualizations",
       "spec": "sdd/proposals/ai-parrot-visualizations.proposal.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Moves different files than TASK-1357; could run in parallel after deps met",
       "assigned_to": null,
       "started_at": "2026-05-28T15:51:50+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1358-move-infographic-messaging-utility.md"
+      "completed_at": "2026-05-28T16:18:15+00:00",
+      "file": "sdd/tasks/completed/TASK-1358-move-infographic-messaging-utility.md"
     },
     {
       "id": "TASK-1359",
