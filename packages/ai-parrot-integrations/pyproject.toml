@@ -89,3 +89,4 @@ namespaces = true
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }
+parrot-formdesigner = { workspace = true }

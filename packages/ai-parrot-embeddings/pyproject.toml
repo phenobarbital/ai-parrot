@@ -46,7 +46,7 @@ huggingface = [
 ]
 google = [
     "google-genai>=2.6.0",
-    "google-cloud-aiplatform==1.133.0",
+    "google-cloud-aiplatform>=1.153.0",
 ]
 openai = [
     "openai==2.8.1",

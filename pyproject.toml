@@ -113,6 +113,11 @@ override-dependencies = [
     "numba>=0.57.0",
     "llvmlite>=0.40.0",
     "openpyxl>=3.1.2,<=3.1.5",
+    # google-cloud-aiplatform>=1.153 (needed for google-genai>=2.6) requires
+    # google-cloud-storage>=3.10 on Python >=3.13, but navigator-api[google]
+    # caps it at <=3.1.0. Override the floor to 3.10 so the py3.13/3.14 split
+    # resolves; navigator-api works fine against google-cloud-storage 3.x.
+    "google-cloud-storage>=3.10.0",
     # Lightning AI removed `lightning` from PyPI on 2026-04-30, breaking
     # any version of pyannote-audio>=3.x. whisperx 3.8.5 transitively
     # requires pyannote-audio>=4.0.0, which propagates the failure.

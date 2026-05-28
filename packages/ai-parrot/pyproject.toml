@@ -327,7 +327,7 @@ images = [
 ]
 
 anthropic = [
-    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+    "anthropic[aiohttp]>=0.105.0,<1.0.0",
 ]
 
 claude-agent = [
@@ -343,7 +343,7 @@ google = [
     "google-api-python-client>=2.166.0,<=2.177.0",
     "google-cloud-texttospeech==2.27.0",
     "google-genai>=2.6.0",
-    "google-cloud-aiplatform==1.133.0",
+    "google-cloud-aiplatform>=1.153.0",
 ]
 
 groq = [
@@ -354,7 +354,7 @@ llms = [
     "google-genai>=2.6.0",
     "openai==2.8.1",
     "groq==0.33.0",
-    "anthropic[aiohttp]>=0.97.0,<1.0.0",
+    "anthropic[aiohttp]>=0.105.0,<1.0.0",
     "claude-agent-sdk>=0.1.68",
     "xai-sdk>=0.1.0",
 ]
@@ -434,8 +434,12 @@ observability = [
 ]
 
 # Optional OpenLIT auto-instrumentation (FEAT-177 — opt-in via enable_openlit=True)
+# NOTE: floor pinned to 1.40 — older openlit releases pin tiktoken<0.7 and
+# xmltodict<0.13, which conflict with the core deps (tiktoken>=0.9.0,
+# xmltodict>=0.14.2) and the flowtask extra. 1.40+ drops the tiktoken pin and
+# accepts xmltodict<1.0.
 observability-openlit = [
-    "openlit>=1.0",
+    "openlit>=1.40.0",
 ]
 
 # Developer / CI tooling (not shipped to end users)
