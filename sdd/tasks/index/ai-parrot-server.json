@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-29T00:00:00Z",
-  "completed_at": "2026-05-29T01:06:20+00:00",
+  "completed_at": "2026-05-28T23:42:33+00:00",
   "tasks": [
     {
       "id": "TASK-1365",
@@ -22,8 +22,8 @@
       "parallelism_notes": "No shared files with TASK-1366",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1365-package-scaffold.md"
+      "completed_at": "2026-05-28T23:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1365-package-scaffold.md"
     },
     {
       "id": "TASK-1366",
@@ -40,8 +40,8 @@
       "parallelism_notes": "No shared files with TASK-1365",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1366-relocate-vault-utils.md"
+      "completed_at": "2026-05-28T23:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1366-relocate-vault-utils.md"
     },
     {
       "id": "TASK-1367",
@@ -60,8 +60,8 @@
       "parallelism_notes": "Modifies host __init__.py files shared by later tasks",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1367-add-extend-path.md"
+      "completed_at": "2026-05-28T23:32:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1367-add-extend-path.md"
     },
     {
       "id": "TASK-1368",
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on vault_utils relocation",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1368-split-mcp-oauth.md"
+      "completed_at": "2026-05-28T23:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1368-split-mcp-oauth.md"
     },
     {
       "id": "TASK-1369",
@@ -101,8 +101,8 @@
       "parallelism_notes": "Depends on extend_path and oauth split",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1369-move-mcp-server.md"
+      "completed_at": "2026-05-28T23:35:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1369-move-mcp-server.md"
     },
     {
       "id": "TASK-1370",
@@ -121,8 +121,8 @@
       "parallelism_notes": "Parallel with TASK-1369 — different namespace dirs",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1370-move-a2a-server.md"
+      "completed_at": "2026-05-28T23:36:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1370-move-a2a-server.md"
     },
     {
       "id": "TASK-1371",
@@ -142,8 +142,8 @@
       "parallelism_notes": "Parallel with TASK-1369/1370 — different namespace dirs",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1371-move-handlers.md"
+      "completed_at": "2026-05-28T23:36:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1371-move-handlers.md"
     },
     {
       "id": "TASK-1372",
@@ -162,8 +162,8 @@
       "parallelism_notes": "BotManager imports handlers — must move after handlers",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1372-move-manager.md"
+      "completed_at": "2026-05-28T23:36:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1372-move-manager.md"
     },
     {
       "id": "TASK-1373",
@@ -183,8 +183,8 @@
       "parallelism_notes": "Parallel with handlers/manager — different namespace",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1373-move-services.md"
+      "completed_at": "2026-05-28T23:37:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1373-move-services.md"
     },
     {
       "id": "TASK-1374",
@@ -203,8 +203,8 @@
       "parallelism_notes": "Independent namespace — parallel with other moves",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1374-move-scheduler.md"
+      "completed_at": "2026-05-28T23:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1374-move-scheduler.md"
     },
     {
       "id": "TASK-1375",
@@ -223,8 +223,8 @@
       "parallelism_notes": "Independent namespace — parallel with other moves",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1375-move-autonomous.md"
+      "completed_at": "2026-05-28T23:38:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1375-move-autonomous.md"
     },
     {
       "id": "TASK-1376",
@@ -249,8 +249,8 @@
       "parallelism_notes": "Must run after all moves complete",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1376-update-host-pyproject.md"
+      "completed_at": "2026-05-28T23:39:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1376-update-host-pyproject.md"
     },
     {
       "id": "TASK-1377",
@@ -269,8 +269,8 @@
       "parallelism_notes": "Must run after all moves and pyproject update",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1377-satellite-tests.md"
+      "completed_at": "2026-05-28T23:41:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1377-satellite-tests.md"
     },
     {
       "id": "TASK-1378",
@@ -289,8 +289,8 @@
       "parallelism_notes": "Parallel with TASK-1377 — independent doc",
       "assigned_to": null,
       "started_at": "2026-05-28T23:26:26+00:00",
-      "completed_at": "2026-05-29T01:06:20+00:00",
-      "file": "sdd/tasks/active/TASK-1378-migration-guide.md"
+      "completed_at": "2026-05-28T23:42:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1378-migration-guide.md"
     }
   ]
 }

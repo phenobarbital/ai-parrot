@@ -163,7 +163,7 @@ class AbstractOAuth2Manager(ABC):
 
         # Vault wiring — defaults use the navigator_session-backed helpers.
         if vault_writer is None or vault_reader is None or vault_deleter is None:
-            from parrot.handlers.vault_utils import (  # local import: tests may mock
+            from parrot.security.vault_utils import (  # local import: tests may mock
                 delete_vault_credential,
                 retrieve_vault_credential,
                 store_vault_credential,

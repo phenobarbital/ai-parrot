@@ -72,8 +72,7 @@ dependencies = [
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
     "urllib3==2.7.0",
-    "aioquic==1.3.0",
-    "pylsqpack==0.3.23",
+    # aioquic and pylsqpack moved to ai-parrot-server[mcp] extra in FEAT-203
     # API / OpenAPI tools
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
@@ -96,7 +95,7 @@ dependencies = [
 
 [project.scripts]
 parrot = "parrot.cli:cli"
-parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
+# parrot-fs moved to ai-parrot-server in FEAT-203
 
 [project.optional-dependencies]
 # ---------------------------------------------------------------------------
@@ -159,9 +158,12 @@ graphindex = [
     "pathspec>=0.12",
 ]
 
-# Task scheduling
-scheduler = [
-    "apscheduler==3.11.2",
+# Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203
+# scheduler = ["apscheduler==3.11.2"]  # use ai-parrot-server[scheduler] instead
+
+# Server layer — all server infrastructure via satellite (FEAT-203)
+server = [
+    "ai-parrot-server[all]",
 ]
 
 # ArangoDB graph database — MOVED to ai-parrot-embeddings[arango]
@@ -470,10 +472,12 @@ visualizations = [
 # Note: embeddings/milvus/chroma/arango extras moved to ai-parrot-embeddings in FEAT-201.
 # ai-parrot-embeddings[all] covers all moved backends.
 # Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
+# Note: scheduler extra and server layer moved to ai-parrot-server in FEAT-203.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,scheduler,reddit,mcp,charts,docling,visualizations]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations]",
     "ai-parrot-embeddings[all]",
     "ai-parrot-integrations[all]",
+    "ai-parrot-server[all]",
 ]
 
 # all-fast: lightweight embedding stack via satellite
