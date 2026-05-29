@@ -39,9 +39,12 @@ Late-reply handling:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Any, Optional
+
+from pydantic import BaseModel, Field
 
 from aiohttp import web
 from botbuilder.core import CardFactory, MessageFactory, TurnContext
@@ -579,6 +582,175 @@ class _FakeResolvedUser:
         self.aad_object_id = ""
         self.upn = email
         self.service_url = None
+
+
+# ── TeamsHitlConfig ───────────────────────────────────────────────────────────
+
+class TeamsHitlConfig(BaseModel):
+    """Boot configuration for the shared HITL bot identity.
+
+    All credential fields must be supplied from navconfig / environment
+    variables.  Use ``${VAR_NAME}`` style substitution in your config
+    files — never hardcode secrets here.
+
+    Attributes:
+        app_id: Microsoft App ID for the HITL bot (``MSTEAMS_HITL_APP_ID``).
+        app_password: Microsoft App Password (``MSTEAMS_HITL_APP_PASSWORD``).
+        tenant_id: AAD tenant ID (``MSTEAMS_TENANT_ID``).
+        graph_client_id: Graph app registration client ID.
+        graph_client_secret: Graph app registration client secret.
+        graph_tenant_id: Tenant ID for the Graph app (may differ from bot tenant).
+        redis_url: Async Redis connection URL.
+        route: Webhook route for the HITL bot (default: ``/api/teams-hitl/messages``).
+        convref_ttl: ConversationReference cache TTL in seconds (default: 30 days).
+        app_type: Bot app type (``"MultiTenant"`` or ``"SingleTenant"``).
+
+    Per-agent override (OQ-9 / OQ-9-impl):
+        A per-agent HITL identity is exposed via keyed channels on the
+        ``HumanInteractionManager``.  Register it as a named entry instead
+        of the default ``"teams"``::
+
+            channel = TeamsHumanChannel(adapter, gc, redis, per_agent_config)
+            manager.register_channel("teams:my-agent", channel)
+
+        The agent's tier or HITL tool can then reference ``channel="teams:my-agent"``
+        to select the dedicated identity.  The default shared identity remains
+        at ``"teams"`` for all tiers that do not need a distinct bot appearance.
+        Selection mechanism: keyed-channel pattern (simpler than BotConfig at
+        construction, avoids deep construction-time coupling).
+    """
+
+    app_id: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_HITL_APP_ID", ""),
+        description="Microsoft App ID for the HITL bot.",
+    )
+    app_password: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_HITL_APP_PASSWORD", ""),
+        description="Microsoft App Password for the HITL bot.",
+    )
+    tenant_id: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_TENANT_ID", ""),
+        description="AAD tenant ID.",
+    )
+    graph_client_id: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_CLIENT_ID", ""),
+        description="Graph app registration client ID.",
+    )
+    graph_client_secret: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_CLIENT_SECRET", ""),
+        description="Graph app registration client secret.",
+    )
+    graph_tenant_id: str = Field(
+        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_TENANT_ID", ""),
+        description="Tenant ID for the Graph app registration.",
+    )
+    redis_url: str = Field(
+        default_factory=lambda: os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        description="Async Redis connection URL.",
+    )
+    route: str = Field(
+        default="/api/teams-hitl/messages",
+        description="aiohttp route for the HITL webhook.",
+    )
+    convref_ttl: int = Field(
+        default=2_592_000,
+        description="ConversationReference cache TTL in seconds (default 30 days).",
+    )
+    app_type: str = Field(
+        default="MultiTenant",
+        description="Bot app type: 'MultiTenant' or 'SingleTenant'.",
+    )
+
+
+# ── setup_teams_hitl ──────────────────────────────────────────────────────────
+
+async def setup_teams_hitl(
+    app: Any,
+    manager: Any,  # HumanInteractionManager — Any to avoid circular import
+    config: TeamsHitlConfig,
+    channel_name: str = "teams",
+) -> "TeamsHumanChannel":
+    """Wire the shared HITL bot in one call.
+
+    Creates the adapter, GraphClient, Redis connection, and
+    :class:`TeamsHumanChannel`, registers the webhook route on the
+    aiohttp app, and registers the channel as ``channel_name`` on
+    the ``HumanInteractionManager``.
+
+    After this call, ``manager.startup()`` will wire the response and
+    cancel handlers by calling :meth:`TeamsHumanChannel.register_response_handler`
+    and :meth:`TeamsHumanChannel.register_cancel_handler`.
+
+    Args:
+        app: The aiohttp ``web.Application`` instance.
+        manager: The :class:`~parrot.human.manager.HumanInteractionManager`.
+        config: Boot configuration (all creds from navconfig/env vars).
+        channel_name: Channel registration key (default ``"teams"``).
+            Use ``"teams:my-agent"`` for per-agent override (OQ-9-impl).
+
+    Returns:
+        The constructed :class:`TeamsHumanChannel` instance.
+
+    Example::
+
+        from parrot.human import get_default_human_manager
+        from parrot.human.channels.teams import TeamsHitlConfig, setup_teams_hitl
+
+        config = TeamsHitlConfig()   # reads from environment
+        manager = get_default_human_manager()
+        channel = await setup_teams_hitl(app, manager, config)
+        # manager.startup() wires response/cancel handlers; call it after all
+        # channels are registered.
+    """
+    import redis.asyncio as aioredis  # type: ignore[import]
+
+    from parrot.integrations.msteams.graph import GraphClient
+    from parrot.integrations.msteams.hitl_adapter import HitlCloudAdapter
+
+    _logger = logging.getLogger("parrot.human.channels.teams.setup")
+
+    # Build the adapter.
+    adapter = HitlCloudAdapter(
+        app_id=config.app_id,
+        app_password=config.app_password,
+        app_type=config.app_type,
+        tenant_id=config.tenant_id if config.app_type == "SingleTenant" else None,
+    )
+
+    # Build the Graph client.
+    graph_client = GraphClient(
+        client_id=config.graph_client_id,
+        client_secret=config.graph_client_secret,
+        tenant_id=config.graph_tenant_id,
+    )
+
+    # Build the Redis client.
+    redis_client = aioredis.from_url(config.redis_url)
+
+    # Assemble the channel.
+    channel = TeamsHumanChannel(
+        adapter=adapter,
+        graph_client=graph_client,
+        redis=redis_client,
+        config=config,
+        app=app,
+    )
+
+    # Register route and start the channel (registers webhook route).
+    await channel.start()
+
+    # Register the channel on the manager.
+    manager.register_channel(channel_name, channel)
+
+    _logger.info(
+        "setup_teams_hitl: Teams HITL channel registered as %r "
+        "(route=%s, app_id=%s)",
+        channel_name,
+        config.route,
+        config.app_id[:4] + "****" if len(config.app_id) > 4 else "***",
+    )
+
+    return channel
 
 
 # ── Auto-register with ChannelRegistry on import ──────────────────────────────
