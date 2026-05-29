@@ -95,7 +95,7 @@ infographic_render ──────────→ _validate_blocks → render
 |---|---|---|
 | `infographic_registry` (`InfographicTemplateRegistry`) | replaces builtin | Re-register the flattened `financial_variance` in `_register_builtins` |
 | `InfographicToolkit._validate_blocks` | unchanged | Must keep passing; add regression test asserting `len(coerced) == 9` |
-| `financial_projection_report` skill (`compute.py`) | downstream caller | Must emit **flat** hero_card blocks, not one block with `items=[...]` (see §7) |
+| `daily_financial_projection` skill (`agents/troc_finance/skills/daily_financial_projection/compute.py`) | downstream caller | Must emit **flat** hero_card blocks, not one block with `items=[...]` (see §7) |
 
 ### Data Models
 No new models. The change is data-only within the existing `InfographicTemplate`
@@ -155,12 +155,22 @@ positional contract that `get_template_contract("financial_variance")` reports c
 - **Depends on**: existing `InfographicTemplate`, `BlockSpec`, `BlockType` (no changes).
 
 ### Module 2: Downstream skill asset alignment
-- **Path**: `<AGENTS_DIR>/<agent_id>/skills/financial_projection_report/compute.py`
+- **Path**: `agents/troc_finance/skills/daily_financial_projection/compute.py`
+  *(verified 2026-05-29 — the skill is present under this name, NOT
+  `financial_projection_report`; that earlier name was a placeholder)*
 - **Responsibility**: Emit the hero cards as **four separate** `{"type": "hero_card", ...}`
   blocks in `BLOCKS_JSON` instead of one `hero_card` block with an `items` list, so the
   payload matches the flattened positional contract (9 blocks).
-- **Depends on**: Module 1. *(If this skill is not present in the worktree, skip and
-  record as a follow-up; the spec's source of truth is Module 1.)*
+  - **Current shape** (`compute.py:114-145`): `title` + **1** `hero_card` w/ `items=[4]`
+    + 2 bar charts + 1 line chart + 1 summary = **6** emitted blocks. After
+    `_normalise_payload` the hero_card expands to 4, but `_validate_blocks` keeps only
+    `.blocks[0]` → 3 cards dropped.
+  - **Target shape**: flatten that single `hero_card` into 4 flat
+    `{"type": "hero_card", "label": ..., "value": ..., ...}` blocks → **9** blocks
+    total, one per positional slot.
+- **Depends on**: Module 1. *(This skill IS present in the repo — see Module 2 path —
+  so this is in-scope work, not a follow-up. See also the doc asset
+  `agents/troc_finance/skills/financial_projection_variance.md`.)*
 
 ---
 
@@ -253,7 +263,7 @@ class BlockSpec(BaseModel):
     description: Optional[str] = None
     min_items: Optional[int] = None
     max_items: Optional[int] = None
-    constraints: Optional[Dict[str, str]] = {}   # NOTE: values are str→str
+    constraints: Optional[Dict[str, str]] = Field(default_factory=dict)  # NOTE: values are str→str
 
 # parrot/models/infographic.py
 #   grep anchor: "class BlockType(str, Enum)"   # has TITLE, HERO_CARD, CHART, SUMMARY
@@ -295,8 +305,10 @@ class BlockSpec(BaseModel):
 ### Known Risks / Gotchas
 - **Breaking change (intended).** Any caller currently sending a single
   `hero_card` block with `items=[...]` for `financial_variance` will break.
-  Mitigation: update Module 2 (`compute.py`) in the same change; grep the repo for
-  other callers (`grep -rn "financial_variance"`).
+  Mitigation: update Module 2 (`compute.py`) in the same change. The repo-wide
+  caller audit (`grep -rln "financial_variance" agents/`) found exactly one code
+  emitter — `agents/troc_finance/skills/daily_financial_projection/compute.py` —
+  plus its doc asset `financial_projection_variance.md`. No other callers.
 - **Latent twin bug.** `basic`/`executive`/`dashboard` keep the grouped
   `hero_card` + `min_items` convention and therefore retain the `.blocks[0]`
   truncation. Out of scope here; see §8.
@@ -318,8 +330,17 @@ None.
   *Owner: Jesus* — this spec deliberately takes the low-risk per-template path; the
   central fix is a separate FEAT if desired.
 - [ ] Confirm the suggested **FEAT-198** id is free on `dev`. *Owner: Jesus*
-- [ ] Is the `financial_projection_report` skill present in the target worktree, or
-  does Module 2 become a follow-up task? *Owner: Jesus*
+- [x] ~~Is the `financial_projection_report` skill present in the target worktree, or
+  does Module 2 become a follow-up task?~~ **Resolved 2026-05-29:** the skill IS
+  present, but named `daily_financial_projection`
+  (`agents/troc_finance/skills/daily_financial_projection/compute.py`), and it emits the
+  legacy `hero_card`-with-`items` shape at `compute.py:117`. Module 2 is therefore
+  **in-scope** (not a follow-up). *Owner: Jesus*
+
+> **Note — unrelated template with a confusable name:** a separate, **unregistered**
+> `InfographicTemplate(name="financial_projection_variance")` exists at
+> `infographic_templates.py:545` (not in `_register_builtins`). This feature does NOT
+> touch it; do not confuse it with `financial_variance`.
 
 ---
 
@@ -328,3 +349,4 @@ None.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-29 | Jesus | Initial draft — flatten `financial_variance` to 9 positional slots; validator unchanged |
+| 0.2 | 2026-05-29 | Jesus | Codebase verification pass. Corrected Module 2 path to `agents/troc_finance/skills/daily_financial_projection/compute.py` (was placeholder `financial_projection_report`); resolved §8 skill-presence question (in-scope); flagged unregistered confusable template `financial_projection_variance`; fixed `BlockSpec.constraints` to `default_factory=dict`. All §6 contract anchors confirmed against source. |
