@@ -32,10 +32,12 @@ from .manager import HumanInteractionManager
 from .tool import HumanTool
 from .node import HumanDecisionNode
 
-# Lazy: TelegramHumanChannel pulls aiogram (~1.5s). Resolved on access via
-# PEP 562 __getattr__ below.
+# Lazy: heavy channel deps (aiogram, botbuilder) are loaded only on access via
+# PEP 562 __getattr__ below.  This keeps import time fast and preserves
+# isolation between the Telegram and Teams channels (FEAT-205 / D3).
 _LAZY_EXPORTS = {
     "TelegramHumanChannel": ".channels.telegram",
+    "TeamsHumanChannel": ".channels.teams",   # FEAT-205: botbuilder — lazy to avoid aiogram clash
 }
 
 
@@ -51,6 +53,7 @@ def __getattr__(name: str):
 
 if TYPE_CHECKING:
     from .channels.telegram import TelegramHumanChannel
+    from parrot.human.channels.teams import TeamsHumanChannel  # FEAT-205 — lazy export
 
 
 # Process-wide default HumanInteractionManager.
@@ -88,6 +91,7 @@ __all__ = [
     "CLIHumanChannel",
     "CLIDaemonHumanChannel",
     "TelegramHumanChannel",
+    "TeamsHumanChannel",
     # Engine
     "HumanInteractionManager",
     "set_default_human_manager",
