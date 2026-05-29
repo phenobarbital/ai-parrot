@@ -582,6 +582,120 @@ class LoadSkillTool(AbstractTool):
         )
 
 
+class ReadSkillAssetArgs(BaseModel):
+    """Arguments for reading a bundled asset of a composite skill."""
+
+    skill_name: str = Field(
+        ...,
+        description="Skill name as listed in <available_skills>.",
+    )
+    asset: str = Field(
+        ...,
+        description=(
+            "Asset filename relative to the skill directory, as listed in the "
+            "'assets' manifest returned by load_skill (e.g. 'template.md')."
+        ),
+    )
+
+
+class ReadSkillAssetTool(AbstractTool):
+    """Tier 2 sandboxed reader for assets bundled with a composite skill.
+
+    A composite skill (``{name}/SKILL.md`` + adjacent files) may reference
+    bundled assets — templates, scripts, examples. ``load_skill`` returns the
+    list of asset *filenames*; this tool returns the *content* of one of them.
+
+    Access is sandboxed to the skill's ``assets_dir``: the requested path is
+    resolved and rejected if it escapes that directory (path traversal) or is
+    not a regular file. ``SKILL.md`` itself is not readable through this tool —
+    use ``load_skill`` for the skill body.
+
+    Args:
+        file_registry: A configured
+            :class:`~parrot.skills.file_registry.SkillFileRegistry` to look up
+            skills (and their ``assets_dir``) by name.
+        max_bytes: Maximum number of bytes to return; larger files are
+            truncated with a trailing notice. Defaults to 64 KiB.
+    """
+
+    name: str = "read_skill_asset"
+    description: str = (
+        "Read the content of an asset bundled with a composite skill "
+        "(template, script, example). Use after load_skill lists the skill's "
+        "assets. Pass the skill name and the asset filename."
+    )
+    args_schema: Type[BaseModel] = ReadSkillAssetArgs
+
+    def __init__(
+        self,
+        file_registry: "SkillFileRegistry",
+        max_bytes: int = 64 * 1024,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._file_registry = file_registry
+        self._max_bytes = max_bytes
+
+    async def _execute(self, skill_name: str, asset: str, **kwargs) -> ToolResult:
+        """Return the content of a bundled asset, sandboxed to ``assets_dir``.
+
+        Args:
+            skill_name: The skill name as listed in ``<available_skills>``.
+            asset: Asset filename relative to the skill directory.
+            **kwargs: Ignored extra keyword arguments.
+
+        Returns:
+            :class:`~parrot.tools.abstract.ToolResult` with:
+
+            - ``status="done"`` and ``result`` set to the file content.
+            - ``status="error"`` if the skill is unknown, is not composite,
+              the asset escapes the sandbox, or is not a readable file.
+        """
+        skill = self._file_registry.get_by_name(skill_name)
+        if not skill:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=f"Skill not found: {skill_name}",
+            )
+        if not skill.assets_dir:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=(
+                    f"Skill '{skill_name}' is a single-file skill and has no "
+                    "bundled assets."
+                ),
+            )
+
+        def _read(assets_dir: Path, rel: str) -> tuple[Optional[str], Optional[str]]:
+            base = assets_dir.resolve()
+            target = (base / rel).resolve()
+            # Sandbox: the resolved target must stay within assets_dir.
+            if base != target and base not in target.parents:
+                return None, f"Asset path escapes the skill directory: {rel}"
+            if target.name == "SKILL.md":
+                return None, "Use load_skill to read the skill body (SKILL.md)."
+            if not target.is_file():
+                return None, f"Asset not found: {rel}"
+            data = target.read_bytes()
+            truncated = len(data) > self._max_bytes
+            text = data[: self._max_bytes].decode("utf-8", errors="replace")
+            if truncated:
+                text += f"\n\n[... truncated at {self._max_bytes} bytes ...]"
+            return text, None
+
+        content, err = await asyncio.to_thread(_read, skill.assets_dir, asset)
+        if err is not None:
+            return ToolResult(status="error", result=None, error=err)
+
+        return ToolResult(
+            status="done",
+            result=content,
+            metadata={"skill_name": skill_name, "asset": asset},
+        )
+
+
 def create_skill_tools(
     registry: SkillRegistry,
     agent_id: str,
@@ -596,8 +710,8 @@ def create_skill_tools(
         agent_id: Agent identifier string.
         include_write_tools: If ``True``, include document/update tools.
         file_registry: Optional :class:`~parrot.skills.file_registry.SkillFileRegistry`
-            for file-based tools. When provided, ``SaveLearnedSkillTool`` and
-            ``LoadSkillTool`` are included.
+            for file-based tools. When provided, ``SaveLearnedSkillTool``,
+            ``LoadSkillTool`` and ``ReadSkillAssetTool`` are included.
         learned_dir: Path to the learned skills directory, required when
             ``file_registry`` is provided for ``SaveLearnedSkillTool``.
 
@@ -627,5 +741,6 @@ def create_skill_tools(
 
     if file_registry is not None:
         tools.append(LoadSkillTool(file_registry=file_registry))
+        tools.append(ReadSkillAssetTool(file_registry=file_registry))
 
     return tools

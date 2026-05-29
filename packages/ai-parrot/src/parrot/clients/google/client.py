@@ -1578,6 +1578,45 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 self.logger.error(f"Failed to send responses back: {e}")
                 break
 
+        # If the loop exited because it hit the iteration cap while the model
+        # was STILL requesting tools, force one final synthesis turn with
+        # tool-calling disabled. Otherwise we return a function-call-only
+        # response with no text, and the caller is left to reformat raw tool
+        # output into the answer (producing garbage such as a column dump).
+        if (
+            iteration >= max_iterations
+            and self._get_function_calls_from_response(current_response)
+        ):
+            self.logger.warning(
+                "Reached max_iterations (%d) with the model still requesting "
+                "tools — forcing a final tool-free synthesis turn.",
+                max_iterations,
+            )
+            try:
+                # Forbid further tool calls so the model must produce text.
+                fcc = getattr(
+                    getattr(current_config, "tool_config", None),
+                    "function_calling_config",
+                    None,
+                )
+                if fcc is not None:
+                    fcc.mode = types.FunctionCallingConfigMode.NONE
+                else:
+                    current_config.tools = None
+                synthesis_prompt = (
+                    "You have reached the maximum number of tool calls allowed "
+                    "for this turn. Do NOT request any more tools. Using ONLY "
+                    "the information already gathered from the tool outputs "
+                    "above, write your final answer to the user's original "
+                    "question now. If what you gathered is not enough to fully "
+                    "answer, say so explicitly and summarize what you did find."
+                )
+                current_response = await chat.send_message(
+                    synthesis_prompt, config=current_config
+                )
+            except Exception as e:
+                self.logger.error("Forced synthesis turn failed: %s", e)
+
         self.logger.info(f"Completed with {len(all_tool_calls)} total tool calls")
         return current_response
 

@@ -139,7 +139,8 @@ class SkillRegistryMixin:
     async def _configure_skill_file_registry(self) -> None:
         """Configure file-based skill registry and trigger middleware.
 
-        Resolves ``AGENTS_DIR/{agent_id}/skills/`` and loads all .md skill files.
+        Resolves ``AGENTS_DIR/{agent_id}/skills/`` and loads skills in both
+        single-file (``{name}.md``) and composite (``{name}/SKILL.md``) layouts.
         Registers SkillTriggerMiddleware in the bot's prompt pipeline.
 
         When ``agents_dir`` is None the original agents-dir loading block is
