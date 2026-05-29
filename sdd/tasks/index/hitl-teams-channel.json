@@ -14,7 +14,7 @@
       "feature_id": "FEAT-205",
       "feature": "hitl-teams-channel",
       "spec": "sdd/specs/hitl-teams-channel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: vendors BF plumbing + resolves emoji clash. Must land before TASK-004/005 import botbuilder paths. Per-spec isolation: sequential in one worktree.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:02:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-001-vendor-bf-plumbing-and-packaging.md"
+      "completed_at": "2026-05-29T16:08:05+00:00",
+      "file": "sdd/tasks/completed/TASK-001-vendor-bf-plumbing-and-packaging.md"
     },
     {
       "id": "TASK-002",
