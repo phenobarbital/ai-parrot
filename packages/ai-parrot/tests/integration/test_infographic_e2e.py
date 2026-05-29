@@ -284,3 +284,79 @@ def test_e2e_output_mode_infographic_value():
     """OutputMode.INFOGRAPHIC == 'infographic' — enum regression guard."""
     assert OutputMode.INFOGRAPHIC.value == "infographic"
     assert OutputMode("infographic") is OutputMode.INFOGRAPHIC
+
+
+# ---------------------------------------------------------------------------
+# E2E: financial_variance 9-block flat render (FEAT-206)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_render_financial_variance_end_to_end(fake_store):
+    """render(template_name='financial_variance') with 9 flat blocks produces HTML
+    containing 4 hero-card containers and 3 chart containers.
+    """
+    tk = InfographicToolkit(artifact_store=fake_store)
+    bot = MagicMock()
+    bot._get_repl_locals = MagicMock(return_value={
+        "fp_daily": pd.DataFrame({"date": [1, 2], "rev_total": [2.3, 3.7]}),
+    })
+    bot.user_id = "u"
+    bot.agent_id = "agt"
+    bot.session_id = "sess"
+    tk._bot = bot
+
+    bar = lambda t: {  # noqa: E731
+        "type": "chart",
+        "chart_type": "bar",
+        "layout": "half",
+        "title": t,
+        "labels": ["D1", "D2"],
+        "series": [{"name": "x", "values": [1.0, 2.0]}],
+    }
+    card = lambda lbl, v: {"type": "hero_card", "label": lbl, "value": v}  # noqa: E731
+    fv_blocks = [
+        {"type": "title", "title": "Financial Variance", "date": "May 14 – 27, 2026"},
+        card("Revenue", "$3.7M"),
+        card("Change", "$1.4M"),
+        card("EBITDA", "$31K"),
+        card("DoD", "$107K"),
+        bar("Revenue DoD"),
+        bar("EBITDA DoD"),
+        {
+            "type": "chart",
+            "chart_type": "line",
+            "layout": "full",
+            "title": "Cumulative",
+            "labels": ["D1", "D2"],
+            "series": [{"name": "rev", "values": [2.3, 3.7]}],
+        },
+        {"type": "summary", "content": "Summary text covering the period."},
+    ]
+
+    result = await tk.render(
+        template_name="financial_variance",
+        theme="light",
+        mode="deterministic",
+        blocks=fv_blocks,
+        data_variables=["fp_daily"],
+    )
+
+    assert isinstance(result, InfographicRenderResult), (
+        f"render() did not return InfographicRenderResult: {type(result)}"
+    )
+    # The payload is intentionally minimal (2-point labels, short strings) so it
+    # stays well under the 50 KB threshold and html_inline is always populated.
+    assert result.html_inline is not None, (
+        "html_inline is None — payload may have exceeded the 50 KB inline threshold "
+        "or the renderer returned an unexpected result. Check render() internals."
+    )
+    html = result.html_inline
+    # The rendered HTML must contain at least 4 hero-card references and 3 chart
+    # references. Substring counts are conservative: any renderer that emits
+    # CSS class names or data attributes containing 'hero' / 'chart' will pass.
+    assert html.count("hero") >= 4, (
+        f"HTML does not contain 4 hero-card references. 'hero' occurrences: {html.count('hero')}"
+    )
+    assert html.count("chart") >= 3, (
+        f"HTML does not reference 3 chart blocks. 'chart' occurrences: {html.count('chart')}"
+    )
