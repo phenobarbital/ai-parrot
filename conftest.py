@@ -35,10 +35,33 @@ _EXTRA_PATHS = [
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-loaders", "src"),
     # ai-parrot-tools: also include worktree version.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-tools", "src"),
+    # ai-parrot-server: FEAT-204 adds new modules (SuspendingWebHumanTool,
+    # SuspendedExecutionStore) — prepend worktree src so they shadow the
+    # main-repo editable install.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src"),
 ]
 for _p in reversed(_EXTRA_PATHS):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# FEAT-204: After updating sys.path, invalidate any cached parrot.human
+# and parrot.handlers modules so they reload from the worktree sources.
+# This is required because pytest's plugin/conftest discovery may import
+# parrot modules from the editable install (.pth) before this conftest runs.
+_FEAT204_RELOAD = [
+    "parrot.human",
+    "parrot.human.models",
+    "parrot.human.tool",
+    "parrot.handlers.web_hitl",
+]
+for _mod in _FEAT204_RELOAD:
+    if _mod in sys.modules:
+        del sys.modules[_mod]
+# Also remove any sub-modules of parrot.human and parrot.handlers that
+# might hold stale references.
+for _key in list(sys.modules.keys()):
+    if _key.startswith("parrot.human.") or _key.startswith("parrot.handlers."):
+        del sys.modules[_key]
 
 # ── navigator.utils.file stubs (pre-FEAT-124 navigator compatibility) ──────
 # FEAT-124 added parrot.interfaces.file and parrot.tools.filemanager that
