@@ -211,6 +211,25 @@ import parrot.handlers.bots as m
 print(m.__file__)  # should contain "ai-parrot-server"
 ```
 
+## Known Issues / Potential Breaking Changes
+
+### `TaskStatus` name collision
+
+`parrot.services` and `parrot.a2a` both define a `TaskStatus` enum. They are
+**different types** and are not interchangeable. If you import both in the
+same module you must use explicit aliases to avoid shadowing:
+
+```python
+from parrot.services import TaskStatus as ServiceTaskStatus
+from parrot.a2a import TaskStatus as A2ATaskStatus
+```
+
+`ServiceTaskStatus` represents an internal scheduler/worker job state, while
+`A2ATaskStatus` is defined by the A2A protocol for remote task lifecycle
+tracking.
+
+---
+
 ### Q: Why is there a parrot.mcp.oauth_server alongside parrot.mcp.oauth?
 
 `parrot.mcp.oauth` (in core) contains the consumer-side token management:
