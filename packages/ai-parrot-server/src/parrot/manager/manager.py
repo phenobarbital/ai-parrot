@@ -40,7 +40,12 @@ from ..handlers.database import (
     DatabaseSchemasHandler,
 )
 from ..handlers.chat_interaction import ChatInteractionHandler
-from ..storage import ChatStorage
+from ..storage import (
+    ChatStorage,
+    ArtifactStore,
+    build_conversation_backend,
+    build_overflow_store,
+)
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
 from ..handlers.testing_handler import BotConfigTestHandler
@@ -1679,6 +1684,21 @@ Available documentation UIs:
 
     async def on_startup(self, app: web.Application) -> None:
         """On startup."""
+        # Initialize the ArtifactStore (FEAT-103) BEFORE loading bots.
+        # at_startup agents configure() during load_bots and may register
+        # toolkits (e.g. InfographicToolkit) that require app['artifact_store'];
+        # request-time handlers (agent, infographic, artifacts) read it too.
+        try:
+            backend = await build_conversation_backend()
+            await backend.initialize()
+            overflow = build_overflow_store()
+            app['artifact_store'] = ArtifactStore(
+                dynamodb=backend,
+                s3_overflow=overflow,
+            )
+            self.logger.info("ArtifactStore initialized and published to app['artifact_store']")
+        except Exception as exc:
+            self.logger.warning("ArtifactStore initialization failed: %s", exc)
         # configure all pre-configured chatbots:
         await self.load_bots(app)
         # Initialize BotConfigStorage and attach to app
@@ -1724,6 +1744,16 @@ Available documentation UIs:
         if chat_storage:
             await chat_storage.close()
             self.logger.info("ChatStorage closed")
+        # Close ArtifactStore backend
+        artifact_store = app.get('artifact_store')
+        if artifact_store is not None:
+            backend = getattr(artifact_store, '_db', None)
+            if backend is not None and hasattr(backend, 'close'):
+                try:
+                    await backend.close()
+                    self.logger.info("ArtifactStore backend closed")
+                except Exception as exc:
+                    self.logger.warning("ArtifactStore backend close failed: %s", exc)
 
     async def add_crew(
         self,
