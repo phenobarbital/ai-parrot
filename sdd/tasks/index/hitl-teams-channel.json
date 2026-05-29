@@ -89,7 +89,7 @@
       "feature_id": "FEAT-205",
       "feature": "hitl-teams-channel",
       "spec": "sdd/specs/hitl-teams-channel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -101,8 +101,8 @@
       "parallelism_notes": "Assembles Modules 1/3/4 into the HumanChannel contract; edits shared human/__init__.py (_LAZY_EXPORTS). Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:02:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-005-teams-channel-assembly.md"
+      "completed_at": "2026-05-29T16:20:59+00:00",
+      "file": "sdd/tasks/completed/TASK-005-teams-channel-assembly.md"
     },
     {
       "id": "TASK-006",

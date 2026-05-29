@@ -146,9 +146,12 @@ verify the contract, implement, move to `completed/`, update index.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
+**Notes**: TeamsHumanChannel fully implements HumanChannel ABC with channel_type="teams", render_reject_button=True.
+Inbound demux: activity.value.hitl=True → HumanResponse (respondent from activity.from_property.aad_object_id, never payload).
+Late-reply tombstone check implemented. ChannelRegistry.register("teams", TeamsHumanChannel) at import bottom.
+_LAZY_EXPORTS entry added to parrot/human/__init__.py. conftest.py updated to prepend ai-parrot core src path.
+11 tests pass. _LAZY_EXPORTS uses ._channels (not ._registry) in ChannelRegistry.
+**Deviations from spec**: none
