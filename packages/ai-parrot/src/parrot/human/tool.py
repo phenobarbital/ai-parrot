@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Type, Union
 from pydantic import BaseModel, Field
 from typing import Literal
 
+from ..core.exceptions import HumanInteractionInterrupt
 from ..tools.abstract import AbstractTool, AbstractToolArgsSchema
 from .models import (
     ChoiceOption,
@@ -15,6 +16,7 @@ from .models import (
     InteractionStatus,
     InteractionType,
     Severity,
+    WaitStrategy,
 )
 
 
@@ -176,6 +178,7 @@ class HumanTool(AbstractTool):
         default_channel: Optional[str] = "telegram",
         default_targets: Optional[List[str]] = None,
         source_agent: Optional[str] = None,
+        wait_strategy: WaitStrategy = WaitStrategy.BLOCK,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -183,6 +186,8 @@ class HumanTool(AbstractTool):
         self.default_channel = default_channel
         self.default_targets = list(default_targets) if default_targets else []
         self.source_agent = source_agent
+        # Wiring decision — never exposed to the LLM / HumanToolInput schema.
+        self.wait_strategy: WaitStrategy = wait_strategy
 
     def _resolve_channel(self) -> Optional[str]:
         """Return the configured channel or pick one from the manager.
@@ -331,6 +336,27 @@ class HumanTool(AbstractTool):
 
         channel = self._resolve_channel()
 
+        # SUSPEND: register the interaction non-blocking and raise an interrupt
+        # so the HTTP handler can serialise tool-loop state and return a paused
+        # envelope.  No in-process timer is relied upon in this mode.
+        if self.wait_strategy == WaitStrategy.SUSPEND:
+            interaction_id = await self.manager.request_human_input_async(
+                interaction, channel=channel,
+            )
+            self.logger.info(
+                "HumanTool SUSPEND: raising HumanInteractionInterrupt for "
+                "interaction %s (policy_id=%s)",
+                interaction_id,
+                policy_id,
+            )
+            raise HumanInteractionInterrupt(
+                prompt=question,
+                interaction_id=interaction_id,
+                policy_id=policy_id,
+            )
+
+        # BLOCK (default) and HOT_THEN_SUSPEND (reserved, treated as BLOCK):
+        # await the full response synchronously.
         try:
             result: InteractionResult = await self.manager.request_human_input(
                 interaction, channel=channel,

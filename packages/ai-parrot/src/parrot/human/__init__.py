@@ -15,6 +15,7 @@ import importlib
 from typing import TYPE_CHECKING, Optional
 
 from .models import (
+    WaitStrategy,
     InteractionType,
     InteractionStatus,
     TimeoutAction,
@@ -73,6 +74,7 @@ def get_default_human_manager() -> Optional[HumanInteractionManager]:
 
 __all__ = [
     # Models
+    "WaitStrategy",
     "InteractionType",
     "InteractionStatus",
     "TimeoutAction",
