@@ -1,5 +1,5 @@
 """
-Unit tests for parrot.skills.tools.ReadSkillAssetTool.
+Unit tests for the ``read_skill_asset`` tool of parrot.skills.tools.SkillFileToolkit.
 
 Tests the Tier 2 sandboxed asset reader for composite skills: valid reads,
 error paths (unknown skill, single-file skill, missing asset), path-traversal
@@ -9,7 +9,7 @@ import pytest
 
 from parrot.skills.file_registry import SkillFileRegistry
 from parrot.skills.models import SkillDefinition, SkillSource
-from parrot.skills.tools import ReadSkillAssetTool
+from parrot.skills.tools import SkillFileToolkit
 
 
 @pytest.fixture
@@ -50,8 +50,8 @@ def registry_with_skills(tmp_path):
 @pytest.mark.asyncio
 async def test_read_valid_asset(registry_with_skills):
     """Reading a bundled asset returns its content."""
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(skill_name="extract-pdf", asset="template.md")
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(skill_name="extract-pdf", asset="template.md")
     assert result.status == "done"
     assert "Report template" in result.result
     assert result.metadata["asset"] == "template.md"
@@ -60,8 +60,8 @@ async def test_read_valid_asset(registry_with_skills):
 @pytest.mark.asyncio
 async def test_unknown_skill(registry_with_skills):
     """Unknown skill name returns an error."""
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(skill_name="nope", asset="template.md")
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(skill_name="nope", asset="template.md")
     assert result.status == "error"
     assert "not found" in result.error.lower()
 
@@ -69,8 +69,8 @@ async def test_unknown_skill(registry_with_skills):
 @pytest.mark.asyncio
 async def test_single_file_skill_has_no_assets(registry_with_skills):
     """Single-file skill (no assets_dir) returns an error."""
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(skill_name="summarize", asset="anything.md")
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(skill_name="summarize", asset="anything.md")
     assert result.status == "error"
     assert "single-file" in result.error.lower()
 
@@ -78,8 +78,8 @@ async def test_single_file_skill_has_no_assets(registry_with_skills):
 @pytest.mark.asyncio
 async def test_missing_asset(registry_with_skills):
     """Requesting a non-existent asset returns an error."""
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(skill_name="extract-pdf", asset="ghost.md")
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(skill_name="extract-pdf", asset="ghost.md")
     assert result.status == "error"
     assert "not found" in result.error.lower()
 
@@ -89,8 +89,8 @@ async def test_path_traversal_rejected(registry_with_skills, tmp_path):
     """An asset path escaping assets_dir is rejected before any read."""
     # Secret lives outside the skill directory
     (tmp_path / "secret.txt").write_text("top secret")
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(
         skill_name="extract-pdf", asset="../secret.txt"
     )
     assert result.status == "error"
@@ -100,15 +100,15 @@ async def test_path_traversal_rejected(registry_with_skills, tmp_path):
 @pytest.mark.asyncio
 async def test_skill_md_is_not_readable(registry_with_skills):
     """SKILL.md is reserved for load_skill, not this tool."""
-    tool = ReadSkillAssetTool(file_registry=registry_with_skills)
-    result = await tool._execute(skill_name="extract-pdf", asset="SKILL.md")
+    toolkit = SkillFileToolkit(file_registry=registry_with_skills)
+    result = await toolkit.read_skill_asset(skill_name="extract-pdf", asset="SKILL.md")
     assert result.status == "error"
     assert "load_skill" in result.error
 
 
 @pytest.mark.asyncio
 async def test_oversized_asset_is_truncated(tmp_path):
-    """Assets larger than max_bytes are truncated with a notice."""
+    """Assets larger than max_asset_bytes are truncated with a notice."""
     composite_dir = tmp_path / "big-skill"
     composite_dir.mkdir()
     (composite_dir / "SKILL.md").write_text("body")
@@ -126,8 +126,8 @@ async def test_oversized_asset_is_truncated(tmp_path):
         assets_dir=composite_dir,
     ))
 
-    tool = ReadSkillAssetTool(file_registry=registry, max_bytes=1000)
-    result = await tool._execute(skill_name="big-skill", asset="data.txt")
+    toolkit = SkillFileToolkit(file_registry=registry, max_asset_bytes=1000)
+    result = await toolkit.read_skill_asset(skill_name="big-skill", asset="data.txt")
     assert result.status == "done"
     assert "truncated" in result.result
     assert result.result.count("x") == 1000
