@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-29T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-29T16:40:22+00:00",
   "tasks": [
     {
       "id": "TASK-1379",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Core ai-parrot only (human/models.py, tool.py, __init__.py). Shares no files with TASK-1380 (server). Foundational for TASK-1381/1382; can start immediately in parallel with TASK-1380.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1379-waitstrategy-humantool-suspend.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1379-waitstrategy-humantool-suspend.md"
     },
     {
       "id": "TASK-1380",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "New isolated module in ai-parrot-server (human/suspended_store.py). No dependency on TASK-1379; shares no files. Can run concurrently with TASK-1379 in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1380-suspended-execution-store.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1380-suspended-execution-store.md"
     },
     {
       "id": "TASK-1381",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Imports WaitStrategy + HumanTool.wait_strategy from TASK-1379; must follow it.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1381-suspending-web-human-tool.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1381-suspending-web-human-tool.md"
     },
     {
       "id": "TASK-1382",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Edits AgentTalk.post in handlers/agent.py (shared with TASK-1383) and consumes the store (TASK-1380) + suspend tool (TASK-1381).",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1382-agenttalk-suspend-catch-paused-envelope.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1382-agenttalk-suspend-catch-paused-envelope.md"
     },
     {
       "id": "TASK-1383",
@@ -91,7 +91,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Edits the SAME AgentTalk.post as TASK-1382 (must follow it to avoid conflict) and uses the store (TASK-1380).",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1383-agenttalk-resume-branch.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1383-agenttalk-resume-branch.md"
     },
     {
       "id": "TASK-1384",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "End-to-end across all prior tasks; must run last.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1384-hitl-web-integration-tests.md"
+      "completed_at": "2026-05-29T16:40:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1384-hitl-web-integration-tests.md"
     }
   ]
 }
