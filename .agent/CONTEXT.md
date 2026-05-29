@@ -43,6 +43,35 @@ Inherit `BaseLoader`, implement `async def load() -> list[Document]`
 - PgVector: `parrot/vectorstores/pgvector.py` — primary store
 - ArangoDB: graph-based, in development
 
+### Skills
+Location: `parrot/skills/`
+Lightweight, on-demand behavioral instructions an agent can load (two-tier:
+a static `<available_skills>` prompt index + on-demand body retrieval).
+
+Skill **discovery** (`SkillsDirectoryLoader` / `SkillFileRegistry`) recognises
+both layouts per directory:
+- **single-file**: `{dir}/{name}.md`
+- **composite**: `{dir}/{name}/SKILL.md` + adjacent asset files (templates,
+  scripts, examples) exposed via `SkillDefinition.assets_dir`.
+
+The agent-facing tools are grouped into **two `AbstractToolkit`s** (FEAT-207),
+each initialized once with its shared registry — never instantiate skill tools
+individually:
+
+- **`SkillFileToolkit`** — file-based skills, shares a `SkillFileRegistry`.
+  Tools: `load_skill` (body + asset manifest), `read_skill_asset` (sandboxed
+  reader for a composite skill's bundled asset; path-traversal rejected,
+  `SKILL.md` reserved for `load_skill`), `save_learned_skill` (only when a
+  `learned_dir` is configured).
+- **`SkillRegistryToolkit`** — DB-backed skill registry, shares a
+  `SkillRegistry` store + `agent_id`. Tools: `search_skills`, `read_skill`,
+  `list_skills`, and the write tools `document_skill` / `update_skill` (exposed
+  only when `include_write_tools=True`).
+
+`create_skill_tools(registry, agent_id, include_write_tools, file_registry,
+learned_dir)` is the factory: it instantiates both toolkits and concatenates
+their `get_tools()`. `SkillRegistryMixin` wires them into a bot automatically.
+
 ---
 
 ## Key Patterns to Follow
@@ -99,7 +128,10 @@ parrot/
 ├── clients/          # LLM provider wrappers (AbstractClient subclasses)
 ├── bots/             # Bot and Agent implementations
 │   └── orchestration/  # AgentCrew, DAG execution
-├── tools/            # Tool definitions and toolkits
+├── tools/            # Tool definitions and toolkits (AbstractTool, AbstractToolkit)
+├── skills/           # On-demand skills: file/composite discovery + two
+│                     #   AbstractToolkits — SkillFileToolkit (file-based) and
+│                     #   SkillRegistryToolkit (DB store). See Core Abstractions.
 ├── loaders/          # Document loaders for RAG
 ├── embeddings/       # base/registry/catalog/matryoshka (base classes stay in core)
 │                     #   concrete backends (google/huggingface/openai) ship from
