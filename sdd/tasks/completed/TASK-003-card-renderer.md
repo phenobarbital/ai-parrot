@@ -129,9 +129,11 @@ Standard SDD flow. Verify the contract, implement, move to `completed/`, update 
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
+**Notes**: All 6 InteractionTypes render Adaptive Cards with interaction_id + hitl=True in every Action.Submit data.
+OQ-5 resolved: form_schema field types map to Input.Text/Number/Toggle/ChoiceSet/Date/Time. Policy field on HumanInteraction
+is EscalationPolicy object (not str) — tests updated accordingly. 20 tests pass. Import isolation confirmed (hitl_cards
+does not import aiogram).
+**Deviations from spec**: none

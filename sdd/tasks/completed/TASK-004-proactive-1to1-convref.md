@@ -134,9 +134,12 @@ the contract, implement, move to `completed/`, update index.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
+**Notes**: OQ-2 resolved: botbuilder v4.17.1 API confirmed — continue_conversation(ref, callback, bot_app_id) for warm path;
+create_conversation(bot_app_id, callback, ConversationParameters(is_group=False, bot=ChannelAccount, members=[ChannelAccount],
+tenant_id=tenant), service_url=...) for cold path. ConversationReference serialised via .serialize()/.deserialize() (JSON).
+MicrosoftAppCredentials.trust_service_url() called before proactive sends. Activity field is 'from_property' not 'from_'.
+12 tests pass. ProactiveDeliveryError raised on cold-create failure (OQ-COLD).
+**Deviations from spec**: none

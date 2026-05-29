@@ -138,9 +138,15 @@ then move this file to `sdd/tasks/completed/` and update the index.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
 **Notes**:
-**Deviations from spec**: none | describe if any
+OQ-VENDOR confirmed: The private azure_teambots fork provides AdapterHandler(CloudAdapter) (mirrors existing adapter.py),
+a basic GraphClient (no Pydantic, no mail-filter fallback — used as reference only), and CardBot (not HITL-specific).
+The fork's __init__.py exports only AzureBots. Created hitl_adapter.py with HitlCloudAdapter(CloudAdapter) + HitlBotConfig
+using the same ConfigurationBotFrameworkAuthentication + BotFrameworkAdapterSettings pattern.
+Emoji clash: botbuilder-dialogs==4.17.1 pins emoji==1.7.0; aiogram 3.28.2 has no emoji dependency. Added
+[tool.uv.override-dependencies] emoji = ["emoji==1.7.0"] to pyproject.toml. All 4 import isolation tests pass.
+Created conftest.py to prepend worktree src to sys.path for test discovery during development.
+**Deviations from spec**: none
