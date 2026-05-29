@@ -85,12 +85,7 @@ import secrets
 import ssl
 import time
 import uuid
-
-# Maximum allowed age (in seconds) for an HMAC-signed request.
-# Requests with a timestamp outside this window are rejected to prevent replay attacks.
-HMAC_TIMESTAMP_WINDOW: int = 300  # 5 minutes
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from functools import wraps
@@ -99,8 +94,11 @@ from aiohttp import web
 import aiohttp
 from navconfig.logging import logging
 if TYPE_CHECKING:
-    from parrot.a2a.server import A2AServer
     from parrot.a2a.client import A2AClient
+
+# Maximum allowed age (in seconds) for an HMAC-signed request.
+# Requests with a timestamp outside this window are rejected to prevent replay attacks.
+HMAC_TIMESTAMP_WINDOW: int = 300  # 5 minutes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
