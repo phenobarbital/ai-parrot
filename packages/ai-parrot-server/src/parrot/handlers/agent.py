@@ -1354,22 +1354,12 @@ class AgentTalk(BaseView):
                 status=503,
             )
 
-        # ── 4. is_valid_respondent gate ───────────────────────────────────
-        if not await hitl_manager.is_valid_respondent(interaction_id, respondent):
-            self.logger.warning(
-                "AgentTalk resume: respondent '%s' rejected for interaction %s",
-                respondent,
-                interaction_id,
-            )
-            return web.json_response(
-                {"status": "error", "message": "forbidden: not the intended respondent"},
-                status=403,
-            )
-
-        # ── 5. Three-state TTL/tombstone check ────────────────────────────
+        # ── 4. Three-state TTL/tombstone check (BEFORE respondent gate) ─────
         #   - hitl:result exists  → already answered (idempotency tombstone)
-        #   - hitl:interaction exists, no result → alive → proceed
-        #   - neither exists → expired
+        #   - hitl:interaction exists, no result → alive → proceed to gate
+        #   - neither exists → expired (fast informational reply)
+        # Checking TTL first lets expired interactions return "expired" rather
+        # than "forbidden" (which would be misleading when the key just expired).
         existing_result = await hitl_manager.get_result(interaction_id)
         if existing_result is not None:
             self.logger.info(
@@ -1390,6 +1380,18 @@ class AgentTalk(BaseView):
             return web.json_response(
                 {"status": "expired", "interaction_id": interaction_id},
                 status=200,
+            )
+
+        # ── 5. is_valid_respondent gate (after TTL check, before write) ───
+        if not await hitl_manager.is_valid_respondent(interaction_id, respondent):
+            self.logger.warning(
+                "AgentTalk resume: respondent '%s' rejected for interaction %s",
+                respondent,
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "forbidden: not the intended respondent"},
+                status=403,
             )
 
         # ── 6. Record the response in the HITL ledger ─────────────────────
