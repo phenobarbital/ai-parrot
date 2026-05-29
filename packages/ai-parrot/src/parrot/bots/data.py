@@ -1190,6 +1190,56 @@ class PandasAgent(BasicAgent):
             "reformat call (~10s latency saved per query).\n"
         )
 
+    # Meta / capability / descriptive questions that should be answered
+    # directly in prose, WITHOUT forcing the PandasAgentResponse data schema
+    # or a data-analysis tool loop. Kept deliberately specific (multi-word
+    # phrases) so genuine analytical queries do not match.
+    _CONVERSATIONAL_PATTERNS = re.compile(
+        r"""(?:^|\b)(?:
+            what\s+(?:can|are)\s+you\s+(?:do|able\s+to\s+do)        |
+            what\s+do\s+you\s+do                                     |
+            what\s+are\s+your\s+(?:capabilities|abilities|skills)    |
+            what\s+can\s+you\s+help\s+(?:me\s+)?with                 |
+            how\s+(?:can|do)\s+you\s+help                            |
+            who\s+are\s+you                                          |
+            what\s+(?:tools|datasets|data)\s+(?:do\s+you\s+have|are\s+available) |
+            qu[eé]\s+(?:puedes|sabes)\s+hacer                        |
+            qu[eé]\s+eres                                            |
+            qui[eé]n\s+eres                                          |
+            cu[aá]les\s+son\s+tus\s+(?:capacidades|habilidades)      |
+            en\s+qu[eé]\s+(?:me\s+)?puedes\s+ayudar                  |
+            para\s+qu[eé]\s+sirves                                   |
+            qu[eé]\s+(?:herramientas|datasets|datos)\s+tienes
+        )(?:\b|$)""",
+        re.IGNORECASE | re.VERBOSE,
+    )
+    _GREETING_PATTERNS = re.compile(
+        r"^\s*(?:hi|hello|hey|hola|buenas|buenos\s+d[ií]as|good\s+morning|"
+        r"help|ayuda|ping|test)\b[\s!.?]*$",
+        re.IGNORECASE,
+    )
+
+    def _is_conversational_query(self, question: str) -> bool:
+        """Detect meta / capability / greeting questions answerable in prose.
+
+        These should NOT be coerced into the ``PandasAgentResponse`` data
+        schema or a data-analysis tool loop — doing so makes the model treat
+        them as analysis tasks (dumping data or spiralling in tool calls).
+
+        Args:
+            question: The raw user question.
+
+        Returns:
+            ``True`` when the question is conversational / descriptive and
+            should be answered directly without forced structured output.
+        """
+        if not question or not question.strip():
+            return False
+        q = question.strip()
+        if self._GREETING_PATTERNS.match(q):
+            return True
+        return bool(self._CONVERSATIONAL_PATTERNS.search(q))
+
     async def ask(
         self,
         question: str,
@@ -1366,6 +1416,25 @@ class PandasAgent(BasicAgent):
                 max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
+
+                # Conversational / meta questions (capabilities, greetings,
+                # "what can you do") are answered directly in prose. Forcing
+                # the PandasAgentResponse data schema on them makes the model
+                # treat them as analysis tasks — either dumping data or
+                # spiralling in a tool loop. Skip forced structured output so
+                # the model replies naturally; the grounding layer's
+                # descriptive-question carve-out keeps it from inventing data.
+                if (
+                    return_structured
+                    and structured_output is None
+                    and self._is_conversational_query(question)
+                ):
+                    self.logger.info(
+                        "Conversational/meta query detected — skipping forced "
+                        "structured output for: %r",
+                        question[:80],
+                    )
+                    return_structured = False
 
                 # Handle structured output
                 if structured_output:

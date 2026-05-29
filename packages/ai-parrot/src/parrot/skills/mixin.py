@@ -9,7 +9,7 @@ Provides automatic skill management integration:
 - Skill trigger middleware for /trigger patterns
 - Directory-based skill discovery (FEAT-188)
 - Static <available_skills> prompt layer injection (FEAT-188)
-- On-demand LoadSkillTool registration (FEAT-188)
+- On-demand SkillFileToolkit registration (FEAT-188)
 """
 from __future__ import annotations
 import inspect
@@ -40,8 +40,9 @@ class SkillRegistryMixin:
     - Static ``<available_skills>`` XML layer injected into system prompt via
       :func:`~parrot.skills.prompt.render_skills_prompt_layer` when
       :attr:`inject_skills_into_prompt` is ``True`` (FEAT-188).
-    - :class:`~parrot.skills.tools.LoadSkillTool` registration for on-demand
-      skill body retrieval (FEAT-188).
+    - :class:`~parrot.skills.tools.SkillFileToolkit` registration exposing
+      ``load_skill`` / ``read_skill_asset`` / ``save_learned_skill`` for
+      on-demand skill body and asset retrieval (FEAT-188).
 
     Usage::
 
@@ -139,13 +140,14 @@ class SkillRegistryMixin:
     async def _configure_skill_file_registry(self) -> None:
         """Configure file-based skill registry and trigger middleware.
 
-        Resolves ``AGENTS_DIR/{agent_id}/skills/`` and loads all .md skill files.
+        Resolves ``AGENTS_DIR/{agent_id}/skills/`` and loads skills in both
+        single-file (``{name}.md``) and composite (``{name}/SKILL.md``) layouts.
         Registers SkillTriggerMiddleware in the bot's prompt pipeline.
 
         When ``agents_dir`` is None the original agents-dir loading block is
         skipped but the FEAT-188 extensions (directory discovery, prompt layer
-        injection, LoadSkillTool registration) still run whenever ``skill_paths``
-        is non-empty.
+        injection, SkillFileToolkit registration) still run whenever
+        ``skill_paths`` is non-empty.
         """
         from .file_registry import SkillFileRegistry
         from .middleware import create_skill_trigger_middleware
@@ -231,21 +233,28 @@ class SkillRegistryMixin:
                         len(self._skill_file_registry.list_skills()),
                     )
 
-        # --- FEAT-188: LoadSkillTool registration ---
+        # --- FEAT-188: file-based skill tools registration ---
         if skill_paths and self._skill_file_registry is not None:
-            from .tools import LoadSkillTool
-            load_tool = LoadSkillTool(file_registry=self._skill_file_registry)
+            from .tools import SkillFileToolkit
+            toolkit = SkillFileToolkit(
+                file_registry=self._skill_file_registry,
+                learned_dir=self._skill_file_registry.learned_dir,
+            )
+            skill_tools = toolkit.get_tools()
             tool_manager = getattr(self, 'tool_manager', None)
             if tool_manager and hasattr(tool_manager, 'register_tool'):
-                result = tool_manager.register_tool(load_tool)
-                if inspect.isawaitable(result):
-                    await result
+                for tool in skill_tools:
+                    result = tool_manager.register_tool(tool)
+                    if inspect.isawaitable(result):
+                        await result
             elif hasattr(self, '_tools'):
                 if isinstance(self._tools, list):
-                    self._tools.append(load_tool)
+                    self._tools.extend(skill_tools)
                 else:
-                    self._tools = list(self._tools) + [load_tool]
-            logger.debug("LoadSkillTool registered")
+                    self._tools = list(self._tools) + skill_tools
+            logger.debug(
+                "SkillFileToolkit registered (%d tools)", len(skill_tools)
+            )
 
     async def save_learned_skill(
         self,

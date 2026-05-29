@@ -1,0 +1,49 @@
+{
+  "feature": "financial-variance-contract",
+  "feature_id": "FEAT-206",
+  "spec": "sdd/specs/FEAT-206-financial-variance-contract.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-05-29T00:00:00Z",
+  "completed_at": "2026-05-29T16:36:36+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1385",
+      "slug": "flatten-financial-variance-template",
+      "title": "Flatten financial_variance template to 9 positional slots (+ tests)",
+      "feature_id": "FEAT-206",
+      "feature": "financial-variance-contract",
+      "spec": "sdd/specs/FEAT-206-financial-variance-contract.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — must land before TASK-1386. Edits the template module + tests; no shared files, but the downstream payload (TASK-1386) only validates once this flat contract exists.",
+      "assigned_to": null,
+      "started_at": "2026-05-29T16:28:58+00:00",
+      "completed_at": "2026-05-29T16:33:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1385-flatten-financial-variance-template.md"
+    },
+    {
+      "id": "TASK-1386",
+      "slug": "align-daily-financial-projection-compute",
+      "title": "Align daily_financial_projection/compute.py to the flat 9-block contract",
+      "feature_id": "FEAT-206",
+      "feature": "financial-variance-contract",
+      "spec": "sdd/specs/FEAT-206-financial-variance-contract.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1385"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches agents/troc_finance/skills/daily_financial_projection/compute.py only (file-disjoint from TASK-1385), but its emitted payload must match the new flat contract, so it runs after TASK-1385.",
+      "assigned_to": null,
+      "started_at": "2026-05-29T16:28:58+00:00",
+      "completed_at": "2026-05-29T16:36:36+00:00",
+      "file": "sdd/tasks/completed/TASK-1386-align-daily-financial-projection-compute.md"
+    }
+  ]
+}

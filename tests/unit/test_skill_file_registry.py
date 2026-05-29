@@ -53,6 +53,54 @@ def test_get_by_name_empty_registry(empty_registry):
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_load_discovers_composite_skill(tmp_path):
+    """load() discovers both single-file and composite {name}/SKILL.md layouts."""
+    # Single-file skill
+    (tmp_path / "summarize.md").write_text(
+        "---\nname: summarize\ndescription: Summarize text\n"
+        "triggers:\n  - /resumen\n---\nSummarize the input."
+    )
+    # Composite skill with an adjacent asset
+    composite = tmp_path / "extract-pdf"
+    composite.mkdir()
+    (composite / "SKILL.md").write_text(
+        "---\nname: extract-pdf\ndescription: Extract tables\n"
+        "triggers:\n  - /extract\n---\nExtract tables from PDF."
+    )
+    (composite / "script.py").write_text("# helper")
+
+    registry = SkillFileRegistry(skills_dir=tmp_path)
+    await registry.load()
+
+    names = {s.name for s in registry.list_skills()}
+    assert names == {"summarize", "extract-pdf"}
+
+    composite_skill = registry.get_by_name("extract-pdf")
+    assert composite_skill.assets_dir is not None
+    assert composite_skill.assets_dir.name == "extract-pdf"
+    assert registry.get_by_name("summarize").assets_dir is None
+
+
+@pytest.mark.asyncio
+async def test_load_excludes_learned_subdir_as_composite(tmp_path):
+    """The learned/ subdir is scanned separately, never as a composite skill."""
+    learned = tmp_path / "learned"
+    learned.mkdir()
+    # A learned single-file skill lives inside learned/
+    (learned / "remember.md").write_text(
+        "---\nname: remember\ndescription: Recall a fact\n"
+        "triggers:\n  - /remember\nsource: learned\n---\nRecall."
+    )
+
+    registry = SkillFileRegistry(skills_dir=tmp_path)
+    await registry.load()
+
+    names = {s.name for s in registry.list_skills()}
+    # Only the learned skill is registered; "learned" itself is not a skill
+    assert names == {"remember"}
+
+
 def test_get_by_name_returns_correct_skill(tmp_path):
     """get_by_name returns the exact skill object that was added."""
     registry = SkillFileRegistry(skills_dir=tmp_path)

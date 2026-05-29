@@ -7,7 +7,7 @@ from aiohttp import web
 from parrot.tools.abstract import AbstractTool
 from parrot.mcp.config import MCPServerConfig, AuthMethod
 from parrot.mcp.adapter import MCPToolAdapter
-from parrot.mcp.oauth import OAuthAuthorizationServer, APIKeyStore, ExternalOAuthValidator
+from parrot.mcp.oauth_server import OAuthAuthorizationServer, APIKeyStore, ExternalOAuthValidator
 from parrot.mcp.resources import MCPResource
 
 class MCPServerBase(ABC):

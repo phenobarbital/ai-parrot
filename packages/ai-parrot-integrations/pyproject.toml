@@ -41,6 +41,7 @@ telegram = [
 msteams = [
     "azure-teambots>=0.1.1",
     "parrot-formdesigner",
+    "redis[asyncio]>=5.0",
 ]
 whatsapp = [
     "pywa>=3.8.0",
@@ -90,3 +91,10 @@ namespaces = true
 [tool.uv.sources]
 ai-parrot = { workspace = true }
 parrot-formdesigner = { workspace = true }
+
+# Resolve botbuilder-dialogs↔aiogram emoji version clash (FEAT-205 / D3).
+# botbuilder-dialogs pins emoji==1.7.0; aiogram>=3.12 does not declare
+# a conflicting emoji requirement (tested with aiogram 3.28.2), so pinning
+# to 1.7.0 satisfies both. Revisit if aiogram adds an emoji dependency.
+[tool.uv.override-dependencies]
+emoji = ["emoji==1.7.0"]

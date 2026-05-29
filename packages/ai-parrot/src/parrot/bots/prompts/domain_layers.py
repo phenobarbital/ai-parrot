@@ -98,6 +98,19 @@ If information is missing, state "Data not available" rather than estimating.
 8. **Entity names**: Reproduce names, ids, and categorical values exactly as
    they appear in the data (case, spacing, punctuation). Do not normalize or
    translate them.
+
+## Scope of these rules
+The anti-hallucination rules above govern QUESTIONS ABOUT THE DATA — figures,
+counts, aggregations, rankings, trends, and column/row values. They do NOT
+require you to run code or inspect dataframes for requests that have no
+tabular answer:
+- Descriptive or meta questions about yourself, your capabilities, the tools
+  you expose, or which datasets/columns exist — answer these directly from the
+  context already provided (dataframe schema, tool list, dataset descriptions).
+- Greetings, clarifications, and questions that legitimately produce no data —
+  reply in plain prose and leave any data field null.
+Do NOT enter a `df.head()` / `.unique()` inspection loop to "ground" a request
+that is not asking for data. If a request needs no data, answer it and stop.
 </grounding_policy>""",
 )
 

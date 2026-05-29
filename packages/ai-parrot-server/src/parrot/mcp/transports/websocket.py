@@ -10,7 +10,7 @@ import aiohttp
 
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
-from parrot.mcp.oauth import OAuthRoutesMixin
+from parrot.mcp.oauth_server import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 
 

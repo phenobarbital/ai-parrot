@@ -2,7 +2,8 @@
 Filesystem-based skill registry with eager loading.
 
 Scans AGENTS_DIR/{agent_id}/skills/ (authored) and skills/learned/ (LLM-generated)
-at configure time, parses .md files, validates, and indexes by trigger name.
+at configure time, discovers both single-file (``{name}.md``) and composite
+(``{name}/SKILL.md``) skill layouts, validates, and indexes by trigger name.
 """
 import asyncio
 import logging
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .models import SkillDefinition
-from .parsers import parse_skill_file
+from .parsers import discover_skills_in_dir
 
 
 class SkillFileRegistry:
@@ -66,24 +67,21 @@ class SkillFileRegistry:
         directory: Path,
         exclude_subdir: Optional[str] = None,
     ) -> List[SkillDefinition]:
-        """Scan a directory for .md skill files, returning parsed definitions."""
-        skills: List[SkillDefinition] = []
-        if not directory.exists() or not directory.is_dir():
-            return skills
+        """Discover single-file and composite skills in ``directory``.
 
-        for md_file in sorted(directory.glob("*.md")):
-            if exclude_subdir and md_file.parent.name == exclude_subdir:
-                continue
-            try:
-                skill = parse_skill_file(md_file)
-                skills.append(skill)
-            except Exception as exc:
-                self.logger.warning(
-                    "Skipping malformed skill file '%s': %s",
-                    md_file,
-                    exc,
-                )
-        return skills
+        Delegates to :func:`~parrot.skills.parsers.discover_skills_in_dir` so
+        the per-agent registry honours the same per-directory contract as
+        :class:`~parrot.skills.loader.SkillsDirectoryLoader`: both
+        ``{name}.md`` and ``{name}/SKILL.md`` layouts are recognised. The
+        ``exclude_subdir`` (typically ``"learned"``) is skipped so the learned
+        subdirectory is not double-scanned as a composite skill.
+        """
+        exclude_names = {exclude_subdir} if exclude_subdir else set()
+        return discover_skills_in_dir(
+            directory,
+            logger=self.logger,
+            exclude_names=exclude_names,
+        )
 
     def _register(self, skill: SkillDefinition) -> None:
         """Register a skill by name and all its triggers."""

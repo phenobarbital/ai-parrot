@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 __all__ = [
+    "WaitStrategy",
     "InteractionType",
     "InteractionStatus",
     "TimeoutAction",
@@ -26,6 +27,26 @@ __all__ = [
     "HumanResponse",
     "InteractionResult",
 ]
+
+class WaitStrategy(str, Enum):
+    """Strategy that controls how HumanTool waits for the human response.
+
+    Attributes:
+        BLOCK: Default — registers an in-memory asyncio.Future and blocks
+            the current coroutine until the human responds (or timeout).
+            Suitable for live-channel deployments (Telegram, WebSocket long-poll).
+        SUSPEND: Stateless web path — persists the interaction to Redis and
+            raises HumanInteractionInterrupt immediately, allowing the HTTP
+            handler to serialise tool-loop state and return a ``paused``
+            envelope.  No in-process timer is relied upon.
+        HOT_THEN_SUSPEND: Reserved for future live-channel + REST hybrid use.
+            Currently treated the same as BLOCK.
+    """
+
+    BLOCK = "block"
+    SUSPEND = "suspend"
+    HOT_THEN_SUSPEND = "hot"
+
 
 # Severity ordering for comparison
 _SEVERITY_ORDER: Dict[str, int] = {

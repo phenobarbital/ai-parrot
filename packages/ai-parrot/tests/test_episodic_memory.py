@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
+from parrot.bots.data import PandasAgentResponse
 from parrot.memory.episodic.models import (
     EpisodeCategory,
     EpisodeOutcome,
@@ -1106,6 +1107,37 @@ class TestMixinIntegration:
         )
         await asyncio.sleep(0.05)
         mock_store.record_tool_episode.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mixin_record_ask_serializes_pydantic_response(self) -> None:
+        """_safe_record_ask records Pydantic responses without subscripting them."""
+
+        class TestBot(EpisodicMemoryMixin):
+            name = "test-bot"
+            enable_episodic_memory = True
+
+        bot = TestBot()
+        mock_store = AsyncMock()
+        mock_store.record_episode = AsyncMock()
+        bot._episodic_store = mock_store
+        response = PandasAgentResponse(
+            explanation="Ventas agrupadas por tienda.",
+            data_variable="sales_by_store",
+        )
+        namespace = MemoryNamespace(
+            tenant_id="default",
+            agent_id="test-bot",
+        )
+
+        await bot._safe_record_ask(
+            namespace=namespace,
+            query="Resume las ventas por tienda",
+            response=response,
+        )
+
+        mock_store.record_episode.assert_awaited_once()
+        kwargs = mock_store.record_episode.await_args.kwargs
+        assert kwargs["action_taken"] == "Responded: Ventas agrupadas por tienda."
 
     @pytest.mark.asyncio
     async def test_mixin_configure(self) -> None:

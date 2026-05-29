@@ -387,40 +387,49 @@ TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
         ),
         BlockSpec(
             block_type=BlockType.HERO_CARD,
-            description=(
-                "Exactly 4 KPI cards in this order: (1) headline metric current value, "
-                "(2) period variance with trend, (3) secondary metric current value, "
-                "(4) day-over-day delta with trend"
-            ),
-            min_items=4,
-            max_items=4,
+            description="Card 1 — headline metric current value (e.g. total revenue)",
+        ),
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            description="Card 2 — period variance vs. baseline, with trend + trend_value",
+        ),
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            description="Card 3 — secondary metric current value (e.g. EBITDA)",
+        ),
+        BlockSpec(
+            block_type=BlockType.HERO_CARD,
+            description="Card 4 — day-over-day delta, with trend + trend_value",
         ),
         BlockSpec(
             block_type=BlockType.CHART,
             description=(
-                "Two bar charts side-by-side showing day-over-day change for the two "
-                "headline metrics. BOTH charts MUST set layout='half' so the frontend "
-                "renders them in a 2-column grid. Use chart_type='bar' and one series each."
+                "Bar chart — day-over-day change of the headline metric. "
+                "MUST set layout='half'."
             ),
-            min_items=2,
-            max_items=2,
             constraints={"chart_type": "bar", "layout": "half"},
         ),
         BlockSpec(
             block_type=BlockType.CHART,
             description=(
-                "Cumulative trend line chart across the same date range, full width "
-                "(layout='full' or omitted). Single series, smooth line."
+                "Bar chart — day-over-day change of the secondary metric. "
+                "MUST set layout='half'."
             ),
-            min_items=1,
-            max_items=1,
+            constraints={"chart_type": "bar", "layout": "half"},
+        ),
+        BlockSpec(
+            block_type=BlockType.CHART,
+            description=(
+                "Line chart — cumulative/daily total of the headline metric, "
+                "full width. layout='full'."
+            ),
             constraints={"chart_type": "line", "layout": "full"},
         ),
         BlockSpec(
             block_type=BlockType.SUMMARY,
             description=(
-                "Executive summary (2-4 sentences) that ties the 4 KPIs and the trend "
-                "together. Call out the largest delta and its likely driver."
+                "Executive summary (2–4 sentences) tying the 4 KPIs and the "
+                "trend together."
             ),
         ),
     ],

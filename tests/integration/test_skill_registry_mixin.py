@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from parrot.skills.mixin import SkillRegistryMixin
-from parrot.skills.tools import LoadSkillTool
 
 
 # ---------------------------------------------------------------------------

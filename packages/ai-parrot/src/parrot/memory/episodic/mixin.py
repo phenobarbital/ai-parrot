@@ -9,6 +9,7 @@ as an opt-in mixin for bot classes. Hooks into the ask() flow to:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,47 @@ _TRIVIAL_PATTERNS = frozenset({
     "hello", "hi", "hey", "thanks", "thank you", "bye", "goodbye",
     "ok", "okay", "yes", "no", "sure", "help",
 })
+
+
+def _stringify_episode_response(
+    response: Any,
+    max_length: int = 200,
+) -> str:
+    """Convert arbitrary ask responses into bounded episode text."""
+    if response is None:
+        return ""
+
+    if isinstance(response, str):
+        return response[:max_length]
+
+    if isinstance(response, bytes):
+        return response.decode("utf-8", errors="replace")[:max_length]
+
+    if isinstance(response, (dict, list, tuple, set)):
+        return json.dumps(response, default=str, ensure_ascii=False)[:max_length]
+
+    for attr in ("content", "explanation"):
+        value = getattr(response, attr, None)
+        if value:
+            return _stringify_episode_response(value, max_length=max_length)
+
+    for method_name in ("model_dump_json", "json"):
+        method = getattr(response, method_name, None)
+        if callable(method):
+            try:
+                return str(method())[:max_length]
+            except Exception:
+                pass
+
+    for method_name in ("model_dump", "dict"):
+        method = getattr(response, method_name, None)
+        if callable(method):
+            try:
+                return json.dumps(method(), default=str, ensure_ascii=False)[:max_length]
+            except Exception:
+                pass
+
+    return str(response)[:max_length]
 
 
 class EpisodicMemoryMixin:
@@ -334,7 +376,7 @@ class EpisodicMemoryMixin:
     async def _record_post_ask(
         self,
         query: str,
-        response: str | None = None,
+        response: Any | None = None,
         user_id: str | None = None,
         session_id: str | None = None,
         room_id: str | None = None,
@@ -376,14 +418,15 @@ class EpisodicMemoryMixin:
         self,
         namespace: MemoryNamespace,
         query: str,
-        response: str | None,
+        response: Any | None,
     ) -> None:
         """Safe wrapper for recording conversation episodes."""
         try:
+            response_text = _stringify_episode_response(response)
             await self._episodic_store.record_episode(
                 namespace=namespace,
                 situation=query[:500],
-                action_taken=f"Responded: {(response or '')[:200]}",
+                action_taken=f"Responded: {response_text}",
                 outcome=EpisodeOutcome.SUCCESS,
                 category=EpisodeCategory.QUERY_RESOLUTION,
                 importance=3,
@@ -406,7 +449,9 @@ class EpisodicMemoryMixin:
         Overrides the no-op BaseBot._on_post_ask so that episodic memory
         recording happens automatically when the mixin is active.
         """
-        content = getattr(response, "content", None) or str(response)[:200]
+        content = getattr(response, "content", None)
+        if not content:
+            content = response
         room_id = kwargs.get("room_id")
         await self._record_post_ask(
             query=question,
