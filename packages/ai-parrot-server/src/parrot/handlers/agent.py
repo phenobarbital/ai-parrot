@@ -44,11 +44,56 @@ from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+# FEAT-204: HumanInteractionInterrupt lives in core.exceptions (no parrot.human dependency)
+from parrot.core.exceptions import HumanInteractionInterrupt
 if TYPE_CHECKING:
     from ..manager import BotManager
 
 # FEAT-146: Web HITL ContextVar helpers
 from .web_hitl import set_current_web_session, reset_current_web_session
+
+
+# ---------------------------------------------------------------------------
+# FEAT-204: PausedEnvelope — structured HTTP-200 reply for HITL suspend
+# ---------------------------------------------------------------------------
+
+#: Default TTL (seconds) for a suspended HITL interaction when neither the
+#: HITL manager nor the interaction object is available.
+#: 7200s = HumanToolInput default timeout (2h) + 60s buffer.
+_DEFAULT_HITL_SUSPEND_TTL: int = 7260
+
+class PausedEnvelope(BaseModel):
+    """HTTP-200 structured reply returned by AgentTalk when a SUSPEND tool raises
+    HumanInteractionInterrupt.
+
+    Modelled on AuthRequiredEnvelope — the frontend detects ``status == "paused"``
+    and renders the appropriate HITL widget for the interaction type.
+
+    Attributes:
+        status: Discriminator literal — always ``"paused"``.
+        turn_id: Correlation ID wrapping interaction_id (shared with resume path).
+        interaction_id: UUID of the pending HumanInteraction in Redis.
+        interaction_type: Interaction type string (e.g. ``"single_choice"``).
+        question: The question posed to the human.
+        context: Optional short background shown above the question.
+        options: For choice-type interactions — list of option dicts.
+        form_schema: For form-type interactions — JSON Schema dict.
+        default_response: Default value if the human does not respond in time.
+        deadline: ISO-8601 absolute expiry derived from the interaction TTL.
+        source_agent: Name of the agent that raised the interrupt.
+    """
+
+    status: str = "paused"
+    turn_id: str
+    interaction_id: str
+    interaction_type: str
+    question: str
+    context: Optional[str] = None
+    options: Optional[list] = None
+    form_schema: Optional[Dict[str, Any]] = None
+    default_response: Any = None
+    deadline: Optional[str] = None
+    source_agent: Optional[str] = None
 
 
 @is_authenticated()
@@ -1242,6 +1287,239 @@ class AgentTalk(BaseView):
             status=400
         )
 
+    async def _handle_hitl_resume(
+        self,
+        hitl_response: dict,
+        agent: Any,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        request_session: Any,
+    ) -> web.Response:
+        """Handle a HITL resume request (FEAT-204).
+
+        Called when ``AgentTalk.post`` detects a ``hitl_response`` tag in the
+        request body.  Validates the respondent, performs the three-state
+        TTL/tombstone check, routes the answer through the manager, loads the
+        suspended tool-loop state, and calls ``agent.resume()`` to continue
+        the agent run to a final ``success`` response.
+
+        Args:
+            hitl_response: The ``hitl_response`` body dict with keys
+                ``turn_id`` (interaction_id), ``value``, and optionally
+                ``response_type``.
+            agent: The resolved ``AbstractBot`` for this request.
+            session_id: The user's session identifier.
+            user_id: The authenticated user ID.
+            request_session: The request session object (for respondent lookup).
+
+        Returns:
+            An HTTP 200 JSON response — either the resumed ``success`` reply
+            or an informational ``expired``/``already_answered`` envelope.
+        """
+        # ── 0. Set current_web_session ContextVar ────────────────────────
+        # Ensures that chained multi-turn HITL (a second ask_human during
+        # resume) can resolve the web session correctly via the ContextVar.
+        # Cleared in the finally block below.
+        _resume_hitl_token = set_current_web_session(session_id)
+        try:
+            return await self._handle_hitl_resume_inner(
+                hitl_response=hitl_response,
+                agent=agent,
+                session_id=session_id,
+                user_id=user_id,
+                request_session=request_session,
+            )
+        finally:
+            reset_current_web_session(_resume_hitl_token)
+
+    async def _handle_hitl_resume_inner(
+        self,
+        hitl_response: dict,
+        agent: Any,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        request_session: Any,
+    ) -> web.Response:
+        """Inner implementation of _handle_hitl_resume (ContextVar already set)."""
+        # Lazy imports — keep module-level free of parrot.human dependency.
+        from parrot.human import get_default_human_manager as _gm  # noqa: PLC0415
+        from parrot.human.models import HumanResponse, InteractionType  # noqa: PLC0415
+        from parrot.human.suspended_store import SuspendedExecutionStore  # noqa: PLC0415
+
+        # ── 1. Parse hitl_response body ──────────────────────────────────
+        turn_id: str = hitl_response.get("turn_id", "")
+        value = hitl_response.get("value")
+        response_type_raw: Optional[str] = hitl_response.get("response_type")
+        # OQ-1: turn_id == interaction_id (one correlation contract)
+        interaction_id: str = turn_id
+
+        if not interaction_id:
+            return web.json_response(
+                {"status": "error", "message": "hitl_response.turn_id is required"},
+                status=400,
+            )
+
+        # ── 2. Respondent from authenticated session only ─────────────────
+        respondent: str = "unknown"
+        try:
+            if request_session:
+                respondent = request_session.get("user_id", "unknown")
+        except AttributeError:
+            pass
+        if respondent == "unknown" or not respondent:
+            self.logger.warning(
+                "AgentTalk resume: unauthenticated resume attempt for %s",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "unauthenticated"},
+                status=403,
+            )
+
+        # ── 3. Manager lookup ─────────────────────────────────────────────
+        hitl_manager = _gm()
+        if hitl_manager is None:
+            return web.json_response(
+                {"status": "error", "message": "HITL service unavailable"},
+                status=503,
+            )
+
+        # ── 4. Three-state TTL/tombstone check (BEFORE respondent gate) ─────
+        #   - hitl:result exists  → already answered (idempotency tombstone)
+        #   - hitl:interaction exists, no result → alive → proceed to gate
+        #   - neither exists → expired (fast informational reply)
+        # Checking TTL first lets expired interactions return "expired" rather
+        # than "forbidden" (which would be misleading when the key just expired).
+        existing_result = await hitl_manager.get_result(interaction_id)
+        if existing_result is not None:
+            self.logger.info(
+                "AgentTalk resume: interaction %s already answered (tombstone)",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "already_answered", "interaction_id": interaction_id},
+                status=200,
+            )
+
+        interaction_alive = await hitl_manager._load_interaction(interaction_id)
+        if interaction_alive is None:
+            self.logger.info(
+                "AgentTalk resume: interaction %s expired (no key in Redis)",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "expired", "interaction_id": interaction_id},
+                status=200,
+            )
+
+        # ── 5. is_valid_respondent gate (after TTL check, before write) ───
+        if not await hitl_manager.is_valid_respondent(interaction_id, respondent):
+            self.logger.warning(
+                "AgentTalk resume: respondent '%s' rejected for interaction %s",
+                respondent,
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "forbidden: not the intended respondent"},
+                status=403,
+            )
+
+        # ── 6. Record the response in the HITL ledger ─────────────────────
+        response_type: "InteractionType" = (
+            interaction_alive.interaction_type
+        )
+        if response_type_raw:
+            try:
+                response_type = InteractionType(response_type_raw)
+            except ValueError:
+                response_type = InteractionType.FREE_TEXT
+
+        human_response = HumanResponse(
+            interaction_id=interaction_id,
+            respondent=respondent,
+            response_type=response_type,
+            value=value,
+        )
+        await hitl_manager.receive_response(human_response)
+        self.logger.info(
+            "AgentTalk resume: recorded response for interaction %s by %s",
+            interaction_id,
+            respondent,
+        )
+
+        # ── 7. Load suspended state and resume the agent ──────────────────
+        redis_client = await hitl_manager._get_redis()
+        sus_store = SuspendedExecutionStore(redis_client)
+        suspended = await sus_store.load(interaction_id)
+        if suspended is None:
+            self.logger.error(
+                "AgentTalk resume: SuspendedExecution missing for %s — "
+                "cannot resume tool-loop",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "suspended state not found"},
+                status=500,
+            )
+
+        resume_state = {
+            "session_id": suspended.session_id,
+            "messages": suspended.messages,
+            "tool_call_id": suspended.tool_call_id,
+            "agent_name": suspended.agent_name,
+        }
+
+        self.logger.info(
+            "AgentTalk resume: calling agent.resume for session %s "
+            "(interaction=%s, tool_call_id=%s)",
+            suspended.session_id,
+            interaction_id,
+            suspended.tool_call_id,
+        )
+
+        # Delete the suspended-state blob BEFORE calling agent.resume().
+        # If resume raises, the tombstone prevents a duplicate resume attempt —
+        # which is the correct conservative behaviour (one-shot guarantee).
+        await sus_store.delete(interaction_id)
+
+        try:
+            async with agent.session(
+                session_id=suspended.session_id,
+                user_id=suspended.user_id or user_id,
+            ) as bot:
+                ai_message = await bot.resume(
+                    session_id=suspended.session_id,
+                    user_input=str(value) if value is not None else "",
+                    state=resume_state,
+                )
+        except HumanInteractionInterrupt:
+            # A second ask_human during resume → let the TASK-1382 catch handle it
+            # by re-raising (the caller AgentTalk.post except block will catch it).
+            raise
+        except Exception as exc:
+            self.logger.exception(
+                "AgentTalk resume: agent.resume failed for session %s: %s",
+                suspended.session_id,
+                exc,
+            )
+            return web.json_response(
+                {"status": "error", "message": f"resume failed: {exc}"},
+                status=500,
+            )
+
+        # Return the resumed response as a normal success reply.
+        return self._format_response(
+            ai_message,
+            "json",
+            {},
+            user_id=suspended.user_id or user_id,
+            user_session=session_id,
+            response_time_ms=None,
+            agent_name=suspended.agent_name or (agent.name if agent else ""),
+            session_id=session_id,
+            client_message_id=None,
+        )
+
     async def post(self):
         """
         POST handler for agent interaction. PBAC-guarded via requires_permission.
@@ -1376,6 +1654,21 @@ class AgentTalk(BaseView):
         client_message_id = data.pop('message_id', None)
         followup_turn_id = data.pop('turn_id', None)
         followup_data = data.pop('data', None)
+
+        # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
+        # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
+        #                           "response_type": "<optional>"}}
+        # Handled BEFORE bot.ask() so the resume can run to a success reply
+        # on the same request that carries the human's answer.
+        hitl_response = data.pop('hitl_response', None)
+        if hitl_response is not None:
+            return await self._handle_hitl_resume(
+                hitl_response=hitl_response,
+                agent=agent,
+                session_id=session_id,
+                user_id=user_id,
+                request_session=request_session,
+            )
 
         # Override with explicit parameter if provided
         if 'output_mode' in data:
@@ -1578,6 +1871,116 @@ class AgentTalk(BaseView):
                 message=str(exc),
             )
             return web.json_response(envelope.model_dump(), status=200)
+        except HumanInteractionInterrupt as exc:
+            # FEAT-204: SUSPEND path — the agent's SuspendingWebHumanTool raised
+            # this interrupt instead of blocking.  Persist the tool-loop state,
+            # rehydrate the interaction, and return a structured paused envelope.
+            # HTTP 200 — the paused envelope IS the agent's turn.
+            interaction_id = exc.interaction_id or ""
+            _agent_name = exc.agent_name or (agent.name if agent else "") or ""
+            self.logger.info(
+                "AgentTalk: HITL suspend for interaction %s (agent=%s)",
+                interaction_id,
+                _agent_name,
+            )
+            # Initialise defaults in case manager/interaction are unavailable.
+            interaction_type_str = "free_text"
+            question = exc.prompt or ""
+            context = None
+            options = None
+            form_schema = None
+            default_response = None
+            deadline = None
+            try:
+                # Lazy imports to avoid module-level dependency on parrot.human
+                # (which would prevent agent.py from loading in environments
+                # where the worktree parrot.human is not first on sys.path).
+                from parrot.human import get_default_human_manager as _get_manager  # noqa: PLC0415
+                from parrot.human.suspended_store import (  # noqa: PLC0415
+                    SuspendedExecution, SuspendedExecutionStore
+                )
+                hitl_manager = _get_manager()
+                if hitl_manager is not None and interaction_id:
+                    # 1. Build and persist the SuspendedExecution blob.
+                    redis_client = await hitl_manager._get_redis()
+                    sus_store = SuspendedExecutionStore(redis_client)
+                    suspended = SuspendedExecution(
+                        interaction_id=interaction_id,
+                        session_id=session_id or "",
+                        user_id=user_id or "",
+                        agent_name=_agent_name,
+                        tool_call_id=exc.tool_call_id or "",
+                        messages=exc.messages or [],
+                    )
+                    # 2. Rehydrate the HumanInteraction for type/options/schema.
+                    interaction_obj = await hitl_manager._load_interaction(interaction_id)
+                    ttl = _DEFAULT_HITL_SUSPEND_TTL  # default fallback (2h + 60s)
+                    if interaction_obj is not None:
+                        ttl = hitl_manager._compute_ttl(interaction_obj)
+                        interaction_type_str = interaction_obj.interaction_type.value
+                        question = interaction_obj.question
+                        context = interaction_obj.context
+                        if interaction_obj.options:
+                            options = [
+                                o.model_dump() if hasattr(o, "model_dump") else dict(o)
+                                for o in interaction_obj.options
+                            ]
+                        form_schema = interaction_obj.form_schema
+                        default_response = interaction_obj.default_response
+                        import datetime as _dt
+                        # Use the same TTL value already computed for Redis
+                        # (which includes the 60s buffer and policy-chain logic)
+                        # so the deadline is aligned with actual key expiry.
+                        deadline = (
+                            _dt.datetime.now(_dt.timezone.utc)
+                            + _dt.timedelta(seconds=ttl)
+                        ).isoformat()
+                    await sus_store.save(suspended, ttl=ttl)
+                    self.logger.info(
+                        "AgentTalk: persisted SuspendedExecution %s (ttl=%ds)",
+                        interaction_id,
+                        ttl,
+                    )
+                else:
+                    self.logger.warning(
+                        "AgentTalk: no HITL manager or interaction_id — "
+                        "PausedEnvelope will have minimal data"
+                    )
+            except Exception as inner_exc:
+                self.logger.exception(
+                    "AgentTalk: error persisting/rehydrating suspend state "
+                    "for interaction %s: %s",
+                    interaction_id,
+                    inner_exc,
+                )
+                # A broken PausedEnvelope (empty question, no options) would
+                # leave the frontend in an irrecoverable state.  Return HTTP 500
+                # so the client can surface a meaningful error.
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "message": (
+                            f"Failed to persist suspend state for interaction "
+                            f"{interaction_id}: {inner_exc}"
+                        ),
+                    },
+                    status=500,
+                )
+            # 3. Build and return the PausedEnvelope.
+            #    turn_id == interaction_id (OQ-1: shared correlation contract).
+            paused = PausedEnvelope(
+                turn_id=interaction_id,
+                interaction_id=interaction_id,
+                interaction_type=interaction_type_str,
+                question=question,
+                context=context,
+                options=options,
+                form_schema=form_schema,
+                default_response=default_response,
+                deadline=deadline,
+                source_agent=_agent_name or None,
+            )
+            return web.json_response(paused.model_dump(), status=200)
         finally:
             # Restore session-isolated PythonPandasTool
             if original_pandas_tool and session_pandas_tool:

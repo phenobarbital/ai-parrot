@@ -472,11 +472,23 @@ class HumanInteractionManager:
         self,
         interaction: HumanInteraction,
         channel: str = "telegram",
+        schedule_timeout: bool = True,
     ) -> str:
         """Non-blocking variant that returns the interaction_id immediately.
 
         The caller serialises its own state and resumes when the result
         appears in Redis (via ``get_result`` or a pub/sub listener).
+
+        Args:
+            interaction: The :class:`HumanInteraction` to register.
+            channel: Channel name to dispatch the interaction on.
+            schedule_timeout: When ``False`` the in-process
+                :meth:`_handle_timeout` task is **not** created.  Pass
+                ``False`` from the SUSPEND path (FEAT-204): the HTTP
+                handler returns immediately after persisting state, so
+                there is no running event loop to host a meaningful
+                timeout task.  The interaction TTL in Redis provides the
+                only expiry guarantee in that mode.
         """
         await self._resolve_interaction_policy(interaction)
         await self._persist_interaction(interaction)
@@ -500,11 +512,12 @@ class HumanInteractionManager:
             callback_data,
         )
 
-        # Schedule timeout — tracked so receive_response can cancel it.
-        timeout_task = asyncio.create_task(
-            self._handle_timeout(interaction, channel)
-        )
-        self._timeout_tasks[interaction.interaction_id] = timeout_task
+        if schedule_timeout:
+            # Schedule timeout — tracked so receive_response can cancel it.
+            timeout_task = asyncio.create_task(
+                self._handle_timeout(interaction, channel)
+            )
+            self._timeout_tasks[interaction.interaction_id] = timeout_task
 
         return interaction.interaction_id
 

@@ -35,10 +35,43 @@ _EXTRA_PATHS = [
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-loaders", "src"),
     # ai-parrot-tools: also include worktree version.
     os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-tools", "src"),
+    # ai-parrot-server: FEAT-204 adds new modules (SuspendingWebHumanTool,
+    # SuspendedExecutionStore) — prepend worktree src so they shadow the
+    # main-repo editable install.
+    os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src"),
 ]
 for _p in reversed(_EXTRA_PATHS):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# FEAT-204: Extend the parrot namespace package __path__ to include the
+# worktree's package sources.  The `parrot` namespace package (namespace
+# __init__.py loaded from the editable install) holds a __path__ list that
+# Python uses to locate sub-packages.  Simply inserting the worktree src
+# into sys.path is not enough because Python follows parrot.__path__ for
+# sub-package lookup.  We must prepend the worktree's parrot directory to
+# parrot.__path__ AND parrot.human.__path__ (and parrot.handlers.__path__)
+# so that worktree-specific modules shadow the main-repo copies.
+try:
+    import parrot as _parrot_pkg
+    _wt_parrot_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot", "src", "parrot")
+    _wt_server_src = os.path.join(_WORKTREE_ROOT, "packages", "ai-parrot-server", "src", "parrot")
+    for _wt_dir in [_wt_server_src, _wt_parrot_src]:
+        if _wt_dir not in _parrot_pkg.__path__:
+            _parrot_pkg.__path__.insert(0, _wt_dir)
+except Exception:
+    pass  # If parrot isn't importable yet, the sys.path insertion above covers it
+
+# After updating parrot.__path__, invalidate cached parrot.human / parrot.handlers
+# so they are re-found from the updated path.
+for _key in list(sys.modules.keys()):
+    if (
+        _key == "parrot.human"
+        or _key.startswith("parrot.human.")
+        or _key == "parrot.handlers.web_hitl"
+        or _key == "parrot.handlers.agent"
+    ):
+        del sys.modules[_key]
 
 # ── navigator.utils.file stubs (pre-FEAT-124 navigator compatibility) ──────
 # FEAT-124 added parrot.interfaces.file and parrot.tools.filemanager that

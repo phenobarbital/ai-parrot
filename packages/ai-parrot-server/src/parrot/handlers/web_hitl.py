@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from ..human import (
     HumanInteractionManager,
     HumanTool,
+    WaitStrategy,
     get_default_human_manager,
     set_default_human_manager,
 )
@@ -195,6 +196,53 @@ class WebHumanTool(HumanTool):
                 )
 
         return await super()._execute(**kwargs)
+
+
+# ---------------------------------------------------------------------------
+# FEAT-204: SuspendingWebHumanTool (REST suspend/resume path)
+# ---------------------------------------------------------------------------
+
+
+class SuspendingWebHumanTool(WebHumanTool):
+    """WebHumanTool variant wired for stateless REST suspend/resume (FEAT-204).
+
+    Sets ``wait_strategy=WaitStrategy.SUSPEND``, which causes
+    :meth:`~parrot.human.tool.HumanTool._execute` to call
+    :meth:`~parrot.human.manager.HumanInteractionManager.request_human_input_async`
+    and raise :class:`~parrot.core.exceptions.HumanInteractionInterrupt` instead of
+    blocking.  The HTTP handler catches the interrupt, serialises the tool-loop
+    state, and returns a ``paused`` envelope so the frontend can drive the
+    resume flow via a later ``hitl_response``-tagged request.
+
+    Lazy manager resolution and ``current_web_session``-based target resolution
+    are fully inherited from :class:`WebHumanTool` — no re-implementation.
+
+    Both :class:`WebHumanTool` (WebSocket long-poll, FEAT-146) and this class
+    coexist.  Wire an agent with one or the other at construction:
+
+    * Blocking (WebSocket): ``ask_human = WebHumanTool(source_agent=name)``
+    * Stateless (REST):     ``ask_human = SuspendingWebHumanTool(source_agent=name)``
+
+    Args:
+        default_targets: Fallback list of target human IDs.
+        source_agent: Name of the agent that owns this tool.
+        **kwargs: Forwarded to :class:`WebHumanTool`.
+    """
+
+    def __init__(
+        self,
+        *,
+        default_targets: Optional[List[str]] = None,
+        source_agent: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            default_targets=default_targets,
+            source_agent=source_agent,
+            **kwargs,
+        )
+        # Override after super().__init__ — HumanTool.wait_strategy defaults to BLOCK.
+        self.wait_strategy = WaitStrategy.SUSPEND
 
 
 # ---------------------------------------------------------------------------
