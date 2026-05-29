@@ -28,12 +28,19 @@ Usage::
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 import time
 from typing import Any, Dict, Optional
 
 import aiohttp
 from pydantic import BaseModel, Field
+
+# Regex for basic email format validation (guards OData $filter injection).
+_EMAIL_RE = re.compile(
+    r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
+)
 
 
 # ── Data models ───────────────────────────────────────────────────────────────
@@ -101,36 +108,72 @@ class GraphClient:
         # In-process token cache: (access_token, expiry_epoch)
         self._token: Optional[str] = None
         self._token_expiry: float = 0.0
+        # Lock to prevent concurrent token refresh races.
+        self._token_lock = asyncio.Lock()
+
+        # Reusable aiohttp session (created lazily, closed via close()).
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    # ── Session management ─────────────────────────────────────────────────
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Return the shared aiohttp session, creating it lazily if needed.
+
+        Returns:
+            The shared :class:`aiohttp.ClientSession`.
+        """
+        if self._session is None or getattr(self._session, "closed", False):
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        """Close the underlying aiohttp session and release resources.
+
+        Should be called when the :class:`GraphClient` is no longer needed
+        (e.g. from :meth:`~parrot.human.channels.teams.TeamsHumanChannel.stop`).
+        """
+        if self._session is not None and not getattr(self._session, "closed", False):
+            await self._session.close()
+            self._session = None
 
     # ── Token acquisition ──────────────────────────────────────────────────
 
     async def _get_access_token(self) -> Optional[str]:
         """Acquire (or return cached) an access token for Graph.
 
+        Uses a double-checked locking pattern with ``_token_lock`` to prevent
+        concurrent token refresh races under asyncio concurrency.
+
         Returns:
             The bearer token string, or ``None`` on failure.
         """
         now = time.monotonic()
-        # Refresh 60 s before actual expiry to avoid clock-skew races.
+        # Fast path: token is still valid.
         if self._token and now < self._token_expiry - 60:
             return self._token
 
-        token_url = _TOKEN_URL_TPL.format(tenant_id=self._tenant_id)
-        payload = {
-            "client_id": self._client_id,
-            "client_secret": self._client_secret,
-            "scope": _GRAPH_SCOPE,
-            "grant_type": "client_credentials",
-        }
+        async with self._token_lock:
+            # Re-check inside the lock: another coroutine may have refreshed.
+            now = time.monotonic()
+            if self._token and now < self._token_expiry - 60:
+                return self._token
 
-        try:
-            async with aiohttp.ClientSession() as session:
+            token_url = _TOKEN_URL_TPL.format(tenant_id=self._tenant_id)
+            payload = {
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+                "scope": _GRAPH_SCOPE,
+                "grant_type": "client_credentials",
+            }
+
+            try:
+                session = await self._get_session()
                 async with session.post(token_url, data=payload) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         self._token = data.get("access_token")
                         expires_in = int(data.get("expires_in", 3600))
-                        self._token_expiry = now + expires_in
+                        self._token_expiry = time.monotonic() + expires_in
                         return self._token
                     body = await resp.text()
                     self.logger.error(
@@ -139,9 +182,9 @@ class GraphClient:
                         body[:200],
                     )
                     return None
-        except Exception:  # noqa: BLE001
-            self.logger.exception("Exception during Graph token acquisition")
-            return None
+            except Exception:  # noqa: BLE001
+                self.logger.exception("Exception during Graph token acquisition")
+                return None
 
     def _auth_headers(self, token: str) -> Dict[str, str]:
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -190,20 +233,20 @@ class GraphClient:
         """Try ``GET /users/{upn}`` and return the raw JSON, or None on 404/error."""
         url = f"{_GRAPH_BASE}/users/{upn}"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    if resp.status == 404:
-                        return None
-                    body = await resp.text()
-                    self.logger.error(
-                        "Graph /users/%s returned HTTP %s: %s",
-                        upn,
-                        resp.status,
-                        body[:200],
-                    )
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status == 404:
                     return None
+                body = await resp.text()
+                self.logger.error(
+                    "Graph /users/%s returned HTTP %s: %s",
+                    upn,
+                    resp.status,
+                    body[:200],
+                )
+                return None
         except Exception:  # noqa: BLE001
             self.logger.exception("Exception calling Graph /users/%s", upn)
             return None
@@ -211,48 +254,77 @@ class GraphClient:
     async def _get_user_by_mail_filter(
         self, email: str, headers: Dict[str, str]
     ) -> Optional[Dict[str, Any]]:
-        """Try ``GET /users?$filter=mail eq '{email}'`` and return the first hit."""
+        """Try ``GET /users?$filter=mail eq '{email}'`` and return the first hit.
+
+        Validates the email format before building the OData ``$filter`` string
+        to prevent injection attacks.  Returns ``None`` if the email is invalid.
+
+        Args:
+            email: The email address to look up.
+            headers: Authorization headers for the Graph request.
+
+        Returns:
+            The first matching Graph user dict, or ``None``.
+        """
+        if not _EMAIL_RE.match(email):
+            self.logger.warning(
+                "Rejecting Graph mail-filter request: email %r failed format validation.",
+                email,
+            )
+            return None
+
         url = f"{_GRAPH_BASE}/users"
         params = {
             "$filter": f"mail eq '{email}'",
             "$select": "id,userPrincipalName,mail",
         }
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, params=params) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        users = data.get("value", [])
-                        if users:
-                            return users[0]
-                        return None
-                    body = await resp.text()
-                    self.logger.error(
-                        "Graph mail-filter for %r returned HTTP %s: %s",
-                        email,
-                        resp.status,
-                        body[:200],
-                    )
+            session = await self._get_session()
+            async with session.get(url, headers=headers, params=params) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    users = data.get("value", [])
+                    if users:
+                        return users[0]
                     return None
+                body = await resp.text()
+                self.logger.error(
+                    "Graph mail-filter for %r returned HTTP %s: %s",
+                    email,
+                    resp.status,
+                    body[:200],
+                )
+                return None
         except Exception:  # noqa: BLE001
             self.logger.exception("Exception calling Graph mail-filter for %r", email)
             return None
 
-    @staticmethod
     def _build_resolved_user(
-        data: Dict[str, Any], original_email: str
-    ) -> ResolvedTeamsUser:
+        self, data: Dict[str, Any], original_email: str
+    ) -> Optional[ResolvedTeamsUser]:
         """Build a :class:`ResolvedTeamsUser` from a Graph user dict.
+
+        Returns ``None`` if the Graph response is missing the ``id`` field or
+        it is an empty string, as an empty ``aad_object_id`` would cause cold
+        bootstrapping to fail silently.
 
         Args:
             data: Raw Graph user object (``id``, ``userPrincipalName``, ``mail``).
             original_email: The email address used for the original lookup.
 
         Returns:
-            A populated :class:`ResolvedTeamsUser`.
+            A populated :class:`ResolvedTeamsUser`, or ``None`` if ``id`` is absent.
         """
+        aad_id = data.get("id", "")
+        if not aad_id:
+            self.logger.warning(
+                "Graph returned a user record without 'id' for email %r; "
+                "skipping resolution.",
+                original_email,
+            )
+            return None
         return ResolvedTeamsUser(
-            aad_object_id=data.get("id", ""),
+            aad_object_id=aad_id,
             upn=data.get("userPrincipalName", original_email),
             email=data.get("mail") or original_email,
         )
@@ -277,21 +349,21 @@ class GraphClient:
         headers = self._auth_headers(token)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-                    if resp.status == 404:
-                        self.logger.debug("No manager found for UPN %r.", upn)
-                        return None
-                    body = await resp.text()
-                    self.logger.error(
-                        "Graph /users/%s/manager returned HTTP %s: %s",
-                        upn,
-                        resp.status,
-                        body[:200],
-                    )
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                if resp.status == 404:
+                    self.logger.debug("No manager found for UPN %r.", upn)
                     return None
+                body = await resp.text()
+                self.logger.error(
+                    "Graph /users/%s/manager returned HTTP %s: %s",
+                    upn,
+                    resp.status,
+                    body[:200],
+                )
+                return None
         except Exception:  # noqa: BLE001
             self.logger.exception("Exception calling Graph /users/%s/manager", upn)
             return None

@@ -41,6 +41,7 @@ telegram = [
 msteams = [
     "azure-teambots>=0.1.1",
     "parrot-formdesigner",
+    "redis[asyncio]>=5.0",
 ]
 whatsapp = [
     "pywa>=3.8.0",

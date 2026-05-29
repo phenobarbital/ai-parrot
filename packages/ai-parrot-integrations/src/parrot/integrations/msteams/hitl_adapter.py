@@ -12,7 +12,7 @@ must never be imported from any Telegram-side module at module level.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from botbuilder.core import (
@@ -135,7 +135,7 @@ class HitlCloudAdapter(CloudAdapter):
             trace = Activity(
                 label="TurnError",
                 name="on_turn_error Trace",
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 type=ActivityTypes.trace,
                 value=str(error),
                 value_type="https://www.botframework.com/schemas/error",

@@ -317,7 +317,7 @@ async def test_cancel_updates_activity_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_updates_activity_when_record_exists() -> None:
-    """cancel_interaction calls update_activity when sent record exists."""
+    """cancel_interaction calls update_activity when sent record and convref exist."""
     redis = _make_redis()
     channel = _make_channel(redis=redis)
 
@@ -329,7 +329,10 @@ async def test_cancel_updates_activity_when_record_exists() -> None:
         bot=CA(id="bot-id"),
         conversation=ConversationAccount(id="conv-1", is_group=False),
     )
+    # Populate both the sent-activity store and the convref store; cancel_interaction
+    # now checks that a convref exists before attempting to update (Issue 6 fix).
     await channel._sent_store.set("cancel-test-id", ref, "activity-to-cancel", "user@contoso.com")
+    await channel._convref_store.set("user@contoso.com", ref)
 
     update_called = []
 

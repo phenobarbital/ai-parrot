@@ -39,11 +39,11 @@ Late-reply handling:
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Any, Optional
 
+from navconfig import config as navconfig
 from pydantic import BaseModel, Field
 
 from aiohttp import web
@@ -148,7 +148,26 @@ class TeamsHumanChannel(HumanChannel):
             )
 
     async def stop(self) -> None:
-        """No-op; the adapter lifecycle is managed externally."""
+        """Shut down the channel and release underlying resources.
+
+        Closes the :class:`~.graph.GraphClient` aiohttp session and the
+        Redis client (if the Redis client exposes a ``close`` or ``aclose``
+        method).
+        """
+        # Close the Graph client's aiohttp session.
+        try:
+            await self._graph_client.close()
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Error closing GraphClient session during stop()")
+
+        # Close the Redis client if possible.
+        try:
+            if hasattr(self._redis, "aclose"):
+                await self._redis.aclose()
+            elif hasattr(self._redis, "close"):
+                await self._redis.close()
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Error closing Redis client during stop()")
 
     # ── Webhook handler ────────────────────────────────────────────────────
 
@@ -203,17 +222,21 @@ class TeamsHumanChannel(HumanChannel):
         activity = turn_context.activity
 
         # Always refresh ConversationReference on inbound contact (OQ-4).
-        # We need the sender's email to key the cache; if not available via
-        # AAD object id we skip (we'll refresh next time Graph resolves it).
+        # Prefer the sender's email as the cache key (matches what send_interaction
+        # uses for lookup).  Fall back to aad_object_id if no email is available.
         sender_aad = (
             getattr(activity.from_property, "aad_object_id", None)
             if activity.from_property
             else None
         )
-        if sender_aad:
-            await self._messenger.capture_reference(
-                activity, sender_aad  # keyed by aad_object_id as fallback
-            )
+        sender_email = (
+            getattr(activity.from_property, "email", None)
+            if activity.from_property
+            else None
+        )
+        cache_key = sender_email or sender_aad
+        if cache_key:
+            await self._messenger.capture_reference(activity, cache_key)
 
         # Only process message-type activities with HITL value payloads.
         if activity.type != ActivityTypes.message:
@@ -430,12 +453,20 @@ class TeamsHumanChannel(HumanChannel):
                     recipient,
                 )
             else:
+                stored_act_id = act_id or ""
                 await self._sent_store.set(
                     interaction.interaction_id,
                     convref,
-                    act_id or "",
+                    stored_act_id,
                     recipient,
                 )
+                if not stored_act_id:
+                    self.logger.warning(
+                        "Sent-activity record for interaction %r has an empty "
+                        "activity_id — cancel_interaction may not work for this "
+                        "interaction (update_activity requires a valid activity ID).",
+                        interaction.interaction_id,
+                    )
         except Exception:  # noqa: BLE001
             self.logger.exception(
                 "Error storing sent-activity for interaction %r",
@@ -503,6 +534,21 @@ class TeamsHumanChannel(HumanChannel):
         if sent is None:
             self.logger.debug(
                 "cancel_interaction: no sent record for %r (already cancelled?).",
+                interaction_id,
+            )
+            return False
+
+        # Verify a ConversationReference exists for the recipient before attempting
+        # to send.  Using _FakeResolvedUser with an empty aad_object_id on a cold
+        # path would trigger a new-conversation bootstrap, which is never appropriate
+        # for a cancel operation.
+        existing_convref = await self._convref_store.get(recipient)
+        if existing_convref is None:
+            self.logger.warning(
+                "cancel_interaction: no ConversationReference found for %r "
+                "(interaction %r); cannot update card without bootstrapping a new "
+                "conversation.  Returning False.",
+                recipient,
                 interaction_id,
             )
             return False
@@ -621,31 +667,31 @@ class TeamsHitlConfig(BaseModel):
     """
 
     app_id: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_HITL_APP_ID", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_HITL_APP_ID", ""),
         description="Microsoft App ID for the HITL bot.",
     )
     app_password: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_HITL_APP_PASSWORD", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_HITL_APP_PASSWORD", ""),
         description="Microsoft App Password for the HITL bot.",
     )
     tenant_id: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_TENANT_ID", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_TENANT_ID", ""),
         description="AAD tenant ID.",
     )
     graph_client_id: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_CLIENT_ID", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_GRAPH_CLIENT_ID", ""),
         description="Graph app registration client ID.",
     )
     graph_client_secret: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_CLIENT_SECRET", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_GRAPH_CLIENT_SECRET", ""),
         description="Graph app registration client secret.",
     )
     graph_tenant_id: str = Field(
-        default_factory=lambda: os.environ.get("MSTEAMS_GRAPH_TENANT_ID", ""),
+        default_factory=lambda: navconfig.get("MSTEAMS_GRAPH_TENANT_ID", ""),
         description="Tenant ID for the Graph app registration.",
     )
     redis_url: str = Field(
-        default_factory=lambda: os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+        default_factory=lambda: navconfig.get("REDIS_URL", "redis://localhost:6379/0"),
         description="Async Redis connection URL.",
     )
     route: str = Field(
