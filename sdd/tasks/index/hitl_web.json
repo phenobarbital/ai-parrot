@@ -112,7 +112,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "End-to-end across all prior tasks; must run last.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1384-hitl-web-integration-tests.md"
+      "completed_at": "2026-05-29T14:50:16+00:00",
+      "file": "sdd/tasks/completed/TASK-1384-hitl-web-integration-tests.md"
     }
   ]
 }
