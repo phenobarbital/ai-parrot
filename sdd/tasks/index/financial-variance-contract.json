@@ -14,7 +14,7 @@
       "feature_id": "FEAT-206",
       "feature": "financial-variance-contract",
       "spec": "sdd/specs/FEAT-206-financial-variance-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — must land before TASK-1386. Edits the template module + tests; no shared files, but the downstream payload (TASK-1386) only validates once this flat contract exists.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:28:58+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1385-flatten-financial-variance-template.md"
+      "completed_at": "2026-05-29T16:33:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1385-flatten-financial-variance-template.md"
     },
     {
       "id": "TASK-1386",

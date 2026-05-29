@@ -261,10 +261,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-05-29
 **Notes**:
+- Replaced 5-grouped-spec `block_specs` with 9 flat positional specs exactly as specified in §2.
+- All 7 unit tests pass: contract shape, chart constraints, 9-block coercion, layout preservation, legacy rejection, validate_blocks ok, get_template_contract.
+- Integration render test passes: 1MB HTML produced with all 4 hero cards and 3 charts present.
+- `infographic_toolkit.py` not touched (diff is empty for that file).
+- `InfographicToolkit(artifact_store=...)` requires a store argument; unit tests use a MagicMock fixture.
+- E2E test uses `fake_store.save_artifact.call_args` to extract rendered HTML since `html_inline` is None for large (>50KB) payloads.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
