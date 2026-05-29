@@ -8,10 +8,10 @@ base_branch: dev
 
 # Feature Specification: Align `financial_variance` template with the positional block validator
 
-**Feature ID**: FEAT-198 *(suggested — confirm next free number on `dev`)*
+**Feature ID**: FEAT-206 *(FEAT-198 was already taken by `move-pageindex-kb`; reassigned 2026-05-29)*
 **Date**: 2026-05-29
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: <x.y.z>
 
 ---
@@ -329,7 +329,9 @@ None.
   That fixes the twin bug but changes validation semantics for every template.
   *Owner: Jesus* — this spec deliberately takes the low-risk per-template path; the
   central fix is a separate FEAT if desired.
-- [ ] Confirm the suggested **FEAT-198** id is free on `dev`. *Owner: Jesus*
+- [x] ~~Confirm the suggested **FEAT-198** id is free on `dev`.~~ **Resolved 2026-05-29:**
+  FEAT-198 was NOT free (owned by `move-pageindex-kb`). Reassigned to **FEAT-206**
+  (next free id) and renamed the spec file accordingly. *Owner: Jesus*
 - [x] ~~Is the `financial_projection_report` skill present in the target worktree, or
   does Module 2 become a follow-up task?~~ **Resolved 2026-05-29:** the skill IS
   present, but named `daily_financial_projection`
