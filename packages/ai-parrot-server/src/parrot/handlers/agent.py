@@ -44,11 +44,51 @@ from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+# FEAT-204: HumanInteractionInterrupt lives in core.exceptions (no parrot.human dependency)
+from parrot.core.exceptions import HumanInteractionInterrupt
 if TYPE_CHECKING:
     from ..manager import BotManager
 
 # FEAT-146: Web HITL ContextVar helpers
 from .web_hitl import set_current_web_session, reset_current_web_session
+
+
+# ---------------------------------------------------------------------------
+# FEAT-204: PausedEnvelope — structured HTTP-200 reply for HITL suspend
+# ---------------------------------------------------------------------------
+
+class PausedEnvelope(BaseModel):
+    """HTTP-200 structured reply returned by AgentTalk when a SUSPEND tool raises
+    HumanInteractionInterrupt.
+
+    Modelled on AuthRequiredEnvelope — the frontend detects ``status == "paused"``
+    and renders the appropriate HITL widget for the interaction type.
+
+    Attributes:
+        status: Discriminator literal — always ``"paused"``.
+        turn_id: Correlation ID wrapping interaction_id (shared with resume path).
+        interaction_id: UUID of the pending HumanInteraction in Redis.
+        interaction_type: Interaction type string (e.g. ``"single_choice"``).
+        question: The question posed to the human.
+        context: Optional short background shown above the question.
+        options: For choice-type interactions — list of option dicts.
+        form_schema: For form-type interactions — JSON Schema dict.
+        default_response: Default value if the human does not respond in time.
+        deadline: ISO-8601 absolute expiry derived from the interaction TTL.
+        source_agent: Name of the agent that raised the interrupt.
+    """
+
+    status: str = "paused"
+    turn_id: str
+    interaction_id: str
+    interaction_type: str
+    question: str
+    context: Optional[str] = None
+    options: Optional[list] = None
+    form_schema: Optional[Dict[str, Any]] = None
+    default_response: Any = None
+    deadline: Optional[str] = None
+    source_agent: Optional[str] = None
 
 
 @is_authenticated()
@@ -1578,6 +1618,100 @@ class AgentTalk(BaseView):
                 message=str(exc),
             )
             return web.json_response(envelope.model_dump(), status=200)
+        except HumanInteractionInterrupt as exc:
+            # FEAT-204: SUSPEND path — the agent's SuspendingWebHumanTool raised
+            # this interrupt instead of blocking.  Persist the tool-loop state,
+            # rehydrate the interaction, and return a structured paused envelope.
+            # HTTP 200 — the paused envelope IS the agent's turn.
+            interaction_id = exc.interaction_id or ""
+            _agent_name = exc.agent_name or (agent.name if agent else "") or ""
+            self.logger.info(
+                "AgentTalk: HITL suspend for interaction %s (agent=%s)",
+                interaction_id,
+                _agent_name,
+            )
+            # Initialise defaults in case manager/interaction are unavailable.
+            interaction_type_str = "free_text"
+            question = exc.prompt or ""
+            context = None
+            options = None
+            form_schema = None
+            default_response = None
+            deadline = None
+            try:
+                # Lazy imports to avoid module-level dependency on parrot.human
+                # (which would prevent agent.py from loading in environments
+                # where the worktree parrot.human is not first on sys.path).
+                from parrot.human import get_default_human_manager as _get_manager  # noqa: PLC0415
+                from parrot.human.suspended_store import (  # noqa: PLC0415
+                    SuspendedExecution, SuspendedExecutionStore
+                )
+                hitl_manager = _get_manager()
+                if hitl_manager is not None and interaction_id:
+                    # 1. Build and persist the SuspendedExecution blob.
+                    redis_client = await hitl_manager._get_redis()
+                    sus_store = SuspendedExecutionStore(redis_client)
+                    suspended = SuspendedExecution(
+                        interaction_id=interaction_id,
+                        session_id=session_id or "",
+                        user_id=user_id or "",
+                        agent_name=_agent_name,
+                        tool_call_id=exc.tool_call_id or "",
+                        messages=exc.messages or [],
+                    )
+                    # 2. Rehydrate the HumanInteraction for type/options/schema.
+                    interaction_obj = await hitl_manager._load_interaction(interaction_id)
+                    ttl = 7260  # default fallback (2h + 60s)
+                    if interaction_obj is not None:
+                        ttl = hitl_manager._compute_ttl(interaction_obj)
+                        interaction_type_str = interaction_obj.interaction_type.value
+                        question = interaction_obj.question
+                        context = interaction_obj.context
+                        if interaction_obj.options:
+                            options = [
+                                o.model_dump() if hasattr(o, "model_dump") else dict(o)
+                                for o in interaction_obj.options
+                            ]
+                        form_schema = interaction_obj.form_schema
+                        default_response = interaction_obj.default_response
+                        import datetime as _dt
+                        deadline = (
+                            _dt.datetime.now(_dt.timezone.utc)
+                            + _dt.timedelta(seconds=interaction_obj.timeout)
+                        ).isoformat()
+                    await sus_store.save(suspended, ttl=ttl)
+                    self.logger.info(
+                        "AgentTalk: persisted SuspendedExecution %s (ttl=%ds)",
+                        interaction_id,
+                        ttl,
+                    )
+                else:
+                    self.logger.warning(
+                        "AgentTalk: no HITL manager or interaction_id — "
+                        "PausedEnvelope will have minimal data"
+                    )
+            except Exception as inner_exc:
+                self.logger.exception(
+                    "AgentTalk: error persisting/rehydrating suspend state "
+                    "for interaction %s: %s",
+                    interaction_id,
+                    inner_exc,
+                )
+            # 3. Build and return the PausedEnvelope.
+            #    turn_id == interaction_id (OQ-1: shared correlation contract).
+            paused = PausedEnvelope(
+                turn_id=interaction_id,
+                interaction_id=interaction_id,
+                interaction_type=interaction_type_str,
+                question=question,
+                context=context,
+                options=options,
+                form_schema=form_schema,
+                default_response=default_response,
+                deadline=deadline,
+                source_agent=_agent_name or None,
+            )
+            return web.json_response(paused.model_dump(), status=200)
         finally:
             # Restore session-isolated PythonPandasTool
             if original_pandas_tool and session_pandas_tool:

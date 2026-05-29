@@ -35,12 +35,22 @@ from pydantic import BaseModel, Field
 from ..human import (
     HumanInteractionManager,
     HumanTool,
-    WaitStrategy,
     get_default_human_manager,
     set_default_human_manager,
 )
 from ..human.channels.base import ESCALATE_OPTION_KEY
 from ..human.models import HumanResponse, InteractionType
+
+# WaitStrategy is imported lazily in SuspendingWebHumanTool.__init__ to avoid
+# a hard dependency on the worktree's parrot.human during module loading in
+# test environments where parrot.human may be cached from the main repo.
+# The import is resolved at first instantiation time (after conftest has
+# ensured the correct parrot.human is on sys.modules).
+try:
+    from ..human import WaitStrategy
+except ImportError:
+    # Deferred — will be imported inside __init__ when needed.
+    WaitStrategy = None  # type: ignore[assignment,misc]
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +251,12 @@ class SuspendingWebHumanTool(WebHumanTool):
             source_agent=source_agent,
             **kwargs,
         )
+        # Resolve WaitStrategy at instantiation time (lazy import fallback).
+        _ws = WaitStrategy
+        if _ws is None:
+            from ..human import WaitStrategy as _ws  # noqa: PLC0415
         # Override after super().__init__ — HumanTool.wait_strategy defaults to BLOCK.
-        self.wait_strategy = WaitStrategy.SUSPEND
+        self.wait_strategy = _ws.SUSPEND
 
 
 # ---------------------------------------------------------------------------

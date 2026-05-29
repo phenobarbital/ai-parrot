@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 
 from parrot.handlers.web_hitl import SuspendingWebHumanTool, WebHumanTool
-from parrot.human import WaitStrategy
 
 
 # ---------------------------------------------------------------------------
@@ -21,13 +20,15 @@ def test_suspend_strategy():
     """SuspendingWebHumanTool has wait_strategy == SUSPEND."""
     tool = SuspendingWebHumanTool()
     assert isinstance(tool, WebHumanTool)
-    assert tool.wait_strategy == WaitStrategy.SUSPEND
+    # Verify by value so this test works regardless of which parrot.human
+    # module is cached (main-repo vs worktree).
+    assert str(tool.wait_strategy) in ("suspend", "WaitStrategy.SUSPEND")
 
 
 def test_block_tool_unchanged():
     """WebHumanTool (blocking) still defaults to BLOCK — no regression."""
     tool = WebHumanTool()
-    assert tool.wait_strategy == WaitStrategy.BLOCK
+    assert str(tool.wait_strategy) in ("block", "WaitStrategy.BLOCK")
 
 
 # ---------------------------------------------------------------------------
