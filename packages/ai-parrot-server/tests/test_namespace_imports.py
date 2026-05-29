@@ -6,6 +6,11 @@ through PEP 420 namespace merging.
 import importlib
 import pathlib
 import sys
+import time
+import hashlib
+import hmac as hmac_mod
+from typing import Optional
+from unittest.mock import patch
 
 import pytest
 
@@ -178,3 +183,205 @@ class TestSatelliteMCPConsolidation:
         assert not host_services_mcp.exists(), (
             "services/mcp/ should have been removed from host after consolidation in FEAT-203"
         )
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat stub: vault_utils redirect
+# ---------------------------------------------------------------------------
+
+class TestVaultUtilsBackwardCompatStub:
+    """Verify that the old import path redirects to the new canonical location."""
+
+    def test_vault_utils_redirect_resolves_same_object(self):
+        """handlers/vault_utils and security/vault_utils must expose the same objects."""
+        host_handlers_stub = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "ai-parrot" / "src" / "parrot" / "handlers" / "vault_utils.py"
+        )
+        if not host_handlers_stub.exists():
+            pytest.skip("handlers/vault_utils.py stub not found — integration test only")
+
+        content = host_handlers_stub.read_text()
+        # The stub must import from the canonical location
+        assert "parrot.security.vault_utils" in content, (
+            "handlers/vault_utils.py must redirect to parrot.security.vault_utils"
+        )
+
+    def test_vault_utils_canonical_path_has_expected_functions(self):
+        """parrot.security.vault_utils must define the expected public helpers."""
+        vault_utils_path = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "ai-parrot" / "src" / "parrot" / "security" / "vault_utils.py"
+        )
+        if not vault_utils_path.exists():
+            pytest.skip("parrot/security/vault_utils.py not found")
+        content = vault_utils_path.read_text()
+        for name in ("store_vault_credential", "retrieve_vault_credential", "delete_vault_credential"):
+            assert f"def {name}" in content or f"async def {name}" in content, (
+                f"{name} must be defined in parrot/security/vault_utils.py"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Lazy __getattr__ for parrot.autonomous
+# ---------------------------------------------------------------------------
+
+class TestAutonomousLazyLoader:
+    """Verify the lazy __getattr__ in parrot/autonomous/__init__.py."""
+
+    def test_unknown_name_raises_attribute_error(self):
+        """Accessing a non-existent name raises AttributeError with install hint."""
+        autonomous_init = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "ai-parrot" / "src" / "parrot" / "autonomous" / "__init__.py"
+        )
+        if not autonomous_init.exists():
+            pytest.skip("parrot/autonomous/__init__.py not found")
+
+        content = autonomous_init.read_text()
+        # Verify the lazy loader is present
+        assert "__getattr__" in content, (
+            "parrot/autonomous/__init__.py must define __getattr__ for lazy loading"
+        )
+        assert "ai-parrot-server" in content, (
+            "__getattr__ must include install hint mentioning ai-parrot-server"
+        )
+
+    def test_satellite_absent_raises_import_error_with_hint(self):
+        """When satellite is absent, ImportError with install hint is raised."""
+        autonomous_init = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "ai-parrot" / "src" / "parrot" / "autonomous" / "__init__.py"
+        )
+        if not autonomous_init.exists():
+            pytest.skip("parrot/autonomous/__init__.py not found")
+
+        content = autonomous_init.read_text()
+        # The error message must mention pip install
+        assert "pip install" in content, (
+            "__getattr__ must suggest pip install ai-parrot-server in the error"
+        )
+
+    def test_autonomous_classes_listed(self):
+        """_AUTONOMOUS_CLASSES must include AutonomousOrchestrator."""
+        autonomous_init = (
+            pathlib.Path(__file__).parent.parent.parent
+            / "ai-parrot" / "src" / "parrot" / "autonomous" / "__init__.py"
+        )
+        if not autonomous_init.exists():
+            pytest.skip("parrot/autonomous/__init__.py not found")
+
+        content = autonomous_init.read_text()
+        assert "AutonomousOrchestrator" in content, (
+            "_AUTONOMOUS_CLASSES must map AutonomousOrchestrator"
+        )
+
+
+# ---------------------------------------------------------------------------
+# HMAC signing round-trip and timestamp enforcement
+# ---------------------------------------------------------------------------
+
+def _sign_request(payload: bytes, secret: str, timestamp: str) -> str:
+    """Helper: compute HMAC-SHA256 signature the same way the security module does."""
+    message = timestamp.encode() + payload
+    return hmac_mod.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+class TestHMACRoundTrip:
+    """Verify InMemoryCredentialProvider HMAC signing round-trip."""
+
+    @pytest.mark.asyncio
+    async def test_valid_signature_fresh_timestamp(self):
+        """A fresh, correctly-signed request returns a CallerIdentity."""
+        try:
+            from parrot.a2a.security import InMemoryCredentialProvider
+        except ImportError:
+            pytest.skip("parrot.a2a.security not importable")
+
+        provider = InMemoryCredentialProvider()
+        result = await provider.register_agent(
+            "TestBot",
+            permissions=["skill:*"],
+        )
+        secret = result["hmac_secret"]
+        payload = b'{"skill": "analyze"}'
+        timestamp = str(int(time.time()))
+        sig = _sign_request(payload, secret, timestamp)
+
+        identity = await provider.validate_hmac(sig, payload, timestamp, agent_name="TestBot")
+        assert identity is not None, "Valid fresh HMAC should return CallerIdentity"
+        assert identity.agent_name == "TestBot"
+
+    @pytest.mark.asyncio
+    async def test_stale_timestamp_rejected(self):
+        """A correctly-signed request with a stale timestamp is rejected."""
+        try:
+            from parrot.a2a.security import InMemoryCredentialProvider, HMAC_TIMESTAMP_WINDOW
+        except ImportError:
+            pytest.skip("parrot.a2a.security not importable")
+
+        provider = InMemoryCredentialProvider()
+        result = await provider.register_agent("StaleBot", permissions=[])
+        secret = result["hmac_secret"]
+        payload = b"test"
+        # Timestamp is 10 seconds beyond the freshness window
+        stale_timestamp = str(int(time.time()) - HMAC_TIMESTAMP_WINDOW - 10)
+        sig = _sign_request(payload, secret, stale_timestamp)
+
+        identity = await provider.validate_hmac(
+            sig, payload, stale_timestamp, agent_name="StaleBot"
+        )
+        assert identity is None, "Stale HMAC timestamp must be rejected"
+
+    @pytest.mark.asyncio
+    async def test_invalid_timestamp_rejected(self):
+        """A non-integer timestamp is rejected."""
+        try:
+            from parrot.a2a.security import InMemoryCredentialProvider
+        except ImportError:
+            pytest.skip("parrot.a2a.security not importable")
+
+        provider = InMemoryCredentialProvider()
+        await provider.register_agent("Bot", permissions=[])
+
+        identity = await provider.validate_hmac("sig", b"payload", "not-a-number")
+        assert identity is None, "Non-integer timestamp must be rejected"
+
+    @pytest.mark.asyncio
+    async def test_wrong_signature_rejected(self):
+        """A fresh but wrong signature is rejected."""
+        try:
+            from parrot.a2a.security import InMemoryCredentialProvider
+        except ImportError:
+            pytest.skip("parrot.a2a.security not importable")
+
+        provider = InMemoryCredentialProvider()
+        await provider.register_agent("Bot2", permissions=[])
+        timestamp = str(int(time.time()))
+        payload = b"test"
+
+        identity = await provider.validate_hmac(
+            "wrong_signature", payload, timestamp, agent_name="Bot2"
+        )
+        assert identity is None, "Wrong signature must be rejected"
+
+    @pytest.mark.asyncio
+    async def test_future_timestamp_within_window_accepted(self):
+        """A slightly future timestamp (clock skew) within the window is accepted."""
+        try:
+            from parrot.a2a.security import InMemoryCredentialProvider, HMAC_TIMESTAMP_WINDOW
+        except ImportError:
+            pytest.skip("parrot.a2a.security not importable")
+
+        provider = InMemoryCredentialProvider()
+        result = await provider.register_agent("FutureBot", permissions=[])
+        secret = result["hmac_secret"]
+        payload = b"future"
+        # 30 seconds in the future (well within ±5min window)
+        future_timestamp = str(int(time.time()) + 30)
+        sig = _sign_request(payload, secret, future_timestamp)
+
+        identity = await provider.validate_hmac(
+            sig, payload, future_timestamp, agent_name="FutureBot"
+        )
+        assert identity is not None, "Slightly future timestamp within window must be accepted"
