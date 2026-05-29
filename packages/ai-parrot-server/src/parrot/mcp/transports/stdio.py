@@ -214,7 +214,7 @@ class StdioMCPSession:
                 try:
                     candidate = json.loads(response_str)
                 except json.JSONDecodeError:
-                    self.logger.debug("Ignoring non-JSON stdout: %s", response_str!r)
+                    self.logger.debug("Ignoring non-JSON stdout: %r", response_str)
                     continue
 
                 # Only accept responses with our request id; ignore notifications/others
