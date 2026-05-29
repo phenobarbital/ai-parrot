@@ -70,7 +70,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Edits AgentTalk.post in handlers/agent.py (shared with TASK-1383) and consumes the store (TASK-1380) + suspend tool (TASK-1381).",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1382-agenttalk-suspend-catch-paused-envelope.md"
+      "completed_at": "2026-05-29T14:45:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1382-agenttalk-suspend-catch-paused-envelope.md"
     },
     {
       "id": "TASK-1383",
