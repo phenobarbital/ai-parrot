@@ -91,7 +91,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Edits the SAME AgentTalk.post as TASK-1382 (must follow it to avoid conflict) and uses the store (TASK-1380).",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1383-agenttalk-resume-branch.md"
+      "completed_at": "2026-05-29T14:47:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1383-agenttalk-resume-branch.md"
     },
     {
       "id": "TASK-1384",
