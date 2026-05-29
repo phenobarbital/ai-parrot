@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-05-29T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-05-28T23:42:33+00:00",
   "tasks": [
     {
       "id": "TASK-1365",
@@ -14,16 +14,16 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No shared files with TASK-1366",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1365-package-scaffold.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1365-package-scaffold.md"
     },
     {
       "id": "TASK-1366",
@@ -32,16 +32,16 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No shared files with TASK-1365",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1366-relocate-vault-utils.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:30:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1366-relocate-vault-utils.md"
     },
     {
       "id": "TASK-1367",
@@ -50,16 +50,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1365"],
+      "depends_on": [
+        "TASK-1365"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies host __init__.py files shared by later tasks",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1367-add-extend-path.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:32:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1367-add-extend-path.md"
     },
     {
       "id": "TASK-1368",
@@ -68,16 +70,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1366"],
+      "depends_on": [
+        "TASK-1366"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on vault_utils relocation",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1368-split-mcp-oauth.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:32:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1368-split-mcp-oauth.md"
     },
     {
       "id": "TASK-1369",
@@ -86,16 +90,19 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1367", "TASK-1368"],
+      "depends_on": [
+        "TASK-1367",
+        "TASK-1368"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on extend_path and oauth split",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1369-move-mcp-server.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:35:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1369-move-mcp-server.md"
     },
     {
       "id": "TASK-1370",
@@ -104,16 +111,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1367"],
+      "depends_on": [
+        "TASK-1367"
+      ],
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-1369 — different namespace dirs",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1370-move-a2a-server.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:36:08+00:00",
+      "file": "sdd/tasks/completed/TASK-1370-move-a2a-server.md"
     },
     {
       "id": "TASK-1371",
@@ -122,16 +131,19 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1366", "TASK-1367"],
+      "depends_on": [
+        "TASK-1366",
+        "TASK-1367"
+      ],
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-1369/1370 — different namespace dirs",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1371-move-handlers.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:36:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1371-move-handlers.md"
     },
     {
       "id": "TASK-1372",
@@ -140,16 +152,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-1371"],
+      "depends_on": [
+        "TASK-1371"
+      ],
       "parallel": false,
       "parallelism_notes": "BotManager imports handlers — must move after handlers",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1372-move-manager.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:36:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1372-move-manager.md"
     },
     {
       "id": "TASK-1373",
@@ -158,16 +172,19 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1367", "TASK-1369"],
+      "depends_on": [
+        "TASK-1367",
+        "TASK-1369"
+      ],
       "parallel": true,
       "parallelism_notes": "Parallel with handlers/manager — different namespace",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1373-move-services.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:37:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1373-move-services.md"
     },
     {
       "id": "TASK-1374",
@@ -176,16 +193,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1367"],
+      "depends_on": [
+        "TASK-1367"
+      ],
       "parallel": true,
       "parallelism_notes": "Independent namespace — parallel with other moves",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1374-move-scheduler.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:37:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1374-move-scheduler.md"
     },
     {
       "id": "TASK-1375",
@@ -194,16 +213,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1367"],
+      "depends_on": [
+        "TASK-1367"
+      ],
       "parallel": true,
       "parallelism_notes": "Independent namespace — parallel with other moves",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1375-move-autonomous.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:38:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1375-move-autonomous.md"
     },
     {
       "id": "TASK-1376",
@@ -212,16 +233,24 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1369", "TASK-1370", "TASK-1371", "TASK-1372", "TASK-1373", "TASK-1374", "TASK-1375"],
+      "depends_on": [
+        "TASK-1369",
+        "TASK-1370",
+        "TASK-1371",
+        "TASK-1372",
+        "TASK-1373",
+        "TASK-1374",
+        "TASK-1375"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run after all moves complete",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1376-update-host-pyproject.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:39:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1376-update-host-pyproject.md"
     },
     {
       "id": "TASK-1377",
@@ -230,16 +259,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1376"],
+      "depends_on": [
+        "TASK-1376"
+      ],
       "parallel": false,
       "parallelism_notes": "Must run after all moves and pyproject update",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1377-satellite-tests.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:41:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1377-satellite-tests.md"
     },
     {
       "id": "TASK-1378",
@@ -248,16 +279,18 @@
       "feature_id": "FEAT-203",
       "feature": "ai-parrot-server",
       "spec": "sdd/specs/ai-parrot-server.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1376"],
+      "depends_on": [
+        "TASK-1376"
+      ],
       "parallel": true,
       "parallelism_notes": "Parallel with TASK-1377 — independent doc",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1378-migration-guide.md"
+      "started_at": "2026-05-28T23:26:26+00:00",
+      "completed_at": "2026-05-28T23:42:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1378-migration-guide.md"
     }
   ]
 }

@@ -34,7 +34,7 @@ Components:
         - OrchestrationResult: Result from orchestration
         - OrchestrationPlan: LLM decision plan
 
-    Security Layer:
+    Security Layer (server-only — requires ai-parrot-server):
         - AuthScheme: Supported authentication schemes
         - CallerIdentity: Authenticated agent identity
         - SecurityPolicy: Access control policies
@@ -53,72 +53,11 @@ Components:
         - Task: A2A task with status and artifacts
         - Message: A2A message format
         - Artifact: Output produced by agent
-
-Example Usage:
-    # Expose an agent as A2A service
-    from parrot.a2a import A2AServer
-
-    a2a = A2AServer(my_agent)
-    a2a.setup(app)
-
-    # Connect to remote agents
-    from parrot.a2a import A2AClient
-
-    async with A2AClient("http://agent:8080") as client:
-        task = await client.send_message("Hello!")
-
-    # Use mesh discovery
-    from parrot.a2a import A2AMeshDiscovery
-
-    mesh = A2AMeshDiscovery.from_config("agents.yaml")
-    await mesh.start()
-    analysts = mesh.get_by_skill("data_analysis")
-
-    # Use router for rule-based routing
-    from parrot.a2a import A2AProxyRouter
-
-    router = A2AProxyRouter(mesh)
-    router.route_by_skill("analysis", "AnalystBot")
-    result = await router.ask("Analyze this data")
-
-    # Use orchestrator for hybrid routing
-    from parrot.a2a import A2AOrchestrator
-
-    orch = A2AOrchestrator(mesh)
-    orch.set_fallback_llm(llm_client)
-    result = await orch.run("Complex query requiring reasoning")
-
-    # Secure A2A communication with JWT
-    from parrot.a2a import (
-        JWTAuthenticator,
-        A2ASecurityMiddleware,
-        SecureA2AClient,
-        InMemoryCredentialProvider,
-    )
-
-    # Server-side
-    jwt_auth = JWTAuthenticator(secret_key="your-secret", issuer="a2a-net")
-    credentials = InMemoryCredentialProvider()
-    await credentials.register_agent("DataBot", permissions=["skill:*"])
-
-    middleware = A2ASecurityMiddleware(
-        jwt_authenticator=jwt_auth,
-        credential_provider=credentials,
-    )
-
-    # Client-side
-    token = jwt_auth.create_token(agent_name="MyAgent")
-    client = SecureA2AClient(
-        "http://agent:8080",
-        auth_scheme=AuthScheme.BEARER,
-        token=token,
-    )
 """
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
 
-# Server - Expose agents as A2A services
-from .server import A2AServer, A2AEnabledMixin
-
-# Client - Connect to remote A2A agents
+# Client - Connect to remote A2A agents (consumer side — stay in core)
 from .client import (
     A2AClient,
     A2AAgentConnection,
@@ -129,7 +68,7 @@ from .client import (
 # Client Mixin - Add A2A client capabilities to agents
 from .mixin import A2AClientMixin
 
-# Data Models
+# Data Models (stay in core)
 from .models import (
     AgentCard,
     AgentSkill,
@@ -174,21 +113,42 @@ from .orchestrator import (
     OrchestratorStats,
 )
 
-from .security import (
-    AuthScheme,
-    CallerIdentity,
-    SecurityPolicy,
-    CredentialProvider,
-    InMemoryCredentialProvider,
-    JWTAuthenticator,
-    MTLSAuthenticator,
-    A2ASecurityMiddleware,
-    SecureA2AClient,
-)
+# Server-side exports (move to satellite in TASK-1370 — lazy via __getattr__)
+# A2AServer, A2AEnabledMixin — satellite: parrot.a2a.server
+# Security classes — satellite: parrot.a2a.security
+_SERVER_CLASSES = {
+    "A2AServer": ("parrot.a2a.server", "A2AServer"),
+    "A2AEnabledMixin": ("parrot.a2a.server", "A2AEnabledMixin"),
+    "AuthScheme": ("parrot.a2a.security", "AuthScheme"),
+    "CallerIdentity": ("parrot.a2a.security", "CallerIdentity"),
+    "SecurityPolicy": ("parrot.a2a.security", "SecurityPolicy"),
+    "CredentialProvider": ("parrot.a2a.security", "CredentialProvider"),
+    "InMemoryCredentialProvider": ("parrot.a2a.security", "InMemoryCredentialProvider"),
+    "RedisCredentialProvider": ("parrot.a2a.security", "RedisCredentialProvider"),
+    "JWTAuthenticator": ("parrot.a2a.security", "JWTAuthenticator"),
+    "MTLSAuthenticator": ("parrot.a2a.security", "MTLSAuthenticator"),
+    "A2ASecurityMiddleware": ("parrot.a2a.security", "A2ASecurityMiddleware"),
+    "SecureA2AClient": ("parrot.a2a.security", "SecureA2AClient"),
+}
+
+
+def __getattr__(name: str):
+    if name in _SERVER_CLASSES:
+        module_path, cls_name = _SERVER_CLASSES[name]
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            return getattr(mod, cls_name)
+        except ImportError:
+            raise ImportError(
+                f"{name!r} requires the ai-parrot-server package. "
+                f"Install it with: pip install ai-parrot-server"
+            ) from None
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
-    # === Server ===
+    # === Server (requires ai-parrot-server) ===
     "A2AServer",
     "A2AEnabledMixin",
 
@@ -235,4 +195,16 @@ __all__ = [
     "OrchestrationResult",
     "AgentExecutionResult",
     "OrchestratorStats",
+
+    # === Security (requires ai-parrot-server) ===
+    "AuthScheme",
+    "CallerIdentity",
+    "SecurityPolicy",
+    "CredentialProvider",
+    "InMemoryCredentialProvider",
+    "RedisCredentialProvider",
+    "JWTAuthenticator",
+    "MTLSAuthenticator",
+    "A2ASecurityMiddleware",
+    "SecureA2AClient",
 ]

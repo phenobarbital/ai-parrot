@@ -18,6 +18,7 @@ dependencies = [
     "ai-parrot-visualizations",
     "ai-parrot-pipelines",
     "ai-parrot-integrations",
+    "ai-parrot-server",
     "ai-parrot-advisors",
 ]
 

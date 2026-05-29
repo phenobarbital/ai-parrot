@@ -1,6 +1,9 @@
 """
 Parrot basic Handlers.
 """
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 
 def __getattr__(name: str):
     """Lazy imports for handlers that may cause circular imports."""
