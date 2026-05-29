@@ -43,7 +43,7 @@ from ..handlers.chat_interaction import ChatInteractionHandler
 from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
-from ..handlers.test_handler import BotConfigTestHandler
+from ..handlers.testing_handler import BotConfigTestHandler
 from ..handlers.dashboard_handler import (
     DashboardHandler,
     DashboardTabHandler,

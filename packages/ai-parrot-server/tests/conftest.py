@@ -1,5 +1,6 @@
 """Shared fixtures for the ai-parrot-server test suite."""
 import importlib.util
+import shutil
 import subprocess
 import zipfile
 from pathlib import Path
@@ -12,6 +13,11 @@ def _package_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
+def _uv_available() -> bool:
+    """Return True if the ``uv`` CLI is available on PATH."""
+    return shutil.which("uv") is not None
+
+
 def pytest_configure(config):
     """Register custom markers."""
     config.addinivalue_line(
@@ -21,6 +27,10 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers",
         "requires_aioquic: requires the mcp extra (aioquic)",
+    )
+    config.addinivalue_line(
+        "markers",
+        "wheel_build: requires building the wheel (slow, needs uv)",
     )
 
 
@@ -33,6 +43,9 @@ def pytest_runtest_setup(item):
     if "requires_aioquic" in markers:
         if not _package_available("aioquic"):
             pytest.skip("requires mcp extra (aioquic)")
+    if "wheel_build" in markers:
+        if not _uv_available():
+            pytest.skip("wheel_build tests require uv on PATH")
 
 
 @pytest.fixture(scope="session")

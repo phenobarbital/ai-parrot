@@ -3,6 +3,10 @@
 Locks the PEP 420 decision into CI:
 - The satellite wheel must NOT contain __init__.py at any of the 8 namespace levels.
 - The satellite wheel MUST contain all expected server files.
+
+Tests that use the ``satellite_wheel_path`` fixture (which builds the wheel via
+``uv build``) are marked ``@pytest.mark.wheel_build`` and are skipped automatically
+when ``uv`` is not available on PATH.
 """
 import pathlib
 import pytest
@@ -39,6 +43,7 @@ SATELLITE_SRC = pathlib.Path(__file__).parent.parent / "src" / "parrot"
 class TestWheelHasNoInitAtNamespaceLevels:
     """PEP 420: no __init__.py at the 8 namespace levels."""
 
+    @pytest.mark.wheel_build
     @pytest.mark.parametrize("forbidden", FORBIDDEN_INIT_PATHS)
     def test_no_init_at(self, satellite_wheel_namelist, forbidden):
         """Assert the satellite wheel does not contain the forbidden __init__.py."""

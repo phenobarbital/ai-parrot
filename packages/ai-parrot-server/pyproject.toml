@@ -70,5 +70,12 @@ where = ["src"]
 include = ["parrot*"]
 namespaces = true
 
+[tool.pytest.ini_options]
+markers = [
+    "wheel_build: requires building the wheel (slow, needs uv)",
+    "requires_apscheduler: requires the scheduler extra (apscheduler)",
+    "requires_aioquic: requires the mcp extra (aioquic)",
+]
+
 [tool.uv.sources]
 ai-parrot = { workspace = true }
