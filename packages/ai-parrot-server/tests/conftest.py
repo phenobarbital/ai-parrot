@@ -2,10 +2,23 @@
 import importlib.util
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
+
+# ---------------------------------------------------------------------------
+# FEAT-204: Ensure the worktree's own ai-parrot-server src is on sys.path.
+# The venv editable install (.pth) points to the MAIN repo's
+# packages/ai-parrot-server/src, so new modules added only in a worktree
+# are not visible via the installed path.  We insert the worktree-local src
+# first so that worktree-specific modules (e.g. parrot.human.suspended_store)
+# are found before the main-repo copy.
+# ---------------------------------------------------------------------------
+_THIS_PKG_SRC = (Path(__file__).parent.parent / "src").resolve()
+if str(_THIS_PKG_SRC) not in sys.path:
+    sys.path.insert(0, str(_THIS_PKG_SRC))
 
 
 def _package_available(name: str) -> bool:
