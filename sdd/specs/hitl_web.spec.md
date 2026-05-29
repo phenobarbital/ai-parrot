@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-204
 **Date**: 2026-05-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: `ai-parrot-server` 0.24.x · `ai-parrot` 0.25.x
 
 > Input: `sdd/proposals/hitl_web.brainstorm.md` (Recommended Option A) and the
