@@ -32,7 +32,7 @@
       "feature_id": "FEAT-204",
       "feature": "hitl_web",
       "spec": "sdd/specs/hitl_web.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "New isolated module in ai-parrot-server (human/suspended_store.py). No dependency on TASK-1379; shares no files. Can run concurrently with TASK-1379 in a separate worktree.",
       "assigned_to": null,
       "started_at": "2026-05-29T14:16:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1380-suspended-execution-store.md"
+      "completed_at": "2026-05-29T14:24:30+00:00",
+      "file": "sdd/tasks/completed/TASK-1380-suspended-execution-store.md"
     },
     {
       "id": "TASK-1381",
