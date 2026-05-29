@@ -136,14 +136,14 @@ toolkit's `exclude_tools` mechanism (set in `__init__`).
 - **Status**: Implemented and committed (`recover: SkillFileToolkit …`),
   61 skills tests green. Listed here for completeness; no further work.
 
-### Module 2: `SkillRegistryToolkit` (DB-backed) — NEW
+### Module 2: `SkillRegistryToolkit` (DB-backed) — ✅ DONE on this branch
 - **Path**: `packages/ai-parrot/src/parrot/skills/tools.py`
 - **Responsibility**: Replace `SearchSkillsTool`, `ReadSkillTool`,
   `ListSkillsTool`, `DocumentSkillTool`, `UpdateSkillTool` with one toolkit
   whose public methods carry the existing `_execute` bodies verbatim.
 - **Depends on**: existing `SkillRegistry` store API, `@tool_schema`.
 
-### Module 3: `create_skill_tools()` simplification + exports — NEW
+### Module 3: `create_skill_tools()` simplification + exports — ✅ DONE on this branch
 - **Path**: `packages/ai-parrot/src/parrot/skills/tools.py`,
   `packages/ai-parrot/src/parrot/skills/__init__.py`
 - **Responsibility**: Reduce `create_skill_tools()` to instantiating the two
@@ -277,10 +277,20 @@ None new.
 
 ## 8. Open Questions
 
-- [ ] `search_skills` schema: keep the local `SkillSearchArgs` (max_results ≤ 10)
-      or switch to `models.SearchSkillArgs` (≤ 20, extra filters)? — *Owner: Jesus*
-- [ ] Should the standalone classes be deleted outright (chosen approach: yes,
-      no backward-compat) or kept as thin deprecated shims? — *Owner: Jesus*
+- [x] `search_skills` schema → **RESOLVED**: use `models.SearchSkillArgs`
+      (adds `tags`, `include_deprecated`, `max_results ≤ 20`). The store's
+      `search_skills` already accepts `tags`/`include_deprecated`, so they are
+      wired through.
+- [x] Standalone classes → **RESOLVED**: deleted outright, no backward-compat
+      shims (consumers are few and internal).
+
+### Implementation note — latent bug fixed
+The original DB-tool error paths returned `ToolResult(status="error",
+error=...)` **without** the required `result` field, which raises a Pydantic
+`ValidationError` whenever hit (those error paths had no test coverage). The
+ported `SkillRegistryToolkit` methods add `result=None` to every error return,
+so those paths now work. Not a behavioural regression — the prior behaviour was
+a latent crash.
 
 ---
 
@@ -289,3 +299,4 @@ None new.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-05-29 | Jesus Lara | Initial draft; Module 1 already implemented on branch |
+| 0.2 | 2026-05-30 | Jesus Lara | Modules 2 & 3 implemented; open questions resolved; latent error-path bug fixed; 77 skills tests green |

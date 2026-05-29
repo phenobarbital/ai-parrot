@@ -59,11 +59,7 @@ from .store import (
 )
 
 from .tools import (
-    DocumentSkillTool,
-    UpdateSkillTool,
-    SearchSkillsTool,
-    ReadSkillTool,
-    ListSkillsTool,
+    SkillRegistryToolkit,
     SkillFileToolkit,
     create_skill_tools,
 )
@@ -105,11 +101,7 @@ __all__ = [
     "compute_unified_diff",
     "apply_unified_diff",
     # Tools
-    "DocumentSkillTool",
-    "UpdateSkillTool",
-    "SearchSkillsTool",
-    "ReadSkillTool",
-    "ListSkillsTool",
+    "SkillRegistryToolkit",
     "SkillFileToolkit",
     "create_skill_tools",
     # Mixin

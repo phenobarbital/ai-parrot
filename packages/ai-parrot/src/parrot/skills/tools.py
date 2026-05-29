@@ -7,6 +7,14 @@ Provides tools that agents can use to:
 - Read skill content
 - Update existing skills
 - Save learned skills as .md files for immediate /trigger activation
+
+Tools are grouped into two toolkits, each initialized once with its shared
+dependency:
+
+- :class:`SkillRegistryToolkit` — DB-backed registry (search/read/list/
+  document/update), sharing a :class:`~parrot.skills.store.SkillRegistry`.
+- :class:`SkillFileToolkit` — file-based skills (load/read_asset/save_learned),
+  sharing a :class:`~parrot.skills.file_registry.SkillFileRegistry`.
 """
 import asyncio
 from typing import Dict, List, Optional, Type
@@ -17,6 +25,7 @@ from ..tools.toolkit import AbstractToolkit
 from ..tools.decorators import tool_schema
 from .models import (
     SkillCategory,
+    SearchSkillArgs,
 )
 from .store import SkillRegistry
 
@@ -41,74 +50,6 @@ class DocumentSkillArgs(BaseModel):
     )
 
 
-class DocumentSkillTool(AbstractTool):
-    """
-    Tool for agents to document learned skills and patterns.
-    
-    Use this when you've learned something valuable that should be remembered:
-    - A successful approach to a problem
-    - How to use tools effectively together
-    - Domain-specific knowledge discovered
-    - Patterns that work well for certain tasks
-    """
-    
-    name: str = "document_skill"
-    description: str = (
-        "Document a learned skill or pattern for future reference. "
-        "Use when you discover an effective approach worth remembering."
-    )
-    args_schema: Type[BaseModel] = DocumentSkillArgs
-    
-    def __init__(
-        self,
-        registry: SkillRegistry,
-        agent_id: str,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.registry = registry
-        self.agent_id = agent_id
-    
-    async def _execute(
-        self,
-        name: str,
-        description: str,
-        content: str,
-        category: str = "general",
-        tags: Optional[List[str]] = None,
-        triggers: Optional[List[str]] = None,
-        related_tools: Optional[List[str]] = None,
-        **kwargs
-    ) -> ToolResult:
-        try:
-            skill, version = await self.registry.upload_skill(
-                name=name,
-                content=content,
-                agent_id=self.agent_id,
-                description=description,
-                category=category,
-                tags=tags or [],
-                triggers=triggers or [],
-                related_tools=related_tools or [],
-                commit_message="Documented by agent",
-            )
-            
-            return ToolResult(
-                status="done",
-                result=f"Skill documented: '{name}' (v{version.version_number})",
-                metadata={
-                    "skill_id": skill.skill_id,
-                    "version": version.version_number,
-                    "category": category,
-                }
-            )
-        except Exception as e:
-            return ToolResult(
-                status="error",
-                error=f"Failed to document skill: {str(e)}",
-            )
-
-
 class UpdateSkillArgs(BaseModel):
     """Arguments for updating an existing skill."""
     skill_id: str = Field(..., description="ID of skill to update")
@@ -118,128 +59,76 @@ class UpdateSkillArgs(BaseModel):
     description: Optional[str] = Field(default=None, description="New description (optional)")
 
 
-class UpdateSkillTool(AbstractTool):
+class ReadSkillToolArgs(BaseModel):
+    """Arguments for reading a skill."""
+    skill_id: str = Field(..., description="Skill ID to read")
+    version: Optional[int] = Field(default=None, description="Version number (latest if None)")
+
+
+class SkillRegistryToolkit(AbstractToolkit):
+    """Unified toolkit for the DB-backed skill registry, sharing one store.
+
+    Every public async method becomes a tool whose name equals the method name
+    (no ``tool_prefix`` is applied, so ``search_skills``, ``read_skill``,
+    ``list_skills``, ``document_skill`` and ``update_skill`` keep their
+    historical names). The :class:`~parrot.skills.store.SkillRegistry` and the
+    ``agent_id`` are injected once and shared by every tool, replacing the
+    previous one-class-per-tool wiring.
+
+    Write tools (``document_skill``, ``update_skill``) are exposed only when
+    ``include_write_tools`` is ``True``.
+
+    Args:
+        registry: Configured DB-backed :class:`~parrot.skills.store.SkillRegistry`.
+        agent_id: Agent identifier, recorded as the author of documented/updated
+            skills.
+        include_write_tools: When ``False``, ``document_skill`` and
+            ``update_skill`` are not exposed.
     """
-    Tool for updating existing skills with new versions.
-    
-    Use when you want to improve or correct an existing skill document.
-    Creates a new version while preserving history.
-    """
-    
-    name: str = "update_skill"
-    description: str = (
-        "Update an existing skill with improved content. "
-        "Creates a new version while preserving history."
-    )
-    args_schema: Type[BaseModel] = UpdateSkillArgs
-    
+
     def __init__(
         self,
         registry: SkillRegistry,
         agent_id: str,
-        **kwargs
-    ):
+        include_write_tools: bool = True,
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
-        self.registry = registry
-        self.agent_id = agent_id
-    
-    async def _execute(
-        self,
-        skill_id: str,
-        content: str,
-        commit_message: str = "",
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        **kwargs
-    ) -> ToolResult:
-        try:
-            # Get existing skill
-            skills = await self.registry.list_skills()
-            existing = next((s for s in skills if s["skill_id"] == skill_id), None)
-            
-            if not existing:
-                return ToolResult(
-                    status="error",
-                    error=f"Skill not found: {skill_id}",
-                )
-            
-            skill, version = await self.registry.upload_skill(
-                name=name or existing["name"],
-                content=content,
-                agent_id=self.agent_id,
-                description=description or existing["description"],
-                category=existing["category"],
-                tags=existing["tags"],
-                commit_message=commit_message or "Updated by agent",
-                skill_id=skill_id,
-            )
-            
-            return ToolResult(
-                status="done",
-                result=f"Skill updated: '{skill.metadata.name}' → v{version.version_number}",
-                metadata={
-                    "skill_id": skill_id,
-                    "version": version.version_number,
-                }
-            )
-        except Exception as e:
-            return ToolResult(
-                status="error",
-                error=f"Failed to update skill: {str(e)}",
-            )
+        self._registry = registry
+        self._agent_id = agent_id
+        # Hide write tools when the caller asked for read-only access.
+        if not include_write_tools:
+            self.exclude_tools = ("document_skill", "update_skill")
 
-
-class SkillSearchArgs(BaseModel):
-    """Arguments for searching skills."""
-    query: str = Field(..., description="Search query")
-    category: Optional[str] = Field(default=None, description="Filter by category")
-    max_results: int = Field(default=5, ge=1, le=10, description="Maximum results")
-
-
-class SearchSkillsTool(AbstractTool):
-    """
-    Tool for searching the skill registry.
-    
-    Use this to find relevant skills before tackling a task.
-    """
-    
-    name: str = "search_skills"
-    description: str = (
-        "Search for relevant skills and patterns. "
-        "Use before tackling unfamiliar tasks to leverage existing knowledge."
-    )
-    args_schema: Type[BaseModel] = SkillSearchArgs
-    
-    def __init__(
-        self,
-        registry: SkillRegistry,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.registry = registry
-    
-    async def _execute(
+    @tool_schema(SearchSkillArgs)
+    async def search_skills(
         self,
         query: str,
         category: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        include_deprecated: bool = False,
         max_results: int = 5,
-        **kwargs
     ) -> ToolResult:
+        """Search for relevant skills and patterns. Use before tackling
+        unfamiliar tasks to leverage existing knowledge.
+        """
         try:
             cat = SkillCategory(category) if category else None
-            results = await self.registry.search_skills(
+            results = await self._registry.search_skills(
                 query=query,
                 category=cat,
+                tags=tags,
+                include_deprecated=include_deprecated,
                 max_results=max_results,
             )
-            
+
             if not results:
                 return ToolResult(
                     status="done",
                     result="No relevant skills found.",
                     metadata={"skills_found": 0}
                 )
-            
+
             # Format results
             formatted = []
             for r in results:
@@ -251,9 +140,9 @@ class SearchSkillsTool(AbstractTool):
                     "category": r.skill.metadata.category.value,
                     "version": r.skill.current_version,
                 })
-            
+
             summary = self._format_summary(results)
-            
+
             return ToolResult(
                 status="done",
                 result=summary,
@@ -265,10 +154,12 @@ class SearchSkillsTool(AbstractTool):
         except Exception as e:
             return ToolResult(
                 status="error",
+                result=None,
                 error=f"Search failed: {str(e)}",
             )
-    
+
     def _format_summary(self, results) -> str:
+        """Render a human-readable summary of search results (internal helper)."""
         lines = ["Found relevant skills:"]
         for r in results:
             lines.append(f"\n**{r.skill.metadata.name}** (v{r.skill.current_version})")
@@ -277,41 +168,18 @@ class SearchSkillsTool(AbstractTool):
                 lines.append(f"  Use when: {', '.join(r.skill.metadata.triggers[:2])}")
         return "\n".join(lines)
 
-
-class ReadSkillToolArgs(BaseModel):
-    """Arguments for reading a skill."""
-    skill_id: str = Field(..., description="Skill ID to read")
-    version: Optional[int] = Field(default=None, description="Version number (latest if None)")
-
-
-class ReadSkillTool(AbstractTool):
-    """
-    Tool for reading skill content.
-    """
-    
-    name: str = "read_skill"
-    description: str = "Read the full content of a skill by ID."
-    args_schema: Type[BaseModel] = ReadSkillToolArgs
-    
-    def __init__(
-        self,
-        registry: SkillRegistry,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.registry = registry
-    
-    async def _execute(
+    @tool_schema(ReadSkillToolArgs)
+    async def read_skill(
         self,
         skill_id: str,
         version: Optional[int] = None,
-        **kwargs
     ) -> ToolResult:
+        """Read the full content of a skill by ID."""
         try:
-            content = await self.registry.read_skill(skill_id, version)
-            skills = await self.registry.list_skills()
+            content = await self._registry.read_skill(skill_id, version)
+            skills = await self._registry.list_skills()
             skill_info = next((s for s in skills if s["skill_id"] == skill_id), None)
-            
+
             return ToolResult(
                 status="done",
                 result=content,
@@ -324,42 +192,28 @@ class ReadSkillTool(AbstractTool):
         except KeyError:
             return ToolResult(
                 status="error",
+                result=None,
                 error=f"Skill not found: {skill_id}",
             )
         except Exception as e:
             return ToolResult(
                 status="error",
+                result=None,
                 error=f"Failed to read skill: {str(e)}",
             )
 
-
-class ListSkillsTool(AbstractTool):
-    """
-    Tool for listing all available skills.
-    """
-    
-    name: str = "list_skills"
-    description: str = "List all available skills with summary info."
-    
-    def __init__(
-        self,
-        registry: SkillRegistry,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.registry = registry
-    
-    async def _execute(self, **kwargs) -> ToolResult:
+    async def list_skills(self) -> ToolResult:
+        """List all available skills with summary info."""
         try:
-            skills = await self.registry.list_skills()
-            
+            skills = await self._registry.list_skills()
+
             if not skills:
                 return ToolResult(
                     status="done",
                     result="No skills documented yet.",
                     metadata={"count": 0}
                 )
-            
+
             # Group by category
             by_category: Dict[str, List] = {}
             for s in skills:
@@ -367,13 +221,13 @@ class ListSkillsTool(AbstractTool):
                 if cat not in by_category:
                     by_category[cat] = []
                 by_category[cat].append(s)
-            
+
             lines = [f"**{len(skills)} skills available:**"]
             for cat, cat_skills in by_category.items():
                 lines.append(f"\n_{cat}_:")
                 for s in cat_skills:
                     lines.append(f"  • {s['name']} (v{s['current_version']})")
-            
+
             return ToolResult(
                 status="done",
                 result="\n".join(lines),
@@ -385,7 +239,100 @@ class ListSkillsTool(AbstractTool):
         except Exception as e:
             return ToolResult(
                 status="error",
+                result=None,
                 error=f"Failed to list skills: {str(e)}",
+            )
+
+    @tool_schema(DocumentSkillArgs)
+    async def document_skill(
+        self,
+        name: str,
+        description: str,
+        content: str,
+        category: str = "general",
+        tags: Optional[List[str]] = None,
+        triggers: Optional[List[str]] = None,
+        related_tools: Optional[List[str]] = None,
+    ) -> ToolResult:
+        """Document a learned skill or pattern for future reference. Use when
+        you discover an effective approach worth remembering.
+        """
+        try:
+            skill, version = await self._registry.upload_skill(
+                name=name,
+                content=content,
+                agent_id=self._agent_id,
+                description=description,
+                category=category,
+                tags=tags or [],
+                triggers=triggers or [],
+                related_tools=related_tools or [],
+                commit_message="Documented by agent",
+            )
+
+            return ToolResult(
+                status="done",
+                result=f"Skill documented: '{name}' (v{version.version_number})",
+                metadata={
+                    "skill_id": skill.skill_id,
+                    "version": version.version_number,
+                    "category": category,
+                }
+            )
+        except Exception as e:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=f"Failed to document skill: {str(e)}",
+            )
+
+    @tool_schema(UpdateSkillArgs)
+    async def update_skill(
+        self,
+        skill_id: str,
+        content: str,
+        commit_message: str = "",
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> ToolResult:
+        """Update an existing skill with improved content. Creates a new version
+        while preserving history.
+        """
+        try:
+            # Get existing skill
+            skills = await self._registry.list_skills()
+            existing = next((s for s in skills if s["skill_id"] == skill_id), None)
+
+            if not existing:
+                return ToolResult(
+                    status="error",
+                    error=f"Skill not found: {skill_id}",
+                )
+
+            skill, version = await self._registry.upload_skill(
+                name=name or existing["name"],
+                content=content,
+                agent_id=self._agent_id,
+                description=description or existing["description"],
+                category=existing["category"],
+                tags=existing["tags"],
+                commit_message=commit_message or "Updated by agent",
+                skill_id=skill_id,
+            )
+
+            return ToolResult(
+                status="done",
+                result=f"Skill updated: '{skill.metadata.name}' → v{version.version_number}",
+                metadata={
+                    "skill_id": skill_id,
+                    "version": version.version_number,
+                }
+            )
+        except Exception as e:
+            return ToolResult(
+                status="error",
+                result=None,
+                error=f"Failed to update skill: {str(e)}",
             )
 
 
@@ -651,10 +598,14 @@ def create_skill_tools(
 ) -> List[AbstractTool]:
     """Create skill registry tools for an agent.
 
+    Thin factory that instantiates the two skill toolkits and concatenates
+    their generated tools.
+
     Args:
         registry: Configured SkillRegistry (DB-backed).
         agent_id: Agent identifier string.
-        include_write_tools: If ``True``, include document/update tools.
+        include_write_tools: If ``True``, include the ``document_skill`` /
+            ``update_skill`` write tools from :class:`SkillRegistryToolkit`.
         file_registry: Optional :class:`~parrot.skills.file_registry.SkillFileRegistry`
             for file-based tools. When provided, the file-based tools from
             :class:`SkillFileToolkit` (``load_skill``, ``read_skill_asset`` and,
@@ -665,17 +616,13 @@ def create_skill_tools(
     Returns:
         List of :class:`~parrot.tools.abstract.AbstractTool` instances.
     """
-    tools: List[AbstractTool] = [
-        SearchSkillsTool(registry=registry),
-        ReadSkillTool(registry=registry),
-        ListSkillsTool(registry=registry),
-    ]
-
-    if include_write_tools:
-        tools.extend([
-            DocumentSkillTool(registry=registry, agent_id=agent_id),
-            UpdateSkillTool(registry=registry, agent_id=agent_id),
-        ])
+    tools: List[AbstractTool] = list(
+        SkillRegistryToolkit(
+            registry=registry,
+            agent_id=agent_id,
+            include_write_tools=include_write_tools,
+        ).get_tools()
+    )
 
     # Add file-based tools when file registry is available. All file-based
     # tools share the single SkillFileToolkit; save_learned_skill is exposed
