@@ -58,7 +58,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         )
         await self.site.start()
 
-        self.logger.info(f"SSE MCP server started at http://{self.config.host}:{self.config.port}")
+        self.logger.info("SSE MCP server started at http://%s:%s", self.config.host, self.config.port)
         self.logger.info(
             "MCP endpoints: "
             f"events at http://{self.config.host}:{self.config.port}{self.events_path}, "
@@ -108,7 +108,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         session_id = self._get_session_id(request)
         queue: asyncio.Queue = asyncio.Queue()
         self.sessions[session_id] = queue
-        self.logger.info(f"SSE client connected: {session_id}")
+        self.logger.info("SSE client connected: %s", session_id)
 
         response = web.StreamResponse(
             status=200,
@@ -147,7 +147,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                     )
                     break
         except (asyncio.CancelledError, ConnectionResetError, ConnectionError):
-            self.logger.info(f"SSE client disconnected: {session_id}")
+            self.logger.info("SSE client disconnected: %s", session_id)
         finally:
             self.sessions.pop(session_id, None)
             with contextlib.suppress(Exception):
@@ -166,7 +166,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
             try:
                 queue.put_nowait(message)
             except Exception as e:
-                self.logger.warning(f"Failed to enqueue SSE message for {session_id}: {e}")
+                self.logger.warning("Failed to enqueue SSE message for %s: %s", session_id, e)
 
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         try:
@@ -180,7 +180,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
             request_id = data.get("id")
             session_id = request.headers.get("X-Session-Id") or request.query.get("session")
 
-            self.logger.info(f"SSE HTTP request: {method} (session {session_id or 'none'})")
+            self.logger.info("SSE HTTP request: %s (session %s)", method, session_id or 'none')
 
             try:
                 if method == "initialize":
@@ -201,7 +201,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                     result = await self.handle_prompts_list(params)
                 elif method and method.startswith("notifications/"):
                     # MCP notifications are fire-and-forget; acknowledge silently
-                    self.logger.debug(f"Received notification: {method}")
+                    self.logger.debug("Received notification: %s", method)
                     return web.Response(status=204)
                 else:
                     raise RuntimeError(
@@ -215,7 +215,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                 }
 
             except Exception as e:
-                self.logger.error(f"Error handling {method}: {e}")
+                self.logger.error("Error handling %s: %s", method, e)
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -229,7 +229,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
             return web.json_response(response)
 
         except Exception as e:
-            self.logger.error(f"SSE HTTP request error: {e}")
+            self.logger.error("SSE HTTP request error: %s", e)
             return web.json_response(
                 {
                     "jsonrpc": "2.0",
@@ -289,7 +289,7 @@ class SseMCPSession(HttpMCPSession):
             # 4. Initialize MCP
             await self._initialize_session()
             self._initialized = True
-            self.logger.info(f"SSE connection established to {self.config.name} (session {self._session_id})")
+            self.logger.info("SSE connection established to %s (session %s)", self.config.name, self._session_id)
 
         except Exception as e:
             await self.disconnect()
@@ -301,7 +301,7 @@ class SseMCPSession(HttpMCPSession):
         if not events_url:
             events_url = self.config.url
         
-        self.logger.debug(f"Connecting to SSE endpoint: {events_url}")
+        self.logger.debug("Connecting to SSE endpoint: %s", events_url)
 
         try:
             async with sse_client.EventSource(
@@ -313,23 +313,23 @@ class SseMCPSession(HttpMCPSession):
                 async for event in event_source:
                     try:
                         if event.type == 'error':
-                            self.logger.error(f"SSE Error: {event.data}")
+                            self.logger.error("SSE Error: %s", event.data)
                             continue
                             
                         if event.type == 'connection':
-                            self.logger.debug(f"SSE Connection event: {event.data}")
+                            self.logger.debug("SSE Connection event: %s", event.data)
                             continue
 
                         if event.type == 'message':
                             await self._handle_sse_message(event.data)
                             
                     except Exception as e:
-                        self.logger.error(f"Error processing SSE event: {e}")
+                        self.logger.error("Error processing SSE event: %s", e)
 
         except asyncio.CancelledError:
             self.logger.debug("SSE listener cancelled")
         except Exception as e:
-            self.logger.error(f"SSE connection error: {e}")
+            self.logger.error("SSE connection error: %s", e)
 
     async def _handle_sse_message(self, data: str):
         """Handle incoming JSON-RPC message from SSE."""
@@ -337,9 +337,9 @@ class SseMCPSession(HttpMCPSession):
             message = json.loads(data)
             
             if "method" in message and "id" not in message:
-                self.logger.info(f"Received notification: {message['method']}")
+                self.logger.info("Received notification: %s", message['method'])
             elif "method" in message and "id" in message:
-                 self.logger.info(f"Received server request: {message['method']}")
+                 self.logger.info("Received server request: %s", message['method'])
             
         except json.JSONDecodeError:
             self.logger.error("Failed to decode SSE message")

@@ -94,7 +94,7 @@ class UserObjectsHandler:
                     len(tools)
                 )
             except Exception as e:
-                self.logger.error(f"Failed to add MCP server to ToolManager: {e}")
+                self.logger.error("Failed to add MCP server to ToolManager: %s", e)
 
     async def configure_tool_manager(
         self,

@@ -145,7 +145,7 @@ class CrewExecutionHandler(BaseView):
                     return self.json_response(statuses)
 
             except Exception as e:
-                self.logger.error(f"Error retrieving crew info: {e}", exc_info=True)
+                self.logger.error("Error retrieving crew info: %s", e, exc_info=True)
                 return self.error(
                     response={"message": f"Server error: {str(e)}"},
                     status=500
@@ -313,7 +313,7 @@ class CrewExecutionHandler(BaseView):
             safe_response = self._safe_serialize_result(response_data, path="response_data")
             return self.json_response(safe_response)
         except Exception as e:
-            self.logger.error(f"Error getting job status: {e}", exc_info=True)
+            self.logger.error("Error getting job status: %s", e, exc_info=True)
             return self.error(
                 response={"message": f"Error: {str(e)}"},
                 status=500
@@ -529,7 +529,7 @@ class CrewExecutionHandler(BaseView):
                     return self.error(status=400, response={"message": f"Unknown action: {action}"})
             
             except Exception as e:
-                self.logger.error(f"Error performing {action}: {e}", exc_info=True)
+                self.logger.error("Error performing %s: %s", action, e, exc_info=True)
                 return self.error(status=500, response={"message": str(e)})
         
         return self.error(status=400, response={"message": "PUT requires an action (ask/summary)"})
@@ -650,7 +650,7 @@ class CrewExecutionHandler(BaseView):
                     elif hasattr(result, '__dict__'): return result.__dict__
                     return result
                 except Exception as e:
-                    self.logger.error(f"Error executing crew {crew_id}: {e}", exc_info=True)
+                    self.logger.error("Error executing crew %s: %s", crew_id, e, exc_info=True)
                     raise
 
             # Start Job
@@ -666,5 +666,5 @@ class CrewExecutionHandler(BaseView):
             }, status=202)
 
         except Exception as e:
-            self.logger.error(f"Error creating job: {e}", exc_info=True)
+            self.logger.error("Error creating job: %s", e, exc_info=True)
             return self.error(response={"message": f"Error: {str(e)}"}, status=500)

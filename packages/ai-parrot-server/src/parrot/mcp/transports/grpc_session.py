@@ -58,7 +58,7 @@ class GrpcMCPSession:
             await self._initialize_session()
             self._initialized = True
             
-            self.logger.info(f"gRPC connection established to {self.config.name}")
+            self.logger.info("gRPC connection established to %s", self.config.name)
             
         except Exception as e:
             await self.disconnect()
@@ -76,7 +76,7 @@ class GrpcMCPSession:
                 
                 await self._response_queue.put(msg)
         except grpc.aio.AioRpcError as e:
-            self.logger.error(f"gRPC stream error: {e}")
+            self.logger.error("gRPC stream error: %s", e)
         except asyncio.CancelledError:
             pass
     

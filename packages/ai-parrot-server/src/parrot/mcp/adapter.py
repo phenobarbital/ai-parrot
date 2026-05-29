@@ -20,7 +20,7 @@ class MCPToolAdapter:
                 # Get the JSON schema from the Pydantic model
                 input_schema = self.tool.args_schema.model_json_schema()
             except Exception as e:
-                self.logger.warning(f"Could not extract schema for {self.tool.name}: {e}")
+                self.logger.warning("Could not extract schema for %s: %s", self.tool.name, e)
                 input_schema = {"type": "object", "properties": {}}
 
         return {
@@ -51,7 +51,7 @@ class MCPToolAdapter:
                 }
 
         except Exception as e:
-            self.logger.error(f"Tool execution failed: {e}")
+            self.logger.error("Tool execution failed: %s", e)
             return {
                 "content": [
                     {

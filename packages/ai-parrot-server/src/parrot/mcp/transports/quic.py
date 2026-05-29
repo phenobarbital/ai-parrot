@@ -177,7 +177,7 @@ class QuicMCPClientProtocol(QuicConnectionProtocol):
     def quic_event_received(self, event: QuicEvent):
         """Handle QUIC-level events."""
         if isinstance(event, ConnectionTerminated):
-            self.logger.warning(f"Connection terminated: {event.reason_phrase}")
+            self.logger.warning("Connection terminated: %s", event.reason_phrase)
             # Cancel all pending requests
             for future in self._pending_requests.values():
                 if not future.done():
@@ -238,12 +238,12 @@ class QuicMCPClientProtocol(QuicConnectionProtocol):
                 self._handle_notification(message)
         
         except Exception as e:
-            self.logger.error(f"Failed to handle WebTransport data: {e}")
+            self.logger.error("Failed to handle WebTransport data: %s", e)
     
     def _handle_notification(self, message: Dict[str, Any]):
         """Handle server-initiated notifications."""
         method = message.get("method", "")
-        self.logger.debug(f"Received notification: {method}")
+        self.logger.debug("Received notification: %s", method)
         # Could emit to event handlers here
     
     def _handle_datagram(self, data: bytes):
@@ -256,11 +256,11 @@ class QuicMCPClientProtocol(QuicConnectionProtocol):
             if msg_type == 0x01:  # Heartbeat
                 self.logger.debug("Received heartbeat")
             elif msg_type == 0x02:  # Telemetry
-                self.logger.debug(f"Received telemetry: {len(payload)} bytes")
+                self.logger.debug("Received telemetry: %s bytes", len(payload))
             # Add more types as needed
         
         except Exception as e:
-            self.logger.debug(f"Failed to handle datagram: {e}")
+            self.logger.debug("Failed to handle datagram: %s", e)
 
 
 class QuicMCPServerProtocol(QuicConnectionProtocol):
@@ -334,7 +334,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
         method = headers.get(b":method", b"").decode()
         path = headers.get(b":path", b"/").decode()
         
-        self.logger.debug(f"Headers received: {method} {path}")
+        self.logger.debug("Headers received: %s %s", method, path)
         
         # Check for WebTransport CONNECT
         if method == "CONNECT" and headers.get(b":protocol") == b"webtransport":
@@ -363,7 +363,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
         )
         self.transmit()
         
-        self.logger.info(f"WebTransport session accepted: {stream_id}")
+        self.logger.info("WebTransport session accepted: %s", stream_id)
     
     async def _handle_data(self, event: DataReceived) -> None:
         """Handle incoming HTTP/3 data."""
@@ -395,7 +395,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
             params = request.get("params", {})
             request_id = request.get("id")
             
-            self.logger.info(f"MCP request: {method} (id={request_id})")
+            self.logger.info("MCP request: %s (id=%s)", method, request_id)
             
             # Dispatch to handler
             try:
@@ -419,7 +419,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
                 }
                 
             except Exception as e:
-                self.logger.error(f"Error handling {method}: {e}")
+                self.logger.error("Error handling %s: %s", method, e)
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -439,7 +439,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
             self.transmit()
             
         except Exception as e:
-            self.logger.error(f"Failed to process MCP request: {e}")
+            self.logger.error("Failed to process MCP request: %s", e)
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
@@ -471,7 +471,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
                 self.transmit()
             
             elif msg_type == 0x02:  # Telemetry
-                self.logger.debug(f"Received telemetry: {len(payload)} bytes")
+                self.logger.debug("Received telemetry: %s bytes", len(payload))
                 # Could forward to metrics system
             
             elif msg_type == 0x03:  # Ping
@@ -480,7 +480,7 @@ class QuicMCPServerProtocol(QuicConnectionProtocol):
                 self.transmit()
             
         except Exception as e:
-            self.logger.debug(f"Failed to handle datagram: {e}")
+            self.logger.debug("Failed to handle datagram: %s", e)
 
 
 class QuicMCPServer(MCPServerBase):
@@ -529,7 +529,7 @@ class QuicMCPServer(MCPServerBase):
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
         
-        self.logger.info(f"Calling tool: {tool_name}")
+        self.logger.info("Calling tool: %s", tool_name)
         
         if tool_name not in self.tools:
             raise RuntimeError(f"Tool not found: {tool_name}")
@@ -551,7 +551,7 @@ class QuicMCPServer(MCPServerBase):
             }
             
         except Exception as e:
-            self.logger.error(f"Tool execution failed: {e}")
+            self.logger.error("Tool execution failed: %s", e)
             return {
                 "content": [{"type": "text", "text": f"Error: {e}"}],
                 "isError": True
@@ -624,10 +624,10 @@ class QuicMCPServer(MCPServerBase):
         self.logger.info(
             f"QUIC MCP server started at https://{self.config.host}:{self.config.port}"
         )
-        self.logger.info(f"Transport: QUIC/HTTP3 with WebTransport")
-        self.logger.info(f"Serialization: {self.quic_config.serialization.value}")
-        self.logger.info(f"0-RTT enabled: {self.quic_config.enable_0rtt}")
-        self.logger.info(f"Registered tools: {list(self.tools.keys())}")
+        self.logger.info("Transport: QUIC/HTTP3 with WebTransport")
+        self.logger.info("Serialization: %s", self.quic_config.serialization.value)
+        self.logger.info("0-RTT enabled: %s", self.quic_config.enable_0rtt)
+        self.logger.info("Registered tools: %s", list(self.tools.keys()))
         
         # Keep server running
         try:
@@ -718,7 +718,7 @@ class QuicMCPSession:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(pickle.dumps(ticket))
             except Exception as e:
-                self.logger.warning(f"Failed to save session ticket: {e}")
+                self.logger.warning("Failed to save session ticket: %s", e)
 
     def _load_session_ticket(self) -> Optional[SessionTicket]:
         """Load session ticket for 0-RTT."""
@@ -741,7 +741,7 @@ class QuicMCPSession:
                 path.write_bytes(pickle.dumps(ticket))
                 self.logger.info("Saved session ticket for 0-RTT")
             except Exception as e:
-                self.logger.warning(f"Failed to save session ticket: {e}")
+                self.logger.warning("Failed to save session ticket: %s", e)
     
     async def connect(self):
         """Establish QUIC connection to MCP server."""
@@ -859,7 +859,7 @@ class QuicMCPSession:
         # Send initialized notification
         await self.send_notification("notifications/initialized")
         
-        self.logger.info(f"MCP session initialized over QUIC")
+        self.logger.info("MCP session initialized over QUIC")
     
     async def send_request(
         self, 

@@ -112,7 +112,7 @@ class ScrapingHandler(BaseView):
         except web.HTTPException:
             raise
         except Exception as err:
-            self.logger.error(f"GET error: {err}", exc_info=True)
+            self.logger.error("GET error: %s", err, exc_info=True)
             return _error_response({"error": str(err)}, status=500)
 
     async def _handle_plan_list(self, toolkit: WebScrapingToolkit) -> web.Response:
@@ -166,7 +166,7 @@ class ScrapingHandler(BaseView):
                 status=400,
             )
         except Exception as err:
-            self.logger.error(f"POST error: {err}", exc_info=True)
+            self.logger.error("POST error: %s", err, exc_info=True)
             return _error_response({"error": str(err)}, status=500)
 
     async def _handle_plan_create(self, data: Dict[str, Any]) -> web.Response:
@@ -311,7 +311,7 @@ class ScrapingHandler(BaseView):
                 status=400,
             )
         except Exception as err:
-            self.logger.error(f"PUT error: {err}", exc_info=True)
+            self.logger.error("PUT error: %s", err, exc_info=True)
             return _error_response({"error": str(err)}, status=500)
 
     # ------------------------------------------------------------------
@@ -343,7 +343,7 @@ class ScrapingHandler(BaseView):
         except web.HTTPException:
             raise
         except Exception as err:
-            self.logger.error(f"PATCH error: {err}", exc_info=True)
+            self.logger.error("PATCH error: %s", err, exc_info=True)
             return _error_response({"error": str(err)}, status=500)
 
     # ------------------------------------------------------------------
@@ -374,7 +374,7 @@ class ScrapingHandler(BaseView):
         except web.HTTPException:
             raise
         except Exception as err:
-            self.logger.error(f"DELETE error: {err}", exc_info=True)
+            self.logger.error("DELETE error: %s", err, exc_info=True)
             return _error_response({"error": str(err)}, status=500)
 
     # ------------------------------------------------------------------

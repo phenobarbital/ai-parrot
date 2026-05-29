@@ -47,7 +47,7 @@ class MCPServerBase(ABC):
         """
         self.resources[resource.uri] = resource
         self.resource_handlers[resource.uri] = read_handler
-        self.logger.info(f"Registered resource: {resource.name} ({resource.uri})")
+        self.logger.info("Registered resource: %s (%s)", resource.name, resource.uri)
 
     # ... (tools registration) ...
 
@@ -128,7 +128,7 @@ class MCPServerBase(ABC):
                             f"Registered static OAuth client: {client.client_id} ({client.client_name})"
                         )
                     except Exception as e:
-                        self.logger.error(f"Failed to register static client: {e}")
+                        self.logger.error("Failed to register static client: %s", e)
 
             self.logger.info("Authentication: OAuth2 (internal) enabled")
 
@@ -172,7 +172,7 @@ class MCPServerBase(ABC):
 
         adapter = MCPToolAdapter(tool)
         self.tools[tool_name] = adapter
-        self.logger.info(f"Registered tool: {tool_name}")
+        self.logger.info("Registered tool: %s", tool_name)
 
     def register_tools(self, tools: List[AbstractTool]):
         """Register multiple tools."""
@@ -220,7 +220,7 @@ class MCPServerBase(ABC):
 
         # Log session start
         self.api_key_store.log_session_start(api_key, record.user_id, time.time())
-        self.logger.debug(f"API key authenticated for user: {record.user_id}")
+        self.logger.debug("API key authenticated for user: %s", record.user_id)
 
         # Store user info in request for downstream use
         request["mcp_user"] = {"user_id": record.user_id, "scopes": record.scopes}
@@ -282,7 +282,7 @@ class MCPServerBase(ABC):
             return None
 
         except Exception as e:
-            self.logger.error(f"navigator-auth error: {e}")
+            self.logger.error("navigator-auth error: %s", e)
             return web.json_response(
                 {"error": "unauthorized", "error_description": "Authentication failed"},
                 status=401,
@@ -330,7 +330,7 @@ class MCPServerBase(ABC):
 
     async def handle_tools_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle tools/list request."""
-        self.logger.info(f"Listing {len(self.tools)} available tools")
+        self.logger.info("Listing %s available tools", len(self.tools))
 
         tools = []
         tools.extend(
@@ -344,7 +344,7 @@ class MCPServerBase(ABC):
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
 
-        self.logger.info(f"Calling tool: {tool_name} with args: {arguments}")
+        self.logger.info("Calling tool: %s with args: %s", tool_name, arguments)
 
         if tool_name not in self.tools:
             raise RuntimeError(

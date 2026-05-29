@@ -156,7 +156,7 @@ async def _run_standalone_server(mcp_server: ParrotMCPServer):
         logger.error("No tools configured")
         sys.exit(1)
 
-    logger.info(f"Loaded {len(tools)} tools")
+    logger.info("Loaded %s tools", len(tools))
 
     # Get transport config (should be single transport in CLI mode)
     if len(mcp_server.transport_configs) != 1:
@@ -181,7 +181,7 @@ async def _run_standalone_server(mcp_server: ParrotMCPServer):
 
     # Start and run
     try:
-        logger.info(f"Starting MCP server in {transport_config.transport} mode...")
+        logger.info("Starting MCP server in %s mode...", transport_config.transport)
         await server.start()
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

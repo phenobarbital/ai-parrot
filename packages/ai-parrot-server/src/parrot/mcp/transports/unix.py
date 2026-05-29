@@ -30,7 +30,7 @@ class UnixMCPServer(MCPServerBase):
     def _setup_signal_handlers(self):
         """Setup graceful shutdown on SIGTERM/SIGINT."""
         def signal_handler(signum, frame):
-            self.logger.info(f"Received signal {signum}, initiating shutdown...")
+            self.logger.info("Received signal %s, initiating shutdown...", signum)
             asyncio.create_task(self.stop())
 
         signal.signal(signal.SIGTERM, signal_handler)
@@ -44,14 +44,14 @@ class UnixMCPServer(MCPServerBase):
         """Start Unix socket server."""
         # Cleanup old socket if exists
         if os.path.exists(self.socket_path):
-            self.logger.warning(f"Removing existing socket: {self.socket_path}")
+            self.logger.warning("Removing existing socket: %s", self.socket_path)
             os.unlink(self.socket_path)
 
         # Ensure parent directory exists
         socket_dir = Path(self.socket_path).parent
         socket_dir.mkdir(parents=True, exist_ok=True)
 
-        self.logger.info(f"Starting Unix socket MCP server at {self.socket_path}")
+        self.logger.info("Starting Unix socket MCP server at %s", self.socket_path)
 
         # Use asyncio.start_unix_server (menos conflicto con aiohttp)
         self.server = await asyncio.start_unix_server(
@@ -62,8 +62,8 @@ class UnixMCPServer(MCPServerBase):
         # Set socket permissions (readable/writable by owner and group)
         os.chmod(self.socket_path, 0o660)
 
-        self.logger.info(f"Unix MCP server listening on {self.socket_path}")
-        self.logger.info(f"Registered {len(self.tools)} tools")
+        self.logger.info("Unix MCP server listening on %s", self.socket_path)
+        self.logger.info("Registered %s tools", len(self.tools))
 
         # Keep server running until stop() cancels the task
         self._serve_task = asyncio.create_task(self.server.serve_forever())
@@ -75,7 +75,7 @@ class UnixMCPServer(MCPServerBase):
     async def _handle_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Handle a client connection."""
         addr = writer.get_extra_info('peername', 'unknown')
-        self.logger.info(f"New connection from {addr}")
+        self.logger.info("New connection from %s", addr)
 
         try:
             while True:
@@ -98,17 +98,17 @@ class UnixMCPServer(MCPServerBase):
                         await writer.drain()
 
                 except json.JSONDecodeError as e:
-                    self.logger.warning(f"Invalid JSON: {e}")
+                    self.logger.warning("Invalid JSON: %s", e)
                     continue
 
         except asyncio.CancelledError:
             self.logger.info("Connection cancelled")
         except Exception as e:
-            self.logger.error(f"Connection error: {e}")
+            self.logger.error("Connection error: %s", e)
         finally:
             writer.close()
             await writer.wait_closed()
-            self.logger.info(f"Connection closed: {addr}")
+            self.logger.info("Connection closed: %s", addr)
 
     async def _handle_request(self, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Handle JSON-RPC request (same as stdio)."""
@@ -136,7 +136,7 @@ class UnixMCPServer(MCPServerBase):
             }
 
         except Exception as e:
-            self.logger.error(f"Error handling {method}: {e}")
+            self.logger.error("Error handling %s: %s", method, e)
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -157,7 +157,7 @@ class UnixMCPServer(MCPServerBase):
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
-                self.logger.error(f"Error in shutdown handler: {e}")
+                self.logger.error("Error in shutdown handler: %s", e)
 
         # Cancel serve loop first
         if self._serve_task and not self._serve_task.done():
@@ -173,7 +173,7 @@ class UnixMCPServer(MCPServerBase):
 
         # Remove socket file
         if os.path.exists(self.socket_path):
-            self.logger.info(f"Removing socket: {self.socket_path}")
+            self.logger.info("Removing socket: %s", self.socket_path)
             os.unlink(self.socket_path)
 
         self.logger.info("Shutdown complete")
@@ -195,7 +195,7 @@ class UnixMCPSession:
     async def connect(self):
         """Connect to MCP server via Unix socket."""
         try:
-            self.logger.info(f"Connecting to Unix socket: {self.config.socket_path}")
+            self.logger.info("Connecting to Unix socket: %s", self.config.socket_path)
 
             if not self.config.socket_path:
                 raise ValueError("socket_path is required for unix transport")
@@ -217,7 +217,7 @@ class UnixMCPSession:
             await self._initialize_session()
             self._initialized = True
 
-            self.logger.info(f"Unix socket connection established to {self.config.name}")
+            self.logger.info("Unix socket connection established to %s", self.config.name)
 
         except Exception as e:
             await self.disconnect()
@@ -249,17 +249,17 @@ class UnixMCPSession:
                             future.set_result(response.get('result'))
                     else:
                         # Notification or unsolicited message
-                        self.logger.debug(f"Received message without pending request: {response}")
+                        self.logger.debug("Received message without pending request: %s", response)
 
                 except json.JSONDecodeError as e:
-                    self.logger.warning(f"Invalid JSON from server: {e}")
+                    self.logger.warning("Invalid JSON from server: %s", e)
                 except Exception as e:
-                    self.logger.error(f"Error processing response: {e}")
+                    self.logger.error("Error processing response: %s", e)
 
         except asyncio.CancelledError:
             self.logger.debug("Read task cancelled")
         except Exception as e:
-            self.logger.error(f"Error in read loop: {e}")
+            self.logger.error("Error in read loop: %s", e)
 
     async def _initialize_session(self):
         """Initialize MCP session over Unix socket."""
@@ -301,7 +301,7 @@ class UnixMCPSession:
         self._writer.write(request_line.encode('utf-8'))
         await self._writer.drain()
 
-        self.logger.debug(f"Sent request: {method} (id={request_id})")
+        self.logger.debug("Sent request: %s (id=%s)", method, request_id)
 
         # Wait for response with timeout
         try:
@@ -329,7 +329,7 @@ class UnixMCPSession:
         self._writer.write(notification_line.encode('utf-8'))
         await self._writer.drain()
 
-        self.logger.debug(f"Sent notification: {method}")
+        self.logger.debug("Sent notification: %s", method)
 
     async def list_tools(self):
         """List available tools."""
@@ -387,7 +387,7 @@ class UnixMCPSession:
                 self._writer.close()
                 await self._writer.wait_closed()
             except Exception as e:
-                self.logger.debug(f"Error closing writer: {e}")
+                self.logger.debug("Error closing writer: %s", e)
             finally:
                 self._writer = None
                 self._reader = None

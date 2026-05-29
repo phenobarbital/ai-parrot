@@ -255,7 +255,7 @@ class CrewHandler(BaseView):
                 )
 
             except Exception as e:
-                self.logger.error(f"Error creating crew from upload: {e}", exc_info=True)
+                self.logger.error("Error creating crew from upload: %s", e, exc_info=True)
                 return self.error(
                     response={"message": f"Error creating crew: {str(e)}"},
                     status=400
@@ -264,7 +264,7 @@ class CrewHandler(BaseView):
         except web.HTTPError:
             raise
         except Exception as e:
-            self.logger.error(f"Error processing upload: {e}", exc_info=True)
+            self.logger.error("Error processing upload: %s", e, exc_info=True)
             return self.error(
                 response={"message": f"Error processing upload: {str(e)}"},
                 status=500
@@ -330,7 +330,7 @@ class CrewHandler(BaseView):
                 # Remove old crew
                 await self.bot_manager.remove_crew(url_crew_id, tenant=tenant)
 
-                self.logger.info(f"Updating crew '{url_crew_id}'")
+                self.logger.info("Updating crew '%s'", url_crew_id)
 
             # Create the crew via bot manager
             try:
@@ -362,7 +362,7 @@ class CrewHandler(BaseView):
                 )
 
             except Exception as e:
-                self.logger.error(f"Error creating crew: {e}", exc_info=True)
+                self.logger.error("Error creating crew: %s", e, exc_info=True)
                 return self.error(
                     response={
                         "message": f"Error creating crew: {str(e)}"
@@ -372,7 +372,7 @@ class CrewHandler(BaseView):
         except web.HTTPError:
             raise
         except Exception as e:
-            self.logger.error(f"Error parsing request: {e}", exc_info=True)
+            self.logger.error("Error parsing request: %s", e, exc_info=True)
             return self.error(
                 response={
                     "message": f"Invalid request: {str(e)}"
@@ -464,7 +464,7 @@ class CrewHandler(BaseView):
         except web.HTTPError:
             raise
         except Exception as e:
-            self.logger.error(f"Error getting crew: {e}", exc_info=True)
+            self.logger.error("Error getting crew: %s", e, exc_info=True)
             return self.error(
                 response={"message": f"Error: {str(e)}"},
                 status=500
@@ -522,7 +522,7 @@ class CrewHandler(BaseView):
         except web.HTTPError:
             raise
         except Exception as e:
-            self.logger.error(f"Error deleting crew: {e}", exc_info=True)
+            self.logger.error("Error deleting crew: %s", e, exc_info=True)
             return self.error(
                 response={"message": f"Error: {str(e)}"},
                 status=500

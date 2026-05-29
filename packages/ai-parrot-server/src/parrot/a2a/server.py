@@ -223,7 +223,7 @@ class A2AServer:
                 input_schema=input_schema,
             )
         except Exception as e:
-            self.logger.warning(f"Could not convert tool to skill: {e}")
+            self.logger.warning("Could not convert tool to skill: %s", e)
             return None
 
     # ─────────────────────────────────────────────────────────────
@@ -257,7 +257,7 @@ class A2AServer:
             task.complete(response)
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}", exc_info=True)
+            self.logger.error("Error processing message: %s", e, exc_info=True)
             task.fail(str(e))
 
         return task
@@ -348,7 +348,7 @@ class A2AServer:
                 status=400
             )
         except Exception as e:
-            self.logger.error(f"Error in send_message: {e}", exc_info=True)
+            self.logger.error("Error in send_message: %s", e, exc_info=True)
             return web.json_response(
                 {"error": {"code": "InternalError", "message": str(e)}},
                 status=500
@@ -400,7 +400,7 @@ class A2AServer:
                     await self._stream_fallback(response, task, question, message)
 
             except Exception as e:
-                self.logger.error(f"Error in streaming: {e}", exc_info=True)
+                self.logger.error("Error in streaming: %s", e, exc_info=True)
                 task.fail(str(e))
                 await self._send_sse(response, {
                     "statusUpdate": {
@@ -415,7 +415,7 @@ class A2AServer:
                 })
 
         except Exception as e:
-            self.logger.error(f"Error setting up stream: {e}", exc_info=True)
+            self.logger.error("Error setting up stream: %s", e, exc_info=True)
             await self._send_sse(response, {"error": {"message": str(e)}})
 
         await response.write_eof()
@@ -515,7 +515,7 @@ class A2AServer:
             })
 
         except Exception as e:
-            self.logger.error(f"Streaming error: {e}", exc_info=True)
+            self.logger.error("Streaming error: %s", e, exc_info=True)
             raise
 
     async def _stream_fallback(

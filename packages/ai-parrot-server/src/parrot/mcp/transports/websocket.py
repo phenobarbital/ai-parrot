@@ -84,7 +84,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
             try:
                 await conn.websocket.close()
             except Exception as e:
-                self.logger.warning(f"Error closing WebSocket for session {session_id}: {e}")
+                self.logger.warning("Error closing WebSocket for session %s: %s", session_id, e)
             self.sessions.pop(session_id, None)
 
         if not self._external_setup:
@@ -133,7 +133,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
         # Close existing connection for this session (SEP-1288: single connection per session)
         if session_id in self.sessions:
             old_conn = self.sessions[session_id]
-            self.logger.info(f"Closing previous WebSocket connection for session {session_id}")
+            self.logger.info("Closing previous WebSocket connection for session %s", session_id)
             try:
                 await old_conn.websocket.close(code=1000, message=b"New connection established")
             except Exception:
@@ -151,7 +151,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
         )
         self.sessions[session_id] = connection
 
-        self.logger.info(f"WebSocket client connected: {session_id}")
+        self.logger.info("WebSocket client connected: %s", session_id)
 
         # Send connection established message
         await self._send_message(ws, {
@@ -169,22 +169,22 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
                 if msg.type == WSMsgType.TEXT:
                     await self._handle_message(session_id, msg.data)
                 elif msg.type == WSMsgType.ERROR:
-                    self.logger.error(f"WebSocket error for {session_id}: {ws.exception()}")
+                    self.logger.error("WebSocket error for %s: %s", session_id, ws.exception())
                     break
                 elif msg.type == WSMsgType.CLOSE:
-                    self.logger.info(f"WebSocket closed by client: {session_id}")
+                    self.logger.info("WebSocket closed by client: %s", session_id)
                     break
 
         except asyncio.CancelledError:
-            self.logger.info(f"WebSocket connection cancelled: {session_id}")
+            self.logger.info("WebSocket connection cancelled: %s", session_id)
         except Exception as e:
-            self.logger.error(f"Error in WebSocket handler for {session_id}: {e}")
+            self.logger.error("Error in WebSocket handler for %s: %s", session_id, e)
         finally:
             # Cleanup
             self.sessions.pop(session_id, None)
             if not ws.closed:
                 await ws.close()
-            self.logger.info(f"WebSocket client disconnected: {session_id}")
+            self.logger.info("WebSocket client disconnected: %s", session_id)
 
         return ws
 
@@ -196,7 +196,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
             params = data.get("params", {})
             request_id = data.get("id")
 
-            self.logger.debug(f"WebSocket message from {session_id}: {method}")
+            self.logger.debug("WebSocket message from %s: %s", session_id, method)
 
             # Handle JSON-RPC request
             try:
@@ -208,7 +208,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
                     result = await self.handle_tools_call(params)
                 elif method == "notifications/initialized":
                     # Client initialization complete notification (no response needed)
-                    self.logger.info(f"Client {session_id} initialization complete")
+                    self.logger.info("Client %s initialization complete", session_id)
                     return
                 else:
                     raise RuntimeError(f"Unknown method: {method}")
@@ -221,7 +221,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
                 }
 
             except Exception as e:
-                self.logger.error(f"Error handling {method} for {session_id}: {e}")
+                self.logger.error("Error handling %s for %s: %s", method, session_id, e)
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -237,7 +237,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
                 await self._send_message(connection.websocket, response)
 
         except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON from {session_id}: {e}")
+            self.logger.error("Invalid JSON from %s: %s", session_id, e)
             # Send parse error
             connection = self.sessions.get(session_id)
             if connection:
@@ -255,7 +255,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
         try:
             await ws.send_str(json.dumps(message))
         except Exception as e:
-            self.logger.error(f"Failed to send WebSocket message: {e}")
+            self.logger.error("Failed to send WebSocket message: %s", e)
 
     async def send_notification(self, session_id: str, method: str, params: Dict[str, Any]):
         """Send server-initiated notification to client.
@@ -266,7 +266,7 @@ class WebSocketMCPServer(OAuthRoutesMixin, MCPServerBase):
         """
         connection = self.sessions.get(session_id)
         if not connection:
-            self.logger.warning(f"Cannot send notification: session {session_id} not found")
+            self.logger.warning("Cannot send notification: session %s not found", session_id)
             return
 
         notification = {
@@ -342,7 +342,7 @@ class WebSocketMCPSession:
                 headers=headers
             )
 
-            self.logger.info(f"Connected to WebSocket MCP server: {url}")
+            self.logger.info("Connected to WebSocket MCP server: %s", url)
 
             # Mark as connected BEFORE starting receiver and initialization
             self._connected = True
@@ -359,7 +359,7 @@ class WebSocketMCPSession:
             self._reconnect_attempts = 0
 
         except Exception as e:
-            self.logger.error(f"Failed to connect to WebSocket MCP server: {e}")
+            self.logger.error("Failed to connect to WebSocket MCP server: %s", e)
             self._connected = False
             await self.disconnect()
             raise MCPConnectionError(f"WebSocket connection failed: {e}")
@@ -371,7 +371,7 @@ class WebSocketMCPSession:
                 if msg.type == WSMsgType.TEXT:
                     await self._handle_message(msg.data)
                 elif msg.type == WSMsgType.ERROR:
-                    self.logger.error(f"WebSocket error: {self._websocket.exception()}")
+                    self.logger.error("WebSocket error: %s", self._websocket.exception())
                     break
                 elif msg.type == WSMsgType.CLOSE:
                     self.logger.info("WebSocket closed by server")
@@ -379,7 +379,7 @@ class WebSocketMCPSession:
         except asyncio.CancelledError:
             self.logger.debug("Message receiver task cancelled")
         except Exception as e:
-            self.logger.error(f"Error in message receiver: {e}")
+            self.logger.error("Error in message receiver: %s", e)
         finally:
             self._connected = False
 
@@ -408,15 +408,15 @@ class WebSocketMCPSession:
                 if method == "notifications/connection":
                     # Extract session ID from connection notification
                     self._session_id = params.get("sessionId")
-                    self.logger.info(f"Session ID: {self._session_id}")
+                    self.logger.info("Session ID: %s", self._session_id)
                 else:
-                    self.logger.info(f"Server notification: {method}")
+                    self.logger.info("Server notification: %s", method)
                     # Could add notification handlers here
 
         except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON from server: {e}")
+            self.logger.error("Invalid JSON from server: %s", e)
         except Exception as e:
-            self.logger.error(f"Error handling message: {e}")
+            self.logger.error("Error handling message: %s", e)
 
     async def _initialize_session(self):
         """Initialize MCP session over WebSocket."""
@@ -429,7 +429,7 @@ class WebSocketMCPSession:
             }
         })
 
-        self.logger.info(f"MCP session initialized: {init_result.get('serverInfo', {}).get('name', 'unknown')}")
+        self.logger.info("MCP session initialized: {init_result.get('serverInfo', {}).get('name', 'unknown')}")
 
         # Send initialized notification
         await self._send_notification("notifications/initialized", {})

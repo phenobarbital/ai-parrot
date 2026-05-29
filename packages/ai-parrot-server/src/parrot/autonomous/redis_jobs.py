@@ -56,7 +56,7 @@ class RedisJobInjector:
                 await conn.close()
             except RuntimeError as e:
                 # Ignore "Future attached to a different loop" during shutdown
-                self.logger.debug(f"Ignoring Redis close error: {e}")
+                self.logger.debug("Ignoring Redis close error: %s", e)
         self._redis = None
         self._subscriber = None
     
@@ -116,7 +116,7 @@ class RedisJobInjector:
             json.dumps({"job_id": job_id, "agent_name": agent_name})
         )
         
-        self.logger.info(f"Injected job {job_id} for agent {agent_name}")
+        self.logger.info("Injected job %s for agent %s", job_id, agent_name)
         return job_id
     
     async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -189,7 +189,7 @@ class RedisJobInjector:
                                 await self._notify_callback(callback_url, job_id, result)
                                 
                         except Exception as e:
-                            self.logger.error(f"Job {job_id} failed: {e}")
+                            self.logger.error("Job %s failed: %s", job_id, e)
                             await self._redis.hset(
                                 f"{self.CHANNEL_PREFIX}data:{job_id}",
                                 mapping={
@@ -230,4 +230,4 @@ class RedisJobInjector:
                             f"Callback to {callback_url} returned {resp.status}"
                         )
         except Exception as e:
-            self.logger.error(f"Failed to notify callback: {e}")
+            self.logger.error("Failed to notify callback: %s", e)

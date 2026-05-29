@@ -172,9 +172,9 @@ class LLMClient(BaseView):
                 tool_manager = ToolManager(debug=True)
                 # Register tools from list of dicts or definitions
                 tool_manager.register_tools(tools_def)
-                self.logger.info(f"Initialized ToolManager with {len(tools_def)} tools")
+                self.logger.info("Initialized ToolManager with %s tools", len(tools_def))
             except Exception as e:
-                self.logger.error(f"Failed to initialize tools: {e}")
+                self.logger.error("Failed to initialize tools: %s", e)
                 return self.error(f"Invalid tools configuration: {e}", status=400)
 
         # 4. Create Client using Factory

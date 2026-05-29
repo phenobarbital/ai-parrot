@@ -436,7 +436,7 @@ class AgentSchedulerManager:
 
     def scheduler_status(self, event):
         print(event)
-        self.logger.debug(f"[{ENVIRONMENT} - NAV Scheduler] :: Started.")
+        self.logger.debug("[%s - NAV Scheduler] :: Started.", ENVIRONMENT)
         self.logger.notice(
             f"[{ENVIRONMENT} - NAV Scheduler] START time is: {datetime.now()}"
         )
@@ -518,7 +518,7 @@ class AgentSchedulerManager:
         try:
             job = self.scheduler.get_job(job_id)
         except JobLookupError as err:
-            self.logger.warning(f"Error found a Job with ID: {err}")
+            self.logger.warning("Error found a Job with ID: %s", err)
             return False
         job_name = job.name
         self.logger.info(
@@ -871,7 +871,7 @@ class AgentSchedulerManager:
                 await schedule.update()
 
         except Exception as e:
-            self.logger.error(f"Failed to update schedule run: {e}")
+            self.logger.error("Failed to update schedule run: %s", e)
 
     def _create_trigger(self, schedule_type: str, config: Dict[str, Any]):
         """
@@ -1008,7 +1008,7 @@ class AgentSchedulerManager:
                 )
                 await schedule.save()
             except Exception as e:
-                self.logger.error(f"Error saving schedule object: {e}")
+                self.logger.error("Error saving schedule object: %s", e)
                 raise
 
         # Add to APScheduler
@@ -1194,7 +1194,7 @@ class AgentSchedulerManager:
             )
 
         except Exception as e:
-            self.logger.error(f"Error removing schedule {schedule_id}: {e}")
+            self.logger.error("Error removing schedule %s: %s", schedule_id, e)
             raise
 
     async def load_schedules_from_db(self):
@@ -1222,7 +1222,7 @@ class AgentSchedulerManager:
                 AgentSchedule.Meta.connection = conn
                 results, error = await conn.query(query)
                 if error:
-                    self.logger.warning(f"Error querying schedules: {error}")
+                    self.logger.warning("Error querying schedules: %s", error)
                     return
 
                 loaded = 0
@@ -1268,7 +1268,7 @@ class AgentSchedulerManager:
             )
 
         except Exception as e:
-            self.logger.error(f"Error loading schedules from database: {e}")
+            self.logger.error("Error loading schedules from database: %s", e)
             raise
 
     async def restart_scheduler(self):
@@ -1288,7 +1288,7 @@ class AgentSchedulerManager:
             self.logger.notice("Scheduler restarted successfully")
 
         except Exception as e:
-            self.logger.error(f"Error restarting scheduler: {e}")
+            self.logger.error("Error restarting scheduler: %s", e)
             raise
 
     def _job_kwargs_from_schedule(self, schedule: AgentSchedule) -> Dict[str, Any]:

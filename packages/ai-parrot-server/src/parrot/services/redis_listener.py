@@ -115,10 +115,10 @@ class RedisTaskListener:
                 if not self._running:
                     self.logger.debug("Redis listener stopped: %s", exc)
                     break
-                self.logger.error(f"Redis connection lost: {exc}")
+                self.logger.error("Redis connection lost: %s", exc)
                 await asyncio.sleep(2.0)
             except Exception as exc:
-                self.logger.error(f"Unexpected error in listen loop: {exc}")
+                self.logger.error("Unexpected error in listen loop: %s", exc)
                 await asyncio.sleep(1.0)
 
     def _parse_task(self, message_id: str, data: dict) -> AgentTask:

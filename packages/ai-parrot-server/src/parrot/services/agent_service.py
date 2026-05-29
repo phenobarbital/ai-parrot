@@ -87,7 +87,7 @@ class AgentService:
             db=self.config.redis_db,
             decode_responses=True,
         )
-        self.logger.info(f"Connected to Redis: {self.config.redis_url}")
+        self.logger.info("Connected to Redis: %s", self.config.redis_url)
 
         # 2. Task queue with Redis persistence
         self._task_queue = TaskQueue(
@@ -97,7 +97,7 @@ class AgentService:
         if self.config.recover_tasks_on_start:
             recovered = await self._task_queue.recover()
             if recovered:
-                self.logger.info(f"Recovered {recovered} task(s) from Redis")
+                self.logger.info("Recovered %s task(s) from Redis", recovered)
         else:
             self.logger.info("Task recovery disabled for this service")
 
@@ -289,7 +289,7 @@ class AgentService:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                self.logger.error(f"Consumer loop error: {exc}", exc_info=True)
+                self.logger.error("Consumer loop error: %s", exc, exc_info=True)
                 await asyncio.sleep(0.5)
 
     async def _run_listener_loop(self) -> None:
@@ -307,7 +307,7 @@ class AgentService:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self.logger.error(f"Listener loop error: {exc}", exc_info=True)
+            self.logger.error("Listener loop error: %s", exc, exc_info=True)
 
     # =========================================================================
     # Internal: Task Processing
@@ -378,7 +378,7 @@ class AgentService:
         try:
             return await self.bot_manager.get_bot(agent_name)
         except Exception as exc:
-            self.logger.error(f"Failed to resolve agent '{agent_name}': {exc}")
+            self.logger.error("Failed to resolve agent '%s': %s", agent_name, exc)
             return None
 
     async def _execute_agent(

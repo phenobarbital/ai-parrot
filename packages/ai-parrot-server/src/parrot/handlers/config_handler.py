@@ -161,7 +161,7 @@ class BotConfigHandler(BaseView):
                 entry["source"] = "redis"
                 agents.append(entry)
         except Exception as exc:
-            self.logger.warning(f"Failed to list Redis configs: {exc}")
+            self.logger.warning("Failed to list Redis configs: %s", exc)
 
         # Filter by category if requested
         if category:
@@ -193,7 +193,7 @@ class BotConfigHandler(BaseView):
 
         try:
             data = await self.request.json()
-            self.logger.debug(f"Incoming BotConfig data (POST): {data}")
+            self.logger.debug("Incoming BotConfig data (POST): %s", data)
         except Exception:
             return self.error(
                 response={"message": "Invalid JSON body"},
@@ -260,7 +260,7 @@ class BotConfigHandler(BaseView):
         """
         try:
             data = await self.request.json()
-            self.logger.debug(f"Incoming BotConfig data (PUT): {data}")
+            self.logger.debug("Incoming BotConfig data (PUT): %s", data)
         except Exception:
             return self.error(
                 response={"message": "Invalid JSON body"},

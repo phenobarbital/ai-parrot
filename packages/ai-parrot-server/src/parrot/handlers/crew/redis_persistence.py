@@ -48,7 +48,7 @@ class CrewRedis:
             socket_timeout=5,
             retry_on_timeout=True
         )
-        self.logger.info(f"CrewRedis initialized with URL: {self.redis_url}")
+        self.logger.info("CrewRedis initialized with URL: %s", self.redis_url)
 
     @staticmethod
     def _normalize_tenant(tenant: Optional[str]) -> str:
@@ -119,7 +119,7 @@ class CrewRedis:
 
             return json.dumps(crew_dict, ensure_ascii=False, separators=(',', ':'))
         except Exception as e:
-            self.logger.error(f"Serialization error: {e}")
+            self.logger.error("Serialization error: %s", e)
             raise
 
     def _deserialize_crew(self, data: str) -> CrewDefinition:
@@ -143,8 +143,8 @@ class CrewRedis:
 
             return CrewDefinition(**crew_dict)
         except Exception as e:
-            self.logger.error(f"Deserialization error: {e}")
-            self.logger.error(f"Problematic data: {data[:200]}")
+            self.logger.error("Deserialization error: %s", e)
+            self.logger.error("Problematic data: %s", data[:200])
             raise
 
     async def save_crew(self, crew: CrewDefinition) -> bool:
@@ -186,7 +186,7 @@ class CrewRedis:
             )
             return True
         except Exception as e:
-            self.logger.error(f"Error saving crew '{crew.name}': {e}")
+            self.logger.error("Error saving crew '%s': %s", crew.name, e)
             return False
 
     async def load_crew(self, name: str, tenant: Optional[str] = None) -> Optional[CrewDefinition]:
@@ -209,14 +209,14 @@ class CrewRedis:
                 data = await self.redis.get(legacy_key)
 
             if data is None:
-                self.logger.warning(f"Crew '{name}' not found in Redis for tenant '{tenant}'")
+                self.logger.warning("Crew '%s' not found in Redis for tenant '%s'", name, tenant)
                 return None
 
             crew = self._deserialize_crew(data)
-            self.logger.info(f"Crew '{name}' loaded successfully for tenant '{tenant}'")
+            self.logger.info("Crew '%s' loaded successfully for tenant '%s'", name, tenant)
             return crew
         except Exception as e:
-            self.logger.error(f"Error loading crew '{name}': {e}")
+            self.logger.error("Error loading crew '%s': %s", name, e)
             return None
 
     async def load_crew_by_id(
@@ -252,7 +252,7 @@ class CrewRedis:
             # Then load the crew by name
             return await self.load_crew(name, tenant)
         except Exception as e:
-            self.logger.error(f"Error loading crew by ID '{crew_id}': {e}")
+            self.logger.error("Error loading crew by ID '%s': %s", crew_id, e)
             return None
 
     async def delete_crew(self, name: str, tenant: Optional[str] = None) -> bool:
@@ -295,13 +295,13 @@ class CrewRedis:
                 await self.redis.srem(self._get_tenants_key(), tenant)
 
             if result > 0:
-                self.logger.info(f"Crew '{name}' deleted successfully for tenant '{tenant}'")
+                self.logger.info("Crew '%s' deleted successfully for tenant '%s'", name, tenant)
                 return True
             else:
-                self.logger.warning(f"Crew '{name}' not found for deletion in tenant '{tenant}'")
+                self.logger.warning("Crew '%s' not found for deletion in tenant '%s'", name, tenant)
                 return False
         except Exception as e:
-            self.logger.error(f"Error deleting crew '{name}': {e}")
+            self.logger.error("Error deleting crew '%s': %s", name, e)
             return False
 
     async def list_crews(self, tenant: Optional[str] = None) -> List[str]:
@@ -321,7 +321,7 @@ class CrewRedis:
                 crews.update(await self.redis.smembers(self._get_legacy_list_key()))
             return sorted(list(crews))
         except Exception as e:
-            self.logger.error(f"Error listing crews: {e}")
+            self.logger.error("Error listing crews: %s", e)
             return []
 
     async def list_all_crews(self) -> List[Dict[str, str]]:
@@ -345,7 +345,7 @@ class CrewRedis:
                 )
             return entries
         except Exception as e:
-            self.logger.error(f"Error listing crews across tenants: {e}")
+            self.logger.error("Error listing crews across tenants: %s", e)
             return []
 
     async def crew_exists(self, name: str, tenant: Optional[str] = None) -> bool:
@@ -368,7 +368,7 @@ class CrewRedis:
                 exists = await self.redis.exists(legacy_key)
             return exists > 0
         except Exception as e:
-            self.logger.error(f"Error checking crew existence '{name}': {e}")
+            self.logger.error("Error checking crew existence '%s': %s", name, e)
             return False
 
     async def get_all_crews(self, tenant: Optional[str] = None) -> List[CrewDefinition]:
@@ -389,7 +389,7 @@ class CrewRedis:
                     crew = await self.load_crew(entry["name"], entry["tenant"])
                     if crew:
                         crews.append(crew)
-                self.logger.info(f"Retrieved {len(crews)} crews from Redis (all tenants)")
+                self.logger.info("Retrieved %s crews from Redis (all tenants)", len(crews))
                 return crews
 
             crew_names = await self.list_crews(tenant)
@@ -400,10 +400,10 @@ class CrewRedis:
                 if crew:
                     crews.append(crew)
 
-            self.logger.info(f"Retrieved {len(crews)} crews from Redis for tenant '{tenant}'")
+            self.logger.info("Retrieved %s crews from Redis for tenant '%s'", len(crews), tenant)
             return crews
         except Exception as e:
-            self.logger.error(f"Error getting all crews: {e}")
+            self.logger.error("Error getting all crews: %s", e)
             return []
 
     async def get_crew_metadata(
@@ -437,7 +437,7 @@ class CrewRedis:
                 }
             return None
         except Exception as e:
-            self.logger.error(f"Error getting crew metadata '{name}': {e}")
+            self.logger.error("Error getting crew metadata '%s': %s", name, e)
             return None
 
     async def update_crew_metadata(
@@ -460,7 +460,7 @@ class CrewRedis:
         try:
             crew = await self.load_crew(name, tenant)
             if crew is None:
-                self.logger.warning(f"Cannot update metadata: crew '{name}' not found")
+                self.logger.warning("Cannot update metadata: crew '%s' not found", name)
                 return False
 
             # Update metadata
@@ -470,7 +470,7 @@ class CrewRedis:
             # Save back to Redis
             return await self.save_crew(crew)
         except Exception as e:
-            self.logger.error(f"Error updating crew metadata '{name}': {e}")
+            self.logger.error("Error updating crew metadata '%s': %s", name, e)
             return False
 
     async def ping(self) -> bool:
@@ -484,7 +484,7 @@ class CrewRedis:
             await self.redis.ping()
             return True
         except Exception as e:
-            self.logger.error(f"Error pinging Redis: {e}")
+            self.logger.error("Error pinging Redis: %s", e)
             return False
 
     async def close(self):
@@ -493,7 +493,7 @@ class CrewRedis:
             await self.redis.close()
             self.logger.info("Redis connection closed")
         except Exception as e:
-            self.logger.error(f"Error closing Redis connection: {e}")
+            self.logger.error("Error closing Redis connection: %s", e)
 
     async def clear_all_crews(self) -> int:
         """
@@ -510,10 +510,10 @@ class CrewRedis:
                 if await self.delete_crew(entry["name"], entry["tenant"]):
                     deleted_count += 1
 
-            self.logger.warning(f"Cleared {deleted_count} crews from Redis")
+            self.logger.warning("Cleared %s crews from Redis", deleted_count)
             return deleted_count
         except Exception as e:
-            self.logger.error(f"Error clearing all crews: {e}")
+            self.logger.error("Error clearing all crews: %s", e)
             return 0
 
 

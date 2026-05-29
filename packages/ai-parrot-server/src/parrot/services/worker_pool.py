@@ -69,7 +69,7 @@ class WorkerPool:
         # Cancel any tasks that didn't finish
         for task in pending:
             task.cancel()
-            self.logger.warning(f"Cancelled task: {task.get_name()}")
+            self.logger.warning("Cancelled task: %s", task.get_name())
 
         # Wait briefly for cancellation to propagate
         if pending:

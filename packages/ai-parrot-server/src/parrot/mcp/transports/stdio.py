@@ -19,7 +19,7 @@ class StdioMCPServer(MCPServerBase):
 
     async def start(self):
         """Start the stdio MCP server."""
-        self.logger.info(f"Starting stdio MCP server with {len(self.tools)} tools...")
+        self.logger.info("Starting stdio MCP server with %s tools...", len(self.tools))
         self._running = True
 
         while self._running:
@@ -42,13 +42,13 @@ class StdioMCPServer(MCPServerBase):
                         print(json.dumps(response), flush=True)
 
                 except json.JSONDecodeError as e:
-                    self.logger.warning(f"Invalid JSON received: {e}")
+                    self.logger.warning("Invalid JSON received: %s", e)
                     continue
 
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                self.logger.error(f"Error in main loop: {e}")
+                self.logger.error("Error in main loop: %s", e)
                 continue
 
         self.logger.info("Stdio MCP server stopped")
@@ -85,7 +85,7 @@ class StdioMCPServer(MCPServerBase):
             }
 
         except Exception as e:
-            self.logger.error(f"Error handling {method}: {e}")
+            self.logger.error("Error handling %s: %s", method, e)
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -118,7 +118,7 @@ class StdioMCPSession:
             await self._start_process()
             await self._initialize_session()
             self._initialized = True
-            self.logger.info(f"Stdio connection established to {self.config.name}")
+            self.logger.info("Stdio connection established to %s", self.config.name)
 
         except Exception as e:
             await self.disconnect()
@@ -194,7 +194,7 @@ class StdioMCPSession:
 
         try:
             line = (json.dumps(request) + "\n").encode("utf-8")
-            self.logger.debug(f"Stdio sending: {line.decode().strip()}")
+            self.logger.debug("Stdio sending: %s", line.decode().strip())
             self._stdin.write(line)
             await self._stdin.drain()
 
@@ -208,13 +208,13 @@ class StdioMCPSession:
                 response_str = response_line.decode("utf-8", errors="replace").strip()
                 if not response_str:
                     continue
-                self.logger.debug(f"Stdio received: {response_str}")
+                self.logger.debug("Stdio received: %s", response_str)
 
                 # Skip non-JSON garbage
                 try:
                     candidate = json.loads(response_str)
                 except json.JSONDecodeError:
-                    self.logger.debug(f"Ignoring non-JSON stdout: {response_str!r}")
+                    self.logger.debug("Ignoring non-JSON stdout: %s", response_str!r)
                     continue
 
                 # Only accept responses with our request id; ignore notifications/others
@@ -244,7 +244,7 @@ class StdioMCPSession:
             notification["params"] = params
 
         notification_line = json.dumps(notification) + "\n"
-        self.logger.debug(f"Stdio notification: {notification_line.strip()}")
+        self.logger.debug("Stdio notification: %s", notification_line.strip())
 
         self._stdin.write(notification_line.encode('utf-8'))
         await self._stdin.drain()
@@ -309,7 +309,7 @@ class StdioMCPSession:
                         await self._process.wait()
 
             except Exception as e:
-                self.logger.debug(f"Error during disconnect: {e}")
+                self.logger.debug("Error during disconnect: %s", e)
             finally:
                 self._process = None
                 self._stdin = None

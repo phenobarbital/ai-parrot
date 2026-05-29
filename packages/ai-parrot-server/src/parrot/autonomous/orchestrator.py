@@ -509,7 +509,7 @@ class AutonomousOrchestrator:
             if hasattr(agent, "resume"):
                 result = await agent.resume(session_id, user_input, state)
             else:
-                self.logger.warning(f"Agent {agent_name} does not implement 'resume'. Attempting standard re-ask.")
+                self.logger.warning("Agent %s does not implement 'resume'. Attempting standard re-ask.", agent_name)
                 # We could try a normal `ask` if resume is missing, but it might not inject as a tool response
                 result = await agent.ask(str(user_input), session_id=session_id)
                 
@@ -577,7 +577,7 @@ class AutonomousOrchestrator:
                         )
 
                 # Paused AGAIN
-                self.logger.info(f"Execution PAUSED again for agent '{agent_name}'.")
+                self.logger.info("Execution PAUSED again for agent '%s'.", agent_name)
                 execution_time = (datetime.now() - start_time).total_seconds() * 1000
                 exec_result = ExecutionResult(
                     request_id=request_id,
@@ -600,7 +600,7 @@ class AutonomousOrchestrator:
                 self._add_to_history(exec_result)
                 return exec_result
 
-            self.logger.error(f"Failed to resume agent '{agent_name}': {e}", exc_info=True)
+            self.logger.error("Failed to resume agent '%s': %s", agent_name, e, exc_info=True)
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             exec_result = ExecutionResult(
                 request_id=request_id,

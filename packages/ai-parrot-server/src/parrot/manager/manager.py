@@ -242,9 +242,9 @@ class BotManager:
         """Log the final state of bot loading."""
         registry_info = self.registry.get_registration_info()
         self.logger.notice("=== Bot Loading Complete ===")
-        self.logger.notice(f"Registered agents: {registry_info['total_registered']}")
-        # self.logger.info(f"Startup agents: {startup_info['total_startup_agents']}")
-        self.logger.notice(f"Active bots: {len(self._bots)}")
+        self.logger.notice("Registered agents: %s", registry_info['total_registered'])
+        # self.logger.info("Startup agents: %s", startup_info['total_startup_agents'])
+        self.logger.notice("Active bots: %s", len(self._bots))
 
     async def _process_startup_results(self, startup_results: Dict[str, Any]) -> None:
         """Process startup instantiation results."""
@@ -674,7 +674,7 @@ class BotManager:
                                 new_tools.append(tool)
                         bot_kwargs['tools'] = new_tools
                     except Exception as e:
-                        self.logger.error(f"Error cloning tools from {name}: {e}")
+                        self.logger.error("Error cloning tools from %s: %s", name, e)
 
                 # 3. Clone Vector Store Configuration
                 if 'vector_store_config' not in bot_kwargs and hasattr(base_bot, '_vector_store'):
@@ -682,7 +682,7 @@ class BotManager:
                         if base_bot._vector_store:
                             bot_kwargs['vector_store_config'] = copy.deepcopy(base_bot._vector_store)
                     except Exception as e:
-                        self.logger.warning(f"Failed to copy vector store config: {e}")
+                        self.logger.warning("Failed to copy vector store config: %s", e)
                         bot_kwargs['vector_store_config'] = base_bot._vector_store
 
                 if 'use_vectorstore' not in bot_kwargs and hasattr(base_bot, '_use_vector'):
@@ -715,7 +715,7 @@ class BotManager:
         if name in self._bots:
             _bot = self._bots[name]
             if not getattr(_bot, 'is_configured', False):
-                self.logger.warning(f"Bot '{name}' found in _bots and is not configured.")
+                self.logger.warning("Bot '%s' found in _bots and is not configured.", name)
                 await _bot.configure(self.app)
             # FEAT-153: Enforce PBAC before returning. AgentAccessDenied propagates.
             await enforce_agent_access(self.registry.evaluator, name, request)
@@ -728,7 +728,7 @@ class BotManager:
                 if bot_instance:
                     # Only configure if NOT already configured
                     if not getattr(bot_instance, 'is_configured', False):
-                        self.logger.info(f"Configuring bot {name} on demand.")
+                        self.logger.info("Configuring bot %s on demand.", name)
                         await bot_instance.configure(self.app)
                     self.add_bot(bot_instance)
             except Exception as e:
@@ -1183,7 +1183,7 @@ class BotManager:
 
     async def save_agent(self, name: str, **kwargs) -> None:
         """Save a Agent to the DB."""
-        self.logger.info(f"Saving Agent {name} into DB ...")
+        self.logger.info("Saving Agent %s into DB ...", name)
         db = self.app['database']
         async with await db.acquire() as conn:
             BotModel.Meta.connection = conn
@@ -1193,20 +1193,20 @@ class BotManager:
                 except NoDataFound:
                     bot = None
                 if bot:
-                    self.logger.info(f"Bot {name} already exists.")
+                    self.logger.info("Bot %s already exists.", name)
                     for key, val in kwargs.items():
                         bot.set(key, val)
                     await bot.update()
-                    self.logger.info(f"Bot {name} updated.")
+                    self.logger.info("Bot %s updated.", name)
                 else:
-                    self.logger.info(f"Bot {name} not found. Creating new one.")
+                    self.logger.info("Bot %s not found. Creating new one.", name)
                     # Create a new Bot
                     new_bot = BotModel(
                         name=name,
                         **kwargs
                     )
                     await new_bot.insert()
-                self.logger.info(f"Bot {name} saved into DB.")
+                self.logger.info("Bot %s saved into DB.", name)
                 return True
             except Exception as e:
                 self.logger.error(
@@ -1604,7 +1604,7 @@ Available documentation UIs:
                 # Remove expired bots
                 for name in expired:
                     try:
-                        self.logger.info(f"Removing expired bot instance: {name}")
+                        self.logger.info("Removing expired bot instance: %s", name)
                         self.remove_bot(name)
                         del self._bot_expiration[name]
                     except Exception as e:
@@ -1696,7 +1696,7 @@ Available documentation UIs:
             await chat_storage.initialize()
             self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
         except Exception as exc:
-            self.logger.warning(f"ChatStorage initialization failed: {exc}")
+            self.logger.warning("ChatStorage initialization failed: %s", exc)
         # Initialize Dashboard indexes
         if ENABLE_DASHBOARDS:
             await _ensure_dashboard_indexes(app)
@@ -1758,7 +1758,7 @@ Available documentation UIs:
                 f"in {crew_def.execution_mode.value} mode and saved to Redis"
             )
         except Exception as e:
-            self.logger.error(f"Failed to save crew '{name}' to Redis: {e}")
+            self.logger.error("Failed to save crew '%s' to Redis: %s", name, e)
             # Don't fail the operation if Redis fails, crew is still in memory
             self.logger.info(
                 f"Crew '{name}' registered in memory only (Redis persistence failed)"
@@ -1938,13 +1938,13 @@ Available documentation UIs:
         crew_key = self._get_crew_key(crew_def.tenant, identifier)
         if crew_key in self._crews:
             self._crews[crew_key] = (crew, crew_def)
-            self.logger.info(f"Updated crew '{identifier}'")
+            self.logger.info("Updated crew '%s'", identifier)
             return True
 
         for key, (_, def_) in self._crews.items():
             if def_.crew_id == identifier and def_.tenant == crew_def.tenant:
                 self._crews[key] = (crew, crew_def)
-                self.logger.info(f"Updated crew '{def_.name}'")
+                self.logger.info("Updated crew '%s'", def_.name)
                 return True
 
         return False
@@ -1969,7 +1969,7 @@ Available documentation UIs:
                 self.logger.info("No crews found in Redis")
                 return
 
-            self.logger.info(f"Loading {len(crew_defs)} crews from Redis...")
+            self.logger.info("Loading %s crews from Redis...", len(crew_defs))
 
             loaded_count = 0
             for crew_def in crew_defs:
@@ -2037,7 +2037,7 @@ Available documentation UIs:
                     if crew_def:
                         crew = await self._create_crew_from_definition(crew_def)
                         self._crews[key] = (crew, crew_def)
-                        self.logger.info(f"Synced new crew '{name}' from Redis")
+                        self.logger.info("Synced new crew '%s' from Redis", name)
                 except Exception as e:
                     # Provide more specific diagnostics, especially for malformed keys.
                     if isinstance(e, ValueError):
@@ -2053,10 +2053,10 @@ Available documentation UIs:
             # Handle removals
             for key in removed:
                 self._crews.pop(key, None)
-                self.logger.info(f"Synced removal of crew '{key}'")
+                self.logger.info("Synced removal of crew '%s'", key)
 
         except Exception as e:
-            self.logger.error(f"Error syncing crews: {e}", exc_info=True)
+            self.logger.error("Error syncing crews: %s", e, exc_info=True)
 
     async def _create_crew_from_definition(
         self,

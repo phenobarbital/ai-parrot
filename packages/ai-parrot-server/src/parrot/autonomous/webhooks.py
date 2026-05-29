@@ -87,7 +87,7 @@ class WebhookListener:
             **kwargs
         )
         self._endpoints[full_path] = endpoint
-        self.logger.info(f"Registered webhook endpoint: {full_path} -> {agent_name}")
+        self.logger.info("Registered webhook endpoint: %s -> %s", full_path, agent_name)
         return endpoint
     
     def setup(self, app: web.Application):
@@ -155,7 +155,7 @@ class WebhookListener:
             try:
                 prompt = endpoint.transform_fn(payload)
             except Exception as e:
-                self.logger.error(f"Transform error: {e}")
+                self.logger.error("Transform error: %s", e)
                 prompt = json.dumps(payload, indent=2)
         else:
             prompt = f"Process this webhook payload:\n```json\n{json.dumps(payload, indent=2)}\n```"
@@ -236,7 +236,7 @@ class WebhookListener:
                 )
                 
         except Exception as e:
-            self.logger.error(f"Webhook execution error: {e}")
+            self.logger.error("Webhook execution error: %s", e)
             if self._event_bus:
                 await self._event_bus.emit(
                     "webhook.failed",

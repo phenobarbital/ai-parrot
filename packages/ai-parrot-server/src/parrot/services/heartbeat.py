@@ -44,7 +44,7 @@ class HeartbeatScheduler:
             APScheduler job ID, or None if config is disabled.
         """
         if not config.enabled:
-            self.logger.debug(f"Heartbeat disabled for {config.agent_name}")
+            self.logger.debug("Heartbeat disabled for %s", config.agent_name)
             return None
 
         _cron = lazy_import(

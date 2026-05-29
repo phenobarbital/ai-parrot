@@ -655,7 +655,7 @@ class AgentTalk(BaseView):
                     f"Added MCP server '{config.name}' with {len(tools)} tools to agent {agent.name}"
                 )
             except Exception as e:
-                self.logger.error(f"Failed to add MCP server: {e}")
+                self.logger.error("Failed to add MCP server: %s", e)
 
     async def _add_mcp_servers_to_tool_manager(
         self,
@@ -687,7 +687,7 @@ class AgentTalk(BaseView):
                     len(tools)
                 )
             except Exception as e:
-                self.logger.error(f"Failed to add MCP server to ToolManager: {e}")
+                self.logger.error("Failed to add MCP server to ToolManager: %s", e)
 
     async def _configure_tool_manager(
         self,
@@ -764,7 +764,7 @@ class AgentTalk(BaseView):
         try:
             method = self._check_methods(bot, method_name)
         except (AttributeError, TypeError) as exc:
-            self.logger.error(f"Method {method_name} not available: {exc}")
+            self.logger.error("Method %s not available: %s", method_name, exc)
             return self.json_response(
                 {"error": f"Method {method_name} not available."},
                 status=400,
@@ -881,7 +881,7 @@ class AgentTalk(BaseView):
                     }
                 )
         except Exception as e:
-            self.logger.error(f"Error notifying WebSocket channel: {e}")
+            self.logger.error("Error notifying WebSocket channel: %s", e)
 
     async def _get_user_session(self, data: dict) -> tuple[Union[str, None], Union[str, None]]:
         """
@@ -967,7 +967,7 @@ class AgentTalk(BaseView):
         try:
             agent: AbstractBot = await manager.get_bot(agent_name)
         except Exception as exc:  # noqa: BLE001
-            self.logger.error(f"Error retrieving agent {agent_name}: {exc}")
+            self.logger.error("Error retrieving agent %s: %s", agent_name, exc)
             return self.error(f"Error retrieving agent: {exc}", status=500), False
         return agent, False
 
@@ -1232,7 +1232,7 @@ class AgentTalk(BaseView):
                     "agent": agent.name
                 })
             except Exception as e:
-                self.logger.error(f"Error handling files: {e}", exc_info=True)
+                self.logger.error("Error handling files: %s", e, exc_info=True)
                 return self.json_response(
                     {"error": f"Error handling files: {str(e)}"},
                     status=500
@@ -1691,7 +1691,7 @@ class AgentTalk(BaseView):
             if not agent:
                 return self.error(f"Agent '{agent_name}' not found.", status=404)
         except Exception as e:
-            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+            self.logger.error("Error retrieving agent %s: %s", agent_name, e)
             return self.error(f"Error retrieving agent: {e}", status=500)
 
         # --- Tool / MCP configuration branch ---
@@ -1752,7 +1752,7 @@ class AgentTalk(BaseView):
                 status=200
             )
         except Exception as e:
-            self.logger.error(f"Error refreshing agent {agent_name}: {e}")
+            self.logger.error("Error refreshing agent %s: %s", agent_name, e)
             return self.error(f"Error refreshing agent: {e}", status=500)
 
     async def put(self):
@@ -1820,7 +1820,7 @@ class AgentTalk(BaseView):
                         status=202
                     )
                 except Exception as e:
-                    self.logger.error(f"Error processing excel upload: {e}")
+                    self.logger.error("Error processing excel upload: %s", e)
                     return self.error(f"Failed to process file: {str(e)}", status=500)
                 finally:
                     if os.path.exists(tmp_path):
@@ -1847,7 +1847,7 @@ class AgentTalk(BaseView):
                 )
 
         except Exception as e:
-            self.logger.error(f"Error in PUT {agent_name}: {e}", exc_info=True)
+            self.logger.error("Error in PUT %s: %s", agent_name, e, exc_info=True)
             return self.error(
                 f"Operation failed: {str(e)}",
                 status=400
@@ -1881,7 +1881,7 @@ class AgentTalk(BaseView):
                         status=404
                     )
             except Exception as e:
-                self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+                self.logger.error("Error retrieving agent %s: %s", agent_name, e)
                 return self.error(
                     f"Error retrieving agent: {e}",
                     status=500
@@ -2258,7 +2258,7 @@ class AgentTalk(BaseView):
                         )
                     )
             except Exception as ex:
-                self.logger.warning(f"Error scheduling chat turn save: {ex}")
+                self.logger.warning("Error scheduling chat turn save: %s", ex)
 
             # FEAT-103: Auto-save data artifact if response includes structured data
             try:
@@ -2307,7 +2307,7 @@ class AgentTalk(BaseView):
                         )
                     )
             except Exception as ex:
-                self.logger.warning(f"Error scheduling artifact auto-save: {ex}")
+                self.logger.warning("Error scheduling artifact auto-save: %s", ex)
 
             return web.json_response(
                 obj_response, dumps=json_encoder, content_type='application/json'
@@ -2492,7 +2492,7 @@ class AgentTalk(BaseView):
                     try:
                         os.unlink(tmp_path)
                     except Exception as e:
-                        self.logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
+                        self.logger.warning("Failed to delete temp file %s: %s", tmp_path, e)
 
         except ImportError:
             self.logger.error(
@@ -2505,7 +2505,7 @@ class AgentTalk(BaseView):
                 charset='utf-8'
             )
         except Exception as e:
-            self.logger.error(f"Error serving Panel dashboard: {e}", exc_info=True)
+            self.logger.error("Error serving Panel dashboard: %s", e, exc_info=True)
             # Fallback to error response
             return self.error(
                 f"Error rendering interactive dashboard: {e}",

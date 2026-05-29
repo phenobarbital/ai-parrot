@@ -79,7 +79,7 @@ class TaskQueue:
             payload = task.model_dump_json()
             await self._redis.zadd(self._redis_key, {payload: score})
         except Exception as exc:
-            self.logger.warning(f"Failed to persist task {task.task_id}: {exc}")
+            self.logger.warning("Failed to persist task %s: %s", task.task_id, exc)
 
     async def _remove_persisted(self, task: AgentTask) -> None:
         """Remove a completed task from Redis."""
@@ -89,7 +89,7 @@ class TaskQueue:
             payload = task.model_dump_json()
             await self._redis.zrem(self._redis_key, payload)
         except Exception as exc:
-            self.logger.warning(f"Failed to remove persisted task {task.task_id}: {exc}")
+            self.logger.warning("Failed to remove persisted task %s: %s", task.task_id, exc)
 
     async def recover(self) -> int:
         """Recover tasks from Redis on startup.
@@ -114,13 +114,13 @@ class TaskQueue:
                     await self._queue.put((score, task))
                     count += 1
                 except Exception as exc:
-                    self.logger.warning(f"Failed to recover task: {exc}")
+                    self.logger.warning("Failed to recover task: %s", exc)
 
             if count:
-                self.logger.info(f"Recovered {count} task(s) from Redis")
+                self.logger.info("Recovered %s task(s) from Redis", count)
             return count
         except Exception as exc:
-            self.logger.error(f"Failed to recover tasks from Redis: {exc}")
+            self.logger.error("Failed to recover tasks from Redis: %s", exc)
             return 0
 
     async def clear_persisted(self) -> None:
@@ -130,7 +130,7 @@ class TaskQueue:
         try:
             await self._redis.delete(self._redis_key)
         except Exception as exc:
-            self.logger.warning(f"Failed to clear persisted tasks: {exc}")
+            self.logger.warning("Failed to clear persisted tasks: %s", exc)
 
     def task_done(self) -> None:
         """Mark the last dequeued task as done."""

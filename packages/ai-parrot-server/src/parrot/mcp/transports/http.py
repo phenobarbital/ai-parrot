@@ -47,14 +47,14 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
             self._add_oauth_routes(target_router)
 
         self.logger.info(
-            f"Starting HTTP MCP server on {self.config.host}:{self.config.port}"
+            "Starting HTTP MCP server on %s:%s", self.config.host, self.config.port
         )
 
         if self.parent_app:
             if not use_direct_attach:
                 # If running as sub-app with prefix, register the sub-app
                 self.parent_app.add_subapp(self.config.base_path, self.app)
-                self.logger.info(f"Mounted at {self.config.base_path}")
+                self.logger.info("Mounted at %s", self.config.base_path)
             else:
                 self.logger.info("Mounted at / (merged)")
         else:
@@ -69,7 +69,7 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
                     certfile=self.config.ssl_cert_path,
                     keyfile=self.config.ssl_key_path
                 )
-                self.logger.info(f"Enabled SSL with cert: {self.config.ssl_cert_path}")
+                self.logger.info("Enabled SSL with cert: %s", self.config.ssl_cert_path)
             
             self.site = web.TCPSite(
                 self.runner,
@@ -112,7 +112,7 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
                 status=400
             )
         except Exception as e:
-            self.logger.error(f"HTTP request error: {e}")
+            self.logger.error("HTTP request error: %s", e)
             return web.json_response(
                 {"jsonrpc": "2.0", "error": {"code": -32603, "message": str(e)}, "id": None},
                 status=500
@@ -212,7 +212,7 @@ class HttpMCPSession:
             # Initialize MCP session
             await self._initialize_session()
             self._initialized = True
-            self.logger.info(f"HTTP connection established to {self.config.name}")
+            self.logger.info("HTTP connection established to %s", self.config.name)
 
         except Exception as e:
             await self.disconnect()
@@ -244,7 +244,7 @@ class HttpMCPSession:
             request["params"] = params
 
         try:
-            self.logger.debug(f"HTTP sending: {json.dumps(request)}")
+            self.logger.debug("HTTP sending: %s", json.dumps(request))
 
             async with self._session.post(
                 self.config.url,
@@ -259,7 +259,7 @@ class HttpMCPSession:
                     raise MCPConnectionError(f"HTTP error: {response.status}")
 
                 response_data = await response.json()
-                self.logger.debug(f"HTTP received: {json.dumps(response_data)}")
+                self.logger.debug("HTTP received: %s", json.dumps(response_data))
 
                 if "error" in response_data:
                     error = response_data["error"]
@@ -279,7 +279,7 @@ class HttpMCPSession:
             notification["params"] = params
 
         try:
-            self.logger.debug(f"HTTP notification: {json.dumps(notification)}")
+            self.logger.debug("HTTP notification: %s", json.dumps(notification))
 
             async with self._session.post(
                 self.config.url,
@@ -293,7 +293,7 @@ class HttpMCPSession:
                 pass
 
         except Exception as e:
-            self.logger.debug(f"Notification error (ignored): {e}")
+            self.logger.debug("Notification error (ignored): %s", e)
 
     def _get_next_id(self):
         self._request_id += 1

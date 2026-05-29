@@ -626,7 +626,7 @@ class OAuthRoutesMixin:
                 status=201,
             )
         except Exception as e:  # pylint: disable=broad-except
-            self.logger.error(f"DCR Error: {e}")
+            self.logger.error("DCR Error: %s", e)
             return web.json_response(
                 {"error": "invalid_client_metadata", "error_description": str(e)},
                 status=400,

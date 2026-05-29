@@ -35,7 +35,7 @@ class ChromeManager:
     def start(self) -> bool:
         """Start headless Chrome if not already running."""
         if self.is_chrome_running():
-            self.logger.info(f"Chrome is already running on port {self.port}")
+            self.logger.info("Chrome is already running on port %s", self.port)
             return True
 
         self.logger.info("Starting headless Chrome...")
@@ -105,7 +105,7 @@ class ChromeManager:
             return False
 
         except Exception as e:
-            self.logger.error(f"Failed to start Chrome: {e}")
+            self.logger.error("Failed to start Chrome: %s", e)
             return False
 
     def stop(self):

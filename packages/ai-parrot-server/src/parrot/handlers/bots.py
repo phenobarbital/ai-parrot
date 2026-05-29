@@ -480,7 +480,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 agents = await BotModel.filter(enabled=True)
                 return agents if agents else []
         except Exception as exc:
-            self.logger.error(f"Failed to load DB agents: {exc}")
+            self.logger.error("Failed to load DB agents: %s", exc)
             return []
 
     async def _get_db_agent(self, name: str) -> BotModel | None:
@@ -495,7 +495,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
                 except NoDataFound:
                     return None
         except Exception as exc:
-            self.logger.error(f"Failed to load DB agent '{name}': {exc}")
+            self.logger.error("Failed to load DB agent '%s': %s", name, exc)
             return None
 
     async def _check_duplicate(self, name: str) -> str | None:
@@ -573,7 +573,7 @@ class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
         try:
             await bot.configure(app)
         except Exception as exc:
-            self.logger.error(f"Error configuring bot {name}: {exc}")
+            self.logger.error("Error configuring bot %s: %s", name, exc)
             return None
 
         # FEAT-133 Step 2: Patch LLM reranker client post-configure.

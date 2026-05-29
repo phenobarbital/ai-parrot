@@ -154,7 +154,7 @@ class ParrotMCPServer:
 
                 start_coro = server.start()
                 self._server_tasks[transport_key] = asyncio.create_task(start_coro)
-                self.logger.info(f"Spawned stdio MCP server task: {server_name}")
+                self.logger.info("Spawned stdio MCP server task: %s", server_name)
 
             elif config.transport in {"http", "sse"}:
                 # Launch HTTP/SSE MCP server using existing aiohttp app
@@ -180,10 +180,10 @@ class ParrotMCPServer:
         for transport_key, server in self.servers.items():
             try:
                 await server.stop()
-                self.logger.info(f"Stopped MCP server: {transport_key}")
+                self.logger.info("Stopped MCP server: %s", transport_key)
             except Exception as exc:
                 shutdown_errors.append((transport_key, exc))
-                self.logger.error(f"Failed stopping MCP server {transport_key}: {exc}")
+                self.logger.error("Failed stopping MCP server %s: %s", transport_key, exc)
 
         # Cancel stdio tasks
         for transport_key, task in self._server_tasks.items():
