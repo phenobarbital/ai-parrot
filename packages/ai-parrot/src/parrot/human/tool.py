@@ -338,10 +338,12 @@ class HumanTool(AbstractTool):
 
         # SUSPEND: register the interaction non-blocking and raise an interrupt
         # so the HTTP handler can serialise tool-loop state and return a paused
-        # envelope.  No in-process timer is relied upon in this mode.
+        # envelope.  No in-process timer is relied upon in this mode — the
+        # interaction TTL in Redis is the sole expiry guarantee, so we must NOT
+        # schedule an in-process _handle_timeout task.
         if self.wait_strategy == WaitStrategy.SUSPEND:
             interaction_id = await self.manager.request_human_input_async(
-                interaction, channel=channel,
+                interaction, channel=channel, schedule_timeout=False,
             )
             self.logger.info(
                 "HumanTool SUSPEND: raising HumanInteractionInterrupt for "

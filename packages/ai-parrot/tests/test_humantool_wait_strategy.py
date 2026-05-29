@@ -100,6 +100,35 @@ async def test_suspend_raises_interrupt():
 
 
 @pytest.mark.asyncio
+async def test_suspend_does_not_schedule_timeout():
+    """SUSPEND path calls request_human_input_async with schedule_timeout=False.
+
+    The in-process _handle_timeout task must NOT be created for the SUSPEND
+    path — the HTTP request returns immediately after raising
+    HumanInteractionInterrupt, so there is no running event loop to host a
+    meaningful timeout task.  The interaction TTL in Redis is the sole expiry
+    guarantee in SUSPEND mode.
+    """
+    fake_manager = MagicMock()
+    fake_manager.request_human_input_async = AsyncMock(return_value="iid-suspend")
+    fake_manager.channels = {}
+
+    tool = HumanTool(manager=fake_manager, wait_strategy=WaitStrategy.SUSPEND)
+
+    with pytest.raises(HumanInteractionInterrupt):
+        await tool._execute(question="approve?", interaction_type="approval")
+
+    # Verify schedule_timeout=False was passed
+    call_kwargs = fake_manager.request_human_input_async.call_args
+    assert call_kwargs is not None, "request_human_input_async was not called"
+    # keyword arg 'schedule_timeout' must be False
+    kwargs = call_kwargs.kwargs if hasattr(call_kwargs, 'kwargs') else call_kwargs[1]
+    assert kwargs.get("schedule_timeout") is False, (
+        f"Expected schedule_timeout=False, got: {kwargs}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_suspend_does_not_call_block_path():
     """SUSPEND path never calls the blocking request_human_input."""
     fake_manager = MagicMock()

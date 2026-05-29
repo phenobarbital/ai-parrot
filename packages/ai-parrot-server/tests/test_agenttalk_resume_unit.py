@@ -52,10 +52,24 @@ class _FakeAgentTalk:
     """Minimal AgentTalk-like object for testing _handle_hitl_resume."""
     logger = MagicMock()
 
-    def _format_response(self, ai_message, output_format, format_kwargs,
-                         user_id=None, user_session=None, response_time_ms=None,
-                         agent_name=None):
-        """Stub: return a fake success web.Response."""
+    def _format_response(
+        self,
+        ai_message,
+        output_format,
+        format_kwargs,
+        user_id=None,
+        user_session=None,
+        response_time_ms=None,
+        agent_name=None,
+        session_id=None,
+        client_message_id=None,
+    ):
+        """Stub: return a fake success web.Response.
+
+        Signature matches the real AgentTalk._format_response so that any
+        mismatch between the call site and this stub causes an immediate
+        TypeError rather than a silent attribute lookup failure.
+        """
         from aiohttp import web
         import json
         return web.json_response({
@@ -63,8 +77,9 @@ class _FakeAgentTalk:
             "content": str(ai_message),
         }, status=200)
 
-    # Re-expose the method under test
+    # Re-expose the methods under test
     _handle_hitl_resume = AgentTalk._handle_hitl_resume
+    _handle_hitl_resume_inner = AgentTalk._handle_hitl_resume_inner
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +229,7 @@ async def test_alive_records_then_resumes(view, fake_agent, fake_manager, fake_r
          patch("parrot.human.suspended_store.SuspendedExecutionStore") as MockStore:
         store_instance = MagicMock()
         store_instance.load = AsyncMock(return_value=suspended)
+        store_instance.delete = AsyncMock(return_value=None)
         MockStore.return_value = store_instance
 
         response = await view._handle_hitl_resume(
@@ -228,6 +244,8 @@ async def test_alive_records_then_resumes(view, fake_agent, fake_manager, fake_r
     fake_manager.receive_response.assert_called_once()
     # agent.session must have been called (resume path)
     fake_agent.session.assert_called_once()
+    # suspended state must have been deleted BEFORE resume
+    store_instance.delete.assert_called_once_with("iid-1")
 
 
 @pytest.mark.asyncio

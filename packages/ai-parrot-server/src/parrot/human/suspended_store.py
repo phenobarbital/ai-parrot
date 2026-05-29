@@ -106,7 +106,18 @@ class SuspendedExecutionStore:
         Args:
             record: The :class:`SuspendedExecution` to persist.
             ttl: Time-to-live in seconds (should match the interaction TTL).
+                Values <= 0 are replaced with a 7260-second (2h+60s) fallback
+                to prevent ``redis.exceptions.ResponseError`` from ``SETEX``
+                with a non-positive TTL.
         """
+        if ttl <= 0:
+            self.logger.warning(
+                "SuspendedExecutionStore.save: non-positive ttl=%d for %s; "
+                "using defensive fallback of 7260s",
+                ttl,
+                record.interaction_id,
+            )
+            ttl = 7260  # 2h + 60s defensive fallback
         key = self._key(record.interaction_id)
         payload = record.model_dump_json()
         await self.redis.setex(key, ttl, payload)

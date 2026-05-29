@@ -68,13 +68,23 @@ def view():
     class _FakeView:
         logger = MagicMock()
 
-        def _format_response(self, ai_message, output_format, format_kwargs,
-                             user_id=None, user_session=None,
-                             response_time_ms=None, agent_name=None):
+        def _format_response(
+            self,
+            ai_message,
+            output_format,
+            format_kwargs,
+            user_id=None,
+            user_session=None,
+            response_time_ms=None,
+            agent_name=None,
+            session_id=None,
+            client_message_id=None,
+        ):
             from aiohttp import web
             return web.json_response({"status": "success", "content": str(ai_message)})
 
         _handle_hitl_resume = AgentTalk._handle_hitl_resume
+        _handle_hitl_resume_inner = AgentTalk._handle_hitl_resume_inner
 
     return _FakeView()
 

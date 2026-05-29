@@ -57,6 +57,11 @@ from .web_hitl import set_current_web_session, reset_current_web_session
 # FEAT-204: PausedEnvelope — structured HTTP-200 reply for HITL suspend
 # ---------------------------------------------------------------------------
 
+#: Default TTL (seconds) for a suspended HITL interaction when neither the
+#: HITL manager nor the interaction object is available.
+#: 7200s = HumanToolInput default timeout (2h) + 60s buffer.
+_DEFAULT_HITL_SUSPEND_TTL: int = 7260
+
 class PausedEnvelope(BaseModel):
     """HTTP-200 structured reply returned by AgentTalk when a SUSPEND tool raises
     HumanInteractionInterrupt.
@@ -1311,6 +1316,31 @@ class AgentTalk(BaseView):
             An HTTP 200 JSON response — either the resumed ``success`` reply
             or an informational ``expired``/``already_answered`` envelope.
         """
+        # ── 0. Set current_web_session ContextVar ────────────────────────
+        # Ensures that chained multi-turn HITL (a second ask_human during
+        # resume) can resolve the web session correctly via the ContextVar.
+        # Cleared in the finally block below.
+        _resume_hitl_token = set_current_web_session(session_id)
+        try:
+            return await self._handle_hitl_resume_inner(
+                hitl_response=hitl_response,
+                agent=agent,
+                session_id=session_id,
+                user_id=user_id,
+                request_session=request_session,
+            )
+        finally:
+            reset_current_web_session(_resume_hitl_token)
+
+    async def _handle_hitl_resume_inner(
+        self,
+        hitl_response: dict,
+        agent: Any,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        request_session: Any,
+    ) -> web.Response:
+        """Inner implementation of _handle_hitl_resume (ContextVar already set)."""
         # Lazy imports — keep module-level free of parrot.human dependency.
         from parrot.human import get_default_human_manager as _gm  # noqa: PLC0415
         from parrot.human.models import HumanResponse, InteractionType  # noqa: PLC0415
@@ -1447,6 +1477,11 @@ class AgentTalk(BaseView):
             suspended.tool_call_id,
         )
 
+        # Delete the suspended-state blob BEFORE calling agent.resume().
+        # If resume raises, the tombstone prevents a duplicate resume attempt —
+        # which is the correct conservative behaviour (one-shot guarantee).
+        await sus_store.delete(interaction_id)
+
         try:
             async with agent.session(
                 session_id=suspended.session_id,
@@ -1481,6 +1516,8 @@ class AgentTalk(BaseView):
             user_session=session_id,
             response_time_ms=None,
             agent_name=suspended.agent_name or (agent.name if agent else ""),
+            session_id=session_id,
+            client_message_id=None,
         )
 
     async def post(self):
@@ -1877,7 +1914,7 @@ class AgentTalk(BaseView):
                     )
                     # 2. Rehydrate the HumanInteraction for type/options/schema.
                     interaction_obj = await hitl_manager._load_interaction(interaction_id)
-                    ttl = 7260  # default fallback (2h + 60s)
+                    ttl = _DEFAULT_HITL_SUSPEND_TTL  # default fallback (2h + 60s)
                     if interaction_obj is not None:
                         ttl = hitl_manager._compute_ttl(interaction_obj)
                         interaction_type_str = interaction_obj.interaction_type.value
@@ -1891,9 +1928,12 @@ class AgentTalk(BaseView):
                         form_schema = interaction_obj.form_schema
                         default_response = interaction_obj.default_response
                         import datetime as _dt
+                        # Use the same TTL value already computed for Redis
+                        # (which includes the 60s buffer and policy-chain logic)
+                        # so the deadline is aligned with actual key expiry.
                         deadline = (
                             _dt.datetime.now(_dt.timezone.utc)
-                            + _dt.timedelta(seconds=interaction_obj.timeout)
+                            + _dt.timedelta(seconds=ttl)
                         ).isoformat()
                     await sus_store.save(suspended, ttl=ttl)
                     self.logger.info(
@@ -1912,6 +1952,19 @@ class AgentTalk(BaseView):
                     "for interaction %s: %s",
                     interaction_id,
                     inner_exc,
+                )
+                # A broken PausedEnvelope (empty question, no options) would
+                # leave the frontend in an irrecoverable state.  Return HTTP 500
+                # so the client can surface a meaningful error.
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "message": (
+                            f"Failed to persist suspend state for interaction "
+                            f"{interaction_id}: {inner_exc}"
+                        ),
+                    },
+                    status=500,
                 )
             # 3. Build and return the PausedEnvelope.
             #    turn_id == interaction_id (OQ-1: shared correlation contract).
