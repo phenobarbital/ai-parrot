@@ -49,7 +49,7 @@ class UserSocketManager(WebSocketManager):
 
     # Optional: Register a custom message callback
     async def custom_handler(ws, channel, msg_type, content, username, client_info):
-        print(f"Custom message from {username}: {content}")
+        logging.getLogger(__name__).debug("Custom message from %s: %s", username, content)
         return True  # Return True to indicate message was handled
 
     ws_manager.register_message_handler(custom_handler)

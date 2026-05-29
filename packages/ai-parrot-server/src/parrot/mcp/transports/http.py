@@ -202,8 +202,6 @@ class HttpMCPSession:
             # Add custom headers
             self._base_headers.update(self.config.headers)
 
-            print('THIS > ', self._base_headers)
-
             # Create HTTP session
             timeout = aiohttp.ClientTimeout(total=self.config.timeout)
             self._session = aiohttp.ClientSession(

@@ -249,7 +249,7 @@ class StreamHandler(BaseHandler):
                         })
                 elif msg.type == web.WSMsgType.ERROR:
                     # Handle errors
-                    print(f'WebSocket error: {ws.exception()}')
+                    self.logger.error("WebSocket error: %s", ws.exception())
                     self.active_connections.remove(ws)
         except Exception as e:
             self.active_connections.remove(ws)
@@ -356,7 +356,7 @@ class StreamHandler(BaseHandler):
             try:
                 await ws.send_json(message)
             except Exception as e:
-                print(f"Error broadcasting to client: {e}")
+                self.logger.error("Error broadcasting to client: %s", e)
 
     def configure_routes(self, app: web.Application):
         """Configure routes for streaming endpoints."""

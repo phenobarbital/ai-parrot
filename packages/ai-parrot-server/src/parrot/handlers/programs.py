@@ -19,7 +19,7 @@ class ProgramsUserHandler(BaseView):
         session = getattr(self, '_session', {})
         user_programs_slugs = session.get('programs', [])
         # We might use user_programs_slugs later to filter
-        print(f"User programs: {user_programs_slugs}")
+        self.logger.debug("User programs: %s", user_programs_slugs)
         
         # Mock response matching the requested payload structure
         # We include some default programs + any specific ones

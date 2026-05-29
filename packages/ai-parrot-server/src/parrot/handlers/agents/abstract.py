@@ -892,7 +892,7 @@ class AgentHandler(BaseView):
             if isinstance(response, Exception):
                 raise response
         except Exception as e:
-            print(f"Error invoking agent: {e}")
+            self.logger.error("Error invoking agent: %s", e)
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
             )

@@ -652,7 +652,7 @@ class BotHandler(BaseView):
         try:
             bot = manager.create_bot(name=name, **data)
         except Exception as exc:
-            print(exc.__traceback__)
+            self.logger.error("Error creating chatbot %s: %s", name, exc, exc_info=True)
             return self.error(
                 response={
                     "message": f"Error creating chatbot {name}.",
@@ -672,7 +672,7 @@ class BotHandler(BaseView):
                 status=400
             )
         except Exception as exc:
-            print(exc.__traceback__)
+            self.logger.error("Error creating chatbot %s: %s", name, exc, exc_info=True)
             return self.error(
                 response={
                     "message": f"Error creating chatbot {name}.",
@@ -949,9 +949,7 @@ class BotManagement(BaseView):
                 )
             tasks = []
             for loader_cls, files in by_loader.items():
-                print(
-                    f"Loading {len(files)} files with {loader_cls.__name__}"
-                )
+                self.logger.debug("Loading %s files with %s", len(files), loader_cls.__name__)
                 try:
                     # Each loader receives the full list for that type (avoid per-file loops)
                     loader = loader_cls(
