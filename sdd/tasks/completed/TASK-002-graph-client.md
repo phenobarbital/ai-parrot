@@ -115,9 +115,10 @@ Standard SDD flow. Verify the contract, implement, move to `completed/`, update 
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
+**Notes**: Implemented GraphClient with client-credentials token caching, get_user_by_email (UPN direct + mail-filter fallback),
+and get_user_manager. ResolvedTeamsUser Pydantic model included. All 7 unit tests pass with stubbed aiohttp sessions.
+No real HTTP calls in tests. Fork's graph.py used as structural reference only (it lacked Pydantic model and mail-filter fallback).
+**Deviations from spec**: none

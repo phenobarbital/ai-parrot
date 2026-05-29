@@ -32,7 +32,7 @@
       "feature_id": "FEAT-205",
       "feature": "hitl-teams-channel",
       "spec": "sdd/specs/hitl-teams-channel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "File-independent of TASK-001 and TASK-003 (pure aiohttp, no botbuilder). Could parallelize under mixed isolation, but spec mandates per-spec (sequential) due to shared package edits.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:02:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-002-graph-client.md"
+      "completed_at": "2026-05-29T16:10:19+00:00",
+      "file": "sdd/tasks/completed/TASK-002-graph-client.md"
     },
     {
       "id": "TASK-003",
