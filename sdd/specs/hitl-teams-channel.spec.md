@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-205
 **Date**: 2026-05-29
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 
 > Input: `sdd/proposals/hitl-teams-channel.brainstorm.md` (Recommended Option A).
@@ -481,7 +481,7 @@ MSTEAMS = "msteams"  # OutputMode.MSTEAMS, line 67
 **Unresolved (implementation-time verification — do NOT block the spec):**
 - [ ] OQ-2: Exact CloudAdapter proactive API for a cold 1:1 (`create_conversation` params vs `TeamsInfo`-assisted) against botbuilder v4.17.1 — *Owner: implementer (Module 3)*.
 - [ ] OQ-5: `form_schema` → Adaptive Card field mapping (which `Input.*` types, validation, required fields) for FORM — *Owner: implementer (Module 4)*.
-- [ ] OQ-VENDOR: Exact contents of the private `azure_teambots` fork (adapter? cards? Graph? proactive?) — confirm before any task references a vendored class. Working assumption: fork provides adapter/cards at most; `GraphClient` + proactive 1:1 are net-new — *Owner: implementer (Module 2) / Jesus*.
+- [ ] OQ-VENDOR: Exact contents of the private `azure_teambots` fork (adapter? cards? Graph? proactive?) — confirm before any task references a vendored class. Working assumption: fork provides adapter/cards at most; `GraphClient` + proactive 1:1 are net-new — *Owner: implementer (Module 2) / Jesus*.: repository code here: /home/jesuslara/proyectos/parallel/azure_teambots
 - [ ] OQ-9-impl: Exact selection mechanism for a per-agent HITL identity (keyed channels `"teams:{agent}"` vs `BotConfig` at tool/agent construction) and how a tier's `channel_type` selects it — *Owner: implementer (Module 5)*.
 
 ---
