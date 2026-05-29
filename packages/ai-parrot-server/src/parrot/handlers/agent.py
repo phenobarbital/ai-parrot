@@ -1282,6 +1282,205 @@ class AgentTalk(BaseView):
             status=400
         )
 
+    async def _handle_hitl_resume(
+        self,
+        hitl_response: dict,
+        agent: Any,
+        session_id: Optional[str],
+        user_id: Optional[str],
+        request_session: Any,
+    ) -> web.Response:
+        """Handle a HITL resume request (FEAT-204).
+
+        Called when ``AgentTalk.post`` detects a ``hitl_response`` tag in the
+        request body.  Validates the respondent, performs the three-state
+        TTL/tombstone check, routes the answer through the manager, loads the
+        suspended tool-loop state, and calls ``agent.resume()`` to continue
+        the agent run to a final ``success`` response.
+
+        Args:
+            hitl_response: The ``hitl_response`` body dict with keys
+                ``turn_id`` (interaction_id), ``value``, and optionally
+                ``response_type``.
+            agent: The resolved ``AbstractBot`` for this request.
+            session_id: The user's session identifier.
+            user_id: The authenticated user ID.
+            request_session: The request session object (for respondent lookup).
+
+        Returns:
+            An HTTP 200 JSON response — either the resumed ``success`` reply
+            or an informational ``expired``/``already_answered`` envelope.
+        """
+        # Lazy imports — keep module-level free of parrot.human dependency.
+        from parrot.human import get_default_human_manager as _gm  # noqa: PLC0415
+        from parrot.human.models import HumanResponse, InteractionType  # noqa: PLC0415
+        from parrot.human.suspended_store import SuspendedExecutionStore  # noqa: PLC0415
+
+        # ── 1. Parse hitl_response body ──────────────────────────────────
+        turn_id: str = hitl_response.get("turn_id", "")
+        value = hitl_response.get("value")
+        response_type_raw: Optional[str] = hitl_response.get("response_type")
+        # OQ-1: turn_id == interaction_id (one correlation contract)
+        interaction_id: str = turn_id
+
+        if not interaction_id:
+            return web.json_response(
+                {"status": "error", "message": "hitl_response.turn_id is required"},
+                status=400,
+            )
+
+        # ── 2. Respondent from authenticated session only ─────────────────
+        respondent: str = "unknown"
+        try:
+            if request_session:
+                respondent = request_session.get("user_id", "unknown")
+        except AttributeError:
+            pass
+        if respondent == "unknown" or not respondent:
+            self.logger.warning(
+                "AgentTalk resume: unauthenticated resume attempt for %s",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "unauthenticated"},
+                status=403,
+            )
+
+        # ── 3. Manager lookup ─────────────────────────────────────────────
+        hitl_manager = _gm()
+        if hitl_manager is None:
+            return web.json_response(
+                {"status": "error", "message": "HITL service unavailable"},
+                status=503,
+            )
+
+        # ── 4. is_valid_respondent gate ───────────────────────────────────
+        if not await hitl_manager.is_valid_respondent(interaction_id, respondent):
+            self.logger.warning(
+                "AgentTalk resume: respondent '%s' rejected for interaction %s",
+                respondent,
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "forbidden: not the intended respondent"},
+                status=403,
+            )
+
+        # ── 5. Three-state TTL/tombstone check ────────────────────────────
+        #   - hitl:result exists  → already answered (idempotency tombstone)
+        #   - hitl:interaction exists, no result → alive → proceed
+        #   - neither exists → expired
+        existing_result = await hitl_manager.get_result(interaction_id)
+        if existing_result is not None:
+            self.logger.info(
+                "AgentTalk resume: interaction %s already answered (tombstone)",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "already_answered", "interaction_id": interaction_id},
+                status=200,
+            )
+
+        interaction_alive = await hitl_manager._load_interaction(interaction_id)
+        if interaction_alive is None:
+            self.logger.info(
+                "AgentTalk resume: interaction %s expired (no key in Redis)",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "expired", "interaction_id": interaction_id},
+                status=200,
+            )
+
+        # ── 6. Record the response in the HITL ledger ─────────────────────
+        response_type: "InteractionType" = (
+            interaction_alive.interaction_type
+        )
+        if response_type_raw:
+            try:
+                response_type = InteractionType(response_type_raw)
+            except ValueError:
+                response_type = InteractionType.FREE_TEXT
+
+        human_response = HumanResponse(
+            interaction_id=interaction_id,
+            respondent=respondent,
+            response_type=response_type,
+            value=value,
+        )
+        await hitl_manager.receive_response(human_response)
+        self.logger.info(
+            "AgentTalk resume: recorded response for interaction %s by %s",
+            interaction_id,
+            respondent,
+        )
+
+        # ── 7. Load suspended state and resume the agent ──────────────────
+        redis_client = await hitl_manager._get_redis()
+        sus_store = SuspendedExecutionStore(redis_client)
+        suspended = await sus_store.load(interaction_id)
+        if suspended is None:
+            self.logger.error(
+                "AgentTalk resume: SuspendedExecution missing for %s — "
+                "cannot resume tool-loop",
+                interaction_id,
+            )
+            return web.json_response(
+                {"status": "error", "message": "suspended state not found"},
+                status=500,
+            )
+
+        resume_state = {
+            "session_id": suspended.session_id,
+            "messages": suspended.messages,
+            "tool_call_id": suspended.tool_call_id,
+            "agent_name": suspended.agent_name,
+        }
+
+        self.logger.info(
+            "AgentTalk resume: calling agent.resume for session %s "
+            "(interaction=%s, tool_call_id=%s)",
+            suspended.session_id,
+            interaction_id,
+            suspended.tool_call_id,
+        )
+
+        try:
+            async with agent.session(
+                session_id=suspended.session_id,
+                user_id=suspended.user_id or user_id,
+            ) as bot:
+                ai_message = await bot.resume(
+                    session_id=suspended.session_id,
+                    user_input=str(value) if value is not None else "",
+                    state=resume_state,
+                )
+        except HumanInteractionInterrupt:
+            # A second ask_human during resume → let the TASK-1382 catch handle it
+            # by re-raising (the caller AgentTalk.post except block will catch it).
+            raise
+        except Exception as exc:
+            self.logger.exception(
+                "AgentTalk resume: agent.resume failed for session %s: %s",
+                suspended.session_id,
+                exc,
+            )
+            return web.json_response(
+                {"status": "error", "message": f"resume failed: {exc}"},
+                status=500,
+            )
+
+        # Return the resumed response as a normal success reply.
+        return self._format_response(
+            ai_message,
+            "json",
+            {},
+            user_id=suspended.user_id or user_id,
+            user_session=session_id,
+            response_time_ms=None,
+            agent_name=suspended.agent_name or (agent.name if agent else ""),
+        )
+
     async def post(self):
         """
         POST handler for agent interaction. PBAC-guarded via requires_permission.
@@ -1416,6 +1615,21 @@ class AgentTalk(BaseView):
         client_message_id = data.pop('message_id', None)
         followup_turn_id = data.pop('turn_id', None)
         followup_data = data.pop('data', None)
+
+        # FEAT-204: HITL resume branch — detect hitl_response tag in the body.
+        # Shape: {"hitl_response": {"turn_id": "<interaction_id>", "value": ...,
+        #                           "response_type": "<optional>"}}
+        # Handled BEFORE bot.ask() so the resume can run to a success reply
+        # on the same request that carries the human's answer.
+        hitl_response = data.pop('hitl_response', None)
+        if hitl_response is not None:
+            return await self._handle_hitl_resume(
+                hitl_response=hitl_response,
+                agent=agent,
+                session_id=session_id,
+                user_id=user_id,
+                request_session=request_session,
+            )
 
         # Override with explicit parameter if provided
         if 'output_mode' in data:
