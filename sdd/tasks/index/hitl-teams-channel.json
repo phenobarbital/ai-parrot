@@ -111,7 +111,7 @@
       "feature_id": "FEAT-205",
       "feature": "hitl-teams-channel",
       "spec": "sdd/specs/hitl-teams-channel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,8 +121,8 @@
       "parallelism_notes": "Wiring + per-agent override (OQ-9-impl) + integration tests + docs. Lands last.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:02:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-006-setup-helper-and-docs.md"
+      "completed_at": "2026-05-29T16:25:17+00:00",
+      "file": "sdd/tasks/completed/TASK-006-setup-helper-and-docs.md"
     }
   ]
 }

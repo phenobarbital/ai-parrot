@@ -130,9 +130,12 @@ implement, move to `completed/`, update index.
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-05-29
+**Notes**: TeamsHitlConfig (Pydantic model with env-var defaults) and setup_teams_hitl added to teams.py.
+Per-agent override via keyed channels documented (OQ-9-impl: "teams:my-agent" pattern).
+6 integration tests pass. Docs added at docs/hitl-teams-channel.md.
+HitlCloudAdapter and GraphClient imported lazily inside setup_teams_hitl function body (not at module top) to maintain lazy-import isolation.
 **Notes**:
 **Deviations from spec**: none | describe if any
