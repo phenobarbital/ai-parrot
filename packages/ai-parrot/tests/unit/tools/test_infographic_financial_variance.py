@@ -5,16 +5,63 @@ Verifies:
 - Chart constraints are correct (positions 5,6: bar/half; position 7: line/full).
 - _validate_blocks coerces all 9 blocks (regression for the .blocks[0] drop).
 - Both half-width bar ChartBlocks preserve layout == 'half'.
-- Legacy single-hero_card-with-items payload is rejected (intended breaking change).
+- An undersized (old 4-block grouped) payload is rejected.
 - A flat 9-block payload passes infographic_validate_blocks (returns {"ok": True}).
 """
 from __future__ import annotations
 
+import sys
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from parrot.models.infographic_templates import infographic_registry
-from parrot.tools.infographic_toolkit import InfographicToolkit, InfographicValidationError
+# Force real infographic modules (bypass any conftest stubs — same pattern as
+# test_infographic_toolkit.py and siblings in this directory).
+for _mod in (
+    "parrot.models.infographic",
+    "parrot.models.infographic_templates",
+    "parrot.tools.infographic_toolkit",
+    "parrot.storage.models",
+):
+    sys.modules.pop(_mod, None)
+
+import parrot.models.infographic as _ri
+import parrot.models.infographic_templates as _rt
+import parrot.storage.models as _rsm
+
+sys.modules["parrot.models.infographic"] = _ri
+sys.modules["parrot.models.infographic_templates"] = _rt
+sys.modules["parrot.storage.models"] = _rsm
+
+import parrot.tools.infographic_toolkit as _rtk
+sys.modules["parrot.tools.infographic_toolkit"] = _rtk
+
+from parrot.models.infographic_templates import infographic_registry  # noqa: E402
+from parrot.tools.infographic_toolkit import (  # noqa: E402
+    InfographicToolkit,
+    InfographicValidationError,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _bar_block(title: str) -> dict:
+    """Minimal bar-chart block with layout='half'."""
+    return {
+        "type": "chart",
+        "chart_type": "bar",
+        "layout": "half",
+        "title": title,
+        "labels": ["D1", "D2"],
+        "series": [{"name": "x", "values": [1.0, 2.0]}],
+    }
+
+
+def _card_block(label: str, value: str) -> dict:
+    """Minimal flat hero_card block."""
+    return {"type": "hero_card", "label": label, "value": value}
 
 
 # ---------------------------------------------------------------------------
@@ -22,7 +69,7 @@ from parrot.tools.infographic_toolkit import InfographicToolkit, InfographicVali
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def fake_store():
+def fake_artifact_store():
     """Minimal mock ArtifactStore for InfographicToolkit construction."""
     store = MagicMock()
     store.save_artifact = AsyncMock(return_value=None)
@@ -31,31 +78,22 @@ def fake_store():
 
 
 @pytest.fixture
-def toolkit(fake_store):
+def toolkit(fake_artifact_store):
     """InfographicToolkit with mocked store — enough to call _validate_blocks."""
-    return InfographicToolkit(artifact_store=fake_store)
+    return InfographicToolkit(artifact_store=fake_artifact_store)
 
 
 @pytest.fixture
-def fv_blocks():
+def fv_blocks() -> list[dict]:
     """Minimal valid 9-block financial_variance payload."""
-    bar = lambda t: {  # noqa: E731
-        "type": "chart",
-        "chart_type": "bar",
-        "layout": "half",
-        "title": t,
-        "labels": ["D1", "D2"],
-        "series": [{"name": "x", "values": [1.0, 2.0]}],
-    }
-    card = lambda lbl, v: {"type": "hero_card", "label": lbl, "value": v}  # noqa: E731
     return [
         {"type": "title", "title": "T", "date": "May 14 – 27, 2026"},
-        card("Revenue", "$3.7M"),
-        card("Change", "$1.4M"),
-        card("EBITDA", "$31K"),
-        card("DoD", "$107K"),
-        bar("Revenue DoD"),
-        bar("EBITDA DoD"),
+        _card_block("Revenue", "$3.7M"),
+        _card_block("Change", "$1.4M"),
+        _card_block("EBITDA", "$31K"),
+        _card_block("DoD", "$107K"),
+        _bar_block("Revenue DoD"),
+        _bar_block("EBITDA DoD"),
         {
             "type": "chart",
             "chart_type": "line",
@@ -121,8 +159,21 @@ def test_two_half_charts_preserve_layout(toolkit, fv_blocks):
     )
 
 
-def test_legacy_items_payload_now_rejected(toolkit):
-    """Old shape (1 hero_card w/ items=[4] + fewer blocks) no longer validates."""
+def test_undersized_legacy_payload_is_rejected(toolkit):
+    """A 4-block payload (the old grouped format) is rejected.
+
+    The template now expects 9 positional blocks. Any payload with fewer blocks
+    raises InfographicValidationError with an INSUFFICIENT_BLOCKS or
+    SLOT_TYPE_MISMATCH code — the exact code depends on where the validator
+    detects the shortfall. What this test guards is that the old 4-block
+    grouped shape can no longer pass through the new 9-spec template.
+
+    Note: this does NOT prove that a hero_card carrying ``items=[…]`` is
+    intrinsically invalid — ``_validate_blocks`` is positional and does not
+    enforce the ``items`` constraint. What it proves is that the old
+    "1 grouped hero_card + 2 charts" layout (4 blocks total) no longer
+    satisfies the 9-slot positional contract.
+    """
     tpl = infographic_registry.get("financial_variance")
     legacy = [
         {"type": "title", "title": "T"},
@@ -147,12 +198,14 @@ def test_legacy_items_payload_now_rejected(toolkit):
         toolkit._validate_blocks(tpl, legacy)
 
 
+@pytest.mark.asyncio
 async def test_validate_flat_payload_ok(toolkit, fv_blocks):
     """A flat 9-block payload must return {"ok": True} from validate_blocks."""
     result = await toolkit.validate_blocks("financial_variance", fv_blocks)
     assert result == {"ok": True}, f"validate_blocks returned: {result}"
 
 
+@pytest.mark.asyncio
 async def test_get_template_contract_returns_nine_specs(toolkit):
     """get_template_contract('financial_variance') returns 9 specs in the correct order."""
     contract = await toolkit.get_template_contract("financial_variance")

@@ -76,6 +76,9 @@ def _money(v: float) -> str:
 
 
 def _lbl(ts) -> str:
+    # NOTE: %-d (strip zero-padding from day) is a Linux/glibc extension.
+    # This script runs on Linux servers only; replace with %d + lstrip('0')
+    # if macOS support is ever needed.
     return pd.Timestamp(ts).strftime("%b %-d")
 
 
@@ -116,7 +119,7 @@ blocks = [
     {"type": "title", "title": "Financial Projection Variance",
      "subtitle": "Daily revenue & EBITDA tracking", "date": date_range},
     # slots 1-4 — four flat hero_card blocks (one per KPI), matching the flat
-    # financial_variance template contract (FEAT-206 / TASK-1385).
+    # financial_variance template contract (FEAT-206 / TASK-1386).
     {"type": "hero_card", "label": f"Revenue ({cur_lbl})", "value": _money(rev_cur),
      "icon": "money", "comparison_period": "Total across all projects"},
     {"type": "hero_card", "label": f"Revenue change ({start_lbl}→{cur_lbl})",

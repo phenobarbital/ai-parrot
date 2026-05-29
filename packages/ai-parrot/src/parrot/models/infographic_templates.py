@@ -376,7 +376,8 @@ TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
     description=(
         "Financial projection variance dashboard: 4 KPI hero cards, 2 day-over-day "
         "bar charts side-by-side, 1 cumulative trend line chart full-width, and an "
-        "executive summary."
+        "executive summary. Ideal for daily/period financial tracking where the "
+        "reader needs both per-period deltas and a cumulative view."
     ),
     default_theme="light",
     block_specs=[

@@ -313,7 +313,7 @@ async def test_render_financial_variance_end_to_end(fake_store):
         "labels": ["D1", "D2"],
         "series": [{"name": "x", "values": [1.0, 2.0]}],
     }
-    card = lambda l, v: {"type": "hero_card", "label": l, "value": v}  # noqa: E731
+    card = lambda lbl, v: {"type": "hero_card", "label": lbl, "value": v}  # noqa: E731
     fv_blocks = [
         {"type": "title", "title": "Financial Variance", "date": "May 14 – 27, 2026"},
         card("Revenue", "$3.7M"),
@@ -344,18 +344,16 @@ async def test_render_financial_variance_end_to_end(fake_store):
     assert isinstance(result, InfographicRenderResult), (
         f"render() did not return InfographicRenderResult: {type(result)}"
     )
-    # html_inline is None for large payloads (> 50 KB threshold).
-    # Extract the rendered HTML from the artifact stored in the mock store.
-    html = result.html_inline or ""
-    if not html and fake_store.save_artifact.called:
-        # The artifact is the 4th positional arg to save_artifact(user_id, agent_id, session_id, artifact)
-        call_args = fake_store.save_artifact.call_args
-        artifact = call_args.args[3] if call_args.args else call_args.kwargs.get("artifact")
-        if artifact is not None and hasattr(artifact, "definition") and artifact.definition:
-            html = artifact.definition.get("html", "") or ""
-    # The rendered HTML must contain at least 4 hero-card references and 3 chart references.
-    # (Exact attribute names depend on renderer; count conservatively.)
-    assert html, "No HTML was captured from render result or artifact store call"
+    # The payload is intentionally minimal (2-point labels, short strings) so it
+    # stays well under the 50 KB threshold and html_inline is always populated.
+    assert result.html_inline is not None, (
+        "html_inline is None — payload may have exceeded the 50 KB inline threshold "
+        "or the renderer returned an unexpected result. Check render() internals."
+    )
+    html = result.html_inline
+    # The rendered HTML must contain at least 4 hero-card references and 3 chart
+    # references. Substring counts are conservative: any renderer that emits
+    # CSS class names or data attributes containing 'hero' / 'chart' will pass.
     assert html.count("hero") >= 4, (
         f"HTML does not contain 4 hero-card references. 'hero' occurrences: {html.count('hero')}"
     )
