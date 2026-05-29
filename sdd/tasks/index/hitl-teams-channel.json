@@ -68,7 +68,7 @@
       "feature_id": "FEAT-205",
       "feature": "hitl-teams-channel",
       "spec": "sdd/specs/hitl-teams-channel.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -79,8 +79,8 @@
       "parallelism_notes": "Net-new core. Needs the vendored adapter (TASK-001) and ResolvedTeamsUser (TASK-002). Riskiest module (OQ-2). Sequential.",
       "assigned_to": null,
       "started_at": "2026-05-29T16:02:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-004-proactive-1to1-convref.md"
+      "completed_at": "2026-05-29T16:16:33+00:00",
+      "file": "sdd/tasks/completed/TASK-004-proactive-1to1-convref.md"
     },
     {
       "id": "TASK-005",
