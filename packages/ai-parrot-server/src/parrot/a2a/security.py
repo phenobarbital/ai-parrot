@@ -85,6 +85,10 @@ import secrets
 import ssl
 import time
 import uuid
+
+# Maximum allowed age (in seconds) for an HMAC-signed request.
+# Requests with a timestamp outside this window are rejected to prevent replay attacks.
+HMAC_TIMESTAMP_WINDOW: int = 300  # 5 minutes
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -445,10 +449,14 @@ class CredentialProvider(ABC):
 
         Default implementation returns None. Override if needed.
 
+        IMPORTANT: Implementations MUST enforce a freshness window (e.g.,
+        ``HMAC_TIMESTAMP_WINDOW`` seconds) on the ``timestamp`` parameter
+        before checking the signature, to prevent replay attacks.
+
         Args:
             signature: The HMAC signature
             payload: The signed payload
-            timestamp: Request timestamp
+            timestamp: Request timestamp (Unix epoch as string)
 
         Returns:
             CallerIdentity if valid, None otherwise
@@ -642,7 +650,32 @@ class InMemoryCredentialProvider(CredentialProvider):
         timestamp: str,
         agent_name: Optional[str] = None,
     ) -> Optional[CallerIdentity]:
-        """Validate HMAC signature."""
+        """Validate HMAC signature with replay-attack protection.
+
+        Rejects requests whose timestamp is outside ``HMAC_TIMESTAMP_WINDOW``
+        seconds of the current time before performing signature verification.
+
+        Args:
+            signature: Hex-encoded HMAC-SHA256 signature.
+            payload: The raw request body that was signed.
+            timestamp: Unix epoch timestamp string included in the request.
+            agent_name: Optional agent name hint to skip scanning all secrets.
+
+        Returns:
+            CallerIdentity if the signature is valid and fresh, None otherwise.
+        """
+        # --- Freshness check (replay-attack prevention) ---
+        try:
+            ts_int = int(timestamp)
+        except (ValueError, TypeError):
+            self.logger.warning("HMAC validation failed: non-integer timestamp %r", timestamp)
+            return None
+        if abs(int(time.time()) - ts_int) > HMAC_TIMESTAMP_WINDOW:
+            self.logger.warning(
+                "HMAC timestamp outside acceptable window (possible replay attack)"
+            )
+            return None
+
         # Try to find the agent by checking all secrets
         for name, secret in self._hmac_secrets.items():
             if agent_name and name != agent_name:
@@ -881,6 +914,82 @@ class RedisCredentialProvider(CredentialProvider):
             json.dumps(identity.to_dict()),
             ex=ttl or self._token_ttl,
         )
+
+    async def validate_hmac(
+        self,
+        signature: str,
+        payload: bytes,
+        timestamp: str,
+        agent_name: Optional[str] = None,
+    ) -> Optional[CallerIdentity]:
+        """Validate HMAC signature with replay-attack protection (Redis backend).
+
+        Retrieves the agent's HMAC secret from Redis, enforces a freshness
+        window on the timestamp, then verifies the signature.
+
+        Args:
+            signature: Hex-encoded HMAC-SHA256 signature.
+            payload: The raw request body that was signed.
+            timestamp: Unix epoch timestamp string included in the request.
+            agent_name: Optional agent name hint; required for Redis lookup.
+
+        Returns:
+            CallerIdentity if the signature is valid and fresh, None otherwise.
+        """
+        # --- Freshness check (replay-attack prevention) ---
+        try:
+            ts_int = int(timestamp)
+        except (ValueError, TypeError):
+            self.logger.warning("HMAC validation failed: non-integer timestamp %r", timestamp)
+            return None
+        if abs(int(time.time()) - ts_int) > HMAC_TIMESTAMP_WINDOW:
+            self.logger.warning(
+                "HMAC timestamp outside acceptable window (possible replay attack)"
+            )
+            return None
+
+        if not agent_name:
+            self.logger.warning("HMAC validation requires agent_name for Redis backend")
+            return None
+
+        # Retrieve agent data from Redis
+        data = await self._redis.hgetall(self._key("agent", agent_name))
+        if not data:
+            self.logger.warning("HMAC validation: agent %r not found in Redis", agent_name)
+            return None
+
+        data = {
+            k.decode() if isinstance(k, bytes) else k:
+            v.decode() if isinstance(v, bytes) else v
+            for k, v in data.items()
+        }
+
+        secret = data.get("hmac_secret")
+        if not secret:
+            self.logger.warning(
+                "HMAC validation: no hmac_secret stored for agent %r", agent_name
+            )
+            return None
+
+        # Compute expected signature
+        message = timestamp.encode() + payload
+        expected = hmac.new(
+            secret.encode(),
+            message,
+            hashlib.sha256,
+        ).hexdigest()
+
+        if hmac.compare_digest(signature, expected):
+            return CallerIdentity(
+                agent_name=agent_name,
+                permissions=json.loads(data.get("permissions", "[]")),
+                roles=json.loads(data.get("roles", "[]")),
+                scopes=json.loads(data.get("scopes", "[]")),
+                metadata=json.loads(data.get("metadata", "{}")),
+                auth_scheme=AuthScheme.HMAC,
+            )
+
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
