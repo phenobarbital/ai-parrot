@@ -94,6 +94,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from functools import wraps
+from pydantic import BaseModel, Field
 from aiohttp import web
 import aiohttp
 from navconfig.logging import logging
@@ -118,40 +119,43 @@ class AuthScheme(str, Enum):
     OAUTH2 = "oauth2"          # OAuth 2.0 tokens
 
 
-@dataclass
-class CallerIdentity:
+class CallerIdentity(BaseModel):
     """
     Represents the authenticated identity of a calling agent.
 
     This is the result of successful authentication and contains
     all information needed for authorization decisions.
-
-    Attributes:
-        agent_name: Unique name/identifier of the agent
-        agent_url: Optional URL of the calling agent
-        permissions: List of permission strings
-        metadata: Additional identity metadata
-        auth_scheme: Authentication scheme used
-        certificate_fingerprint: For mTLS, the cert fingerprint
-        issued_at: When the identity was established
-        expires_at: When the identity expires
-        scopes: OAuth2-style scopes
-        roles: Role-based access control roles
     """
-    agent_name: str
-    agent_url: Optional[str] = None
-    permissions: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    auth_scheme: Optional[AuthScheme] = None
-    certificate_fingerprint: Optional[str] = None
-    issued_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
-    scopes: List[str] = field(default_factory=list)
-    roles: List[str] = field(default_factory=list)
 
-    def __post_init__(self):
+    agent_name: str = Field(..., description="Unique name/identifier of the agent")
+    agent_url: Optional[str] = Field(None, description="Optional URL of the calling agent")
+    permissions: List[str] = Field(
+        default_factory=list, description="List of permission strings"
+    )
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional identity metadata"
+    )
+    auth_scheme: Optional[AuthScheme] = Field(
+        None, description="Authentication scheme used"
+    )
+    certificate_fingerprint: Optional[str] = Field(
+        None, description="For mTLS, the SHA-256 cert fingerprint"
+    )
+    issued_at: Optional[datetime] = Field(
+        None, description="When the identity was established"
+    )
+    expires_at: Optional[datetime] = Field(None, description="When the identity expires")
+    scopes: List[str] = Field(default_factory=list, description="OAuth2-style scopes")
+    roles: List[str] = Field(
+        default_factory=list, description="Role-based access control roles"
+    )
+
+    model_config = {"use_enum_values": False}
+
+    def model_post_init(self, __context: Any) -> None:
+        """Set issued_at to now if not provided."""
         if self.issued_at is None:
-            self.issued_at = datetime.now(timezone.utc)
+            object.__setattr__(self, "issued_at", datetime.now(timezone.utc))
 
     def has_permission(self, permission: str) -> bool:
         """
@@ -199,86 +203,57 @@ class CallerIdentity:
         return datetime.now(timezone.utc) > self.expires_at
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "agent_name": self.agent_name,
-            "agent_url": self.agent_url,
-            "permissions": self.permissions,
-            "metadata": self.metadata,
-            "auth_scheme": self.auth_scheme.value if self.auth_scheme else None,
-            "certificate_fingerprint": self.certificate_fingerprint,
-            "issued_at": self.issued_at.isoformat() if self.issued_at else None,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
-            "scopes": self.scopes,
-            "roles": self.roles,
-        }
+        """Convert to dictionary for serialization (backward-compat wrapper)."""
+        data = self.model_dump()
+        # Serialize enum and datetime to JSON-safe values
+        data["auth_scheme"] = self.auth_scheme.value if self.auth_scheme else None
+        data["issued_at"] = self.issued_at.isoformat() if self.issued_at else None
+        data["expires_at"] = self.expires_at.isoformat() if self.expires_at else None
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CallerIdentity":
-        """Create from dictionary."""
-        auth_scheme = None
-        if data.get("auth_scheme"):
-            auth_scheme = AuthScheme(data["auth_scheme"])
-
-        issued_at = None
-        if data.get("issued_at"):
-            issued_at = datetime.fromisoformat(data["issued_at"])
-
-        expires_at = None
-        if data.get("expires_at"):
-            expires_at = datetime.fromisoformat(data["expires_at"])
-
-        return cls(
-            agent_name=data["agent_name"],
-            agent_url=data.get("agent_url"),
-            permissions=data.get("permissions", []),
-            metadata=data.get("metadata", {}),
-            auth_scheme=auth_scheme,
-            certificate_fingerprint=data.get("certificate_fingerprint"),
-            issued_at=issued_at,
-            expires_at=expires_at,
-            scopes=data.get("scopes", []),
-            roles=data.get("roles", []),
-        )
+        """Create from dictionary (backward-compat wrapper for model_validate)."""
+        return cls.model_validate(data)
 
 
-@dataclass
-class SecurityPolicy:
+class SecurityPolicy(BaseModel):
     """
     Security policy for an agent, endpoint, or skill.
 
     Defines authentication requirements and access control rules.
-
-    Attributes:
-        require_auth: Whether authentication is required
-        allowed_schemes: Which auth schemes are accepted
-        allowed_agents: Specific agents allowed (None = any authenticated)
-        denied_agents: Specific agents denied (blacklist)
-        required_permissions: Permissions required to access
-        required_roles: Roles required to access
-        required_scopes: OAuth2 scopes required
-        rate_limit: Requests per minute limit
-        rate_limit_burst: Burst allowance for rate limiting
-        ip_whitelist: Allowed IP addresses/ranges
-        ip_blacklist: Denied IP addresses/ranges
-        require_https: Require HTTPS connections
-        require_mtls: Require mutual TLS
     """
-    require_auth: bool = True
-    allowed_schemes: List[AuthScheme] = field(
-        default_factory=lambda: [AuthScheme.BEARER, AuthScheme.API_KEY]
+
+    require_auth: bool = Field(True, description="Whether authentication is required")
+    allowed_schemes: List[AuthScheme] = Field(
+        default_factory=lambda: [AuthScheme.BEARER, AuthScheme.API_KEY],
+        description="Which authentication schemes are accepted",
     )
-    allowed_agents: Optional[List[str]] = None
-    denied_agents: Optional[List[str]] = None
-    required_permissions: List[str] = field(default_factory=list)
-    required_roles: List[str] = field(default_factory=list)
-    required_scopes: List[str] = field(default_factory=list)
-    rate_limit: Optional[int] = None
-    rate_limit_burst: int = 10
-    ip_whitelist: Optional[List[str]] = None
-    ip_blacklist: Optional[List[str]] = None
-    require_https: bool = False
-    require_mtls: bool = False
+    allowed_agents: Optional[List[str]] = Field(
+        None, description="Specific agents allowed (None = any authenticated)"
+    )
+    denied_agents: Optional[List[str]] = Field(
+        None, description="Specific agents denied (blacklist)"
+    )
+    required_permissions: List[str] = Field(
+        default_factory=list, description="Permissions required to access"
+    )
+    required_roles: List[str] = Field(
+        default_factory=list, description="Roles required to access"
+    )
+    required_scopes: List[str] = Field(
+        default_factory=list, description="OAuth2 scopes required"
+    )
+    rate_limit: Optional[int] = Field(None, description="Requests per minute limit")
+    rate_limit_burst: int = Field(10, description="Burst allowance for rate limiting")
+    ip_whitelist: Optional[List[str]] = Field(
+        None, description="Allowed IP addresses/ranges"
+    )
+    ip_blacklist: Optional[List[str]] = Field(
+        None, description="Denied IP addresses/ranges"
+    )
+    require_https: bool = Field(False, description="Require HTTPS connections")
+    require_mtls: bool = Field(False, description="Require mutual TLS")
 
     def allows_scheme(self, scheme: AuthScheme) -> bool:
         """Check if authentication scheme is allowed."""
@@ -592,7 +567,7 @@ class InMemoryCredentialProvider(CredentialProvider):
         # Store HMAC secret
         self._hmac_secrets[agent_name] = hmac_secret
 
-        self.logger.info(f"Registered agent: {agent_name}")
+        self.logger.info("Registered agent: %s", agent_name)
 
         return {
             "agent_name": agent_name,
@@ -632,7 +607,7 @@ class InMemoryCredentialProvider(CredentialProvider):
         # Remove agent
         del self._agents[agent_name]
 
-        self.logger.info(f"Revoked agent: {agent_name}")
+        self.logger.info("Revoked agent: %s", agent_name)
         return True
 
     async def store_token(
@@ -867,7 +842,7 @@ class RedisCredentialProvider(CredentialProvider):
                 agent_name
             )
 
-        self.logger.info(f"Registered agent in Redis: {agent_name}")
+        self.logger.info("Registered agent in Redis: %s", agent_name)
 
         return {
             "agent_name": agent_name,
@@ -899,7 +874,7 @@ class RedisCredentialProvider(CredentialProvider):
         # Remove agent
         await self._redis.delete(self._key("agent", agent_name))
 
-        self.logger.info(f"Revoked agent from Redis: {agent_name}")
+        self.logger.info("Revoked agent from Redis: %s", agent_name)
         return True
 
     async def store_token(
@@ -1149,7 +1124,7 @@ class JWTAuthenticator:
             algorithm=self._algorithm,
         )
 
-        self.logger.debug(f"Created JWT for agent: {agent_name}")
+        self.logger.debug("Created JWT for agent: %s", agent_name)
         return token
 
     async def validate_token(self, token: str) -> Optional[CallerIdentity]:
@@ -1202,7 +1177,7 @@ class JWTAuthenticator:
             self.logger.warning("JWT token expired")
             return None
         except self._jwt.InvalidTokenError as e:
-            self.logger.warning(f"Invalid JWT token: {e}")
+            self.logger.warning("Invalid JWT token: %s", e)
             return None
 
     def decode_without_verification(self, token: str) -> Optional[Dict[str, Any]]:
@@ -1411,7 +1386,7 @@ class MTLSAuthenticator:
                 fingerprint
             )
             if identity:
-                self.logger.debug(f"mTLS auth success: {identity.agent_name}")
+                self.logger.debug("mTLS auth success: %s", identity.agent_name)
                 return identity
 
         # If no provider, create minimal identity from cert
@@ -1656,7 +1631,7 @@ class A2ASecurityMiddleware:
         identity = await self.authenticate(request)
 
         if not identity:
-            self.logger.warning(f"Authentication failed for {path}")
+            self.logger.warning("Authentication failed for %s", path)
             return web.json_response(
                 {"error": "Authentication required"},
                 status=401,
