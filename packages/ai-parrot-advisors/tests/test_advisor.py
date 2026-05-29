@@ -293,7 +293,7 @@ class TestToolFactory:
             question_set=sample_questions,
         )
 
-        assert len(tools) == 8  # All 8 tools
+        assert len(tools) == 10  # All 10 tools
 
         tool_names = {t.name for t in tools}
         expected_names = {
@@ -305,6 +305,8 @@ class TestToolFactory:
             "redo_selection",
             "get_selection_state",
             "recommend_product",
+            "search_products",
+            "get_product_details",
         }
         assert tool_names == expected_names
 
