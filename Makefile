@@ -256,6 +256,8 @@ release: lint test clean check-registry
 	uv build --package ai-parrot-visualizations
 	uv build --package ai-parrot-integrations
 	uv build --package parrot-formdesigner
+	uv build --package ai-parrot-server
+	uv build --package ai-parrot-advisors
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
@@ -264,6 +266,8 @@ release: lint test clean check-registry
 	uv publish dist/ai_parrot_visualizations-*.tar.gz dist/ai_parrot_visualizations-*.whl
 	uv publish dist/ai_parrot_integrations-*.tar.gz dist/ai_parrot_integrations-*.whl
 	uv publish dist/parrot_formdesigner-*.tar.gz dist/parrot_formdesigner-*.whl
+	uv publish dist/ai_parrot_server-*.tar.gz dist/ai_parrot_server-*.whl
+	uv publish dist/ai_parrot_advisors-*.tar.gz dist/ai_parrot_advisors-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -323,6 +327,8 @@ build: clean
 	uv build --package ai-parrot-visualizations
 	uv build --package ai-parrot-integrations
 	uv build --package parrot-formdesigner
+	uv build --package ai-parrot-server
+	uv build --package ai-parrot-advisors
 
 # ============================================================
 # Tool Registry Management
@@ -410,6 +416,8 @@ EMBEDDINGS_VERSION_FILE := packages/ai-parrot-embeddings/src/parrot/embeddings/v
 VISUALIZATIONS_VERSION_FILE := packages/ai-parrot-visualizations/src/parrot/outputs/formats/version.py
 INTEGRATIONS_VERSION_FILE := packages/ai-parrot-integrations/src/parrot/integrations/version.py
 FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot_formdesigner/version.py
+SERVER_VERSION_FILE := packages/ai-parrot-server/src/parrot/server/version.py
+ADVISORS_VERSION_FILE := packages/ai-parrot-advisors/src/parrot/advisors/version.py
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
 # part: patch=2, minor=1, major=0
@@ -510,6 +518,24 @@ bump-minor-formdesigner:
 bump-major-formdesigner:
 	$(call _bump,$(FORMDESIGNER_VERSION_FILE),0)
 
+bump-patch-server:
+	$(call _bump,$(SERVER_VERSION_FILE),2)
+
+bump-minor-server:
+	$(call _bump,$(SERVER_VERSION_FILE),1)
+
+bump-major-server:
+	$(call _bump,$(SERVER_VERSION_FILE),0)
+
+bump-patch-advisors:
+	$(call _bump,$(ADVISORS_VERSION_FILE),2)
+
+bump-minor-advisors:
+	$(call _bump,$(ADVISORS_VERSION_FILE),1)
+
+bump-major-advisors:
+	$(call _bump,$(ADVISORS_VERSION_FILE),0)
+
 # --- Bump ALL packages at once (patch) ---
 bump-all:
 	$(call _bump,$(VERSION_FILE),2)
@@ -520,6 +546,8 @@ bump-all:
 	$(call _bump,$(INTEGRATIONS_VERSION_FILE),2)
 	$(call _bump,$(PIPELINES_VERSION_FILE),2)
 	$(call _bump,$(FORMDESIGNER_VERSION_FILE),2)
+	$(call _bump,$(SERVER_VERSION_FILE),2)
+	$(call _bump,$(ADVISORS_VERSION_FILE),2)
 	@$(MAKE) _sync-core-dep
 
 # Sync ai-parrot>= dependency in tools/loaders pyproject.toml
@@ -701,7 +729,10 @@ help:
 	@echo "    bump-patch-visualizations - Bump visualizations patch version"
 	@echo "    bump-patch-integrations - Bump integrations patch version"
 	@echo "    bump-patch-pipelines- Bump pipelines patch version"
-	@echo "    bump-all            - Bump patch on ALL packages"
+	@echo "    bump-patch-formdesigner - Bump formdesigner patch version"
+	@echo "    bump-patch-server   - Bump server patch version"
+	@echo "    bump-patch-advisors - Bump advisors patch version"
+	@echo "    bump-all            - Bump patch on ALL 10 packages + sync dependency"
 	@echo ""
 	@echo "  Dependencies:"
 	@echo "    lock                - Generate lock file"

@@ -35,6 +35,16 @@ import parrot.tools.infographic_toolkit as _rtk  # noqa: E402
 sys.modules["parrot.tools.infographic_toolkit"] = _rtk
 
 from parrot.tools.infographic_toolkit import InfographicToolkit  # noqa: E402
+# Capture these at module load (collection time) so they reference the SAME
+# registry/module objects the toolkit (_rtk) bound to — later test files pop &
+# re-import these modules, so a late in-function import would resolve to a
+# different registry instance and templates we register would be invisible.
+from parrot.models.infographic import BlockType  # noqa: E402
+from parrot.models.infographic_templates import (  # noqa: E402
+    BlockSpec,
+    InfographicTemplate,
+    infographic_registry,
+)
 
 
 @pytest.fixture
@@ -204,10 +214,6 @@ class TestBuildLiteralAndAccumulator:
     @pytest.mark.asyncio
     async def test_built_blocks_feed_render(self, toolkit):
         """Blocks built into the accumulator render via blocks_variable."""
-        from parrot.models.infographic import BlockType
-        from parrot.models.infographic_templates import (
-            BlockSpec, InfographicTemplate, infographic_registry,
-        )
         tmpl = InfographicTemplate(
             name="_bb_render_test", description="d",
             block_specs=[BlockSpec(
