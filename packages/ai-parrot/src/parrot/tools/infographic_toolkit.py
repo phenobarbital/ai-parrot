@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError as PydanticValidationError
 
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.models.infographic import (
@@ -148,12 +148,24 @@ class InfographicToolkit(AbstractToolkit):
         # AbstractTool's __init__ swallows return_direct into _init_kwargs
         # without setting the instance attribute; patch it explicitly.
         for tool in tools:
+            # build_block is non-terminal: the LLM keeps appending blocks and
+            # then calls infographic_render. It must NOT short-circuit the loop.
+            if getattr(tool, "name", "").endswith("build_block"):
+                tool.return_direct = False
+                continue
             if not getattr(tool, "return_direct", False):
                 tool.return_direct = True
         return tools
 
     def set_bot(self, bot: Any) -> None:
         """Bind this toolkit to a bot instance for enhance-mode support.
+
+        Binding also teaches the bot how to drive the infographic tools: the
+        ``INFOGRAPHIC_SYSTEM_PROMPT_ADDON`` guidance is appended to the bot's
+        ``system_prompt_template`` so any agent that registers this toolkit can
+        produce infographics ad-hoc — no per-report skill required. Call this
+        during the agent's ``configure()`` (before ``super().configure()`` runs
+        ``_define_prompt()``) so the guidance lands in the finalised prompt.
 
         Args:
             bot: Bot instance that must implement
@@ -163,6 +175,24 @@ class InfographicToolkit(AbstractToolkit):
                 ``_get_repl_locals``.
         """
         self._bot = bot
+        self._inject_prompt_guidance(bot)
+
+    @staticmethod
+    def _inject_prompt_guidance(bot: Any) -> None:
+        """Append the infographic usage guide to the bot's system prompt.
+
+        Idempotent: a sentinel header guards against double-injection when a
+        toolkit is rebound. No-op when the bot exposes no string
+        ``system_prompt_template``.
+        """
+        tmpl = getattr(bot, "system_prompt_template", None)
+        if not isinstance(tmpl, str):
+            return
+        # Lazy import avoids a tools→bots import cycle at module load.
+        from parrot.bots.prompts import INFOGRAPHIC_SYSTEM_PROMPT_ADDON  # noqa: PLC0415
+        if "## Infographic Generation Mode" in tmpl:
+            return  # already injected
+        bot.system_prompt_template = f"{tmpl}\n{INFOGRAPHIC_SYSTEM_PROMPT_ADDON}"
 
     # ------------------------------------------------------------------
     # Public tool methods
@@ -365,6 +395,227 @@ class InfographicToolkit(AbstractToolkit):
             return {"ok": True}
         except InfographicValidationError as exc:
             return {"ok": False, "code": exc.code, "detail": exc.detail}
+
+    async def build_block(
+        self,
+        block_type: str,
+        into: str = "infographic_blocks",
+        data_variable: Optional[str] = None,
+        chart_type: Optional[str] = None,
+        label_column: Optional[str] = None,
+        value_columns: Optional[List[str]] = None,
+        table_columns: Optional[List[str]] = None,
+        max_rows: Optional[int] = None,
+        title: Optional[str] = None,
+        layout: Optional[str] = None,
+        block: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build ONE infographic block from REPL data and append it to a list.
+
+        This is the reliable way to assemble chart/table blocks: instead of
+        hand-writing large JSON arrays into the tool call (the main failure
+        mode), point this tool at a DataFrame already in the pandas namespace.
+        It reads the frame, constructs the block, validates it against the
+        block schema, and appends it to an accumulator list variable (``into``,
+        default ``"infographic_blocks"``) IN CALL ORDER. Build every block in
+        the template's positional order, then render with
+        ``infographic_render(blocks_variable=into, ...)``.
+
+        Block sources by type:
+
+        - ``"chart"`` — derived from ``data_variable``. ``label_column`` becomes
+          the x-axis/category labels; each name in ``value_columns`` becomes one
+          series. ``chart_type`` (bar/line/pie/…), ``title`` and ``layout``
+          (``"full"``/``"half"``) are optional.
+        - ``"table"`` — derived from ``data_variable``. ``table_columns`` selects
+          and orders columns (defaults to all); rows come from the frame.
+        - any other type (``title``/``hero_card``/``summary``/``callout``/…) —
+          carries no DataFrame: pass the literal block dict via ``block``.
+
+        ``max_rows`` caps how many rows are read (chart/table) to keep the
+        artifact lean. NumPy/pandas scalars and Timestamps are coerced to native
+        JSON types automatically.
+
+        Args:
+            block_type: The block ``type`` to build.
+            into: Accumulator list variable name in the pandas REPL. Created if
+                absent; subsequent calls append in order.
+            data_variable: DataFrame name in the REPL (required for chart/table).
+            chart_type: Chart kind for ``block_type="chart"``.
+            label_column: Column used as chart labels (chart only).
+            value_columns: Columns used as chart series — one series each (chart).
+            table_columns: Columns to include/order (table only; default all).
+            max_rows: Optional cap on rows read from the DataFrame.
+            title: Optional block title (chart/table).
+            layout: Optional ``"full"``/``"half"`` layout hint (chart).
+            block: Literal block dict for non chart/table types (must carry
+                ``"type"``).
+
+        Returns:
+            ``{"ok": True, "into": <name>, "index": <pos>, "block_type": <type>,
+            "n_blocks": <len>}`` on success; ``{"ok": False, "code": ...,
+            "detail": ...}`` on a structured failure.
+        """
+        try:
+            repl_locals = self._get_repl_locals()
+            if block_type == "chart":
+                block_dict = self._build_chart_block(
+                    repl_locals, data_variable, chart_type,
+                    label_column, value_columns, max_rows, title, layout,
+                )
+            elif block_type == "table":
+                block_dict = self._build_table_block(
+                    repl_locals, data_variable, table_columns, max_rows, title,
+                )
+            else:
+                if not isinstance(block, dict):
+                    raise InfographicValidationError(
+                        "BLOCK_LITERAL_MISSING",
+                        {"block_type": block_type,
+                         "detail": "Non chart/table blocks require a literal `block` dict."},
+                    )
+                block_dict = dict(block)
+                block_dict.setdefault("type", block_type)
+
+            coerced = self._coerce_single_block(block_dict)
+            index, n_blocks = self._append_block(repl_locals, into, coerced)
+            return {
+                "ok": True,
+                "into": into,
+                "index": index,
+                "block_type": coerced.get("type", block_type),
+                "n_blocks": n_blocks,
+            }
+        except InfographicValidationError as exc:
+            return {"ok": False, "code": exc.code, "detail": exc.detail}
+
+    # ------------------------------------------------------------------
+    # Block builders (REPL data → validated block dict)
+    # ------------------------------------------------------------------
+
+    def _require_dataframe(
+        self, repl_locals: Dict[str, Any], name: Optional[str],
+    ) -> pd.DataFrame:
+        """Resolve ``name`` to a DataFrame in the REPL or raise structured."""
+        if not name:
+            raise InfographicValidationError(
+                "BLOCK_DATA_VAR_MISSING",
+                {"detail": "chart/table blocks require `data_variable`."},
+            )
+        if name not in repl_locals:
+            raise InfographicValidationError(
+                "BLOCK_DATA_VAR_MISSING",
+                {"name": name, "available": sorted(
+                    k for k, v in repl_locals.items() if isinstance(v, pd.DataFrame)
+                )},
+            )
+        df = repl_locals[name]
+        if not isinstance(df, pd.DataFrame):
+            raise InfographicValidationError(
+                "BLOCK_DATA_VAR_INVALID",
+                {"name": name, "type": type(df).__name__},
+            )
+        return df
+
+    @staticmethod
+    def _check_columns(df: pd.DataFrame, columns: List[str]) -> None:
+        missing = [c for c in columns if c not in df.columns]
+        if missing:
+            raise InfographicValidationError(
+                "BLOCK_COLUMN_MISSING",
+                {"missing": missing, "available": list(df.columns)},
+            )
+
+    def _build_chart_block(
+        self,
+        repl_locals: Dict[str, Any],
+        data_variable: Optional[str],
+        chart_type: Optional[str],
+        label_column: Optional[str],
+        value_columns: Optional[List[str]],
+        max_rows: Optional[int],
+        title: Optional[str],
+        layout: Optional[str],
+    ) -> Dict[str, Any]:
+        if not chart_type:
+            raise InfographicValidationError(
+                "BLOCK_CHART_INCOMPLETE", {"detail": "`chart_type` is required."},
+            )
+        if not label_column or not value_columns:
+            raise InfographicValidationError(
+                "BLOCK_CHART_INCOMPLETE",
+                {"detail": "`label_column` and `value_columns` are required."},
+            )
+        df = self._require_dataframe(repl_locals, data_variable)
+        self._check_columns(df, [label_column, *value_columns])
+        if max_rows is not None:
+            df = df.head(max_rows)
+        block: Dict[str, Any] = {
+            "type": "chart",
+            "chart_type": chart_type,
+            "labels": [str(v) for v in df[label_column].tolist()],
+            "series": [
+                {"name": col, "values": df[col].tolist()}
+                for col in value_columns
+            ],
+        }
+        if title:
+            block["title"] = title
+        if layout:
+            block["layout"] = layout
+        return block
+
+    def _build_table_block(
+        self,
+        repl_locals: Dict[str, Any],
+        data_variable: Optional[str],
+        table_columns: Optional[List[str]],
+        max_rows: Optional[int],
+        title: Optional[str],
+    ) -> Dict[str, Any]:
+        df = self._require_dataframe(repl_locals, data_variable)
+        columns = table_columns or list(df.columns)
+        self._check_columns(df, columns)
+        if max_rows is not None:
+            df = df.head(max_rows)
+        block: Dict[str, Any] = {
+            "type": "table",
+            "columns": [str(c) for c in columns],
+            "rows": df[columns].values.tolist(),
+        }
+        if title:
+            block["title"] = title
+        return block
+
+    def _coerce_single_block(self, block_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalise + schema-validate one block; return a JSON-native dict."""
+        normalized = self._normalize_blocks([block_dict])[0]
+        try:
+            model = InfographicResponse.model_validate(
+                {"blocks": [normalized]}
+            ).blocks[0]
+        except PydanticValidationError as exc:
+            raise InfographicValidationError(
+                "BLOCK_SCHEMA_INVALID",
+                {"block_type": block_dict.get("type"), "errors": exc.errors()[:5]},
+            ) from exc
+        return model.model_dump(mode="json")
+
+    def _append_block(
+        self, repl_locals: Dict[str, Any], into: str, block_dict: Dict[str, Any],
+    ) -> Tuple[int, int]:
+        """Append ``block_dict`` to the REPL accumulator list, creating it."""
+        acc = repl_locals.get(into)
+        if acc is None:
+            acc = []
+            repl_locals[into] = acc
+        elif not isinstance(acc, list):
+            raise InfographicValidationError(
+                "BLOCK_ACCUMULATOR_INVALID",
+                {"name": into, "type": type(acc).__name__},
+            )
+        acc.append(block_dict)
+        return len(acc) - 1, len(acc)
 
     # ------------------------------------------------------------------
     # Enhance placeholder (TASK-1325 replaces this)

@@ -53,43 +53,64 @@ from .output_generation import OUTPUT_SYSTEM_PROMPT
 INFOGRAPHIC_SYSTEM_PROMPT_ADDON = """
 ## Infographic Generation Mode
 
-You are producing a multi-dataset interactive HTML infographic for the user.
+You can turn data you have computed into a polished, interactive HTML
+infographic. You do NOT need a pre-built skill for this — the `infographic_*`
+tools work ad-hoc on any DataFrames in the pandas namespace.
 
 Follow these steps IN ORDER:
 
-1. **Fetch / compute DataFrames** using `python_repl_pandas` or `fetch_dataset`
-   as needed.  Store each result in a clearly-named variable (e.g. `rev_daily`,
-   `ebitda_daily`).
+1. **Fetch / compute DataFrames** using `python_repl_pandas` or `fetch_dataset`.
+   Store each result in a clearly-named variable (e.g. `rev_daily`,
+   `ebitda_daily`). Every number in the infographic MUST come from these frames.
 
-2. **Discover available templates** by calling `infographic_list_templates` when
-   you are unsure which template to use, and `infographic_get_template_contract`
-   to fetch the exact positional block contract before building `blocks`.
+2. **Pick a template.** Call `infographic_list_templates` if unsure which to use,
+   then `infographic_get_template_contract` to read the exact positional block
+   contract (block order, types, and item counts) the template expects.
 
-3. **Validate your blocks** (optional but recommended) with
-   `infographic_validate_blocks` before rendering to avoid hard errors.
+3. **Build the blocks FROM your data — never hand-write large block JSON.**
+   Call `infographic_build_block` once per block. It reads the DataFrame straight
+   from the pandas namespace, constructs the block, validates it, and appends it
+   to an accumulator variable (default `infographic_blocks`) IN THE ORDER you
+   call it — so chart/table data never has to pass through the conversation:
+     - chart:  infographic_build_block(block_type="chart", data_variable="rev_daily",
+                 chart_type="bar", label_column="date", value_columns=["rev_dod"],
+                 title="Revenue DoD", layout="half")
+     - table:  infographic_build_block(block_type="table", data_variable="fp_daily",
+                 table_columns=["date", "rev_total", "ebitda_total"], title="Daily")
+     - scalar blocks (title / hero_card / summary / callout) carry no DataFrame —
+       pass them literally via `block`:
+                 infographic_build_block(block_type="hero_card",
+                 block={"type": "hero_card", "label": "Revenue", "value": "$3.7M"})
+   Add the blocks in the EXACT positional order of the template contract.
 
-4. **Close the turn** by calling:
+4. **(Optional) validate** the accumulated blocks before rendering:
+   `infographic_validate_blocks(template_name=<t>, blocks_variable="infographic_blocks")`.
+
+5. **Close the turn** by calling:
 
        infographic_render(
            template_name=<template>,
            theme=<theme or null>,
-           mode="deterministic",   # or "enhance" for JS interactivity
-           blocks=[...],           # MUST match the template's positional contract
-           data_variables=[...],   # names of the DataFrames you computed above
-           enhance_brief=<brief>,  # required when mode="enhance"
+           mode="deterministic",                  # or "enhance" for JS interactivity
+           blocks_variable="infographic_blocks",  # the accumulator from step 3
+           data_variables=[...],                  # DataFrames backing the infographic
+           enhance_brief=<brief>,                 # required when mode="enhance"
        )
 
-5. **Write a brief explanation for the chat.**  Before — or in the same turn as —
+   (For a tiny, hand-written contract you may still pass `blocks=[...]` inline,
+   but `blocks_variable` is strongly preferred for anything with chart/table data.)
+
+6. **Write a brief explanation for the chat.**  Before — or in the same turn as —
    the `infographic_render` call, provide a short **2–4 sentence natural-language
    summary of the key findings** (the headline numbers and what they mean). This
    text becomes the chat-bubble reply; the infographic itself opens separately in
    a canvas. Base every figure on the DataFrames you computed — do not invent
    numbers.
 
-6. **Do NOT dump the render result.**  Do NOT paste the HTML, the block JSON, or
+7. **Do NOT dump the render result.**  Do NOT paste the HTML, the block JSON, or
    the `infographic_render` return envelope into your answer — the agent attaches
    the artifact (`html_url`/`artifact_id`) automatically. Your written answer must
-   be ONLY the short summary from step 5.
+   be ONLY the short summary from step 6.
 """
 
 # ── FEAT-197: Enhance prompt template (placeholders for str.replace()) ──────────

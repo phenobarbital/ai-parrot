@@ -61,6 +61,46 @@ from ...models.infographic import (
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
+# Chart styling defaults
+# ──────────────────────────────────────────────
+# Diverging colors for sign-based bar coloring (variance / day-over-day
+# charts). Used as a fallback when the active theme does not provide
+# accent_green / accent_red. Positive → green, negative → red.
+_DEFAULT_POSITIVE_COLOR = "#10b981"
+_DEFAULT_NEGATIVE_COLOR = "#ef4444"
+
+# Corner radius (px) for bar charts — rounded on the end away from the axis.
+_BAR_BORDER_RADIUS = 4
+
+# Fallbacks when the active theme is unavailable.
+_DEFAULT_PRIMARY_COLOR = "#6366f1"      # line / gradient base
+_DEFAULT_SPLITLINE_COLOR = "#e2e8f0"    # subtle Y-axis gridline
+
+# Opacity stops for the gradient fill under line / area charts (top → bottom).
+_AREA_GRADIENT_TOP_ALPHA = 0.28
+_AREA_GRADIENT_BOTTOM_ALPHA = 0.02
+
+# Point-marker diameter (px) for line / area charts — small dots that keep the
+# data points visible without cluttering the curve (ECharts default is 4).
+_LINE_SYMBOL_SIZE = 5
+
+# Compact currency axis/tooltip formatter ($K / $M / $B). ECharts formatters
+# must be JS functions, which JSON cannot carry, so we serialize a sentinel
+# string and swap it for the real function after orjson.dumps() (see
+# _render_chart). The token must be unique enough never to collide with data.
+_CURRENCY_FORMATTER_TOKEN = "__PARROT_CURRENCY_FORMATTER__"
+_CURRENCY_FORMATTER_JS = (
+    "function(value){"
+    "if(value==null||isNaN(value))return value;"
+    "if(value===0)return '$0';"
+    "var a=Math.abs(value),s=value<0?'-':'';"
+    "if(a>=1e6)return s+'$'+(a/1e6).toFixed(2)+'M';"
+    "if(a>=1e3)return s+'$'+(a/1e3).toFixed(1)+'K';"
+    "return s+'$'+a.toFixed(0);"
+    "}"
+)
+
+# ──────────────────────────────────────────────
 # ECharts JS lazy-loaded cache
 # ──────────────────────────────────────────────
 _ECHARTS_JS_PATH = Path(__file__).parent / "assets" / "echarts.min.js"
@@ -604,6 +644,10 @@ class InfographicHTMLRenderer(BaseRenderer):
     def __init__(self) -> None:
         self._md = markdown_it.MarkdownIt()  # html=False by default (safe)
         self._tab_view_counter: int = 0  # reset per render_to_html() call
+        # Active theme config for the in-progress render. Set in
+        # render_to_html() so chart builders can pull palette colors
+        # (e.g. accent_green / accent_red for sign-based bar coloring).
+        self._theme_cfg: Optional[ThemeConfig] = None
         self._block_renderers: Dict[str, Any] = {
             "title": self._render_title,
             "hero_card": self._render_hero_card,
@@ -692,6 +736,8 @@ class InfographicHTMLRenderer(BaseRenderer):
         except KeyError:
             logger.warning("Unknown theme '%s', falling back to 'light'", theme_name)
             theme_cfg = theme_registry.get("light")
+        # Expose the resolved theme to per-block builders (e.g. chart palette).
+        self._theme_cfg = theme_cfg
 
         # Render blocks
         blocks_html = self._render_blocks(data)
@@ -914,6 +960,13 @@ class InfographicHTMLRenderer(BaseRenderer):
 
         option = self._build_echarts_option(block)
         option_json = orjson.dumps(option).decode("utf-8")
+        # Swap the currency-formatter sentinel for the real JS function. JSON
+        # cannot carry functions, so the option dict holds a quoted token that
+        # we replace with the unquoted function source here.
+        if _CURRENCY_FORMATTER_TOKEN in option_json:
+            option_json = option_json.replace(
+                f'"{_CURRENCY_FORMATTER_TOKEN}"', _CURRENCY_FORMATTER_JS
+            )
 
         return (
             f'        <div class="chart-container">\n'
@@ -930,6 +983,105 @@ class InfographicHTMLRenderer(BaseRenderer):
             f"        </div>"
         )
 
+    @staticmethod
+    def _has_negative(values: List[Any]) -> bool:
+        """True when any numeric value in the series is negative."""
+        return any(v is not None and v < 0 for v in values)
+
+    @staticmethod
+    def _is_currency_axis(block: ChartBlock) -> bool:
+        """Heuristic: format the value axis as currency when the axis label
+        mentions a currency symbol (e.g. ``"$ change"`` / ``"Total revenue ($)"``).
+        """
+        label = getattr(block, "y_axis_label", None) or ""
+        return "$" in label
+
+    @staticmethod
+    def _to_rgba(color: str, alpha: float) -> Optional[str]:
+        """Convert a ``#rgb`` / ``#rrggbb`` hex color to an ``rgba(...)`` string.
+
+        Returns ``None`` for non-hex inputs (rgb()/hsl()/named) — callers fall
+        back to a flat translucent fill in that case.
+        """
+        if not isinstance(color, str):
+            return None
+        c = color.strip().lstrip("#")
+        if len(c) == 3:
+            c = "".join(ch * 2 for ch in c)
+        if len(c) != 6:
+            return None
+        try:
+            r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+        except ValueError:
+            return None
+        return f"rgba({r},{g},{b},{alpha})"
+
+    def _gradient_area_style(self, base_color: str) -> Dict[str, Any]:
+        """Vertical gradient fill under a line, fading to transparent.
+
+        Uses ECharts' JSON-serializable gradient object form (no JS needed).
+        Falls back to a flat translucent fill when ``base_color`` is not hex.
+        """
+        top = self._to_rgba(base_color, _AREA_GRADIENT_TOP_ALPHA)
+        bottom = self._to_rgba(base_color, _AREA_GRADIENT_BOTTOM_ALPHA)
+        if top and bottom:
+            return {
+                "color": {
+                    "type": "linear",
+                    "x": 0, "y": 0, "x2": 0, "y2": 1,
+                    "colorStops": [
+                        {"offset": 0, "color": top},
+                        {"offset": 1, "color": bottom},
+                    ],
+                }
+            }
+        return {"opacity": 0.08}
+
+    @staticmethod
+    def _bar_border_radius(positive: bool) -> List[int]:
+        """Rounded corners on the end of the bar away from the zero axis.
+
+        Positive bars grow up → round the top corners; negative bars grow
+        down → round the bottom corners. Order is
+        ``[topLeft, topRight, bottomRight, bottomLeft]``.
+        """
+        r = _BAR_BORDER_RADIUS
+        return [r, r, 0, 0] if positive else [0, 0, r, r]
+
+    def _sign_colored_bar_data(self, values: List[Any]) -> List[Dict[str, Any]]:
+        """Build ECharts bar data with per-bar color + rounded corners by sign.
+
+        Positive (and zero) bars take the theme's positive accent with
+        top-rounded corners; negative bars the negative accent with
+        bottom-rounded corners — the diverging look used by variance /
+        day-over-day dashboards. Falls back to module defaults when the active
+        theme does not define the accents.
+
+        Args:
+            values: Raw numeric series values (may include ``None``).
+
+        Returns:
+            A list of ECharts data items (``{"value", "itemStyle"}``); ``None``
+            values are preserved without styling.
+        """
+        theme = self._theme_cfg
+        pos = getattr(theme, "accent_green", None) or _DEFAULT_POSITIVE_COLOR
+        neg = getattr(theme, "accent_red", None) or _DEFAULT_NEGATIVE_COLOR
+        data: List[Dict[str, Any]] = []
+        for v in values:
+            if v is None:
+                data.append({"value": None})
+                continue
+            is_pos = v >= 0
+            data.append({
+                "value": v,
+                "itemStyle": {
+                    "color": pos if is_pos else neg,
+                    "borderRadius": self._bar_border_radius(is_pos),
+                },
+            })
+        return data
+
     def _build_echarts_option(self, block: ChartBlock) -> dict:
         """Map a ChartBlock to an ECharts option dict.
 
@@ -941,14 +1093,26 @@ class InfographicHTMLRenderer(BaseRenderer):
         """
         option: Dict[str, Any] = {
             "tooltip": {},
-            "grid": {"containLabel": True},
+            # Leave headroom at the top for the legend (placed top-right
+            # below) so it never overlaps the plot.
+            "grid": {"containLabel": True, "top": 40, "left": 8, "right": 16, "bottom": 8},
         }
 
-        if block.title:
-            option["title"] = {"text": str(escape(block.title))}
+        # NOTE: the chart's visible heading is rendered as an HTML <h3> above
+        # the canvas by _render_chart(). We deliberately do NOT set an ECharts
+        # ``title`` here — a second, in-canvas title would duplicate the <h3>
+        # and overlap the legend. The <h3> is the single source of truth.
 
         if block.show_legend is not False:
-            option["legend"] = {"data": [s.name for s in block.series]}
+            # Compact legend pinned to the top-right so it clears the heading
+            # area and the plotting grid.
+            option["legend"] = {
+                "data": [s.name for s in block.series],
+                "top": 0,
+                "right": 0,
+                "itemGap": 12,
+                "textStyle": {"fontSize": 12},
+            }
 
         ct = block.chart_type
 
@@ -958,9 +1122,30 @@ class InfographicHTMLRenderer(BaseRenderer):
             option["xAxis"] = {"type": "category", "data": block.labels}
             if block.x_axis_label:
                 option["xAxis"]["name"] = str(escape(block.x_axis_label))
-            option["yAxis"] = {"type": "value"}
+            # Subtle horizontal gridlines on the value axis (PowerBI-style).
+            split_color = getattr(
+                self._theme_cfg, "neutral_border", None
+            ) or _DEFAULT_SPLITLINE_COLOR
+            option["yAxis"] = {
+                "type": "value",
+                "splitLine": {"show": True, "lineStyle": {"color": split_color}},
+            }
             if block.y_axis_label:
                 option["yAxis"]["name"] = str(escape(block.y_axis_label))
+            # Compact $K/$M/$B labels on the value axis (and tooltip) when the
+            # axis represents money. The token is swapped for a JS function in
+            # _render_chart after JSON serialization.
+            if self._is_currency_axis(block):
+                option["yAxis"]["axisLabel"] = {"formatter": _CURRENCY_FORMATTER_TOKEN}
+                option["tooltip"]["valueFormatter"] = _CURRENCY_FORMATTER_TOKEN
+            top_round = [_BAR_BORDER_RADIUS, _BAR_BORDER_RADIUS, 0, 0]
+            primary = getattr(
+                self._theme_cfg, "primary", None
+            ) or _DEFAULT_PRIMARY_COLOR
+            # Single-series lines get a gradient fill (the cumulative-line look);
+            # multi-series lines stay unfilled to avoid muddy overlaps. Area
+            # charts always get the gradient.
+            fill_line = ct == ChartType.LINE and len(block.series) == 1
             option["series"] = []
             for s in block.series:
                 item: Dict[str, Any] = {
@@ -970,9 +1155,33 @@ class InfographicHTMLRenderer(BaseRenderer):
                 }
                 if ct == ChartType.AREA:
                     item["type"] = "line"
-                    item["areaStyle"] = {}
+                # Smooth (curved) lines with small point markers for line &
+                # area charts — keeps the data points readable without
+                # cluttering the curve.
+                if ct in (ChartType.LINE, ChartType.AREA):
+                    item["smooth"] = True
+                    item["symbolSize"] = _LINE_SYMBOL_SIZE
                 if s.color:
                     item["itemStyle"] = {"color": s.color}
+                    if ct == ChartType.BAR:
+                        item["itemStyle"]["borderRadius"] = top_round
+                elif ct == ChartType.BAR and self._has_negative(s.values):
+                    # Variance / day-over-day bars: color + round each bar by
+                    # sign so gains and losses read at a glance (green up,
+                    # red down).
+                    item["data"] = self._sign_colored_bar_data(s.values)
+                elif ct == ChartType.BAR:
+                    # Plain positive-only bars: top-rounded corners.
+                    item["itemStyle"] = {"borderRadius": top_round}
+
+                # Gradient fill under line / area charts.
+                if ct == ChartType.AREA or fill_line:
+                    base = s.color or primary
+                    # Keep the line color aligned with the fill so they match.
+                    if not s.color:
+                        item.setdefault("itemStyle", {})["color"] = base
+                    item["areaStyle"] = self._gradient_area_style(base)
+
                 if block.stacked:
                     item["stack"] = "total"
                 option["series"].append(item)
