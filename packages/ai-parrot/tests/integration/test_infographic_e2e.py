@@ -100,6 +100,11 @@ def toolkit(fake_store, basic_template):
     tk = InfographicToolkit(artifact_store=fake_store)
     bot = MagicMock()
     bot._get_repl_locals = MagicMock(return_value={"rev": pd.DataFrame([{"x": 1}])})
+    # _resolve_scope prefers _current_* (set by PandasAgent.ask at runtime);
+    # None here exercises the user_id/agent_id/session_id fallback.
+    bot._current_user_id = None
+    bot._current_agent_id = None
+    bot._current_session_id = None
     bot.user_id = "u"
     bot.agent_id = "agt"
     bot.session_id = "sess"
@@ -135,7 +140,10 @@ async def test_e2e_toolkit_validate_and_render(toolkit, basic_template, fake_sto
     )
     assert isinstance(result, InfographicRenderResult)
     assert result.enhanced is False
-    assert result.html_url == "https://signed/artifact-1"
+    # html_url targets the signed public HTML route (serves rendered HTML),
+    # not the presigned overflow-JSON URL.
+    assert result.html_url.startswith("/api/v1/artifacts/public/")
+    assert f"/{result.artifact_id}.html" in result.html_url
     assert fake_store.save_artifact.call_count == 1
 
 
@@ -344,13 +352,16 @@ async def test_render_financial_variance_end_to_end(fake_store):
     assert isinstance(result, InfographicRenderResult), (
         f"render() did not return InfographicRenderResult: {type(result)}"
     )
-    # The payload is intentionally minimal (2-point labels, short strings) so it
-    # stays well under the 50 KB threshold and html_inline is always populated.
-    assert result.html_inline is not None, (
-        "html_inline is None — payload may have exceeded the 50 KB inline threshold "
-        "or the renderer returned an unexpected result. Check render() internals."
+    # The financial_variance template inlines a charting JS bundle, so even a
+    # minimal payload renders well over the 50 KB inline threshold (~1 MB) and
+    # html_inline is intentionally None.  Read the rendered HTML from the
+    # persisted artifact definition instead.
+    assert result.html_inline is None, (
+        "Expected html_inline to be None for financial_variance (chart bundle "
+        "pushes the HTML over the 50 KB inline threshold)."
     )
-    html = result.html_inline
+    persisted_artifact = fake_store.save_artifact.call_args[0][-1]
+    html = persisted_artifact.definition["html"]
     # The rendered HTML must contain at least 4 hero-card references and 3 chart
     # references. Substring counts are conservative: any renderer that emits
     # CSS class names or data attributes containing 'hero' / 'chart' will pass.

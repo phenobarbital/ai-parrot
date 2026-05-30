@@ -280,6 +280,29 @@ class TestStoreResult:
         assert result["status"] == "stored"
         assert result["summary"]["entry_type"] == "text"
 
+    async def test_data_field_in_tool_schema(self):
+        """Regression: the LLM-facing schema must advertise `data` as required.
+
+        Previously StoreResultInput omitted `data`, so the agent path stripped
+        it during model_dump() and the bound method raised
+        ``TypeError: store_result() missing 1 required positional argument: 'data'``.
+        """
+        tk = WorkingMemoryToolkit()
+        store = next(t for t in tk.get_tools() if t.name == "wm_store_result")
+        schema = store.args_schema.model_json_schema()
+        assert "data" in schema.get("properties", {})
+        assert "data" in schema.get("required", [])
+
+    async def test_store_result_via_execute_carries_data(self):
+        """Regression: `data` must survive the execute() validation pipeline."""
+        tk = WorkingMemoryToolkit()
+        store = next(t for t in tk.get_tools() if t.name == "wm_store_result")
+        res = await store.execute(key="note", data={"a": 1})
+        assert res.status == "success"
+        entry = tk._catalog.get("note")
+        assert isinstance(entry, GenericEntry)
+        assert entry.data == {"a": 1}
+
 
 # ─────────────────────────────────────────────
 # WorkingMemoryToolkit.get_result

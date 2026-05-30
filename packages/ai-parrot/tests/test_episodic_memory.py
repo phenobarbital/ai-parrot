@@ -632,6 +632,43 @@ class TestReflection:
         assert result.lesson_learned == "Keep doing this"
 
     @pytest.mark.asyncio
+    async def test_reflection_llm_aimessage_structured_output(self) -> None:
+        """`ask()` returns an AIMessage; parsed result lives on structured_output.
+
+        Regression for: 'AIMessage' object has no attribute 'get'.
+        """
+        parsed = ReflectionResult(
+            reflection="The action succeeded well",
+            lesson_learned="Keep doing this",
+            suggested_action="Continue this approach",
+        )
+
+        class _FakeAIMessage:
+            """Minimal stand-in mirroring AIMessage's relevant surface."""
+
+            def __init__(self, obj: ReflectionResult) -> None:
+                self.structured_output = obj
+                self.output = obj
+                self.data = None
+                self.response = None
+
+            @property
+            def to_text(self) -> str:
+                return ""
+
+        mock_client = AsyncMock()
+        mock_client.ask = AsyncMock(return_value=_FakeAIMessage(parsed))
+
+        engine = ReflectionEngine(
+            llm_client=mock_client, fallback_to_heuristic=True
+        )
+        result = await engine.reflect(
+            "Test situation", "Test action", EpisodeOutcome.SUCCESS
+        )
+        assert isinstance(result, ReflectionResult)
+        assert result.lesson_learned == "Keep doing this"
+
+    @pytest.mark.asyncio
     async def test_reflection_llm_failure_fallback(self) -> None:
         """LLM fails, heuristic fallback used."""
         mock_client = AsyncMock()

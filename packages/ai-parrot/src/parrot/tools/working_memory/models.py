@@ -243,6 +243,12 @@ class StoreResultInput(BaseModel):
     """Input for storing a generic (non-DataFrame) result into working memory."""
 
     key: str = Field(description="Unique name for this entry in working memory")
+    data: Any = Field(
+        description=(
+            "The value to store: text, number, dict/JSON, list, message, or "
+            "bytes. Required."
+        ),
+    )
     data_type: str = Field(
         default="auto",
         description=(

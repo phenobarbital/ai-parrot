@@ -125,7 +125,17 @@ def test_tool_names_prefixed(toolkit):
 
 
 def test_tools_have_return_direct(toolkit):
-    """All generated tools must have return_direct=True."""
+    """Tools are return_direct=True EXCEPT build_block, which is non-terminal.
+
+    ``infographic_build_block`` only appends a block to the REPL accumulator —
+    the LLM keeps calling tools and then renders — so it must not short-circuit
+    the agent loop.
+    """
     tools = toolkit.get_tools()
     for t in tools:
-        assert t.return_direct is True, f"Tool {t.name} missing return_direct=True"
+        if t.name.endswith("build_block"):
+            assert t.return_direct is False, (
+                f"Non-terminal tool {t.name} must NOT be return_direct"
+            )
+        else:
+            assert t.return_direct is True, f"Tool {t.name} missing return_direct=True"

@@ -25,11 +25,6 @@ Endpoints:
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
-import os
-import time
-from base64 import urlsafe_b64encode
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -40,47 +35,41 @@ from navigator_auth.decorators import is_authenticated, user_session
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 
 from ..storage.models import Artifact, ArtifactType, ArtifactCreator
+from ..storage.artifact_signing import (
+    get_signing_key as _core_get_signing_key,
+    sign_artifact as _core_sign_artifact,
+    verify_signature as _core_verify_signature,
+)
 from .csp import build_csp_headers, frame_ancestors_from_env
 
 
 # ---------------------------------------------------------------------------
 # Signing helpers for FEAT-197 public artifact URL (design B)
+#
+# The signature scheme lives in ``parrot.storage.artifact_signing`` (core) so
+# the producer (InfographicToolkit, which mints the signed URL at persist time)
+# and the consumer (ArtifactPublicHTMLView below) agree byte-for-byte. The
+# thin module-level wrappers preserve the historical private names used by
+# tests and call sites in this module.
 # ---------------------------------------------------------------------------
 
 def _sign_artifact(artifact_id: str, expiry: int, key: bytes) -> str:
-    """Compute HMAC-SHA256 over ``'{artifact_id}|{expiry}'``.
-
-    Returns base64url-encoded digest without padding.
-    """
-    msg = f"{artifact_id}|{expiry}".encode()
-    digest = hmac.new(key, msg, hashlib.sha256).digest()
-    return urlsafe_b64encode(digest).decode().rstrip("=")
+    """Compute HMAC-SHA256 over ``'{artifact_id}|{expiry}'`` (see core)."""
+    return _core_sign_artifact(artifact_id, expiry, key)
 
 
 def _verify_artifact_signature(artifact_id: str, signature_segment: str, key: bytes) -> bool:
-    """Verify the ``{expiry}.{sig}`` signature segment.
-
-    Returns True when the signature is valid AND the expiry is in the future.
-    """
-    try:
-        expiry_str, sig = signature_segment.split(".", 1)
-        expiry = int(expiry_str)
-    except ValueError:
-        return False
-    if expiry < int(time.time()):
-        return False
-    expected = _sign_artifact(artifact_id, expiry, key)
-    return hmac.compare_digest(expected, sig)
+    """Verify the ``{expiry}.{sig}`` signature segment (see core)."""
+    return _core_verify_signature(artifact_id, signature_segment, key)
 
 
 def _get_signing_key() -> bytes:
-    """Read INFOGRAPHIC_SIGNING_KEY env var.
+    """Read INFOGRAPHIC_SIGNING_KEY env var (see core).
 
     Returns bytes, or a deterministic fallback when the var is unset
     (not recommended for production; logged as a warning in the view).
     """
-    raw = os.getenv("INFOGRAPHIC_SIGNING_KEY", "")
-    return raw.encode() if raw else b"dev-insecure-key-change-in-prod"
+    return _core_get_signing_key()
 
 
 @is_authenticated()

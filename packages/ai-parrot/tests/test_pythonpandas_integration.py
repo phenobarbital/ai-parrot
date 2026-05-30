@@ -211,9 +211,126 @@ class TestPythonPandasToolEnvironment:
     def test_register_dataframes(self, sample_df):
         """register_dataframes replaces all dataframes."""
         tool = PythonPandasTool(dataframes={"old": sample_df})
-        
+
         new_df = pd.DataFrame({"x": [1, 2]})
         tool.register_dataframes({"new": new_df})
-        
+
         assert "old" not in tool.dataframes
         assert "new" in tool.dataframes
+
+
+class TestDriftSelfHeal:
+    """Re-bind datasets materialized after a session clone is created.
+
+    Reproduces the fetch_dataset → REPL race: the dataset tools and the sync
+    callback can live on different DatasetManager instances, so a just-fetched
+    DataFrame is occasionally absent from the next python_repl_pandas call and
+    surfaces as a NameError.  ``_rebind_drifted_dataframes`` self-heals it.
+    """
+
+    def test_rebind_binds_drifted_dataset(self, sample_df):
+        """A dataset materialized after clone creation re-binds on demand."""
+        dm = DatasetManager()
+        base = PythonPandasTool(dataframes={})
+        base._dataset_manager = dm
+        clone = base.create_session_clone(dataset_manager=dm)
+        assert "financial_projection" not in clone.locals
+
+        # Simulate fetch_dataset materializing a dataset on the shared DM
+        # WITHOUT the clone's on_change callback firing (the race).
+        dm.add_dataframe("financial_projection", sample_df)
+        assert "financial_projection" not in clone.locals  # drift present
+
+        clone._rebind_drifted_dataframes()
+
+        assert "financial_projection" in clone.locals
+        pd.testing.assert_frame_equal(
+            clone.locals["financial_projection"], sample_df
+        )
+
+    def test_rebind_preserves_computed_locals(self, sample_df):
+        """Re-binding must not clobber LLM-computed REPL variables."""
+        dm = DatasetManager()
+        tool = PythonPandasTool(dataframes={})
+        tool._dataset_manager = dm
+        tool.locals["fp_daily"] = sample_df.copy()  # computed earlier
+        dm.add_dataframe("financial_projection", sample_df)
+
+        tool._rebind_drifted_dataframes()
+
+        assert "financial_projection" in tool.locals
+        assert "fp_daily" in tool.locals  # preserved
+
+    def test_rebind_noop_when_no_drift(self, sample_df):
+        """With no drift, a scratch variable survives the rebind check."""
+        dm = DatasetManager()
+        dm.add_dataframe("ds", sample_df)
+        tool = PythonPandasTool(dataframes={})
+        tool._dataset_manager = dm
+        tool.register_dataframes(
+            dm.get_active_dataframes(), alias_map=dm._get_alias_map()
+        )
+        tool.locals["scratch"] = 42
+
+        tool._rebind_drifted_dataframes()
+
+        assert tool.locals.get("scratch") == 42
+
+    def test_rebind_noop_without_manager(self, sample_df):
+        """No DatasetManager attached → safe no-op."""
+        tool = PythonPandasTool(dataframes={"a": sample_df})
+        tool._dataset_manager = None
+        tool._rebind_drifted_dataframes()  # must not raise
+
+
+class TestExecScoping:
+    """Regression tests for the exec() globals/locals scoping trap.
+
+    When code is exec'd with distinct globals/locals dicts, free-variable
+    lookups inside comprehensions, generator expressions and nested functions
+    resolve as LOAD_GLOBAL (through `globals` only). Helper functions or
+    variables defined earlier in the SAME snippet then raise NameError when
+    referenced inside a comprehension. A single unified namespace fixes it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_helper_function_visible_inside_comprehension(self, sample_df):
+        """A module-level helper must be callable from within a comprehension."""
+        tool = PythonPandasTool(dataframes={"a": sample_df})
+        code = (
+            "def _double(x):\n"
+            "    return x * 2\n"
+            "vals = [_double(v) for v in [1, 2, 3]]\n"
+            "print('RESULT', vals)\n"
+        )
+        out = await tool._execute(code)
+        assert "NameError" not in out
+        assert "ExecutionError" not in out
+        assert "RESULT [2, 4, 6]" in out
+
+    @pytest.mark.asyncio
+    async def test_variable_visible_inside_generator_expression(self, sample_df):
+        """A top-level variable must be visible inside a generator expression."""
+        tool = PythonPandasTool(dataframes={"a": sample_df})
+        code = (
+            "factor = 10\n"
+            "total = sum(v * factor for v in [1, 2, 3])\n"
+            "print('TOTAL', total)\n"
+        )
+        out = await tool._execute(code)
+        assert "NameError" not in out
+        assert "TOTAL 60" in out
+
+    @pytest.mark.asyncio
+    async def test_helper_used_in_comprehension_over_dataframe(self, sample_df):
+        """Mirrors the financial_projection compute.py failure pattern."""
+        tool = PythonPandasTool(dataframes={"sales": sample_df})
+        code = (
+            "def _label(name):\n"
+            "    return name.upper()\n"
+            "labels = [_label(n) for n in sales['name']]\n"
+            "print('LABELS', labels)\n"
+        )
+        out = await tool._execute(code)
+        assert "NameError" not in out
+        assert "LABELS ['ALICE', 'BOB', 'CHARLIE']" in out
