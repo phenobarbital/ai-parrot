@@ -36,10 +36,19 @@ class TestInfographicSystemPromptAddon:
         lower = INFOGRAPHIC_SYSTEM_PROMPT_ADDON.lower()
         assert "dataframe" in lower or "python_repl_pandas" in lower or "fetch_dataset" in lower
 
-    def test_addon_mentions_no_summarise(self):
-        """The addon must instruct the LLM not to summarise the result."""
+    def test_addon_requests_brief_explanation(self):
+        """The addon must ask the LLM for a brief natural-language explanation.
+
+        This explanation becomes the chat-bubble reply (the infographic itself
+        opens in a separate canvas).
+        """
         lower = INFOGRAPHIC_SYSTEM_PROMPT_ADDON.lower()
-        assert "not" in lower and ("summarise" in lower or "summarize" in lower or "final answer" in lower)
+        assert "summary" in lower or "explanation" in lower
+
+    def test_addon_forbids_dumping_render_result(self):
+        """The addon must tell the LLM NOT to paste the HTML / render envelope."""
+        lower = INFOGRAPHIC_SYSTEM_PROMPT_ADDON.lower()
+        assert "not" in lower and ("dump" in lower or "paste" in lower or "envelope" in lower)
 
 
 class TestStreamingDisabledForInfographic:

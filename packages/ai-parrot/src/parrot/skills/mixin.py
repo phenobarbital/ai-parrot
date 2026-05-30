@@ -234,7 +234,14 @@ class SkillRegistryMixin:
                     )
 
         # --- FEAT-188: file-based skill tools registration ---
-        if skill_paths and self._skill_file_registry is not None:
+        # Register the SkillFileToolkit (load_skill / read_skill_asset /
+        # save_learned_skill) whenever file-based skills were discovered —
+        # whether via the agents_dir convention OR explicit skill_paths.
+        # Gating this on skill_paths alone left agents_dir-based agents with a
+        # <available_skills> prompt index promising load_skill() but no tool to
+        # honour it, so the model fell back to the DB-backed read_skill/
+        # list_skills (empty registry) and failed to load the skill body.
+        if self._skill_file_registry is not None and self._skill_file_registry.list_skills():
             from .tools import SkillFileToolkit
             toolkit = SkillFileToolkit(
                 file_registry=self._skill_file_registry,

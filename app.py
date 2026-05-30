@@ -23,6 +23,11 @@ from parrot.handlers.bots import (
 from parrot.handlers.chat import (
     BotManagement
 )
+from parrot.handlers.artifacts import (
+    ArtifactListView,
+    ArtifactDetailView,
+    ArtifactPublicHTMLView,
+)
 # from parrot.handlers.o365_auth import (
 #     O365InteractiveAuthSessions,
 #     O365InteractiveAuthSessionDetail,
@@ -233,6 +238,28 @@ class Main(AppHandler):
         )
         # Planogram Compliance:
         PlanogramComplianceHandler.setup(self.app)
+
+        # Artifact persistence + public infographic HTML serving (FEAT-197).
+        # - list/detail: session-scoped, authenticated CRUD over artifacts.
+        # - public: serves signed, frozen infographic HTML for <iframe>
+        #   embedding (no session); the signed URL is minted by
+        #   InfographicToolkit at persist time. ``app['artifact_store']`` is
+        #   published by BotManager.setup() above, so it is already available.
+        self.app.router.add_view(
+            '/api/v1/threads/{session_id}/artifacts',
+            ArtifactListView,
+            name='artifacts_list',
+        )
+        self.app.router.add_view(
+            '/api/v1/threads/{session_id}/artifacts/{artifact_id}',
+            ArtifactDetailView,
+            name='artifacts_detail',
+        )
+        self.app.router.add_view(
+            '/api/v1/artifacts/public/{signature}/{artifact_id_html}',
+            ArtifactPublicHTMLView,
+            name='artifacts_public_html',
+        )
 
         # parrot-formdesigner: shared FormRegistry + REST API + HTML/Telegram UI.
         # protect_pages=False — page auth is handled client-side via JWT in

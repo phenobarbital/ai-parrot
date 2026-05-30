@@ -13,6 +13,7 @@ result of ``infographic_render`` is the final agent output, consumed by
 """
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ from parrot.models.infographic_templates import (
 from parrot.outputs.formats import get_infographic_html_renderer
 from parrot.models.outputs import OutputMode
 from parrot.storage.artifacts import ArtifactStore
+from parrot.storage.artifact_signing import build_public_html_url
 from parrot.storage.models import Artifact, ArtifactType, ArtifactCreator
 
 
@@ -171,8 +173,9 @@ class InfographicToolkit(AbstractToolkit):
         template_name: str,
         theme: Optional[str],
         mode: Literal["deterministic", "enhance"],
-        blocks: List[Dict[str, Any]],
         data_variables: List[str],
+        blocks: Optional[List[Dict[str, Any]]] = None,
+        blocks_variable: Optional[str] = None,
         enhance_brief: Optional[str] = None,
     ) -> InfographicRenderResult:
         """Validate, render, and persist an infographic artifact.
@@ -189,11 +192,18 @@ class InfographicToolkit(AbstractToolkit):
                 to use the template's ``default_theme``.
             mode: ``"deterministic"`` for skeleton-only; ``"enhance"`` for
                 optional JS interactivity (requires ``enhance_brief``).
-            blocks: List of block dicts matching the template's positional
-                contract.  Use ``infographic_get_template_contract`` to see
-                the expected types and counts.
             data_variables: Names of DataFrames in the pandas REPL locals
                 that provide the underlying data for this infographic.
+            blocks_variable: **Preferred.** Name of a Python variable in the
+                pandas REPL that holds the block list (e.g. ``"fp_blocks"``
+                built by a skill's ``compute.py``).  The toolkit reads the
+                blocks straight from the REPL namespace, so you never have to
+                copy a large JSON payload into the tool call.  Takes
+                precedence over ``blocks`` when both are given.
+            blocks: List of block dicts matching the template's positional
+                contract.  Use ``infographic_get_template_contract`` to see
+                the expected types and counts.  Prefer ``blocks_variable``
+                for anything but a tiny, hand-written block list.
             enhance_brief: Brief description of the desired interactivity
                 (required when ``mode == "enhance"``; ignored otherwise).
 
@@ -207,7 +217,8 @@ class InfographicToolkit(AbstractToolkit):
         """
         # --- Validation pipeline ---
         template = self._validate_template(template_name)
-        coerced_blocks = self._validate_blocks(template, blocks)
+        resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+        coerced_blocks = self._validate_blocks(template, resolved_blocks)
         repl_locals = self._get_repl_locals()
         self._validate_data_variables(data_variables, repl_locals)
         validated_theme = self._validate_theme(theme or template.default_theme)
@@ -325,7 +336,8 @@ class InfographicToolkit(AbstractToolkit):
     async def validate_blocks(
         self,
         template_name: str,
-        blocks: List[Dict[str, Any]],
+        blocks: Optional[List[Dict[str, Any]]] = None,
+        blocks_variable: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Dry-run block validation without rendering or persisting.
 
@@ -335,7 +347,12 @@ class InfographicToolkit(AbstractToolkit):
 
         Args:
             template_name: Template identifier.
-            blocks: Block list to validate.
+            blocks_variable: **Preferred.** Name of a Python variable in the
+                pandas REPL holding the block list (e.g. ``"fp_blocks"``).
+                Validated straight from the REPL namespace — no need to copy
+                JSON into the call.  Takes precedence over ``blocks``.
+            blocks: Block list to validate.  Prefer ``blocks_variable`` for
+                anything but a tiny, hand-written block list.
 
         Returns:
             ``{"ok": True}`` on success; ``{"ok": False, "code": ...,
@@ -343,7 +360,8 @@ class InfographicToolkit(AbstractToolkit):
         """
         try:
             template = self._validate_template(template_name)
-            self._validate_blocks(template, blocks)
+            resolved_blocks = self._resolve_blocks(blocks, blocks_variable)
+            self._validate_blocks(template, resolved_blocks)
             return {"ok": True}
         except InfographicValidationError as exc:
             return {"ok": False, "code": exc.code, "detail": exc.detail}
@@ -503,6 +521,68 @@ class InfographicToolkit(AbstractToolkit):
                     )
                 return  # only check the first list-like key found
 
+    def _resolve_blocks(
+        self,
+        blocks: Optional[List[Dict[str, Any]]],
+        blocks_variable: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Resolve the block list from an inline payload or a REPL variable.
+
+        When ``blocks_variable`` is given it is looked up in the pandas REPL
+        namespace (the same source as ``data_variables``) and takes
+        precedence over an inline ``blocks`` payload.  This lets a skill's
+        ``compute.py`` leave a ``fp_blocks`` variable in scope and have the
+        LLM pass ``blocks_variable="fp_blocks"`` instead of copying a large
+        JSON array into the tool call — the copy step is the main failure
+        mode for big positional contracts.
+
+        The resolved value is normalised through a NumPy-aware JSON round-trip
+        so ``numpy`` scalars (e.g. ``round()`` over a pandas Series) coerce to
+        native Python types before Pydantic validation.
+
+        Raises:
+            InfographicValidationError: ``BLOCKS_MISSING`` when neither source
+                is provided, ``BLOCKS_VAR_MISSING`` when the named variable is
+                absent from the REPL, ``BLOCKS_VAR_INVALID`` when it is not a
+                list of dicts.
+        """
+        if blocks_variable:
+            repl_locals = self._get_repl_locals()
+            if blocks_variable not in repl_locals:
+                raise InfographicValidationError(
+                    "BLOCKS_VAR_MISSING",
+                    {"name": blocks_variable, "available": sorted(repl_locals.keys())},
+                )
+            resolved = repl_locals[blocks_variable]
+            if not isinstance(resolved, list):
+                raise InfographicValidationError(
+                    "BLOCKS_VAR_INVALID",
+                    {"name": blocks_variable, "type": type(resolved).__name__},
+                )
+            return self._normalize_blocks(resolved)
+
+        if blocks is not None:
+            return self._normalize_blocks(blocks)
+
+        raise InfographicValidationError(
+            "BLOCKS_MISSING",
+            {"detail": "Provide either `blocks` or `blocks_variable`."},
+        )
+
+    @staticmethod
+    def _normalize_blocks(blocks: List[Any]) -> List[Dict[str, Any]]:
+        """Coerce NumPy/pandas scalars inside blocks to native JSON types."""
+        def _default(obj: Any) -> Any:
+            if hasattr(obj, "item"):  # numpy scalar
+                return obj.item()
+            if hasattr(obj, "tolist"):  # numpy array / pandas Series
+                return obj.tolist()
+            if hasattr(obj, "isoformat"):  # datetime / pandas Timestamp
+                return obj.isoformat()
+            return str(obj)
+
+        return json.loads(json.dumps(blocks, default=_default))
+
     def _validate_data_variables(
         self, names: List[str], locals_: Dict[str, Any],
     ) -> Dict[str, pd.DataFrame]:
@@ -633,15 +713,18 @@ class InfographicToolkit(AbstractToolkit):
 
         await self._artifact_store.save_artifact(user_id, agent_id, session_id, artifact)
 
-        # get_public_url may raise ValueError for inline artifacts — catch and
-        # return a sentinel so the toolkit can still return a result.
-        try:
-            html_url = await self._artifact_store.get_public_url(
-                user_id, agent_id, session_id, artifact_id, format="html",
-            )
-        except (ValueError, KeyError):
-            # Artifact was stored inline (small definition) or store not S3 —
-            # return a relative session-scoped URL as fallback.
-            html_url = f"/api/v1/artifacts/{artifact_id}?format=html"
+        # ``html_url`` must point to *rendered HTML* the frontend can embed in
+        # an <iframe>.  ``ArtifactStore.get_public_url`` returns a presigned URL
+        # to the raw overflow *JSON* object (and a ``file://`` path on local /
+        # non-S3 backends) — neither is servable HTML.  Instead mint a signed
+        # URL for the server's public HTML route, which streams
+        # ``definition.html`` regardless of storage backend.  The exact persist
+        # scope is known here, so we embed it for scope-partitioned stores.
+        html_url = build_public_html_url(
+            artifact_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+        )
 
         return artifact_id, html_url

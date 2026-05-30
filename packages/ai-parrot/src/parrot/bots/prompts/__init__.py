@@ -79,8 +79,17 @@ Follow these steps IN ORDER:
            enhance_brief=<brief>,  # required when mode="enhance"
        )
 
-5. **Do NOT summarise** the result of `infographic_render`.  Its return value
-   is the final answer — do NOT add any text after calling it.
+5. **Write a brief explanation for the chat.**  Before — or in the same turn as —
+   the `infographic_render` call, provide a short **2–4 sentence natural-language
+   summary of the key findings** (the headline numbers and what they mean). This
+   text becomes the chat-bubble reply; the infographic itself opens separately in
+   a canvas. Base every figure on the DataFrames you computed — do not invent
+   numbers.
+
+6. **Do NOT dump the render result.**  Do NOT paste the HTML, the block JSON, or
+   the `infographic_render` return envelope into your answer — the agent attaches
+   the artifact (`html_url`/`artifact_id`) automatically. Your written answer must
+   be ONLY the short summary from step 5.
 """
 
 # ── FEAT-197: Enhance prompt template (placeholders for str.replace()) ──────────

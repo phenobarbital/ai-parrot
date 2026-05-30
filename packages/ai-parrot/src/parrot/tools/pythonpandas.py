@@ -306,6 +306,42 @@ class PythonPandasTool(PythonREPLTool):
         # Update description
         self._update_description()
 
+    def _rebind_drifted_dataframes(self) -> None:
+        """Bind active DatasetManager DataFrames missing from the REPL namespace.
+
+        Fetched/materialized datasets are normally pushed into the REPL by the
+        DatasetManager ``on_change`` callback. Session-scoped tool and manager
+        swapping (one ``DatasetManager`` instance owns the dataset tools,
+        another owns the sync callback) can race, so a just-fetched DataFrame
+        is occasionally absent on the next ``python_repl_pandas`` execution and
+        surfaces as a ``NameError``.
+
+        This makes the tool self-healing: when a dataset that is active in the
+        attached ``DatasetManager`` is missing (by name) from ``self.locals``,
+        the full active set is re-registered. ``register_dataframes`` only
+        clears the previously-registered dataset bindings (``df_locals``), so
+        variables the LLM computed earlier in the session are preserved.
+        """
+        dm = self._dataset_manager
+        if dm is None:
+            return
+        try:
+            active = dm.get_active_dataframes()
+        except Exception as exc:  # never break execution over a sync hiccup
+            self.logger.debug("Active-dataframe drift check skipped: %s", exc)
+            return
+        if not active:
+            return
+        drifted = [name for name in active if name not in self.locals]
+        if not drifted:
+            return
+        self.logger.debug(
+            "Re-binding %d drifted DataFrame(s) into REPL namespace: %s",
+            len(drifted),
+            drifted,
+        )
+        self.register_dataframes(active, alias_map=dm._get_alias_map())
+
     # ─────────────────────────────────────────────────────────────
     # Description & Plotting Guide
     # ─────────────────────────────────────────────────────────────
@@ -780,9 +816,17 @@ print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
         Also appends a preview of any new/modified DataFrames to the output,
         and includes the executed code for audit purposes.
         """
+        # Self-heal the REPL namespace before running user code: a dataset
+        # fetched/materialized earlier in this turn must be visible here even
+        # if the DatasetManager on_change sync raced with session-scoped tool/
+        # manager swapping (one DM instance owns the tools, another owns the
+        # sync callback). Otherwise a just-fetched DataFrame surfaces as a
+        # NameError on the next python_repl_pandas call.
+        self._rebind_drifted_dataframes()
+
         # Snapshot current locals keys to identify new variables
         pre_keys = set(self.locals.keys())
-        
+
         result = await super()._execute(code, debug=debug, **kwargs)
 
         # ── NameError recovery: tell the LLM which variables actually exist ──

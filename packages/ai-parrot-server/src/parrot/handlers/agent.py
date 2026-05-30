@@ -6,6 +6,7 @@ with support for multiple output modes and MCP server integration.
 """
 from __future__ import annotations
 import contextlib
+import json
 from typing import Dict, Any, List, Optional, Tuple, Union, TYPE_CHECKING
 import tempfile
 import os
@@ -2763,6 +2764,36 @@ class AgentTalk(BaseView):
 
         return output
 
+    @staticmethod
+    def _extract_infographic_explanation(response: "AIMessage") -> str:
+        """Pull the LLM's narrative explanation for the infographic envelope.
+
+        Prefers ``response.response`` (where ``PandasAgent`` stores the parsed
+        ``explanation``), falling back to ``response.content``.  When the value
+        is still a raw structured-output JSON string (e.g. Gemini emits
+        ``{"explanation": "..."}``), the ``explanation`` field is unwrapped.
+
+        Args:
+            response: The agent's ``AIMessage``.
+
+        Returns:
+            The explanation text, or an empty string when none is available.
+        """
+        raw = getattr(response, "response", None) or getattr(response, "content", None)
+        if raw is None:
+            return ""
+        if not isinstance(raw, str):
+            return str(raw)
+        stripped = raw.strip()
+        if stripped.startswith("{") and '"explanation"' in stripped:
+            try:
+                parsed = json.loads(stripped)
+            except (ValueError, TypeError):
+                return raw
+            if isinstance(parsed, dict) and parsed.get("explanation"):
+                return str(parsed["explanation"])
+        return raw
+
     def _format_infographic_response(
         self,
         response: "AIMessage",
@@ -2825,9 +2856,17 @@ class AgentTalk(BaseView):
         metadata = dict(getattr(response, "metadata", None) or {})
         artifact_id = getattr(response, "artifact_id", None)
 
+        # Surface the LLM's narrative explanation.  The infographic post-loop
+        # branch in PandasAgent returns early (bypassing the formatter), so the
+        # explanation only survives on ``response.response``/``response.content``
+        # — never in ``output`` (which carries the HTML URL or inline HTML).
+        # Without this the frontend loses the textual summary entirely.
+        explanation = self._extract_infographic_explanation(response)
+
         obj_response = {
             "input": response.input,
             "output": response.output,
+            "response": explanation,
             "output_mode": "infographic",
             "artifact_id": artifact_id,
             "data": response.data,

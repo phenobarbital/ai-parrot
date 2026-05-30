@@ -603,12 +603,25 @@ print("Use 'execution_results' dict to store intermediate results.")
             # ✅ CREATE BUFFER - before any execution
             io_buffer = StringIO()
 
+            # Execute against a SINGLE unified namespace. Passing distinct
+            # globals/locals dicts to exec()/eval() makes free-variable lookups
+            # inside comprehensions, generator expressions and nested functions
+            # resolve as LOAD_GLOBAL — i.e. through `globals` only, never the
+            # module-level `locals`. Helper functions or variables defined
+            # earlier in the SAME snippet therefore raise NameError when used
+            # inside a comprehension (classic exec() scoping trap). `self.locals`
+            # is a superset of `self.globals` (globals only ever receives keys
+            # copied from locals), so it is safe to use as the unified namespace;
+            # keep `self.globals` in sync for any external reader / clone.
+            ns = self.locals
+            self.globals = ns
+
             with redirect_stdout(io_buffer):
                 # Execute all but the last statement
                 if len(tree.body) > 1:
                     try:
                         module = ast.Module(tree.body[:-1], type_ignores=[])
-                        exec(ast.unparse(module), self.globals, self.locals)
+                        exec(ast.unparse(module), ns, ns)
                     except Exception as e:
                         return f"ExecutionError: {type(e).__name__}: {str(e)}"
 
@@ -621,7 +634,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                 if is_expression := isinstance(last_statement, ast.Expr):
                     with contextlib.suppress(Exception):
                         # Try to evaluate as expression first
-                        ret = eval(module_end_str, self.globals, self.locals)
+                        ret = eval(module_end_str, ns, ns)
                         output = io_buffer.getvalue()
 
                         # Auto-save plots if enabled
@@ -637,7 +650,7 @@ print("Use 'execution_results' dict to store intermediate results.")
 
                 try:
                     # Try to evaluate as expression first
-                    ret = eval(module_end_str, self.globals, self.locals)
+                    ret = eval(module_end_str, ns, ns)
 
                     # Auto-save plots if enabled
                     plot_info = self._auto_save_plots_if_enabled()
@@ -653,7 +666,7 @@ print("Use 'execution_results' dict to store intermediate results.")
                 except Exception:
                     # Fall back to execution
                     try:
-                        exec(module_end_str, self.globals, self.locals)
+                        exec(module_end_str, ns, ns)
 
                         # Auto-save plots if enabled
                         plot_info = self._auto_save_plots_if_enabled()

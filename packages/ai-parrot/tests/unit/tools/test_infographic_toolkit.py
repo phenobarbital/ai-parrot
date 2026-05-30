@@ -74,6 +74,11 @@ def toolkit(fake_artifact_store):
     tk = InfographicToolkit(artifact_store=fake_artifact_store)
     bot = MagicMock()
     bot._get_repl_locals = MagicMock(return_value={})
+    # _resolve_scope prefers _current_* (set by PandasAgent.ask at runtime);
+    # None here exercises the user_id/agent_id/session_id fallback.
+    bot._current_user_id = None
+    bot._current_agent_id = None
+    bot._current_session_id = None
     bot.user_id = "u"
     bot.agent_id = "agt"
     bot.session_id = "sess"
@@ -223,7 +228,10 @@ class TestRender:
         assert isinstance(result, InfographicRenderResult)
         assert result.enhanced is False
         assert result.template_name == hero_cards_template.name
-        assert result.html_url == "https://signed/x"
+        # html_url points to the server's public HTML route (serves rendered
+        # HTML), NOT the presigned overflow-JSON URL from get_public_url.
+        assert result.html_url.startswith("/api/v1/artifacts/public/")
+        assert f"/{result.artifact_id}.html" in result.html_url
 
     @pytest.mark.asyncio
     async def test_html_inline_set_for_small_html(
@@ -288,11 +296,15 @@ class TestRender:
         assert "html" in artifact.definition
 
     @pytest.mark.asyncio
-    async def test_get_public_url_called_once(
+    async def test_html_url_is_signed_public_route_with_scope(
         self, toolkit, hero_cards_template, fake_artifact_store,
     ):
+        """html_url targets the signed public HTML route, embedding the
+        persist scope so partitioned stores can locate the artifact.  The
+        presigned-JSON ``get_public_url`` path is no longer used by _persist.
+        """
         toolkit._bot._get_repl_locals.return_value = {"r": pd.DataFrame([{"x": 1}])}
-        await toolkit.render(
+        result = await toolkit.render(
             template_name=hero_cards_template.name,
             theme=None,
             mode="deterministic",
@@ -301,4 +313,112 @@ class TestRender:
             ]}],
             data_variables=["r"],
         )
-        assert fake_artifact_store.get_public_url.call_count == 1
+        assert fake_artifact_store.get_public_url.call_count == 0
+        assert result.html_url.startswith("/api/v1/artifacts/public/")
+        assert "user_id=u" in result.html_url
+        assert "agent_id=agt" in result.html_url
+        assert "session_id=sess" in result.html_url
+
+
+# ---------------------------------------------------------------------------
+# blocks_variable — pass blocks by REPL variable name instead of inline JSON
+# ---------------------------------------------------------------------------
+
+class TestBlocksVariable:
+    _HERO = {"type": "hero_card", "cards": [
+        {"value": 1}, {"value": 2}, {"value": 3}, {"value": 4}
+    ]}
+
+    @pytest.mark.asyncio
+    async def test_render_resolves_blocks_from_repl(
+        self, toolkit, hero_cards_template,
+    ):
+        toolkit._bot._get_repl_locals.return_value = {
+            "fp_blocks": [self._HERO],
+            "rev": pd.DataFrame([{"x": 1}]),
+        }
+        result = await toolkit.render(
+            template_name=hero_cards_template.name,
+            theme=None,
+            mode="deterministic",
+            blocks_variable="fp_blocks",
+            data_variables=["rev"],
+        )
+        assert isinstance(result, InfographicRenderResult)
+
+    @pytest.mark.asyncio
+    async def test_validate_blocks_resolves_from_repl(
+        self, toolkit, hero_cards_template,
+    ):
+        toolkit._bot._get_repl_locals.return_value = {"fp_blocks": [self._HERO]}
+        out = await toolkit.validate_blocks(
+            template_name=hero_cards_template.name,
+            blocks_variable="fp_blocks",
+        )
+        assert out == {"ok": True}
+
+    @pytest.mark.asyncio
+    async def test_blocks_variable_takes_precedence_over_blocks(
+        self, toolkit, hero_cards_template,
+    ):
+        toolkit._bot._get_repl_locals.return_value = {"fp_blocks": [self._HERO]}
+        # Inline blocks are intentionally wrong; the REPL variable wins.
+        out = await toolkit.validate_blocks(
+            template_name=hero_cards_template.name,
+            blocks=[{"type": "title", "text": "wrong"}],
+            blocks_variable="fp_blocks",
+        )
+        assert out == {"ok": True}
+
+    @pytest.mark.asyncio
+    async def test_blocks_var_missing(self, toolkit, hero_cards_template):
+        toolkit._bot._get_repl_locals.return_value = {"other": 1}
+        with pytest.raises(InfographicValidationError) as ei:
+            await toolkit.render(
+                template_name=hero_cards_template.name,
+                theme=None,
+                mode="deterministic",
+                blocks_variable="fp_blocks",
+                data_variables=[],
+            )
+        assert ei.value.code == "BLOCKS_VAR_MISSING"
+
+    @pytest.mark.asyncio
+    async def test_blocks_var_invalid_type(self, toolkit, hero_cards_template):
+        toolkit._bot._get_repl_locals.return_value = {"fp_blocks": {"not": "a list"}}
+        with pytest.raises(InfographicValidationError) as ei:
+            await toolkit.render(
+                template_name=hero_cards_template.name,
+                theme=None,
+                mode="deterministic",
+                blocks_variable="fp_blocks",
+                data_variables=[],
+            )
+        assert ei.value.code == "BLOCKS_VAR_INVALID"
+
+    @pytest.mark.asyncio
+    async def test_blocks_missing_entirely(self, toolkit, hero_cards_template):
+        with pytest.raises(InfographicValidationError) as ei:
+            await toolkit.render(
+                template_name=hero_cards_template.name,
+                theme=None,
+                mode="deterministic",
+                data_variables=[],
+            )
+        assert ei.value.code == "BLOCKS_MISSING"
+
+    @pytest.mark.asyncio
+    async def test_numpy_scalars_normalized(self, toolkit, hero_cards_template):
+        """NumPy scalars inside REPL blocks coerce to native types."""
+        import numpy as np
+        toolkit._bot._get_repl_locals.return_value = {
+            "fp_blocks": [{"type": "hero_card", "cards": [
+                {"value": np.float64(1.5)}, {"value": np.int64(2)},
+                {"value": 3}, {"value": 4},
+            ]}],
+        }
+        out = await toolkit.validate_blocks(
+            template_name=hero_cards_template.name,
+            blocks_variable="fp_blocks",
+        )
+        assert out == {"ok": True}

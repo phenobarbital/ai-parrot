@@ -6,6 +6,7 @@ post-loop branch logic WITHOUT spinning up a full agent session.
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 import pytest
 from unittest.mock import MagicMock
 
@@ -138,6 +139,88 @@ class TestExtractLastInfographicResult:
         helper = self._make_helper()
         calls = [_ToolCall("other_tool", result={"some": "dict"})]
         assert helper._extract_last_infographic_result(calls) is None
+
+
+class TestFinalizeInfographicResponse:
+    """Unit tests for the _finalize_infographic_response helper (explanation split)."""
+
+    def _bind(self):
+        """Return the real PandasAgent._finalize_infographic_response function.
+
+        The method does not touch ``self``, so it can be invoked with any
+        object as the first argument. Skips if data.py is not importable here.
+        """
+        try:
+            from parrot.bots.data import PandasAgent
+        except Exception:  # pragma: no cover - env-dependent
+            pytest.skip("parrot.bots.data not importable in this environment")
+        return PandasAgent._finalize_infographic_response
+
+    def _resp(self, **kwargs):
+        defaults = dict(
+            response=None,
+            output=None,
+            output_mode=OutputMode.DEFAULT,
+            artifact_id=None,
+            metadata={},
+        )
+        defaults.update(kwargs)
+        return SimpleNamespace(**defaults)
+
+    def test_explanation_preserved_and_html_in_output(self):
+        finalize = self._bind()
+        text = "Revenue reached $1.2M, up 5% vs baseline."
+        resp = self._resp(response=text, output=text)
+        env = _make_envelope(html_inline="<html>info</html>")
+
+        explanation = finalize(object(), resp, env)
+
+        # Explanation stays as the chat-bubble reply…
+        assert explanation == text
+        assert resp.response == text
+        # …while output carries the infographic HTML for the canvas.
+        assert resp.output == "<html>info</html>"
+        assert resp.output_mode == OutputMode.INFOGRAPHIC
+        assert resp.artifact_id == "art-1"
+        # Explicit, documented metadata contract for the frontend.
+        assert resp.metadata["explanation"] == text
+        assert resp.metadata["html_url"] == "https://signed/x"
+        assert resp.metadata["html_inline_omitted"] is False
+        assert resp.metadata["template_name"] == "t"
+        assert resp.metadata["theme"] == "dark"
+
+    def test_falls_back_to_output_when_no_response_field(self):
+        finalize = self._bind()
+        resp = self._resp(response=None, output="Some explanation text")
+        env = _make_envelope()
+
+        explanation = finalize(object(), resp, env)
+
+        assert explanation == "Some explanation text"
+        assert resp.response == "Some explanation text"
+        assert resp.metadata["explanation"] == "Some explanation text"
+
+    def test_html_url_used_when_inline_omitted(self):
+        finalize = self._bind()
+        resp = self._resp(response="x", output="x")
+        env = _make_envelope(html_inline=None)
+
+        finalize(object(), resp, env)
+
+        assert resp.output == "https://signed/x"
+        assert resp.metadata["html_inline_omitted"] is True
+
+    def test_no_explanation_when_neither_present(self):
+        finalize = self._bind()
+        resp = self._resp(response=None, output=None)
+        env = _make_envelope()
+
+        explanation = finalize(object(), resp, env)
+
+        assert explanation is None
+        assert resp.metadata["explanation"] is None
+        # output still set to the HTML so the canvas can render.
+        assert resp.output == "<html/>"
 
 
 class TestOutputModeInfographic:

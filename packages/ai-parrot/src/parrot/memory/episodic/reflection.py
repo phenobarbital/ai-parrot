@@ -173,30 +173,68 @@ class ReflectionEngine:
             structured_output=ReflectionResult,
         )
 
-        # Extract content from MessageResponse
-        content = response.get("content", [])
-        if not content:
+        # `ask()` returns an AIMessage. When structured_output=ReflectionResult
+        # is requested, the parsed object is exposed on `.structured_output`
+        # (and mirrored on `.output`). Prefer that fast path.
+        if isinstance(response, ReflectionResult):
+            return response
+
+        for attr in ("structured_output", "output", "data"):
+            candidate = getattr(response, attr, None)
+            if isinstance(candidate, ReflectionResult):
+                return candidate
+            if isinstance(candidate, dict):
+                try:
+                    return ReflectionResult(**candidate)
+                except (TypeError, ValueError):
+                    pass
+
+        # Otherwise, fall back to parsing the textual response as JSON.
+        text = self._extract_text(response)
+        if not text:
             raise ValueError("Empty LLM response for reflection")
 
-        text = ""
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                text = block.get("text", "")
-                break
-            elif isinstance(block, str):
-                text = block
-                break
-
-        # If structured_output returned a parsed object directly
-        if isinstance(content, ReflectionResult):
-            return content
-
-        # Parse the JSON response
         try:
             data = json.loads(text)
             return ReflectionResult(**data)
-        except (json.JSONDecodeError, TypeError, KeyError) as e:
+        except (json.JSONDecodeError, TypeError, KeyError, ValueError) as e:
             raise ValueError(f"Failed to parse LLM reflection response: {e}") from e
+
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        """Best-effort extraction of textual content from an LLM response.
+
+        Handles AIMessage objects (``.to_text`` / ``.response`` / ``.output``),
+        plain strings, and legacy dict-shaped responses with a ``content`` list.
+        """
+        if response is None:
+            return ""
+        if isinstance(response, str):
+            return response
+
+        # AIMessage exposes a `to_text` property and a `response` field.
+        to_text = getattr(response, "to_text", None)
+        if isinstance(to_text, str) and to_text:
+            return to_text
+        resp_text = getattr(response, "response", None)
+        if isinstance(resp_text, str) and resp_text:
+            return resp_text
+
+        # Legacy dict-shaped payloads: {"content": [{"type": "text", ...}]}
+        if isinstance(response, dict):
+            content = response.get("content", [])
+            if isinstance(content, str):
+                return content
+            for block in content or []:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    return block.get("text", "")
+                if isinstance(block, str):
+                    return block
+
+        output = getattr(response, "output", None)
+        if isinstance(output, str):
+            return output
+        return ""
 
     @staticmethod
     def _heuristic_reflect(

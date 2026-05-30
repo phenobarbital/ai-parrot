@@ -1056,6 +1056,57 @@ class PandasAgent(BasicAgent):
                 return result
         return None
 
+    def _finalize_infographic_response(
+        self, response: Any, envelope: Any,
+    ) -> Optional[str]:
+        """Apply an ``InfographicRenderResult`` to the agent response in place.
+
+        Splits the turn into two channels for the frontend (FEAT-197):
+
+        - ``response.response`` keeps the LLM's natural-language explanation,
+          used as the chat-bubble reply (preferred by ``AIMessage.to_text``).
+        - ``response.output`` carries the infographic HTML (inline when small,
+          otherwise the signed URL), opened separately in a canvas.
+
+        The explanation MUST be captured before ``response.output`` is
+        overwritten: ``AIMessage.content`` is a property alias for ``output``,
+        and the client factory writes the LLM text into BOTH ``output`` and
+        ``response``, so assigning the HTML to ``output`` would otherwise be the
+        only remaining copy. The explanation is also mirrored into
+        ``response.metadata['explanation']`` as an explicit, documented field.
+
+        Args:
+            response: The ``AIMessage`` to mutate in place.
+            envelope: The ``InfographicRenderResult`` from the render tool.
+
+        Returns:
+            The captured explanation text (may be ``None`` when the LLM emitted
+            no natural-language text alongside the render call).
+        """
+        explanation = getattr(response, "response", None)
+        if not explanation and isinstance(response.output, str):
+            explanation = response.output
+
+        response.output = envelope.html_inline or envelope.html_url
+        response.output_mode = OutputMode.INFOGRAPHIC
+        response.artifact_id = envelope.artifact_id
+        if explanation:
+            response.response = explanation
+
+        meta = dict(getattr(response, "metadata", None) or {})
+        meta.update({
+            "html_url": envelope.html_url,
+            "html_inline_omitted": envelope.html_inline is None,
+            "enhanced": envelope.enhanced,
+            "template_name": envelope.template_name,
+            "theme": envelope.theme,
+            "explanation": explanation,
+        })
+        if hasattr(response, "metadata"):
+            response.metadata = meta
+
+        return explanation
+
     async def _rerun_for_map(
         self,
         *,
@@ -1677,30 +1728,15 @@ class PandasAgent(BasicAgent):
                     await self._inject_multi_data_from_variables(
                         response, infographic_envelope.data_variables,
                     )
-                    response.output = (
-                        infographic_envelope.html_inline
-                        or infographic_envelope.html_url
+                    explanation = self._finalize_infographic_response(
+                        response, infographic_envelope,
                     )
-                    response.output_mode = OutputMode.INFOGRAPHIC
-                    response.artifact_id = infographic_envelope.artifact_id
-                    # Surface URL + flags via response.metadata so the HTTP
-                    # formatter (_format_infographic_response) can pass them
-                    # through to the JSON envelope.
-                    meta = dict(getattr(response, "metadata", None) or {})
-                    meta.update({
-                        "html_url": infographic_envelope.html_url,
-                        "html_inline_omitted": infographic_envelope.html_inline is None,
-                        "enhanced": infographic_envelope.enhanced,
-                        "template_name": infographic_envelope.template_name,
-                        "theme": infographic_envelope.theme,
-                    })
-                    if hasattr(response, "metadata"):
-                        response.metadata = meta
                     self.logger.info(
                         "InfographicRenderResult detected — bypassing formatter: "
-                        "artifact_id=%s enhanced=%s",
+                        "artifact_id=%s enhanced=%s explanation_chars=%d",
                         infographic_envelope.artifact_id,
                         infographic_envelope.enhanced,
+                        len(explanation or ""),
                     )
                     return response   # skip formatter + structured reformat
 
