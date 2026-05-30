@@ -155,6 +155,32 @@ async def test_schedule_telegram_prefers_chat_id_over_telegram_id(toolkit, mock_
     assert call_kwargs["kwargs"]["recipients"] == [-1001234567]
 
 
+async def test_schedule_telegram_persists_bot_id(toolkit, mock_sm):
+    """When extra carries telegram_bot_id, it is persisted in the job kwargs
+    as the (non-secret) bot_id so deliver_reminder can route through the
+    originating bot instead of the TELEGRAM_BOT_TOKEN env default."""
+    pctx = _pctx(extra={"chat_id": -1001234567, "telegram_bot_id": "123456"})
+    await _run(
+        toolkit, pctx,
+        lambda: toolkit.schedule_reminder(message="x", delay_seconds=60, channel="telegram"),
+    )
+    payload = mock_sm.scheduler.add_job.call_args.kwargs["kwargs"]
+    assert payload["bot_id"] == "123456"
+    # The secret token must never be persisted in the jobstore payload.
+    assert "bot_token" not in payload
+
+
+async def test_schedule_telegram_without_bot_id_omits_key(toolkit, mock_sm):
+    """No telegram_bot_id in extra → bot_id key is absent (legacy fallback)."""
+    pctx = _pctx(extra={"chat_id": 987654321})
+    await _run(
+        toolkit, pctx,
+        lambda: toolkit.schedule_reminder(message="x", delay_seconds=60, channel="telegram"),
+    )
+    payload = mock_sm.scheduler.add_job.call_args.kwargs["kwargs"]
+    assert "bot_id" not in payload
+
+
 async def test_schedule_email_requires_email_in_pctx(toolkit):
     """Missing email in pctx + channel='email' → clear ValueError."""
     pctx = _pctx(extra={})  # no email field

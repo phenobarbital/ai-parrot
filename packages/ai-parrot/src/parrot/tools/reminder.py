@@ -35,6 +35,56 @@ _notifier = NotificationMixin()
 
 
 # ---------------------------------------------------------------------------
+# Per-bot token registry (FEAT-115 hardening)
+# ---------------------------------------------------------------------------
+# ``deliver_reminder`` runs at module scope (APScheduler serialises only a
+# dotted-path reference), so it cannot capture the live aiogram ``Bot`` the
+# user talked to. Without a token it builds a generic ``notify.Telegram()``
+# that falls back to the global ``TELEGRAM_BOT_TOKEN`` env var — the *wrong*
+# bot in a multi-agent deployment, which is why reminders surfaced on a
+# default channel instead of the originating chat.
+#
+# The integration layer registers each bot's token here, keyed by the bot's
+# **non-secret** numeric id (the part of the token before ``:``). Only that id
+# is persisted inside the APScheduler job, never the token itself, so secrets
+# stay out of the Redis jobstore. On process restart the integration
+# re-registers its bots at startup, so reminders armed before the restart
+# still resolve the correct token when they fire.
+_TELEGRAM_BOT_TOKENS: dict[str, str] = {}
+
+
+def register_telegram_bot(bot_id: str | int, bot_token: str) -> None:
+    """Register a Telegram bot token under its non-secret numeric id.
+
+    Called by the Telegram integration when a bot starts so that
+    :func:`deliver_reminder` can deliver through the same bot the user
+    interacted with.
+
+    Args:
+        bot_id: The bot's Telegram numeric id (token prefix before ``:``).
+        bot_token: The full ``<id>:<secret>`` bot token.
+    """
+    if bot_id and bot_token:
+        _TELEGRAM_BOT_TOKENS[str(bot_id)] = bot_token
+
+
+def unregister_telegram_bot(bot_id: str | int) -> None:
+    """Remove a previously registered Telegram bot token.
+
+    Args:
+        bot_id: The bot's Telegram numeric id used at registration time.
+    """
+    _TELEGRAM_BOT_TOKENS.pop(str(bot_id), None)
+
+
+def _resolve_telegram_token(bot_id: str | None) -> str | None:
+    """Return the registered token for *bot_id*, or ``None`` if unknown."""
+    if not bot_id:
+        return None
+    return _TELEGRAM_BOT_TOKENS.get(str(bot_id))
+
+
+# ---------------------------------------------------------------------------
 # Top-level coroutine — MUST NOT be a method, closure, or lambda.
 # ---------------------------------------------------------------------------
 async def deliver_reminder(
@@ -44,6 +94,7 @@ async def deliver_reminder(
     message: str,
     requested_by: str,
     requested_at: str,
+    bot_id: str | None = None,
 ) -> None:
     """Fire a reminder by delivering it through the requested notification channel.
 
@@ -62,18 +113,42 @@ async def deliver_reminder(
             Stored for audit purposes; not used for delivery logic here.
         requested_at: ISO-8601 UTC timestamp of when the reminder was
             scheduled.  Included in the delivered message prefix.
+        bot_id: For Telegram reminders, the non-secret numeric id of the bot
+            that scheduled the reminder. Used to resolve the matching token
+            from :data:`_TELEGRAM_BOT_TOKENS` so delivery goes through the
+            originating bot. When ``None`` or unregistered, the provider falls
+            back to the global ``TELEGRAM_BOT_TOKEN`` env default (legacy
+            behaviour).
     """
     prefix = f"⏰ <b>Reminder</b> (scheduled {requested_at}):\n\n"
+
+    provider_options: dict | None = None
+    if provider == "telegram" and bot_id:
+        token = _resolve_telegram_token(bot_id)
+        if token:
+            provider_options = {"bot_token": token}
+        else:
+            logger.warning(
+                "No registered Telegram bot for bot_id=%s; delivering reminder "
+                "for user=%s via the TELEGRAM_BOT_TOKEN env default. The "
+                "reminder may reach the wrong chat if the env bot differs from "
+                "the originating bot.",
+                bot_id,
+                requested_by,
+            )
+
     logger.info(
-        "Delivering reminder for user=%s via provider=%s recipients=%s",
+        "Delivering reminder for user=%s via provider=%s recipients=%s bot_id=%s",
         requested_by,
         provider,
         recipients,
+        bot_id,
     )
     await _notifier.send_notification(
         message=prefix + message,
         recipients=recipients,
         provider=provider,
+        provider_options=provider_options,
     )
 
 
@@ -191,17 +266,36 @@ class ReminderToolkit(AbstractToolkit):
         reminder_id = f"reminder-{uuid.uuid4()}"
         requested_at = datetime.now(timezone.utc).isoformat()
 
+        # For Telegram, persist the originating bot's *non-secret* numeric id
+        # so ``deliver_reminder`` can resolve the matching token at fire time
+        # and deliver through the same bot the user talked to (never the global
+        # env default). The token itself is never persisted in the jobstore.
+        job_kwargs: dict[str, Any] = {
+            "provider": channel,
+            "recipients": recipients,
+            "message": message,
+            "requested_by": str(pctx.user_id),
+            "requested_at": requested_at,
+        }
+        if channel == "telegram":
+            extra: dict = pctx.extra or {}
+            bot_id = extra.get("telegram_bot_id")
+            if bot_id is not None:
+                job_kwargs["bot_id"] = str(bot_id)
+            else:
+                self.logger.warning(
+                    "schedule_reminder: no 'telegram_bot_id' in "
+                    "PermissionContext.extra; the reminder will be delivered "
+                    "via the TELEGRAM_BOT_TOKEN env default and may reach the "
+                    "wrong bot. Ensure the Telegram integration populates "
+                    "extra['telegram_bot_id']."
+                )
+
         self._sm.scheduler.add_job(
             deliver_reminder,
             trigger="date",
             run_date=run_at,
-            kwargs={
-                "provider": channel,
-                "recipients": recipients,
-                "message": message,
-                "requested_by": str(pctx.user_id),
-                "requested_at": requested_at,
-            },
+            kwargs=job_kwargs,
             id=reminder_id,
             jobstore="redis",
             replace_existing=False,

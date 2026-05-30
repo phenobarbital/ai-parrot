@@ -96,6 +96,24 @@ class TelegramAgentWrapper:
         self.conversations: Dict[int, "ConversationMemory"] = {}
         self.logger = logging.getLogger(f"TelegramWrapper.{config.name}")
 
+        # Cache the bot's non-secret numeric id (token prefix before ``:``) and
+        # register the full token with the reminder module so a scheduled
+        # ``deliver_reminder`` can deliver through THIS bot instead of the
+        # global TELEGRAM_BOT_TOKEN env default. Only the numeric id is ever
+        # persisted in the APScheduler job; the token stays in process memory.
+        self._bot_id: Optional[str] = self._resolve_bot_id(bot, config)
+        _bot_token = getattr(config, "bot_token", None)
+        if self._bot_id and isinstance(_bot_token, str):
+            try:
+                from parrot.tools.reminder import register_telegram_bot
+
+                register_telegram_bot(self._bot_id, _bot_token)
+            except Exception:  # noqa: BLE001 - reminders are optional
+                self.logger.debug(
+                    "Could not register Telegram bot token for reminders",
+                    exc_info=True,
+                )
+
         # Agent-declared commands (from @telegram_command decorator).
         # TelegramBotManager passes these explicitly, but IntegrationManager
         # constructs wrappers directly, so discover here as a fallback.
@@ -1071,9 +1089,32 @@ class TelegramAgentWrapper:
         return f"<reply_context>{original_text}</reply_context>\n"
 
     @staticmethod
+    def _resolve_bot_id(bot: Bot, config: "TelegramAgentConfig") -> Optional[str]:
+        """Return the bot's non-secret numeric id (token prefix before ``:``).
+
+        Prefers aiogram's :pyattr:`Bot.id` (parsed from the token, no network
+        call) and falls back to parsing ``config.bot_token``. Returns ``None``
+        when neither is available so callers degrade to the env default.
+        """
+        try:
+            bot_id = getattr(bot, "id", None)
+            # aiogram's Bot.id is always an int (parsed from the token). The
+            # int check also rejects MagicMock attributes in tests so we fall
+            # through to parsing config.bot_token instead.
+            if isinstance(bot_id, int):
+                return str(bot_id)
+        except Exception:  # noqa: BLE001 - id may raise if token is malformed
+            pass
+        token = getattr(config, "bot_token", None)
+        if isinstance(token, str) and ":" in token:
+            return token.split(":", 1)[0]
+        return None
+
+    @staticmethod
     def _build_permission_context(
         session: TelegramUserSession,
         chat_id: Optional[int] = None,
+        bot_id: Optional[str] = None,
     ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
@@ -1092,6 +1133,12 @@ class TelegramAgentWrapper:
         is in — not the user's DM, which is unreachable for groups or for
         users who never opened a private chat with the bot.
 
+        When *bot_id* is supplied it is added to ``extra['telegram_bot_id']``
+        so a scheduled reminder is later delivered through the *same* bot the
+        user talked to, rather than the global ``TELEGRAM_BOT_TOKEN`` env
+        default (which, in a multi-bot deployment, is the wrong bot and lands
+        the message on a default channel).
+
         Imported lazily to keep the Telegram wrapper importable without
         ``parrot.auth.permission`` on the path (older deployments).
         """
@@ -1109,6 +1156,10 @@ class TelegramAgentWrapper:
         }
         if chat_id is not None:
             extra["chat_id"] = chat_id
+        if bot_id is not None:
+            # Non-secret bot id so ReminderToolkit can persist it and
+            # deliver_reminder can resolve the originating bot's token.
+            extra["telegram_bot_id"] = bot_id
         if session.nav_user_id:
             extra["nav_user_id"] = session.nav_user_id
         if session.jira_account_id:
@@ -1286,7 +1337,9 @@ class TelegramAgentWrapper:
 
         agent, user_tm = await self._resolve_agent_for_request(session, message=message)
         chat_id = message.chat.id if message is not None else None
-        permission_context = self._build_permission_context(session, chat_id=chat_id)
+        permission_context = self._build_permission_context(
+            session, chat_id=chat_id, bot_id=self._bot_id
+        )
         enriched = self._enrich_question(question, session)
 
         timeout = self.config.agent_timeout
