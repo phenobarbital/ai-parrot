@@ -294,6 +294,12 @@ class Main(AppHandler):
         auth = AuthHandler()
         auth.setup(self.app)  # configure this Auth system into App.
 
+        # FEAT-197: the public infographic HTML route authorises requests with
+        # an HMAC signature, not a session — exclude it from the auth/ABAC
+        # middlewares so the frontend can embed it in an <iframe> without a
+        # session cookie. fnmatch pattern; '*' spans the signature + id.html.
+        auth.add_exclude_list('/api/v1/artifacts/public/*')
+
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
         # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
         # app['abac'] is registered before AgentRegistry.setup(app) reads it.
