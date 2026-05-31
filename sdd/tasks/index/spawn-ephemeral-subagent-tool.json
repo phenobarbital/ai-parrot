@@ -52,7 +52,7 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Core tool — calls BotManager methods generalized by M2; must run after M2.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1389-spawn-subagent-tool.md"
+      "completed_at": "2026-05-31T23:51:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1389-spawn-subagent-tool.md"
     },
     {
       "id": "TASK-1390",
