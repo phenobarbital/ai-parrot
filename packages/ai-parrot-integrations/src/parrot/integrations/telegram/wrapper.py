@@ -2934,6 +2934,13 @@ class TelegramAgentWrapper:
 
     async def close(self) -> None:
         """Release resources held by the wrapper (call on shutdown)."""
+        if self._bot_id:
+            try:
+                from parrot.tools.reminder import unregister_telegram_bot
+
+                unregister_telegram_bot(self._bot_id)
+            except Exception:  # noqa: BLE001 - reminders are optional
+                pass
         if self._transcriber is not None:
             await self._transcriber.close()
             self._transcriber = None
