@@ -14,14 +14,14 @@
       "feature_id": "FEAT-209",
       "feature": "autonomous-agent-heartbeat",
       "spec": "sdd/specs/FEAT-209-autonomous-agent-heartbeat.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Creates heartbeat.py — all subsequent tasks modify the same file; sequential required.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-31T23:33:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1391-heartbeat-models-strategy.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-209",
       "feature": "autonomous-agent-heartbeat",
       "spec": "sdd/specs/FEAT-209-autonomous-agent-heartbeat.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1391"],
+      "depends_on": [
+        "TASK-1391"
+      ],
       "parallel": false,
       "parallelism_notes": "Extends heartbeat.py created by TASK-1391; must run after it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-31T23:33:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1392-heartbeat-manager.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-209",
       "feature": "autonomous-agent-heartbeat",
       "spec": "sdd/specs/FEAT-209-autonomous-agent-heartbeat.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1392"],
+      "depends_on": [
+        "TASK-1392"
+      ],
       "parallel": false,
       "parallelism_notes": "Updates __init__.py exports and writes integration test; requires completed heartbeat.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-05-31T23:33:37+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1393-heartbeat-export-integration.md"
     }
