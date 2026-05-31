@@ -14,7 +14,7 @@
       "feature_id": "FEAT-209",
       "feature": "autonomous-agent-heartbeat",
       "spec": "sdd/specs/FEAT-209-autonomous-agent-heartbeat.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates heartbeat.py — all subsequent tasks modify the same file; sequential required.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:33:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1391-heartbeat-models-strategy.md"
+      "completed_at": "2026-05-31T23:35:49+00:00",
+      "file": "sdd/tasks/completed/TASK-1391-heartbeat-models-strategy.md"
     },
     {
       "id": "TASK-1392",
