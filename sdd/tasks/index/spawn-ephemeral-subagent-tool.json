@@ -32,7 +32,7 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Depends on M1 ownership model; modifies the same BotManager methods M3 calls.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1388-botmanager-ownership-aware-methods.md"
+      "completed_at": "2026-05-31T23:45:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1388-botmanager-ownership-aware-methods.md"
     },
     {
       "id": "TASK-1389",
