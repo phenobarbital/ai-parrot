@@ -193,6 +193,7 @@ class IntegrationBotManager:
         human_channel = TelegramHumanChannel(
             bot=bot,
             redis=self._human_redis,
+            voice_config=config.voice_config,
         )
         human_manager.register_channel(name, human_channel)
         await human_channel.register_response_handler(

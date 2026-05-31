@@ -21,9 +21,12 @@ Usage:
     channel = TelegramHumanChannel(bot=bot, redis=redis_client)
     await channel.register_response_handler(manager.receive_response)
 """
+import asyncio
 import json
 import secrets
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 from navconfig.logging import logging
@@ -41,6 +44,7 @@ try:
     from aiogram.filters import Command
     from aiogram.types import (
         CallbackQuery,
+        ContentType,
         InlineKeyboardMarkup,
         InlineKeyboardButton,
         Message,
@@ -81,6 +85,7 @@ class TelegramHumanChannel(HumanChannel):
         redis: Any,
         token_ttl: int = 86400,
         parse_mode: str = "Markdown",
+        voice_config: Optional[Any] = None,  # VoiceTranscriberConfig | None
     ) -> None:
         if not HAS_AIOGRAM:
             raise ImportError(
@@ -92,6 +97,7 @@ class TelegramHumanChannel(HumanChannel):
         self.redis = redis
         self.token_ttl = token_ttl
         self.parse_mode = parse_mode
+        self.voice_config = voice_config
         self.logger = logging.getLogger("parrot.human.channels.telegram")
 
         # Router for handling callback queries
@@ -111,6 +117,9 @@ class TelegramHumanChannel(HumanChannel):
         # abort them. Callback interactions live in Redis tokens; this is the
         # in-memory index to reverse-lookup them by chat.
         self._pending_by_chat: Dict[int, Set[str]] = {}
+
+        # Lazy-initialized voice transcriber (shared VoiceTranscriber instance)
+        self._transcriber: Optional[Any] = None
 
         # Register handlers
         self._register_handlers()
@@ -154,6 +163,19 @@ class TelegramHumanChannel(HumanChannel):
             self._handle_text_reply,
             F.chat.type == "private",
             F.text,
+            self._awaiting_text_filter,
+        )
+
+        # Voice / audio replies during HITL free-text interactions.
+        # Registered AFTER the text handler so F.text wins when present.
+        # When the user sends a voice note while we're awaiting a free-text
+        # response, transcribe it here and route to the same finalization
+        # logic — rather than letting it fall through to the wrapper and
+        # being treated as a fresh agent query.
+        self.router.message.register(
+            self._handle_voice_reply,
+            F.chat.type == "private",
+            F.content_type.in_({ContentType.VOICE, ContentType.AUDIO}),
             self._awaiting_text_filter,
         )
 
@@ -832,16 +854,25 @@ class TelegramHumanChannel(HumanChannel):
         Only processes messages from chats where we're actively
         waiting for a text response.
         """
+        if message.chat.id not in self._awaiting_text:
+            return  # Not waiting for input from this chat — ignore
+
+        await self._finalize_text_response(message, message.text.strip())
+
+    async def _finalize_text_response(self, message: Message, text: str) -> None:
+        """Complete a HITL free-text interaction with the provided text.
+
+        Shared by ``_handle_text_reply`` (typed input) and
+        ``_handle_voice_reply`` (transcribed voice input).
+        """
         chat_id = message.chat.id
 
         if chat_id not in self._awaiting_text:
-            return  # Not waiting for input from this chat — ignore
+            return
 
         interaction_id = self._awaiting_text.pop(chat_id)
         telegram_user_id = str(message.from_user.id)
 
-        # Check if this is a form response (key: value format)
-        text = message.text.strip()
         interaction_meta = await self._get_interaction_meta(interaction_id)
 
         value: Any = text
@@ -872,6 +903,110 @@ class TelegramHumanChannel(HumanChannel):
 
         if self._response_callback:
             await self._response_callback(response)
+
+    def _get_transcriber(self) -> Any:
+        """Lazily create the VoiceTranscriber from the configured voice_config."""
+        if self._transcriber is None:
+            from ...voice.transcriber import VoiceTranscriber
+
+            self._transcriber = VoiceTranscriber(self.voice_config)
+        return self._transcriber
+
+    async def _handle_voice_reply(self, message: Message) -> None:
+        """Handle voice/audio messages during HITL free-text interactions.
+
+        When voice_config is set: downloads, transcribes, then routes to
+        ``_finalize_text_response`` exactly like a typed reply.
+        When voice_config is absent: informs the user to type instead.
+        """
+        chat_id = message.chat.id
+
+        if chat_id not in self._awaiting_text:
+            return
+
+        if not self.voice_config:
+            await message.reply(
+                "🎙 Voice notes aren't supported for this interaction. "
+                "Please type your response as text."
+            )
+            return
+
+        # Extract file_id and choose a temporary file suffix
+        if message.voice:
+            file_id = message.voice.file_id
+            suffix = ".ogg"
+        elif message.audio:
+            file_id = message.audio.file_id
+            mt = (message.audio.mime_type or "").lower()
+            if "ogg" in mt:
+                suffix = ".ogg"
+            elif "wav" in mt:
+                suffix = ".wav"
+            elif "m4a" in mt or "mp4" in mt:
+                suffix = ".m4a"
+            else:
+                suffix = ".mp3"
+        else:
+            return
+
+        tmp_path: Optional[Path] = None
+        try:
+            file = await self.bot.get_file(file_id)
+            if file.file_path:
+                tg_ext = Path(file.file_path).suffix
+                if tg_ext:
+                    suffix = tg_ext
+
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=suffix, prefix="hitl_voice_", delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+
+            transcriber = self._get_transcriber()
+            result = await transcriber.transcribe_file(
+                tmp_path, language=self.voice_config.language
+            )
+
+            if not result.text.strip():
+                await message.reply(
+                    "❓ Sorry, I couldn't understand the voice note. "
+                    "Please try again or type your response."
+                )
+                return
+
+            if self.voice_config.show_transcription:
+                await message.answer(
+                    f"🎙 _{result.text}_", parse_mode="Markdown"
+                )
+
+            await self._finalize_text_response(message, result.text.strip())
+
+        except Exception as exc:
+            self.logger.error(
+                "Error transcribing HITL voice reply (chat %d): %s",
+                chat_id,
+                exc,
+                exc_info=True,
+            )
+            await message.reply(
+                "❌ Couldn't process the voice note. Please type your response."
+            )
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError as exc:
+                    self.logger.debug(
+                        "Could not delete HITL temp file %s: %s", tmp_path, exc
+                    )
+
+    async def close(self) -> None:
+        """Release transcriber resources (call on bot shutdown)."""
+        if self._transcriber is not None:
+            await self._transcriber.close()
+            self._transcriber = None
 
     # ─── User-initiated cancellation ──────────────────────────────────────
 
