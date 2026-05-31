@@ -114,7 +114,6 @@ class TestHeartbeatManagerRegistration:
 
 
 class TestHeartbeatManagerLifecycle:
-    @pytest.mark.asyncio
     async def test_start_stop_lifecycle(self, fake_orchestrator, always_act_strategy):
         """start() spawns tasks, stop() cancels them cleanly, running becomes False."""
         mgr = HeartbeatManager(fake_orchestrator, strategy=always_act_strategy)
@@ -130,7 +129,6 @@ class TestHeartbeatManagerLifecycle:
         assert state.tick_count > 0
         assert state.action_count > 0
 
-    @pytest.mark.asyncio
     async def test_stop_cancels_cleanly(self, fake_orchestrator, always_act_strategy):
         """stop() does not raise and leaves running=False."""
         mgr = HeartbeatManager(fake_orchestrator, strategy=always_act_strategy)
@@ -141,7 +139,6 @@ class TestHeartbeatManagerLifecycle:
         await mgr.stop()
         assert mgr.get_state("x").running is False
 
-    @pytest.mark.asyncio
     async def test_stop_without_start_is_safe(self, fake_orchestrator):
         """stop() on a manager that was never started does not raise."""
         mgr = HeartbeatManager(fake_orchestrator)
@@ -149,7 +146,6 @@ class TestHeartbeatManagerLifecycle:
         # Should not raise even if no tasks were spawned
         await mgr.stop()
 
-    @pytest.mark.asyncio
     async def test_disabled_agent_not_started(self, fake_orchestrator, always_act_strategy):
         """Agents with enabled=False are not given a loop task."""
         mgr = HeartbeatManager(fake_orchestrator, strategy=always_act_strategy)
@@ -169,7 +165,6 @@ class TestHeartbeatManagerLifecycle:
 
 
 class TestHeartbeatManagerLoop:
-    @pytest.mark.asyncio
     async def test_loop_ticks_and_acts(self, fake_orchestrator, always_act_strategy):
         """With a fast interval and always-act strategy, ticks and actions accumulate."""
         mgr = HeartbeatManager(fake_orchestrator, strategy=always_act_strategy)
@@ -184,7 +179,6 @@ class TestHeartbeatManagerLoop:
         assert state.last_tick_at is not None
         assert state.last_action_at is not None
 
-    @pytest.mark.asyncio
     async def test_loop_no_act_when_strategy_refuses(
         self, fake_orchestrator, never_act_strategy
     ):
@@ -199,7 +193,6 @@ class TestHeartbeatManagerLoop:
         assert state.action_count == 0
         fake_orchestrator.execute_agent.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_consecutive_errors_reset_on_success(
         self, fake_orchestrator, always_act_strategy
     ):
@@ -217,7 +210,6 @@ class TestHeartbeatManagerLoop:
 
         await mgr.stop()
 
-    @pytest.mark.asyncio
     async def test_jitter_does_not_break_loop(self, fake_orchestrator, always_act_strategy):
         """Loop works correctly with jitter enabled."""
         mgr = HeartbeatManager(fake_orchestrator, strategy=always_act_strategy)
@@ -235,7 +227,6 @@ class TestHeartbeatManagerLoop:
 
 
 class TestHeartbeatManagerSkipWhenBusy:
-    @pytest.mark.asyncio
     async def test_loop_skips_when_busy(self, fake_orchestrator):
         """If a tick is still running, the next tick skips (no overlap)."""
         slow_strategy = MagicMock()
@@ -268,7 +259,6 @@ class TestHeartbeatManagerSkipWhenBusy:
 
 
 class TestHeartbeatManagerBackoff:
-    @pytest.mark.asyncio
     async def test_backoff_on_consecutive_errors(
         self, fake_orchestrator, always_act_strategy
     ):
@@ -288,7 +278,6 @@ class TestHeartbeatManagerBackoff:
         assert state.last_error is not None
         assert "boom" in state.last_error
 
-    @pytest.mark.asyncio
     async def test_loop_continues_after_single_error(
         self, fake_orchestrator, always_act_strategy
     ):
@@ -317,7 +306,6 @@ class TestHeartbeatManagerBackoff:
         assert state.action_count >= 1
         assert state.consecutive_errors == 0  # reset after success
 
-    @pytest.mark.asyncio
     async def test_paused_agent_stops_acting(
         self, fake_orchestrator, always_act_strategy
     ):

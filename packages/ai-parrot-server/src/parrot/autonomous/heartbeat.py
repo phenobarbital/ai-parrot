@@ -18,7 +18,7 @@ Usage example (manual wiring)::
     )
 
     async def has_work():
-        return await queue.qsize() > 0
+        return queue.qsize() > 0
 
     strategy = DefaultHeartbeatStrategy(has_pending_work=has_work)
     manager = HeartbeatManager(orchestrator, strategy=strategy)
@@ -45,12 +45,20 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from parrot.autonomous.orchestrator import AutonomousOrchestrator
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "HeartbeatConfig",
+    "HeartbeatState",
+    "HeartbeatStrategy",
+    "DefaultHeartbeatStrategy",
+    "HeartbeatManager",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -73,7 +81,11 @@ class HeartbeatConfig(BaseModel):
             which the agent's loop is paused automatically.
         mission: Default prompt seed forwarded to the act step. May be
             ``None`` if the strategy builds its own prompt.
+        execution_timeout: Seconds to wait for execute_agent before timing
+            out. Must be > 0.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     agent_name: str
     interval: float = Field(60.0, gt=0, description="Seconds between ticks.")
@@ -84,6 +96,9 @@ class HeartbeatConfig(BaseModel):
     max_consecutive_errors: int = Field(5, ge=1)
     mission: Optional[str] = Field(
         default=None, description="Default prompt seed for act step."
+    )
+    execution_timeout: float = Field(
+        30.0, gt=0, description="Seconds to wait for execute_agent before timing out."
     )
 
 
@@ -203,6 +218,7 @@ class DefaultHeartbeatStrategy(HeartbeatStrategy):
         has_pending_work: Optional[_HasPendingWork] = None,
         act_every_n_ticks: int = 10,
     ) -> None:
+        self.logger = logging.getLogger(__name__)
         self._has_pending_work = has_pending_work
         self._act_every_n_ticks = act_every_n_ticks
 
@@ -236,7 +252,7 @@ class DefaultHeartbeatStrategy(HeartbeatStrategy):
                 if await self._has_pending_work():
                     return True
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
+                self.logger.warning(
                     "DefaultHeartbeatStrategy.has_pending_work raised: %s", exc
                 )
 
@@ -279,8 +295,8 @@ class HeartbeatManager:
 
     Observability:
         :meth:`get_state` / :meth:`get_all_states` return in-memory state
-        for each agent. This state is the base for ``/health`` and the
-        ledger (feature #4).
+        snapshots for each agent. This state is the base for ``/health`` and
+        the ledger (feature #4).
 
     Args:
         orchestrator: The :class:`~parrot.autonomous.orchestrator.
@@ -313,8 +329,10 @@ class HeartbeatManager:
     def register(self, cfg: HeartbeatConfig) -> None:
         """Register an agent for heartbeat monitoring.
 
-        Must be called **before** :meth:`start`. Calling ``register`` on
-        an already-registered agent replaces the config and resets state.
+        Calling ``register`` on an already-registered agent replaces the
+        config and resets state. If the manager is already running and the
+        agent is enabled, a heartbeat loop task is spawned immediately so
+        dynamically-added agents do not require a restart.
 
         Args:
             cfg: The agent's heartbeat configuration.
@@ -322,6 +340,20 @@ class HeartbeatManager:
         self._configs[cfg.agent_name] = cfg
         self._states[cfg.agent_name] = HeartbeatState(agent_name=cfg.agent_name)
         self._locks[cfg.agent_name] = asyncio.Lock()
+
+        # If already running, spawn a task for the newly registered agent.
+        if self._running and cfg.enabled:
+            name = cfg.agent_name
+            if name not in self._tasks or self._tasks[name].done():
+                task = asyncio.create_task(
+                    self._heartbeat_loop(cfg), name=f"heartbeat:{name}"
+                )
+                self._tasks[name] = task
+                self.logger.info(
+                    "Heartbeat started (dynamic register) for agent %s (interval=%.1fs).",
+                    name,
+                    cfg.interval,
+                )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -366,6 +398,9 @@ class HeartbeatManager:
                 ):
                     self.logger.warning("Heartbeat task ended with error: %s", result)
 
+        # Clear task references so a subsequent start() is clean.
+        self._tasks = {}
+
         # Mark all agents as not running
         for state in self._states.values():
             state.running = False
@@ -389,13 +424,16 @@ class HeartbeatManager:
         return self._states.get(agent_name)
 
     def get_all_states(self) -> list[HeartbeatState]:
-        """Return a list of states for all registered agents.
+        """Return a list of state snapshots for all registered agents.
+
+        Returns a copy of each state so callers cannot accidentally mutate
+        internal manager state.
 
         Returns:
-            List of :class:`HeartbeatState` instances (one per registered
+            List of :class:`HeartbeatState` snapshots (one per registered
             agent).
         """
-        return list(self._states.values())
+        return [state.model_copy() for state in self._states.values()]
 
     # ------------------------------------------------------------------
     # Inner loop (mirrors _presence_loop pattern from transport.py:296)
@@ -417,6 +455,11 @@ class HeartbeatManager:
         """
         state = self._states[cfg.agent_name]
         lock = self._locks[cfg.agent_name]
+
+        # Reset error counters at the start of every (re)start so the agent
+        # begins fresh regardless of prior state.
+        state.consecutive_errors = 0
+        state.last_error = None
         state.running = True
 
         while self._running:
@@ -442,9 +485,32 @@ class HeartbeatManager:
 
                     if await self._strategy.should_act(ctx):
                         prompt = await self._strategy.build_prompt(ctx)
-                        result = await self._orchestrator.execute_agent(
-                            cfg.agent_name, prompt
-                        )
+                        try:
+                            result = await asyncio.wait_for(
+                                self._orchestrator.execute_agent(cfg.agent_name, prompt),
+                                timeout=cfg.execution_timeout,
+                            )
+                        except asyncio.TimeoutError as exc:
+                            state.consecutive_errors += 1
+                            state.last_error = str(exc) or "execution_timeout"
+                            state.tick_count += 1
+                            state.last_tick_at = datetime.now(tz=timezone.utc)
+                            self.logger.warning(
+                                "Heartbeat execute_agent timed out for %s after %.1fs (consecutive=%d).",
+                                cfg.agent_name,
+                                cfg.execution_timeout,
+                                state.consecutive_errors,
+                            )
+                            if state.consecutive_errors >= cfg.max_consecutive_errors:
+                                self.logger.error(
+                                    "Heartbeat paused for %s after %d consecutive errors.",
+                                    cfg.agent_name,
+                                    state.consecutive_errors,
+                                )
+                                state.running = False
+                                return
+                            continue
+
                         state.action_count += 1
                         state.last_action_at = datetime.now(tz=timezone.utc)
                         state.consecutive_errors = 0

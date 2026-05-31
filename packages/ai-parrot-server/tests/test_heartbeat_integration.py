@@ -40,7 +40,6 @@ def fake_orchestrator():
 
 
 class TestHeartbeatIntegration:
-    @pytest.mark.asyncio
     async def test_heartbeat_drives_orchestrator(self, fake_orchestrator):
         """Real HeartbeatManager + real DefaultHeartbeatStrategy
         drives the orchestrator and records state correctly."""
@@ -67,7 +66,6 @@ class TestHeartbeatIntegration:
         assert state.running is False
         assert fake_orchestrator.execute_agent.called
 
-    @pytest.mark.asyncio
     async def test_mission_forwarded_to_execute_agent(self, fake_orchestrator):
         """The mission string is forwarded as the 'task' argument to execute_agent."""
 
@@ -94,7 +92,6 @@ class TestHeartbeatIntegration:
         assert first_call_args.args[0] == "mission-agent"
         assert first_call_args.args[1] == mission
 
-    @pytest.mark.asyncio
     async def test_no_work_no_action(self, fake_orchestrator):
         """When has_pending_work returns False, execute_agent is not called."""
 
@@ -121,7 +118,6 @@ class TestHeartbeatIntegration:
         assert state.action_count == 0
         fake_orchestrator.execute_agent.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_multiple_agents_independent(self, fake_orchestrator):
         """Multiple agents run independently with separate state."""
 
@@ -148,7 +144,6 @@ class TestHeartbeatIntegration:
         assert alpha.agent_name == "alpha"
         assert beta.agent_name == "beta"
 
-    @pytest.mark.asyncio
     async def test_fallback_n_ticks_triggers_action(self, fake_orchestrator):
         """Without has_pending_work, the fallback N-ticks cadence triggers actions."""
         # Use act_every_n_ticks=2 so fallback fires often with fast interval

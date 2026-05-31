@@ -100,7 +100,6 @@ class TestHeartbeatState:
 class TestDefaultHeartbeatStrategy:
     """Tests for DefaultHeartbeatStrategy."""
 
-    @pytest.mark.asyncio
     async def test_build_context_returns_dict_with_tick_count_and_config(self):
         """build_context returns a dict with 'tick_count' and 'config' keys."""
         strategy = DefaultHeartbeatStrategy()
@@ -110,7 +109,6 @@ class TestDefaultHeartbeatStrategy:
         assert "config" in ctx
         assert ctx["config"] is cfg
 
-    @pytest.mark.asyncio
     async def test_should_act_with_pending_work(self):
         """should_act returns True when has_pending_work() returns True."""
 
@@ -122,7 +120,6 @@ class TestDefaultHeartbeatStrategy:
         ctx = await strategy.build_context(cfg)
         assert await strategy.should_act(ctx) is True
 
-    @pytest.mark.asyncio
     async def test_should_not_act_without_pending_work_and_not_on_n_tick(self):
         """should_act returns False when no pending work and tick_count not on N boundary."""
 
@@ -135,7 +132,6 @@ class TestDefaultHeartbeatStrategy:
         ctx["tick_count"] = 3  # not on N boundary (default N=10)
         assert await strategy.should_act(ctx) is False
 
-    @pytest.mark.asyncio
     async def test_fallback_every_n_ticks(self):
         """Fallback cadence fires when tick_count is a positive multiple of N."""
         strategy = DefaultHeartbeatStrategy(act_every_n_ticks=5)
@@ -144,7 +140,6 @@ class TestDefaultHeartbeatStrategy:
         ctx["tick_count"] = 10  # multiple of 5
         assert await strategy.should_act(ctx) is True
 
-    @pytest.mark.asyncio
     async def test_fallback_tick_zero_does_not_act(self):
         """tick_count=0 should not trigger the fallback (guard: tick_count > 0)."""
         strategy = DefaultHeartbeatStrategy(act_every_n_ticks=1)
@@ -154,7 +149,6 @@ class TestDefaultHeartbeatStrategy:
         # With no has_pending_work and tick=0, should not act
         assert await strategy.should_act(ctx) is False
 
-    @pytest.mark.asyncio
     async def test_fallback_fires_on_exact_n(self):
         """Fallback fires exactly on multiples of N."""
         strategy = DefaultHeartbeatStrategy(act_every_n_ticks=3)
@@ -170,7 +164,6 @@ class TestDefaultHeartbeatStrategy:
         ctx["tick_count"] = 4  # not a multiple
         assert await strategy.should_act(ctx) is False
 
-    @pytest.mark.asyncio
     async def test_pending_work_takes_priority_over_fallback(self):
         """has_pending_work=True triggers even when not on N boundary."""
 
@@ -185,7 +178,6 @@ class TestDefaultHeartbeatStrategy:
         ctx["tick_count"] = 1  # not on N boundary
         assert await strategy.should_act(ctx) is True
 
-    @pytest.mark.asyncio
     async def test_build_prompt_returns_mission_from_config(self):
         """build_prompt returns cfg.mission when set."""
         strategy = DefaultHeartbeatStrategy()
@@ -194,7 +186,6 @@ class TestDefaultHeartbeatStrategy:
         prompt = await strategy.build_prompt(ctx)
         assert prompt == "check the queue"
 
-    @pytest.mark.asyncio
     async def test_build_prompt_returns_default_when_no_mission(self):
         """build_prompt returns a sensible fallback when mission is None."""
         strategy = DefaultHeartbeatStrategy()
@@ -204,7 +195,6 @@ class TestDefaultHeartbeatStrategy:
         assert isinstance(prompt, str)
         assert len(prompt) > 0
 
-    @pytest.mark.asyncio
     async def test_has_pending_work_exception_falls_through_to_n_ticks(self):
         """If has_pending_work raises, the fallback N-ticks check still applies."""
 
@@ -219,3 +209,11 @@ class TestDefaultHeartbeatStrategy:
         ctx["tick_count"] = 5  # on N boundary — fallback should trigger
         # The exception in has_pending_work is swallowed; fallback fires.
         assert await strategy.should_act(ctx) is True
+
+    async def test_default_strategy_idle_tick_no_action(self):
+        """should_act returns False when has_pending_work=None, tick_count not on N boundary."""
+        strategy = DefaultHeartbeatStrategy(act_every_n_ticks=10)
+        cfg = HeartbeatConfig(agent_name="a")
+        ctx = await strategy.build_context(cfg)
+        ctx["tick_count"] = 3  # not a multiple of 10, and no has_pending_work
+        assert await strategy.should_act(ctx) is False
