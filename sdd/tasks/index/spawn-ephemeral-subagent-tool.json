@@ -72,7 +72,7 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Exports the module created in M3 — strictly sequential.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1390-spawn-tool-export-registration.md"
+      "completed_at": "2026-05-31T23:57:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1390-spawn-tool-export-registration.md"
     }
   ]
 }
