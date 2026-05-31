@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-208
 **Date**: 2026-05-31
 **Author**: jesuslarag (via Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 ---
@@ -319,15 +319,15 @@ class BaseBot:
 
 # packages/ai-parrot-server/src/parrot/manager/manager.py
 class BotManager:                                        # line 95
-    def _ephemeral_registry(self) -> EphemeralRegistry   # line 879 (lazy singleton)
+    def _ephemeral_registry(self)                        # line 879 (lazy singleton; no return annotation — returns EphemeralRegistry)
     async def create_ephemeral_user_bot(self, user_id: int,
         config: Dict[str, Any], uploaded_paths: List[dict], *,
-        ttl_seconds: int = 86400) -> EphemeralAgentStatus  # line 888
+        ttl_seconds: int = 86400)                        # line 888 (no return annotation — returns EphemeralAgentStatus)
     async def promote_user_bot(self, ...)                # line 1042  (NOT used by this feature)
-    def get_ephemeral_status(self, chatbot_id: str, user_id: int) -> Optional[EphemeralAgentStatus]  # line 1147 (SYNC)
+    def get_ephemeral_status(self, chatbot_id: str, user_id: int)  # line 1147 (SYNC; no return annotation — returns Optional[EphemeralAgentStatus])
     async def discard_ephemeral_user_bot(self, chatbot_id: str, user_id: int) -> bool  # line 1163
     def get_bots(self) -> Dict[str, AbstractBot]         # line 857
-    def add_agent(self, bot) -> None                     # used at manager.py:965
+    def add_agent(self, agent: AbstractBot) -> None       # line 866 (called at manager.py:965)
 
 # packages/ai-parrot-server/src/parrot/manager/ephemeral.py
 EphemeralPhase = Literal["creating", "warming", "ready", "error"]   # line 43
