@@ -21,7 +21,6 @@ Usage:
     channel = TelegramHumanChannel(bot=bot, redis=redis_client)
     await channel.register_response_handler(manager.receive_response)
 """
-import asyncio
 import json
 import secrets
 import tempfile
@@ -924,19 +923,21 @@ class TelegramHumanChannel(HumanChannel):
         if chat_id not in self._awaiting_text:
             return
 
-        if not self.voice_config:
+        if not self.voice_config or not self.voice_config.enabled:
             await message.reply(
                 "🎙 Voice notes aren't supported for this interaction. "
                 "Please type your response as text."
             )
             return
 
-        # Extract file_id and choose a temporary file suffix
+        # Extract file_id, duration, and choose a temporary file suffix
         if message.voice:
             file_id = message.voice.file_id
+            duration = message.voice.duration or 0
             suffix = ".ogg"
         elif message.audio:
             file_id = message.audio.file_id
+            duration = message.audio.duration or 0
             mt = (message.audio.mime_type or "").lower()
             if "ogg" in mt:
                 suffix = ".ogg"
@@ -949,13 +950,25 @@ class TelegramHumanChannel(HumanChannel):
         else:
             return
 
+        if duration > self.voice_config.max_audio_duration_seconds:
+            await message.reply(
+                f"⏱ Audio too long ({duration}s). "
+                f"Maximum is {self.voice_config.max_audio_duration_seconds}s."
+            )
+            return
+
         tmp_path: Optional[Path] = None
         try:
             file = await self.bot.get_file(file_id)
-            if file.file_path:
-                tg_ext = Path(file.file_path).suffix
-                if tg_ext:
-                    suffix = tg_ext
+            if not file.file_path:
+                await message.reply(
+                    "⚠️ Couldn't download the voice note. "
+                    "Please try a shorter recording or type your response."
+                )
+                return
+            tg_ext = Path(file.file_path).suffix
+            if tg_ext:
+                suffix = tg_ext
 
             tmp = tempfile.NamedTemporaryFile(
                 suffix=suffix, prefix="hitl_voice_", delete=False
@@ -977,8 +990,9 @@ class TelegramHumanChannel(HumanChannel):
                 return
 
             if self.voice_config.show_transcription:
+                safe = result.text.replace("_", "\\_").replace("*", "\\*")
                 await message.answer(
-                    f"🎙 _{result.text}_", parse_mode="Markdown"
+                    f"🎙 _{safe}_", parse_mode="Markdown"
                 )
 
             await self._finalize_text_response(message, result.text.strip())

@@ -5,8 +5,12 @@ Covers:
 - Voice note during HITL free-text: transcribed and routed correctly
 - Audio file during HITL free-text: transcribed and routed correctly
 - voice_config=None during HITL: user told to type instead
+- voice_config.enabled=False during HITL: user told to type instead
+- Duration exceeds max_audio_duration_seconds: rejected before download
+- file.file_path is None: user told to try again
 - Empty transcription: user prompted to retry
 - show_transcription=True: italic preview sent before finalizing
+- Markdown chars in transcription: escaped in preview
 - Transcription error: graceful error reply, temp file cleaned up
 - Voice note NOT during HITL (no awaiting state): handler returns immediately
 - _finalize_text_response: creates correct HumanResponse and invokes callback
@@ -153,6 +157,7 @@ class TestHITLVoiceReply:
 
         interaction_id = "iid-001"
         channel._awaiting_text[42] = interaction_id
+        channel.redis.get = AsyncMock(return_value=None)
 
         response_cb = AsyncMock()
         channel._response_callback = response_cb
@@ -215,6 +220,58 @@ class TestHITLVoiceReply:
         assert "type" in reply_text.lower() or "text" in reply_text.lower()
 
     @pytest.mark.asyncio
+    async def test_voice_reply_disabled_config_tells_user_to_type(self):
+        """When voice_config.enabled=False, user is instructed to type."""
+        voice_config = _make_voice_config(enabled=False)
+        channel, bot = _make_channel(voice_config=voice_config)
+        channel._awaiting_text[42] = "iid-020"
+
+        message = _make_voice_message(chat_id=42)
+        await channel._handle_voice_reply(message)
+
+        bot.get_file.assert_not_called()
+        message.reply.assert_awaited_once()
+        reply_text = message.reply.call_args[0][0]
+        assert "type" in reply_text.lower() or "text" in reply_text.lower()
+
+    @pytest.mark.asyncio
+    async def test_voice_reply_duration_exceeds_limit_rejected(self):
+        """Audio longer than max_audio_duration_seconds is rejected before download."""
+        voice_config = _make_voice_config(max_audio_duration_seconds=30)
+        channel, bot = _make_channel(voice_config=voice_config)
+        channel._awaiting_text[42] = "iid-021"
+
+        message = _make_voice_message(chat_id=42, duration=45)
+        await channel._handle_voice_reply(message)
+
+        bot.get_file.assert_not_called()
+        message.reply.assert_awaited_once()
+        reply_text = message.reply.call_args[0][0]
+        assert "45s" in reply_text
+        assert "30s" in reply_text
+        # HITL state preserved so user can retry with shorter audio
+        assert 42 in channel._awaiting_text
+
+    @pytest.mark.asyncio
+    async def test_voice_reply_null_file_path_tells_user(self):
+        """When Telegram returns file_path=None, user gets a clear message."""
+        voice_config = _make_voice_config()
+        channel, bot = _make_channel(voice_config=voice_config)
+        channel._awaiting_text[42] = "iid-022"
+
+        message = _make_voice_message(chat_id=42)
+        file_info = _make_file_info(file_path=None)
+        bot.get_file.return_value = file_info
+
+        await channel._handle_voice_reply(message)
+
+        message.reply.assert_awaited_once()
+        reply_text = message.reply.call_args[0][0]
+        assert "download" in reply_text.lower() or "shorter" in reply_text.lower()
+        # HITL state preserved
+        assert 42 in channel._awaiting_text
+
+    @pytest.mark.asyncio
     async def test_voice_reply_empty_transcription_prompts_retry(self):
         """Empty transcription → user is asked to retry or type."""
         voice_config = _make_voice_config()
@@ -247,6 +304,7 @@ class TestHITLVoiceReply:
         channel._awaiting_text[42] = "iid-004"
         channel._pending_by_chat[42] = {"iid-004"}
         channel._response_callback = AsyncMock()
+        channel.redis.get = AsyncMock(return_value=None)
 
         message = _make_voice_message(chat_id=42)
         bot.get_file.return_value = _make_file_info()
@@ -262,6 +320,31 @@ class TestHITLVoiceReply:
         message.answer.assert_awaited_once()
         preview = message.answer.call_args[0][0]
         assert "Please proceed" in preview
+
+    @pytest.mark.asyncio
+    async def test_voice_reply_show_transcription_escapes_markdown(self):
+        """Markdown special chars in transcription are escaped in the preview."""
+        voice_config = _make_voice_config(show_transcription=True)
+        channel, bot = _make_channel(voice_config=voice_config)
+        channel._awaiting_text[42] = "iid-030"
+        channel._pending_by_chat[42] = {"iid-030"}
+        channel._response_callback = AsyncMock()
+        channel.redis.get = AsyncMock(return_value=None)
+
+        message = _make_voice_message(chat_id=42)
+        bot.get_file.return_value = _make_file_info()
+
+        transcription = _make_transcription("under_score and *bold*")
+        mock_transcriber = AsyncMock()
+        mock_transcriber.transcribe_file = AsyncMock(return_value=transcription)
+
+        with patch.object(channel, "_get_transcriber", return_value=mock_transcriber):
+            await channel._handle_voice_reply(message)
+
+        message.answer.assert_awaited_once()
+        preview = message.answer.call_args[0][0]
+        assert "\\_" in preview
+        assert "\\*" in preview
 
     @pytest.mark.asyncio
     async def test_voice_reply_error_sends_error_message(self):
@@ -293,6 +376,7 @@ class TestHITLVoiceReply:
         channel._awaiting_text[42] = "iid-006"
         channel._pending_by_chat[42] = {"iid-006"}
         channel._response_callback = AsyncMock()
+        channel.redis.get = AsyncMock(return_value=None)
 
         message = _make_audio_message(chat_id=42, mime_type="audio/mpeg")
         bot.get_file.return_value = _make_file_info("audio/abc.mp3")
