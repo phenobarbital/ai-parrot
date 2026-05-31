@@ -1343,6 +1343,17 @@ class HumanInteractionManager:
                 future.cancel()
         self._pending_futures.clear()
 
+        # Close registered channels (releases per-channel resources like transcribers)
+        for name, channel in self.channels.items():
+            if hasattr(channel, "close"):
+                try:
+                    await channel.close()
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error closing channel %s: %s", name, exc
+                    )
+        self.channels.clear()
+
         # Close Redis
         if self._redis is not None:
             await self._redis.close()
