@@ -137,6 +137,7 @@ class NotificationMixin:
         report: Optional[Any] = None,
         template: Optional[str] = None,
         with_attachments: bool = True,
+        provider_options: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -150,6 +151,12 @@ class NotificationMixin:
             report: Optional AgentResponse or AIMessage containing output/files
             template: Email template name
             with_attachments: Whether to include file attachments
+            provider_options: Connection-level keyword arguments forwarded to
+                the provider's constructor (NOT the per-message ``send`` call).
+                For Telegram this carries ``{"bot_token": "..."}`` so the
+                notification is delivered through a specific bot rather than the
+                global ``TELEGRAM_BOT_TOKEN`` env default — essential when
+                several agents each run their own Telegram bot.
             **kwargs: Additional provider-specific arguments
 
         Returns:
@@ -222,7 +229,8 @@ class NotificationMixin:
             result = await self._send_with_provider(
                 provider=provider,
                 notify_args=notify_args,
-                files=files if with_attachments else None
+                files=files if with_attachments else None,
+                provider_options=provider_options,
             )
 
             self.logger.info(
@@ -468,7 +476,8 @@ class NotificationMixin:
         self,
         provider: NotificationProvider,
         notify_args: Dict[str, Any],
-        files: Optional[List[Path]] = None
+        files: Optional[List[Path]] = None,
+        provider_options: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Send notification using the specified provider with smart file handling.
@@ -477,6 +486,9 @@ class NotificationMixin:
             provider: Notification provider to use
             notify_args: Arguments for the notification
             files: Optional list of file attachments
+            provider_options: Connection-level kwargs for the provider
+                constructor (currently honoured by the Telegram provider to
+                select a specific bot token).
 
         Returns:
             Provider-specific result
@@ -488,7 +500,9 @@ class NotificationMixin:
             return await self._send_slack(notify_args)
 
         elif provider == NotificationProvider.TELEGRAM:
-            return await self._send_telegram(notify_args, files)
+            return await self._send_telegram(
+                notify_args, files, provider_options=provider_options
+            )
 
         elif provider == NotificationProvider.TEAMS:
             return await self._send_teams(notify_args, files)
@@ -519,15 +533,26 @@ class NotificationMixin:
     async def _send_telegram(
         self,
         notify_args: Dict[str, Any],
-        files: Optional[List[Path]] = None
+        files: Optional[List[Path]] = None,
+        provider_options: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Send Telegram notification with smart file handling.
 
         Images are sent as photos, documents as documents, videos as videos.
+
+        Args:
+            notify_args: Per-message arguments forwarded to the provider's
+                ``send``/``send_*`` calls (message text, recipient, …).
+            files: Optional attachments classified and sent by type.
+            provider_options: Connection-level kwargs for the ``Telegram``
+                constructor. When it carries ``bot_token`` the message is
+                delivered through that specific bot instead of the global
+                ``TELEGRAM_BOT_TOKEN`` env default — required so a scheduled
+                reminder reaches the user via the same bot that scheduled it.
         """
         from notify.providers.telegram import Telegram
-        telegram = Telegram()
+        telegram = Telegram(**(provider_options or {}))
         results = []
 
         async with telegram as conn:

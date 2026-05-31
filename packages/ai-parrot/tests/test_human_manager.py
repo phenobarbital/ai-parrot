@@ -1085,3 +1085,41 @@ class TestEscalateButtonInterception:
         )
         await mgr.receive_response(response)
         assert len(responses_store) == 1  # accumulated normally
+
+    async def test_escalate_on_approval_interaction_with_free_text_type(
+        self, mgr_with_redis
+    ):
+        """Teams sends the Escalate button as FREE_TEXT even on APPROVAL
+        interactions.  The sentinel must be checked before type validation
+        so the escalation is not silently discarded."""
+        from parrot.human.channels.base import ESCALATE_OPTION_KEY
+
+        mgr = mgr_with_redis
+        policy = _make_policy(_notify_tier(1))
+        interaction = HumanInteraction(
+            question="Approve expense?",
+            policy=policy,
+            interaction_type=InteractionType.APPROVAL,
+        )
+        mgr._redis.get = AsyncMock(
+            return_value=interaction.model_dump_json()
+        )
+
+        advanced = []
+
+        async def fake_advance(iid, cause):
+            advanced.append(cause)
+
+        mgr.advance_chain = fake_advance
+
+        response = HumanResponse(
+            interaction_id=interaction.interaction_id,
+            value=ESCALATE_OPTION_KEY,
+            respondent="approver@corp.com",
+            response_type=InteractionType.FREE_TEXT,
+        )
+        await mgr.receive_response(response)
+        assert advanced == ["reject"], (
+            "Escalate sentinel on APPROVAL interaction must reach "
+            "advance_chain even when response_type is FREE_TEXT"
+        )

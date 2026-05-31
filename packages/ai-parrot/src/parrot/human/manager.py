@@ -93,6 +93,20 @@ class HumanInteractionManager:
         self._on_event: Optional[Callable[[str, Any], Awaitable[None]]] = on_event
 
     # ------------------------------------------------------------------
+    # Public registration API
+    # ------------------------------------------------------------------
+
+    def register_policy(self, policy: EscalationPolicy) -> None:
+        """Register an escalation policy by its ``policy_id``."""
+        self._policies[policy.policy_id] = policy
+
+    def set_action(
+        self, action_type: EscalationActionType, action: Any
+    ) -> None:
+        """Set (or replace) the handler for *action_type*."""
+        self._actions[action_type] = action
+
+    # ------------------------------------------------------------------
     # Event emission helpers
     # ------------------------------------------------------------------
 
@@ -606,20 +620,11 @@ class HumanInteractionManager:
             )
             return
 
-        # Validate response type is compatible
-        if not self._validate_response(interaction, response):
-            self.logger.warning(
-                "Incompatible response for interaction %s: "
-                "expected %s, got %s",
-                response.interaction_id,
-                interaction.interaction_type,
-                response.response_type,
-            )
-            return
-
-        # --- Reject-button interception (TASK-1279) ---
-        # If the response value is the escalate sentinel key and the interaction
-        # is policy-bound, route to advance_chain immediately.
+        # --- Escalate-sentinel interception (TASK-1279) ---
+        # Check BEFORE type validation: the escalate sentinel may arrive as
+        # FREE_TEXT even when the interaction is APPROVAL (Teams sends the
+        # Escalate button as free_text).  It is a control signal, not a typed
+        # response, so it must bypass compatibility checks.
         if (
             interaction.policy is not None
             and isinstance(response.value, str)
@@ -631,6 +636,17 @@ class HumanInteractionManager:
                 response.interaction_id,
             )
             await self.advance_chain(response.interaction_id, cause="reject")
+            return
+
+        # Validate response type is compatible
+        if not self._validate_response(interaction, response):
+            self.logger.warning(
+                "Incompatible response for interaction %s: "
+                "expected %s, got %s",
+                response.interaction_id,
+                interaction.interaction_type,
+                response.response_type,
+            )
             return
 
         # --- Escalation-intent interception (TASK-1278) ---
@@ -1326,6 +1342,17 @@ class HumanInteractionManager:
             if not future.done():
                 future.cancel()
         self._pending_futures.clear()
+
+        # Close registered channels (releases per-channel resources like transcribers)
+        for name, channel in self.channels.items():
+            if hasattr(channel, "close"):
+                try:
+                    await channel.close()
+                except Exception as exc:
+                    self.logger.debug(
+                        "Error closing channel %s: %s", name, exc
+                    )
+        self.channels.clear()
 
         # Close Redis
         if self._redis is not None:
