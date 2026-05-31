@@ -137,12 +137,13 @@ if not any(isinstance(f, _ParrotToolsRedirector) for f in sys.meta_path):
 
 # ---------------------------------------------------------------------------
 # Core base classes (always available)
+# Imports are intentionally after the meta_path finder setup above.
 # ---------------------------------------------------------------------------
-from .abstract import AbstractTool, ToolResult
-from .toolkit import AbstractToolkit, ToolkitTool
-from .decorators import tool_schema, tool
-from .registry import ToolkitRegistry, get_supported_toolkits
-from .executors import (
+from .abstract import AbstractTool, ToolResult  # noqa: E402
+from .toolkit import AbstractToolkit, ToolkitTool  # noqa: E402
+from .decorators import tool_schema, tool  # noqa: E402
+from .registry import ToolkitRegistry, get_supported_toolkits  # noqa: E402
+from .executors import (  # noqa: E402
     AbstractToolExecutor,
     LocalToolExecutor,
     ToolExecutionEnvelope,
@@ -151,9 +152,10 @@ from .executors import (
 # ---------------------------------------------------------------------------
 # Core tools that stay in ai-parrot (lightweight deps only)
 # ---------------------------------------------------------------------------
-from .mcp_mixin import MCPToolManagerMixin
-from .json_tool import ToJsonTool
-from .agent import AgentTool
+from .mcp_mixin import MCPToolManagerMixin  # noqa: E402
+from .json_tool import ToJsonTool  # noqa: E402
+from .agent import AgentTool  # noqa: E402
+from .spawn import SpawnSubAgentTool, SpawnSubAgentInput  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Plugin importer setup (existing plugin system)
@@ -236,6 +238,8 @@ __all__ = (
     "MCPToolManagerMixin",
     "ToJsonTool",
     "AgentTool",
+    "SpawnSubAgentTool",
+    "SpawnSubAgentInput",
 )
 
 
