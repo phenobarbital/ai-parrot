@@ -28,7 +28,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import difflib
 
@@ -96,16 +96,11 @@ class RepositoryCredential(BaseModel):
 
     @model_validator(mode="after")
     def _validate_auth(self) -> "RepositoryCredential":  # pragma: no cover - pydantic hook
-        """Validate that App-mode entries carry the required fields.
-
-        Returns:
-            The validated model instance.
-
-        Raises:
-            ValueError: When auth_type='github_app' is missing required fields
-                or violates the private_key/private_key_path mutual exclusion.
-        """
-        if self.auth_type == "github_app":
+        """Validate auth fields for both pat and github_app modes."""
+        if self.auth_type == "pat":
+            if not self.github_token:
+                raise ValueError("auth_type='pat' requires github_token")
+        elif self.auth_type == "github_app":
             if not self.app_id:
                 raise ValueError("auth_type='github_app' requires app_id")
             if not self.installation_id:
@@ -721,23 +716,7 @@ def _load_pem(
     private_key: Optional[str],
     private_key_path: Optional[str],
 ) -> str:
-    """Resolve a GitHub App private key PEM from inline contents or a file path.
-
-    Exactly one of ``private_key`` / ``private_key_path`` must be supplied.
-    Env-injected PEMs sometimes carry literal ``\\n`` escape sequences, which
-    are normalised back to real newlines.
-
-    Args:
-        private_key: Inline PEM contents, or None.
-        private_key_path: Filesystem path to a PEM file, or None.
-
-    Returns:
-        The PEM contents as a string with real newlines.
-
-    Raises:
-        GitToolkitError: When neither or both inputs are supplied, or when the
-            file cannot be read.
-    """
+    """Resolve a PEM from inline contents or file path (exactly one must be set)."""
     if private_key and private_key_path:
         raise GitToolkitError(
             "auth_type='github_app': set EITHER private_key OR "
@@ -762,32 +741,7 @@ def _load_pem(
 
 
 class _RepoConnection:
-    """A resolved connection to one repository: slug, branch default + token.
-
-    One instance per registered alias (and one per ad-hoc ``owner/name`` slug
-    that is resolved at call time). Each connection owns its own
-    :class:`_GitHubAppTokenProvider` in App mode, so installation tokens are
-    minted and cached independently per repository. :meth:`token` re-resolves
-    the bearer token on every call — that is the "re-connect per operation"
-    semantic.
-
-    Args:
-        repository: Repository in ``owner/name`` format.
-        default_branch: Fallback branch for pull requests.
-        auth_type: ``'pat'`` or ``'github_app'``.
-        github_token: PAT (pat mode).
-        token_provider: Pre-built App token provider to reuse. When supplied in
-            App mode, it takes precedence over the ``app_id``/``private_key``
-            arguments (used so the ``"default"`` connection shares the toolkit's
-            already-built provider).
-        app_id: GitHub App ID (App mode, when no ``token_provider`` is given).
-        installation_id: Installation ID (App mode).
-        private_key: Inline PEM (App mode).
-        private_key_path: PEM file path (App mode).
-
-    Raises:
-        GitToolkitError: When App-mode configuration is incomplete/invalid.
-    """
+    """Resolved connection to one repository: slug, branch default, and token provider."""
 
     def __init__(
         self,
@@ -827,15 +781,7 @@ class _RepoConnection:
                 )
 
     def token(self) -> str:
-        """Return the bearer token for the next GitHub API call to this repo.
-
-        Returns:
-            A valid bearer token string.
-
-        Raises:
-            GitToolkitError: When no token is available (pat mode without a
-                token) or the App provider fails to mint one.
-        """
+        """Return the bearer token for the next API call to this repo."""
         if self.auth_type == "github_app":
             if self._token_provider is None:
                 raise GitToolkitError(
@@ -1037,7 +983,7 @@ class GitToolkit(AbstractToolkit):
         installation_id: Optional[int] = None,
         private_key: Optional[str] = None,
         private_key_path: Optional[str] = None,
-        repositories: Optional[Dict[str, "RepositoryCredential | dict"]] = None,
+        repositories: Optional[Dict[str, Union[RepositoryCredential, dict]]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the Git/GitHub toolkit.
@@ -1163,18 +1109,7 @@ class GitToolkit(AbstractToolkit):
     # Connection / bearer token resolution
     # ------------------------------------------------------------------
     def _default_token(self) -> str:
-        """Return the bearer token for the global/default credentials.
-
-        Independent of the repository registry, so it works even when no
-        ``default_repository`` is configured (only a bare token/App is set).
-
-        Returns:
-            A valid bearer token string.
-
-        Raises:
-            GitToolkitError: When no token is available (PAT mode with no token
-                set) or when the App token provider fails to mint a token.
-        """
+        """Return the bearer token for the global/default credentials."""
         if self.auth_type == "github_app":
             if self._token_provider is None:
                 raise GitToolkitError(
@@ -1189,28 +1124,7 @@ class GitToolkit(AbstractToolkit):
         return self.github_token
 
     def _resolve_connection(self, repository: Optional[str]) -> _RepoConnection:
-        """Resolve ``repository`` (None | alias | 'owner/name') to a connection.
-
-        Resolution order:
-        1. ``None`` -> the ``"default"`` registry entry (raises when absent).
-        2. A registered alias -> that connection.
-        3. A raw ``owner/name`` slug matching a registered connection's
-           ``.repository`` -> that connection (so callers can pass the slug of
-           a registered repo and still use its dedicated credentials).
-        4. An unknown ``owner/name`` slug -> an ad-hoc connection built from the
-           global/default credentials, cached under the slug for reuse.
-
-        Args:
-            repository: An alias, an ``owner/name`` slug, or None for default.
-
-        Returns:
-            The resolved :class:`_RepoConnection`.
-
-        Raises:
-            GitToolkitError: When no repository can be resolved (no default and
-                none supplied) or when no global credentials exist for an
-                ad-hoc slug.
-        """
+        """Map None / alias / ``owner/name`` slug to a ``_RepoConnection``."""
         if repository is None:
             conn = self._connections.get("default")
             if conn is None:
@@ -1220,21 +1134,24 @@ class GitToolkit(AbstractToolkit):
                 )
             return conn
 
-        # Alias hit.
+        # Fast path (no lock): alias hit from the pre-built registry.
         conn = self._connections.get(repository)
         if conn is not None:
             return conn
 
-        # Raw slug matching a registered connection's repository.
-        for existing in self._connections.values():
-            if existing.repository == repository:
-                return existing
-
-        # Unknown slug -> ad-hoc connection from global/default creds (cached).
+        # Slug scan + ad-hoc creation under lock (safe for free-threaded Python).
         with self._connections_lock:
+            # Re-check after acquiring lock.
             conn = self._connections.get(repository)
             if conn is not None:
                 return conn
+
+            # Raw slug matching a registered connection's repository field.
+            for existing in self._connections.values():
+                if existing.repository == repository:
+                    return existing
+
+            # Unknown slug -> ad-hoc connection from global/default creds.
             if self.auth_type == "github_app":
                 if self._token_provider is None:
                     raise GitToolkitError(
@@ -1257,19 +1174,7 @@ class GitToolkit(AbstractToolkit):
             return conn
 
     def _bearer_token(self) -> str:
-        """Return the bearer token for the next GitHub API call.
-
-        In ``pat`` mode, returns ``self.github_token`` and raises when it is
-        absent. In ``github_app`` mode, delegates to the token provider which
-        mints / caches installation access tokens transparently.
-
-        Returns:
-            A valid bearer token string.
-
-        Raises:
-            GitToolkitError: When no token is available (PAT mode with no token
-                set) or when the App token provider fails to mint a token.
-        """
+        """Legacy shim — delegates to ``_default_token``."""
         return self._default_token()
 
     # ------------------------------------------------------------------

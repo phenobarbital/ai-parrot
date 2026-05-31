@@ -1,17 +1,8 @@
-"""Unit tests for GitToolkit's multi-repository credentials registry.
-
-The registry lets a single ``GitToolkit`` reference several repositories by
-alias, each with its own credentials. Every tool call re-resolves the
-connection for the named repository ("re-connect per operation"), so the
-correct token is used per request.
-
-Network calls are mocked at ``requests.request`` so the tests stay hermetic;
-GitHub App token providers are patched via ``GithubIntegration``.
-"""
+"""Unit tests for GitToolkit's multi-repository credentials registry."""
 from __future__ import annotations
 
-import asyncio
 import datetime as _dt
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +13,7 @@ from parrot_tools.gittoolkit import (
     GitToolkit,
     GitToolkitError,
     RepositoryCredential,
+    _load_pem,
 )
 
 
@@ -72,7 +64,6 @@ class TestRegistryResolution:
         tk = GitToolkit(
             repositories={"a": {"repository": "org/a", "github_token": "ta"}}
         )
-        # Passing the raw slug of a registered repo uses its dedicated creds.
         assert tk._resolve_connection("org/a") is tk._resolve_connection("a")
         assert tk._resolve_connection("org/a").token() == "ta"
 
@@ -107,7 +98,8 @@ class TestRegistryResolution:
 # ---------------------------------------------------------------------------
 
 class TestPerRepoTokenSelection:
-    def test_authorization_header_per_alias(self):
+    @pytest.mark.asyncio
+    async def test_authorization_header_per_alias(self):
         tk = GitToolkit(
             repositories={
                 "a": {"repository": "org/a", "github_token": "ta"},
@@ -118,11 +110,11 @@ class TestPerRepoTokenSelection:
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(200, json_data={"number": 1}),
         ) as mocked:
-            asyncio.run(tk.get_pull_request(pr_number=1, repository="a"))
+            await tk.get_pull_request(pr_number=1, repository="a")
             assert "/repos/org/a/pulls/1" in mocked.call_args.args[1]
             assert mocked.call_args.kwargs["headers"]["Authorization"] == "Bearer ta"
 
-            asyncio.run(tk.get_pull_request(pr_number=2, repository="b"))
+            await tk.get_pull_request(pr_number=2, repository="b")
             assert "/repos/org/b/pulls/2" in mocked.call_args.args[1]
             assert mocked.call_args.kwargs["headers"]["Authorization"] == "Bearer tb"
 
@@ -171,7 +163,6 @@ class TestPerRepoDefaultBranch:
                 }
             }
         )
-        # base_branch omitted -> fall back to the registered repo's default.
         ctx = tk._prepare_github_context("a", None)
         assert ctx.repository == "org/a"
         assert ctx.base_branch == "develop"
@@ -196,16 +187,16 @@ class TestPerRepoDefaultBranch:
 # ---------------------------------------------------------------------------
 
 class TestAdHocFallback:
-    def test_unknown_slug_uses_global_token_and_caches(self):
+    @pytest.mark.asyncio
+    async def test_unknown_slug_uses_global_token_and_caches(self):
         tk = GitToolkit(default_repository="org/d", github_token="g")
         with patch(
             "parrot_tools.gittoolkit.requests.request",
             return_value=_make_response(200, json_data={"number": 1}),
         ) as mocked:
-            asyncio.run(tk.get_pull_request(pr_number=1, repository="x/y"))
+            await tk.get_pull_request(pr_number=1, repository="x/y")
         assert "/repos/x/y/pulls/1" in mocked.call_args.args[1]
         assert mocked.call_args.kwargs["headers"]["Authorization"] == "Bearer g"
-        # The ad-hoc connection is cached under the slug for reuse.
         assert "x/y" in tk._connections
         first = tk._resolve_connection("x/y")
         second = tk._resolve_connection("x/y")
@@ -224,7 +215,6 @@ class TestAdHocFallback:
                 private_key=PEM,
             )
         conn = tk._resolve_connection("x/y")
-        # Ad-hoc app connection reuses the toolkit's single global provider.
         assert conn._token_provider is tk._token_provider
 
 
@@ -239,6 +229,80 @@ class TestThreadSafety:
             conns = list(
                 pool.map(lambda _: tk._resolve_connection("x/y"), range(32))
             )
-        # All threads observe the same cached connection instance.
         assert all(c is conns[0] for c in conns)
         assert list(tk._connections).count("x/y") == 1
+
+
+# ---------------------------------------------------------------------------
+# "default" alias in repositories (without legacy default_repository)
+# ---------------------------------------------------------------------------
+
+class TestDefaultAliasInRegistry:
+    def test_default_alias_resolves_via_none(self):
+        tk = GitToolkit(
+            repositories={
+                "default": {"repository": "org/main", "github_token": "tok"},
+            }
+        )
+        conn = tk._resolve_connection(None)
+        assert conn.repository == "org/main"
+        assert conn.token() == "tok"
+
+    def test_default_alias_sets_custom_branch(self):
+        tk = GitToolkit(
+            repositories={
+                "default": {
+                    "repository": "org/main",
+                    "github_token": "tok",
+                    "default_branch": "develop",
+                },
+            }
+        )
+        ctx = tk._prepare_github_context(None, None)
+        assert ctx.base_branch == "develop"
+
+
+# ---------------------------------------------------------------------------
+# _load_pem direct tests
+# ---------------------------------------------------------------------------
+
+class TestLoadPem:
+    def test_inline_pem_returned_directly(self):
+        assert _load_pem("INLINE", None) == "INLINE"
+
+    def test_literal_backslash_n_normalised(self):
+        result = _load_pem("line1\\nline2", None)
+        assert result == "line1\nline2"
+
+    def test_file_path_reads_contents(self):
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".pem", delete=False) as f:
+            f.write("FILE_PEM")
+            f.flush()
+            result = _load_pem(None, f.name)
+        assert result == "FILE_PEM"
+
+    def test_both_set_raises(self):
+        with pytest.raises(gt.GitToolkitError, match="EITHER"):
+            _load_pem("inline", "/some/path")
+
+    def test_neither_set_raises(self):
+        with pytest.raises(gt.GitToolkitError, match="requires"):
+            _load_pem(None, None)
+
+    def test_unreadable_path_raises(self):
+        with pytest.raises(gt.GitToolkitError, match="Could not read"):
+            _load_pem(None, "/nonexistent/path.pem")
+
+
+# ---------------------------------------------------------------------------
+# RepositoryCredential pat-mode validation
+# ---------------------------------------------------------------------------
+
+class TestRepositoryCredentialPatValidation:
+    def test_pat_mode_without_token_raises(self):
+        with pytest.raises(ValueError, match="github_token"):
+            RepositoryCredential(repository="org/a", auth_type="pat")
+
+    def test_pat_mode_with_token_succeeds(self):
+        cred = RepositoryCredential(repository="org/a", github_token="tok")
+        assert cred.github_token == "tok"
