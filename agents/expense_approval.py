@@ -321,6 +321,11 @@ class EscalatingTeamsApprovalTool(_TeamsApprovalToolBase):
         error = self._preflight_error(manager)
         if error:
             return error
+        if "teams" not in getattr(manager, "channels", {}):
+            return (
+                "Approval system unavailable: the Microsoft Teams channel is "
+                "not connected (check the MSTEAMS_HITL_* settings)."
+            )
 
         interaction = self._build_interaction(
             amount, reason, requestor, currency, severity
@@ -351,6 +356,7 @@ class ExpenseApprovalAgent(Agent):
     """
 
     agent_id: str = "expense_approval"
+    llm: str = "anthropic"
     model: str = config.get("EXPENSE_APPROVAL_LLM", fallback="claude-sonnet-4-6")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -451,8 +457,9 @@ class ExpenseApprovalAgent(Agent):
 
         # 2. Tier 2 — configure the email backend on the NOTIFY action.
         try:
-            manager._actions[EscalationActionType.NOTIFY] = NotifyAction(
-                email_cfg=_smtp_email_cfg()
+            manager.set_action(
+                EscalationActionType.NOTIFY,
+                NotifyAction(email_cfg=_smtp_email_cfg()),
             )
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
@@ -475,7 +482,7 @@ class ExpenseApprovalAgent(Agent):
         self._policy = self._build_policy(
             approver_email, tier1_timeout, tier2_timeout
         )
-        manager._policies[self._policy.policy_id] = self._policy
+        manager.register_policy(self._policy)
 
         # 4. Inject the resolved wiring into both tools.
         for tool in (self._quick_tool, self._escalating_tool):

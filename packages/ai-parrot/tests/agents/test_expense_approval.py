@@ -196,6 +196,14 @@ async def test_escalating_tool_errors_when_manager_missing():
     assert "unavailable" in out.lower()
 
 
+@pytest.mark.asyncio
+async def test_escalating_tool_errors_when_no_teams_channel(fake_manager):
+    fake_manager.channels = {}  # teams not connected
+    tool = _wire_tool(m.EscalatingTeamsApprovalTool())
+    out = await tool._execute(amount=10.0, reason="x", requestor="z@corp.com")
+    assert "unavailable" in out.lower()
+
+
 # ---------------------------------------------------------------------------
 # Tool metadata
 # ---------------------------------------------------------------------------
