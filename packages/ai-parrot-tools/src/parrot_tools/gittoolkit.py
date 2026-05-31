@@ -28,7 +28,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import difflib
 
@@ -42,6 +42,79 @@ from .toolkit import AbstractToolkit
 
 class GitToolkitError(RuntimeError):
     """Raised when the toolkit cannot satisfy a request."""
+
+
+class RepositoryCredential(BaseModel):
+    """Credentials + defaults for a single named repository in a registry.
+
+    Each entry in :attr:`GitToolkit.repositories` is one of these. The alias
+    (the dict key) is how tools reference the repository by name; the
+    ``repository`` field is the underlying ``owner/name`` slug used to build
+    GitHub API URLs.
+    """
+
+    repository: str = Field(
+        description="GitHub repository in 'owner/name' format.",
+    )
+    default_branch: str = Field(
+        default="main",
+        description="Fallback branch used for pull requests against this repo.",
+    )
+    auth_type: Literal["pat", "github_app"] = Field(
+        default="pat",
+        description=(
+            "Authentication backend. 'pat' uses github_token; 'github_app' "
+            "uses app_id + installation_id + private key."
+        ),
+    )
+    github_token: Optional[str] = Field(
+        default=None,
+        description="Personal access token with repo scope (pat mode).",
+    )
+    app_id: Optional[int] = Field(
+        default=None,
+        description="GitHub App ID (required when auth_type='github_app').",
+    )
+    installation_id: Optional[int] = Field(
+        default=None,
+        description="Installation ID (required when auth_type='github_app').",
+    )
+    private_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "PEM contents of the App's private key. Mutually exclusive with "
+            "private_key_path."
+        ),
+    )
+    private_key_path: Optional[str] = Field(
+        default=None,
+        description=(
+            "Filesystem path to the App's private key PEM. Mutually exclusive "
+            "with private_key."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_auth(self) -> "RepositoryCredential":  # pragma: no cover - pydantic hook
+        """Validate auth fields for both pat and github_app modes."""
+        if self.auth_type == "pat":
+            if not self.github_token:
+                raise ValueError("auth_type='pat' requires github_token")
+        elif self.auth_type == "github_app":
+            if not self.app_id:
+                raise ValueError("auth_type='github_app' requires app_id")
+            if not self.installation_id:
+                raise ValueError("auth_type='github_app' requires installation_id")
+            if self.private_key and self.private_key_path:
+                raise ValueError(
+                    "auth_type='github_app': set EITHER private_key OR "
+                    "private_key_path, not both."
+                )
+            if not self.private_key and not self.private_key_path:
+                raise ValueError(
+                    "auth_type='github_app' requires private_key or private_key_path"
+                )
+        return self
 
 
 class GitToolkitInput(BaseModel):
@@ -88,6 +161,15 @@ class GitToolkitInput(BaseModel):
         description=(
             "Filesystem path to the App's private key PEM. Mutually "
             "exclusive with private_key."
+        ),
+    )
+    repositories: Optional[Dict[str, RepositoryCredential]] = Field(
+        default=None,
+        description=(
+            "Named registry mapping an alias to that repository's credentials "
+            "and defaults. Registry entries are explicit-config only and do NOT "
+            "inherit GITHUB_* environment variables (those feed only the default "
+            "and ad-hoc fallback paths)."
         ),
     )
 
@@ -184,7 +266,12 @@ class CreatePullRequestInput(BaseModel):
     """Input payload for ``create_pull_request``."""
 
     repository: Optional[str] = Field(
-        default=None, description="Target GitHub repository in 'owner/name' format."
+        default=None,
+        description=(
+            "Target repository: a registered alias from the toolkit's "
+            "repositories registry, or a raw 'owner/name' slug. Uses the "
+            "default repository when omitted."
+        ),
     )
     title: str = Field(description="Pull request title")
     body: Optional[str] = Field(default=None, description="Pull request description")
@@ -215,7 +302,7 @@ class GetPullRequestInput(BaseModel):
     pr_number: int = Field(description="Pull request number on the repository.")
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -224,7 +311,7 @@ class ListPullRequestsInput(BaseModel):
 
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
     state: Literal["open", "closed", "all"] = Field(
         default="open",
@@ -244,7 +331,7 @@ class GetPullRequestDiffInput(BaseModel):
     pr_number: int = Field(description="Pull request number on the repository.")
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
     max_bytes: int = Field(
         default=50_000,
@@ -260,7 +347,7 @@ class AddPRCommentInput(BaseModel):
     body: str = Field(description="Comment body in Markdown.")
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -274,7 +361,7 @@ class SubmitPRReviewInput(BaseModel):
     body: str = Field(description="Review body in Markdown (required for REQUEST_CHANGES).")
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -294,7 +381,7 @@ class GetFileContentInput(BaseModel):
     )
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
     start_line: Optional[int] = Field(
         default=None,
@@ -342,7 +429,7 @@ class ComparePRVersionsInput(BaseModel):
     )
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -357,7 +444,7 @@ class SearchRepoCodeInput(BaseModel):
     )
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
     max_results: int = Field(
         default=20,
@@ -522,7 +609,7 @@ class GetContributorStatsInput(BaseModel):
 
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -531,7 +618,7 @@ class GetCommitActivityInput(BaseModel):
 
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -540,7 +627,7 @@ class GetCodeFrequencyInput(BaseModel):
 
     repository: Optional[str] = Field(
         default=None,
-        description="Target GitHub repository in 'owner/name' format. Uses default when omitted.",
+        description="Target repository: a registered alias from the toolkit's repositories registry, or a raw 'owner/name' slug. Uses the default repository when omitted.",
     )
 
 
@@ -623,6 +710,89 @@ class _GitHubAppTokenProvider:
         if self._expires_at is not None and self._expires_at.tzinfo is None:
             # Defensive: PyGithub returns tz-aware UTC, but normalise just in case.
             self._expires_at = self._expires_at.replace(tzinfo=_dt.timezone.utc)
+
+
+def _load_pem(
+    private_key: Optional[str],
+    private_key_path: Optional[str],
+) -> str:
+    """Resolve a PEM from inline contents or file path (exactly one must be set)."""
+    if private_key and private_key_path:
+        raise GitToolkitError(
+            "auth_type='github_app': set EITHER private_key OR "
+            "private_key_path, not both."
+        )
+    if not private_key and not private_key_path:
+        raise GitToolkitError(
+            "auth_type='github_app' requires private_key or private_key_path "
+            "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
+        )
+    pem = private_key
+    if private_key_path:
+        try:
+            with open(private_key_path, "r", encoding="utf-8") as fh:
+                pem = fh.read()
+        except OSError as exc:
+            raise GitToolkitError(
+                f"Could not read GitHub App private key from {private_key_path}: {exc}"
+            ) from exc
+    # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
+    return pem.replace("\\n", "\n")  # type: ignore[union-attr]
+
+
+class _RepoConnection:
+    """Resolved connection to one repository: slug, branch default, and token provider."""
+
+    def __init__(
+        self,
+        repository: str,
+        default_branch: str,
+        auth_type: Literal["pat", "github_app"],
+        *,
+        github_token: Optional[str] = None,
+        token_provider: Optional[_GitHubAppTokenProvider] = None,
+        app_id: Optional[int] = None,
+        installation_id: Optional[int] = None,
+        private_key: Optional[str] = None,
+        private_key_path: Optional[str] = None,
+    ) -> None:
+        self.repository = repository
+        self.default_branch = default_branch
+        self.auth_type = auth_type
+        self._github_token = github_token
+        self._token_provider: Optional[_GitHubAppTokenProvider] = None
+        if auth_type == "github_app":
+            if token_provider is not None:
+                self._token_provider = token_provider
+            else:
+                if not app_id:
+                    raise GitToolkitError(
+                        "auth_type='github_app' requires app_id."
+                    )
+                if not installation_id:
+                    raise GitToolkitError(
+                        "auth_type='github_app' requires installation_id."
+                    )
+                pem = _load_pem(private_key, private_key_path)
+                self._token_provider = _GitHubAppTokenProvider(
+                    app_id=app_id,
+                    installation_id=installation_id,
+                    private_key_pem=pem,
+                )
+
+    def token(self) -> str:
+        """Return the bearer token for the next API call to this repo."""
+        if self.auth_type == "github_app":
+            if self._token_provider is None:
+                raise GitToolkitError(
+                    "BUG: _token_provider is None in github_app mode; internal error."
+                )
+            return self._token_provider.get_token()
+        if not self._github_token:
+            raise GitToolkitError(
+                "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
+            )
+        return self._github_token
 
 
 class _FileBlobCache:
@@ -813,6 +983,7 @@ class GitToolkit(AbstractToolkit):
         installation_id: Optional[int] = None,
         private_key: Optional[str] = None,
         private_key_path: Optional[str] = None,
+        repositories: Optional[Dict[str, Union[RepositoryCredential, dict]]] = None,
         **kwargs: Any,
     ) -> None:
         """Initialise the Git/GitHub toolkit.
@@ -830,11 +1001,21 @@ class GitToolkit(AbstractToolkit):
                 exclusive with ``private_key_path``.
             private_key_path: Filesystem path to the App's private key PEM.
                 Mutually exclusive with ``private_key``.
+            repositories: Optional named registry mapping an alias to that
+                repository's credentials (``RepositoryCredential`` or an
+                equivalent dict). Tools may reference a repository by its alias
+                or by its raw ``owner/name`` slug. Registry entries are
+                explicit-config only — they do NOT inherit ``GITHUB_*`` env
+                vars. Passing a ``"default"`` alias here while the legacy
+                ``default_repository`` argument is also set raises, to avoid
+                ambiguity.
             **kwargs: Forwarded to the base class.
 
         Raises:
             GitToolkitError: When ``auth_type`` is invalid or required App-mode
-                fields are missing / mutually exclusive constraints are violated.
+                fields are missing / mutually exclusive constraints are violated,
+                or when a ``"default"`` registry alias collides with the legacy
+                default-repository arguments.
         """
         super().__init__(**kwargs)
 
@@ -875,27 +1056,7 @@ class GitToolkit(AbstractToolkit):
 
             inline_pem = private_key or os.getenv("GITHUB_APP_PRIVATE_KEY")
             pem_path = private_key_path or os.getenv("GITHUB_APP_PRIVATE_KEY_PATH")
-            if inline_pem and pem_path:
-                raise GitToolkitError(
-                    "auth_type='github_app': set EITHER private_key OR "
-                    "private_key_path, not both."
-                )
-            if not inline_pem and not pem_path:
-                raise GitToolkitError(
-                    "auth_type='github_app' requires private_key or private_key_path "
-                    "(or GITHUB_APP_PRIVATE_KEY[_PATH] env)."
-                )
-            if pem_path:
-                try:
-                    with open(pem_path, "r", encoding="utf-8") as fh:
-                        inline_pem = fh.read()
-                except OSError as exc:
-                    raise GitToolkitError(
-                        f"Could not read GitHub App private key from {pem_path}: {exc}"
-                    ) from exc
-
-            # Defensive: env-injected PEMs sometimes carry literal "\n" escape sequences.
-            inline_pem = inline_pem.replace("\\n", "\n")  # type: ignore[union-attr]
+            inline_pem = _load_pem(inline_pem, pem_path)
 
             self._token_provider = _GitHubAppTokenProvider(
                 app_id=self.app_id,
@@ -903,23 +1064,52 @@ class GitToolkit(AbstractToolkit):
                 private_key_pem=inline_pem,
             )
 
+        # ------------------------------------------------------------------
+        # Multi-repository registry (alias -> _RepoConnection)
+        # ------------------------------------------------------------------
+        self._connections: Dict[str, _RepoConnection] = {}
+        self._connections_lock = threading.Lock()
+
+        # Build the "default" connection from the legacy fields, reusing the
+        # already-built token provider so it shares the cached App token.
+        if self.default_repository:
+            self._connections["default"] = _RepoConnection(
+                repository=self.default_repository,
+                default_branch=self.default_branch,
+                auth_type=self.auth_type,
+                github_token=self.github_token,
+                token_provider=self._token_provider,
+            )
+
+        # Register explicit named repositories.
+        if repositories:
+            if "default" in repositories and self.default_repository:
+                raise GitToolkitError(
+                    "A 'default' alias in repositories collides with the legacy "
+                    "default_repository argument; use one or the other."
+                )
+            for alias, value in repositories.items():
+                cred = (
+                    value
+                    if isinstance(value, RepositoryCredential)
+                    else RepositoryCredential.model_validate(value)
+                )
+                self._connections[alias] = _RepoConnection(
+                    repository=cred.repository,
+                    default_branch=cred.default_branch,
+                    auth_type=cred.auth_type,
+                    github_token=cred.github_token,
+                    app_id=cred.app_id,
+                    installation_id=cred.installation_id,
+                    private_key=cred.private_key,
+                    private_key_path=cred.private_key_path,
+                )
+
     # ------------------------------------------------------------------
-    # Bearer token resolution
+    # Connection / bearer token resolution
     # ------------------------------------------------------------------
-    def _bearer_token(self) -> str:
-        """Return the bearer token for the next GitHub API call.
-
-        In ``pat`` mode, returns ``self.github_token`` and raises when it is
-        absent. In ``github_app`` mode, delegates to the token provider which
-        mints / caches installation access tokens transparently.
-
-        Returns:
-            A valid bearer token string.
-
-        Raises:
-            GitToolkitError: When no token is available (PAT mode with no token
-                set) or when the App token provider fails to mint a token.
-        """
+    def _default_token(self) -> str:
+        """Return the bearer token for the global/default credentials."""
         if self.auth_type == "github_app":
             if self._token_provider is None:
                 raise GitToolkitError(
@@ -932,6 +1122,60 @@ class GitToolkit(AbstractToolkit):
                 "A GitHub personal access token is required via init argument or GITHUB_TOKEN."
             )
         return self.github_token
+
+    def _resolve_connection(self, repository: Optional[str]) -> _RepoConnection:
+        """Map None / alias / ``owner/name`` slug to a ``_RepoConnection``."""
+        if repository is None:
+            conn = self._connections.get("default")
+            if conn is None:
+                raise GitToolkitError(
+                    "A target repository is required (pass repository or "
+                    "configure default)."
+                )
+            return conn
+
+        # Fast path (no lock): alias hit from the pre-built registry.
+        conn = self._connections.get(repository)
+        if conn is not None:
+            return conn
+
+        # Slug scan + ad-hoc creation under lock (safe for free-threaded Python).
+        with self._connections_lock:
+            # Re-check after acquiring lock.
+            conn = self._connections.get(repository)
+            if conn is not None:
+                return conn
+
+            # Raw slug matching a registered connection's repository field.
+            for existing in self._connections.values():
+                if existing.repository == repository:
+                    return existing
+
+            # Unknown slug -> ad-hoc connection from global/default creds.
+            if self.auth_type == "github_app":
+                if self._token_provider is None:
+                    raise GitToolkitError(
+                        "No GitHub App credentials configured to access "
+                        f"{repository!r}."
+                    )
+            elif not self.github_token:
+                raise GitToolkitError(
+                    "A GitHub personal access token is required via init "
+                    "argument or GITHUB_TOKEN."
+                )
+            conn = _RepoConnection(
+                repository=repository,
+                default_branch=self.default_branch,
+                auth_type=self.auth_type,
+                github_token=self.github_token,
+                token_provider=self._token_provider,
+            )
+            self._connections[repository] = conn
+            return conn
+
+    def _bearer_token(self) -> str:
+        """Legacy shim — delegates to ``_default_token``."""
+        return self._default_token()
 
     # ------------------------------------------------------------------
     # Patch generation helpers
@@ -1035,16 +1279,11 @@ class GitToolkit(AbstractToolkit):
     def _prepare_github_context(
         self, repository: Optional[str], base_branch: Optional[str]
     ) -> _GitHubContext:
-        repo = repository or self.default_repository
-        if not repo:
-            raise GitToolkitError(
-                "A target repository is required (pass repository or configure default)."
-            )
-
-        token = self._bearer_token()
-
-        branch = base_branch or self.default_branch
-        return _GitHubContext(repository=repo, base_branch=branch, token=token)
+        conn = self._resolve_connection(repository)
+        branch = base_branch or conn.default_branch
+        return _GitHubContext(
+            repository=conn.repository, base_branch=branch, token=conn.token()
+        )
 
     @staticmethod
     def _request(
@@ -1277,19 +1516,16 @@ class GitToolkit(AbstractToolkit):
     # Pull request read / review helpers (FEAT: github-pr-review-agent)
     # ------------------------------------------------------------------
     def _resolve_repository(self, repository: Optional[str]) -> str:
-        repo = repository or self.default_repository
-        if not repo:
-            raise GitToolkitError(
-                "A target repository is required (pass repository or set GIT_DEFAULT_REPOSITORY)."
-            )
-        return repo
+        """Resolve ``repository`` (None | alias | slug) to an ``owner/name`` slug."""
+        return self._resolve_connection(repository).repository
 
     def _resolve_token(self) -> str:
-        return self._bearer_token()
+        """Return the bearer token for the global/default credentials."""
+        return self._default_token()
 
     def _get_pull_request_sync(self, repository: Optional[str], pr_number: int) -> Dict[str, Any]:
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
         response = self._request("GET", url, token, expected=200)
         return response.json()
@@ -1312,8 +1548,8 @@ class GitToolkit(AbstractToolkit):
         state: str,
         per_page: int,
     ) -> List[Dict[str, Any]]:
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/pulls"
         params = {"state": state, "per_page": min(max(per_page, 1), 100)}
         response = self._request("GET", url, token, expected=200, params=params)
@@ -1339,8 +1575,8 @@ class GitToolkit(AbstractToolkit):
         pr_number: int,
         max_bytes: int,
     ) -> Dict[str, Any]:
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
         response = self._request(
             "GET",
@@ -1381,8 +1617,8 @@ class GitToolkit(AbstractToolkit):
         pr_number: int,
         body: str,
     ) -> Dict[str, Any]:
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
         response = self._request(
             "POST", url, token, expected=201, json={"body": body}
@@ -1410,8 +1646,8 @@ class GitToolkit(AbstractToolkit):
         event: str,
         body: str,
     ) -> Dict[str, Any]:
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
         payload = {"event": event, "body": body}
         response = self._request("POST", url, token, expected=200, json=payload)
@@ -1448,8 +1684,8 @@ class GitToolkit(AbstractToolkit):
         Returns a dict with ``status`` in {created, already_exists, no_permission, error}
         plus the hook payload when available.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         list_url = f"https://api.github.com/repos/{repo}/hooks"
         try:
             response = self._request("GET", list_url, token, expected=200)
@@ -1553,8 +1789,8 @@ class GitToolkit(AbstractToolkit):
             A populated :class:`FileContentResult`. ``exists=False`` on 404;
             ``error='file_too_large'`` when the blob exceeds GitHub's 1 MB limit.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
 
         url = f"https://api.github.com/repos/{repo}/contents/{path}"
 
@@ -1848,8 +2084,8 @@ class GitToolkit(AbstractToolkit):
             A :class:`SearchCodeResult`. When the search API is rate-limited,
             returns with ``error='rate_limited'`` rather than raising.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         q = f"{query} repo:{repo}"
         url = "https://api.github.com/search/code"
         params = {"q": q, "per_page": min(max_results, 100)}
@@ -1957,8 +2193,8 @@ class GitToolkit(AbstractToolkit):
         Returns:
             List of :class:`ContributorStats` models, one per contributor.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/stats/contributors"
         response = self._get_stats_with_polling(url, token)
         raw = response.json() or []
@@ -2018,8 +2254,8 @@ class GitToolkit(AbstractToolkit):
         Returns:
             Last 52 weeks of commit counts broken down by day-of-week.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/stats/commit_activity"
         response = self._get_stats_with_polling(url, token)
         raw = response.json() or []
@@ -2060,8 +2296,8 @@ class GitToolkit(AbstractToolkit):
         Returns:
             List of :class:`WeeklyCodeFrequency` models.
         """
-        repo = self._resolve_repository(repository)
-        token = self._resolve_token()
+        conn = self._resolve_connection(repository)
+        repo, token = conn.repository, conn.token()
         url = f"https://api.github.com/repos/{repo}/stats/code_frequency"
         response = self._get_stats_with_polling(url, token)
         raw = response.json() or []
@@ -2104,6 +2340,7 @@ class GitToolkit(AbstractToolkit):
 __all__ = [
     "GitToolkit",
     "GitToolkitInput",
+    "RepositoryCredential",
     "GitPatchFile",
     "GitHubFileChange",
     "GeneratePatchInput",
