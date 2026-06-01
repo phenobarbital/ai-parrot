@@ -76,7 +76,7 @@ class TestEndToEndCapture:
                 trace_ids = {e.trace_id for e in events}
                 assert trace_ids == {"t-e2e"}
             finally:
-                recorder.stop()
+                await recorder.stop()
 
     @pytest.mark.asyncio
     async def test_both_event_classes_preserved(self, memory_ledger):
@@ -105,7 +105,7 @@ class TestEndToEndCapture:
                 assert "BeforeToolCallEvent" in classes
                 assert "AfterToolCallEvent" in classes
             finally:
-                recorder.stop()
+                await recorder.stop()
 
     @pytest.mark.asyncio
     async def test_stream_chunk_excluded(self, memory_ledger):
@@ -155,6 +155,7 @@ class TestCrashResumeFlow:
         orch = MagicMock()
         orch.inject_job = AsyncMock(return_value="job-1")
         orch.logger = MagicMock()
+        orch.job_injector = MagicMock()  # non-None so Redis guard passes
         orch.resume = AutonomousOrchestrator.resume.__get__(orch, AutonomousOrchestrator)
 
         count = await orch.resume(memory_ledger)
@@ -190,6 +191,7 @@ class TestCrashResumeFlow:
         orch = MagicMock()
         orch.inject_job = AsyncMock(return_value="job-1")
         orch.logger = MagicMock()
+        orch.job_injector = MagicMock()  # non-None so Redis guard passes
         orch.resume = AutonomousOrchestrator.resume.__get__(orch, AutonomousOrchestrator)
 
         count = await orch.resume(memory_ledger)
@@ -217,6 +219,7 @@ class TestCrashResumeFlow:
         orch = MagicMock()
         orch.inject_job = AsyncMock(return_value="job-x")
         orch.logger = MagicMock()
+        orch.job_injector = MagicMock()  # non-None so Redis guard passes
         orch.resume = AutonomousOrchestrator.resume.__get__(orch, AutonomousOrchestrator)
 
         count = await orch.resume(memory_ledger)

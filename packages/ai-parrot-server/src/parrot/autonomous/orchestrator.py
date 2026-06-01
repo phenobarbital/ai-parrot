@@ -1278,6 +1278,10 @@ class AutonomousOrchestrator:
         ``AfterInvokeEvent``, ``InvokeFailedEvent``) and calls
         :meth:`inject_job` for each one.
 
+        ``BeforeToolCallEvent`` traces are skipped because individual tool
+        calls cannot be replayed independently — only invoke-level traces
+        are re-enqueued.
+
         Idempotency note: re-enqueueing does NOT guarantee idempotent
         side-effects — that is the agent/tool's responsibility.  This
         method re-queues *work*, not replayed *effects*.
@@ -1289,13 +1293,30 @@ class AutonomousOrchestrator:
         Returns:
             The number of jobs successfully re-enqueued.
         """
+        if self.job_injector is None:
+            self.logger.warning(
+                "resume: job_injector not configured (no redis_url); "
+                "crash-resume disabled"
+            )
+            return 0
+
         incomplete = await ledger.find_incomplete()
         if not incomplete:
             self.logger.info("resume: no incomplete executions found")
             return 0
 
         count = 0
+        skipped = 0
         for exec_info in incomplete:
+            # Skip tool-level traces — they cannot be replayed independently.
+            if exec_info.event_class == "BeforeToolCallEvent":
+                self.logger.info(
+                    "resume: skipping tool-level trace_id=%s "
+                    "(tool calls cannot be replayed independently)",
+                    exec_info.trace_id,
+                )
+                skipped += 1
+                continue
             try:
                 # Reconstruct job parameters from the incomplete execution.
                 # source_name / agent_id is the best proxy for target_id.
@@ -1317,4 +1338,10 @@ class AutonomousOrchestrator:
                 self.logger.exception(
                     "resume: failed to re-enqueue trace_id=%s", exec_info.trace_id
                 )
+        if skipped:
+            self.logger.info(
+                "resume: skipped %d tool-level trace(s); re-enqueued %d job(s)",
+                skipped,
+                count,
+            )
         return count

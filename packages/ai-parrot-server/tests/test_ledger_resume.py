@@ -17,6 +17,9 @@ def fake_orchestrator():
     orch = MagicMock(spec=AutonomousOrchestrator)
     orch.inject_job = AsyncMock(return_value="job-1")
     orch.logger = MagicMock()
+    # Provide a non-None job_injector so the Redis guard in resume() does not
+    # short-circuit before reaching the ledger query.
+    orch.job_injector = MagicMock()
     # Bind the real resume method to the mock instance
     orch.resume = AutonomousOrchestrator.resume.__get__(orch, AutonomousOrchestrator)
     return orch
@@ -126,8 +129,7 @@ class TestOrchestratorResume:
         await fake_orchestrator.resume(ledger)
         call_kwargs = fake_orchestrator.inject_job.call_args
         # target_id should come from agent_id
-        assert call_kwargs.kwargs.get("target_id") == "my-agent" or \
-               call_kwargs.args[1] == "my-agent" if call_kwargs.args else True
+        assert call_kwargs.kwargs["target_id"] == "my-agent"
 
     @pytest.mark.asyncio
     async def test_resume_uses_fallback_task_when_missing(self, fake_orchestrator):
@@ -147,8 +149,7 @@ class TestOrchestratorResume:
         await fake_orchestrator.resume(ledger)
         call_kwargs = fake_orchestrator.inject_job.call_args
         # The task param should be "resume:trace-fallback"
-        injected_task = call_kwargs.kwargs.get("task") or (call_kwargs.args[2] if len(call_kwargs.args) > 2 else None)
-        assert injected_task == "resume:trace-fallback" if injected_task else True
+        assert call_kwargs.kwargs["task"] == "resume:trace-fallback"
 
     @pytest.mark.asyncio
     async def test_resume_returns_correct_count_multiple(self, fake_orchestrator):

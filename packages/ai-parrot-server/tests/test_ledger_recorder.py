@@ -3,7 +3,7 @@
 FEAT-212 — Typed Event Ledger & Crash Resume (TASK-1401).
 """
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -57,7 +57,7 @@ class TestLedgerRecorderPersistence:
                 assert len(events) >= 1
                 assert events[0].event_class == "BeforeToolCallEvent"
             finally:
-                r.stop()
+                await r.stop()
 
     @pytest.mark.asyncio
     async def test_recorder_sets_trace_id(self, memory_ledger):
@@ -79,7 +79,7 @@ class TestLedgerRecorderPersistence:
                 events = await memory_ledger.read()
                 assert events[0].trace_id == "trace-abc"
             finally:
-                r.stop()
+                await r.stop()
 
     @pytest.mark.asyncio
     async def test_recorder_enqueues_immediately(self, recorder, memory_ledger):
@@ -114,7 +114,7 @@ class TestLedgerRecorderPersistence:
                 events = await memory_ledger.read(agent_id="bot-1")
                 assert len(events) == 5
             finally:
-                r.stop()
+                await r.stop()
 
 
 class TestLedgerRecorderFilter:
@@ -185,7 +185,7 @@ class TestLedgerRecorderStartStop:
             recorder.start()
             assert recorder._subscription_id == "sub-123"
 
-            recorder.stop()
+            await recorder.stop()
             mock_registry.unsubscribe.assert_called_once_with("sub-123")
             assert recorder._subscription_id is None
 
@@ -205,8 +205,7 @@ class TestLedgerRecorderStartStop:
             assert task is not None
             assert not task.done()
 
-            r.stop()
-            await asyncio.sleep(0.05)
+            await r.stop()
             assert task.done()
 
     @pytest.mark.asyncio
@@ -221,7 +220,7 @@ class TestLedgerRecorderStartStop:
             assert recorder._flush_task is not None
             assert not recorder._flush_task.done()
 
-            recorder.stop()
+            await recorder.stop()
 
 
 class TestLedgerRecorderBatching:
