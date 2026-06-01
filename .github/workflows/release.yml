@@ -15,12 +15,12 @@ jobs:
       run:
         working-directory: packages/ai-parrot
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -56,7 +56,7 @@ jobs:
         run: python -m build --sdist --outdir ${{ github.workspace }}/dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: core-dist-${{ matrix.os }}-py${{ matrix.python-version }}
           path: |
@@ -66,7 +66,7 @@ jobs:
   build-tools:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -74,7 +74,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -84,7 +84,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-tools
           path: dist/*
@@ -92,7 +92,7 @@ jobs:
   build-loaders:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -100,7 +100,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -110,7 +110,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-loaders
           path: dist/*
@@ -118,7 +118,7 @@ jobs:
   build-embeddings:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -126,7 +126,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -136,7 +136,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-embeddings
           path: dist/*
@@ -144,7 +144,7 @@ jobs:
   build-pipelines:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -152,7 +152,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -162,7 +162,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-pipelines
           path: dist/*
@@ -170,7 +170,7 @@ jobs:
   build-visualizations:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -178,7 +178,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -188,7 +188,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-visualizations
           path: dist/*
@@ -196,7 +196,7 @@ jobs:
   build-integrations:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -204,7 +204,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -214,7 +214,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-integrations
           path: dist/*
@@ -222,7 +222,7 @@ jobs:
   build-formdesigner:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -230,7 +230,7 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -240,7 +240,7 @@ jobs:
           uv build --out-dir ../../dist
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist-formdesigner
           path: dist/*
@@ -255,7 +255,7 @@ jobs:
       id-token: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist-artifacts
 
