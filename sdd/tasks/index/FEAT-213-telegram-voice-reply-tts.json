@@ -14,7 +14,7 @@
       "feature_id": "FEAT-213",
       "feature": "telegram-voice-reply-tts",
       "spec": "sdd/specs/FEAT-213-telegram-voice-reply-tts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module; everything else imports from it. No sibling to parallelize against.",
       "assigned_to": null,
       "started_at": "2026-06-01T23:11:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1407-tts-abstraction-and-models.md"
+      "completed_at": "2026-06-01T23:13:34+00:00",
+      "file": "sdd/tasks/completed/TASK-1407-tts-abstraction-and-models.md"
     },
     {
       "id": "TASK-1408",
