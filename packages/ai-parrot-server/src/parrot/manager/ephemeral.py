@@ -15,10 +15,10 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Optional
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -41,6 +41,9 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 EphemeralPhase = Literal["creating", "warming", "ready", "error"]
+
+# Owner kind: "user" for human-owned bots, "agent" for agent-owned sub-agents.
+OwnerKind = Literal["user", "agent"]
 
 # Default TTL: 24 h, overridable via env / navconfig.
 _DEFAULT_TTL_SECONDS: int = 86400
@@ -75,9 +78,17 @@ def _default_ttl() -> int:
 class EphemeralAgentStatus(BaseModel):
     """Live warm-up state for an ephemeral user bot.
 
+    Supports typed ownership: a bot may be owned by a human user
+    (``owner_kind="user"``) or an agent (``owner_kind="agent"``).
+    The legacy ``user_id: int`` constructor path is preserved via a
+    ``model_validator`` that converts ``user_id`` → ``owner_id``/
+    ``owner_kind="user"`` automatically (backward compatibility).
+
     Attributes:
         chatbot_id: Canonical string form of the bot's UUID.
-        user_id: Owning user — enforced on every registry lookup.
+        owner_id: Canonical owner identifier (str form of user_id for users,
+            or e.g. "agent:parent-123" for agent-owned bots).
+        owner_kind: "user" for human-owned, "agent" for agent-owned sub-bots.
         phase: Current lifecycle phase.
         progress: Per-subsystem progress dict (tools / mcp / rag).
         error: Human-readable error message, set when phase == "error".
@@ -89,13 +100,53 @@ class EphemeralAgentStatus(BaseModel):
     model_config = {"validate_assignment": True}
 
     chatbot_id: str
-    user_id: int
+    owner_id: str
+    owner_kind: OwnerKind = "user"
     phase: EphemeralPhase = "creating"
     progress: Dict[str, str] = Field(default_factory=dict)
     error: Optional[str] = None
     created_at: datetime
     expires_at: datetime
     rag_mode: Optional[Literal["pageindex", "vector"]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_owner(cls, values: Any) -> Any:
+        """Normalize legacy ``user_id: int`` constructor path.
+
+        If ``user_id`` is provided and ``owner_id`` is not, converts
+        ``user_id`` → ``owner_id=str(user_id)`` + ``owner_kind="user"``.
+        This preserves full backward compatibility with FEAT-149 code and
+        the HTTP handler (``EphemeralUserAgentHandler``).
+
+        Args:
+            values: Raw constructor data dict (or object).
+
+        Returns:
+            Normalized data dict with ``owner_id``/``owner_kind`` populated.
+        """
+        if isinstance(values, dict):
+            if "user_id" in values and "owner_id" not in values:
+                values = dict(values)  # avoid mutating the caller's dict
+                values["owner_id"] = str(values.pop("user_id"))
+                values.setdefault("owner_kind", "user")
+        return values
+
+    @property
+    def user_id(self) -> Optional[int]:
+        """Backward-compatible alias returning the int user ID.
+
+        Returns:
+            The integer user ID when ``owner_kind == "user"`` and
+            ``owner_id`` is a valid integer string; ``None`` otherwise
+            (e.g. for agent-owned bots).
+        """
+        if self.owner_kind == "user":
+            try:
+                return int(self.owner_id)
+            except (ValueError, TypeError):
+                return None
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -141,47 +192,77 @@ class EphemeralRegistry:
         async with self._get_lock:  # FIX-1: acquire lock
             self._store[status.chatbot_id] = status
         logger.debug(
-            "EphemeralRegistry: registered %s for user %s (phase=%s)",
+            "EphemeralRegistry: registered %s for owner %s (kind=%s, phase=%s)",
             status.chatbot_id,
-            status.user_id,
+            status.owner_id,
+            status.owner_kind,
             status.phase,
         )
 
-    def get(self, chatbot_id: str, user_id: int) -> Optional[EphemeralAgentStatus]:
-        """Return the status if it exists and belongs to *user_id*.
+    def get(
+        self,
+        chatbot_id: str,
+        user_id: Optional[int] = None,
+        *,
+        owner_id: Optional[str] = None,
+    ) -> Optional[EphemeralAgentStatus]:
+        """Return the status if it exists and belongs to the given owner.
+
+        Accepts either the legacy ``user_id: int`` positional argument
+        (backward compat) or the new ``owner_id: str`` keyword argument.
+        Exactly one of ``user_id`` or ``owner_id`` must be supplied.
 
         Args:
             chatbot_id: The bot's canonical UUID string.
-            user_id: The requesting user — must match the stored entry.
+            user_id: The requesting human user ID (legacy path). Converted
+                to ``owner_id=str(user_id)`` internally.
+            owner_id: The requesting owner's canonical string ID (new path).
+                Use for agent-owned bots (e.g. ``"agent:parent-123"``).
 
         Returns:
             The ``EphemeralAgentStatus`` on a hit, ``None`` on a miss or
             ownership mismatch.
+
+        Raises:
+            ValueError: If neither ``user_id`` nor ``owner_id`` is provided.
         """
+        # Normalize to a canonical owner_id string.
+        if owner_id is None and user_id is not None:
+            owner_id = str(user_id)
+        elif owner_id is None:
+            raise ValueError(
+                "EphemeralRegistry.get() requires either 'user_id' or 'owner_id'."
+            )
+
         entry = self._store.get(chatbot_id)
         if entry is None:
             return None
-        if entry.user_id != user_id:
+        if entry.owner_id != owner_id:
             logger.warning(
                 "EphemeralRegistry: ownership mismatch for %s "
                 "(owner=%s, requester=%s)",
                 chatbot_id,
-                entry.user_id,
-                user_id,
+                entry.owner_id,
+                owner_id,
             )
             return None
         return entry
 
     def get_all_for_user(self, user_id: int) -> List[EphemeralAgentStatus]:
-        """Return all entries owned by *user_id*.
+        """Return all entries owned by the human user *user_id*.
 
         Args:
             user_id: The owning user ID to filter by.
 
         Returns:
-            List of matching ``EphemeralAgentStatus`` objects.
+            List of matching ``EphemeralAgentStatus`` objects (only
+            ``owner_kind=="user"`` entries are included).
         """
-        return [s for s in self._store.values() if s.user_id == user_id]
+        owner_id_str = str(user_id)
+        return [
+            s for s in self._store.values()
+            if s.owner_kind == "user" and s.owner_id == owner_id_str
+        ]
 
     async def remove(self, chatbot_id: str) -> bool:
         """Delete the registry entry for *chatbot_id*.

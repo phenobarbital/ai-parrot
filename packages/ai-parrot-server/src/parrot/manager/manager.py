@@ -887,10 +887,12 @@ class BotManager:
 
     async def create_ephemeral_user_bot(
         self,
-        user_id: int,
-        config: Dict[str, Any],
-        uploaded_paths: List[dict],
+        user_id: Optional[int] = None,
+        config: Optional[Dict[str, Any]] = None,
+        uploaded_paths: Optional[List[dict]] = None,
         *,
+        owner_id: Optional[str] = None,
+        owner_kind: str = "user",
         ttl_seconds: int = 86400,
     ):
         """Create an ephemeral (in-memory-only) user bot and schedule warm-up.
@@ -899,12 +901,20 @@ class BotManager:
         ``self._bots`` until it is either promoted (``promote_user_bot``) or
         discarded (``discard_ephemeral_user_bot`` / TTL expiry).
 
+        Accepts typed ownership: pass either the legacy ``user_id: int`` (for
+        human-owned bots, backward compat) or ``owner_id: str`` +
+        ``owner_kind`` (for agent-owned sub-bots — FEAT-208).
+
         Args:
-            user_id: Owning user ID.
+            user_id: Owning human user ID (legacy path; HTTP handler uses this).
             config: Dict matching the UserBotModel field names (plain values;
                 ``mcp_config_plain`` / ``tools_config_plain`` are the raw lists).
             uploaded_paths: List of document dicts from ``_ingest_uploads``
                 (``[{name, path, url, size, ...}]``).
+            owner_id: Canonical owner string ID (new path — FEAT-208). Use for
+                agent-owned sub-bots (e.g. ``"agent:parent-123"``).
+            owner_kind: ``"user"`` (default) or ``"agent"``.  Ignored when
+                ``user_id`` is provided (normalised automatically).
             ttl_seconds: Seconds until this ephemeral bot expires.  Defaults to
                 86400 (24 h).
 
@@ -913,11 +923,35 @@ class BotManager:
             ``chatbot_id``.
 
         Raises:
-            ValueError: On invalid config or instantiation failure.
+            ValueError: On invalid config, missing owner, or instantiation failure.
         """
         import uuid as _uuid  # noqa: PLC0415
         from datetime import datetime, timedelta  # noqa: PLC0415
         from ..manager.ephemeral import EphemeralAgentStatus, _warm_up  # noqa: PLC0415
+
+        # --- Normalize ownership -------------------------------------------------
+        # Legacy path: user_id provided → convert to owner_id/owner_kind.
+        if owner_id is None and user_id is not None:
+            owner_id = str(user_id)
+            owner_kind = "user"
+        elif owner_id is None:
+            raise ValueError(
+                "create_ephemeral_user_bot: either 'user_id' or 'owner_id' is required."
+            )
+
+        config = config or {}
+        uploaded_paths = uploaded_paths or []
+
+        # For UserBotModel (requires user_id: int for field validation):
+        # Use int(owner_id) for user-owned bots; use 0 as a placeholder for
+        # agent-owned ephemeral bots (never written to DB).
+        if owner_kind == "user":
+            try:
+                model_user_id = int(owner_id)
+            except (ValueError, TypeError):
+                model_user_id = 0
+        else:
+            model_user_id = 0  # placeholder; agent-owned bots are never persisted
 
         # Build UserBotModel in memory — no DB write.
         chatbot_id = _uuid.uuid4()
@@ -927,7 +961,7 @@ class BotManager:
                                   "mcp_config_plain", "tools_config_plain")}
             model = UserBotModel(
                 chatbot_id=chatbot_id,
-                user_id=user_id,
+                user_id=model_user_id,
                 documents=list(uploaded_paths),
                 **plain,
             )
@@ -940,8 +974,8 @@ class BotManager:
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "create_ephemeral_user_bot: failed to build UserBotModel "
-                "for user %s: %s",
-                user_id, exc, exc_info=True,
+                "for owner %s: %s",
+                owner_id, exc, exc_info=True,
             )
             raise ValueError(f"Invalid ephemeral bot configuration: {exc}") from exc
 
@@ -956,8 +990,8 @@ class BotManager:
         except Exception as exc:  # noqa: BLE001
             self.logger.error(
                 "create_ephemeral_user_bot: failed to instantiate bot for "
-                "user %s: %s",
-                user_id, exc, exc_info=True,
+                "owner %s: %s",
+                owner_id, exc, exc_info=True,
             )
             raise ValueError(f"Could not instantiate ephemeral bot: {exc}") from exc
 
@@ -975,7 +1009,8 @@ class BotManager:
 
         status = EphemeralAgentStatus(
             chatbot_id=str(chatbot_id),
-            user_id=user_id,
+            owner_id=owner_id,
+            owner_kind=owner_kind,
             phase="creating",
             created_at=now,
             expires_at=now + timedelta(seconds=ttl_seconds),
@@ -995,9 +1030,10 @@ class BotManager:
             status.phase = "ready"
 
         self.logger.info(
-            "create_ephemeral_user_bot: created ephemeral bot %s for user %s",
+            "create_ephemeral_user_bot: created ephemeral bot %s for owner %s (kind=%s)",
             chatbot_id,
-            user_id,
+            owner_id,
+            owner_kind,
         )
         return status
 
@@ -1147,42 +1183,72 @@ class BotManager:
     def get_ephemeral_status(
         self,
         chatbot_id: str,
-        user_id: int,
+        user_id: Optional[int] = None,
+        *,
+        owner_id: Optional[str] = None,
     ):
-        """Return the ``EphemeralAgentStatus`` for *chatbot_id* owned by *user_id*.
+        """Return the ``EphemeralAgentStatus`` for *chatbot_id* owned by the given owner.
+
+        Accepts either the legacy ``user_id: int`` (backward compat) or the new
+        ``owner_id: str`` keyword argument (FEAT-208 agent-owner path).
 
         Args:
             chatbot_id: Canonical UUID string.
-            user_id: Owning user ID (enforces ownership check).
+            user_id: Owning human user ID (legacy positional path).
+            owner_id: Canonical owner string ID (new keyword path).
 
         Returns:
             The ``EphemeralAgentStatus`` or ``None`` if not found / wrong owner.
+
+        Raises:
+            ValueError: If neither ``user_id`` nor ``owner_id`` is provided.
         """
-        return self._ephemeral_registry.get(chatbot_id, user_id)
+        if owner_id is None and user_id is not None:
+            owner_id = str(user_id)
+        elif owner_id is None:
+            raise ValueError(
+                "get_ephemeral_status: either 'user_id' or 'owner_id' is required."
+            )
+        return self._ephemeral_registry.get(chatbot_id, owner_id=owner_id)
 
     async def discard_ephemeral_user_bot(
         self,
         chatbot_id: str,
-        user_id: int,
+        user_id: Optional[int] = None,
+        *,
+        owner_id: Optional[str] = None,
     ) -> bool:
         """Remove an ephemeral bot from memory and clean up its resources.
 
+        Accepts either the legacy ``user_id: int`` (backward compat) or the new
+        ``owner_id: str`` keyword argument (FEAT-208 agent-owner path).
+
         Args:
             chatbot_id: Canonical UUID string.
-            user_id: Must match the owning user (ownership check).
+            user_id: Owning human user ID (legacy positional path; ownership check).
+            owner_id: Canonical owner string ID (new keyword path; ownership check).
 
         Returns:
             ``True`` if the bot was found and removed, ``False`` otherwise.
+
+        Raises:
+            ValueError: If neither ``user_id`` nor ``owner_id`` is provided.
         """
-        status = self._ephemeral_registry.get(chatbot_id, user_id)
+        if owner_id is None and user_id is not None:
+            owner_id = str(user_id)
+        elif owner_id is None:
+            raise ValueError(
+                "discard_ephemeral_user_bot: either 'user_id' or 'owner_id' is required."
+            )
+        status = self._ephemeral_registry.get(chatbot_id, owner_id=owner_id)
         if status is None:
             return False
         await self._ephemeral_registry.remove(chatbot_id)  # FIX-1: async remove
         self._bots.pop(chatbot_id, None)
         self.logger.info(
-            "discard_ephemeral_user_bot: discarded %s for user %s",
+            "discard_ephemeral_user_bot: discarded %s for owner %s",
             chatbot_id,
-            user_id,
+            owner_id,
         )
         return True
 
