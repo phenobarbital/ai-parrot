@@ -14,7 +14,7 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — all other tasks depend on the config fields and _is_operator gate it creates.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1394-operator-config-gate.md"
+      "completed_at": "2026-06-01T00:10:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1394-operator-config-gate.md"
     },
     {
       "id": "TASK-1395",
