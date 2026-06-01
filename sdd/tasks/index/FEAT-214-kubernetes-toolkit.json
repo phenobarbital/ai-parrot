@@ -14,14 +14,14 @@
       "feature_id": "FEAT-214",
       "feature": "FEAT-214-kubernetes-toolkit",
       "spec": "sdd/specs/FEAT-214-kubernetes-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation models — all other tasks depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-01T01:09:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1122-k8s-config-result-models.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-214",
       "feature": "FEAT-214-kubernetes-toolkit",
       "spec": "sdd/specs/FEAT-214-kubernetes-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1122"],
+      "depends_on": [
+        "TASK-1122"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports KubernetesConfig/K8sOperationResult from TASK-1122; must run after it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-01T01:09:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1123-k8s-executor.md"
     },
@@ -50,14 +52,17 @@
       "feature_id": "FEAT-214",
       "feature": "FEAT-214-kubernetes-toolkit",
       "spec": "sdd/specs/FEAT-214-kubernetes-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1122", "TASK-1123"],
+      "depends_on": [
+        "TASK-1122",
+        "TASK-1123"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on both config models and executor; sequential after TASK-1123.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-01T01:09:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1124-k8s-toolkit.md"
     },
@@ -68,14 +73,16 @@
       "feature_id": "FEAT-214",
       "feature": "FEAT-214-kubernetes-toolkit",
       "spec": "sdd/specs/FEAT-214-kubernetes-toolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1124"],
+      "depends_on": [
+        "TASK-1124"
+      ],
       "parallel": false,
       "parallelism_notes": "Final wiring task; depends on all prior modules existing.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-01T01:09:59+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1125-k8s-lazy-registration.md"
     }
