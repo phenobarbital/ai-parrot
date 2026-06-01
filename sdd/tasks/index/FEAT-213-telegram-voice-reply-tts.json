@@ -32,7 +32,7 @@
       "feature_id": "FEAT-213",
       "feature": "telegram-voice-reply-tts",
       "spec": "sdd/specs/FEAT-213-telegram-voice-reply-tts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports AbstractTTSBackend/TTSConfig/SynthesisResult from TASK-1407; must run after it.",
       "assigned_to": null,
       "started_at": "2026-06-01T23:11:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1408-google-backend-and-synthesizer.md"
+      "completed_at": "2026-06-01T23:15:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1408-google-backend-and-synthesizer.md"
     },
     {
       "id": "TASK-1409",
