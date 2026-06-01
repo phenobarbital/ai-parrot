@@ -179,9 +179,10 @@ async def test_text_input_unaffected(wrapper_with_voice):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-02
+**Notes**: voice/tts/__init__.py populated with all 5 public symbols + __all__.
+voice/__init__.py updated with VoiceSynthesizer convenience re-export (no import cycle).
+5 integration tests pass: 3 export/smoke tests + voice-in/voice-out + text-unaffected.
+Full -k "tts or voice" suite: 189 passed, 4 pre-existing failures unrelated to FEAT-213.
+**Deviations from spec**: none
