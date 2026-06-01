@@ -194,10 +194,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: Added "kubernetes" entry to TOOL_REGISTRY in parrot_tools/__init__.py (alongside pulumi/docker).
+Finalized kubernetes/__init__.py with all 4 exports. 16 integration tests verify lazy registry
+resolution, package imports, lazy loading (no kubernetes_asyncio import at load time), and
+full end-to-end tool exposure. 80 total tests pass across all kubernetes test files.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: none
 
 **Deviations from spec**: none | describe if any
