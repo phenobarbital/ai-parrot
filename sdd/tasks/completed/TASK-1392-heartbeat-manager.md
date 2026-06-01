@@ -332,10 +332,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: `HeartbeatManager` was fully implemented in TASK-1391 (same `heartbeat.py` file).
+This task added the comprehensive manager unit test suite (`test_heartbeat_manager.py`):
+17 tests covering registration, lifecycle (start/stop), loop ticking, skip-if-busy,
+backoff on errors, jitter, disabled agents, and clean cancellation. All 17 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `heartbeat.py` was not modified (the manager was already
+complete from TASK-1391). Only the test file was created as specified.

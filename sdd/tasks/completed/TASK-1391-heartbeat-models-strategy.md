@@ -216,10 +216,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: Created `heartbeat.py` with `HeartbeatConfig`, `HeartbeatState`,
+`HeartbeatStrategy` (ABC), and `DefaultHeartbeatStrategy`. The `DefaultHeartbeatStrategy`
+supports both a `has_pending_work` callable and the `act_every_n_ticks` fallback cadence.
+Also implemented `HeartbeatManager` in the same file since the spec places all components
+in `heartbeat.py`. Unit tests: 20 pass, 0 fail. No linting errors.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `HeartbeatManager` was added in this same task (along with
+models/strategy) because the spec targets a single file `heartbeat.py`. TASK-1392
+modifies the same file as specified — it verifies and uses the manager already present.

@@ -74,6 +74,7 @@ include = ["parrot*"]
 namespaces = true
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 markers = [
     "wheel_build: requires building the wheel (slow, needs uv)",
     "requires_apscheduler: requires the scheduler extra (apscheduler)",

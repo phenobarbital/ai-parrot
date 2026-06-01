@@ -207,10 +207,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: Added 5 heartbeat entries to `_AUTONOMOUS_CLASSES` in
+`packages/ai-parrot/src/parrot/autonomous/__init__.py` (lazy-loader dict, no structural
+change). Created `test_heartbeat_integration.py` with 11 tests: 5 integration tests
+(real HeartbeatManager + real DefaultHeartbeatStrategy + fake orchestrator) and 6 export
+contract tests verifying `from parrot.autonomous import Heartbeat*`. All 48 heartbeat
+tests pass. No linting errors. No breaking changes to existing autonomous exports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

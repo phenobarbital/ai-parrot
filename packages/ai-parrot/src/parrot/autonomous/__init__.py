@@ -20,6 +20,12 @@ _AUTONOMOUS_CLASSES: dict[str, str] = {
     "RedisJobInjector": "parrot.autonomous.redis_jobs",
     "WebhookEndpoint": "parrot.autonomous.webhooks",
     "WebhookListener": "parrot.autonomous.webhooks",
+    # Heartbeat — FEAT-209 (autonomous-agent-heartbeat)
+    "HeartbeatConfig": "parrot.autonomous.heartbeat",
+    "HeartbeatState": "parrot.autonomous.heartbeat",
+    "HeartbeatStrategy": "parrot.autonomous.heartbeat",
+    "DefaultHeartbeatStrategy": "parrot.autonomous.heartbeat",
+    "HeartbeatManager": "parrot.autonomous.heartbeat",
 }
 
 
