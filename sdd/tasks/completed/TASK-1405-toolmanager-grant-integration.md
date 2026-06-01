@@ -300,10 +300,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-01
+**Notes**: Added `self._grant_guard = None` in `ToolManager.__init__`, added
+`set_grant_guard()`/`get_grant_guard()` methods (mirror of `set_resolver()`),
+and inserted the guard check in `execute_tool()` inside the
+`isinstance(tool, AbstractTool)` branch before `exec_kwargs = dict(parameters)`.
+TYPE_CHECKING import added for `GrantGuard`. Integration tests updated to use
+`spec=AbstractTool` for correct mock dispatch. 4/4 integration tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. The `get_grant_guard()` getter was added as
+specified in the task.
