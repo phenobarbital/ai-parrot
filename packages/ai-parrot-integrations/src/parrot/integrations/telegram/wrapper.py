@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
     from ...voice.transcriber import VoiceTranscriber
+    from ...voice.tts.synthesizer import VoiceSynthesizer  # FEAT-213
 
 
 class TelegramAgentWrapper(OperatorCommandsMixin):
@@ -174,6 +175,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         # Voice transcriber (lazy — created on first voice message)
         self._transcriber: Optional["VoiceTranscriber"] = None
+
+        # Voice synthesizer for TTS reply (lazy — created on first voice reply)
+        # FEAT-213: opt-in via config.tts_enabled
+        self._synthesizer: Optional["VoiceSynthesizer"] = None
 
         # Register message handlers
         self._register_handlers()
@@ -2973,6 +2978,23 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             self._transcriber = VoiceTranscriber(self.config.voice_config)
         return self._transcriber
 
+    def _get_synthesizer(self) -> "VoiceSynthesizer":
+        """Get or lazily create the VoiceSynthesizer instance (FEAT-213).
+
+        Mirrors _get_transcriber. Only called when tts_enabled is True.
+        """
+        if self._synthesizer is None:
+            from ...voice.tts.synthesizer import VoiceSynthesizer
+            from ...voice.tts.models import TTSConfig
+
+            self._synthesizer = VoiceSynthesizer(
+                TTSConfig(
+                    backend=self.config.tts_backend,
+                    voice=self.config.tts_voice,
+                )
+            )
+        return self._synthesizer
+
     async def close(self) -> None:
         """Release resources held by the wrapper (call on shutdown)."""
         if self._bot_id:
@@ -2985,6 +3007,10 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if self._transcriber is not None:
             await self._transcriber.close()
             self._transcriber = None
+        # FEAT-213: also close the TTS synthesizer if it was created
+        if self._synthesizer is not None:
+            await self._synthesizer.close()
+            self._synthesizer = None
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
@@ -3178,6 +3204,36 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
             parsed = self._parse_response(response)
             sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-213: TTS voice reply — synthesize and send as voice note
+            # when the input was a voice message and TTS is enabled.
+            if (
+                self.config.tts_enabled
+                and self.config.reply_in_kind
+                and parsed.text
+                and parsed.text.strip()
+            ):
+                try:
+                    from aiogram.types import BufferedInputFile
+
+                    synth = self._get_synthesizer()
+                    tts_result = await synth.synthesize(parsed.text)
+                    await self.bot.send_voice(
+                        chat_id,
+                        BufferedInputFile(tts_result.audio, filename="reply.ogg"),
+                    )
+                    self.logger.info(
+                        "Chat %d: Sent voice reply (%d bytes, mime=%s)",
+                        chat_id,
+                        len(tts_result.audio),
+                        tts_result.mime_format,
+                    )
+                except Exception as exc:  # noqa: BLE001 — never break the message flow
+                    self.logger.warning(
+                        "Chat %d: Voice reply failed (text-only fallback): %s",
+                        chat_id,
+                        exc,
+                    )
 
             # FEAT-120: cache bot message ID and store metadata
             bot_msg_id = sent.message_id if sent else 0
