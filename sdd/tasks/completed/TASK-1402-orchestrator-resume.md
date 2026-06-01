@@ -268,8 +268,11 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: Added AutonomousOrchestrator.resume(ledger) method and modified start()
+to accept optional ledger + resume_on_start=True opt-in flag. Added EventLedger to
+TYPE_CHECKING imports. 10 tests pass, including backward compatibility tests for
+start() without arguments. resume() handles inject_job failures gracefully.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. All acceptance criteria met.
