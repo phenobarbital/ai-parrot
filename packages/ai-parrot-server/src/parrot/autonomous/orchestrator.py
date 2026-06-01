@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from ..bots.orchestration import AgentCrew
     from ..bots.abstract import AbstractBot
     from ..models.crew_definition import CrewDefinition
+    from .ledger import EventLedger
 
 
 class ExecutionTarget(Enum):
@@ -199,10 +200,27 @@ class AutonomousOrchestrator:
     # Lifecycle
     # =========================================================================
     
-    async def start(self):
-        """Start all autonomy components."""
+    async def start(
+        self,
+        ledger: "Optional[EventLedger]" = None,
+        *,
+        resume_on_start: bool = False,
+    ) -> None:
+        """Start all autonomy components.
+
+        Args:
+            ledger: Optional ``EventLedger`` instance. When provided alongside
+                ``resume_on_start=True``, the orchestrator calls
+                ``self.resume(ledger)`` after all components are up to
+                re-enqueue incomplete executions from the previous session.
+                Callers that do not pass ``ledger`` are unaffected — this
+                change is fully backward-compatible. (FEAT-212)
+            resume_on_start: Opt-in flag (default ``False``). Set to
+                ``True`` to enable the crash-resume logic. Requires
+                ``ledger`` to be provided; ignored otherwise.
+        """
         self.logger.info("Starting Autonomy Orchestrator...")
-        
+
         # Event Bus
         if self._use_event_bus:
             self.event_bus = EventBus(
@@ -212,14 +230,14 @@ class AutonomousOrchestrator:
             await self.event_bus.connect()
             self._setup_internal_event_handlers()
             self.logger.info("Event Bus initialized")
-        
+
         # Redis Job Injector
         if self.redis_url:
             self.job_injector = RedisJobInjector(redis_url=self.redis_url)
             await self.job_injector.connect()
             await self.job_injector.start_listening(self._handle_injected_job)
             self.logger.info("Redis Job Injector initialized")
-        
+
         # Webhook Listener
         if self._use_webhooks:
             self.webhook_listener = WebhookListener()
@@ -235,6 +253,15 @@ class AutonomousOrchestrator:
 
         self._running = True
         self.logger.info("Autonomy Orchestrator started successfully")
+
+        # FEAT-212 — Crash Resume (opt-in, additive).
+        # Only executes when both ledger and resume_on_start are provided.
+        if ledger is not None and resume_on_start:
+            try:
+                count = await self.resume(ledger)
+                self.logger.info("Resume complete: %d job(s) re-enqueued", count)
+            except Exception:
+                self.logger.exception("Resume failed during start(); ignoring")
     
     async def stop(self):
         """Stop all autonomy components."""
@@ -1214,7 +1241,7 @@ class AutonomousOrchestrator:
     def get_stats(self) -> Dict[str, Any]:
         """Get orchestrator statistics."""
         history = self._execution_history
-        
+
         return {
             "running": self._running,
             "components": {
@@ -1235,3 +1262,59 @@ class AutonomousOrchestrator:
             },
             "cached_agents": len(self._agent_cache)
         }
+
+    # =========================================================================
+    # FEAT-212 — Crash Resume
+    # =========================================================================
+
+    async def resume(self, ledger: "EventLedger") -> int:
+        """Re-enqueue incomplete executions found in the ledger.
+
+        Called from :meth:`start` when ``resume_on_start=True``, or
+        directly from application startup code.
+
+        Reads all traces in the ledger that have an opening event (e.g.
+        ``BeforeInvokeEvent``) but no matching closing event (e.g.
+        ``AfterInvokeEvent``, ``InvokeFailedEvent``) and calls
+        :meth:`inject_job` for each one.
+
+        Idempotency note: re-enqueueing does NOT guarantee idempotent
+        side-effects — that is the agent/tool's responsibility.  This
+        method re-queues *work*, not replayed *effects*.
+
+        Args:
+            ledger: An ``EventLedger`` implementation to query for
+                incomplete executions.
+
+        Returns:
+            The number of jobs successfully re-enqueued.
+        """
+        incomplete = await ledger.find_incomplete()
+        if not incomplete:
+            self.logger.info("resume: no incomplete executions found")
+            return 0
+
+        count = 0
+        for exec_info in incomplete:
+            try:
+                # Reconstruct job parameters from the incomplete execution.
+                # source_name / agent_id is the best proxy for target_id.
+                target_type = exec_info.event_data.get("target_type", "agent")
+                target_id = exec_info.agent_id or exec_info.event_data.get("target_id", "")
+                task = exec_info.event_data.get("task", "")
+                job_id = await self.inject_job(
+                    target_type=target_type,
+                    target_id=target_id,
+                    task=task or f"resume:{exec_info.trace_id}",
+                )
+                self.logger.info(
+                    "resume: re-enqueued trace_id=%s as job=%s",
+                    exec_info.trace_id,
+                    job_id,
+                )
+                count += 1
+            except Exception:
+                self.logger.exception(
+                    "resume: failed to re-enqueue trace_id=%s", exec_info.trace_id
+                )
+        return count
