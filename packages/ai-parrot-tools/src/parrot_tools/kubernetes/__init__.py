@@ -8,8 +8,10 @@ governance integration.
 """
 
 from .config import K8sOperationResult, KubernetesConfig
+from .executor import KubernetesExecutor
 
 __all__ = [
     "KubernetesConfig",
     "K8sOperationResult",
+    "KubernetesExecutor",
 ]
