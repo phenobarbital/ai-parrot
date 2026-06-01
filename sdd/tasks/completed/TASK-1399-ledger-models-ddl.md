@@ -241,10 +241,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: Implemented LedgerEvent (with from_lifecycle classmethod), LedgerConfig,
+AgentLedgerState, IncompleteExecution, LEDGER_DDL in ledger.py. Also implemented
+EventLedger ABC, PostgresLedgerBackend, InMemoryLedgerBackend and LedgerRecorder in
+the same file per spec §3 (all modules share ledger.py as "(continuación)"). 15 tests
+pass. AfterToolCallEvent uses result_status not result — test fixtures adjusted.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. All acceptance criteria met.

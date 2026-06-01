@@ -14,7 +14,7 @@
       "feature_id": "FEAT-212",
       "feature": "event-ledger-resume",
       "spec": "sdd/specs/FEAT-212-event-ledger-resume.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates ledger.py which all subsequent tasks modify or depend on",
       "assigned_to": null,
       "started_at": "2026-06-01T00:51:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1399-ledger-models-ddl.md"
+      "completed_at": "2026-06-01T00:54:44+00:00",
+      "file": "sdd/tasks/completed/TASK-1399-ledger-models-ddl.md"
     },
     {
       "id": "TASK-1400",
