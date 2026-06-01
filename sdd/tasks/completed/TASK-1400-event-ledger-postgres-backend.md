@@ -296,10 +296,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-01
+**Notes**: EventLedger ABC, PostgresLedgerBackend, and InMemoryLedgerBackend were all
+implemented in ledger.py (started in TASK-1399). Created test_ledger_backend.py with 21
+tests covering append, read filters, last_state projection, and find_incomplete logic.
+All tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None. All acceptance criteria met.

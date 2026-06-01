@@ -32,7 +32,7 @@
       "feature_id": "FEAT-212",
       "feature": "event-ledger-resume",
       "spec": "sdd/specs/FEAT-212-event-ledger-resume.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Extends ledger.py created by TASK-1399; must run after it",
       "assigned_to": null,
       "started_at": "2026-06-01T00:51:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1400-event-ledger-postgres-backend.md"
+      "completed_at": "2026-06-01T00:56:17+00:00",
+      "file": "sdd/tasks/completed/TASK-1400-event-ledger-postgres-backend.md"
     },
     {
       "id": "TASK-1401",
