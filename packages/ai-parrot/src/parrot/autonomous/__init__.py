@@ -26,6 +26,24 @@ _AUTONOMOUS_CLASSES: dict[str, str] = {
     "HeartbeatStrategy": "parrot.autonomous.heartbeat",
     "DefaultHeartbeatStrategy": "parrot.autonomous.heartbeat",
     "HeartbeatManager": "parrot.autonomous.heartbeat",
+    # Event Ledger — FEAT-212 (event-ledger-resume)
+    # App startup wiring sequence:
+    #   db = app["database"]
+    #   backend = PostgresLedgerBackend(db)
+    #   await backend.ensure_schema()
+    #   recorder = LedgerRecorder(backend)
+    #   recorder.start()
+    #   # At orchestrator start (opt-in crash resume):
+    #   await orchestrator.resume(backend)
+    #   # or: await orchestrator.start(ledger=backend, resume_on_start=True)
+    "EventLedger": "parrot.autonomous.ledger",
+    "PostgresLedgerBackend": "parrot.autonomous.ledger",
+    "LedgerRecorder": "parrot.autonomous.ledger",
+    "LedgerEvent": "parrot.autonomous.ledger",
+    "LedgerConfig": "parrot.autonomous.ledger",
+    "AgentLedgerState": "parrot.autonomous.ledger",
+    "IncompleteExecution": "parrot.autonomous.ledger",
+    "InMemoryLedgerBackend": "parrot.autonomous.ledger",
 }
 
 
