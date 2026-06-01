@@ -46,6 +46,15 @@ from .credentials import (
     StaticCredentialResolver,
     StaticCredentials,
 )
+# Grants (bounded approval windows — FEAT-211)
+from .grants import (
+    Grant,
+    GrantConfig,
+    GrantStore,
+    InMemoryGrantStore,
+    GrantGuard,
+    GuardDecision,
+)
 
 __all__ = [
     # Data models
@@ -72,4 +81,11 @@ __all__ = [
     "OAuthCredentialResolver",
     "StaticCredentialResolver",
     "StaticCredentials",
+    # Grants (bounded approval windows)
+    "Grant",
+    "GrantConfig",
+    "GrantStore",
+    "InMemoryGrantStore",
+    "GrantGuard",
+    "GuardDecision",
 ]

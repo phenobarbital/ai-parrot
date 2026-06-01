@@ -14,16 +14,16 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Creates grants.py — all subsequent tasks modify or depend on this file",
       "assigned_to": null,
-      "started_at": "2026-06-01T00:51:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1403-grant-models-and-store.md"
+      "started_at": null,
+      "completed_at": "2026-06-01T01:00:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1403-grant-models-and-store.md"
     },
     {
       "id": "TASK-1404",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -41,9 +41,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies grants.py (same file as TASK-1403) — must be sequential",
       "assigned_to": null,
-      "started_at": "2026-06-01T00:51:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1404-grant-guard.md"
+      "started_at": null,
+      "completed_at": "2026-06-01T01:01:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1404-grant-guard.md"
     },
     {
       "id": "TASK-1405",
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,9 +61,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on GrantGuard from TASK-1404; modifies manager.py (different file but runtime dependency)",
       "assigned_to": null,
-      "started_at": "2026-06-01T00:51:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1405-toolmanager-grant-integration.md"
+      "started_at": null,
+      "completed_at": "2026-06-01T01:04:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1405-toolmanager-grant-integration.md"
     },
     {
       "id": "TASK-1406",
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -81,9 +81,9 @@
       "parallel": false,
       "parallelism_notes": "Final wiring — needs all prior tasks completed to export their types",
       "assigned_to": null,
-      "started_at": "2026-06-01T00:51:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1406-grant-exports-wiring.md"
+      "started_at": null,
+      "completed_at": "2026-06-01T01:05:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1406-grant-exports-wiring.md"
     }
   ]
 }

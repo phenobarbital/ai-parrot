@@ -264,10 +264,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-01
+**Notes**: Created `packages/ai-parrot/src/parrot/auth/grants.py` with `Grant`,
+`GrantConfig`, `GrantStore` (ABC), and `InMemoryGrantStore` with asyncio.Lock,
+TTL expiry, and `cleanup()`. Test file created at
+`packages/ai-parrot/tests/tools/test_grants.py`. All 17 model/store tests pass,
+ruff reports no issues.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.
