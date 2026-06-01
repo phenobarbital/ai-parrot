@@ -32,7 +32,7 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies grants.py (same file as TASK-1403) — must be sequential",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1404-grant-guard.md"
+      "completed_at": "2026-06-01T01:01:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1404-grant-guard.md"
     },
     {
       "id": "TASK-1405",

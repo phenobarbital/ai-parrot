@@ -359,10 +359,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-01
+**Notes**: Added `GuardDecision` and `GrantGuard` to `grants.py` (same file as
+TASK-1403, as specified). `GrantGuard.authorize()` implements the full
+allow/approve/deny logic with HITL via `HumanInteractionManager`. 8 guard tests
+pass. Imports use `TYPE_CHECKING` where needed to avoid circular imports.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: None.
 
 **Deviations from spec**: none | describe if any
