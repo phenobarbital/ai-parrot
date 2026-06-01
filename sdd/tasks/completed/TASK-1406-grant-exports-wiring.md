@@ -197,10 +197,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-01
+**Notes**: Added grant imports from `.grants` and extended `__all__` in
+`parrot/auth/__init__.py`. All 6 names exported: Grant, GrantConfig, GrantStore,
+InMemoryGrantStore, GrantGuard, GuardDecision. Full test suite: 30/30 pass.
+Export smoke test passes. Ruff reports no issues.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: None.
