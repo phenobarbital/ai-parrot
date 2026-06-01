@@ -392,6 +392,29 @@ class TestGrantGuard:
 # ── TASK-1405: ToolManager integration tests ─────────────────────────────────
 
 
+def _make_abstract_tool_for_manager(
+    name: str = "pulumi_apply",
+    requires_grant: bool = True,
+    **extra_meta,
+):
+    """Create a mock AbstractTool that works with ToolManager.register_tool().
+
+    Must use spec=AbstractTool so isinstance(tool, AbstractTool) is True,
+    which ensures ToolManager registers and dispatches it correctly.
+    """
+    from parrot.tools.abstract import AbstractTool, ToolResult
+
+    tool = MagicMock(spec=AbstractTool)
+    tool.name = name
+    tool.routing_meta = {"requires_grant": requires_grant, **extra_meta}
+    tool.execute = AsyncMock(
+        return_value=ToolResult(success=True, status="success", result="deployed")
+    )
+    # ToolManager calls _auto_wire_toolkit — spec=AbstractTool doesn't have that,
+    # so ensure it doesn't break
+    return tool
+
+
 @pytest.mark.asyncio
 class TestToolManagerGrantIntegration:
     """Integration tests for ToolManager grant guard gating."""
@@ -399,15 +422,9 @@ class TestToolManagerGrantIntegration:
     async def test_no_guard_unaffected(self):
         """Without guard configured, tools with requires_grant execute normally."""
         from parrot.tools.manager import ToolManager
-        from parrot.tools.abstract import ToolResult
 
         tm = ToolManager()
-        tool = MagicMock()
-        tool.name = "pulumi_apply"
-        tool.routing_meta = {"requires_grant": True}
-        tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="deployed"
-        ))
+        tool = _make_abstract_tool_for_manager(requires_grant=True)
         tm.register_tool(tool)
 
         result = await tm.execute_tool("pulumi_apply", {})
@@ -417,7 +434,6 @@ class TestToolManagerGrantIntegration:
     async def test_gates_requires_grant_approved(self):
         """Guard approves (active grant) → tool executes normally."""
         from parrot.tools.manager import ToolManager
-        from parrot.tools.abstract import ToolResult
 
         tm = ToolManager()
         store = InMemoryGrantStore()
@@ -427,18 +443,13 @@ class TestToolManagerGrantIntegration:
         guard = GrantGuard(store, human_manager=None)
         tm.set_grant_guard(guard)
 
-        tool = MagicMock()
-        tool.name = "pulumi_apply"
-        tool.routing_meta = {"requires_grant": True}
-        tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="deployed"
-        ))
+        tool = _make_abstract_tool_for_manager()
         tm.register_tool(tool)
 
         pctx = MagicMock()
         pctx.user_id = "user-1"
         pctx.channel = None
-        result = await tm.execute_tool("pulumi_apply", {}, permission_context=pctx)
+        await tm.execute_tool("pulumi_apply", {}, permission_context=pctx)
         tool.execute.assert_called_once()
 
     async def test_denied_returns_forbidden(self):
@@ -451,12 +462,7 @@ class TestToolManagerGrantIntegration:
         guard = GrantGuard(store, human_manager=None)  # no HITL → fail-closed
         tm.set_grant_guard(guard)
 
-        tool = MagicMock()
-        tool.name = "pulumi_apply"
-        tool.routing_meta = {"requires_grant": True}
-        tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="deployed"
-        ))
+        tool = _make_abstract_tool_for_manager()
         tm.register_tool(tool)
 
         pctx = MagicMock()
@@ -470,25 +476,19 @@ class TestToolManagerGrantIntegration:
     async def test_non_gated_tool_passes_with_guard(self):
         """With guard set, tools without requires_grant still execute normally."""
         from parrot.tools.manager import ToolManager
-        from parrot.tools.abstract import ToolResult
 
         tm = ToolManager()
         store = InMemoryGrantStore()
         guard = GrantGuard(store, human_manager=None)
         tm.set_grant_guard(guard)
 
-        tool = MagicMock()
-        tool.name = "safe_tool"
-        tool.routing_meta = {}  # no requires_grant
-        tool.execute = AsyncMock(return_value=ToolResult(
-            success=True, status="success", result="safe_result"
-        ))
+        tool = _make_abstract_tool_for_manager(name="safe_tool", requires_grant=False)
         tm.register_tool(tool)
 
         pctx = MagicMock()
         pctx.user_id = "user-1"
         pctx.channel = None
-        result = await tm.execute_tool("safe_tool", {}, permission_context=pctx)
+        await tm.execute_tool("safe_tool", {}, permission_context=pctx)
         tool.execute.assert_called_once()
 
 

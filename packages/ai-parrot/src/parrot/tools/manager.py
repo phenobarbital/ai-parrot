@@ -15,6 +15,7 @@ from ..auth.exceptions import AuthorizationRequired
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
     from ..auth.resolver import AbstractPermissionResolver
+    from ..auth.grants import GrantGuard
 
 
 @dataclass
@@ -245,6 +246,9 @@ class ToolManager(MCPToolManagerMixin):
         # Permission resolver for Layer 2 enforcement (optional)
         self._resolver: Optional["AbstractPermissionResolver"] = resolver
 
+        # Grant guard for bounded approval windows (optional — FEAT-211)
+        self._grant_guard: Optional["GrantGuard"] = None
+
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
 
@@ -297,6 +301,32 @@ class ToolManager(MCPToolManagerMixin):
         self.logger.debug(
             "Permission resolver set: %s", resolver.__class__.__name__
         )
+
+    # ── Grant Guard Methods (FEAT-211) ─────────────────────────────────────────
+
+    def set_grant_guard(self, guard: "GrantGuard") -> None:
+        """Set the grant guard for tool-level bounded approval windows.
+
+        When set, tools with ``routing_meta["requires_grant"] = True`` will
+        require an active grant or HITL approval before execution. Tools
+        without this flag are unaffected.
+
+        This is an **additive** change: without a guard configured,
+        ``execute_tool`` behaves identically to its current behaviour.
+
+        Args:
+            guard: The GrantGuard instance to use for authorization decisions.
+        """
+        self._grant_guard = guard
+        self.logger.debug("Grant guard set: %s", guard.__class__.__name__)
+
+    def get_grant_guard(self) -> "Optional[GrantGuard]":
+        """Return the current grant guard, or None if not configured.
+
+        Returns:
+            The GrantGuard instance, or None if no guard is configured.
+        """
+        return self._grant_guard
 
     # ── Tool Search ────────────────────────────────────────────────────────────
 
@@ -1167,6 +1197,25 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
+                # === Grant guard check (FEAT-211) ===
+                # If a GrantGuard is configured and the tool requires a grant,
+                # authorize before dispatching to tool.execute().
+                # This is purely additive: without a guard the path is unchanged.
+                if self._grant_guard is not None:
+                    decision = await self._grant_guard.authorize(
+                        tool=tool,
+                        parameters=parameters,
+                        permission_context=permission_context,
+                    )
+                    if not decision.allowed:
+                        return ToolResult(
+                            success=False,
+                            status="forbidden",
+                            error=f"Grant denied: {decision.reason}",
+                            result=None,
+                        )
+                # === End grant guard ===
+
                 # Propagate permission context and resolver to tool.execute()
                 # for Layer 2 enforcement
                 exec_kwargs = dict(parameters)
