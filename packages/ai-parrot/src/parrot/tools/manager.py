@@ -320,7 +320,8 @@ class ToolManager(MCPToolManagerMixin):
         self._grant_guard = guard
         self.logger.debug("Grant guard set: %s", guard.__class__.__name__)
 
-    def get_grant_guard(self) -> "Optional[GrantGuard]":
+    @property
+    def grant_guard(self) -> Optional[GrantGuard]:
         """Return the current grant guard, or None if not configured.
 
         Returns:

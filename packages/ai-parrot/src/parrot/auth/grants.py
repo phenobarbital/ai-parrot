@@ -191,6 +191,13 @@ class InMemoryGrantStore(GrantStore):
     Note:
         Grants are lost on process restart. Persistence is a future concern
         tied to the event ledger (FEAT-212).
+
+    Note:
+        ``cleanup()`` removes stale grants but has no built-in scheduler.
+        Callers are responsible for invoking it periodically (e.g. on a
+        background task or before long-running operations) to bound memory
+        growth. A future Redis-backed store will use TTL natively and not
+        require explicit cleanup.
     """
 
     def __init__(self) -> None:
@@ -438,7 +445,7 @@ class GrantGuard:
             GuardDecision reflecting the human's decision.
         """
         # Import here to avoid circular imports at module level
-        from parrot.human.models import HumanInteraction, InteractionType
+        from parrot.human.models import HumanInteraction, InteractionType, Severity
 
         # Determine HITL channel (prefer context channel, fall back to config)
         channel = (
@@ -447,23 +454,35 @@ class GrantGuard:
             else self.config.default_channel
         )
 
-        # Determine window duration (routing_meta override takes precedence)
-        window_seconds: int = tool.routing_meta.get(
-            "grant_window_seconds", self.config.window_seconds
-        )
+        # Determine window duration (routing_meta override takes precedence).
+        # Clamp to at least 1 second: a zero/negative value from routing_meta
+        # would produce an already-expired grant, silently defeating the approval.
+        raw_window = tool.routing_meta.get("grant_window_seconds", self.config.window_seconds)
+        try:
+            window_seconds: int = max(1, int(raw_window))
+        except (TypeError, ValueError):
+            self.logger.warning(
+                "Invalid grant_window_seconds %r in routing_meta for tool %r; "
+                "falling back to config default (%ds)",
+                raw_window,
+                tool.name,
+                self.config.window_seconds,
+            )
+            window_seconds = self.config.window_seconds
 
+        window_display = f"{window_seconds / 60:.1f} min"
         interaction = HumanInteraction(
             interaction_type=InteractionType.APPROVAL,
             question=(
                 f"⚠️ Tool '{tool.name}' requires approval.\n"
                 f"Scope: {scope}\n"
                 f"Owner: {owner}\n"
-                f"Approval window: {window_seconds // 60} min\n\n"
+                f"Approval window: {window_display}\n\n"
                 "Do you approve this action?"
             ),
             timeout=self.config.approval_timeout,
             default_response=False,  # fail-closed on timeout
-            severity="high",
+            severity=Severity.HIGH,
         )
 
         self.logger.info(
@@ -491,6 +510,9 @@ class GrantGuard:
         approved: bool = bool(result.consolidated_value)
 
         if approved:
+            # InteractionResult carries no human-respondent identifier beyond
+            # the interaction UUID, so we use it as the granted_by token.
+            # This keeps the grant record traceable back to the HITL event.
             new_grant = await self.store.grant(
                 owner,
                 scope,

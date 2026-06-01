@@ -14,10 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 from parrot.auth.grants import (
     Grant,
     GrantConfig,
-    GrantStore,
     InMemoryGrantStore,
     GrantGuard,
-    GuardDecision,
 )
 from parrot.human.models import InteractionResult, InteractionStatus
 
@@ -51,6 +49,22 @@ class TestGrant:
             expires_at=now + timedelta(minutes=15),
         )
         assert g.is_active(now + timedelta(minutes=20)) is False
+
+    def test_grant_is_active_at_exact_boundary(self):
+        """Grant is inactive exactly at expires_at (closed-open interval [created, expires))."""
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(minutes=15)
+        g = Grant(
+            owner_id="user-1",
+            scope="tool:deploy",
+            granted_by="admin",
+            created_at=now,
+            expires_at=expires,
+        )
+        # Exactly at the boundary: expired (interval is [created_at, expires_at))
+        assert g.is_active(expires) is False
+        # One microsecond before: still active
+        assert g.is_active(expires - timedelta(microseconds=1)) is True
 
     def test_grant_is_active_revoked(self):
         """Revoked grant is inactive even within window."""
@@ -221,7 +235,10 @@ class TestInMemoryGrantStore:
         )
         removed = await store.cleanup()
         assert removed == 1
-        assert g1.grant_id in store._grants  # still active grant remains
+        # Verify via the public API: g1 must still be active, tool:b must be gone
+        active = await store.list_active("user-1")
+        assert len(active) == 1
+        assert active[0].grant_id == g1.grant_id
 
 
 # ── TASK-1404: GrantGuard tests ───────────────────────────────────────────────
@@ -388,6 +405,56 @@ class TestGrantGuard:
         active = await store.list_active("user-1")
         assert len(active) == 1
 
+    async def test_zero_window_in_routing_meta_clamped_to_one_second(self):
+        """grant_window_seconds=0 in routing_meta is clamped to 1s, not silently broken."""
+        store = InMemoryGrantStore()
+        hm = _approve_manager()
+        guard = GrantGuard(store, human_manager=hm)
+        tool = _make_tool(grant_window_seconds=0)
+
+        decision = await guard.authorize(
+            tool=tool, parameters={}, permission_context=_make_pctx()
+        )
+        # Guard should allow (approval was granted) and produce a valid grant
+        assert decision.allowed is True
+        assert decision.grant is not None
+        # Grant window must be at least 1 second (clamped), not already expired
+        delta = (decision.grant.expires_at - decision.grant.created_at).total_seconds()
+        assert delta >= 1
+
+    async def test_negative_window_in_routing_meta_clamped(self):
+        """Negative grant_window_seconds in routing_meta is clamped to 1s."""
+        store = InMemoryGrantStore()
+        hm = _approve_manager()
+        guard = GrantGuard(store, human_manager=hm)
+        tool = _make_tool(grant_window_seconds=-300)
+
+        decision = await guard.authorize(
+            tool=tool, parameters={}, permission_context=_make_pctx()
+        )
+        assert decision.allowed is True
+        assert decision.grant is not None
+        delta = (decision.grant.expires_at - decision.grant.created_at).total_seconds()
+        assert delta >= 1
+
+    async def test_hitl_exception_fails_closed(self):
+        """Exception from request_human_input → fail-closed GuardDecision."""
+        store = InMemoryGrantStore()
+        hm = MagicMock()
+        hm.request_human_input = AsyncMock(
+            side_effect=RuntimeError("connection refused")
+        )
+        guard = GrantGuard(store, human_manager=hm)
+
+        decision = await guard.authorize(
+            tool=_make_tool(),
+            parameters={},
+            permission_context=_make_pctx(),
+        )
+        assert decision.allowed is False
+        assert "connection refused" in decision.reason
+        assert "fail-closed" in decision.reason
+
 
 # ── TASK-1405: ToolManager integration tests ─────────────────────────────────
 
@@ -427,7 +494,7 @@ class TestToolManagerGrantIntegration:
         tool = _make_abstract_tool_for_manager(requires_grant=True)
         tm.register_tool(tool)
 
-        result = await tm.execute_tool("pulumi_apply", {})
+        await tm.execute_tool("pulumi_apply", {})
         # No guard → tool executes normally
         tool.execute.assert_called_once()
 
@@ -490,6 +557,51 @@ class TestToolManagerGrantIntegration:
         pctx.channel = None
         await tm.execute_tool("safe_tool", {}, permission_context=pctx)
         tool.execute.assert_called_once()
+
+    async def test_hitl_approve_through_execute_tool_then_no_reask(self):
+        """Full HITL path via execute_tool: approve → execute; 2nd call → no re-ask.
+
+        This is the spec-mandated integration test: the HITL approval path must
+        work end-to-end through ToolManager.execute_tool, not just through
+        GrantGuard.authorize in isolation.
+        """
+        from parrot.tools.manager import ToolManager
+
+        store = InMemoryGrantStore()
+        hm = _approve_manager()
+        guard = GrantGuard(store, human_manager=hm)
+
+        tm = ToolManager()
+        tm.set_grant_guard(guard)
+
+        tool = _make_abstract_tool_for_manager(requires_grant=True)
+        tm.register_tool(tool)
+
+        pctx = MagicMock()
+        pctx.user_id = "user-1"
+        pctx.channel = "telegram"
+
+        # First call: HITL fires, approval granted, tool executes
+        await tm.execute_tool("pulumi_apply", {}, permission_context=pctx)
+        assert tool.execute.call_count == 1
+        assert hm.request_human_input.call_count == 1
+
+        # Second call within window: no re-approval, tool executes again
+        await tm.execute_tool("pulumi_apply", {}, permission_context=pctx)
+        assert tool.execute.call_count == 2
+        assert hm.request_human_input.call_count == 1  # still exactly 1
+
+    async def test_grant_guard_property(self):
+        """grant_guard property returns the configured guard."""
+        from parrot.tools.manager import ToolManager
+
+        tm = ToolManager()
+        assert tm.grant_guard is None
+
+        store = InMemoryGrantStore()
+        guard = GrantGuard(store)
+        tm.set_grant_guard(guard)
+        assert tm.grant_guard is guard
 
 
 # ── TASK-1406: Export smoke test ──────────────────────────────────────────────
