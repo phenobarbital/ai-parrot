@@ -56,6 +56,11 @@ class TelegramAgentConfig:
         enable_group_commands: Allow bot to respond to /ask command in groups.
         reply_in_thread: Reply as thread to original message in groups.
         enable_channel_posts: Allow bot to process channel posts with @mentions.
+        operator_chat_ids: Allowlist of chat IDs permitted to run operator commands.
+            Fail-closed: ``None`` (or empty) means NO chat is an operator.
+            YAML values are coerced to ``int`` so quoted IDs work correctly.
+        enable_operator_commands: Feature toggle — set ``False`` to skip
+            registering all operator command handlers entirely.
     """
     name: str
     chatbot_id: str
@@ -120,6 +125,14 @@ class TelegramAgentConfig:
     max_document_size_mb: int = 20
     # Reply context enrichment (FEAT-120)
     enable_reply_context: bool = True
+    # Operator commands (FEAT-210)
+    # Allowlist of chat IDs that may execute operator commands.
+    # Fail-closed: None (or empty) means NO chat is an operator.
+    # This is intentionally more restrictive than allowed_chat_ids
+    # (which is fail-open when None → everyone allowed).
+    operator_chat_ids: Optional[List[int]] = None
+    # Feature toggle — set False to skip registering all operator handlers.
+    enable_operator_commands: bool = True
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
@@ -258,6 +271,9 @@ class TelegramAgentConfig:
             agent_timeout=float(data.get('agent_timeout', 120.0)),
             max_document_size_mb=int(data.get('max_document_size_mb', 20)),
             enable_reply_context=bool(data.get('enable_reply_context', True)),
+            operator_chat_ids=[int(x) for x in data['operator_chat_ids']]
+            if data.get('operator_chat_ids') else None,
+            enable_operator_commands=bool(data.get('enable_operator_commands', True)),
         )
 
 

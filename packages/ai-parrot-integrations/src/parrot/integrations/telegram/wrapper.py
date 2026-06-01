@@ -44,6 +44,7 @@ from .auth import (
     CompositeAuthStrategy,
 )
 from .filters import BotMentionedFilter
+from .operator_commands import OperatorCommandsMixin
 from .post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
@@ -57,7 +58,7 @@ if TYPE_CHECKING:
     from ...voice.transcriber import VoiceTranscriber
 
 
-class TelegramAgentWrapper:
+class TelegramAgentWrapper(OperatorCommandsMixin):
     """
     Wraps an Agent/AgentCrew/AgentFlow for Telegram integration.
 
@@ -230,6 +231,12 @@ class TelegramAgentWrapper:
 
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
+
+        # ─── Operator Commands (FEAT-210) — before generic text handler ───
+        # Must be registered here, before the generic message handler so that
+        # Command("x") filters catch these commands before the text handler does.
+        if getattr(self.config, 'enable_operator_commands', True):
+            self._register_operator_commands()
 
         # ─── Group/Channel Handlers (must be before generic text handler) ───
 
@@ -919,6 +926,27 @@ class TelegramAgentWrapper:
             return True
         return chat_id in self.config.allowed_chat_ids
 
+    def _is_operator(self, chat_id: int) -> bool:
+        """Check if a chat is an operator (has access to operator-only commands).
+
+        Fail-closed: when operator_chat_ids is None or empty, no chat is an
+        operator. This is intentionally opposite to _is_authorized's fail-open
+        behavior. Gate also respects the enable_operator_commands feature toggle.
+
+        Args:
+            chat_id: Telegram chat identifier to check.
+
+        Returns:
+            True only when operator commands are enabled AND chat_id is in
+            the configured operator_chat_ids allowlist.
+        """
+        if not getattr(self.config, 'enable_operator_commands', True):
+            return False
+        operator_ids = getattr(self.config, 'operator_chat_ids', None)
+        if not operator_ids:
+            return False
+        return chat_id in operator_ids
+
     def _get_or_create_memory(self, chat_id: int) -> "ConversationMemory":
         """Get or create conversation memory for a chat."""
         if chat_id not in self.conversations:
@@ -1512,6 +1540,19 @@ class TelegramAgentWrapper:
             help_text += "\n*Agent Commands:*\n"
             for cmd_info in self._agent_commands:
                 help_text += f"/{cmd_info['command']} - {cmd_info['description']}\n"
+
+        # Operator commands — visible only to operators (FEAT-210)
+        if getattr(self.config, 'enable_operator_commands', True) and self._is_operator(chat_id):
+            help_text += (
+                "\n*Operator Commands:*\n"
+                "/health - Heartbeat liveness\n"
+                "/status - Harness status (heartbeat + sub-agents)\n"
+                "/context - Conversation shaping context\n"
+                "/memory - Recent conversation turns\n"
+                "/mission - Heartbeat mission (read-only)\n"
+                "/model - Agent model and provider (read-only)\n"
+                "/thread <task> - Fork task to ephemeral sub-agent\n"
+            )
 
         help_text += "\nSend any message directly for a conversation with the agent."
 
