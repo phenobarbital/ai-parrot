@@ -9,9 +9,11 @@ governance integration.
 
 from .config import K8sOperationResult, KubernetesConfig
 from .executor import KubernetesExecutor
+from .toolkit import KubernetesToolkit
 
 __all__ = [
     "KubernetesConfig",
     "K8sOperationResult",
     "KubernetesExecutor",
+    "KubernetesToolkit",
 ]
