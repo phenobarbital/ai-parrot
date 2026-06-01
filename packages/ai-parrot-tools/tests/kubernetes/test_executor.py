@@ -27,6 +27,18 @@ def _make_k8s_modules():
     k8s_client.AppsV1Api = MagicMock()
     k8s_client.ApiClient = MagicMock()
 
+    # kubernetes_asyncio.client.exceptions
+    k8s_client_exceptions = types.ModuleType("kubernetes_asyncio.client.exceptions")
+
+    class _FakeApiException(Exception):
+        def __init__(self, status=0, reason=""):
+            self.status = status
+            self.reason = reason
+            super().__init__(f"[{status}] {reason}")
+
+    k8s_client_exceptions.ApiException = _FakeApiException
+    k8s_client.exceptions = k8s_client_exceptions
+
     # kubernetes_asyncio.config
     k8s_config_mod = types.ModuleType("kubernetes_asyncio.config")
     k8s_config_mod.load_kube_config = AsyncMock()
@@ -43,6 +55,7 @@ def _make_k8s_modules():
     return {
         "kubernetes_asyncio": k8s,
         "kubernetes_asyncio.client": k8s_client,
+        "kubernetes_asyncio.client.exceptions": k8s_client_exceptions,
         "kubernetes_asyncio.config": k8s_config_mod,
         "kubernetes_asyncio.utils": k8s_utils,
     }
@@ -138,7 +151,7 @@ class TestKubernetesExecutorListPods:
 
         result = await executor.list_pods(namespace="test-ns", label_selector="app=nginx")
         mock_v1.list_namespaced_pod.assert_called_once_with(
-            namespace="test-ns", label_selector="app=nginx"
+            namespace="test-ns", label_selector="app=nginx", _request_timeout=60
         )
         assert result.success is True
 
@@ -199,7 +212,7 @@ class TestKubernetesExecutorGetLogs:
 
         await executor.get_logs(pod="my-pod", tail_lines=50)
         mock_v1.read_namespaced_pod_log.assert_called_once_with(
-            name="my-pod", namespace="test-ns", tail_lines=50
+            name="my-pod", namespace="test-ns", tail_lines=50, _request_timeout=60
         )
 
     @pytest.mark.asyncio
@@ -227,7 +240,7 @@ class TestKubernetesExecutorGetLogs:
 
         await executor.get_logs(pod="my-pod", container="sidecar")
         mock_v1.read_namespaced_pod_log.assert_called_once_with(
-            name="my-pod", namespace="test-ns", tail_lines=200, container="sidecar"
+            name="my-pod", namespace="test-ns", tail_lines=200, _request_timeout=60, container="sidecar"
         )
 
 
@@ -287,6 +300,7 @@ class TestKubernetesExecutorScaleDeployment:
             name="my-deploy",
             namespace="test-ns",
             body={"spec": {"replicas": 5}},
+            _request_timeout=60,
         )
 
     @pytest.mark.asyncio
@@ -474,3 +488,19 @@ class TestKubernetesExecutorLifecycle:
         # _ensure_client should return immediately (client already set)
         await exc._ensure_client()
         assert exc._api_client is mock_client  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_import_error_when_kubernetes_not_installed(self, config):
+        """_ensure_client raises ImportError when kubernetes_asyncio is missing."""
+        from parrot_tools.kubernetes.executor import KubernetesExecutor
+
+        executor = KubernetesExecutor(config)
+        # Remove kubernetes_asyncio from sys.modules to simulate missing package
+        mods_to_remove = [k for k in sys.modules if k.startswith("kubernetes_asyncio")]
+        saved = {k: sys.modules.pop(k) for k in mods_to_remove}
+        try:
+            with pytest.raises(ImportError) as exc_info:
+                await executor._ensure_client()
+            assert "kubernetes_asyncio" in str(exc_info.value)
+        finally:
+            sys.modules.update(saved)

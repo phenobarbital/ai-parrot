@@ -4,7 +4,7 @@ Provides Pydantic models for KubernetesConfig and K8sOperationResult,
 mirroring the PulumiConfig/PulumiOperationResult pattern.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -79,7 +79,7 @@ class K8sOperationResult(BaseModel):
         ...,
         description="Human-readable summary of the operation result.",
     )
-    items: list[dict] = Field(
+    items: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Bounded projection of resources affected/returned. "
                     "Never contains full Kubernetes API objects.",

@@ -73,7 +73,7 @@ class KubernetesToolkit(AbstractToolkit):
         """
         super().__init__(**kwargs)
         self.config = config or KubernetesConfig()
-        self.executor = KubernetesExecutor(self.config)
+        self._k8s_executor = KubernetesExecutor(self.config)
 
     def _generate_tools(self) -> None:
         """Generate tools and set routing_meta on mutating tools.
@@ -98,13 +98,18 @@ class KubernetesToolkit(AbstractToolkit):
         Call this when the toolkit is no longer needed to release connections.
         This method is excluded from tool generation (see exclude_tools).
         """
-        await self.executor.close()
+        await self._k8s_executor.close()
 
     async def __aenter__(self) -> "KubernetesToolkit":
         """Async context manager entry."""
         return self
 
-    async def __aexit__(self, *args) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[object],
+    ) -> None:
         """Async context manager exit — closes the executor."""
         await self.close()
 
@@ -131,7 +136,7 @@ class KubernetesToolkit(AbstractToolkit):
             namespace or self.config.namespace,
             label_selector,
         )
-        return await self.executor.list_pods(
+        return await self._k8s_executor.list_pods(
             namespace=namespace,
             label_selector=label_selector,
         )
@@ -163,7 +168,7 @@ class KubernetesToolkit(AbstractToolkit):
             container,
             tail_lines,
         )
-        return await self.executor.get_logs(
+        return await self._k8s_executor.get_logs(
             pod=pod,
             namespace=namespace,
             container=container,
@@ -209,7 +214,7 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="name must not be empty",
             )
-        return await self.executor.describe(kind=kind, name=name, namespace=namespace)
+        return await self._k8s_executor.describe(kind=kind, name=name, namespace=namespace)
 
     async def k8s_get(
         self,
@@ -243,7 +248,7 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="kind must not be empty",
             )
-        return await self.executor.get_resources(
+        return await self._k8s_executor.get_resources(
             kind=kind,
             namespace=namespace,
             label_selector=label_selector,
@@ -284,7 +289,7 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="manifest_yaml must not be empty",
             )
-        return await self.executor.apply_manifest(
+        return await self._k8s_executor.apply_manifest(
             manifest_yaml=manifest_yaml,
             namespace=namespace,
         )
@@ -321,7 +326,7 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="name must not be empty",
             )
-        return await self.executor.scale_deployment(
+        return await self._k8s_executor.scale_deployment(
             name=name,
             replicas=replicas,
             namespace=namespace,
@@ -371,7 +376,7 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="name must not be empty",
             )
-        return await self.executor.delete_resource(
+        return await self._k8s_executor.delete_resource(
             kind=kind,
             name=name,
             namespace=namespace,
@@ -407,4 +412,4 @@ class KubernetesToolkit(AbstractToolkit):
                 summary="Invalid input",
                 error="name must not be empty",
             )
-        return await self.executor.rollout_restart(name=name, namespace=namespace)
+        return await self._k8s_executor.rollout_restart(name=name, namespace=namespace)

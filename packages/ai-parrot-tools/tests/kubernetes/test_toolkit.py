@@ -21,9 +21,23 @@ def _make_k8s_modules():
     k8s.client = k8s_client
     k8s.config = k8s_config_mod
     k8s.utils = k8s_utils
+
+    # Add client.exceptions submodule
+    k8s_client_exceptions = types.ModuleType("kubernetes_asyncio.client.exceptions")
+
+    class _FakeApiException(Exception):
+        def __init__(self, status=0, reason=""):
+            self.status = status
+            self.reason = reason
+            super().__init__(f"[{status}] {reason}")
+
+    k8s_client_exceptions.ApiException = _FakeApiException
+    k8s_client.exceptions = k8s_client_exceptions
+
     return {
         "kubernetes_asyncio": k8s,
         "kubernetes_asyncio.client": k8s_client,
+        "kubernetes_asyncio.client.exceptions": k8s_client_exceptions,
         "kubernetes_asyncio.config": k8s_config_mod,
         "kubernetes_asyncio.utils": k8s_utils,
     }
@@ -148,114 +162,114 @@ class TestKubernetesToolkitDelegation:
 
     @pytest.mark.asyncio
     async def test_k8s_list_pods_delegates(self, toolkit):
-        """k8s_list_pods delegates to executor.list_pods."""
+        """k8s_list_pods delegates to _k8s_executor.list_pods."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="list_pods", summary="Found 0 pods"
         )
-        toolkit.executor.list_pods = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.list_pods = AsyncMock(return_value=expected)
         result = await toolkit.k8s_list_pods(namespace="test")
-        toolkit.executor.list_pods.assert_awaited_once_with(
+        toolkit._k8s_executor.list_pods.assert_awaited_once_with(
             namespace="test", label_selector=None
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_get_logs_delegates(self, toolkit):
-        """k8s_get_logs delegates to executor.get_logs."""
+        """k8s_get_logs delegates to _k8s_executor.get_logs."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="get_logs", summary="OK",
             items=[{"log": "log line"}]
         )
-        toolkit.executor.get_logs = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.get_logs = AsyncMock(return_value=expected)
         result = await toolkit.k8s_get_logs(pod="my-pod", tail_lines=50)
-        toolkit.executor.get_logs.assert_awaited_once_with(
+        toolkit._k8s_executor.get_logs.assert_awaited_once_with(
             pod="my-pod", namespace=None, container=None, tail_lines=50
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_describe_delegates(self, toolkit):
-        """k8s_describe delegates to executor.describe."""
+        """k8s_describe delegates to _k8s_executor.describe."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="describe", summary="Described"
         )
-        toolkit.executor.describe = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.describe = AsyncMock(return_value=expected)
         result = await toolkit.k8s_describe(kind="Deployment", name="my-deploy")
-        toolkit.executor.describe.assert_awaited_once_with(
+        toolkit._k8s_executor.describe.assert_awaited_once_with(
             kind="Deployment", name="my-deploy", namespace=None
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_get_delegates(self, toolkit):
-        """k8s_get delegates to executor.get_resources."""
+        """k8s_get delegates to _k8s_executor.get_resources."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="get", summary="Found 2 items"
         )
-        toolkit.executor.get_resources = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.get_resources = AsyncMock(return_value=expected)
         result = await toolkit.k8s_get(kind="Service", label_selector="app=nginx")
-        toolkit.executor.get_resources.assert_awaited_once_with(
+        toolkit._k8s_executor.get_resources.assert_awaited_once_with(
             kind="Service", namespace=None, label_selector="app=nginx"
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_apply_manifest_delegates(self, toolkit):
-        """k8s_apply_manifest delegates to executor.apply_manifest."""
+        """k8s_apply_manifest delegates to _k8s_executor.apply_manifest."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="apply", summary="Applied 1 resource"
         )
-        toolkit.executor.apply_manifest = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.apply_manifest = AsyncMock(return_value=expected)
         yaml_str = "kind: ConfigMap\nmetadata:\n  name: test\n"
         result = await toolkit.k8s_apply_manifest(manifest_yaml=yaml_str)
-        toolkit.executor.apply_manifest.assert_awaited_once_with(
+        toolkit._k8s_executor.apply_manifest.assert_awaited_once_with(
             manifest_yaml=yaml_str, namespace=None
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_scale_deployment_delegates(self, toolkit):
-        """k8s_scale_deployment delegates to executor.scale_deployment."""
+        """k8s_scale_deployment delegates to _k8s_executor.scale_deployment."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="scale", summary="Scaled to 3"
         )
-        toolkit.executor.scale_deployment = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.scale_deployment = AsyncMock(return_value=expected)
         result = await toolkit.k8s_scale_deployment(name="my-deploy", replicas=3)
-        toolkit.executor.scale_deployment.assert_awaited_once_with(
+        toolkit._k8s_executor.scale_deployment.assert_awaited_once_with(
             name="my-deploy", replicas=3, namespace=None
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_delete_resource_delegates(self, toolkit):
-        """k8s_delete_resource delegates to executor.delete_resource."""
+        """k8s_delete_resource delegates to _k8s_executor.delete_resource."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="delete", summary="Deleted"
         )
-        toolkit.executor.delete_resource = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.delete_resource = AsyncMock(return_value=expected)
         result = await toolkit.k8s_delete_resource(kind="Pod", name="old-pod")
-        toolkit.executor.delete_resource.assert_awaited_once_with(
+        toolkit._k8s_executor.delete_resource.assert_awaited_once_with(
             kind="Pod", name="old-pod", namespace=None
         )
         assert result.success is True
 
     @pytest.mark.asyncio
     async def test_k8s_rollout_restart_delegates(self, toolkit):
-        """k8s_rollout_restart delegates to executor.rollout_restart."""
+        """k8s_rollout_restart delegates to _k8s_executor.rollout_restart."""
         from parrot_tools.kubernetes.config import K8sOperationResult
         expected = K8sOperationResult(
             success=True, operation="rollout_restart", summary="Restarted"
         )
-        toolkit.executor.rollout_restart = AsyncMock(return_value=expected)
+        toolkit._k8s_executor.rollout_restart = AsyncMock(return_value=expected)
         result = await toolkit.k8s_rollout_restart(name="my-deploy")
-        toolkit.executor.rollout_restart.assert_awaited_once_with(
+        toolkit._k8s_executor.rollout_restart.assert_awaited_once_with(
             name="my-deploy", namespace=None
         )
         assert result.success is True
@@ -309,25 +323,27 @@ class TestKubernetesToolkitLifecycle:
 
     @pytest.mark.asyncio
     async def test_close_delegates_to_executor(self, toolkit):
-        """close() delegates to executor.close."""
-        toolkit.executor.close = AsyncMock()
+        """close() delegates to _k8s_executor.close."""
+        toolkit._k8s_executor.close = AsyncMock()
         await toolkit.close()
-        toolkit.executor.close.assert_awaited_once()
+        toolkit._k8s_executor.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_context_manager(self):
-        """KubernetesToolkit supports async context manager."""
+    async def test_context_manager_closes_executor(self):
+        """KubernetesToolkit async context manager calls close() on exit."""
         from parrot_tools.kubernetes.config import KubernetesConfig
         from parrot_tools.kubernetes.toolkit import KubernetesToolkit
 
-        async with KubernetesToolkit(config=KubernetesConfig()) as tk:
-            tk.executor.close = AsyncMock()
-            assert isinstance(tk, KubernetesToolkit)
+        tk = KubernetesToolkit(config=KubernetesConfig())
+        tk._k8s_executor.close = AsyncMock()
+        async with tk:
+            pass
+        tk._k8s_executor.close.assert_awaited_once()
 
     def test_instantiation_creates_executor(self, toolkit):
         """KubernetesToolkit instantiation creates a KubernetesExecutor."""
         from parrot_tools.kubernetes.executor import KubernetesExecutor
-        assert isinstance(toolkit.executor, KubernetesExecutor)
+        assert isinstance(toolkit._k8s_executor, KubernetesExecutor)
 
     def test_default_config_used_when_none(self):
         """KubernetesToolkit uses default KubernetesConfig when config=None."""

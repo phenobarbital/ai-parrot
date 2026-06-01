@@ -1,6 +1,7 @@
 """Unit tests for KubernetesConfig and K8sOperationResult models (TASK-1122)."""
 
 import pytest
+from pydantic import ValidationError
 from parrot_tools.kubernetes.config import K8sOperationResult, KubernetesConfig
 
 
@@ -37,12 +38,12 @@ class TestKubernetesConfig:
 
     def test_timeout_must_be_positive(self):
         """timeout_seconds must be > 0 (gt=0 validator)."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             KubernetesConfig(timeout_seconds=0)
 
     def test_timeout_negative_rejected(self):
         """Negative timeout_seconds is rejected."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             KubernetesConfig(timeout_seconds=-10)
 
     def test_timeout_positive_accepted(self):
@@ -126,10 +127,10 @@ class TestK8sOperationResult:
 
     def test_operation_field_required(self):
         """operation field is required."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             K8sOperationResult(success=True, summary="OK")  # missing operation
 
     def test_summary_field_required(self):
         """summary field is required."""
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             K8sOperationResult(success=True, operation="get")  # missing summary

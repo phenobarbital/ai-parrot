@@ -12,29 +12,12 @@ used. See K8sToolExecutor (parrot/tools/executors/k8s.py) for the same pattern.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
-
-import yaml
+from typing import Any, Optional
 
 from .config import K8sOperationResult, KubernetesConfig
 
 # Maximum characters to return from pod logs (prevents flooding LLM context)
 _MAX_LOG_CHARS = 50_000
-
-# Kinds supported via typed API (CoreV1Api / AppsV1Api)
-_CORE_KINDS = {"pod", "pods", "service", "services", "svc",
-               "configmap", "configmaps", "cm", "secret", "secrets",
-               "namespace", "namespaces", "ns", "node", "nodes",
-               "persistentvolumeclaim", "persistentvolumeclaims", "pvc",
-               "serviceaccount", "serviceaccounts", "sa",
-               "event", "events"}
-
-_APPS_KINDS = {"deployment", "deployments", "deploy",
-               "replicaset", "replicasets", "rs",
-               "statefulset", "statefulsets", "sts",
-               "daemonset", "daemonsets", "ds"}
-
-_BATCH_KINDS = {"job", "jobs", "cronjob", "cronjobs", "cj"}
 
 
 def _now_ts() -> str:
@@ -133,13 +116,16 @@ class KubernetesExecutor:
         try:
             await self._ensure_client()
             from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
 
             v1 = k8s_client.CoreV1Api(self._api_client)
-            kwargs: dict = {"namespace": ns}
+            kwargs: dict[str, Any] = {"namespace": ns}
             if label_selector:
                 kwargs["label_selector"] = label_selector
 
-            response = await v1.list_namespaced_pod(**kwargs)
+            response = await v1.list_namespaced_pod(
+                **kwargs, _request_timeout=self.config.timeout_seconds
+            )
             items = [
                 {
                     "name": pod.metadata.name,
@@ -157,8 +143,16 @@ class KubernetesExecutor:
                 summary=f"Found {len(items)} pod(s) in namespace '{ns}'",
                 items=items,
             )
+        except ApiException as exc:
+            self.logger.error("list_pods failed: [%s] %s", exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="list_pods",
+                summary=f"Failed to list pods in namespace '{ns}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("list_pods failed: %s", exc)
+            self.logger.exception("list_pods unexpected error")
             return K8sOperationResult(
                 success=False,
                 operation="list_pods",
@@ -188,17 +182,23 @@ class KubernetesExecutor:
         try:
             await self._ensure_client()
             from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
 
             v1 = k8s_client.CoreV1Api(self._api_client)
-            kwargs: dict = {
+            kwargs: dict[str, Any] = {
                 "name": pod,
                 "namespace": ns,
                 "tail_lines": tail_lines,
+                "_request_timeout": self.config.timeout_seconds,
             }
             if container:
                 kwargs["container"] = container
 
-            log_text: str = await v1.read_namespaced_pod_log(**kwargs)
+            log_text = await v1.read_namespaced_pod_log(**kwargs)
+
+            # Guard: ensure log_text is a string
+            if not isinstance(log_text, str):
+                log_text = str(log_text or "")
 
             # Truncate to avoid flooding LLM context
             if len(log_text) > _MAX_LOG_CHARS:
@@ -217,8 +217,16 @@ class KubernetesExecutor:
                 summary=summary,
                 items=[{"pod": pod, "namespace": ns, "log": log_text}],
             )
+        except ApiException as exc:
+            self.logger.error("get_logs failed for pod '%s': [%s] %s", pod, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="get_logs",
+                summary=f"Failed to get logs for pod '{pod}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("get_logs failed for pod '%s': %s", pod, exc)
+            self.logger.exception("get_logs unexpected error for pod '%s'", pod)
             return K8sOperationResult(
                 success=False,
                 operation="get_logs",
@@ -235,7 +243,7 @@ class KubernetesExecutor:
         """Describe a Kubernetes resource (kubectl describe equivalent).
 
         Supports common kinds: Pod, Deployment, Service, ConfigMap, Secret,
-        Job, CronJob, Namespace, Node, StatefulSet, DaemonSet, ReplicaSet.
+        StatefulSet, DaemonSet, ReplicaSet.
 
         Args:
             kind: Resource kind (e.g. "Pod", "Deployment").
@@ -250,6 +258,8 @@ class KubernetesExecutor:
 
         try:
             await self._ensure_client()
+            from kubernetes_asyncio.client.exceptions import ApiException
+
             item = await self._get_single_resource(kind_lower, name, ns)
             if item is None:
                 return K8sOperationResult(
@@ -258,7 +268,7 @@ class KubernetesExecutor:
                     summary=f"Unsupported kind '{kind}' for describe",
                     error=f"Kind '{kind}' is not supported. "
                           "Supported kinds: Pod, Deployment, Service, ConfigMap, "
-                          "Secret, Job, CronJob, Namespace, Node, StatefulSet, DaemonSet.",
+                          "Secret, StatefulSet, DaemonSet, ReplicaSet.",
                 )
             return K8sOperationResult(
                 success=True,
@@ -266,8 +276,16 @@ class KubernetesExecutor:
                 summary=f"Described {kind} '{name}' in '{ns}'",
                 items=[item],
             )
+        except ApiException as exc:
+            self.logger.error("describe failed for %s/%s: [%s] %s", kind, name, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="describe",
+                summary=f"Failed to describe {kind} '{name}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("describe failed for %s/%s: %s", kind, name, exc)
+            self.logger.exception("describe unexpected error for %s/%s", kind, name)
             return K8sOperationResult(
                 success=False,
                 operation="describe",
@@ -284,7 +302,7 @@ class KubernetesExecutor:
         """List Kubernetes resources by kind with optional label filtering.
 
         Supports common kinds: Pod, Deployment, Service, ConfigMap, Secret,
-        Job, CronJob, Namespace, Node, StatefulSet, DaemonSet, ReplicaSet.
+        StatefulSet, DaemonSet, ReplicaSet.
 
         Args:
             kind: Resource kind (e.g. "Deployment", "Service").
@@ -299,6 +317,8 @@ class KubernetesExecutor:
 
         try:
             await self._ensure_client()
+            from kubernetes_asyncio.client.exceptions import ApiException
+
             items = await self._list_resources(kind_lower, ns, label_selector)
             if items is None:
                 return K8sOperationResult(
@@ -307,7 +327,7 @@ class KubernetesExecutor:
                     summary=f"Unsupported kind '{kind}'",
                     error=f"Kind '{kind}' is not supported. "
                           "Supported kinds: Pod, Deployment, Service, ConfigMap, "
-                          "Secret, Job, CronJob, Namespace, Node, StatefulSet, DaemonSet.",
+                          "Secret, StatefulSet, DaemonSet, ReplicaSet.",
                 )
             return K8sOperationResult(
                 success=True,
@@ -315,8 +335,16 @@ class KubernetesExecutor:
                 summary=f"Found {len(items)} {kind}(s) in '{ns}'",
                 items=items,
             )
+        except ApiException as exc:
+            self.logger.error("get_resources failed for kind %s: [%s] %s", kind, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="get",
+                summary=f"Failed to get {kind} resources",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("get_resources failed for kind %s: %s", kind, exc)
+            self.logger.exception("get_resources unexpected error for kind %s", kind)
             return K8sOperationResult(
                 success=False,
                 operation="get",
@@ -333,9 +361,10 @@ class KubernetesExecutor:
         manifest_yaml: str,
         namespace: Optional[str] = None,
     ) -> K8sOperationResult:
-        """Apply a Kubernetes manifest (kubectl apply equivalent).
+        """Create Kubernetes resources from a manifest YAML string.
 
-        Parses the YAML manifest and creates or patches the resource.
+        Parses the YAML manifest and creates each resource. On conflict
+        (409 Already Exists), the resource is skipped (not patched).
         Supports multi-document YAML (separated by ---).
 
         Args:
@@ -344,15 +373,23 @@ class KubernetesExecutor:
                        or the namespace in the manifest.
 
         Returns:
-            K8sOperationResult with the applied resource summary.
+            K8sOperationResult with a list of created/skipped resources.
         """
+        try:
+            import yaml
+        except ImportError as exc:
+            raise ImportError(
+                "PyYAML is required for apply_manifest. "
+                "Install with: pip install pyyaml"
+            ) from exc
+
         ns_override = namespace or self.config.namespace
         applied = []
         errors = []
 
         try:
             await self._ensure_client()
-            from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
             from kubernetes_asyncio.utils import create_from_dict
 
             docs = list(yaml.safe_load_all(manifest_yaml))
@@ -378,14 +415,15 @@ class KubernetesExecutor:
                 try:
                     await create_from_dict(self._api_client, doc, namespace=ns_override)
                     applied.append({"kind": kind, "name": name, "action": "applied"})
+                except ApiException as e:
+                    if e.status == 409:
+                        applied.append({"kind": kind, "name": name, "action": "skipped (already exists)"})
+                    else:
+                        errors.append({"kind": kind, "name": name, "error": f"[{e.status}] {e.reason}"})
                 except Exception as e:
                     err_str = str(e)
-                    # If resource already exists (409 Conflict), try to patch
-                    if "already exists" in err_str or "409" in err_str:
-                        try:
-                            applied.append({"kind": kind, "name": name, "action": "updated (already existed)"})
-                        except Exception as patch_err:
-                            errors.append({"kind": kind, "name": name, "error": str(patch_err)})
+                    if "already exists" in err_str:
+                        applied.append({"kind": kind, "name": name, "action": "skipped (already exists)"})
                     else:
                         errors.append({"kind": kind, "name": name, "error": err_str})
 
@@ -402,7 +440,7 @@ class KubernetesExecutor:
                 error="; ".join(e["error"] for e in errors) if errors else None,
             )
         except Exception as exc:
-            self.logger.error("apply_manifest failed: %s", exc)
+            self.logger.exception("apply_manifest unexpected error")
             return K8sOperationResult(
                 success=False,
                 operation="apply",
@@ -438,6 +476,7 @@ class KubernetesExecutor:
         try:
             await self._ensure_client()
             from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
 
             apps_v1 = k8s_client.AppsV1Api(self._api_client)
             scale_body = {"spec": {"replicas": replicas}}
@@ -445,6 +484,7 @@ class KubernetesExecutor:
                 name=name,
                 namespace=ns,
                 body=scale_body,
+                _request_timeout=self.config.timeout_seconds,
             )
             return K8sOperationResult(
                 success=True,
@@ -452,8 +492,16 @@ class KubernetesExecutor:
                 summary=f"Scaled deployment '{name}' to {replicas} replica(s) in '{ns}'",
                 items=[{"name": name, "namespace": ns, "replicas": replicas}],
             )
+        except ApiException as exc:
+            self.logger.error("scale_deployment failed for '%s': [%s] %s", name, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="scale",
+                summary=f"Failed to scale deployment '{name}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("scale_deployment failed for '%s': %s", name, exc)
+            self.logger.exception("scale_deployment unexpected error for '%s'", name)
             return K8sOperationResult(
                 success=False,
                 operation="scale",
@@ -470,7 +518,7 @@ class KubernetesExecutor:
         """Delete a Kubernetes resource by kind and name.
 
         Supports common kinds: Pod, Deployment, Service, ConfigMap, Secret,
-        Job, CronJob, StatefulSet, DaemonSet.
+        StatefulSet, DaemonSet, ReplicaSet.
 
         Args:
             kind: Resource kind (e.g. "Pod", "Deployment").
@@ -486,26 +534,28 @@ class KubernetesExecutor:
         try:
             await self._ensure_client()
             from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
 
             v1 = k8s_client.CoreV1Api(self._api_client)
             apps_v1 = k8s_client.AppsV1Api(self._api_client)
+            timeout = self.config.timeout_seconds
 
             if kind_lower in {"pod", "pods"}:
-                await v1.delete_namespaced_pod(name=name, namespace=ns)
+                await v1.delete_namespaced_pod(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"service", "services", "svc"}:
-                await v1.delete_namespaced_service(name=name, namespace=ns)
+                await v1.delete_namespaced_service(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"configmap", "configmaps", "cm"}:
-                await v1.delete_namespaced_config_map(name=name, namespace=ns)
+                await v1.delete_namespaced_config_map(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"secret", "secrets"}:
-                await v1.delete_namespaced_secret(name=name, namespace=ns)
+                await v1.delete_namespaced_secret(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"deployment", "deployments", "deploy"}:
-                await apps_v1.delete_namespaced_deployment(name=name, namespace=ns)
+                await apps_v1.delete_namespaced_deployment(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"statefulset", "statefulsets", "sts"}:
-                await apps_v1.delete_namespaced_stateful_set(name=name, namespace=ns)
+                await apps_v1.delete_namespaced_stateful_set(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"daemonset", "daemonsets", "ds"}:
-                await apps_v1.delete_namespaced_daemon_set(name=name, namespace=ns)
+                await apps_v1.delete_namespaced_daemon_set(name=name, namespace=ns, _request_timeout=timeout)
             elif kind_lower in {"replicaset", "replicasets", "rs"}:
-                await apps_v1.delete_namespaced_replica_set(name=name, namespace=ns)
+                await apps_v1.delete_namespaced_replica_set(name=name, namespace=ns, _request_timeout=timeout)
             else:
                 return K8sOperationResult(
                     success=False,
@@ -522,8 +572,16 @@ class KubernetesExecutor:
                 summary=f"Deleted {kind} '{name}' in '{ns}'",
                 items=[{"kind": kind, "name": name, "namespace": ns, "status": "deleted"}],
             )
+        except ApiException as exc:
+            self.logger.error("delete_resource failed for %s/%s: [%s] %s", kind, name, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="delete",
+                summary=f"Failed to delete {kind} '{name}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("delete_resource failed for %s/%s: %s", kind, name, exc)
+            self.logger.exception("delete_resource unexpected error for %s/%s", kind, name)
             return K8sOperationResult(
                 success=False,
                 operation="delete",
@@ -555,6 +613,7 @@ class KubernetesExecutor:
         try:
             await self._ensure_client()
             from kubernetes_asyncio import client as k8s_client
+            from kubernetes_asyncio.client.exceptions import ApiException
 
             apps_v1 = k8s_client.AppsV1Api(self._api_client)
             patch_body = {
@@ -572,6 +631,7 @@ class KubernetesExecutor:
                 name=name,
                 namespace=ns,
                 body=patch_body,
+                _request_timeout=self.config.timeout_seconds,
             )
             return K8sOperationResult(
                 success=True,
@@ -579,8 +639,16 @@ class KubernetesExecutor:
                 summary=f"Rollout restart triggered for deployment '{name}' in '{ns}'",
                 items=[{"name": name, "namespace": ns, "restartedAt": restart_ts}],
             )
+        except ApiException as exc:
+            self.logger.error("rollout_restart failed for '%s': [%s] %s", name, exc.status, exc.reason)
+            return K8sOperationResult(
+                success=False,
+                operation="rollout_restart",
+                summary=f"Failed to rollout restart deployment '{name}'",
+                error=f"[{exc.status}] {exc.reason}",
+            )
         except Exception as exc:
-            self.logger.error("rollout_restart failed for '%s': %s", name, exc)
+            self.logger.exception("rollout_restart unexpected error for '%s'", name)
             return K8sOperationResult(
                 success=False,
                 operation="rollout_restart",
@@ -594,7 +662,7 @@ class KubernetesExecutor:
 
     async def _get_single_resource(
         self, kind_lower: str, name: str, ns: str
-    ) -> Optional[dict]:
+    ) -> Optional[dict[str, Any]]:
         """Get a single resource and return a bounded projection dict.
 
         Args:
@@ -609,9 +677,10 @@ class KubernetesExecutor:
 
         v1 = k8s_client.CoreV1Api(self._api_client)
         apps_v1 = k8s_client.AppsV1Api(self._api_client)
+        timeout = self.config.timeout_seconds
 
         if kind_lower in {"pod", "pods"}:
-            obj = await v1.read_namespaced_pod(name=name, namespace=ns)
+            obj = await v1.read_namespaced_pod(name=name, namespace=ns, _request_timeout=timeout)
             return {
                 "kind": "Pod",
                 "name": obj.metadata.name,
@@ -622,7 +691,7 @@ class KubernetesExecutor:
                 "labels": obj.metadata.labels or {},
             }
         elif kind_lower in {"deployment", "deployments", "deploy"}:
-            obj = await apps_v1.read_namespaced_deployment(name=name, namespace=ns)
+            obj = await apps_v1.read_namespaced_deployment(name=name, namespace=ns, _request_timeout=timeout)
             return {
                 "kind": "Deployment",
                 "name": obj.metadata.name,
@@ -632,7 +701,7 @@ class KubernetesExecutor:
                 "labels": obj.metadata.labels or {},
             }
         elif kind_lower in {"service", "services", "svc"}:
-            obj = await v1.read_namespaced_service(name=name, namespace=ns)
+            obj = await v1.read_namespaced_service(name=name, namespace=ns, _request_timeout=timeout)
             return {
                 "kind": "Service",
                 "name": obj.metadata.name,
@@ -645,7 +714,7 @@ class KubernetesExecutor:
                 ] if obj.spec else [],
             }
         elif kind_lower in {"configmap", "configmaps", "cm"}:
-            obj = await v1.read_namespaced_config_map(name=name, namespace=ns)
+            obj = await v1.read_namespaced_config_map(name=name, namespace=ns, _request_timeout=timeout)
             return {
                 "kind": "ConfigMap",
                 "name": obj.metadata.name,
@@ -653,7 +722,7 @@ class KubernetesExecutor:
                 "data_keys": list(obj.data.keys()) if obj.data else [],
             }
         elif kind_lower in {"secret", "secrets"}:
-            obj = await v1.read_namespaced_secret(name=name, namespace=ns)
+            obj = await v1.read_namespaced_secret(name=name, namespace=ns, _request_timeout=timeout)
             return {
                 "kind": "Secret",
                 "name": obj.metadata.name,
@@ -665,7 +734,7 @@ class KubernetesExecutor:
 
     async def _list_resources(
         self, kind_lower: str, ns: str, label_selector: Optional[str]
-    ) -> Optional[list[dict]]:
+    ) -> Optional[list[dict[str, Any]]]:
         """List resources of a given kind and return bounded projections.
 
         Args:
@@ -680,7 +749,8 @@ class KubernetesExecutor:
 
         v1 = k8s_client.CoreV1Api(self._api_client)
         apps_v1 = k8s_client.AppsV1Api(self._api_client)
-        kwargs = {}
+        timeout = self.config.timeout_seconds
+        kwargs: dict[str, Any] = {"_request_timeout": timeout}
         if label_selector:
             kwargs["label_selector"] = label_selector
 
