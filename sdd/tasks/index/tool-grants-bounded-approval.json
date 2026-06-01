@@ -14,7 +14,7 @@
       "feature_id": "FEAT-211",
       "feature": "tool-grants-bounded-approval",
       "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Creates grants.py — all subsequent tasks modify or depend on this file",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1403-grant-models-and-store.md"
+      "completed_at": "2026-06-01T01:00:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1403-grant-models-and-store.md"
     },
     {
       "id": "TASK-1404",
@@ -35,7 +35,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1403"],
+      "depends_on": [
+        "TASK-1403"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies grants.py (same file as TASK-1403) — must be sequential",
       "assigned_to": null,
@@ -53,7 +55,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1404"],
+      "depends_on": [
+        "TASK-1404"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on GrantGuard from TASK-1404; modifies manager.py (different file but runtime dependency)",
       "assigned_to": null,
@@ -71,7 +75,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-1405"],
+      "depends_on": [
+        "TASK-1405"
+      ],
       "parallel": false,
       "parallelism_notes": "Final wiring — needs all prior tasks completed to export their types",
       "assigned_to": null,
