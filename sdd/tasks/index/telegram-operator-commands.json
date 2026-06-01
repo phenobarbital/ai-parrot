@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-01T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-01T00:45:18.646369+00:00",
   "tasks": [
     {
       "id": "TASK-1394",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all other tasks depend on the config fields and _is_operator gate it creates.",
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on the config fields and _is_operator gate it creates.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1394-operator-config-gate.md"
+      "completed_at": "2026-06-01T00:45:18.646369+00:00",
+      "file": "sdd/tasks/completed/TASK-1394-operator-config-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1395",
@@ -32,18 +33,19 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-1394"
       ],
       "parallel": false,
-      "parallelism_notes": "Creates operator_commands.py with OperatorCommandsMixin — all subsequent tasks modify this same file, so parallel execution would cause conflicts.",
+      "parallelism_notes": "Creates operator_commands.py with OperatorCommandsMixin \u2014 all subsequent tasks modify this same file, so parallel execution would cause conflicts.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1395-readonly-operator-commands.md"
+      "completed_at": "2026-06-01T00:45:18.646369+00:00",
+      "file": "sdd/tasks/completed/TASK-1395-readonly-operator-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1396",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,20 +62,21 @@
         "TASK-1395"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends OperatorCommandsMixin in the same operator_commands.py created by TASK-1395 — shared file prevents parallel execution.",
+      "parallelism_notes": "Extends OperatorCommandsMixin in the same operator_commands.py created by TASK-1395 \u2014 shared file prevents parallel execution.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1396-harness-state-commands.md"
+      "completed_at": "2026-06-01T00:45:18.646369+00:00",
+      "file": "sdd/tasks/completed/TASK-1396-harness-state-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1397",
       "slug": "thread-command",
-      "title": "/thread command (fork → ephemeral sub-agent)",
+      "title": "/thread command (fork \u2192 ephemeral sub-agent)",
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -81,11 +84,12 @@
         "TASK-1395"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends OperatorCommandsMixin in the same operator_commands.py — shared file prevents parallel execution. Also logically sequential after TASK-1396 for consistency.",
+      "parallelism_notes": "Extends OperatorCommandsMixin in the same operator_commands.py \u2014 shared file prevents parallel execution. Also logically sequential after TASK-1396 for consistency.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1397-thread-command.md"
+      "completed_at": "2026-06-01T00:45:18.646369+00:00",
+      "file": "sdd/tasks/completed/TASK-1397-thread-command.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1398",
@@ -94,7 +98,7 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,11 +108,12 @@
         "TASK-1397"
       ],
       "parallel": false,
-      "parallelism_notes": "Final wiring task — depends on all prior tasks; mixes OperatorCommandsMixin into TelegramAgentWrapper and modifies wrapper.py.",
+      "parallelism_notes": "Final wiring task \u2014 depends on all prior tasks; mixes OperatorCommandsMixin into TelegramAgentWrapper and modifies wrapper.py.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1398-operator-wiring-registration.md"
+      "completed_at": "2026-06-01T00:45:18.646369+00:00",
+      "file": "sdd/tasks/completed/TASK-1398-operator-wiring-registration.md",
+      "verification": "verified"
     }
   ]
 }
