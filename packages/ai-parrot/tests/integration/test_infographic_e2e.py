@@ -246,22 +246,24 @@ def test_e2e_csp_headers_from_js_bundles():
 
 
 # ---------------------------------------------------------------------------
-# E2E: financial_projection_variance template is registered
+# E2E: financial_variance template is registered
 # ---------------------------------------------------------------------------
 
 def test_e2e_financial_variance_template_registered():
-    """infographic_registry must have financial_projection_variance."""
+    """infographic_registry must have the consolidated financial_variance template."""
     # The template is registered at module load time in infographic_templates.py
     # We need to reimport to pick it up (since we cleared the module cache above).
     sys.modules.pop("parrot.models.infographic_templates", None)
     import parrot.models.infographic_templates as _fresh
     sys.modules["parrot.models.infographic_templates"] = _fresh
 
-    assert "financial_projection_variance" in _fresh.infographic_registry.list_templates()
-    tpl = _fresh.infographic_registry.get("financial_projection_variance")
-    assert len(tpl.block_specs) == 4
+    names = _fresh.infographic_registry.list_templates()
+    assert "financial_variance" in names
+    # The legacy duplicate was consolidated into financial_variance.
+    assert "financial_projection_variance" not in names
+    tpl = _fresh.infographic_registry.get("financial_variance")
+    assert len(tpl.block_specs) == 9
     assert tpl.js_bundles is not None and len(tpl.js_bundles) >= 1
-    assert tpl.default_theme == "dark"
 
 
 # ---------------------------------------------------------------------------

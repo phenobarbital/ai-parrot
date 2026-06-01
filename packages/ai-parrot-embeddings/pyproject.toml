@@ -45,8 +45,14 @@ huggingface = [
     "sentencepiece==0.2.1",
 ]
 google = [
+    # The embeddings backend (parrot/embeddings/google.py) uses only the
+    # google-genai SDK (`from google import genai`). google-cloud-aiplatform is
+    # NOT imported anywhere in this package; declaring it dragged in
+    # google-cloud-storage>=3.10.0, conflicting with consumers that pin
+    # google-cloud-storage<=3.1.0 (e.g. navigator-api[google]). Keep this extra
+    # to google-genai only; add a dedicated `vertex` extra if Vertex SDK use is
+    # ever introduced.
     "google-genai>=2.6.0",
-    "google-cloud-aiplatform>=1.153.0",
 ]
 openai = [
     "openai==2.8.1",

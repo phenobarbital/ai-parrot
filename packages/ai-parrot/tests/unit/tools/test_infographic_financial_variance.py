@@ -127,10 +127,14 @@ def test_financial_variance_chart_constraints():
     """Positions 5,6 carry bar/half constraints; position 7 carries line/full."""
     tpl = infographic_registry.get("financial_variance")
     specs = tpl.block_specs
-    assert specs[5].constraints == {"chart_type": "bar", "layout": "half"}, (
+    assert specs[5].constraints == {
+        "chart_type": "bar", "layout": "half", "color_by_sign": "true"
+    }, (
         f"Slot 5 constraints wrong: {specs[5].constraints}"
     )
-    assert specs[6].constraints == {"chart_type": "bar", "layout": "half"}, (
+    assert specs[6].constraints == {
+        "chart_type": "bar", "layout": "half", "color_by_sign": "true"
+    }, (
         f"Slot 6 constraints wrong: {specs[6].constraints}"
     )
     assert specs[7].constraints == {"chart_type": "line", "layout": "full"}, (

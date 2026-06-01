@@ -427,6 +427,39 @@ class ChartBlock(BaseModel):
             "a 2-column grid. Omit or set to 'full' for full-width rendering."
         ),
     )
+    color_by_sign: Optional[bool] = Field(
+        False,
+        description=(
+            "When True, the frontend colors each data point by the sign of its "
+            "value (positive vs negative) instead of by series. Intended for "
+            "variance/delta charts (e.g. bar or waterfall) where positive and "
+            "negative figures should read differently. The actual colors come "
+            "from the frontend theme unless overridden via 'positive_color' / "
+            "'negative_color'."
+        ),
+    )
+    positive_color: Optional[str] = Field(
+        None,
+        description=(
+            "Optional override color for positive values when 'color_by_sign' is "
+            "enabled. CSS color value. When omitted, the frontend falls back to "
+            "its theme's positive/success color."
+        ),
+    )
+    negative_color: Optional[str] = Field(
+        None,
+        description=(
+            "Optional override color for negative values when 'color_by_sign' is "
+            "enabled. CSS color value. When omitted, the frontend falls back to "
+            "its theme's negative/danger color."
+        ),
+    )
+
+    @field_validator("positive_color", "negative_color", mode="before")
+    @classmethod
+    def _validate_sign_colors(cls, v: Any) -> Any:
+        """Validate CSS color value — silently drops invalid values."""
+        return _validate_css_color(v)
 
 
 class BulletListBlock(BaseModel):
