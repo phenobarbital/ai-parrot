@@ -32,7 +32,7 @@
       "feature_id": "FEAT-214",
       "feature": "FEAT-214-kubernetes-toolkit",
       "spec": "sdd/specs/FEAT-214-kubernetes-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports KubernetesConfig/K8sOperationResult from TASK-1122; must run after it.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1123-k8s-executor.md"
+      "completed_at": "2026-06-01T01:17:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1123-k8s-executor.md"
     },
     {
       "id": "TASK-1124",
