@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-01T01:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-01T00:21:41.296872+00:00",
   "tasks": [
     {
       "id": "TASK-1387",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — M2/M3/M4 depend on the ownership model this introduces.",
+      "parallelism_notes": "Foundation task \u2014 M2/M3/M4 depend on the ownership model this introduces.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1387-ephemeral-ownership-generalization.md"
+      "completed_at": "2026-06-01T00:21:41.296872+00:00",
+      "file": "sdd/tasks/active/TASK-1387-ephemeral-ownership-generalization.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1388",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Depends on M1 ownership model; modifies the same BotManager methods M3 calls.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1388-botmanager-ownership-aware-methods.md"
+      "completed_at": "2026-06-01T00:21:41.296872+00:00",
+      "file": "sdd/tasks/active/TASK-1388-botmanager-ownership-aware-methods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1389",
@@ -52,18 +54,19 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-1388"
       ],
       "parallel": false,
-      "parallelism_notes": "Core tool — calls BotManager methods generalized by M2; must run after M2.",
+      "parallelism_notes": "Core tool \u2014 calls BotManager methods generalized by M2; must run after M2.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1389-spawn-subagent-tool.md"
+      "completed_at": "2026-06-01T00:21:41.296872+00:00",
+      "file": "sdd/tasks/active/TASK-1389-spawn-subagent-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1390",
@@ -72,18 +75,19 @@
       "feature_id": "FEAT-208",
       "feature": "spawn-ephemeral-subagent-tool",
       "spec": "sdd/specs/FEAT-208-spawn-ephemeral-subagent-tool.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-1389"
       ],
       "parallel": false,
-      "parallelism_notes": "Exports the module created in M3 — strictly sequential.",
+      "parallelism_notes": "Exports the module created in M3 \u2014 strictly sequential.",
       "assigned_to": null,
       "started_at": "2026-05-31T23:20:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1390-spawn-tool-export-registration.md"
+      "completed_at": "2026-06-01T00:21:41.296872+00:00",
+      "file": "sdd/tasks/active/TASK-1390-spawn-tool-export-registration.md",
+      "verification": "verified"
     }
   ]
 }
