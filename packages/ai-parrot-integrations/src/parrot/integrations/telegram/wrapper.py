@@ -919,6 +919,27 @@ class TelegramAgentWrapper:
             return True
         return chat_id in self.config.allowed_chat_ids
 
+    def _is_operator(self, chat_id: int) -> bool:
+        """Check if a chat is an operator (has access to operator-only commands).
+
+        Fail-closed: when operator_chat_ids is None or empty, no chat is an
+        operator. This is intentionally opposite to _is_authorized's fail-open
+        behavior. Gate also respects the enable_operator_commands feature toggle.
+
+        Args:
+            chat_id: Telegram chat identifier to check.
+
+        Returns:
+            True only when operator commands are enabled AND chat_id is in
+            the configured operator_chat_ids allowlist.
+        """
+        if not getattr(self.config, 'enable_operator_commands', True):
+            return False
+        operator_ids = getattr(self.config, 'operator_chat_ids', None)
+        if not operator_ids:
+            return False
+        return chat_id in operator_ids
+
     def _get_or_create_memory(self, chat_id: int) -> "ConversationMemory":
         """Get or create conversation memory for a chat."""
         if chat_id not in self.conversations:
