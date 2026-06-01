@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, List, Optional
 
 from aiogram.filters import Command
 from aiogram.types import Message
-from navconfig.logging import logging
 
 # ---------------------------------------------------------------------------
 # Guarded imports for FEAT-209 (HeartbeatManager) — not yet merged
@@ -45,8 +44,11 @@ if TYPE_CHECKING:
 # Formatting helpers
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Module-level tunables (readable by tests via oc_module._X)
+# ---------------------------------------------------------------------------
 _MEMORY_TURN_LIMIT = 10
-_THREAD_TIMEOUT = 120.0  # seconds
+_THREAD_TIMEOUT = 120.0  # seconds — hard ceiling for /thread sub-agent spawns
 
 
 def _format_memory(conv: "ConversationMemory", limit: int = _MEMORY_TURN_LIMIT) -> str:
@@ -86,7 +88,7 @@ def _format_memory(conv: "ConversationMemory", limit: int = _MEMORY_TURN_LIMIT) 
             lines.append(f"[{ts}] U: {user_snippet}")
             lines.append(f"       A: {asst_snippet}")
         return "\n".join(lines)
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         return f"Memory: (error reading turns — {exc})"
 
 
@@ -118,7 +120,7 @@ def _format_context(conv: "ConversationMemory") -> str:
                 val_str = str(val)[:200]
                 lines.append(f"  {key}: {val_str}")
         return "\n".join(lines)
-    except Exception as exc:  # pragma: no cover
+    except Exception as exc:
         return f"Context: (error reading context — {exc})"
 
 
@@ -189,16 +191,43 @@ class OperatorCommandsMixin:
     via multiple-inheritance.
 
     The mixin relies on the following attributes being present on ``self``:
-    - ``self.config``         — TelegramAgentConfig (with operator_chat_ids,
-                                enable_operator_commands from TASK-1394)
-    - ``self.agent``          — AbstractBot instance
-    - ``self.conversations``  — Dict[int, ConversationMemory]
-    - ``self.app``            — aiohttp web.Application (may be None or dict)
-    - ``self.router``         — aiogram Router
-    - ``_is_operator()``      — gate method added by TASK-1394
+    - ``self.config``          — TelegramAgentConfig (with operator_chat_ids,
+                                 enable_operator_commands from TASK-1394)
+    - ``self.agent``           — AbstractBot instance
+    - ``self.conversations``   — Dict[int, ConversationMemory]
+    - ``self.app``             — aiohttp web.Application (may be None or dict)
+    - ``self.router``          — aiogram Router
+    - ``self.logger``          — standard Python logger
+    - ``_is_operator()``       — gate method added by TASK-1394
     - ``_send_safe_message()`` — safe reply helper from wrapper.py
-    - ``_get_or_create_memory()`` — memory factory from wrapper.py
+    - ``_typing_indicator()``  — optional; used by /thread for Telegram UX.
+                                 When absent, /thread still works without indicator.
     """
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_from_app(self, key: str):
+        """Safely retrieve a value from ``self.app`` by key.
+
+        Handles both ``aiohttp.web.Application`` (a ``MutableMapping``) and
+        plain ``dict``-like objects.  Returns ``None`` when ``self.app`` is
+        absent, has no ``.get`` method, or the key is not present.
+
+        Args:
+            key: The application-state key to look up.
+
+        Returns:
+            The stored value, or ``None``.
+        """
+        app = getattr(self, 'app', None)
+        if app is None:
+            return None
+        get = getattr(app, 'get', None)
+        if callable(get):
+            return get(key)
+        return None
 
     def _register_operator_commands(self) -> None:
         """Register all 7 operator command handlers on the router.
@@ -208,8 +237,7 @@ class OperatorCommandsMixin:
         are registered even when FEAT-208/FEAT-209 are not merged —
         the individual handlers degrade gracefully in that case.
         """
-        logger = logging.getLogger(f"TelegramWrapper.{getattr(self.config, 'name', 'unknown')}")
-        logger.debug("Registering operator commands")
+        self.logger.debug("Registering operator commands")
         self.router.message.register(self.handle_health, Command("health"))
         self.router.message.register(self.handle_status, Command("status"))
         self.router.message.register(self.handle_context, Command("context"))
@@ -309,20 +337,24 @@ class OperatorCommandsMixin:
                 message, "Mission: heartbeat not configured (FEAT-209 not available)."
             )
             return
-        app = getattr(self, 'app', None)
-        hb = None
-        if app is not None:
-            if hasattr(app, 'get'):
-                hb = app.get('heartbeat_manager')
-            elif isinstance(app, dict):
-                hb = app.get('heartbeat_manager')
+        hb = self._get_from_app('heartbeat_manager')
         if hb is None:
             await self._send_safe_message(
                 message, "Mission: heartbeat not configured."
             )
             return
         try:
-            mission = getattr(hb, 'mission', None) or getattr(hb, 'get_mission', lambda: None)()
+            # Prefer a dedicated attribute; fall back to a callable accessor.
+            if hasattr(hb, 'mission'):
+                mission = hb.mission
+            elif hasattr(hb, 'get_mission'):
+                get_fn = hb.get_mission
+                if asyncio.iscoroutinefunction(get_fn):
+                    mission = await get_fn()
+                else:
+                    mission = get_fn()
+            else:
+                mission = None
             if mission:
                 text = f"Mission:\n{mission}"
             else:
@@ -355,20 +387,18 @@ class OperatorCommandsMixin:
                 message, "Health: heartbeat not configured (FEAT-209 not available)."
             )
             return
-        app = getattr(self, 'app', None)
-        hb = None
-        if app is not None:
-            if hasattr(app, 'get'):
-                hb = app.get('heartbeat_manager')
-            elif isinstance(app, dict):
-                hb = app.get('heartbeat_manager')
+        hb = self._get_from_app('heartbeat_manager')
         if hb is None:
             await self._send_safe_message(
                 message, "Health: heartbeat not configured."
             )
             return
         try:
-            states = hb.get_all_states()
+            get_states = hb.get_all_states
+            if asyncio.iscoroutinefunction(get_states):
+                states = await get_states()
+            else:
+                states = get_states()
             text = _format_heartbeat_health(states)
             await self._send_safe_message(message, text)
         except Exception as exc:
@@ -390,36 +420,31 @@ class OperatorCommandsMixin:
             await message.answer("Access denied. Operator-only command.")
             return
 
-        # Heartbeat section
+        # Heartbeat section — degrades independently if FEAT-209 absent or not wired
         heartbeat_states: Optional[list] = None
         if HeartbeatManager is not None:
-            app = getattr(self, 'app', None)
-            hb = None
-            if app is not None:
-                if hasattr(app, 'get'):
-                    hb = app.get('heartbeat_manager')
-                elif isinstance(app, dict):
-                    hb = app.get('heartbeat_manager')
+            hb = self._get_from_app('heartbeat_manager')
             if hb is not None:
                 try:
-                    heartbeat_states = hb.get_all_states()
+                    get_states = hb.get_all_states
+                    if asyncio.iscoroutinefunction(get_states):
+                        heartbeat_states = await get_states()
+                    else:
+                        heartbeat_states = get_states()
                 except Exception as exc:
                     self.logger.warning("handle_status heartbeat error: %s", exc)
 
-        # Sub-agent section
+        # Sub-agent section — degrades independently if FEAT-208 absent or not wired
         ephemeral_info: Optional[str] = None
         try:
-            app = getattr(self, 'app', None)
-            bot_manager = None
-            if app is not None:
-                if hasattr(app, 'get'):
-                    bot_manager = app.get('bot_manager')
-                elif isinstance(app, dict):
-                    bot_manager = app.get('bot_manager')
+            bot_manager = self._get_from_app('bot_manager')
             if bot_manager is not None:
                 status_method = getattr(bot_manager, 'get_ephemeral_status', None)
                 if status_method is not None:
-                    info = status_method()
+                    if asyncio.iscoroutinefunction(status_method):
+                        info = await status_method()
+                    else:
+                        info = status_method()
                     ephemeral_info = str(info) if info is not None else "no active sub-agents."
                 else:
                     ephemeral_info = "(status method unavailable)"
@@ -462,19 +487,18 @@ class OperatorCommandsMixin:
         task = parts[1].strip()
 
         # Resolve bot_manager from app
-        app = getattr(self, 'app', None)
-        bot_manager = None
-        if app is not None:
-            if hasattr(app, 'get'):
-                bot_manager = app.get('bot_manager')
-            elif isinstance(app, dict):
-                bot_manager = app.get('bot_manager')
+        bot_manager = self._get_from_app('bot_manager')
 
         if bot_manager is None:
             await self._send_safe_message(message, "Sub-agents not available.")
             return
 
-        await self._send_safe_message(message, f"Spawning sub-agent for task: {task}")
+        # Start typing indicator while the sub-agent runs (may take up to _THREAD_TIMEOUT s).
+        # _typing_indicator is defined on TelegramAgentWrapper; gracefully absent in unit tests.
+        typing_task = None
+        _ti = getattr(self, '_typing_indicator', None)
+        if _ti is not None:
+            typing_task = asyncio.create_task(_ti(chat_id))
 
         try:
             spawn_method = getattr(bot_manager, 'create_ephemeral_user_bot', None)
@@ -503,6 +527,9 @@ class OperatorCommandsMixin:
         except Exception as exc:
             self.logger.warning("handle_thread error: %s", exc, exc_info=True)
             await self._send_safe_message(message, f"Sub-agent error: {exc}")
+        finally:
+            if typing_task is not None:
+                typing_task.cancel()
 
 
 async def _invoke_spawn(spawn_method, task: str):

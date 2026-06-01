@@ -9,7 +9,7 @@ Tests:
 - Existing commands (/help, /clear, /whoami) remain functional (zero regression)
 """
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,12 @@ def _make_message(chat_id: int, text: str = "") -> MagicMock:
 
 
 def _get_registered_commands(router) -> list:
-    """Extract Command filter values from registered handlers in an aiogram Router."""
+    """Extract Command filter values from registered handlers in an aiogram Router.
+
+    Note: This introspects aiogram internal structure (observer.handlers[*].filters).
+    Prefer the mock-router approach (count ``router.message.register`` calls) for
+    version-independent assertions; this helper is kept for human-readable output.
+    """
     commands = []
     for observer_name, observer in router.observers.items():
         if observer_name != "message":
@@ -115,46 +120,67 @@ class TestMixinHierarchy:
 
 class TestOperatorRegistration:
     def test_commands_registered_when_enabled(self):
-        """enable_operator_commands=True → all 7 operator Command handlers registered."""
+        """enable_operator_commands=True → router.message.register called 7 times.
+
+        Uses a mock router to avoid depending on aiogram's internal observer
+        structure, which can change between minor versions.
+        """
+        from unittest.mock import MagicMock as _MM
         w = _make_wrapper_with_router(operator_chat_ids=[111], enable_operator_commands=True)
+        w.router = _MM()
         w._register_operator_commands()
-        registered = _get_registered_commands(w.router)
-        expected = {'health', 'status', 'context', 'memory', 'mission', 'model', 'thread'}
-        missing = expected - set(registered)
-        assert not missing, f"Missing operator commands: {missing}"
+        assert w.router.message.register.call_count == 7, (
+            f"Expected 7 register calls, got {w.router.message.register.call_count}"
+        )
 
     def test_all_7_commands_registered(self):
-        """Exactly the 7 expected operator commands are registered by the mixin method."""
+        """Each of the 7 expected commands is passed as a Command filter to register.
+
+        Uses a mock router and inspects call args for Command objects.
+        """
+        from unittest.mock import MagicMock as _MM
+        from aiogram.filters import Command
+
         w = _make_wrapper_with_router(operator_chat_ids=[111], enable_operator_commands=True)
+        w.router = _MM()
         w._register_operator_commands()
-        registered = set(_get_registered_commands(w.router))
-        for cmd in ('health', 'status', 'context', 'memory', 'mission', 'model', 'thread'):
-            assert cmd in registered, f"Expected /{cmd} to be registered"
+
+        # Collect all Command instances from positional args of every register() call
+        registered_cmds: set = set()
+        for call in w.router.message.register.call_args_list:
+            for arg in call.args:
+                if isinstance(arg, Command):
+                    for cmd in arg.commands:
+                        registered_cmds.add(getattr(cmd, 'command', str(cmd)))
+
+        expected = {'health', 'status', 'context', 'memory', 'mission', 'model', 'thread'}
+        missing = expected - registered_cmds
+        assert not missing, f"Missing operator commands: {missing}"
 
     def test_commands_not_registered_when_disabled(self):
-        """enable_operator_commands=False → _register_operator_commands is not called
-        from _register_handlers, so no operator commands in router."""
-        # We test by calling the conditional path manually (as _register_handlers does it)
+        """enable_operator_commands=False → _register_operator_commands not called,
+        so router.message.register is never invoked."""
+        from unittest.mock import MagicMock as _MM
+
         w = _make_wrapper_with_router(enable_operator_commands=False)
+        w.router = _MM()
         # Simulate what _register_handlers does:
         if getattr(w.config, 'enable_operator_commands', True):
             w._register_operator_commands()
-        # Because enable_operator_commands=False, nothing should be registered
-        registered = _get_registered_commands(w.router)
-        op_commands = {'health', 'status', 'context', 'memory', 'mission', 'model', 'thread'}
-        overlap = op_commands & set(registered)
-        assert not overlap, f"Operator commands registered when disabled: {overlap}"
+        # Because enable_operator_commands=False, register should not have been called
+        assert w.router.message.register.call_count == 0, (
+            "Operator commands should not be registered when feature is disabled"
+        )
 
     def test_register_calls_router_register_7_times(self):
-        """_register_operator_commands registers exactly 7 handlers."""
-        from aiogram import Router
+        """_register_operator_commands registers exactly 7 handlers (mock-router variant)."""
+        from unittest.mock import MagicMock as _MM
 
         w = _make_wrapper_with_router(operator_chat_ids=[111])
-        initial_count = len(w.router.message.handlers)
+        w.router = _MM()
         w._register_operator_commands()
-        final_count = len(w.router.message.handlers)
-        assert final_count - initial_count == 7, (
-            f"Expected 7 new handlers, got {final_count - initial_count}"
+        assert w.router.message.register.call_count == 7, (
+            f"Expected 7 new handlers, got {w.router.message.register.call_count}"
         )
 
 

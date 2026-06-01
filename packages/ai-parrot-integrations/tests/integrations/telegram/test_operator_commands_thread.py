@@ -6,7 +6,7 @@ with degrade paths when the sub-agent infrastructure is absent.
 """
 import asyncio
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -146,16 +146,14 @@ class TestHandleThread:
 
     @pytest.mark.asyncio
     async def test_timeout_handling(self):
-        """Sub-agent exceeds timeout → timeout message sent."""
-        from parrot.integrations.telegram.operator_commands import _THREAD_TIMEOUT
+        """Sub-agent exceeds timeout → timeout message sent.
 
-        async def slow_spawn(task: str) -> str:
-            # Sleep longer than the timeout
-            await asyncio.sleep(_THREAD_TIMEOUT + 10)
-            return "This should not arrive"
-
+        Patches ``asyncio.wait_for`` directly to raise ``TimeoutError`` so the
+        test is decoupled from the module-level ``_THREAD_TIMEOUT`` constant and
+        runs instantly regardless of its value.
+        """
         fake_bm = MagicMock()
-        fake_bm.create_ephemeral_user_bot = slow_spawn
+        fake_bm.create_ephemeral_user_bot = AsyncMock(return_value="never arrives")
 
         w = _make_op_wrapper(
             operator_chat_ids=[111],
@@ -163,15 +161,11 @@ class TestHandleThread:
         )
         msg = _make_message(chat_id=111, text="/thread Long running task")
 
-        # Patch _THREAD_TIMEOUT to a very small value for the test
-        import parrot.integrations.telegram.operator_commands as oc_module
-        original_timeout = oc_module._THREAD_TIMEOUT
-        oc_module._THREAD_TIMEOUT = 0.05  # 50 ms
-
-        try:
+        with patch(
+            'parrot.integrations.telegram.operator_commands.asyncio.wait_for',
+            new=AsyncMock(side_effect=asyncio.TimeoutError()),
+        ):
             await w.handle_thread(msg)
-        finally:
-            oc_module._THREAD_TIMEOUT = original_timeout
 
         calls = [c[0][1] for c in w._send_safe_message.call_args_list]
         all_text = " ".join(calls).lower()

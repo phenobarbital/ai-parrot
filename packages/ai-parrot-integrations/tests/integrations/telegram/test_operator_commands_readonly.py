@@ -300,3 +300,44 @@ class TestHandleMission:
         await w.handle_mission(msg)
         msg.answer.assert_awaited_once()
         w._send_safe_message.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Exception-path tests for module-level format helpers
+# ---------------------------------------------------------------------------
+
+class TestFormatHelperExceptionPaths:
+    """Verify that _format_memory and _format_context return error strings
+    rather than propagating exceptions when the memory internals raise.
+
+    This covers the ``except Exception`` branches that were previously marked
+    ``# pragma: no cover``, ensuring a regression in InMemoryConversation's
+    internal structure produces a helpful error string rather than a traceback.
+    """
+
+    def test_format_memory_error_path(self):
+        """_format_memory returns an error string when internals raise."""
+        from parrot.integrations.telegram.operator_commands import _format_memory
+        from unittest.mock import MagicMock
+
+        broken_conv = MagicMock()
+        # _histories.values() raises unexpectedly
+        broken_conv._histories = MagicMock()
+        broken_conv._histories.values.side_effect = RuntimeError("broken store")
+
+        result = _format_memory(broken_conv)
+        assert "error" in result.lower() or "memory" in result.lower()
+        assert "broken store" in result
+
+    def test_format_context_error_path(self):
+        """_format_context returns an error string when internals raise."""
+        from parrot.integrations.telegram.operator_commands import _format_context
+        from unittest.mock import MagicMock
+
+        broken_conv = MagicMock()
+        broken_conv._histories = MagicMock()
+        broken_conv._histories.values.side_effect = ValueError("unexpected schema")
+
+        result = _format_context(broken_conv)
+        assert "error" in result.lower() or "context" in result.lower()
+        assert "unexpected schema" in result
