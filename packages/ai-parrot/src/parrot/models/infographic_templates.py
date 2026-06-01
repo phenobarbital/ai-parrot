@@ -405,17 +405,19 @@ TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
             block_type=BlockType.CHART,
             description=(
                 "Bar chart — day-over-day change of the headline metric. "
-                "MUST set layout='half'."
+                "MUST set layout='half'. Set color_by_sign=true so positive and "
+                "negative deltas render in different colors."
             ),
-            constraints={"chart_type": "bar", "layout": "half"},
+            constraints={"chart_type": "bar", "layout": "half", "color_by_sign": "true"},
         ),
         BlockSpec(
             block_type=BlockType.CHART,
             description=(
                 "Bar chart — day-over-day change of the secondary metric. "
-                "MUST set layout='half'."
+                "MUST set layout='half'. Set color_by_sign=true so positive and "
+                "negative deltas render in different colors."
             ),
-            constraints={"chart_type": "bar", "layout": "half"},
+            constraints={"chart_type": "bar", "layout": "half", "color_by_sign": "true"},
         ),
         BlockSpec(
             block_type=BlockType.CHART,
@@ -431,6 +433,17 @@ TEMPLATE_FINANCIAL_VARIANCE = InfographicTemplate(
                 "Executive summary (2–4 sentences) tying the 4 KPIs and the "
                 "trend together."
             ),
+        ),
+    ],
+    js_bundles=[
+        JSBundle(
+            name="echarts",
+            scope="cdn",
+            url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
+            # Hash computed via:
+            #   curl -sL "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js" | \
+            #     openssl dgst -sha384 -binary | base64 | tr -d '\n'
+            sri_hash="sha384-BQKzmHvQLMCAnL3UtDBA1Al5tFjsCz1wrMlIUA1wkzo14DYkRWjywW+p9pCj0cwd",
         ),
     ],
 )
@@ -544,53 +557,3 @@ class InfographicTemplateRegistry:
 
 # Module-level singleton registry
 infographic_registry = InfographicTemplateRegistry()
-
-
-# ── FEAT-197: financial_projection_variance template ─────────────────────────
-# Registered outside the _register_builtins() block so it can reference
-# JSBundle (added by FEAT-197) without touching the seven built-in definitions.
-
-TEMPLATE_FINANCIAL_PROJECTION_VARIANCE = InfographicTemplate(
-    name="financial_projection_variance",
-    description=(
-        "4 hero cards (total revenue, total EBITDA, EBITDA margin, largest swing) "
-        "+ 2 DoD bar charts (revenue, EBITDA) + 1 cumulative line chart."
-    ),
-    block_specs=[
-        BlockSpec(
-            block_type=BlockType.HERO_CARD,
-            min_items=4,
-            max_items=4,
-            description="4 KPI cards: total revenue, total EBITDA, EBITDA margin, largest daily swing.",
-        ),
-        BlockSpec(
-            block_type=BlockType.CHART,
-            required=True,
-            description="Day-over-day revenue bar chart (uses rev_daily DataFrame).",
-        ),
-        BlockSpec(
-            block_type=BlockType.CHART,
-            required=True,
-            description="Day-over-day EBITDA bar chart (uses ebitda_daily DataFrame).",
-        ),
-        BlockSpec(
-            block_type=BlockType.CHART,
-            required=True,
-            description="Cumulative revenue line chart (uses rev_cumulative DataFrame).",
-        ),
-    ],
-    default_theme="dark",
-    js_bundles=[
-        JSBundle(
-            name="echarts",
-            scope="cdn",
-            url="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js",
-            # Hash computed via:
-            #   curl -sL "https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js" | \
-            #     openssl dgst -sha384 -binary | base64 | tr -d '\n'
-            sri_hash="sha384-BQKzmHvQLMCAnL3UtDBA1Al5tFjsCz1wrMlIUA1wkzo14DYkRWjywW+p9pCj0cwd",
-        ),
-    ],
-)
-
-infographic_registry.register(TEMPLATE_FINANCIAL_PROJECTION_VARIANCE)
