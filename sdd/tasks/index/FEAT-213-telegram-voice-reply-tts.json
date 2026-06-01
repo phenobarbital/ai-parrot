@@ -52,7 +52,7 @@
       "feature_id": "FEAT-213",
       "feature": "telegram-voice-reply-tts",
       "spec": "sdd/specs/FEAT-213-telegram-voice-reply-tts.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Consumes VoiceSynthesizer/TTSConfig from TASK-1407/1408 and modifies the Telegram wrapper. Sequential.",
       "assigned_to": null,
       "started_at": "2026-06-01T23:11:23+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1409-telegram-voice-reply-wiring.md"
+      "completed_at": "2026-06-01T23:20:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1409-telegram-voice-reply-wiring.md"
     },
     {
       "id": "TASK-1410",
