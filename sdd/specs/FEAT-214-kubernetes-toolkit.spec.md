@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-214
 **Date**: 2026-05-31
 **Author**: jesuslarag (via Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 ---
