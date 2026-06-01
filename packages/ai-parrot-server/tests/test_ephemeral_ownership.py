@@ -9,7 +9,7 @@ Verifies:
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from parrot.manager.ephemeral import (
     EphemeralAgentStatus,
@@ -24,7 +24,8 @@ from parrot.manager.ephemeral import (
 
 
 def _now() -> datetime:
-    return datetime.utcnow()
+    """Return a naive UTC datetime (matching the codebase's storage convention)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _expires(seconds: int = 300) -> datetime:

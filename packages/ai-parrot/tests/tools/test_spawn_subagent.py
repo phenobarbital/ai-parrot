@@ -227,14 +227,15 @@ class TestSpawnSubAgentToolHappyPath:
         tool: SpawnSubAgentTool,
         mock_bot_manager: MagicMock,
     ) -> None:
-        """system_prompt is forwarded to the bot config."""
+        """system_prompt is forwarded as system_prompt_template (UserBotModel field name)."""
         await tool._execute(
             task="Do something.",
             system_prompt="Be very concise.",
             timeout=30,
         )
         create_kwargs = mock_bot_manager.create_ephemeral_user_bot.call_args.kwargs
-        assert create_kwargs["config"].get("system_prompt") == "Be very concise."
+        # UserBotModel field is system_prompt_template, not system_prompt.
+        assert create_kwargs["config"].get("system_prompt_template") == "Be very concise."
 
     @pytest.mark.asyncio
     async def test_model_override_in_config(
@@ -269,10 +270,10 @@ class TestSpawnSubAgentToolHappyPath:
         mock_bot_manager: MagicMock,
     ) -> None:
         """promote_user_bot is never called during the lifecycle."""
+        # Wire up promote BEFORE the call so we can assert it was never invoked.
+        mock_bot_manager.promote_user_bot = AsyncMock()
         await tool._execute(task="Do something.", timeout=30)
-        mock_bot_manager.promote_user_bot = MagicMock()
-        # verify promote was never called (it shouldn't even exist on the mock path)
-        assert not mock_bot_manager.promote_user_bot.called
+        mock_bot_manager.promote_user_bot.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

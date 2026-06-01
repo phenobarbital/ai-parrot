@@ -25,17 +25,11 @@ Usage::
 from __future__ import annotations
 
 import asyncio
-import logging
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 from parrot.tools.abstract import AbstractTool
-
-if TYPE_CHECKING:
-    pass
-
-logger = logging.getLogger("Parrot.SpawnSubAgentTool")
 
 # ---------------------------------------------------------------------------
 # Args schema
@@ -257,9 +251,16 @@ class SpawnSubAgentTool(AbstractTool):
         tools_config = self._tools_to_config(effective_tools)
 
         # --- Build ephemeral bot config ---
-        config: Dict[str, Any] = {}
+        # ``name`` is a required field on UserBotModel (no default).
+        # Use a deterministic slug derived from the owner_id + task prefix.
+        config: Dict[str, Any] = {
+            "name": f"ephemeral-sub-{self._owner_id.replace(':', '-')[:40]}",
+        }
+        # Use ``system_prompt_template`` — the actual UserBotModel field name.
+        # (Not ``system_prompt``, which is not a valid field and would cause
+        # a ValidationError in strict mode.)
         if system_prompt:
-            config["system_prompt"] = system_prompt
+            config["system_prompt_template"] = system_prompt
         if model:
             config["llm"] = model
         if tools_config:
@@ -351,7 +352,8 @@ class SpawnSubAgentTool(AbstractTool):
             RuntimeError: If the bot's phase becomes ``"error"`` or if the
                 ready state is not reached within ``_POLL_TIMEOUT`` seconds.
         """
-        deadline = asyncio.get_event_loop().time() + _POLL_TIMEOUT
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _POLL_TIMEOUT
         while True:
             status = self._bot_manager.get_ephemeral_status(
                 chatbot_id,
@@ -369,7 +371,7 @@ class SpawnSubAgentTool(AbstractTool):
                     f"SpawnSubAgentTool: sub-agent {chatbot_id!r} warm-up failed: "
                     f"{status.error}"
                 )
-            if asyncio.get_event_loop().time() >= deadline:
+            if loop.time() >= deadline:
                 raise RuntimeError(
                     f"SpawnSubAgentTool: sub-agent {chatbot_id!r} did not reach "
                     f"phase='ready' within {_POLL_TIMEOUT:.0f}s."
