@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-211
 **Date**: 2026-05-31
 **Author**: jesuslarag (via Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 ---
@@ -453,7 +453,7 @@ class PermissionContext:                                 # line 80
   `tool:{name}` + override opcional).
 - [ ] ¿La ventana se **renueva** en cada uso (sliding) o es fija desde la
   aprobación? — *Owner: usuario* (preferencia del spec: **fija** desde la
-  aprobación, estilo aphelion 15-min window).
+  aprobación, estilo aphelion 15-min window).: pudiera renovarse sliding en cada uso.
 
 ---
 

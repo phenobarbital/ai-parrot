@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-212
 **Date**: 2026-05-31
 **Author**: jesuslarag (via Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 ---
@@ -466,7 +466,7 @@ class SuspendedExecutionStore:                    # line 64 (async store pattern
   crash (¿ventana de gracia por `seq`/timestamp?) — *Owner: implementador M2/M4*.
 - [ ] ¿`resume()` automático en `start()` por defecto o solo bajo
   `resume_on_start=True`? — *Owner: usuario* (preferencia del spec: opt-in
-  configurable).
+  configurable).: deberia ser opt-in configurable
 
 ---
 
