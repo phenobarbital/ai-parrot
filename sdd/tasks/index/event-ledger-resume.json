@@ -72,7 +72,7 @@
       "feature_id": "FEAT-212",
       "feature": "event-ledger-resume",
       "spec": "sdd/specs/FEAT-212-event-ledger-resume.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends on EventLedger.find_incomplete() from TASK-1400; modifies orchestrator.py (different file from TASK-1401 but logically sequential)",
       "assigned_to": null,
       "started_at": "2026-06-01T00:51:41+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1402-orchestrator-resume.md"
+      "completed_at": "2026-06-01T01:00:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1402-orchestrator-resume.md"
     },
     {
       "id": "TASK-1403",
