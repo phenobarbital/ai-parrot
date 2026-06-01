@@ -73,7 +73,7 @@
       "feature_id": "FEAT-210",
       "feature": "telegram-operator-commands",
       "spec": "sdd/specs/FEAT-210-telegram-operator-commands.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Extends OperatorCommandsMixin in the same operator_commands.py — shared file prevents parallel execution. Also logically sequential after TASK-1396 for consistency.",
       "assigned_to": null,
       "started_at": "2026-06-01T00:08:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1397-thread-command.md"
+      "completed_at": "2026-06-01T00:17:58+00:00",
+      "file": "sdd/tasks/completed/TASK-1397-thread-command.md"
     },
     {
       "id": "TASK-1398",
