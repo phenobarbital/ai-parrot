@@ -52,25 +52,31 @@ frontend already speaks.
 - **Strictly additive.** `OutputMode.ECHARTS` and `OutputMode.ALTAIR` and their
   renderers/prompts must remain untouched. The new behavior is **opt-in** via
   `output_mode=structured_chart`. Zero regressions.
-- **Dual emission with deterministic fallback.** Alongside the structured config,
-  emit a native ECharts spec **derived deterministically server-side** from the
-  structured config (no extra LLM tokens, guaranteed config↔spec consistency) so the
-  frontend can fall back during the migration window.
+- **Single agnostic emission — NO native fallback (SCOPE-CUT 2026-06-02).** The agent emits
+  **only** the validated `StructuredChartConfig`; `response.code` is left **null**. The
+  deterministic `structured→ECharts` transform and its `EChartsMapsMixin` geo dependency are
+  **out of scope**. Justified by the impact investigation (see "Impact Investigation
+  Findings" below): every backend consumer tolerates `code=null`, channels render images
+  (not specs), and `structured_chart` is client-requested so it never reaches a non-frontend
+  channel.
 - **Real data via tools.** The chart must use real domain data: the agent fetches it
   through tools (e.g. `database_query`) — same flow as the Altair renderer — then maps
   columns into the config and embeds the rows.
 - **Data in two places (configurable).** Rows embedded in the config (mirrors
   `AppChartConfig`) AND populated into the existing `AIMessage.data` / envelope `data`
   field for clients that read it.
-- **Map support included.** The contract accepts `type: "map"`, represented agnostically
-  as `x`=region column, `y`=value column, plus a new `mapName` field
-  (e.g. `"world"`, `"USA"`, `"Argentina"`) selecting the GeoJSON.
-- **Resilient validation.** On a config that fails pydantic validation, retry with a
-  STRUCTURED_CHART repair prompt. ⚠️ **VERIFIED CAVEAT:** the existing
-  `OutputFormatter.format_with_retry` loop is **dormant** — it is never called from the
-  agent flow (the bot uses plain `formatter.format()` at `base.py:404` and `:1166`;
-  `format_with_retry` appears only in its own docstring + unit tests). So retry must be
-  *explicitly enabled* — see Open Questions. This is NOT free reuse.
+- **Map support included (frontend-only).** The contract accepts `type: "map"`, represented
+  agnostically as `x`=region column, `y`=value column, plus a new `mapName` field
+  (e.g. `"world"`, `"USA"`, `"Argentina"`) selecting the GeoJSON. `mapName` exists **purely
+  as a field the frontend (`AppChartGeo`) consumes** — there is no server-side geo render and
+  no `EChartsMapsMixin` involvement (fallback removed).
+- **Resilient validation (v1 = strict + graceful degradation).** On a config that fails
+  pydantic validation, **degrade gracefully** — return the best-effort structured `output`
+  with an error flag rather than hard-failing. **LLM-repair is DEFERRED to a follow-up** to
+  avoid injecting an `AbstractClient` into the renderer and touching `base.py`. (Context: the
+  existing `OutputFormatter.format_with_retry` loop is **dormant** — never called from the
+  agent flow; bot uses plain `formatter.format()` at `base.py:404`/`:1166`; it appears only
+  in its own docstring + unit tests. So there is no free retry to reuse anyway.)
 - **Async-first, Google-style docstrings, strict type hints, Pydantic** (project rules).
 - **Renderers ship from the satellite** `ai-parrot-visualizations` (PEP 420 namespace);
   core only gains the enum value + dispatch entry + the pydantic model.
@@ -79,48 +85,48 @@ frontend already speaks.
 
 ## Options Explored
 
-### Option A: New `STRUCTURED_CHART` mode — LLM emits agnostic config, renderer derives ECharts deterministically
+### Option A (RECOMMENDED, scope-cut): New `STRUCTURED_CHART` mode — LLM emits ONLY the agnostic config, no native fallback
 
 The agent runs in a new `OutputMode.STRUCTURED_CHART`. Its system prompt instructs the
 LLM to (1) fetch data with tools, then (2) emit **only** a JSON object validated against a
 new `StructuredChartConfig` pydantic model (the agnostic contract + embedded rows). A new
-`StructuredChartRenderer` (in the satellite) validates the JSON, populates `response.data`
-with the rows, and **deterministically transforms** the config into a native ECharts
-`option` (placed in `response.code`) as a migration fallback. No HTML is rendered — the
-frontend's `<AppChart>` renders from the structured `output`.
+`StructuredChartRenderer` (in the satellite) validates the JSON and populates
+`response.data` with the rows. **`response.code` is left null** — no native spec is derived.
+No HTML is rendered — the frontend's `<AppChart>` renders from the structured `output`.
 
 ✅ **Pros:**
-- One LLM contract, one source of truth; the ECharts fallback can never diverge from the
-  structured config because it is generated from it.
-- Zero extra LLM tokens for the fallback (pure server-side transform).
+- One LLM contract, one source of truth; nothing can diverge because there is no second
+  representation.
+- **Smallest possible surface**: dropping the deterministic transform removes the largest
+  implementation cost and the geo-fallback complexity (`EChartsMapsMixin`).
 - Cleanly additive: new enum value + new `_MODULE_MAP` entry + new renderer module.
   ECHARTS/ALTAIR fully untouched.
-- Reuses the entire existing plumbing: `register_renderer`, `get_system_prompt`
-  injection in `BaseBot`, `format_with_retry` retry loop, and the JSON response envelope.
-- Maps handled with the same `x`/`y` + `mapName` shape; the deterministic transform can
-  lean on the existing `EChartsMapsMixin` for the geo fallback.
+- Reuses existing plumbing: `register_renderer`, `get_system_prompt` injection in `BaseBot`,
+  and the JSON response envelope (which already serializes `code=null`).
+- The renderer is trivial: validate → populate `data` → return. No `response.code` mutation,
+  no transformer, no client injection.
 
 ❌ **Cons:**
-- A deterministic `structured → ECharts` transformer must cover each chart `type`
-  (bar/line/area/scatter/pie/donut/radar/map) — non-trivial but bounded and unit-testable.
-- The renderer mutates `response.code` (side-effect) to carry the fallback spec; needs a
-  documented, tested contract (see Open Questions).
+- During the migration window, any consumer that *only* knew how to paint a raw ECharts/Vega
+  spec gets nothing renderable from `code` — **verified safe**: the only such consumer is the
+  frontend chat, which is the driver of this change and renders from `output`. No backend
+  consumer breaks (see Impact Investigation Findings).
+- No automatic LLM-repair on a malformed config in v1 (graceful degradation only) — deferred.
 
-📊 **Effort:** Medium
+📊 **Effort:** Low–Medium (reduced from Medium after the scope cut).
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
 | `pydantic` (v2, already used) | `StructuredChartConfig` model + validation | `model_json_schema()` already used elsewhere in `outputs.py` |
 | `ai-parrot-visualizations` (satellite, in-repo) | Hosts the new renderer | PEP 420 namespace merge into `parrot.outputs.formats` |
-| — (no new 3rd-party dep) | Deterministic transform is plain Python/dicts | Avoids adding `pyecharts` etc. |
+| — (no new 3rd-party dep) | none needed (no transform) | — |
 
 🔗 **Existing Code to Reuse:**
 - `packages/ai-parrot/src/parrot/models/outputs.py` — add enum value + host the pydantic model (alongside `ObjectDetectionResult` et al.).
 - `packages/ai-parrot/src/parrot/outputs/formats/__init__.py` — `register_renderer`, `_MODULE_MAP` dispatch.
-- `packages/ai-parrot-visualizations/src/parrot/outputs/formats/echarts.py` — renderer pattern (`execute_code`, `_extract_json_code`, `render`).
-- `packages/ai-parrot-visualizations/src/parrot/outputs/formats/mixins/emaps.py` — `EChartsMapsMixin` / `get_echarts_system_prompt_with_geo` for the map fallback.
-- `packages/ai-parrot/src/parrot/outputs/formatter.py` — `DEFAULT_RETRY_PROMPTS` + `format_with_retry`.
+- `packages/ai-parrot-visualizations/src/parrot/outputs/formats/echarts.py` — renderer pattern only (`_extract_json_code`, `render` signature). **Do NOT** pull in the `execute_code` ECharts validation or `EChartsMapsMixin` — out of scope.
+- `packages/ai-parrot-visualizations/src/parrot/outputs/formats/altair.py` — closest reference for the "fetch-via-tools then emit" system-prompt style.
 
 ---
 
@@ -186,21 +192,23 @@ Leave the agent emitting ECharts as today. Add a converter in the response path
 
 ## Recommendation
 
-**Option A** is recommended.
+**Option A (scope-cut: no native fallback)** is recommended.
 
 It is the only option that achieves the actual goal — a **single, agnostic source of
-truth** the frontend can render with one library — while staying cheap and consistent.
-By having the LLM emit *only* the structured config and **deriving** the ECharts fallback
-deterministically, the config and its fallback can never diverge (the failure mode that
-sinks Option B), and there is no fragile reverse-engineering of arbitrary specs (the
-failure mode that sinks Option C). It costs no extra LLM tokens for the fallback, lands
-entirely in the reusable renderer layer following the proven `EChartsRenderer` pattern,
-and is strictly additive so ECHARTS/ALTAIR keep working untouched.
+truth** the frontend can render with one library. The LLM emits *only* the structured
+config; nothing can diverge because there is no second representation (the failure mode that
+sinks Option B), and there is no fragile reverse-engineering of arbitrary specs (the failure
+mode that sinks Option C). It lands entirely in the reusable renderer layer and is strictly
+additive so ECHARTS/ALTAIR keep working untouched.
 
-The tradeoff accepted: we must write and maintain a deterministic `structured → ECharts`
-transformer per chart type. This is bounded (a fixed set of types), fully unit-testable,
-and the natural place for the complexity — far preferable to runtime divergence or lossy
-reverse translation.
+The original plan emitted a deterministic `structured→ECharts` fallback in `response.code`
+as a migration safety net. The **impact investigation (2026-06-02) found this unnecessary**:
+verdict **(B)** — removal is safe, and the safety condition (`structured_chart` is
+client-requested and never reaches a non-frontend channel) is **structurally guaranteed**
+(channels force their own `output_mode`; no router auto-selects the new mode; every backend
+consumer tolerates `code=null`). Cutting the fallback removes the largest implementation
+cost and the geo-fallback complexity for zero real risk. If a fallback is ever needed it can
+be reintroduced additively (all consumers already tolerate `code=null`).
 
 ---
 
@@ -212,11 +220,11 @@ response whose:
 - `output` = a `StructuredChartConfig` JSON object (chart `type`, `x`, `y[]`, flags,
   palette controls, **embedded data rows**) — directly consumable by `<AppChart>`.
 - `data` = the same flat rows (for clients that read the envelope `data` field).
-- `code` = a deterministically-derived native ECharts `option` JSON (migration fallback).
+- `code` = **null** (no native fallback spec).
 - `output_mode` = `"structured_chart"`.
 
-The frontend `ChatBubble` can render via LayerChart/`<AppChart>` from `output` and drop
-its `echarts` + `vega` runtime dependencies once it no longer needs the `code` fallback.
+The frontend `ChatBubble` renders via LayerChart/`<AppChart>` from `output` and can drop its
+`echarts` + `vega` runtime dependencies.
 
 ### Internal Behavior
 1. `BaseBot.ask()/conversation()` receives `output_mode=STRUCTURED_CHART` and injects the
@@ -230,28 +238,23 @@ its `echarts` + `vega` runtime dependencies once it no longer needs the `code` f
    dispatches to the new `StructuredChartRenderer`.
 4. The renderer extracts the JSON (reusing the `_extract_json_code` pattern), validates it
    into `StructuredChartConfig`, then:
-   - sets `output` = validated config (`model_dump(mode="json")`),
-   - populates `response.data` with the rows (if not already present),
-   - deterministically transforms the config into an ECharts `option` and writes it to
-     `response.code` (the fallback; maps via `EChartsMapsMixin`).
+   - sets `output` = validated config (`model_dump(mode="json", by_alias=True)`),
+   - populates `response.data` with the rows (if not already present).
+   - **Leaves `response.code` as null** — no transform.
 5. The HTTP handler serializes the generic JSON envelope (`agent.py:2591-2614`):
-   `output`, `data`, `response`, `output_mode`, `code` — no handler change required for
-   the happy path (the INFOGRAPHIC special-case at `2547` is not triggered).
+   `output`, `data`, `response`, `output_mode`, `code` (already `None`-safe at `:2597`) —
+   no handler change required (the INFOGRAPHIC special-case at `2547` is not triggered).
 
 ### Edge Cases & Error Handling
-- **Invalid/malformed config JSON** → repaired via a STRUCTURED_CHART repair prompt.
-  ⚠️ Requires wiring retry into the flow (the dormant `format_with_retry` is not invoked
-  today) — either call it for this mode in `base.py`, or handle validation+repair inside
-  the renderer. The repair prompt (`DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]`)
-  is new and must be added regardless.
-- **`y` references a column absent from rows** → validation error surfaced to the retry
-  loop (model-level validator).
+- **Invalid/malformed config JSON** → **v1: graceful degradation** — return a best-effort
+  result (the raw/partial structured `output` plus an error flag/message) instead of
+  hard-failing. **LLM-repair is deferred** to a follow-up (no client injection in v1).
+- **`y` references a column absent from rows** → pydantic model-level validation error →
+  graceful-degradation path.
 - **`type=map` without `mapName`** → validation error (conditional requirement).
-- **`colorBySign=true` without `negativeColor`** → fall back to a default negative color
-  (documented), not an error.
+- **`colorBySign=true` without `negativeColor`** → default negative color (documented), not
+  an error.
 - **Empty rows** → emit the config with empty `data`; frontend renders an empty-state.
-- **Transform can't map a type to ECharts** → still return the structured `output` (the
-  primary contract); leave `code` null and log a warning (fallback is best-effort).
 
 ---
 
@@ -259,8 +262,8 @@ its `echarts` + `vega` runtime dependencies once it no longer needs the `code` f
 
 ### New Capabilities
 - `structured-chart-output`: a library-agnostic `OutputMode.STRUCTURED_CHART` that emits a
-  `StructuredChartConfig` mirroring the frontend `AppChartConfig`, plus a deterministically
-  derived ECharts fallback.
+  `StructuredChartConfig` mirroring the frontend `AppChartConfig` (config + embedded rows),
+  with `response.code` left null (no native fallback).
 
 ### Modified Capabilities
 <!-- none — strictly additive -->
@@ -273,13 +276,50 @@ its `echarts` + `vega` runtime dependencies once it no longer needs the `code` f
 |---|---|---|
 | `packages/ai-parrot/src/parrot/models/outputs.py` | modifies | Add `OutputMode.STRUCTURED_CHART = "structured_chart"`; add `StructuredChartConfig` (+ enums) pydantic model |
 | `packages/ai-parrot/src/parrot/outputs/formats/__init__.py` | modifies | Add `OutputMode.STRUCTURED_CHART: ('.structured_chart',)` to `_MODULE_MAP` |
-| `packages/ai-parrot-visualizations/.../outputs/formats/structured_chart.py` | extends (new file) | `StructuredChartRenderer` + system prompt + deterministic `structured→ECharts` transform |
-| `packages/ai-parrot/src/parrot/outputs/formatter.py` | modifies | Add `DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]` repair prompt |
-| `packages/ai-parrot/src/parrot/bots/base.py` | depends on | No change expected — generic `output_mode != DEFAULT` path already routes to the formatter (verify `code` mutation reaches envelope) |
-| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | depends on | No change for happy path; verify dict `output` serializes cleanly (it does — `2585` safety net) |
+| `packages/ai-parrot-visualizations/.../outputs/formats/structured_chart.py` | extends (new file) | `StructuredChartRenderer` (validate + populate `data`) + system prompt. **No** transform, **no** `EChartsMapsMixin`, **no** `response.code` mutation |
+| `packages/ai-parrot/src/parrot/outputs/formatter.py` | none (v1) | LLM-repair deferred → **no** `DEFAULT_RETRY_PROMPTS` entry in v1 |
+| `packages/ai-parrot/src/parrot/bots/base.py` | depends on / no change | Generic `output_mode != DEFAULT` path already routes to the formatter; no `code` mutation needed |
+| `packages/ai-parrot-server/src/parrot/handlers/agent.py` | depends on / no change | Generic envelope handles dict `output` (`:2585` safety net) and `code=null` (`:2597`). Optional follow-up: add `'structured_chart'` to the artifact tuple at `:2675` to persist these turns as artifacts (additive) |
 | `AIMessage` / `ChatMessage` | depends on | Reuse existing `output`/`data`/`code`/`output_mode` fields — no schema change |
 
 **No breaking changes. No new third-party dependency.**
+
+---
+
+## Impact Investigation Findings (2026-06-02 — read-only audit on `dev`)
+
+Evidence backing the decision to **cut the native ECharts fallback** (`code=null`). Verdict
+**(B): safe, and the safety condition is structurally guaranteed.**
+
+- **Envelope already `None`-safe**: `handlers/agent.py:2597` →
+  `"code": str(response.code) if response.code else None`. Dict `output` passes the
+  serialization safety-net at `:2585`.
+- **Channels render IMAGES, not specs**: `integrations/parser.py:21-76` `ChartData`
+  (`path`/`base64`/`mime_type`); `_parse_chart_item` (`:193-217`) only accepts file-path /
+  image chart items. No channel parses ECharts/Vega from `code`. The matplotlib/plotly
+  `ChartTool` (`parrot_tools/chart.py`) produces the images.
+- **`structured_chart` cannot leak to a non-frontend channel**: channels hardcode their own
+  mode — Telegram `OutputMode.TELEGRAM` (`telegram/wrapper.py:1740,1846,2282,…`), Slack
+  `OutputMode.SLACK` (`slack/assistant.py:180,234,255`), WhatsApp `OutputMode.WHATSAPP`
+  (`whatsapp/wrapper.py:215`), Teams `OutputMode.MSTEAMS` (`msteams/wrapper.py:528`).
+  Client-requested mode enters only via HTTP (`handlers/agent.py:499,1646,1675-1677`). No
+  router auto-selects the new mode.
+- **Storage/streaming do not re-render**: `storage/chat.py:243-245` persists
+  `output`/`output_mode`/`data`/`code` verbatim and replays them as-is (`:363`); `code` is
+  already nullable. `handlers/stream.py` & `handlers/chat.py` do not read chart output
+  fields (text-token streaming).
+- **No server-side echarts-from-`code` render**: ECharts `to_html` needs a browser/CDN;
+  the only server-side echarts generation is `infographic_html.py:961` `_build_echarts_option`,
+  which builds from infographic block data — **independent** of any chart-response `code`.
+- **Other `.code` readers tolerate null**: parser (`:386`), MS Teams (`:959`), TABLE renderer
+  (`table.py:310`), app generators (`generators/abstract.py:48-51`, `generators/base.py:151,174`),
+  orchestrator (`bots/flows/agents/orchestrator.py:225`) — all gated to other modes or
+  null-tolerant.
+- **Tests**: no test asserts a "chart mode always carries `code`" invariant; no
+  `structured_chart` test exists yet.
+- **Optional additive follow-up**: to persist `structured_chart` turns as artifacts, add
+  `'structured_chart'` to the tuple at `handlers/agent.py:2675` (it uses `response.data`, not
+  `code`). Purely additive; not required.
 
 ---
 
@@ -339,16 +379,17 @@ class BaseChart(BaseRenderer):                              # line 20
     def to_html(self, chart_obj, mode='partial', **kwargs)  # line 408
 
 # packages/ai-parrot-visualizations/src/parrot/outputs/formats/mixins/emaps.py
-class EChartsMapsMixin:                                     # line 609
-    def _render_chart_content_geo(self, ...)                # line 750
-def get_echarts_system_prompt_with_geo(base_prompt: str) -> str:  # line 835
+# ⚠️ OUT OF SCOPE (v1) — the map FALLBACK was cut. `mapName` is a passthrough field for
+#    the frontend only; no server-side geo render. Listed for reference, NOT to be used.
+class EChartsMapsMixin:                                     # line 609 — do NOT mix in
+def get_echarts_system_prompt_with_geo(base_prompt: str) -> str:  # line 835 — do NOT use
 
 # packages/ai-parrot/src/parrot/outputs/formatter.py
-DEFAULT_RETRY_PROMPTS = { OutputMode.ECHARTS: "...", OutputMode.JSON: "...", ... }  # line 49
 class OutputFormatter:                                      # line 129
     def get_system_prompt(self, mode) -> Optional[str]:     # line 242 (-> get_output_prompt)
-    async def format(self, mode, data, **kwargs) -> Tuple[str, Optional[str]]:  # line 267
-    async def format_with_retry(self, mode, data, original_prompt=None, ...) -> OutputRetryResult:  # line 608
+    async def format(self, mode, data, **kwargs) -> Tuple[str, Optional[str]]:  # line 267 — the call used by the bot
+# ⚠️ DEFERRED (v1): DEFAULT_RETRY_PROMPTS (line 49) + format_with_retry (line 608) — NOT
+#    touched. LLM-repair is a follow-up; v1 degrades gracefully inside the renderer.
 
 # packages/ai-parrot/src/parrot/bots/base.py
 async def ask/conversation(..., output_mode: OutputMode = OutputMode.DEFAULT, ...)  # 139 / 735 / 1307
@@ -406,23 +447,25 @@ from .mixins.emaps import EChartsMapsMixin, get_echarts_system_prompt_with_geo  
 - ~~`ChartConfig` / `SeriesConfig` / `AppChartConfig`~~ — **no** intermediate structured chart model exists anywhere in ai-parrot today.
 - ~~`parrot.outputs.formats.structured_chart`~~ — module to be created in the satellite.
 - `GenerateChartInput` (`packages/ai-parrot-tools/src/parrot_tools/chart.py`) **exists but is NOT applicable** — it is the matplotlib/plotly `ChartTool` that produces static images, unrelated to echarts/altair/structured chat output.
-- ~~`DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]`~~ — not present; to be added (formatter.py:49).
+- ~~`DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]`~~ — not present, and **NOT added in
+  v1** (LLM-repair deferred). Do not add it.
+- ~~deterministic `structured→ECharts` transform~~ — **cut from scope**; do NOT implement.
+  `response.code` stays null.
 - ⚠️ **`format_with_retry` is DORMANT** — verified it is called **nowhere** in production
   code (`bots/`, `handlers/`); only in its own docstring (`formatter.py:158,638`) and in
   `tests/outputs/test_formatter_retry.py`. The agent flow calls plain
-  `self.formatter.format()` (`base.py:404, 1166`). Adding a STRUCTURED_CHART retry prompt
-  alone does **NOT** make retry happen — it must be wired. Note even `OutputMode.ECHARTS`'s
-  existing retry prompt is dormant for the same reason.
+  `self.formatter.format()` (`base.py:404, 1166`). This is *why* LLM-repair is deferred — it
+  is not free reuse. v1 uses graceful degradation inside the renderer instead.
 - No `__init__.py` exists in the satellite `parrot/outputs/formats/` directory — do **not** create one (would shadow the core namespace package).
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: Limited. The work is a tight vertical slice (enum value →
-  pydantic model → renderer + transform → retry prompt → tests). The renderer depends on
-  the model and enum; the transform depends on the model. Best done sequentially in one
-  worktree.
+- **Internal parallelism**: Limited. The work is a small, tight vertical slice (enum value →
+  pydantic model → renderer (validate + populate `data`) → system prompt → tests). The
+  renderer depends on the model and enum. Best done sequentially in one worktree. (Smaller
+  after the fallback/transform/retry scope cut.)
 - **Cross-feature independence**: Touches `models/outputs.py`, `outputs/formats/__init__.py`,
   and `outputs/formatter.py` — files shared with infographic/echarts work. Additive edits
   (new enum member, new dict entry, new model) minimize conflict risk, but the recently
@@ -442,27 +485,10 @@ from .mixins.emaps import EChartsMapsMixin, get_echarts_system_prompt_with_geo  
 - [x] Where do data rows travel — *Owner: Juan2coder*: embedded in the config **and** populated into `AIMessage.data` (configurable, both by default).
 - [x] How the LLM produces the config with real data — *Owner: Juan2coder*: tools fetch data first (like Altair), then map columns into the config and embed rows.
 - [x] Map coverage — *Owner: Juan2coder*: include `type="map"`, represented as `x`=region, `y`=value + a new `mapName` field selecting the GeoJSON.
-- [x] Validation failure behavior — *Owner: Juan2coder*: retry with a new STRUCTURED_CHART repair prompt — **but** see the open question below: the retry loop is not wired into the agent flow today, so this needs explicit wiring (not free reuse).
 - [x] Backwards compatibility — *Owner: Juan2coder*: strictly additive + opt-in via `output_mode=structured_chart`; ECHARTS/ALTAIR untouched.
-- [x] **Retry wiring (VERIFIED GAP)** — *Owner: Juan2coder*: resolved → **option (b)**: do
-  validation + LLM repair *inside* the `StructuredChartRenderer`, self-contained, with **no
-  change to `base.py`** (avoids the regression surface of touching the shared generic path,
-  and keeps the dormant `format_with_retry` untouched). Implications the spec must cover:
-  the renderer needs an `AbstractClient` reference for the repair round-trip, but renderers
-  are instantiated today with no args (`formatter.py:239` `renderer_cls()`). Decide the
-  injection path. VERIFIED: the bot's client is `self._llm` (`base.py:328,584,1024,1451`,
-  **not** `self.client`); `format_kwargs` is a *caller-supplied* param splatted into
-  `render()` (`base.py:405,1167`) and does NOT carry the llm by default; renderers are
-  built with `renderer_cls()` (no args, `formatter.py:239`). So the candidates are:
-  **(i) truly zero base.py change** — the renderer lazily instantiates its own
-  `AbstractClient` for repair; or **(ii) one-line base.py addition** — inject `self._llm`
-  into `format_kwargs` for STRUCTURED_CHART so `render()` receives it. Decide in the spec
-  (lean (i) to honor the "self-contained" intent; (ii) is acceptable if reusing the bot's
-  configured client/model matters). **Graceful degradation still applies as the floor**: if
-  repair attempts are exhausted (or no client is available), return the best-effort
-  structured `output` (and native fallback) rather than hard-failing. Bounded retry count
-  (default 2, mirroring `OutputRetryConfig.max_retries`).
-- [ ] **Fallback wiring mechanism** — *Owner: Juan2coder*: confirm how the deterministic ECharts spec reaches the envelope `code`. Candidate: the renderer mutates `response.code` (it receives the full `AIMessage` by reference; `base.py:407-409` overwrite only `output`/`response`/`output_mode`, so a `code` mutation survives). Needs a documented, tested contract since `format()`'s return tuple only feeds `output`/`response`. Decide in the spec.
-- [ ] **Exact field naming & casing** — *Owner: Juan2coder*: the frontend contract is camelCase (`horizontalBar`, `splitSeries`, `xAxisMode`, `colorBySign`, `negativeColor`). Decide whether `StructuredChartConfig` serializes camelCase (pydantic alias) to match `<AppChart>` 1:1, or snake_case with a documented frontend adapter. Lean: pydantic `alias`/`populate_by_name` → emit camelCase.
-- [ ] **`mapName` vocabulary** — *Owner: Juan2coder*: enumerate the supported GeoJSON map names and how they line up with the existing `EChartsMapsMixin` geo registry, to keep the map fallback working.
-- [ ] **`xAxisMode="time"` row format** — *Owner: Juan2coder*: define expected date/time representation in rows (ISO string vs epoch) for both `<AppChart>` and the ECharts fallback.
+- [x] **Native fallback / "Fallback wiring mechanism"** — *Owner: Juan2coder*: **RESOLVED → ELIMINATED.** No native ECharts fallback; `response.code` stays null. Backed by the Impact Investigation (verdict B). The `response.code`-mutation question is therefore moot.
+- [x] **Validation failure behavior + Retry wiring** — *Owner: Juan2coder*: **RESOLVED for v1 → strict pydantic validation + graceful degradation** (return best-effort `output` with an error flag; never hard-fail). **LLM-repair DEFERRED to a follow-up** — avoids injecting an `AbstractClient` into the renderer and avoids touching `base.py`. (The dormant `format_with_retry` is not free reuse anyway.)
+- [ ] **Exact field naming & casing** — *Owner: Juan2coder*: the frontend contract is camelCase (`horizontalBar`, `splitSeries`, `xAxisMode`, `colorBySign`, `negativeColor`). Decide whether `StructuredChartConfig` serializes camelCase (pydantic `alias` + `populate_by_name`, `model_dump(by_alias=True)`) to match `<AppChart>` 1:1, or snake_case with a documented frontend adapter. **Lean: camelCase via pydantic alias.** — *resolve before/during spec.*
+- [ ] **`mapName` vocabulary** — *Owner: Juan2coder*: enumerate the supported map names the frontend `AppChartGeo` consumes (e.g. `"world"`, `"USA"`, country names). This is now a **frontend-contract** question (no server-side geo render / no `EChartsMapsMixin`). — *resolve before/during spec.*
+- [ ] **`xAxisMode="time"` row format** — *Owner: Juan2coder*: define expected date/time representation in rows (ISO 8601 string vs epoch) that `<AppChart>` consumes. — *resolve before/during spec.*
+- [ ] **Frontend coordination / bridge** — *Owner: Juan2coder*: the frontend `AppChartConfig` **today has neither `mapName` nor an embedded `data` field** (it receives data as a separate prop). The spec must **document the bridge**: how `<AppChart>`/`ChatBubble` reads `mapName` and the embedded `data` rows from the `structured_chart` envelope (or how the chat adapts the envelope into the existing `AppChartConfig` + data-prop shape). — *coordinate with frontend; document in spec.*
