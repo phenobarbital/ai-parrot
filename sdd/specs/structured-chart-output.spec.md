@@ -420,10 +420,12 @@ output_mode in ('chart', 'dataframe', 'export')          # line 2675  ← artifa
 - **`code` must stay null**: do not set `response.code`; verify no base path repopulates it.
 - **Namespace import**: confirm `get_renderer(OutputMode.STRUCTURED_CHART)` triggers the lazy
   import (`_MODULE_MAP` entry) — same mechanism as `.echarts`.
-- **Frontend bridge (coordination)**: the current `AppChartConfig` has neither `mapName` nor an
-  embedded `data` field (data is a separate prop). The frontend must adapt the envelope (read
-  `mapName` and embedded `data` from `output`, or split them). Documented here; not a backend
-  blocker (see §8).
+- **Frontend bridge (verified, not a backend blocker)**: `navigator-frontend-next` already has the
+  adapter — `DataChart.svelte` maps a free-form config → `AppChartConfig` and renders
+  `<AppChart config={appConfig} {data} />` (config + data as **separate props**). The chat routes
+  `message.output` (config) + `message.data` (rows) into it. No frontend reads `code` for charts
+  (both frontends read `message.output`), so `code=null` is safe. Remaining frontend work (a
+  `ChatBubble` branch for `structured_chart`) is tracked outside this spec. See §8.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -459,11 +461,20 @@ output_mode in ('chart', 'dataframe', 'export')          # line 2675  ← artifa
 - [x] `mapName` vocabulary — *Resolved in brainstorm*: free-form `str`; frontend `AppChartGeo`
   owns/validates the set.
 - [x] `xAxisMode="time"` row format — *Resolved in brainstorm*: ISO 8601 strings (prompt-enforced).
-- [ ] **Frontend coordination / bridge** — *Owner: Juan2coder*: the frontend `AppChartConfig` has
-  no `mapName` nor embedded `data` today. Coordinate with the frontend on how `<AppChart>` /
-  `ChatBubble` adapts the `structured_chart` envelope (read `mapName` + embedded `data` from
-  `output`, or split into config + data-prop). Documentation/coordination item — **not a backend
-  blocker** for this spec.
+- [x] **Frontend coordination / bridge** — *Resolved by cross-repo investigation (2026-06-02)*:
+  the verified bridge in `navigator-frontend-next` is **`DataChart.svelte`** → **`AppChart.svelte`**.
+  `DataChart` already maps a free-form config to `AppChartConfig` (`toAppType()` at
+  `DataChart.svelte:54`, `appConfig` derived at `:81`) and renders **config and data as separate
+  props**: `<AppChart config={appConfig} {data} />` (`DataChart.svelte:133,229`). So the chat
+  consumes `structured_chart` by routing `message.output` (config, incl. `mapName`) +
+  `message.data` (rows) into `DataChart` — **no embedded-`data` requirement on `AppChartConfig`,
+  no `code` fallback**. The only remaining frontend work is adding the
+  `output_mode === "structured_chart"` branch in `ChatBubble.svelte` (currently absent in both
+  frontends) and `'structured_chart'` to the request union (`client.ts:16`). Frontend-side, tracked
+  outside this backend spec. **Cross-repo finding** (read-only): no frontend reads `code` for charts
+  — both `navigator-frontend-next` and `navigator-svelte` read the spec from `message.output`
+  (`ChatBubble.svelte:878,935 / 817,874`); `navigator-svelte` keeps using `echarts`/`altair`
+  (untouched). Removing the ECharts fallback affects no real frontend.
 
 ---
 
