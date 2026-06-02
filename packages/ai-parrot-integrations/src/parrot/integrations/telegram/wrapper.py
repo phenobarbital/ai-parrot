@@ -44,6 +44,7 @@ from .auth import (
     CompositeAuthStrategy,
 )
 from .filters import BotMentionedFilter
+from .operator_commands import OperatorCommandsMixin
 from .post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
@@ -55,9 +56,10 @@ if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
     from ...voice.transcriber import VoiceTranscriber
+    from ...voice.tts.synthesizer import VoiceSynthesizer  # FEAT-213
 
 
-class TelegramAgentWrapper:
+class TelegramAgentWrapper(OperatorCommandsMixin):
     """
     Wraps an Agent/AgentCrew/AgentFlow for Telegram integration.
 
@@ -174,6 +176,13 @@ class TelegramAgentWrapper:
         # Voice transcriber (lazy — created on first voice message)
         self._transcriber: Optional["VoiceTranscriber"] = None
 
+        # Voice synthesizer for TTS reply (lazy — created on first voice reply)
+        # FEAT-213: opt-in via config.tts_enabled
+        self._synthesizer: Optional["VoiceSynthesizer"] = None
+        # Prevents a race when two concurrent voice messages both find
+        # _synthesizer is None and attempt lazy creation simultaneously.
+        self._synthesizer_lock: asyncio.Lock = asyncio.Lock()
+
         # Register message handlers
         self._register_handlers()
 
@@ -230,6 +239,12 @@ class TelegramAgentWrapper:
 
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
+
+        # ─── Operator Commands (FEAT-210) — before generic text handler ───
+        # Must be registered here, before the generic message handler so that
+        # Command("x") filters catch these commands before the text handler does.
+        if getattr(self.config, 'enable_operator_commands', True):
+            self._register_operator_commands()
 
         # ─── Group/Channel Handlers (must be before generic text handler) ───
 
@@ -919,6 +934,27 @@ class TelegramAgentWrapper:
             return True
         return chat_id in self.config.allowed_chat_ids
 
+    def _is_operator(self, chat_id: int) -> bool:
+        """Check if a chat is an operator (has access to operator-only commands).
+
+        Fail-closed: when operator_chat_ids is None or empty, no chat is an
+        operator. This is intentionally opposite to _is_authorized's fail-open
+        behavior. Gate also respects the enable_operator_commands feature toggle.
+
+        Args:
+            chat_id: Telegram chat identifier to check.
+
+        Returns:
+            True only when operator commands are enabled AND chat_id is in
+            the configured operator_chat_ids allowlist.
+        """
+        if not getattr(self.config, 'enable_operator_commands', True):
+            return False
+        operator_ids = getattr(self.config, 'operator_chat_ids', None)
+        if not operator_ids:
+            return False
+        return chat_id in operator_ids
+
     def _get_or_create_memory(self, chat_id: int) -> "ConversationMemory":
         """Get or create conversation memory for a chat."""
         if chat_id not in self.conversations:
@@ -1512,6 +1548,19 @@ class TelegramAgentWrapper:
             help_text += "\n*Agent Commands:*\n"
             for cmd_info in self._agent_commands:
                 help_text += f"/{cmd_info['command']} - {cmd_info['description']}\n"
+
+        # Operator commands — visible only to operators (FEAT-210)
+        if getattr(self.config, 'enable_operator_commands', True) and self._is_operator(chat_id):
+            help_text += (
+                "\n*Operator Commands:*\n"
+                "/health - Heartbeat liveness\n"
+                "/status - Harness status (heartbeat + sub-agents)\n"
+                "/context - Conversation shaping context\n"
+                "/memory - Recent conversation turns\n"
+                "/mission - Heartbeat mission (read-only)\n"
+                "/model - Agent model and provider (read-only)\n"
+                "/thread <task> - Fork task to ephemeral sub-agent\n"
+            )
 
         help_text += "\nSend any message directly for a conversation with the agent."
 
@@ -2932,6 +2981,31 @@ class TelegramAgentWrapper:
             self._transcriber = VoiceTranscriber(self.config.voice_config)
         return self._transcriber
 
+    async def _get_synthesizer(self) -> "VoiceSynthesizer":
+        """Get or lazily create the VoiceSynthesizer instance (FEAT-213).
+
+        Uses double-checked locking with ``_synthesizer_lock`` so that
+        concurrent voice messages cannot both pass the ``None`` check and
+        create duplicate synthesizer instances.
+
+        Returns:
+            The shared ``VoiceSynthesizer`` for this wrapper instance.
+        """
+        if self._synthesizer is None:
+            async with self._synthesizer_lock:
+                if self._synthesizer is None:  # double-checked locking
+                    from ...voice.tts.synthesizer import VoiceSynthesizer
+                    from ...voice.tts.models import TTSConfig
+
+                    self._synthesizer = VoiceSynthesizer(
+                        TTSConfig(
+                            backend=self.config.tts_backend,
+                            voice=self.config.tts_voice,
+                            language=getattr(self.config, "tts_language", None),
+                        )
+                    )
+        return self._synthesizer
+
     async def close(self) -> None:
         """Release resources held by the wrapper (call on shutdown)."""
         if self._bot_id:
@@ -2944,6 +3018,10 @@ class TelegramAgentWrapper:
         if self._transcriber is not None:
             await self._transcriber.close()
             self._transcriber = None
+        # FEAT-213: also close the TTS synthesizer if it was created
+        if self._synthesizer is not None:
+            await self._synthesizer.close()
+            self._synthesizer = None
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
@@ -3137,6 +3215,78 @@ class TelegramAgentWrapper:
 
             parsed = self._parse_response(response)
             sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-213: TTS voice reply — synthesize and send as voice note
+            # when the input was a voice message and TTS is enabled.
+            if (
+                self.config.tts_enabled
+                and self.config.reply_in_kind
+                and parsed.text
+                and parsed.text.strip()
+            ):
+                try:
+                    import io
+                    from aiogram.types import BufferedInputFile
+                    from pydub import AudioSegment
+
+                    # FIX-3: Strip Markdown before feeding text to TTS so
+                    # the engine does not speak formatting tokens aloud
+                    # (e.g. "asterisk asterisk hello asterisk asterisk").
+                    tts_text = self._strip_markdown(parsed.text).strip()
+                    if not tts_text:
+                        self.logger.debug(
+                            "Chat %d: TTS skipped — text empty after markdown strip",
+                            chat_id,
+                        )
+                    else:
+                        # FIX-2: Show RECORD_VOICE indicator while synthesizing.
+                        await self.bot.send_chat_action(
+                            chat_id=chat_id, action=ChatAction.RECORD_VOICE
+                        )
+
+                        synth = await self._get_synthesizer()
+                        # FIX-4: forward language from config
+                        tts_language = getattr(self.config, "tts_language", None)
+                        tts_result = await synth.synthesize(
+                            tts_text,
+                            language=tts_language,
+                        )
+
+                        # FIX-1: Google backend returns raw PCM (24 kHz mono
+                        # 16-bit); convert to OGG/Opus before send_voice so
+                        # Telegram accepts and plays the audio correctly.
+                        def _convert_pcm_to_ogg(raw_pcm: bytes) -> bytes:
+                            seg = AudioSegment(
+                                data=raw_pcm,
+                                sample_width=2,
+                                frame_rate=24000,
+                                channels=1,
+                            )
+                            buf = io.BytesIO()
+                            seg.export(buf, format="ogg", codec="libopus")
+                            return buf.getvalue()
+
+                        ogg_bytes = await asyncio.to_thread(
+                            _convert_pcm_to_ogg, tts_result.audio
+                        )
+
+                        await self.bot.send_voice(
+                            chat_id,
+                            BufferedInputFile(ogg_bytes, filename="reply.ogg"),
+                        )
+                        self.logger.info(
+                            "Chat %d: Sent voice reply (%d bytes OGG/Opus, "
+                            "source mime=%s)",
+                            chat_id,
+                            len(ogg_bytes),
+                            tts_result.mime_format,
+                        )
+                except Exception as exc:  # noqa: BLE001 — never break the message flow
+                    self.logger.warning(
+                        "Chat %d: Voice reply failed (text-only fallback): %s",
+                        chat_id,
+                        exc,
+                    )
 
             # FEAT-120: cache bot message ID and store metadata
             bot_msg_id = sent.message_id if sent else 0

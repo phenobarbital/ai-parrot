@@ -719,6 +719,36 @@ async def test_aggregate_records_calls_formatted_read_group_for_odoo_19():
 
 
 @pytest.mark.asyncio
+async def test_aggregate_records_allows_empty_group_by_global_aggregation():
+    """An empty group_by performs a global aggregation (no grouping)."""
+    from parrot_tools.odoo.models.inputs import AggregateRecordsInput
+
+    # Input schema accepts empty group_by (no min_length constraint).
+    payload = AggregateRecordsInput(
+        model="res.partner", group_by=[], measures=["id:count"]
+    )
+    assert payload.group_by == []
+
+    transport = _fake_transport()
+    transport.version.return_value = {"server_serie": "17.0", "server_version": "17.0"}
+    toolkit = _make_toolkit(transport)
+
+    groups_data = [{"__count": 38, "id": 38}]
+    transport.execute_kw.side_effect = [groups_data]
+    result = await toolkit.aggregate_records(
+        model="res.partner",
+        group_by=[],
+        measures=["id:count"],
+    )
+
+    assert result.group_by == []
+    assert result.count == 1
+    # read_group must have been called with an empty groupby.
+    calls = transport.execute_kw.call_args_list
+    assert any("read_group" in str(c) for c in calls)
+
+
+@pytest.mark.asyncio
 async def test_aggregate_records_rejects_invalid_aggregator():
     """Unknown aggregator names raise ValueError."""
     transport = _fake_transport()

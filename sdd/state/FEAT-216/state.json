@@ -1,0 +1,22 @@
+{
+  "feature_id": "FEAT-216",
+  "phase": "committed",
+  "mode": "enrichment",
+  "started_at": "2026-06-02T00:00:00Z",
+  "updated_at": "2026-06-02T00:00:00Z",
+  "base_branch": "dev",
+  "type": "feature",
+  "budget": {"profile": "default", "files_read": 40, "grep_calls": 25, "git_calls": 10, "depth": 2, "wall_seconds": 300},
+  "consumed": {"files_read": 12, "grep_calls": 9, "git_calls": 1, "truncated": false},
+  "source": {"kind": "inline", "jira_key": null, "summary_oneline": "OdooFieldServiceToolkit over OCA fieldservice + fieldservice_stock"},
+  "phases": {
+    "source": {"status": "complete"},
+    "plan": {"status": "complete", "approved_by_user": true, "query_count": 8},
+    "research": {"status": "complete", "findings": 4},
+    "synthesis": {"status": "complete", "overall_confidence": "high"},
+    "review_gate": {"status": "complete"},
+    "qa": {"status": "complete", "questions_total": 4, "questions_answered": 2, "questions_deferred": 2},
+    "output": {"status": "complete", "proposal_path": "sdd/proposals/odoo-fieldservice-toolkit.proposal.md", "commit_sha": null}
+  },
+  "resume_hint": {"next_phase": "done", "next_action": "Run /sdd-spec FEAT-216"}
+}

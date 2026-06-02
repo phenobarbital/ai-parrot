@@ -20,6 +20,30 @@ _AUTONOMOUS_CLASSES: dict[str, str] = {
     "RedisJobInjector": "parrot.autonomous.redis_jobs",
     "WebhookEndpoint": "parrot.autonomous.webhooks",
     "WebhookListener": "parrot.autonomous.webhooks",
+    # Heartbeat — FEAT-209 (autonomous-agent-heartbeat)
+    "HeartbeatConfig": "parrot.autonomous.heartbeat",
+    "HeartbeatState": "parrot.autonomous.heartbeat",
+    "HeartbeatStrategy": "parrot.autonomous.heartbeat",
+    "DefaultHeartbeatStrategy": "parrot.autonomous.heartbeat",
+    "HeartbeatManager": "parrot.autonomous.heartbeat",
+    # Event Ledger — FEAT-212 (event-ledger-resume)
+    # App startup wiring sequence:
+    #   db = app["database"]
+    #   backend = PostgresLedgerBackend(db)
+    #   await backend.ensure_schema()
+    #   recorder = LedgerRecorder(backend)
+    #   recorder.start()
+    #   # At orchestrator start (opt-in crash resume):
+    #   await orchestrator.resume(backend)
+    #   # or: await orchestrator.start(ledger=backend, resume_on_start=True)
+    "EventLedger": "parrot.autonomous.ledger",
+    "PostgresLedgerBackend": "parrot.autonomous.ledger",
+    "LedgerRecorder": "parrot.autonomous.ledger",
+    "LedgerEvent": "parrot.autonomous.ledger",
+    "LedgerConfig": "parrot.autonomous.ledger",
+    "AgentLedgerState": "parrot.autonomous.ledger",
+    "IncompleteExecution": "parrot.autonomous.ledger",
+    "InMemoryLedgerBackend": "parrot.autonomous.ledger",
 }
 
 

@@ -1,0 +1,89 @@
+{
+  "feature": "tool-grants-bounded-approval",
+  "feature_id": "FEAT-211",
+  "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-01T00:00:00Z",
+  "completed_at": "2026-06-01T01:16:43+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1403",
+      "slug": "grant-models-and-store",
+      "title": "Grant Models & InMemoryGrantStore",
+      "feature_id": "FEAT-211",
+      "feature": "tool-grants-bounded-approval",
+      "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Creates grants.py — all subsequent tasks modify or depend on this file",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-01T01:00:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1403-grant-models-and-store.md"
+    },
+    {
+      "id": "TASK-1404",
+      "slug": "grant-guard",
+      "title": "GrantGuard (Governor)",
+      "feature_id": "FEAT-211",
+      "feature": "tool-grants-bounded-approval",
+      "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1403"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies grants.py (same file as TASK-1403) — must be sequential",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-01T01:01:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1404-grant-guard.md"
+    },
+    {
+      "id": "TASK-1405",
+      "slug": "toolmanager-grant-integration",
+      "title": "ToolManager Grant Guard Integration",
+      "feature_id": "FEAT-211",
+      "feature": "tool-grants-bounded-approval",
+      "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1404"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on GrantGuard from TASK-1404; modifies manager.py (different file but runtime dependency)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-01T01:04:59+00:00",
+      "file": "sdd/tasks/completed/TASK-1405-toolmanager-grant-integration.md"
+    },
+    {
+      "id": "TASK-1406",
+      "slug": "grant-exports-wiring",
+      "title": "Grant Exports & Wiring",
+      "feature_id": "FEAT-211",
+      "feature": "tool-grants-bounded-approval",
+      "spec": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1405"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final wiring — needs all prior tasks completed to export their types",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-06-01T01:05:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1406-grant-exports-wiring.md"
+    }
+  ]
+}
