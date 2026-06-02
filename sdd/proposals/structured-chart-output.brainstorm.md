@@ -65,9 +65,12 @@ frontend already speaks.
 - **Map support included.** The contract accepts `type: "map"`, represented agnostically
   as `x`=region column, `y`=value column, plus a new `mapName` field
   (e.g. `"world"`, `"USA"`, `"Argentina"`) selecting the GeoJSON.
-- **Resilient validation.** On a config that fails pydantic validation, retry via the
-  existing `OutputFormatter.format_with_retry` loop with a new STRUCTURED_CHART repair
-  prompt (mirrors the existing `DEFAULT_RETRY_PROMPTS[OutputMode.ECHARTS]`).
+- **Resilient validation.** On a config that fails pydantic validation, retry with a
+  STRUCTURED_CHART repair prompt. ⚠️ **VERIFIED CAVEAT:** the existing
+  `OutputFormatter.format_with_retry` loop is **dormant** — it is never called from the
+  agent flow (the bot uses plain `formatter.format()` at `base.py:404` and `:1166`;
+  `format_with_retry` appears only in its own docstring + unit tests). So retry must be
+  *explicitly enabled* — see Open Questions. This is NOT free reuse.
 - **Async-first, Google-style docstrings, strict type hints, Pydantic** (project rules).
 - **Renderers ship from the satellite** `ai-parrot-visualizations` (PEP 420 namespace);
   core only gains the enum value + dispatch entry + the pydantic model.
@@ -236,8 +239,11 @@ its `echarts` + `vega` runtime dependencies once it no longer needs the `code` f
    the happy path (the INFOGRAPHIC special-case at `2547` is not triggered).
 
 ### Edge Cases & Error Handling
-- **Invalid/malformed config JSON** → `format_with_retry` retries with a new
-  `DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]` repair prompt (up to `max_retries`).
+- **Invalid/malformed config JSON** → repaired via a STRUCTURED_CHART repair prompt.
+  ⚠️ Requires wiring retry into the flow (the dormant `format_with_retry` is not invoked
+  today) — either call it for this mode in `base.py`, or handle validation+repair inside
+  the renderer. The repair prompt (`DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]`)
+  is new and must be added regardless.
 - **`y` references a column absent from rows** → validation error surfaced to the retry
   loop (model-level validator).
 - **`type=map` without `mapName`** → validation error (conditional requirement).
@@ -401,6 +407,12 @@ from .mixins.emaps import EChartsMapsMixin, get_echarts_system_prompt_with_geo  
 - ~~`parrot.outputs.formats.structured_chart`~~ — module to be created in the satellite.
 - `GenerateChartInput` (`packages/ai-parrot-tools/src/parrot_tools/chart.py`) **exists but is NOT applicable** — it is the matplotlib/plotly `ChartTool` that produces static images, unrelated to echarts/altair/structured chat output.
 - ~~`DEFAULT_RETRY_PROMPTS[OutputMode.STRUCTURED_CHART]`~~ — not present; to be added (formatter.py:49).
+- ⚠️ **`format_with_retry` is DORMANT** — verified it is called **nowhere** in production
+  code (`bots/`, `handlers/`); only in its own docstring (`formatter.py:158,638`) and in
+  `tests/outputs/test_formatter_retry.py`. The agent flow calls plain
+  `self.formatter.format()` (`base.py:404, 1166`). Adding a STRUCTURED_CHART retry prompt
+  alone does **NOT** make retry happen — it must be wired. Note even `OutputMode.ECHARTS`'s
+  existing retry prompt is dormant for the same reason.
 - No `__init__.py` exists in the satellite `parrot/outputs/formats/` directory — do **not** create one (would shadow the core namespace package).
 
 ---
@@ -430,9 +442,18 @@ from .mixins.emaps import EChartsMapsMixin, get_echarts_system_prompt_with_geo  
 - [x] Where do data rows travel — *Owner: Juan2coder*: embedded in the config **and** populated into `AIMessage.data` (configurable, both by default).
 - [x] How the LLM produces the config with real data — *Owner: Juan2coder*: tools fetch data first (like Altair), then map columns into the config and embed rows.
 - [x] Map coverage — *Owner: Juan2coder*: include `type="map"`, represented as `x`=region, `y`=value + a new `mapName` field selecting the GeoJSON.
-- [x] Validation failure behavior — *Owner: Juan2coder*: retry via `format_with_retry` with a new STRUCTURED_CHART repair prompt.
+- [x] Validation failure behavior — *Owner: Juan2coder*: retry with a new STRUCTURED_CHART repair prompt — **but** see the open question below: the retry loop is not wired into the agent flow today, so this needs explicit wiring (not free reuse).
 - [x] Backwards compatibility — *Owner: Juan2coder*: strictly additive + opt-in via `output_mode=structured_chart`; ECHARTS/ALTAIR untouched.
-- [ ] **Fallback wiring mechanism** — *Owner: Juan2coder*: confirm how the deterministic ECharts spec reaches the envelope `code`. Candidate: the renderer mutates `response.code` (it receives the full `AIMessage`); needs a documented, tested contract since `format()`'s return tuple only feeds `output`/`response`. Decide in the spec.
+- [ ] **Retry wiring (VERIFIED GAP)** — *Owner: Juan2coder*: `format_with_retry` is dead
+  code in the live flow (bot uses plain `format()`). Pick the mechanism in the spec:
+  **(a)** call `format_with_retry` for STRUCTURED_CHART in `base.py` (touches the shared
+  generic path → regression surface); **(b)** do validation + LLM repair *inside* the
+  renderer (self-contained, no base.py change); or **(c)** renderer degrades gracefully
+  (best-effort native fallback / structured `output` with an error flag) and skips the LLM
+  round-trip. Lean: **(b)** keeps the change additive and contained. Requires the renderer
+  to hold an `AbstractClient` reference (the renderer is instantiated with no args today —
+  `formatter.py:239` `renderer_cls()`), which is itself a wiring decision.
+- [ ] **Fallback wiring mechanism** — *Owner: Juan2coder*: confirm how the deterministic ECharts spec reaches the envelope `code`. Candidate: the renderer mutates `response.code` (it receives the full `AIMessage` by reference; `base.py:407-409` overwrite only `output`/`response`/`output_mode`, so a `code` mutation survives). Needs a documented, tested contract since `format()`'s return tuple only feeds `output`/`response`. Decide in the spec.
 - [ ] **Exact field naming & casing** — *Owner: Juan2coder*: the frontend contract is camelCase (`horizontalBar`, `splitSeries`, `xAxisMode`, `colorBySign`, `negativeColor`). Decide whether `StructuredChartConfig` serializes camelCase (pydantic alias) to match `<AppChart>` 1:1, or snake_case with a documented frontend adapter. Lean: pydantic `alias`/`populate_by_name` → emit camelCase.
 - [ ] **`mapName` vocabulary** — *Owner: Juan2coder*: enumerate the supported GeoJSON map names and how they line up with the existing `EChartsMapsMixin` geo registry, to keep the map fallback working.
 - [ ] **`xAxisMode="time"` row format** — *Owner: Juan2coder*: define expected date/time representation in rows (ISO string vs epoch) for both `<AppChart>` and the ECharts fallback.
