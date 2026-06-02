@@ -281,10 +281,83 @@ async def test_renderer_preserves_data_when_cfg_data_empty():
     resp = SimpleNamespace(code=config_no_data, data=pre_existing, output=None, response=None)
     output, wrapped = await r.render(resp)
 
+    # wrapped = explanation (None since resp.response is None)
     assert wrapped is None
     assert "data" not in output
     # No cfg.data → existing data must be preserved
     assert resp.data is pre_existing
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_code_as_dict(bar_config_json):
+    """response.code as a pre-parsed dict (PandasAgentResponse.code) is validated directly."""
+    import json
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    # PandasAgentResponse.code may be a dict when the LLM emits the chart
+    # config as a JSON object (not Python code).
+    config_dict = json.loads(bar_config_json)   # dict, not string
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=config_dict, data=None, output=None, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None  # no explanation in this simple case
+    assert output is not None
+    assert "data" not in output
+    assert isinstance(resp.data, list) and len(resp.data) == 2
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_preserves_explanation_as_wrapped(bar_config_json):
+    """Explanation from PandasAgentResponse is returned as wrapped so callers see prose."""
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    explanation = "For Q1 2026, here is the expense breakdown by category."
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    # Simulate PandasAgent state: code = chart JSON, response = explanation text
+    resp = SimpleNamespace(
+        code=bar_config_json,
+        data=None,
+        output=None,
+        response=explanation,
+    )
+    output, wrapped = await r.render(resp)
+
+    assert output is not None, "config dict must be returned"
+    assert "data" not in output
+    # The explanation must be returned as wrapped so data.py sets
+    # response.response = explanation (not None).
+    assert wrapped == explanation, "explanation must be surfaced as wrapped text"
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_explanation_preserved_on_failure():
+    """On parse failure the explanation is NOT returned (error message replaces it)."""
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    explanation = "I tried to build the chart but something went wrong."
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(
+        code="{bad json",
+        data=None,
+        output=None,
+        response=explanation,
+    )
+    output, wrapped = await r.render(resp)
+
+    assert output is None
+    # On failure, the error message is returned (not the explanation)
+    assert wrapped is not None
+    assert "Invalid" in wrapped or "structured chart" in wrapped.lower()
 
 
 @satellite_available
@@ -332,12 +405,15 @@ async def test_renderer_reads_code_first(bar_config_json):
     from parrot.outputs.formats import get_renderer
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    # code is set; response text is gibberish — code must win
+    # code is set; response text is explanation prose — code must win for the
+    # config, and the explanation is preserved as wrapped.
+    explanation = "some unrelated text"
     resp = SimpleNamespace(code=bar_config_json, data=None, output=None,
-                           response="some unrelated text")
+                           response=explanation)
     output, wrapped = await r.render(resp)
     assert output is not None
-    assert wrapped is None
+    # wrapped = the preserved explanation (not None — renderer now surfaces it)
+    assert wrapped == explanation
 
 
 @satellite_available
@@ -349,12 +425,14 @@ async def test_renderer_falls_back_to_text_extraction(bar_config_json):
     from parrot.outputs.formats import get_renderer
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    # Embed the JSON in a markdown code block inside the response text
+    # Embed the JSON in a markdown code block inside the response text.
+    # The same text is also the "explanation" that gets preserved as wrapped.
     text_with_json = f"```json\n{bar_config_json}\n```"
     resp = SimpleNamespace(code=None, data=None, output=None, response=text_with_json)
     output, wrapped = await r.render(resp)
     assert output is not None, "Should extract JSON from text"
-    assert wrapped is None
+    # wrapped = the preserved explanation (the same text that held the JSON)
+    assert wrapped == text_with_json
 
 
 @satellite_available

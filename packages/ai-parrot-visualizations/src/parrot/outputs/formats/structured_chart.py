@@ -109,24 +109,53 @@ class StructuredChartRenderer(BaseChart):
                 - On failure: ``(None, error_message_str)``
         """
         try:
-            # 1. Extract raw JSON string
-            raw = getattr(response, "code", None)
-            if not raw:
-                content = self._get_content(response)
-                raw = self._extract_json_code(content)
+            # 0. Capture the pre-existing explanation so we can surface it as
+            #    the human-readable message even after data.py overwrites
+            #    response.response with the renderer's `wrapped` return value.
+            #    When PandasAgent processes the turn it sets
+            #    response.response = PandasAgentResponse.explanation before
+            #    calling the formatter; we must preserve that text.
+            explanation: Optional[str] = getattr(response, "response", None) or None
 
-            if not raw:
-                msg = "No structured chart configuration found in response"
-                logger.warning(msg)
-                return None, msg
+            # 1. Extract raw JSON — three sources, in priority order:
+            #    a) response.code as a dict (PandasAgentResponse.code may carry
+            #       the chart config as a pre-parsed dict when the LLM returns
+            #       a JSON object in the `code` field rather than Python code)
+            #    b) response.code as a string (chart JSON or embedded in text)
+            #    c) response.response / content (explanation text may contain
+            #       the JSON object)
+            raw_code = getattr(response, "code", None)
 
-            # 2. Validate into StructuredChartConfig
-            try:
-                cfg = StructuredChartConfig.model_validate_json(raw)
-            except Exception as exc:
-                msg = f"Invalid structured chart config: {exc}"
-                logger.warning(msg)
-                return None, msg
+            cfg: Optional[StructuredChartConfig] = None
+
+            # 1a. response.code is already a dict → validate directly
+            if isinstance(raw_code, dict):
+                try:
+                    cfg = StructuredChartConfig.model_validate(raw_code)
+                except Exception as exc:
+                    msg = f"Invalid structured chart config (dict): {exc}"
+                    logger.warning(msg)
+                    return None, msg
+
+            # 1b. response.code is a string → try JSON extraction
+            if cfg is None:
+                raw: Optional[str] = raw_code if isinstance(raw_code, str) else None
+                if not raw:
+                    content = self._get_content(response)
+                    raw = self._extract_json_code(content)
+
+                if not raw:
+                    msg = "No structured chart configuration found in response"
+                    logger.warning(msg)
+                    return None, msg
+
+                # 2. Validate into StructuredChartConfig
+                try:
+                    cfg = StructuredChartConfig.model_validate_json(raw)
+                except Exception as exc:
+                    msg = f"Invalid structured chart config: {exc}"
+                    logger.warning(msg)
+                    return None, msg
 
             # 3. Build output — camelCase, data key excluded
             out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
@@ -142,10 +171,15 @@ class StructuredChartRenderer(BaseChart):
             if cfg.data:
                 # cfg.data rows always win — they match the chart config.
                 response.data = cfg.data
-            # else: leave response.data as-is (e.g. raw DataFrame from agent)
+            # else: leave response.data as-is (e.g. aggregated DataFrame from
+            # agent — data.py will serialise it to records if still a DataFrame)
 
             # response.code is left untouched (renderer never sets it)
-            return out, None
+            # Return the explanation as `wrapped` so that data.py's
+            #   response.response = wrapped
+            # preserves the LLM's natural-language text instead of setting it
+            # to None (the previous behaviour when render returned (out, None)).
+            return out, explanation
 
         except Exception as exc:  # noqa: BLE001
             msg = f"Unexpected error in StructuredChartRenderer: {exc}"
