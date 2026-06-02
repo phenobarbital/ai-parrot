@@ -26,6 +26,7 @@ _MODULE_MAP: dict = {
     OutputMode.CHART:           ('.chart',),             # base class only; no renderer registered
     OutputMode.MAP:             ('.map',),
     OutputMode.ALTAIR:          ('.altair',),
+    OutputMode.STRUCTURED_CHART: ('.structured_chart',),
     OutputMode.JINJA2:          ('.jinja2',),
     OutputMode.TEMPLATE_REPORT: ('.template_report',),
     OutputMode.BOKEH:           ('.bokeh',),
