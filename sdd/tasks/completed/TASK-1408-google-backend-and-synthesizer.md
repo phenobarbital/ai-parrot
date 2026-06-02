@@ -260,9 +260,10 @@ def test_synthesizer_rejects_unimplemented_backend():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-02
+**Notes**: GoogleTTSBackend wraps generate_speech via SpeakerConfig/SpeechGenerationPrompt.
+Audio bytes extracted from AIMessage.output as specified. VoiceSynthesizer lazy-creates
+the backend on first use and caches it. ValueError raised for unimplemented backends.
+27 tests pass total across tts package, ruff clean.
+**Deviations from spec**: none

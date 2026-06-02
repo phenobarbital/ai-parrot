@@ -133,6 +133,13 @@ class TelegramAgentConfig:
     operator_chat_ids: Optional[List[int]] = None
     # Feature toggle — set False to skip registering all operator handlers.
     enable_operator_commands: bool = True
+    # FEAT-213: TTS voice reply settings (all opt-in).
+    # tts_enabled=False by default — no TTS unless explicitly activated.
+    tts_enabled: bool = False
+    tts_backend: str = "google"
+    tts_voice: Optional[str] = None
+    # reply_in_kind: when True and tts_enabled, a voice input triggers a voice reply.
+    reply_in_kind: bool = True
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
@@ -274,6 +281,11 @@ class TelegramAgentConfig:
             operator_chat_ids=[int(x) for x in data['operator_chat_ids']]
             if data.get('operator_chat_ids') else None,
             enable_operator_commands=bool(data.get('enable_operator_commands', True)),
+            # FEAT-213: TTS voice reply (opt-in, defaults match dataclass defaults)
+            tts_enabled=bool(data.get('tts_enabled', False)),
+            tts_backend=data.get('tts_backend', 'google'),
+            tts_voice=data.get('tts_voice'),
+            reply_in_kind=bool(data.get('reply_in_kind', True)),
         )
 
 
