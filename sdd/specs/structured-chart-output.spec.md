@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-215
 **Date**: 2026-06-02
 **Author**: Juan2coder
-**Status**: draft
+**Status**: approved
 **Target version**: additive — release at maintainers' discretion
 **Brainstorm**: `sdd/proposals/structured-chart-output.brainstorm.md` (Recommended Option A, scope-cut)
 
