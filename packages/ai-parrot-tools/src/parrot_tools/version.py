@@ -2,7 +2,7 @@
 
 __title__ = "ai-parrot-tools"
 __description__ = "Tools and toolkits for AI-Parrot agents."
-__version__ = "0.1.56"
+__version__ = "0.1.57"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"

@@ -89,7 +89,7 @@ from ..handlers.web_hitl import HITLResponseHandler, setup_web_hitl
 # because IntegrationBotManager pulls aiogram (~1.5s); we only need it
 # when the app starts serving traffic.
 if TYPE_CHECKING:
-    from ..integrations import IntegrationBotManager
+    from parrot.integrations import IntegrationBotManager
 
 
 class BotManager:
@@ -1787,10 +1787,23 @@ Available documentation UIs:
         if ENABLE_DASHBOARDS:
             await _ensure_dashboard_indexes(app)
         app['chat_storage'] = chat_storage
-        # Start Integration bots (deferred aiogram import — see top of file)
-        from ..integrations import IntegrationBotManager
-        self._integration_manager = IntegrationBotManager(self)
-        await self._integration_manager.startup()
+        # Start Integration bots (deferred aiogram import — see top of file).
+        # ai-parrot-integrations is an optional satellite distribution: a
+        # server install may omit it (or a per-channel SDK may be missing).
+        # Treat integrations as optional and degrade gracefully instead of
+        # failing startup — on_shutdown already guards on the None manager.
+        try:
+            from parrot.integrations import IntegrationBotManager
+        except ImportError as exc:
+            self.logger.warning(
+                "Integration bots disabled: %s "
+                "(install 'ai-parrot-integrations[all]' to enable them).",
+                exc,
+            )
+            self._integration_manager = None
+        else:
+            self._integration_manager = IntegrationBotManager(self)
+            await self._integration_manager.startup()
 
     async def on_shutdown(self, app: web.Application) -> None:
         """On shutdown."""

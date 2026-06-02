@@ -986,6 +986,8 @@ class OdooToolkit(AbstractToolkit):
         Args:
             model: Odoo model technical name (e.g. ``"sale.order"``).
             group_by: Fields to group by (e.g. ``["state", "partner_id"]``).
+                Pass an empty list for a global aggregation with no grouping
+                (e.g. counting or summing across all matching records).
             measures: Aggregation specs as ``"field:agg"`` strings
                 (e.g. ``["amount_total:sum", "id:count"]``). Supported
                 aggregators: sum, avg, min, max, count, count_distinct.

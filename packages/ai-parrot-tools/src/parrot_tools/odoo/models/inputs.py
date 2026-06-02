@@ -260,7 +260,14 @@ class AggregateRecordsInput(_OdooBaseInput):
     """Input schema for ``aggregate_records`` — server-side grouping via read_group."""
 
     model: str = Field(..., description="Odoo model technical name, e.g. 'sale.order'")
-    group_by: list[str] = Field(..., min_length=1, description="Fields to group by")
+    group_by: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Fields to group by. Pass an empty list for a global aggregation "
+            "(no grouping) — useful for counting or summing across all matching "
+            "records."
+        ),
+    )
     measures: Optional[list[str]] = Field(
         default=None,
         description="Aggregation measures as 'field:agg' strings, e.g. 'amount_total:sum'",

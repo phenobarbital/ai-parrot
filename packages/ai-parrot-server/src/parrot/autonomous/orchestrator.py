@@ -303,11 +303,21 @@ class AutonomousOrchestrator:
             manager.setup()
             # FEAT-108 combined callback is an integration concern — it stays
             # on the Telegram side and is mounted here so callers whose
-            # bootstrap only wired the manager still get it.
-            from ..integrations.telegram.combined_callback import (
-                setup_combined_auth_routes,
-            )
-            setup_combined_auth_routes(app)
+            # bootstrap only wired the manager still get it. The Telegram
+            # integration ships in the optional ai-parrot-integrations
+            # satellite, so degrade gracefully when it's absent.
+            try:
+                from parrot.integrations.telegram.combined_callback import (
+                    setup_combined_auth_routes,
+                )
+            except ImportError as exc:
+                self.logger.warning(
+                    "Telegram combined-auth routes not mounted: %s "
+                    "(install 'ai-parrot-integrations[telegram]' to enable).",
+                    exc,
+                )
+            else:
+                setup_combined_auth_routes(app)
 
     # =========================================================================
     # External Hooks
