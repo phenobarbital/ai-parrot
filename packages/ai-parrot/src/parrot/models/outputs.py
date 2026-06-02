@@ -69,6 +69,7 @@ class OutputMode(str, Enum):
     SLACK = "slack"
     INFOGRAPHIC = "infographic"
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
+    STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
 
 @dataclass
 class StructuredOutputConfig:
