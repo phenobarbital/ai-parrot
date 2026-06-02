@@ -32,7 +32,7 @@
       "feature_id": "FEAT-215",
       "feature": "structured-chart-output",
       "spec": "sdd/specs/structured-chart-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits models/outputs.py (same file touched by TASK-1411). Sequential.",
       "assigned_to": null,
       "started_at": "2026-06-02T16:50:12+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1412-structuredchartconfig-model.md"
+      "completed_at": "2026-06-02T17:56:19+00:00",
+      "file": "sdd/tasks/completed/TASK-1412-structuredchartconfig-model.md"
     },
     {
       "id": "TASK-1413",
