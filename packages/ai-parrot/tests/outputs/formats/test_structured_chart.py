@@ -221,21 +221,90 @@ async def test_renderer_output_excludes_data(bar_config_json):
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_does_not_clobber_existing_data(bar_config_json):
-    """Existing non-empty response.data is preserved; output still excludes data."""
+async def test_renderer_cfg_data_wins_over_existing_data(bar_config_json):
+    """cfg.data always replaces response.data — chart rows beat any pre-existing value."""
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
-    pre_existing = [{"row": "existing"}]
+    pre_existing = [{"row": "existing", "unrelated": True}]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
     resp = SimpleNamespace(code=bar_config_json, data=pre_existing, output=None, response=None)
     output, wrapped = await r.render(resp)
 
     assert wrapped is None
     assert "data" not in output
-    # Pre-existing data should NOT have been overwritten
+    # cfg.data (2 chart rows) must replace the pre-existing list
+    assert isinstance(resp.data, list)
+    assert len(resp.data) == 2, "cfg.data rows should have replaced pre-existing data"
+    assert resp.data[0].get("month") == "Jan"
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_cfg_data_wins_over_dataframe(bar_config_json):
+    """cfg.data replaces a pd.DataFrame response.data without truthiness crash."""
+    import pandas as pd
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    # Simulate PandasAgent pre-populating response.data with a raw DataFrame.
+    raw_df = pd.DataFrame({"col_a": range(142), "col_b": range(142)})
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=bar_config_json, data=raw_df, output=None, response=None)
+
+    # Must NOT raise "truth value of a DataFrame is ambiguous"
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None, "No error expected"
+    assert "data" not in output
+    # cfg.data (2 rows) must replace the 142-row raw DataFrame
+    assert isinstance(resp.data, list), "response.data must be a plain list after render"
+    assert len(resp.data) == 2, "Chart rows (cfg.data) must replace the raw DataFrame"
+    assert resp.data[0].get("month") == "Jan"
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_preserves_data_when_cfg_data_empty():
+    """When cfg.data is empty, existing response.data is left untouched."""
+    import json
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    # A valid config with no data rows
+    config_no_data = json.dumps({"type": "bar", "x": "m", "y": ["v"]})
+    pre_existing = [{"m": "Jan", "v": 1}]
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=config_no_data, data=pre_existing, output=None, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None
+    assert "data" not in output
+    # No cfg.data → existing data must be preserved
     assert resp.data is pre_existing
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_outer_exception_graceful_degradation(bar_config_json):
+    """An unexpected exception inside render() returns (None, msg), never raises."""
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+
+    # Pass a completely broken response object (no attributes at all)
+    class _Broken:
+        @property
+        def code(self):
+            raise RuntimeError("simulated unexpected crash")
+
+    output, wrapped = await r.render(_Broken())  # MUST NOT raise
+    assert output is None
+    assert wrapped and "unexpected" in wrapped.lower()
 
 
 @satellite_available

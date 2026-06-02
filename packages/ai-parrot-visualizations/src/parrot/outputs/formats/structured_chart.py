@@ -80,9 +80,26 @@ class StructuredChartRenderer(BaseChart):
         Reads ``response.code`` first; falls back to JSON extraction from the
         message text. Validates the result into :class:`StructuredChartConfig`.
 
+        **Data-placement contract**: ``cfg.data`` (the rows the LLM included
+        in its JSON, matched to the chart's x/y columns) **always wins** over
+        any raw DataFrame that a PandasAgent may have placed in
+        ``response.data`` before the renderer runs.  This is intentional:
+        PandasAgent sets ``response.data`` to the full tool-local DataFrame
+        (potentially hundreds of rows with arbitrary columns), which is
+        unsuitable for chart rendering.  The LLM is responsible for selecting
+        and packaging only the relevant rows inside the structured JSON; the
+        renderer trusts that selection.
+
+        If ``cfg.data`` is empty (the LLM omitted the ``data`` key), the
+        pre-existing ``response.data`` is left untouched so that callers
+        (e.g. a generic DataFrame table view) can still use it.
+
         Args:
             response: An AIMessage-like object with ``code``, ``data``,
-                ``output``, and ``response`` attributes.
+                ``output``, and ``response`` attributes.  ``response.data``
+                may be a ``pd.DataFrame`` at call time (set by PandasAgent
+                before the formatter runs); the renderer replaces it with a
+                plain ``list[dict]`` when ``cfg.data`` is non-empty.
             environment: Rendering environment (unused; kept for protocol compat).
             **kwargs: Forwarded to base class (unused by this renderer).
 
@@ -91,34 +108,49 @@ class StructuredChartRenderer(BaseChart):
                 - On success: ``(config_dict_without_data, None)``
                 - On failure: ``(None, error_message_str)``
         """
-        # 1. Extract raw JSON string
-        raw = getattr(response, "code", None)
-        if not raw:
-            content = self._get_content(response)
-            raw = self._extract_json_code(content)
-
-        if not raw:
-            msg = "No structured chart configuration found in response"
-            logger.warning(msg)
-            return None, msg
-
-        # 2. Validate into StructuredChartConfig
         try:
-            cfg = StructuredChartConfig.model_validate_json(raw)
-        except Exception as exc:
-            msg = f"Invalid structured chart config: {exc}"
-            logger.warning(msg)
+            # 1. Extract raw JSON string
+            raw = getattr(response, "code", None)
+            if not raw:
+                content = self._get_content(response)
+                raw = self._extract_json_code(content)
+
+            if not raw:
+                msg = "No structured chart configuration found in response"
+                logger.warning(msg)
+                return None, msg
+
+            # 2. Validate into StructuredChartConfig
+            try:
+                cfg = StructuredChartConfig.model_validate_json(raw)
+            except Exception as exc:
+                msg = f"Invalid structured chart config: {exc}"
+                logger.warning(msg)
+                return None, msg
+
+            # 3. Build output — camelCase, data key excluded
+            out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
+
+            # 4. Route chart rows to response.data.
+            #    cfg.data contains the rows the LLM selected and matched to
+            #    x/y — they take priority over any raw DataFrame the agent
+            #    placed in response.data before the renderer ran.
+            #    Explicit None/empty check avoids DataFrame truthiness crash:
+            #    `not response.data` raises "truth value of a DataFrame is
+            #    ambiguous" when the agent pre-populated response.data with a
+            #    pd.DataFrame.
+            if cfg.data:
+                # cfg.data rows always win — they match the chart config.
+                response.data = cfg.data
+            # else: leave response.data as-is (e.g. raw DataFrame from agent)
+
+            # response.code is left untouched (renderer never sets it)
+            return out, None
+
+        except Exception as exc:  # noqa: BLE001
+            msg = f"Unexpected error in StructuredChartRenderer: {exc}"
+            logger.exception(msg)
             return None, msg
-
-        # 3. Build output — camelCase, data key excluded
-        out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
-
-        # 4. Route rows to response.data only if currently empty
-        if not getattr(response, "data", None) and cfg.data:
-            response.data = cfg.data
-
-        # response.code is left untouched (renderer never sets it)
-        return out, None
 
     # ── JSON extraction helper (mirrors EChartsRenderer._extract_json_code) ──
 
