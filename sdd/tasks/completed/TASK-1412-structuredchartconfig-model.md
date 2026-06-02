@@ -193,9 +193,7 @@ def test_structured_chart_config_y_columns_present():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-02
+**Notes**: Added ChartType, XAxisMode Literals and StructuredChartConfig model to models/outputs.py. Updated pydantic import to include ConfigDict, model_validator. All model tests pass.
+**Deviations from spec**: none

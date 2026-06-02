@@ -118,9 +118,7 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-02
+**Notes**: Added `STRUCTURED_CHART = "structured_chart"` after `SQL_ANALYSIS` in `OutputMode` enum. Created shared test file `test_structured_chart.py`. Test passes.
+**Deviations from spec**: none

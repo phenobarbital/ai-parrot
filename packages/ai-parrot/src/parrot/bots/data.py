@@ -1617,7 +1617,17 @@ class PandasAgent(BasicAgent):
                         'None' if response.data is None else 'empty',
                     )
                     await self._inject_data_from_variable(response, inferred_var)
-                elif inferred_var and isinstance(response.data, pd.DataFrame):
+                elif (
+                    inferred_var
+                    and isinstance(response.data, pd.DataFrame)
+                    # FEAT-215: STRUCTURED_CHART routes data via cfg.data inside
+                    # StructuredChartRenderer. Skipping the override guard here
+                    # prevents the raw tool-local DataFrame (all columns, many
+                    # rows) from replacing the aggregated DataFrame the LLM
+                    # declared via data_variable. The renderer is responsible for
+                    # setting response.data = cfg.data after validating the JSON.
+                    and output_mode != OutputMode.STRUCTURED_CHART
+                ):
                     # Override guard: when the reformatter populated
                     # ``response.data`` but the live tool-local DataFrame
                     # disagrees on shape or columns, prefer the tool's

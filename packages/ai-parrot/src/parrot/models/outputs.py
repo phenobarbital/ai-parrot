@@ -15,7 +15,7 @@ from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
 import os
 import uuid
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from .basic import OutputFormat
 
 
@@ -69,6 +69,7 @@ class OutputMode(str, Enum):
     SLACK = "slack"
     INFOGRAPHIC = "infographic"
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
+    STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
 
 @dataclass
 class StructuredOutputConfig:
@@ -291,3 +292,101 @@ class ProductReview(BaseModel):
         ..., description="Sentiment of the review"
     )
     key_features: list[str] = Field(..., description="Key features highlighted in the review")
+
+
+# ── FEAT-215: Structured Chart Output ────────────────────────────────────────
+
+ChartType = Literal[
+    "bar", "horizontalBar", "line", "area", "scatter",
+    "pie", "donut", "radar", "map"
+]
+"""Supported chart types for StructuredChartConfig."""
+
+XAxisMode = Literal["category", "time"]
+"""X-axis mode: 'category' for categorical labels, 'time' for ISO 8601 date strings."""
+
+
+class StructuredChartConfig(BaseModel):
+    """Library-agnostic chart configuration mirroring the frontend AppChartConfig.
+
+    Accepts data rows on input (for column validation), but the renderer excludes
+    the ``data`` field from the serialized output — rows are routed to
+    ``response.data`` instead (see StructuredChartRenderer).
+
+    Attributes:
+        type: Chart type (e.g. "bar", "line", "map").
+        x: Categorical/label column name.
+        y: One or more value column names (multi-series).
+        stacked: Whether to stack series (bar/area/line).
+        trendline: Whether to render a trend line.
+        split_series: Render each y series as a separate chart.
+        show_legend: Whether to display the chart legend.
+        x_axis_mode: Axis scale — "category" or "time" (ISO 8601 strings required).
+        palette: Optional list of hex colour strings.
+        color_by_sign: Colour bars/points by positive/negative value.
+        negative_color: Hex colour for negative values when colorBySign is True.
+        map_name: GeoJSON map identifier (required when type="map").
+        data: Flat row list — INPUT-ONLY; excluded from output by the renderer.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    type: ChartType = Field(..., description="Chart type")
+    x: str = Field(..., description="Categorical/label column name")
+    y: List[str] = Field(..., description="One or more value column names (multi-series)")
+    stacked: Optional[bool] = Field(default=None, description="Stack series")
+    trendline: Optional[bool] = Field(default=None, description="Show trend line")
+    split_series: Optional[bool] = Field(
+        default=None, alias="splitSeries",
+        description="Render each y series as a separate chart",
+    )
+    show_legend: Optional[bool] = Field(
+        default=None, alias="showLegend",
+        description="Display chart legend",
+    )
+    x_axis_mode: Optional[XAxisMode] = Field(
+        default=None, alias="xAxisMode",
+        description="Axis scale: 'category' or 'time'",
+    )
+    palette: Optional[List[str]] = Field(
+        default=None, description="Optional list of hex colour strings",
+    )
+    color_by_sign: Optional[bool] = Field(
+        default=None, alias="colorBySign",
+        description="Colour bars/points by positive/negative value",
+    )
+    negative_color: Optional[str] = Field(
+        default=None, alias="negativeColor",
+        description="Hex colour for negative values when colorBySign is True",
+    )
+    map_name: Optional[str] = Field(
+        default=None, alias="mapName",
+        description="GeoJSON map name (frontend-validated, free-form; required for type='map')",
+    )
+    data: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Flat data rows; INPUT-ONLY — excluded from `output`, "
+            "routed to response.data by the renderer."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _validate_chart_constraints(self) -> "StructuredChartConfig":
+        """Validate map-name requirement and column presence.
+
+        Returns:
+            The validated StructuredChartConfig instance.
+
+        Raises:
+            ValueError: When type='map' and mapName is absent, or when x/y
+                columns are missing from non-empty data rows.
+        """
+        if self.type == "map" and not self.map_name:
+            raise ValueError("type='map' requires 'mapName'")
+        if self.data:
+            cols = set(self.data[0].keys())
+            missing = [c for c in [self.x, *self.y] if c not in cols]
+            if missing:
+                raise ValueError(f"columns not present in data rows: {missing}")
+        return self
