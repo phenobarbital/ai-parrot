@@ -444,15 +444,24 @@ from .mixins.emaps import EChartsMapsMixin, get_echarts_system_prompt_with_geo  
 - [x] Map coverage — *Owner: Juan2coder*: include `type="map"`, represented as `x`=region, `y`=value + a new `mapName` field selecting the GeoJSON.
 - [x] Validation failure behavior — *Owner: Juan2coder*: retry with a new STRUCTURED_CHART repair prompt — **but** see the open question below: the retry loop is not wired into the agent flow today, so this needs explicit wiring (not free reuse).
 - [x] Backwards compatibility — *Owner: Juan2coder*: strictly additive + opt-in via `output_mode=structured_chart`; ECHARTS/ALTAIR untouched.
-- [ ] **Retry wiring (VERIFIED GAP)** — *Owner: Juan2coder*: `format_with_retry` is dead
-  code in the live flow (bot uses plain `format()`). Pick the mechanism in the spec:
-  **(a)** call `format_with_retry` for STRUCTURED_CHART in `base.py` (touches the shared
-  generic path → regression surface); **(b)** do validation + LLM repair *inside* the
-  renderer (self-contained, no base.py change); or **(c)** renderer degrades gracefully
-  (best-effort native fallback / structured `output` with an error flag) and skips the LLM
-  round-trip. Lean: **(b)** keeps the change additive and contained. Requires the renderer
-  to hold an `AbstractClient` reference (the renderer is instantiated with no args today —
-  `formatter.py:239` `renderer_cls()`), which is itself a wiring decision.
+- [x] **Retry wiring (VERIFIED GAP)** — *Owner: Juan2coder*: resolved → **option (b)**: do
+  validation + LLM repair *inside* the `StructuredChartRenderer`, self-contained, with **no
+  change to `base.py`** (avoids the regression surface of touching the shared generic path,
+  and keeps the dormant `format_with_retry` untouched). Implications the spec must cover:
+  the renderer needs an `AbstractClient` reference for the repair round-trip, but renderers
+  are instantiated today with no args (`formatter.py:239` `renderer_cls()`). Decide the
+  injection path. VERIFIED: the bot's client is `self._llm` (`base.py:328,584,1024,1451`,
+  **not** `self.client`); `format_kwargs` is a *caller-supplied* param splatted into
+  `render()` (`base.py:405,1167`) and does NOT carry the llm by default; renderers are
+  built with `renderer_cls()` (no args, `formatter.py:239`). So the candidates are:
+  **(i) truly zero base.py change** — the renderer lazily instantiates its own
+  `AbstractClient` for repair; or **(ii) one-line base.py addition** — inject `self._llm`
+  into `format_kwargs` for STRUCTURED_CHART so `render()` receives it. Decide in the spec
+  (lean (i) to honor the "self-contained" intent; (ii) is acceptable if reusing the bot's
+  configured client/model matters). **Graceful degradation still applies as the floor**: if
+  repair attempts are exhausted (or no client is available), return the best-effort
+  structured `output` (and native fallback) rather than hard-failing. Bounded retry count
+  (default 2, mirroring `OutputRetryConfig.max_retries`).
 - [ ] **Fallback wiring mechanism** — *Owner: Juan2coder*: confirm how the deterministic ECharts spec reaches the envelope `code`. Candidate: the renderer mutates `response.code` (it receives the full `AIMessage` by reference; `base.py:407-409` overwrite only `output`/`response`/`output_mode`, so a `code` mutation survives). Needs a documented, tested contract since `format()`'s return tuple only feeds `output`/`response`. Decide in the spec.
 - [ ] **Exact field naming & casing** — *Owner: Juan2coder*: the frontend contract is camelCase (`horizontalBar`, `splitSeries`, `xAxisMode`, `colorBySign`, `negativeColor`). Decide whether `StructuredChartConfig` serializes camelCase (pydantic alias) to match `<AppChart>` 1:1, or snake_case with a documented frontend adapter. Lean: pydantic `alias`/`populate_by_name` → emit camelCase.
 - [ ] **`mapName` vocabulary** — *Owner: Juan2coder*: enumerate the supported GeoJSON map names and how they line up with the existing `EChartsMapsMixin` geo registry, to keep the map fallback working.
