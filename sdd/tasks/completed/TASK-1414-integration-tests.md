@@ -153,9 +153,7 @@ See the patterns above; the three tests are the deliverable. Add fixtures as nee
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-02
+**Notes**: All three integration tests added to test_structured_chart.py: test_envelope_serializes_structured_chart, test_envelope_serializes_degraded_structured_chart, test_echarts_altair_unchanged. json_encoder from datamodel.parsers.json is available in test env. All 20 tests pass.
+**Deviations from spec**: none
