@@ -1,0 +1,49 @@
+{
+  "feature_id": "FEAT-216",
+  "mode": "enrichment",
+  "overall_confidence": "high",
+  "summary": "Add OdooFieldServiceToolkit — a domain specialization over the existing OdooToolkit exposing 8 @tools for OCA fieldservice/fieldservice_stock route management. All required infrastructure (toolkit base, lazy transport, _execute RPC chokepoint, tool/permission decorators, Pydantic model layering, mature HITL/approval stack) already exists. The net-new work is FSM-specific Pydantic models (fsm.order/fsm.location entities + inputs + envelopes), 8 tool methods, and a decision on how 'rep confirm' and 'manager PIN' map onto the existing HITL/grant primitives.",
+  "localization": [
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py", "symbol": "OdooToolkit", "lines": "159-221", "role": "base class to extend; tool_prefix, lazy auth, __init__", "evidence": ["F001"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py", "symbol": "OdooToolkit._execute", "lines": "261-272", "role": "RPC chokepoint for fsm/stock button methods + stage advance", "evidence": ["F001"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/tools/toolkit.py", "symbol": "AbstractToolkit.get_tools", "lines": "337-422", "role": "reflection-based tool discovery — subclass methods auto-register", "evidence": ["F002"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/entities.py", "symbol": "_OdooEntity / StockPicking", "lines": "22-34,227", "role": "entity model pattern; add FsmOrder/FsmLocation here", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/inputs.py", "symbol": "_OdooBaseInput", "lines": "111", "role": "input schema pattern for @tool_schema", "evidence": ["F004"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/tools/decorators.py", "symbol": "requires_permission / tool_schema", "lines": "9-54", "role": "per-tool permission + schema decoration", "evidence": ["F001", "F003"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/human/manager.py", "symbol": "HumanInteractionManager.request_human_input", "lines": "51", "role": "rep-confirm / manager-approval HITL substrate", "evidence": ["F003"], "confidence": "high"},
+    {"path": "packages/ai-parrot/src/parrot/tools/manager.py", "symbol": "ToolManager.execute_tool", "lines": "1126", "role": "central gating point for any approval/grant guard", "evidence": ["F003"], "confidence": "high"},
+    {"path": "sdd/specs/FEAT-211-tool-grants-bounded-approval.spec.md", "symbol": "Grant / GrantStore", "lines": "1-60", "role": "bounded-approval-window home for manager-PIN semantics", "evidence": ["F003"], "confidence": "medium"}
+  ],
+  "constraints": [
+    {"claim": "All tools must be async and go through OdooToolkit._execute / inherited helpers; no direct SDK or blocking I/O", "confidence": "high", "evidence": ["F001"]},
+    {"claim": "Subclassing OdooToolkit auto-inherits ~30 generic CRUD tools; exposing them to a field rep may be undesirable (favor composition or tool filtering)", "confidence": "high", "evidence": ["F002"]},
+    {"claim": "fsm.order / fsm.location entities, inputs, envelopes and known-model registration must be added — they do not exist today", "confidence": "high", "evidence": ["F004"]},
+    {"claim": "Return pickings reuse existing stock.picking plumbing and attach_document for photos", "confidence": "high", "evidence": ["F001", "F004"]},
+    {"claim": "No numeric-PIN primitive exists; manager PIN must map onto APPROVAL HITL, a FEAT-211 grant, or a new Odoo-credential check", "confidence": "medium", "evidence": ["F003"]}
+  ],
+  "hypothesis": {
+    "statement": "Implement OdooFieldServiceToolkit as a subclass of OdooToolkit adding 8 FSM @tools plus FSM Pydantic models, reusing _execute for RPC and the existing HumanInteractionManager (InteractionType.APPROVAL) for rep-confirm; gate the two PIN tools via FEAT-211 grants or APPROVAL, and expose only the FSM tool surface via get_tools_filtered.",
+    "confidence": "high",
+    "supporting": ["F001", "F002", "F003", "F004"],
+    "reasoning": "Every framework dependency exists and has repo precedent (DatabaseToolkit subclassing); only domain models + thin tool methods + one HITL wiring decision are net-new."
+  },
+  "confidence_map": [
+    {"claim": "OdooToolkit is the correct base; _execute is the RPC path", "level": "high"},
+    {"claim": "Subclass methods auto-register as tools via reflection", "level": "high"},
+    {"claim": "HITL APPROVAL covers rep-confirm out of the box", "level": "high"},
+    {"claim": "FSM models must be added (gap confirmed)", "level": "high"},
+    {"claim": "manager PIN maps to FEAT-211 grants/APPROVAL", "level": "medium"},
+    {"claim": "rep_id resolves to fsm.order.person_id/user_id; Navigator sequence is a custom order field", "level": "low"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "How should 'manager PIN' be implemented — reuse APPROVAL HITL (manager taps ✅), a FEAT-211 bounded grant, or a real numeric PIN verified against Odoo res.users?", "blocks": ["validate_loading_pick", "validate_returns"], "user_answer": "Real numeric PIN verified against Odoo res.users (the `pin` arg is a true secret checked via Odoo credentials, e.g. check_credentials / a res.users PIN field). Needs a new credential-check path.", "status": "resolved"},
+    {"id": "U2", "question": "Should OdooFieldServiceToolkit SUBCLASS OdooToolkit (inherits all ~30 generic CRUD tools) or COMPOSE/filter so only the 8 FSM tools are exposed to the rep?", "blocks": ["tool surface", "security"], "user_answer": "Subclass OdooToolkit and expose all — the rep gets the 8 FSM tools plus all inherited generic CRUD tools. Least code, widest surface.", "status": "resolved"},
+    {"id": "U3", "question": "Which fsm.order field encodes 'Navigator sequence' ordering, and how does rep_id map to fsm.order (person_id/user_id) and to the day's outbound pickings?", "blocks": ["get_today_fsos", "get_loading_summary"], "status": "deferred-to-spec"},
+    {"id": "U4", "question": "Which fsm.location field holds the 'planogram ref' returned by get_kiosk?", "blocks": ["get_kiosk"], "status": "deferred-to-spec"}
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "High-confidence localization with a clear, well-precedented implementation path. Remaining unknowns are bounded design/domain choices the spec can pin down in its Open Questions and Codebase Contract sections."
+  },
+  "budget_status": {"consumed": {"files_read": 12, "grep_calls": 9, "git_calls": 1}, "truncated": false}
+}

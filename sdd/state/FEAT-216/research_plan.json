@@ -1,0 +1,15 @@
+{
+  "feature_id": "FEAT-216",
+  "mode": "enrichment",
+  "budget": "default",
+  "queries": [
+    {"id": "Q001", "type": "glob", "intent": "Locate existing Odoo toolkit + interface code", "params": "*odoo*", "priority": "high"},
+    {"id": "Q002", "type": "read", "intent": "Understand OdooToolkit class, __init__, lifecycle, tool patterns", "params": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py", "priority": "high"},
+    {"id": "Q003", "type": "read", "intent": "Pydantic entity/input/envelope model patterns", "params": "packages/ai-parrot-tools/src/parrot_tools/odoo/models/*.py", "priority": "high"},
+    {"id": "Q004", "type": "grep", "intent": "Decorators: tool/tool_schema/requires_permission", "params": "tools/decorators.py", "priority": "high"},
+    {"id": "Q005", "type": "grep", "intent": "HITL / approval / grant infrastructure for rep-confirm & manager-PIN", "params": "human/, tools/manager.py, FEAT-211", "priority": "high"},
+    {"id": "Q006", "type": "read", "intent": "AbstractToolkit.get_tools discovery — confirms subclass auto-registers tools", "params": "packages/ai-parrot/src/parrot/tools/toolkit.py", "priority": "high"},
+    {"id": "Q007", "type": "grep", "intent": "Precedent for domain toolkit subclassing a base toolkit", "params": "class X(DatabaseToolkit)", "priority": "medium"},
+    {"id": "Q008", "type": "read", "intent": "Known-models registry + StockPicking entity (fsm.order/fsm.location absent)", "params": "toolkit.py _DEFAULT_KNOWN_MODELS, entities.py StockPicking", "priority": "medium"}
+  ]
+}
