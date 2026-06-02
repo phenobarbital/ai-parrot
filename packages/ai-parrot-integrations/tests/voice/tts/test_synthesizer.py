@@ -96,6 +96,7 @@ async def test_synthesizer_delegates_to_backend():
         "Hello from the synthesizer",
         voice="Kore",
         mime_format="audio/wav",
+        language=None,
     )
     assert result.audio == b"SYNTH-AUDIO"
 

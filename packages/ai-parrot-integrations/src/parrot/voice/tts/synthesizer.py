@@ -90,7 +90,12 @@ class VoiceSynthesizer:
                 )
         return self._backend
 
-    async def synthesize(self, text: str) -> SynthesisResult:
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        language: Optional[str] = None,
+    ) -> SynthesisResult:
         """
         Synthesize speech from text.
 
@@ -99,6 +104,10 @@ class VoiceSynthesizer:
 
         Args:
             text: The text to convert to speech. Must be non-empty.
+            language: BCP-47 language tag (e.g. ``"en-US"``). When
+                ``None``, the value from ``self.config.language`` is used
+                as a fallback; if that is also ``None`` the backend applies
+                its own default.
 
         Returns:
             ``SynthesisResult`` containing the raw audio bytes and the
@@ -111,14 +120,19 @@ class VoiceSynthesizer:
 
         Example::
 
-            result = await synth.synthesize("Hola, ¿en qué te puedo ayudar?")
+            result = await synth.synthesize(
+                "Hola, ¿en qué te puedo ayudar?",
+                language="es-ES",
+            )
             print(f"Audio size: {len(result.audio)} bytes")
         """
         backend = self._get_backend()
+        effective_language = language if language is not None else self.config.language
         return await backend.synthesize(
             text,
             voice=self.config.voice,
             mime_format=self.config.mime_format,
+            language=effective_language,
         )
 
     async def close(self) -> None:

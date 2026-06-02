@@ -41,6 +41,7 @@ class AbstractTTSBackend(ABC):
         *,
         voice: Optional[str] = None,
         mime_format: str = "audio/ogg",
+        language: Optional[str] = None,
     ) -> SynthesisResult:
         """
         Synthesize speech from text.
@@ -53,6 +54,8 @@ class AbstractTTSBackend(ABC):
                 should honour this when possible; they may return a different
                 format if the requested one is not supported and must reflect
                 the actual format in ``SynthesisResult.mime_format``.
+            language: BCP-47 language tag (e.g. ``"en-US"``). ``None``
+                delegates language selection to the backend.
 
         Returns:
             ``SynthesisResult`` containing the raw audio bytes and the MIME
@@ -68,6 +71,7 @@ class AbstractTTSBackend(ABC):
                 "Buenos días, ¿en qué te puedo ayudar?",
                 voice="Kore",
                 mime_format="audio/ogg",
+                language="es-ES",
             )
             print(f"Audio size: {len(result.audio)} bytes")
         """

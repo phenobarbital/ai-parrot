@@ -56,9 +56,13 @@ voice-local = [
 voice-openai = [
     "openai>=1.0",
 ]
+voice-tts = [
+    "pydub>=0.25",
+]
 voice = [
     "ai-parrot-integrations[voice-local]",
     "ai-parrot-integrations[voice-openai]",
+    "ai-parrot-integrations[voice-tts]",
 ]
 messaging = [
     "ai-parrot-integrations[slack]",

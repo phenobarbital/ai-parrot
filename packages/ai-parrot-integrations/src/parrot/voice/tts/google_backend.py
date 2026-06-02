@@ -61,9 +61,20 @@ class GoogleTTSBackend(AbstractTTSBackend):
         voice: Optional[str] = None,
         **kwargs,
     ) -> None:
-        """Initialize the Google TTS backend."""
+        """Initialize the Google TTS backend.
+
+        Args:
+            client: An already-instantiated ``GoogleGenAIClient``. When
+                ``None`` (default), a new client is created lazily on first
+                use using any remaining ``**kwargs`` (e.g. ``api_key=``,
+                ``model=``).
+            voice: Default voice identifier. Falls back to ``"Charon"``.
+            **kwargs: Extra keyword arguments forwarded verbatim to
+                ``GoogleGenAIClient(**kwargs)`` during lazy creation.
+        """
         self._client = client
         self._default_voice = voice or _DEFAULT_VOICE
+        self._client_kwargs: dict = kwargs
         self.logger = logging.getLogger(__name__)
 
     def _get_client(self) -> "GoogleGenAIClient":
@@ -76,8 +87,11 @@ class GoogleTTSBackend(AbstractTTSBackend):
         if self._client is None:
             from parrot.clients.google.generation import GoogleGenAIClient
 
-            self.logger.debug("GoogleTTSBackend: creating GoogleGenAIClient lazily")
-            self._client = GoogleGenAIClient()
+            self.logger.debug(
+                "GoogleTTSBackend: creating GoogleGenAIClient lazily (kwargs=%s)",
+                list(self._client_kwargs.keys()),
+            )
+            self._client = GoogleGenAIClient(**self._client_kwargs)
         return self._client
 
     async def synthesize(
@@ -86,28 +100,38 @@ class GoogleTTSBackend(AbstractTTSBackend):
         *,
         voice: Optional[str] = None,
         mime_format: str = "audio/ogg",
+        language: Optional[str] = None,
     ) -> SynthesisResult:
         """
         Synthesize speech from text using the Google TTS API.
 
         Builds a single-speaker ``SpeechGenerationPrompt``, calls
-        ``GoogleGenAIClient.generate_speech``, and returns the raw audio
+        ``GoogleGenAIClient.generate_speech``, and returns the raw PCM audio
         bytes packed in a ``SynthesisResult``.
+
+        Note:
+            The Google backend always returns **raw PCM** (24 kHz, mono,
+            16-bit little-endian). The ``mime_format`` argument is passed
+            through to ``SynthesisResult.mime_format`` for the caller's
+            reference, but no container conversion is performed here. The
+            caller (e.g. the Telegram wrapper) is responsible for converting
+            the PCM bytes to OGG/Opus before sending as a Telegram voice note.
 
         Args:
             text: The text to convert to speech. Must be non-empty.
             voice: Voice identifier (e.g. ``"Charon"``). Falls back to
                 the ``voice`` supplied at construction time, then to
                 ``"Charon"``.
-            mime_format: Requested MIME type of the audio output
-                (e.g. ``"audio/ogg"``). This value is passed through
-                to ``SynthesisResult.mime_format``; note that the Google
-                API returns raw PCM regardless of this setting — container
-                wrapping/conversion is the caller's responsibility.
+            mime_format: Requested MIME type label stored in the returned
+                ``SynthesisResult.mime_format``. Does NOT affect the actual
+                encoding — raw PCM is always returned.
+            language: BCP-47 language tag forwarded to
+                ``SpeechGenerationPrompt.language`` (e.g. ``"es-ES"``).
+                ``None`` leaves the prompt at its default (``"en-US"``).
 
         Returns:
-            ``SynthesisResult`` with the raw audio bytes and the
-            ``mime_format`` that was requested.
+            ``SynthesisResult`` with the raw PCM audio bytes and the
+            ``mime_format`` label that was requested.
 
         Raises:
             ValueError: If ``text`` is empty.
@@ -118,7 +142,8 @@ class GoogleTTSBackend(AbstractTTSBackend):
             result = await backend.synthesize(
                 "Buenos días, ¿cómo estás?",
                 voice="Kore",
-                mime_format="audio/wav",
+                mime_format="audio/ogg",
+                language="es-ES",
             )
         """
         if not text or not text.strip():
@@ -129,7 +154,10 @@ class GoogleTTSBackend(AbstractTTSBackend):
         from parrot.models.outputs import SpeakerConfig, SpeechGenerationPrompt
 
         speaker = SpeakerConfig(name="Narrator", voice=effective_voice)
-        prompt = SpeechGenerationPrompt(prompt=text, speakers=[speaker])
+        prompt_kwargs: dict = {"prompt": text, "speakers": [speaker]}
+        if language is not None:
+            prompt_kwargs["language"] = language
+        prompt = SpeechGenerationPrompt(**prompt_kwargs)
 
         self.logger.debug(
             "GoogleTTSBackend: synthesizing %d chars with voice=%s",

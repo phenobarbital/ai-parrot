@@ -152,26 +152,28 @@ def test_config_from_dict_without_tts_keys_still_loads():
 # ---------------------------------------------------------------------------
 
 
-def test_get_synthesizer_creates_voice_synthesizer():
+@pytest.mark.asyncio
+async def test_get_synthesizer_creates_voice_synthesizer():
     """_get_synthesizer returns a VoiceSynthesizer with TTSConfig from config."""
     cfg = _make_config(tts_enabled=True, tts_backend="google", tts_voice="Puck")
     wrapper = _make_wrapper(cfg)
 
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
 
-    synth = wrapper._get_synthesizer()
+    synth = await wrapper._get_synthesizer()
     assert isinstance(synth, VoiceSynthesizer)
     assert synth.config.backend == "google"
     assert synth.config.voice == "Puck"
 
 
-def test_get_synthesizer_cached():
+@pytest.mark.asyncio
+async def test_get_synthesizer_cached():
     """_get_synthesizer returns the same instance on repeated calls."""
     cfg = _make_config()
     wrapper = _make_wrapper(cfg)
 
-    s1 = wrapper._get_synthesizer()
-    s2 = wrapper._get_synthesizer()
+    s1 = await wrapper._get_synthesizer()
+    s2 = await wrapper._get_synthesizer()
     assert s1 is s2
 
 
@@ -220,6 +222,7 @@ async def test_handle_voice_replies_with_voice():
          patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
          patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))), \
          patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
+         patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"CONVERTED_OGG")), \
          patch("tempfile.NamedTemporaryFile") as mock_ntf, \
          patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
         tmp = MagicMock()
@@ -241,10 +244,10 @@ async def test_handle_voice_replies_with_voice():
     synth_mock.synthesize.assert_awaited_once()
     wrapper.bot.send_voice.assert_awaited_once()
 
-    # Verify the audio bytes were passed via BufferedInputFile
+    # Verify the converted OGG bytes (not raw PCM) were passed via BufferedInputFile
     call_args = wrapper.bot.send_voice.call_args
     buf_file = call_args[0][1]  # second positional arg is the BufferedInputFile
-    assert buf_file.data == b"OGG_BYTES"
+    assert buf_file.data == b"CONVERTED_OGG"
 
 
 @pytest.mark.asyncio

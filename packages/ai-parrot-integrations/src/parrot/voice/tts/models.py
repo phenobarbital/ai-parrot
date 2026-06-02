@@ -96,7 +96,11 @@ class SynthesisResult(BaseModel):
 
     audio: bytes = Field(
         ...,
-        description="Raw audio bytes; format matches mime_format",
+        description=(
+            "Raw audio bytes. For the Google backend this is always raw PCM "
+            "(24 kHz, mono, 16-bit LE); the caller must convert to OGG/Opus "
+            "before sending as a Telegram voice note."
+        ),
     )
     mime_format: str = Field(
         ...,
@@ -112,8 +116,8 @@ class SynthesisResult(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "audio": b"<binary ogg data>",
-                    "mime_format": "audio/ogg",
+                    "audio": "<base64-encoded PCM audio>",
+                    "mime_format": "audio/pcm",
                     "duration_s": 3.2,
                 }
             ]

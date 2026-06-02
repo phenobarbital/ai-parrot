@@ -178,6 +178,8 @@ async def test_voice_in_voice_out_flow(synth_mock):
          patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
          patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=99))), \
          patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
+         patch.object(wrapper, "_get_synthesizer", new=AsyncMock(return_value=synth_mock)), \
+         patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"OGG...")), \
          patch("tempfile.NamedTemporaryFile") as mock_ntf, \
          patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
         tmp = MagicMock()
@@ -212,8 +214,6 @@ async def test_text_input_unaffected(synth_mock):
     wrapper = _make_wrapper_for_integration(cfg)
     wrapper._synthesizer = synth_mock
 
-    # Normal text message processing uses handle_message (not handle_voice).
-    # We simulate that by calling the agent's ask and confirming synth is NOT used.
     message = _make_text_message()
 
     from parrot.integrations.telegram.wrapper import ParsedResponse
@@ -226,19 +226,13 @@ async def test_text_input_unaffected(synth_mock):
          patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=10))), \
          patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
          patch.object(wrapper, "_cache_message_id", return_value=None), \
-         patch.object(wrapper, "_extract_reply_context", return_value=None):
-        # Directly invoke the text message path
-        # (wraps agent call logic without going through handle_message's full routing)
-        response = await wrapper._invoke_agent(
-            MagicMock(),  # minimal session
-            "Hello bot",
-            memory=MagicMock(),
-            output_mode=MagicMock(),
-            message=message,
-        )
-        # Parse and send — but NO voice send because this is NOT handle_voice
-        parsed = wrapper._parse_response(response)
-        await wrapper._send_parsed_response(message, parsed)
+         patch.object(wrapper, "_extract_reply_context", return_value=""), \
+         patch.object(wrapper, "_is_authorized", return_value=True), \
+         patch.object(wrapper, "_check_authentication", new=AsyncMock(return_value=True)), \
+         patch.object(wrapper, "_state_manager") as mock_sm:
+        mock_sm.get_suspended_session = AsyncMock(return_value=None)
+        # Route the message through the real handle_message code path
+        await wrapper.handle_message(message)
 
     # Synthesizer MUST NOT be called for text-only flow
     synth_mock.synthesize.assert_not_awaited()

@@ -179,6 +179,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Voice synthesizer for TTS reply (lazy — created on first voice reply)
         # FEAT-213: opt-in via config.tts_enabled
         self._synthesizer: Optional["VoiceSynthesizer"] = None
+        # Prevents a race when two concurrent voice messages both find
+        # _synthesizer is None and attempt lazy creation simultaneously.
+        self._synthesizer_lock: asyncio.Lock = asyncio.Lock()
 
         # Register message handlers
         self._register_handlers()
@@ -2978,21 +2981,29 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             self._transcriber = VoiceTranscriber(self.config.voice_config)
         return self._transcriber
 
-    def _get_synthesizer(self) -> "VoiceSynthesizer":
+    async def _get_synthesizer(self) -> "VoiceSynthesizer":
         """Get or lazily create the VoiceSynthesizer instance (FEAT-213).
 
-        Mirrors _get_transcriber. Only called when tts_enabled is True.
+        Uses double-checked locking with ``_synthesizer_lock`` so that
+        concurrent voice messages cannot both pass the ``None`` check and
+        create duplicate synthesizer instances.
+
+        Returns:
+            The shared ``VoiceSynthesizer`` for this wrapper instance.
         """
         if self._synthesizer is None:
-            from ...voice.tts.synthesizer import VoiceSynthesizer
-            from ...voice.tts.models import TTSConfig
+            async with self._synthesizer_lock:
+                if self._synthesizer is None:  # double-checked locking
+                    from ...voice.tts.synthesizer import VoiceSynthesizer
+                    from ...voice.tts.models import TTSConfig
 
-            self._synthesizer = VoiceSynthesizer(
-                TTSConfig(
-                    backend=self.config.tts_backend,
-                    voice=self.config.tts_voice,
-                )
-            )
+                    self._synthesizer = VoiceSynthesizer(
+                        TTSConfig(
+                            backend=self.config.tts_backend,
+                            voice=self.config.tts_voice,
+                            language=getattr(self.config, "tts_language", None),
+                        )
+                    )
         return self._synthesizer
 
     async def close(self) -> None:
@@ -3214,20 +3225,62 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 and parsed.text.strip()
             ):
                 try:
+                    import io
                     from aiogram.types import BufferedInputFile
+                    from pydub import AudioSegment
 
-                    synth = self._get_synthesizer()
-                    tts_result = await synth.synthesize(parsed.text)
-                    await self.bot.send_voice(
-                        chat_id,
-                        BufferedInputFile(tts_result.audio, filename="reply.ogg"),
-                    )
-                    self.logger.info(
-                        "Chat %d: Sent voice reply (%d bytes, mime=%s)",
-                        chat_id,
-                        len(tts_result.audio),
-                        tts_result.mime_format,
-                    )
+                    # FIX-3: Strip Markdown before feeding text to TTS so
+                    # the engine does not speak formatting tokens aloud
+                    # (e.g. "asterisk asterisk hello asterisk asterisk").
+                    tts_text = self._strip_markdown(parsed.text).strip()
+                    if not tts_text:
+                        self.logger.debug(
+                            "Chat %d: TTS skipped — text empty after markdown strip",
+                            chat_id,
+                        )
+                    else:
+                        # FIX-2: Show RECORD_VOICE indicator while synthesizing.
+                        await self.bot.send_chat_action(
+                            chat_id=chat_id, action=ChatAction.RECORD_VOICE
+                        )
+
+                        synth = await self._get_synthesizer()
+                        # FIX-4: forward language from config
+                        tts_language = getattr(self.config, "tts_language", None)
+                        tts_result = await synth.synthesize(
+                            tts_text,
+                            language=tts_language,
+                        )
+
+                        # FIX-1: Google backend returns raw PCM (24 kHz mono
+                        # 16-bit); convert to OGG/Opus before send_voice so
+                        # Telegram accepts and plays the audio correctly.
+                        def _convert_pcm_to_ogg(raw_pcm: bytes) -> bytes:
+                            seg = AudioSegment(
+                                data=raw_pcm,
+                                sample_width=2,
+                                frame_rate=24000,
+                                channels=1,
+                            )
+                            buf = io.BytesIO()
+                            seg.export(buf, format="ogg", codec="libopus")
+                            return buf.getvalue()
+
+                        ogg_bytes = await asyncio.to_thread(
+                            _convert_pcm_to_ogg, tts_result.audio
+                        )
+
+                        await self.bot.send_voice(
+                            chat_id,
+                            BufferedInputFile(ogg_bytes, filename="reply.ogg"),
+                        )
+                        self.logger.info(
+                            "Chat %d: Sent voice reply (%d bytes OGG/Opus, "
+                            "source mime=%s)",
+                            chat_id,
+                            len(ogg_bytes),
+                            tts_result.mime_format,
+                        )
                 except Exception as exc:  # noqa: BLE001 — never break the message flow
                     self.logger.warning(
                         "Chat %d: Voice reply failed (text-only fallback): %s",
