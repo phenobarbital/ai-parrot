@@ -45,11 +45,14 @@ through one library (LayerChart / `<AppChart>`). The fix belongs in the **backen
 
 - Add a new `OutputMode.STRUCTURED_CHART` (`"structured_chart"`) that makes the agent emit a
   **library-agnostic** chart configuration mirroring the frontend `AppChartConfig`.
-- Introduce a `StructuredChartConfig` pydantic model (camelCase-serialized via aliases) that
-  maps **1:1** to `AppChartConfig`, with the flat data rows embedded.
+- Introduce a `StructuredChartConfig` pydantic model (camelCase-serialized via aliases). The
+  model **accepts `data` on input** (the LLM emits the rows inside the JSON), but the
+  serialized `output` is a **pure 1:1 mirror of `AppChartConfig`** — i.e. **`data` is EXCLUDED
+  from `output`**. The rows go **only** to `response.data` (the envelope `data` field).
 - The agent fetches real domain data via tools (DB query etc.) — same flow as the Altair
-  renderer — then maps columns into the config and embeds the rows.
-- Populate the rows into the existing `AIMessage.data` / envelope `data` field as well.
+  renderer — then maps columns into the config and includes the rows in the emitted JSON.
+- **Data placement**: `data` ∈ model input → **excluded from `output`** → populated into
+  `response.data`. `output` never contains `data`; `response.data` always carries the rows.
 - Be **strictly additive and opt-in**: ECHARTS/ALTAIR and their renderers/prompts untouched;
   the mode is selected only when a client requests `output_mode=structured_chart`.
 
@@ -79,11 +82,13 @@ On finalize, the existing generic formatter path dispatches to a new
 renderer:
 
 1. extracts the JSON (from `response.code` or message text),
-2. validates it into `StructuredChartConfig`,
-3. sets `response.output` to the validated config (`model_dump(mode="json", by_alias=True)` →
-   camelCase, mirroring `AppChartConfig`),
-4. populates `response.data` with the embedded rows (if not already present),
-5. **leaves `response.code` null** (no native spec), returning `(config, None)`.
+2. validates it into `StructuredChartConfig` (the model accepts `data` on input),
+3. sets `response.output` to the validated config **excluding `data`** —
+   `config.model_dump(mode="json", by_alias=True, exclude={"data"})` → camelCase, a pure 1:1
+   mirror of `AppChartConfig`,
+4. populates `response.data` with the rows from the config (only if `response.data` is empty —
+   don't clobber tool-extracted data),
+5. **leaves `response.code` null** (no native spec), returning `(config_without_data, None)`.
 
 The HTTP handler serializes the existing generic JSON envelope unchanged — `code=null` is
 already handled. The frontend `<AppChart>` renders from `output`.
@@ -104,9 +109,9 @@ Client (chat) ──output_mode=structured_chart──► BaseBot.ask()/conversa
                                                       ▼
                           StructuredChartRenderer.render(response)   [satellite, NEW]
                              ├─ extract JSON (response.code or text)
-                             ├─ validate → StructuredChartConfig (pydantic)
-                             ├─ response.output = config.model_dump(by_alias=True)   (camelCase)
-                             ├─ response.data  = rows (if empty)
+                             ├─ validate → StructuredChartConfig (pydantic; accepts data on input)
+                             ├─ response.output = config.model_dump(by_alias=True, exclude={"data"})  (camelCase, NO data)
+                             ├─ response.data  = config rows (only if empty)
                              └─ response.code  = null  ◄── no fallback
                                                       │
                                                       ▼
@@ -160,11 +165,20 @@ class StructuredChartConfig(BaseModel):
     map_name: Optional[str] = Field(default=None, alias="mapName",
                                     description="GeoJSON map name (frontend-validated, free-form)")
     data: list[dict] = Field(default_factory=list,
-                             description="Flat data rows (each row keyed by column name)")
+                             description="Flat data rows (each row keyed by column name). "
+                                         "INPUT-ONLY: emitted by the LLM and consumed by the "
+                                         "renderer, but EXCLUDED from `output` (dumped with "
+                                         "exclude={'data'}) so `output` is a pure 1:1 mirror of "
+                                         "AppChartConfig. The rows are routed to response.data.")
     # Validators (model-level):
     #  - type=="map" requires map_name present.
     #  - every entry in `y` (and `x`) must be a key present in the data rows (when rows non-empty).
     #  - x_axis_mode=="time": x-column values SHOULD be ISO 8601 strings (prompt-enforced).
+    #
+    # SERIALIZATION CONTRACT:
+    #   response.output = config.model_dump(mode="json", by_alias=True, exclude={"data"})  # NO data
+    #   response.data   = config.data  (only if response.data is empty — don't clobber tool data)
+    #   → output is the agnostic config (camelCase) WITHOUT rows; rows live in the envelope `data`.
 ```
 
 ### New Public Interfaces
@@ -177,10 +191,23 @@ STRUCTURED_CHART_SYSTEM_PROMPT = """..."""   # instructs: fetch data via tools, 
 class StructuredChartRenderer(BaseChart):
     async def render(self, response, *, environment: str = "html", **kwargs
                      ) -> Tuple[Any, Optional[Any]]:
-        """Validate the agnostic chart config; populate data; leave code null.
+        """Validate the agnostic chart config; route rows to data; leave code null.
 
-        Returns (config_dict, None). On validation failure: graceful degradation —
-        return a best-effort dict carrying an error flag, never raise.
+        Success:
+            response.output = config.model_dump(mode="json", by_alias=True, exclude={"data"})
+            response.data   = config.data  (only if response.data is empty)
+            response.code   = None
+            returns (output, None)
+
+        GRACEFUL-DEGRADATION CONTRACT (validation/parse failure — never raise):
+            response.output = None                      # or {"error": <msg>} — see note
+            response.response = "<human-readable validation error message>"
+            response.data   = None
+            response.code   = None
+            returns (None, error_message)
+            → The envelope still serializes; the frontend detects the error via
+              output==null (or output.error present) + the message in `response`, and
+              MUST NOT attempt to render an invalid config.
         """
 ```
 
@@ -210,9 +237,21 @@ class StructuredChartRenderer(BaseChart):
 
 ### Module 4: `StructuredChartRenderer` + system prompt
 - **Path**: `packages/ai-parrot-visualizations/src/parrot/outputs/formats/structured_chart.py` (NEW)
-- **Responsibility**: System prompt constant + `@register_renderer`-decorated renderer that
-  extracts JSON, validates into `StructuredChartConfig`, sets `output` (camelCase dump),
-  populates `response.data`, leaves `code` null, and degrades gracefully on failure.
+- **Responsibility**: System prompt constant + `@register_renderer`-decorated renderer.
+- **System prompt MUST**:
+  - **embed the schema** via `StructuredChartConfig.model_json_schema()` (so the LLM sees the
+    exact contract — same technique used elsewhere in `outputs.py`),
+  - demand **JSON-only output** (a single JSON object, no prose, no markdown fences around prose),
+  - instruct **fetch-via-tools first** (use `database_query`/available tools to get real data,
+    then map columns) — mirror the Altair prompt's "USE TOOLS, do not ask the user" guidance,
+  - require **ISO 8601 date strings** for the `x` column when `xAxisMode="time"`,
+  - instruct that data rows go **inside** the JSON under `data` (the renderer strips them from
+    `output` and routes them to the envelope).
+- **Renderer MUST**: extract JSON (`response.code` first, else `_extract_json_code` on text),
+  validate into `StructuredChartConfig`, set `response.output =
+  model_dump(by_alias=True, exclude={"data"})` (**no `data` in output**), populate
+  `response.data` only if empty, leave `response.code` null, and **degrade gracefully** on
+  failure per the contract in §2/§7 (never raise).
 - **Depends on**: Modules 1, 2, 3.
 
 ### Module 5: Tests
@@ -234,15 +273,17 @@ class StructuredChartRenderer(BaseChart):
 | `test_structured_chart_config_y_columns_present` | M2 | `y` referencing a column absent from non-empty `data` → `ValidationError` |
 | `test_outputmode_has_structured_chart` | M1 | `OutputMode("structured_chart") is OutputMode.STRUCTURED_CHART` |
 | `test_get_renderer_resolves_structured_chart` | M3/M4 | `get_renderer(OutputMode.STRUCTURED_CHART)` returns `StructuredChartRenderer` (lazy import works) |
-| `test_renderer_valid_config_sets_output_and_data` | M4 | Valid JSON → `output` is camelCase dict, `data` populated, returned `wrapped` is `None`, `response.code` stays `None` |
+| `test_renderer_output_excludes_data` | M4 | **Valid JSON with rows → `response.output` does NOT contain a `data` key; `response.data` DOES carry the rows.** `output` is camelCase; `wrapped` is `None`; `response.code` stays `None` |
+| `test_renderer_does_not_clobber_existing_data` | M4 | If `response.data` already set (tool-extracted), the renderer leaves it; still strips `data` from `output` |
 | `test_renderer_extracts_from_code_and_text` | M4 | Reads `response.code` first, falls back to `_extract_json_code` on message text |
-| `test_renderer_malformed_graceful_degradation` | M4 | Invalid JSON / failed validation → returns best-effort dict with error flag, does NOT raise, `code` still `None` |
-| `test_system_prompt_registered` | M4 | `get_output_prompt(OutputMode.STRUCTURED_CHART)` returns the new prompt |
+| `test_renderer_malformed_graceful_degradation` | M4 | Invalid JSON / failed validation → `response.output is None` (or `{"error": ...}`), `response.response` carries the error message, `response.data is None`, `response.code is None`; the call does NOT raise |
+| `test_system_prompt_embeds_schema` | M4 | `get_output_prompt(OutputMode.STRUCTURED_CHART)` returns a prompt that contains the `StructuredChartConfig` JSON schema (a key field name from `model_json_schema()`) and demands JSON-only |
 
 ### Integration Tests
 | Test | Description |
 |---|---|
-| `test_envelope_serializes_structured_chart` | Given an `AIMessage` with `output_mode=STRUCTURED_CHART`, `output`=config dict, `code=None`, the handler JSON envelope (`agent.py:2591-2614`) serializes cleanly (`code: null`, `output` is the camelCase config) |
+| `test_envelope_serializes_structured_chart` | Given an `AIMessage` with `output_mode=STRUCTURED_CHART`, `output`=config dict (no `data` key), `data`=rows, `code=None`, the handler JSON envelope (`agent.py:2591-2614`) serializes cleanly (`code: null`, `output` is the camelCase config, `data` carries the rows) |
+| `test_envelope_serializes_degraded_structured_chart` | On graceful degradation (malformed config): `output=null` (or `{"error": ...}`) + `response` carries the message → the envelope still serializes (`json_encoder` does not raise), and a consumer can detect the error from `output==null` / `output.error` + `response` **without** attempting to render an invalid config |
 | `test_echarts_altair_unchanged` | ECHARTS and ALTAIR renderers/prompts still resolve and behave exactly as before (regression guard) |
 
 ### Test Data / Fixtures
@@ -274,9 +315,12 @@ def map_config_json():
 - [ ] `get_renderer(OutputMode.STRUCTURED_CHART)` resolves the new `StructuredChartRenderer`
       (lazy-imported via `_MODULE_MAP`).
 - [ ] `get_output_prompt(OutputMode.STRUCTURED_CHART)` returns the new system prompt.
-- [ ] A valid config response yields: `output`=camelCase config dict, `data`=rows,
-      **`code` is null**.
-- [ ] Malformed config → **graceful degradation** (best-effort result + error flag, no raise).
+- [ ] A valid config response yields: `output`=camelCase config dict **without a `data` key**,
+      `response.data`=the rows, **`code` is null**. (`output` is a pure 1:1 mirror of
+      `AppChartConfig`; `data` lives only in the envelope.)
+- [ ] Malformed config → **graceful degradation**: `output=null` (or `{"error": ...}`),
+      `response` carries the error message, no raise; the envelope still serializes and a
+      consumer can detect the failure without rendering an invalid config.
 - [ ] `type="map"` requires `mapName`; `y`/`x` must reference present columns (validators).
 - [ ] **Strictly additive**: ECHARTS / ALTAIR / MAP modes, renderers, and prompts are byte-for-byte
       unchanged; no change to `bots/base.py`, `outputs/formatter.py`, or `handlers/agent.py`.
@@ -402,17 +446,26 @@ output_mode in ('chart', 'dataframe', 'export')          # line 2675  ← artifa
   emit" prompt style.
 - Mirror `EChartsRenderer.render` (`echarts.py:253`) for reading `response.code` first then
   `_extract_json_code(content)` (copy the static `_extract_json_code` extraction, `echarts.py:336`).
-- The renderer returns `(content, wrapped)`; for this mode `content`=config dict, `wrapped=None`.
-  `BaseBot` assigns them to `response.output`/`response.response` (`base.py:407-409`). Populate
-  `response.data` by mutating the `response` passed into `render()` (it is by-reference).
-- pydantic: `populate_by_name=True` + camelCase `alias` per field; dump with
-  `model_dump(mode="json", by_alias=True)`.
+- The renderer returns `(content, wrapped)`; on success `content`=config dict (NO `data` key),
+  `wrapped=None`. `BaseBot` assigns them to `response.output`/`response.response`
+  (`base.py:407-409`). Populate `response.data` by mutating the `response` passed into
+  `render()` (it is by-reference).
+- pydantic: `populate_by_name=True` + camelCase `alias` per field. **Dump for `output` with
+  `model_dump(mode="json", by_alias=True, exclude={"data"})`** — the `data` rows are stripped
+  from `output` and routed to `response.data`.
 - async-first; Google-style docstrings; strict type hints; `self.logger` for logging.
 
 ### Known Risks / Gotchas
-- **Graceful degradation contract**: a malformed config must NOT raise out of `render()` — it
-  must return a best-effort dict (e.g. `{"error": "...", "raw": <text>}`) so the envelope still
-  serializes. Mirror how `EChartsRenderer` returns an error payload instead of raising.
+- **Data placement (resolved)**: `data` is input-only. `output` must NOT contain `data`
+  (`exclude={"data"}`) so it is a pure 1:1 mirror of `AppChartConfig`; the rows live solely in
+  `response.data`. Tests assert: `"data" not in output` AND `response.data == rows`.
+- **Graceful-degradation contract (canonical)**: on parse/validation failure the renderer must
+  **NOT raise**. It sets `response.output = None` (an `{"error": <msg>}` dict is an acceptable
+  variant), puts the human-readable message in `response.response`, leaves `response.data` and
+  `response.code` null, and returns `(None, error_message)`. The envelope must still serialize
+  (`json_encoder` does not raise on `None`), and the frontend detects the failure via
+  `output == null` (or `output.error`) + `response`, and **must not** try to render an invalid
+  config. (Mirror the spirit of `EChartsRenderer` returning an error payload instead of raising.)
 - **camelCase round-trip**: the LLM may emit either snake_case or camelCase; `populate_by_name`
   must accept both, but the dumped `output` must always be camelCase (`by_alias=True`).
 - **`data` already present**: only populate `response.data` if empty (the bot may have already
@@ -445,8 +498,11 @@ output_mode in ('chart', 'dataframe', 'export')          # line 2675  ← artifa
 - [x] Flow type & base branch — *Resolved in brainstorm*: `type: feature`, `base_branch: dev`.
 - [x] Emit structured only vs. structured + native spec — *Resolved in brainstorm*: structured
   ONLY; **no native fallback**; `response.code` null (Impact Investigation verdict B).
-- [x] Data placement — *Resolved in brainstorm*: rows embedded in config AND populated into
-  `AIMessage.data`.
+- [x] Data placement — *Resolved (refined 2026-06-02)*: the model **accepts `data` on input**
+  (LLM emits the rows), but `output` is dumped with `exclude={"data"}` so it is a **pure 1:1
+  mirror of `AppChartConfig` (no rows)**; the rows are routed **only** to `response.data`
+  (envelope). Resolves the earlier "1:1 vs embedded data" contradiction. Tests assert `output`
+  has no `data` key and `response.data` carries the rows.
 - [x] How the LLM produces the config — *Resolved in brainstorm*: fetch via tools (Altair-style),
   then map columns and embed rows.
 - [x] Map coverage — *Resolved in brainstorm*: `type="map"` supported; `x`=region, `y`=value,
