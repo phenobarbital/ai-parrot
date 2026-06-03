@@ -36,6 +36,13 @@ from parrot.eval.sandbox.base import (
     SandboxSpec,
 )
 from parrot.eval.evaluators.base import AbstractEvaluator, Metric
+from parrot.eval.rollout import (
+    ConversationalRollout,
+    LLMUserSimulator,
+    RolloutStrategy,
+    SingleTurnRollout,
+    UserSimulator,
+)
 from parrot.eval.evaluators.state_based import StateBasedEvaluator, StateMatch
 from parrot.eval.sandbox.state import (
     DatabaseToolkitBinder,
@@ -79,6 +86,12 @@ __all__ = [
     # state backend
     "StateBackend",
     "DictStateBackend",
+    # rollout strategies + simulators
+    "RolloutStrategy",
+    "SingleTurnRollout",
+    "ConversationalRollout",
+    "UserSimulator",
+    "LLMUserSimulator",
     # evaluator ABCs
     "Metric",
     "AbstractEvaluator",
