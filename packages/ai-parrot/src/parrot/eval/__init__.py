@@ -18,6 +18,14 @@ from parrot.eval.models import (
     Trajectory,
     TurnRecord,
 )
+from parrot.eval.registry import (
+    get_evaluator,
+    get_metric,
+    list_evaluators,
+    list_metrics,
+    register_evaluator,
+    register_metric,
+)
 
 __all__ = [
     # models
@@ -29,4 +37,11 @@ __all__ = [
     "MetricScore",
     "EvalResult",
     "EvalDataset",
+    # registry
+    "register_evaluator",
+    "register_metric",
+    "get_evaluator",
+    "get_metric",
+    "list_evaluators",
+    "list_metrics",
 ]
