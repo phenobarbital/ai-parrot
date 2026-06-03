@@ -981,5 +981,122 @@ class TestBotCommandSanitization:
         assert names.count("start") == 1
 
 
+class TestTelegramBotManagerMenuDelegation:
+    """Regression guard: TelegramBotManager still registers the menu via the wrapper.
+
+    FEAT-220 TASK-1443 — After delegation, ``_register_bot_menu`` must still be
+    called by ``_start_bot`` when ``register_menu=True`` and skipped when
+    ``register_menu=False``.  The thin delegator body itself is tested separately
+    in the wrapper tests.
+    """
+
+    def _make_manager(self):
+        """Build a minimal TelegramBotManager with a mock BotManager."""
+        from parrot.integrations.telegram.manager import TelegramBotManager
+
+        manager = TelegramBotManager.__new__(TelegramBotManager)
+        manager.logger = MagicMock()
+        mock_bm = MagicMock()
+        mock_bm.get_app.side_effect = RuntimeError("no app")
+        manager.bot_manager = mock_bm
+        manager.bots = {}
+        manager._polling_tasks = []
+        return manager
+
+    def _make_config(self, *, register_menu: bool = True):
+        """Minimal TelegramAgentConfig."""
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        return TelegramAgentConfig(
+            name="testbot",
+            chatbot_id="test-agent",
+            bot_token="1234567890:AABBCCDDEEFFaabbccddeeff-test_token",
+            register_menu=register_menu,
+        )
+
+    @pytest.mark.asyncio
+    async def test_start_bot_delegates_menu_when_enabled(self, monkeypatch):
+        """register_menu=True: _register_bot_menu is awaited once during _start_bot.
+
+        The ``TelegramAgentWrapper`` constructor does significant work (auth
+        strategy build, callback discovery, handler registration) that requires
+        a real agent object.  We stub the whole wrapper class with a minimal
+        stand-in to keep this test focused on the manager's control flow.
+        """
+        manager = self._make_manager()
+        config = self._make_config(register_menu=True)
+
+        menu_mock = AsyncMock()
+        monkeypatch.setattr(manager, "_register_bot_menu", menu_mock)
+
+        mock_agent = MagicMock()
+        mock_agent.system_prompt = None
+        monkeypatch.setattr(manager, "_get_agent", AsyncMock(return_value=mock_agent))
+
+        # Stub discover_telegram_commands (inspects real methods on real agents).
+        monkeypatch.setattr(
+            "parrot.integrations.telegram.manager.discover_telegram_commands",
+            lambda agent: [],
+        )
+
+        # Stub TelegramAgentWrapper to avoid constructor side-effects.
+        mock_wrapper = MagicMock()
+        mock_wrapper.router = MagicMock()
+        monkeypatch.setattr(
+            "parrot.integrations.telegram.manager.TelegramAgentWrapper",
+            lambda *a, **kw: mock_wrapper,
+        )
+
+        with patch("asyncio.create_task", return_value=MagicMock()):
+            await manager._start_bot("testbot", config)
+
+        menu_mock.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_start_bot_skips_menu_when_disabled(self, monkeypatch):
+        """register_menu=False: _register_bot_menu is never called."""
+        manager = self._make_manager()
+        config = self._make_config(register_menu=False)
+
+        menu_mock = AsyncMock()
+        monkeypatch.setattr(manager, "_register_bot_menu", menu_mock)
+
+        mock_agent = MagicMock()
+        mock_agent.system_prompt = None
+        monkeypatch.setattr(manager, "_get_agent", AsyncMock(return_value=mock_agent))
+
+        monkeypatch.setattr(
+            "parrot.integrations.telegram.manager.discover_telegram_commands",
+            lambda agent: [],
+        )
+
+        mock_wrapper = MagicMock()
+        mock_wrapper.router = MagicMock()
+        monkeypatch.setattr(
+            "parrot.integrations.telegram.manager.TelegramAgentWrapper",
+            lambda *a, **kw: mock_wrapper,
+        )
+
+        with patch("asyncio.create_task", return_value=MagicMock()):
+            await manager._start_bot("testbot", config)
+
+        menu_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_register_bot_menu_delegates_to_wrapper(self, monkeypatch):
+        """_register_bot_menu body calls wrapper.register_command_menu()."""
+        from parrot.integrations.telegram.manager import TelegramBotManager
+
+        manager = TelegramBotManager.__new__(TelegramBotManager)
+        manager.logger = MagicMock()
+
+        wrapper_mock = MagicMock()
+        wrapper_mock.register_command_menu = AsyncMock()
+
+        await manager._register_bot_menu("testbot", MagicMock(), wrapper_mock)
+
+        wrapper_mock.register_command_menu.assert_awaited_once()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
