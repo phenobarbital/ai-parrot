@@ -26,6 +26,19 @@ from parrot.eval.registry import (
     register_evaluator,
     register_metric,
 )
+from parrot.eval.sandbox.base import (
+    AgentFactory,
+    ExecResult,
+    NoopSandbox,
+    NoopSandboxProvider,
+    Sandbox,
+    SandboxProvider,
+    SandboxSpec,
+)
+
+# Resolve the forward reference in EvalTask.sandbox_spec now that SandboxSpec
+# is importable.
+EvalTask.model_rebuild()
 
 __all__ = [
     # models
@@ -44,4 +57,12 @@ __all__ = [
     "get_metric",
     "list_evaluators",
     "list_metrics",
+    # sandbox ABCs
+    "SandboxSpec",
+    "ExecResult",
+    "Sandbox",
+    "SandboxProvider",
+    "AgentFactory",
+    "NoopSandbox",
+    "NoopSandboxProvider",
 ]
