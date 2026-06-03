@@ -55,12 +55,17 @@ The brainstorm's Option A is architecturally sound: three layered capabilities
 `ScrapingPlan` and `execute_plan_steps` engine. Research confirms that all referenced
 existing code paths are accurate — `execute_plan_steps`, `BasePlanRegistry[T]`, and
 `ExtractionPlan.to_scraping_plan()` — and the extension patterns are proven. However,
-two significant gaps were discovered: (1) the brainstorm's claim about a "double-brace
+three significant gaps were discovered: (1) the brainstorm's claim about a "double-brace
 `{{index}}` convention" in Loop is **factually incorrect** — Loop uses single braces
 `{index}` via regex, so TemplatePlan needs its own placeholder convention; (2) `PlaywrightDriver`
 supports only a single `BrowserContext`, meaning the FlowExecutor cannot use the existing
 driver abstraction for multi-session flows and must work directly with Playwright's Browser
-object via a new `PageDriver` adapter and `SessionManager` component.
+object via a new `PageDriver` adapter and `SessionManager` component; (3) Loop/conditional
+actions are stubbed out in `execute_plan_steps` and their full implementations exist **only**
+in the legacy `WebScrapingTool` (tool.py) — meaning the modern `WebScrapingToolkit` already
+cannot execute these actions. This proposal includes extracting Loop/conditional dispatch
+into a shared `advanced_actions` module that serves WebScrapingToolkit, FlowExecutor, and
+the standalone executor alike.
 
 ---
 
@@ -84,6 +89,10 @@ object via a new `PageDriver` adapter and `SessionManager` component.
 | 10 | `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py` | `PlaywrightDriver` | 15-395 | Single BrowserContext; `new_page()` shares context | F006 |
 | 11 | `packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py` | `AbstractDriver` | 11-352 | 19 abstract methods; no context/page management | F006 |
 | 12 | `packages/ai-parrot-tools/src/parrot_tools/scraping/__init__.py` | `__all__` | 1-69 | 29 exports; new types need addition | F008 |
+| 13 | `packages/ai-parrot-tools/src/parrot_tools/scraping/toolkit.py` | `WebScrapingToolkit` | 274-942 | Modern toolkit; delegates to `execute_plan_steps`; Loop/Conditional NOT handled (existing gap) | F011 |
+| 14 | `packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py` | `WebScrapingTool._exec_loop` | 2582-2664 | Legacy tool; ONLY location of full Loop implementation; to be extracted | F011 |
+| 15 | `packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py` | `WebScrapingTool._exec_conditional` | 2456-2580 | Legacy tool; ONLY location of full Conditional implementation; to be extracted | F011 |
+| 16 | `packages/ai-parrot-tools/src/parrot_tools/scraping/tool.py` | `WebScrapingTool._substitute_template_vars` | 3271-3338 | Template variable substitution for Loop; to be extracted | F011 |
 
 ### 2.2 Constraints Discovered
 
@@ -99,13 +108,16 @@ object via a new `PageDriver` adapter and `SessionManager` component.
   *Implication*: FlowExecutor must create and manage Page-wrapping drivers itself.
   *Evidence*: F001
 
-- **Loop and 7 other advanced actions are SKIPPED in standalone executor.** The executor
+- **Loop and 7 other advanced actions are SKIPPED in `execute_plan_steps`.** The executor
   logs a warning and returns `True` (no error) for `loop`, `conditional`, `authenticate`,
   `await_human`, `await_keypress`, `await_browser_event`, `upload_file`, `wait_for_download`.
-  The full implementations live in `WebScrapingTool` (tool.py:2590+).
-  *Implication*: Flow nodes with loop/conditional steps will silently produce incomplete
-  results unless routed through WebScrapingTool or a custom dispatch.
-  *Evidence*: F001, F003
+  The full implementations exist **only** in the legacy `WebScrapingTool` (tool.py:2456-2664).
+  The modern `WebScrapingToolkit` delegates to `execute_plan_steps`, so it **already cannot
+  execute Loop/Conditional actions** — this is an existing gap, not just a FlowExecutor concern.
+  *Implication*: Extracting Loop/Conditional dispatch into a shared `advanced_actions` module
+  fixes three consumers at once: WebScrapingToolkit (existing gap), FlowExecutor (new), and
+  the standalone executor.
+  *Evidence*: F001, F003, F011
 
 - **PlaywrightDriver supports only ONE BrowserContext.** `start()` creates exactly one
   context and one page. `new_page()` creates additional pages in the same context but no
@@ -184,7 +196,33 @@ with recent work; the module is stable. *Evidence*: F009
   `BrowserContext`s by session label. Deterministic lifecycle: precomputes `last_use[session]`
   from topological order, closes context after its last node completes.
 
+- **`advanced_actions` module** (`advanced_actions.py`) — Extracted from the legacy
+  `WebScrapingTool` (tool.py). Standalone async functions for advanced action dispatch:
+  - `exec_loop(driver, action, dispatch_step_fn, ...)` — full Loop execution with iteration,
+    condition evaluation, value-list iteration, and `break_on_error`. Calls `substitute_template_vars`
+    internally. Extracted from `WebScrapingTool._exec_loop` (tool.py:2582-2664).
+  - `exec_conditional(driver, action, dispatch_step_fn, ...)` — Conditional execution with
+    JS condition evaluation and if/else branch dispatch. Extracted from
+    `WebScrapingTool._exec_conditional` (tool.py:2456-2580).
+  - `substitute_template_vars(value, index, start_index, values, value_name)` — Recursive
+    template variable substitution for strings/dicts/lists. Supports `{i}`, `{index}`,
+    `{i+1}`, `{value}`, arithmetic expressions. Extracted from
+    `WebScrapingTool._substitute_template_vars` (tool.py:3271-3338).
+
+  These functions accept an `AbstractDriver` and a `dispatch_step_fn` callback (for recursive
+  step execution within loops/conditionals), making them driver-agnostic and reusable by
+  `execute_plan_steps`, `WebScrapingToolkit`, and `FlowExecutor`. *Evidence*: F001, F003, F011
+
 ### What Changes
+
+- **`executor.py`** (`execute_plan_steps` / `_dispatch_step`) — Replace the stub that skips
+  `loop` and `conditional` with calls to `advanced_actions.exec_loop` / `exec_conditional`.
+  This fixes the existing gap where the modern `WebScrapingToolkit` cannot execute these
+  actions. *Evidence*: F001, F011
+
+- **`tool.py`** (`WebScrapingTool`) — Delegate `_exec_loop`, `_exec_conditional`, and
+  `_substitute_template_vars` to the new `advanced_actions` module. The legacy tool's methods
+  become thin wrappers or are removed, eliminating duplication. *Evidence*: F011
 
 - **`__init__.py`** — Add exports: `TemplatePlan`, `ParamSpec`, `ScrapingFlow`, `FlowNode`,
   `FlowExecutor`, `FlowResult`. *Evidence*: F008
@@ -192,13 +230,11 @@ with recent work; the module is stable. *Evidence*: F009
 ### What's Untouched (Non-Goals)
 
 - `ScrapingPlan` — no modification; `TemplatePlan.bind()` produces it
-- `execute_plan_steps` — used as-is; invoked per node
 - `ACTION_MAP` / `ScrapingStep` — no changes to action registry
 - `CrawlEngine` — pattern borrowed, class untouched
 - `AbstractDriver` — interface unchanged; `PageDriver` implements it
 - `PlaywrightDriver` — unchanged; `FlowExecutor` works below it
 - `ExtractionPlan` / `ExtractionResult` — independent subsystem
-- `WebScrapingToolkit` — higher-level interface, no changes
 - Playwright code generation / MCP server — deferred to future spec
 
 ### Patterns to Follow
@@ -215,11 +251,15 @@ with recent work; the module is stable. *Evidence*: F009
   (PageDriver doesn't own the browser). *Mitigation*: `start()` → no-op; `quit()` → `page.close()`.
   *Evidence*: F006
 
-- **Silent skip of Loop/conditional in flow nodes.** `execute_plan_steps` returns `True` for
-  Loop actions without executing them. Flow nodes with loops will produce results missing the
-  looped data, with no error raised. *Mitigation*: Either route nodes with advanced actions
-  through `WebScrapingTool`, extract the `_exec_loop` logic into a reusable function, or
-  document as limitation. *Evidence*: F001, F003
+- **Advanced actions extraction from legacy `WebScrapingTool`.** The `_exec_loop` (~80 lines),
+  `_exec_conditional` (~120 lines), and `_substitute_template_vars` (~70 lines) depend on
+  a `dispatch_step_fn` callback for recursive step execution. The extracted functions must
+  accept this callback as a parameter rather than relying on `self._execute_step`. The legacy
+  tool's internal state (e.g., `self._current_context`) accessed during loop execution must
+  be mapped to explicit parameters. *Mitigation*: Design the extracted functions to be
+  stateless — accept `driver`, `action`, `dispatch_step_fn`, and any loop-state as arguments.
+  The legacy tool wraps these with its internal state; the executor and FlowExecutor call
+  them directly. *Evidence*: F001, F003, F011
 
 - **Concurrent fan-out on shared authenticated session.** Multiple Pages in one BrowserContext
   reading/writing cookies simultaneously may race. *Mitigation*: Enforce sequential execution
@@ -239,11 +279,12 @@ with recent work; the module is stable. *Evidence*: F009
 | C6 | PlaywrightDriver cannot manage multiple BrowserContexts | F006 | high | start() creates exactly one context |
 | C7 | PageDriver adapter wrapping Playwright Page is feasible | F006 | medium | 19 methods need implementation; start/quit semantics differ |
 | C8 | Flow checkpoint persistence must be built from scratch | F004, F005 | high | No existing checkpoint mechanism anywhere |
-| C9 | Loop/conditional silently skipped in flow nodes via execute_plan_steps | F001, F003 | high | Executor logs warning and returns True |
+| C9 | Loop/conditional silently skipped in both executor AND WebScrapingToolkit (existing gap) | F001, F003, F011 | high | Toolkit delegates to executor; executor stubs these actions; full impls only in legacy tool |
 | C10 | ExtractionPlan.to_scraping_plan() is the pattern for bind() | F007 | high | Both transform rich model → executable ScrapingPlan |
 | C11 | No existing template/flow/parameterized patterns in scraping module | F009 | high | grep returned no matches; all net-new |
+| C12 | Loop/conditional extraction from legacy tool is feasible as stateless functions | F011 | medium | ~270 lines to extract; callback-based design needed; legacy tool's internal state refs must be parameterized |
 
-Distribution: **9** high, **1** medium, **0** low.
+Distribution: **10** high, **2** medium, **0** low.
 
 > The medium-confidence item (C7) is a design feasibility assessment, not a codebase
 > uncertainty — all relevant code was directly read and verified.
@@ -268,18 +309,22 @@ Distribution: **9** high, **1** medium, **0** low.
   *Blocks claims*: (implementation detail)
   *Plausible answers*: a) flat: `node_id.field_name` · b) dot-path with optional `[N]` list index · c) JSONPath-lite subset
 
-- [ ] **How should flow nodes with Loop/conditional steps be executed?** — *Owner*: spec author
-  *Blocks claims*: C9
-  *Plausible answers*: a) route through WebScrapingTool · b) extract `_exec_loop` to reusable function · c) defer as limitation
+- [x] **How should flow nodes with Loop/conditional steps be executed?** — *Resolved*:
+  Extract `_exec_loop`, `_exec_conditional`, and `_substitute_template_vars` from the legacy
+  `WebScrapingTool` into a shared `advanced_actions` module. This fixes the existing gap in
+  `WebScrapingToolkit` and enables FlowExecutor support simultaneously. The legacy tool
+  delegates to the extracted functions; `execute_plan_steps` calls them instead of stubbing.
+  *Resolves claims*: C9, C12
 
 ---
 
 ## 6. Recommended Next Step
 
 **`/sdd-spec FEAT-221`** — *Rationale*: Localization is high-confidence across all 12
-affected code areas, the scope is well-defined with 8 new components and clear integration
-points, and the brainstorm already explored and rejected alternatives. The two unresolved
-questions are implementation-level decisions best resolved during spec writing.
+affected code areas, the scope is well-defined with 9 new components (including the
+`advanced_actions` extraction) and clear integration points, and the brainstorm already
+explored and rejected alternatives. The remaining unresolved question (inputs resolver
+grammar) is an implementation-level decision best resolved during spec writing.
 
 ### Alternatives
 
@@ -297,7 +342,7 @@ questions are implementation-level decisions best resolved during spec writing.
 |----------|------|
 | State checkpoints | `sdd/state/FEAT-221/state.json` |
 | Source (raw) | `sdd/state/FEAT-221/source.md` |
-| Findings (digests) | `sdd/state/FEAT-221/findings/F001-*.md` through `F010-*.md` |
+| Findings (digests) | `sdd/state/FEAT-221/findings/F001-*.md` through `F011-*.md` |
 | Synthesis (JSON) | `sdd/state/FEAT-221/synthesis.json` |
 
 **Budget consumed**:
