@@ -90,7 +90,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Consumes config models (1445), SpatialResult (1446), and profile hints (1447).",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1449-structured-map-renderer.md"
+      "completed_at": "2026-06-03T23:59:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1449-structured-map-renderer.md"
     },
     {
       "id": "TASK-1450",
