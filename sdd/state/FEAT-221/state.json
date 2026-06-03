@@ -1,0 +1,39 @@
+{
+  "feat_id": "FEAT-221",
+  "phase": "proposal_drafted",
+  "started_at": "2026-06-04T00:00:00Z",
+  "updated_at": "2026-06-04T00:10:00Z",
+  "mode": "enrichment",
+  "budget": {
+    "profile": "loose",
+    "max_files_read": 100,
+    "max_grep_calls": 60,
+    "max_git_calls": 20,
+    "max_depth": 3,
+    "max_wall_seconds": 900
+  },
+  "consumed": {
+    "files_read": 35,
+    "grep_calls": 15,
+    "git_calls": 5,
+    "depth_reached": 1,
+    "wall_seconds": 210
+  },
+  "truncated": false,
+  "truncation_reason": null,
+  "source": {
+    "kind": "file",
+    "jira_key": null,
+    "path": "sdd/proposals/scrapingflow.proposal.md",
+    "summary_oneline": "ScrapingFlow: composable long-horizon scraping via TemplatePlan, ScrapingFlow DAG, and FlowExecutor"
+  },
+  "phases": {
+    "source": { "status": "complete" },
+    "plan": { "status": "complete", "approved_by_user": true },
+    "research": { "status": "complete", "completed_at": "2026-06-04T00:05:00Z", "duration_seconds": 210, "files_read": 35, "grep_calls": 15, "git_calls": 5 },
+    "synthesis": { "status": "complete" },
+    "review_gate": { "status": "pending" },
+    "qa": { "status": "skipped", "reason": "2 unknowns deferred to spec phase" },
+    "output": { "status": "complete", "proposal_path": "sdd/proposals/scrapingflow-composable-scraping.proposal.md" }
+  }
+}

@@ -1,0 +1,357 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-221",
+  "mode": "enrichment",
+  "summary_oneline": "ScrapingFlow: composable long-horizon scraping via TemplatePlan, ScrapingFlow DAG, and FlowExecutor built atop execute_plan_steps",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/executor.py",
+      "symbol": "execute_plan_steps",
+      "lines": "41-186",
+      "role": "Step runner invoked per-node by FlowExecutor; accepts pre-initialized driver, returns ScrapingResult",
+      "evidence": ["F001"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/plan.py",
+      "symbol": "ScrapingPlan",
+      "lines": "59-110",
+      "role": "Immutable plan model produced by TemplatePlan.bind(); fingerprint is URL-only",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/plan.py",
+      "symbol": "_compute_fingerprint",
+      "lines": "31-44",
+      "role": "16-char SHA-256 fingerprint; template fingerprints must incorporate param values",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/models.py",
+      "symbol": "ACTION_MAP",
+      "lines": "726-755",
+      "role": "29 registered action types; Loop uses single-brace {index} convention",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/models.py",
+      "symbol": "Loop",
+      "lines": "679-707",
+      "role": "Loop action with template vars; uses single braces, not double braces as brainstorm claims",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/base_registry.py",
+      "symbol": "BasePlanRegistry",
+      "lines": "93-149",
+      "role": "Generic registry base class; 3-tier lookup; extension pattern for TemplatePlanRegistry",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/extraction_registry.py",
+      "symbol": "ExtractionPlanRegistry",
+      "lines": "1-251",
+      "role": "Demonstrates BasePlanRegistry extension pattern: separate index, failure tracking, file storage",
+      "evidence": ["F005"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/extraction_models.py",
+      "symbol": "ExtractionPlan.to_scraping_plan",
+      "lines": "127-168",
+      "role": "Translation pattern to follow for TemplatePlan.bind()",
+      "evidence": ["F007"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/crawler.py",
+      "symbol": "CrawlEngine",
+      "lines": "46-195",
+      "role": "Semaphore-based concurrency pattern reusable for fan-out; class itself too URL-centric",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py",
+      "symbol": "PlaywrightDriver",
+      "lines": "15-395",
+      "role": "Single-context driver; FlowExecutor needs direct Playwright access for multi-context",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py",
+      "symbol": "AbstractDriver",
+      "lines": "11-352",
+      "role": "19 abstract methods; no context/page management; PageDriver adapter must implement all",
+      "evidence": ["F006"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/__init__.py",
+      "symbol": "__all__",
+      "lines": "1-69",
+      "role": "29 public exports; new types must be added here",
+      "evidence": ["F008"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "ScrapingPlan is immutable — no mutation methods, fingerprint auto-computed from URL in model_post_init",
+      "evidence": ["F002"],
+      "implication": "TemplatePlan.bind() must produce a NEW ScrapingPlan, not mutate one; fingerprint must incorporate param values to avoid collisions"
+    },
+    {
+      "statement": "execute_plan_steps expects a pre-initialized AbstractDriver and does not manage driver lifecycle",
+      "evidence": ["F001"],
+      "implication": "FlowExecutor must create and manage Page-wrapping drivers itself, passing them to execute_plan_steps per node"
+    },
+    {
+      "statement": "Loop, conditional, authenticate, and 5 other advanced actions are SKIPPED in standalone executor",
+      "evidence": ["F001", "F003"],
+      "implication": "Flow nodes containing Loop/conditional steps won't execute correctly via execute_plan_steps alone — need WebScrapingTool or custom dispatch"
+    },
+    {
+      "statement": "PlaywrightDriver creates only ONE BrowserContext; AbstractDriver exposes no context/page management",
+      "evidence": ["F006"],
+      "implication": "FlowExecutor must bypass PlaywrightDriver and work directly with Playwright's Browser object for multi-session flows"
+    },
+    {
+      "statement": "CrawlEngine's concurrency is asyncio.Semaphore+gather but its interface is URL-centric (scrape_fn(url, plan))",
+      "evidence": ["F004"],
+      "implication": "Reuse the semaphore pattern, not the CrawlEngine class, for flow fan-out"
+    },
+    {
+      "statement": "No checkpoint mechanism exists anywhere in the scraping module",
+      "evidence": ["F004", "F005"],
+      "implication": "Flow execution checkpoints must be built from scratch — suggest file-based JSON per execution run"
+    },
+    {
+      "statement": "Loop template substitution uses single braces {index}, not double {{index}} as brainstorm states",
+      "evidence": ["F003"],
+      "implication": "TemplatePlan should use a DIFFERENT convention (double braces {{param}} recommended) to avoid collision with Loop's single-brace vars and CSS/JSON syntax"
+    },
+    {
+      "statement": "BasePlanRegistry[T] is generic with ExtractionPlanRegistry as proven extension pattern",
+      "evidence": ["F005"],
+      "implication": "TemplatePlanRegistry can follow the same pattern: separate index file, per-fingerprint storage"
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "new": [
+      {
+        "name": "TemplatePlan",
+        "role": "Pydantic model with ParamSpec list + url_template/objective_template/steps_template; bind(**kwargs) validates params and produces a concrete ScrapingPlan",
+        "evidence": ["F002", "F007"]
+      },
+      {
+        "name": "ParamSpec",
+        "role": "Pydantic model defining a typed parameter: name, type (string|int|date|enum|url), required, default, choices, description",
+        "evidence": ["F002"]
+      },
+      {
+        "name": "ScrapingFlow",
+        "role": "Pydantic model: DAG of FlowNodes with data-dependency inputs and session affinity labels; validates refs/cycles on load",
+        "evidence": ["F004", "F005"]
+      },
+      {
+        "name": "FlowNode",
+        "role": "Pydantic model: id, plan_ref, inputs dict, session label, on_error policy",
+        "evidence": ["F001", "F005"]
+      },
+      {
+        "name": "FlowExecutor",
+        "role": "Orchestration engine: topological sort, session lifecycle (lazy open BrowserContext per session label, deterministic close by last-use), per-node execution via execute_plan_steps, fan-out concurrency, checkpoint persistence",
+        "evidence": ["F001", "F004", "F006"]
+      },
+      {
+        "name": "FlowResult",
+        "role": "Aggregated result container: per-node ExtractionResult/ScrapingResult, flow-level success flag, timing, checkpoint state",
+        "evidence": ["F001", "F007"]
+      },
+      {
+        "name": "PageDriver",
+        "role": "Lightweight AbstractDriver adapter wrapping a Playwright Page object; delegates all 19 abstract methods to Page equivalents",
+        "evidence": ["F006", "F010"]
+      },
+      {
+        "name": "SessionManager",
+        "role": "Owns the Playwright Browser instance; creates/caches/closes BrowserContexts by session label; deterministic lifecycle based on precomputed last-use",
+        "evidence": ["F006", "F010"]
+      }
+    ],
+    "modified": [
+      {
+        "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/__init__.py",
+        "symbol": "__all__",
+        "change": "Add exports: TemplatePlan, ParamSpec, ScrapingFlow, FlowNode, FlowExecutor, FlowResult",
+        "evidence": ["F008"]
+      }
+    ],
+    "untouched": [
+      "ScrapingPlan — no modification; TemplatePlan.bind() produces it",
+      "execute_plan_steps — used as-is; called per node",
+      "ACTION_MAP / ScrapingStep — no changes",
+      "CrawlEngine — pattern borrowed, class untouched",
+      "AbstractDriver — interface unchanged; PageDriver implements it",
+      "PlaywrightDriver — unchanged; FlowExecutor works at a lower level (Playwright Browser)",
+      "ExtractionPlan / ExtractionResult — independent subsystem",
+      "WebScrapingToolkit — higher-level interface, no changes"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "ExtractionPlan.to_scraping_plan() translation pattern for TemplatePlan.bind()",
+        "evidence": ["F007"]
+      },
+      {
+        "pattern": "ExtractionPlanRegistry(BasePlanRegistry[T]) extension pattern for TemplatePlanRegistry",
+        "evidence": ["F005"]
+      },
+      {
+        "pattern": "asyncio.Semaphore + gather for bounded concurrency (from CrawlEngine._run_concurrent)",
+        "evidence": ["F004"]
+      },
+      {
+        "pattern": "Pydantic BaseModel for all data models (consistent with ScrapingPlan, ExtractionPlan)",
+        "evidence": ["F002", "F007"]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "PageDriver adapter must implement all 19 AbstractDriver abstract methods",
+        "impact": "High implementation surface; some methods (start/quit) need special handling since PageDriver doesn't own the browser lifecycle",
+        "mitigation": "Map each method to Playwright Page equivalent; start() is no-op; quit() closes the page only",
+        "evidence": ["F006"]
+      },
+      {
+        "risk": "Loop/conditional actions silently skipped in standalone executor",
+        "impact": "Flow nodes with Loop steps produce incomplete results without error",
+        "mitigation": "Either route nodes with advanced actions through WebScrapingTool instead of execute_plan_steps, or port the _exec_loop logic to a reusable function callable from FlowExecutor",
+        "evidence": ["F001", "F003"]
+      },
+      {
+        "risk": "Concurrent fan-out on shared authenticated session (multiple Pages in one BrowserContext)",
+        "impact": "Cookie writes from parallel requests may race",
+        "mitigation": "Defer to sequential execution within a session; document as known limitation; add concurrency support per-session in a future iteration",
+        "evidence": ["F004", "F006"]
+      }
+    ]
+  },
+
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "execute_plan_steps can be invoked per-node with any AbstractDriver-conformant adapter",
+      "evidence": ["F001"],
+      "confidence": "high",
+      "reasoning": "Function signature directly confirmed; accepts any AbstractDriver, no lifecycle coupling"
+    },
+    {
+      "id": "C2",
+      "statement": "ScrapingPlan fingerprint is URL-only; template fingerprints must incorporate param values",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "_compute_fingerprint reads normalized_url only; two binds with different params on same URL template would collide"
+    },
+    {
+      "id": "C3",
+      "statement": "Loop template substitution uses single braces {index}, contradicting brainstorm's claim of double braces",
+      "evidence": ["F003"],
+      "confidence": "high",
+      "reasoning": "Regex pattern r'\\{([^}]*(?:i|index|iteration)[^}]*)\\}' confirmed in tool.py:3271"
+    },
+    {
+      "id": "C4",
+      "statement": "CrawlEngine's Semaphore concurrency pattern is reusable for fan-out",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Standard asyncio.Semaphore + gather pattern; straightforward to replicate"
+    },
+    {
+      "id": "C5",
+      "statement": "BasePlanRegistry is generic and supports new plan types via subclassing",
+      "evidence": ["F005"],
+      "confidence": "high",
+      "reasoning": "ExtractionPlanRegistry already proves the extension pattern"
+    },
+    {
+      "id": "C6",
+      "statement": "PlaywrightDriver cannot manage multiple BrowserContexts — FlowExecutor must bypass it",
+      "evidence": ["F006"],
+      "confidence": "high",
+      "reasoning": "start() creates exactly one context; no API to create more"
+    },
+    {
+      "id": "C7",
+      "statement": "A lightweight PageDriver adapter wrapping Playwright Page is feasible for execute_plan_steps",
+      "evidence": ["F006"],
+      "confidence": "medium",
+      "reasoning": "Most AbstractDriver methods map to Playwright Page equivalents, but 19 methods need implementation; start/quit semantics differ"
+    },
+    {
+      "id": "C8",
+      "statement": "Flow checkpoint persistence must be built from scratch — no existing mechanism",
+      "evidence": ["F004", "F005"],
+      "confidence": "high",
+      "reasoning": "CrawlEngine has no checkpoints; registry persistence is index-level, not execution-level"
+    },
+    {
+      "id": "C9",
+      "statement": "Loop/conditional actions will be silently skipped in flow nodes using execute_plan_steps",
+      "evidence": ["F001", "F003"],
+      "confidence": "high",
+      "reasoning": "Confirmed: executor logs warning and returns True for loop/conditional action types"
+    },
+    {
+      "id": "C10",
+      "statement": "ExtractionPlan.to_scraping_plan() is the correct pattern for TemplatePlan.bind()",
+      "evidence": ["F007"],
+      "confidence": "high",
+      "reasoning": "Both transform a rich model into an executable ScrapingPlan; bind() adds parameter rendering"
+    },
+    {
+      "id": "C11",
+      "statement": "No existing template/flow/parameterized patterns in the scraping module",
+      "evidence": ["F009"],
+      "confidence": "high",
+      "reasoning": "grep returned no matches; all three capabilities are net-new"
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "What is the exact mini-grammar for the inputs resolver ('node_id.path.field')? Should it support list indexing (e.g., 'listing.products[0].url'), nested dict access, or just flat field lookup on ExtractedEntity.fields?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Flat: 'node_id.field_name' — access ExtractedEntity.fields[field_name] directly",
+        "Dot-path: 'node_id.entity_type.field_name' with optional [N] list index",
+        "JSONPath-lite: support nested access via dot notation and array indexing"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Should flow nodes with Loop/conditional steps route through WebScrapingTool (full context, heavier) or should the Loop dispatch logic be extracted and reused in FlowExecutor?",
+      "blocks_claims": ["C9"],
+      "plausible_answers": [
+        "Route through WebScrapingTool — reuse existing implementation, accept heavier weight",
+        "Extract loop dispatch into a reusable function — cleaner but requires refactoring tool.py",
+        "Defer — document as limitation; loops in flow nodes are a future enhancement"
+      ],
+      "ask_user": true
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence across all affected modules, the scope is well-defined with 3 clear new capabilities, and the brainstorm already explored and rejected alternatives. The two unknowns are implementation-level decisions resolvable during spec writing."
+  },
+
+  "overall_confidence": "high",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006", "F007", "F008", "F009", "F010"],
+    "findings_unused": [],
+    "notes": "The brainstorm document's claim about double-brace convention {{index}} in Loop is factually incorrect — Loop uses single braces. This is the most significant discrepancy between the brainstorm and actual codebase. The PlaywrightDriver's single-context limitation is the biggest architectural gap to bridge."
+  }
+}
