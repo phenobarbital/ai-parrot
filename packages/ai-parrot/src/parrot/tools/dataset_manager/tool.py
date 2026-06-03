@@ -4123,3 +4123,54 @@ class DatasetManager(AbstractToolkit):
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
         return dfs
+
+    # ─────────────────────────────────────────────────────────────
+    # Spatial Filtering (FEAT-219)
+    # ─────────────────────────────────────────────────────────────
+
+    def get_manifest(self) -> list:
+        """Return a manifest of all datasets that have a spatial profile.
+
+        Each entry carries the layer id, geodesic hint, and property columns
+        for that dataset — the minimum the frontend needs to configure Leaflet
+        layers and the LLM needs to understand which datasets are spatially
+        queryable.
+
+        Returns:
+            List of dicts, one per spatially-profiled dataset::
+
+                [
+                    {
+                        "dataset": "schools",
+                        "layer": "schools",
+                        "geodesic": True,
+                        "property_cols": ["name", "type"],
+                    },
+                    ...
+                ]
+
+            Only datasets that (a) have a registered spatial profile AND
+            (b) exist in this DatasetManager instance are included.  Profiles
+            for unknown datasets are skipped with a debug log.
+        """
+        from .spatial.registry import SPATIAL_PROFILE_REGISTRY
+
+        manifest = []
+        for dataset_name, profile in SPATIAL_PROFILE_REGISTRY.items():
+            # Only include datasets that actually exist in this manager instance
+            resolved = self._resolve_name(dataset_name)
+            if resolved not in self._datasets and dataset_name not in self._datasets:
+                self.logger.debug(
+                    "get_manifest: spatial profile for '%s' skipped — dataset not registered "
+                    "in this DatasetManager instance.",
+                    dataset_name,
+                )
+                continue
+            manifest.append({
+                "dataset": dataset_name,
+                "layer": profile.layer,
+                "geodesic": profile.geodesic,
+                "property_cols": list(profile.property_cols),
+            })
+        self.logger.debug("get_manifest: returning %d spatial dataset(s).", len(manifest))
+        return manifest
