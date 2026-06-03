@@ -87,6 +87,7 @@ def _make_toolkit(transport: MagicMock | None = None) -> OdooToolkit:
         database="testdb",
         username="admin",
         password="secret",
+        timeout=30,
         verify_ssl=False,
         transport=transport or _fake_transport(),
     )

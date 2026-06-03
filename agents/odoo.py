@@ -1,13 +1,20 @@
+import os
+
 from parrot.bots import Agent
 from parrot.registry import register_agent
 from parrot_tools.odoo import OdooToolkit
 from parrot.models.google import GoogleModel
-from parrot.conf import (
-    ODOO_URL,
-    ODOO_DATABASE,
-    ODOO_USERNAME,
-    ODOO_PASSWORD,
-)
+
+
+# ── Odoo test instance (prozac, Odoo 18.0) ──────────────────────────────────
+# This agent targets a local *test* Odoo, not the shared staging instance
+# configured via the global ``ODOO_*`` env vars (which point at TROC staging).
+# Values are overridable through ``ODOO_TEST_*`` environment variables so the
+# admin/admin test credentials never need to be edited in code.
+ODOO_TEST_URL = os.getenv("ODOO_TEST_URL", "http://prozac:8069")
+ODOO_TEST_DATABASE = os.getenv("ODOO_TEST_DATABASE", "odoo")
+ODOO_TEST_USERNAME = os.getenv("ODOO_TEST_USERNAME", "admin")
+ODOO_TEST_PASSWORD = os.getenv("ODOO_TEST_PASSWORD", "admin")
 
 
 BACKSTORY = """
@@ -50,20 +57,28 @@ class OdooAgent(Agent):
     def agent_tools(self):
         missing = [
             name for name, val in [
-                ("ODOO_URL", ODOO_URL),
-                ("ODOO_DATABASE", ODOO_DATABASE),
-                ("ODOO_USERNAME", ODOO_USERNAME),
-                ("ODOO_PASSWORD", ODOO_PASSWORD),
+                ("ODOO_TEST_URL", ODOO_TEST_URL),
+                ("ODOO_TEST_DATABASE", ODOO_TEST_DATABASE),
+                ("ODOO_TEST_USERNAME", ODOO_TEST_USERNAME),
+                ("ODOO_TEST_PASSWORD", ODOO_TEST_PASSWORD),
             ] if not val
         ]
         if missing:
             self.logger.warning(
-                "OdooToolkit skipped — missing env vars: %s",
+                "OdooToolkit skipped — missing config: %s",
                 ", ".join(missing),
             )
             return []
 
-        self._odoo_toolkit = OdooToolkit()
+        # Explicit config so this agent always talks to the test instance,
+        # independent of the global ODOO_* env vars (TROC staging).
+        self._odoo_toolkit = OdooToolkit(
+            url=ODOO_TEST_URL,
+            database=ODOO_TEST_DATABASE,
+            username=ODOO_TEST_USERNAME,
+            password=ODOO_TEST_PASSWORD,
+            verify_ssl=False,
+        )
         return self._odoo_toolkit.get_tools()
 
     async def cleanup(self):

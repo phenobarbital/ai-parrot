@@ -1626,7 +1626,11 @@ class PandasAgent(BasicAgent):
                     # rows) from replacing the aggregated DataFrame the LLM
                     # declared via data_variable. The renderer is responsible for
                     # setting response.data = cfg.data after validating the JSON.
+                    # FEAT-218: STRUCTURED_TABLE has the same ownership contract —
+                    # the StructuredTableRenderer sets response.data = cfg.data;
+                    # the override guard must not clobber it with the raw DataFrame.
                     and output_mode != OutputMode.STRUCTURED_CHART
+                    and output_mode != OutputMode.STRUCTURED_TABLE
                 ):
                     # Override guard: when the reformatter populated
                     # ``response.data`` but the live tool-local DataFrame

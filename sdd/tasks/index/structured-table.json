@@ -1,0 +1,152 @@
+{
+  "feature": "structured-table",
+  "feature_id": "FEAT-218",
+  "spec": "sdd/specs/structured-table.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-03T15:55:44Z",
+  "completed_at": "2026-06-03T17:07:11+00:00",
+  "tasks": [
+    {
+      "id": "TASK-1429",
+      "slug": "contract-models",
+      "title": "Contract — OutputMode.STRUCTURED_TABLE + StructuredTableConfig",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Foundation model in models/outputs.py. Shares no files with TASK-1430; both can run concurrently before the renderer.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1429-contract-models.md"
+    },
+    {
+      "id": "TASK-1430",
+      "slug": "dtype-vocabulary-map",
+      "title": "Deterministic dtype→vocabulary map + canonical value serialization",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Standalone util (table_types.py) using categorize_columns read-only. No file overlap with TASK-1429; both runnable concurrently.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1430-dtype-vocabulary-map.md"
+    },
+    {
+      "id": "TASK-1431",
+      "slug": "structured-table-renderer",
+      "title": "StructuredTableRenderer + dispatch wiring",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1429",
+        "TASK-1430"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Consumes the contract (1429) and the dtype helpers (1430); must follow both.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1431-structured-table-renderer.md"
+    },
+    {
+      "id": "TASK-1432",
+      "slug": "data-py-routing-guard",
+      "title": "Extend data.py override-guard for STRUCTURED_TABLE",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-1429",
+        "TASK-1431"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Edits the shared data.py routing; depends on the enum (1429) and renderer routing semantics (1431).",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1432-data-py-routing-guard.md"
+    },
+    {
+      "id": "TASK-1433",
+      "slug": "pandasagent-producer",
+      "title": "PandasAgent producer — STRUCTURED_TABLE end-to-end",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1431",
+        "TASK-1432"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Reference producer #1. Touches PandasAgent only; runnable in parallel with TASK-1434 (DB/SQL agent) — disjoint files.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1433-pandasagent-producer.md"
+    },
+    {
+      "id": "TASK-1434",
+      "slug": "db-sql-producer",
+      "title": "DB/SQL agent producer — STRUCTURED_TABLE end-to-end",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1431",
+        "TASK-1432"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Reference producer #2. Touches bots/database/agent.py only; runnable in parallel with TASK-1433 — disjoint files.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1434-db-sql-producer.md"
+    },
+    {
+      "id": "TASK-1435",
+      "slug": "integration-tests",
+      "title": "Integration tests + envelope parity + full cloned suite",
+      "feature_id": "FEAT-218",
+      "feature": "structured-table",
+      "spec": "sdd/specs/structured-table.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1433",
+        "TASK-1434"
+      ],
+      "parallel": false,
+      "parallelism_notes": "End-to-end suite; needs both producers complete.",
+      "assigned_to": null,
+      "started_at": "2026-06-03T16:04:13+00:00",
+      "completed_at": "2026-06-03T17:07:11+00:00",
+      "file": "sdd/tasks/active/TASK-1435-integration-tests.md"
+    }
+  ]
+}

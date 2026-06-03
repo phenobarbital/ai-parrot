@@ -44,9 +44,12 @@ _MOVED_SYMBOLS: dict[str, str] = {
 
 # Public symbols the satellite ai-parrot-integrations publishes at the
 # parrot.integrations top level, mapped to the submodule that defines them.
-# Resolved lazily here (the satellite's own __init__ is intentionally empty,
-# so this stub owns the dispatch) — the core never hard-depends on the
-# satellite, and per-channel SDKs load only when the symbol is actually used.
+# Resolved lazily here: the satellite ships NO parrot/integrations/__init__.py
+# (it would otherwise overwrite this file when both wheels unpack into the same
+# site-packages — last writer wins at the file level, not a namespace merge),
+# so this core stub is the sole owner of the package's dispatch. The core never
+# hard-depends on the satellite, and per-channel SDKs load only when the symbol
+# is actually used.
 _SATELLITE_EXPORTS: dict[str, str] = {
     "IntegrationBotManager": "manager",
     "IntegrationBotConfig": "models",
