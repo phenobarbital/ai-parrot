@@ -36,6 +36,7 @@ from parrot.eval.sandbox.base import (
     SandboxSpec,
 )
 from parrot.eval.runner import EvalReport, EvalRunConfig, EvalRunner
+from parrot.eval.sink import EvalReportSink, PostgresEvalSink
 
 # Lifecycle events — imported lazily to avoid pulling in parrot.core.events
 # at module level (which transitively requires navconfig). Access them via
@@ -120,6 +121,9 @@ __all__ = [
     "EvalRolloutCompleted",
     "EvalRolloutFailed",
     "EvalRunCompleted",
+    # persistence sink
+    "EvalReportSink",
+    "PostgresEvalSink",
     # runner
     "EvalRunConfig",
     "EvalRunner",
