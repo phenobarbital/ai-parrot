@@ -52,7 +52,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Resolves EvalTask.sandbox_spec forward ref; gating dependency for the state-sandbox chain.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1417-sandbox-abcs.md"
+      "completed_at": "2026-06-03T16:52:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1417-sandbox-abcs.md"
     },
     {
       "id": "TASK-1418",
