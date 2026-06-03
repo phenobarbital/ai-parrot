@@ -32,7 +32,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "File-independent of TASK-1445 — could parallelize, but per-spec isolation is sequential. Modifies spatial/contracts.py + tool.py (FEAT-219 contract change).",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1446-spatial-filter-per-dataset-result.md"
+      "completed_at": "2026-06-03T23:51:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1446-spatial-filter-per-dataset-result.md"
     },
     {
       "id": "TASK-1447",
