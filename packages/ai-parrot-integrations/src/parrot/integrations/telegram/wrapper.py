@@ -999,18 +999,25 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         Returns:
             The subset of commands that Telegram accepted.
         """
+        # Probe each command individually to isolate bad entries, then make a
+        # single final batch call with all accepted commands.  The previous
+        # cumulative approach ([cmd1], then [cmd1, cmd2], …) made N round trips
+        # and left the menu in a half-registered state between iterations.
         accepted: List[BotCommand] = []
         for cmd in bot_commands:
             try:
-                await self.bot.set_my_commands([*accepted, cmd])
+                await self.bot.set_my_commands([cmd])  # probe: isolate bad entry
                 accepted.append(cmd)
             except Exception:
                 self.logger.warning(
-                    "Telegram rejected command /%s (description=%r) — skipping",
+                    "Skipping command '%s' (rejected by Telegram): %s",
                     cmd.command,
                     cmd.description,
                     exc_info=True,
                 )
+
+        if accepted:
+            await self.bot.set_my_commands(accepted)
         return accepted
 
     @staticmethod

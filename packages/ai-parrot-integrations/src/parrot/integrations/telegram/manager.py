@@ -191,9 +191,20 @@ class TelegramBotManager:
                 app=app,
             )
 
-            # Register bot menu commands via Telegram API
+            # Register bot menu commands via Telegram API.
+            # A failure here must never abort bot startup — wrap with its own
+            # guard so an unexpected exception from _register_bot_menu does not
+            # propagate into the monolithic try/except and abort the whole
+            # _start_bot sequence.  (IntegrationBotManager applies the same
+            # pattern at its own call site — FEAT-220.)
             if agent_config.register_menu:
-                await self._register_bot_menu(name, bot, wrapper)
+                try:
+                    await self._register_bot_menu(name, bot, wrapper)
+                except Exception:
+                    self.logger.warning(
+                        "Menu registration failed for '%s' — bot will start without menu",
+                        name, exc_info=True,
+                    )
 
             # Include wrapper's router in dispatcher
             dp.include_router(wrapper.router)

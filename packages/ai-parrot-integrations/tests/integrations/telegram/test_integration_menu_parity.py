@@ -8,60 +8,15 @@ register_command_menu()``, closing the parity gap with ``TelegramBotManager``.
 These tests build the wrapper directly (without running the full
 ``_start_telegram_bot`` flow) to assert that ``register_command_menu()`` on
 the integration path publishes the expected commands.
+
+Shared helpers (``FakeBot``, ``make_wrapper``) live in ``conftest.py`` —
+imported here via local aliases to keep the test body concise.
 """
 import pytest
 from unittest.mock import MagicMock
 from aiogram.types import BotCommand
 
-
-# ---------------------------------------------------------------------------
-# Fake Bot that records API calls
-# ---------------------------------------------------------------------------
-
-
-class _FakeBot:
-    """Records Bot API calls without hitting Telegram."""
-
-    def __init__(self) -> None:
-        self.set_calls: list[list[BotCommand]] = []
-        self.deleted_scopes: list[str] = []
-        self.menu_button_set: bool = False
-
-    async def delete_my_commands(self, scope=None) -> None:
-        self.deleted_scopes.append(type(scope).__name__)
-
-    async def set_my_commands(self, commands, scope=None) -> None:
-        self.set_calls.append(list(commands))
-
-    async def set_chat_menu_button(self, menu_button=None) -> None:
-        self.menu_button_set = True
-
-
-# ---------------------------------------------------------------------------
-# Helper: build a minimal TelegramAgentWrapper via __new__
-# ---------------------------------------------------------------------------
-
-
-def _make_wrapper(monkeypatch, bot, commands):
-    """Build a minimal TelegramAgentWrapper for testing register_command_menu.
-
-    Args:
-        monkeypatch: pytest monkeypatch fixture.
-        bot: Fake Bot instance.
-        commands: List of BotCommand that get_bot_commands() returns.
-
-    Returns:
-        Configured TelegramAgentWrapper instance.
-    """
-    from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
-
-    wrapper = TelegramAgentWrapper.__new__(TelegramAgentWrapper)
-    wrapper.bot = bot
-    wrapper.logger = MagicMock()
-    wrapper._platform_commands = []
-    wrapper._agent_commands = []
-    monkeypatch.setattr(wrapper, "get_bot_commands", lambda: commands)
-    return wrapper
+from .conftest import FakeBot as _FakeBot, make_wrapper as _make_wrapper
 
 
 # ---------------------------------------------------------------------------

@@ -1104,12 +1104,24 @@ class TestIntegrationBotManagerMenuRegistration:
     TASK-1444 — ``_start_telegram_bot`` now calls
     ``wrapper.register_command_menu()`` (gated on ``config.register_menu``).
 
-    Because both ``TelegramAgentWrapper`` and ``TelegramHumanChannel`` are
-    lazily imported inside ``_start_telegram_bot``, we patch at the control
-    plane: stub ``_start_telegram_bot`` itself and invoke only the *gate* logic
-    (checking ``config.register_menu``) directly, using the actual manager
-    implementation.  This keeps the test narrowly focused on the gate while
-    avoiding the complex aiogram/Redis constructor chain.
+    Each test exercises the *real* ``_start_telegram_bot`` method (not a stub)
+    by mocking only the external dependencies that would require a live network,
+    Redis, or the full aiogram constructor chain:
+
+    * ``_get_agent`` — returns a minimal MagicMock agent.
+    * ``aiogram.Bot`` / ``aiogram.Dispatcher`` — aiogram types lazily imported
+      inside the method; patched at the module level.
+    * ``TelegramAgentWrapper`` — patched at the lazy-import site inside
+      ``parrot.integrations.manager`` so the wrapper's constructor is bypassed
+      and ``register_command_menu`` is a controllable AsyncMock.
+    * ``TelegramHumanChannel`` — patched at the same lazy-import site.
+    * ``_ensure_human_manager`` — returns a minimal AsyncMock human manager.
+    * ``asyncio.create_task`` — returns a MagicMock task.
+
+    This approach ensures that if the real guard (``if config.register_menu``)
+    or the try/except around ``register_command_menu()`` is removed or broken,
+    the tests catch it — unlike stub-based tests where the gate logic is
+    reproduced in the stub itself.
     """
 
     def _make_integration_manager(self):
@@ -1137,56 +1149,108 @@ class TestIntegrationBotManagerMenuRegistration:
             register_menu=register_menu,
         )
 
+    def _patch_external_deps(self, monkeypatch, menu_mock):
+        """Patch all external dependencies of _start_telegram_bot.
+
+        ``_start_telegram_bot`` uses local (lazy) imports so its dependencies
+        must be patched at the *module* level that Python's import cache will
+        resolve to:
+
+        * ``aiogram.Bot`` / ``aiogram.Dispatcher`` — patched on the ``aiogram``
+          module so the ``from aiogram import Bot, Dispatcher`` inside the
+          method picks up our fakes.
+        * ``aiogram.client.default.DefaultBotProperties`` / ``aiogram.enums.ParseMode``
+          — same approach.
+        * ``TelegramAgentWrapper`` — patched on
+          ``parrot.integrations.telegram.wrapper`` so the local import resolves
+          to our fake factory.
+        * ``TelegramHumanChannel`` — patched on ``parrot.human``.
+
+        Returns:
+            The mock wrapper instance with ``register_command_menu`` set to
+            ``menu_mock``.
+        """
+        # Stub aiogram classes (lazily imported inside _start_telegram_bot).
+        fake_bot = MagicMock()
+        fake_dp = MagicMock()
+        fake_dp.include_router = MagicMock()
+
+        import aiogram
+        import aiogram.client.default
+        import aiogram.enums
+
+        monkeypatch.setattr(aiogram, "Bot", lambda **kw: fake_bot, raising=False)
+        monkeypatch.setattr(aiogram, "Dispatcher", lambda: fake_dp, raising=False)
+        monkeypatch.setattr(aiogram.client.default, "DefaultBotProperties", MagicMock(), raising=False)
+        monkeypatch.setattr(aiogram.enums, "ParseMode", MagicMock(), raising=False)
+
+        # Stub TelegramAgentWrapper so the real constructor (Redis, aiogram,
+        # PostAuthRegistry, CallbackRegistry, …) is not executed.
+        mock_wrapper = MagicMock()
+        mock_wrapper.router = MagicMock()
+        mock_wrapper.register_command_menu = menu_mock
+
+        import parrot.integrations.telegram.wrapper as wrapper_module
+        monkeypatch.setattr(wrapper_module, "TelegramAgentWrapper", lambda *a, **kw: mock_wrapper)
+
+        # Stub TelegramHumanChannel (lazily imported from parrot.human).
+        fake_channel = MagicMock()
+        fake_channel.router = MagicMock()
+        fake_channel.register_response_handler = AsyncMock()
+        fake_channel.register_cancel_handler = AsyncMock()
+
+        import parrot.human as human_module
+        monkeypatch.setattr(human_module, "TelegramHumanChannel", lambda **kw: fake_channel, raising=False)
+
+        return mock_wrapper
+
     @pytest.mark.asyncio
     async def test_integration_path_registers_menu_when_enabled(self, monkeypatch):
-        """_start_telegram_bot invokes register_command_menu when register_menu=True.
-
-        We test the gate by replacing ``_start_telegram_bot`` with a minimal
-        stub that reproduces only the ``register_menu`` gate logic so we can
-        verify the wrapper method is (or is not) called without pulling in the
-        full aiogram/Redis/HITL constructor chain.
-        """
+        """Real _start_telegram_bot calls register_command_menu when register_menu=True."""
         manager = self._make_integration_manager()
         config = self._make_tg_config(register_menu=True)
 
         menu_mock = AsyncMock()
-        mock_wrapper = MagicMock()
-        mock_wrapper.register_command_menu = menu_mock
+        mock_wrapper = self._patch_external_deps(monkeypatch, menu_mock)
 
-        async def _stub_start(name, cfg):
-            """Minimal reproduction of the gate logic under test."""
-            if cfg.register_menu:
-                try:
-                    await mock_wrapper.register_command_menu()
-                except Exception:
-                    manager.logger.warning("menu error")
+        mock_agent = MagicMock()
+        mock_agent.system_prompt = None
+        monkeypatch.setattr(manager, "_get_agent", AsyncMock(return_value=mock_agent))
 
-        monkeypatch.setattr(manager, "_start_telegram_bot", _stub_start)
+        fake_human_mgr = MagicMock()
+        fake_human_mgr.receive_response = AsyncMock()
+        fake_human_mgr.cancel_pending = AsyncMock()
+        monkeypatch.setattr(
+            manager, "_ensure_human_manager", AsyncMock(return_value=fake_human_mgr)
+        )
 
-        await manager._start_telegram_bot("testbot", config)
+        with patch("asyncio.create_task", return_value=MagicMock()):
+            await manager._start_telegram_bot("testbot", config)
 
         menu_mock.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_integration_path_skips_menu_when_disabled(self, monkeypatch):
-        """_start_telegram_bot skips register_command_menu when register_menu=False."""
+        """Real _start_telegram_bot skips register_command_menu when register_menu=False."""
         manager = self._make_integration_manager()
         config = self._make_tg_config(register_menu=False)
 
         menu_mock = AsyncMock()
-        mock_wrapper = MagicMock()
-        mock_wrapper.register_command_menu = menu_mock
+        mock_wrapper = self._patch_external_deps(monkeypatch, menu_mock)
 
-        async def _stub_start(name, cfg):
-            if cfg.register_menu:
-                try:
-                    await mock_wrapper.register_command_menu()
-                except Exception:
-                    manager.logger.warning("menu error")
+        mock_agent = MagicMock()
+        mock_agent.system_prompt = None
+        monkeypatch.setattr(manager, "_get_agent", AsyncMock(return_value=mock_agent))
 
-        monkeypatch.setattr(manager, "_start_telegram_bot", _stub_start)
+        fake_human_mgr = MagicMock()
+        fake_human_mgr.receive_response = AsyncMock()
+        fake_human_mgr.cancel_pending = AsyncMock()
+        monkeypatch.setattr(
+            manager, "_ensure_human_manager", AsyncMock(return_value=fake_human_mgr)
+        )
 
-        await manager._start_telegram_bot("testbot", config)
+        with patch("asyncio.create_task", return_value=MagicMock()):
+            await manager._start_telegram_bot("testbot", config)
 
         menu_mock.assert_not_awaited()
 
@@ -1194,30 +1258,29 @@ class TestIntegrationBotManagerMenuRegistration:
     async def test_integration_path_menu_failure_does_not_abort_startup(
         self, monkeypatch
     ):
-        """A menu registration error must be swallowed — startup must complete."""
+        """A menu registration error must be swallowed — real startup must complete."""
         manager = self._make_integration_manager()
         config = self._make_tg_config(register_menu=True)
 
         menu_boom = AsyncMock(side_effect=RuntimeError("Telegram down"))
-        mock_wrapper = MagicMock()
-        mock_wrapper.register_command_menu = menu_boom
+        mock_wrapper = self._patch_external_deps(monkeypatch, menu_boom)
 
-        async def _stub_start(name, cfg):
-            if cfg.register_menu:
-                try:
-                    await mock_wrapper.register_command_menu()
-                except Exception:
-                    manager.logger.warning(
-                        "Failed to register Telegram command menu for '%s'", name,
-                        exc_info=True,
-                    )
+        mock_agent = MagicMock()
+        mock_agent.system_prompt = None
+        monkeypatch.setattr(manager, "_get_agent", AsyncMock(return_value=mock_agent))
 
-        monkeypatch.setattr(manager, "_start_telegram_bot", _stub_start)
+        fake_human_mgr = MagicMock()
+        fake_human_mgr.receive_response = AsyncMock()
+        fake_human_mgr.cancel_pending = AsyncMock()
+        monkeypatch.setattr(
+            manager, "_ensure_human_manager", AsyncMock(return_value=fake_human_mgr)
+        )
 
-        # Must not raise.
-        await manager._start_telegram_bot("testbot", config)
+        # Must not raise — the real try/except in _start_telegram_bot swallows it.
+        with patch("asyncio.create_task", return_value=MagicMock()):
+            await manager._start_telegram_bot("testbot", config)
 
-        # Warning must have been logged.
+        # Warning must have been logged via the real code path.
         manager.logger.warning.assert_called()
 
     @pytest.mark.asyncio
