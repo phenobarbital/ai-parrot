@@ -32,7 +32,7 @@
       "feature_id": "FEAT-218",
       "feature": "structured-table",
       "spec": "sdd/specs/structured-table.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Standalone util (table_types.py) using categorize_columns read-only. No file overlap with TASK-1429; both runnable concurrently.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1430-dtype-vocabulary-map.md"
+      "completed_at": "2026-06-03T16:09:00+00:00",
+      "file": "sdd/tasks/completed/TASK-1430-dtype-vocabulary-map.md"
     },
     {
       "id": "TASK-1431",
