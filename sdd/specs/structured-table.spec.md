@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-218
 **Date**: 2026-06-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 
 > Input: `sdd/proposals/structured-table.brainstorm.md` (Recommended Option C) and
