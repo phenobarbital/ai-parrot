@@ -8,8 +8,8 @@ base_branch: dev
 
 **Date**: 2026-06-03
 **Author**: Juan Ruffato
-**Status**: exploration
-**Recommended Option**: B
+**Status**: accepted
+**Recommended Option**: B (scope widened per Jesus — homologate the whole `structured_` family)
 
 ---
 
@@ -253,11 +253,15 @@ behave symmetrically.
   definition mirroring the chart contract is small and keeps the taxonomy coherent (already
   reflected in Options, Capabilities and Impact above).
 
-### For Jesus to decide
-- **Q1 (Owner: Jesus):** Endorse aligning `STRUCTURED_CHART` to the FEAT-218 deterministic-data
-  pattern (deterministic layer owns rows; LLM = presentation only)? This is the crux of Option B.
-- **Q5 (Owner: Jesus / product):** Migration & deprecation policy for the library-specific
-  `OutputMode`s (echarts/plotly/vega/matplotlib/...), given other frontends consume ai-parrot.
+### Resolved by Jesus (2026-06-03)
+- **Q1 → APPROVED, scope widened:** yes to the deterministic-data alignment, and **homologate
+  the whole `structured_` family** under one common pattern — *"if we homologate all the
+  `structured_` outputs it will be easier to incorporate new ones"*. So this FEAT delivers a
+  homologated `structured_` contract (chart + table conform now; map/summary/document plug in
+  later), not just a chart-only fix.
+- **Q5 → RESOLVED:** keep the library-specific `OutputMode`s (echarts/plotly/vega/matplotlib/...)
+  for **backward compatibility now; retire them in the next release** — *"not yet; it stays for
+  backward compatibility and they will be retired in the next release"*.
 
 ### Deferred (Option C)
 - **Q4:** Output-side artifact selector — agent proposes `kind`, a router validates, or both.
