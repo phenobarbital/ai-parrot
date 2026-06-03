@@ -70,7 +70,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on SpatialResult.as_feature_collection() from TASK-1446. Independent of TASK-1447 (different file) but sequential per-spec.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1448-spatial-handler-compat.md"
+      "completed_at": "2026-06-03T23:54:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1448-spatial-handler-compat.md"
     },
     {
       "id": "TASK-1449",
