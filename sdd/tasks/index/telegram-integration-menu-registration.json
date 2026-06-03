@@ -32,7 +32,7 @@
       "feature_id": "FEAT-220",
       "feature": "telegram-integration-menu-registration",
       "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Edits telegram/manager.py only — file-disjoint from TASK-1444 (integrations/manager.py), so the two COULD run in separate worktrees after TASK-1442. Kept sequential per the spec's per-spec isolation (both validate the shared wrapper method; one worktree keeps the regression + parity tests together).",
       "assigned_to": null,
       "started_at": "2026-06-03T22:14:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1443-telegrambotmanager-delegate-menu.md"
+      "completed_at": "2026-06-03T22:22:33+00:00",
+      "file": "sdd/tasks/completed/TASK-1443-telegrambotmanager-delegate-menu.md"
     },
     {
       "id": "TASK-1444",
