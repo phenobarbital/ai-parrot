@@ -35,6 +35,12 @@ from parrot.eval.sandbox.base import (
     SandboxProvider,
     SandboxSpec,
 )
+from parrot.eval.datasets import (
+    DatasetLoader,
+    HFDatasetLoader,
+    JSONLDatasetLoader,
+    YAMLDatasetLoader,
+)
 from parrot.eval.evaluators.base import AbstractEvaluator, Metric
 from parrot.eval.rollout import (
     ConversationalRollout,
@@ -86,6 +92,11 @@ __all__ = [
     # state backend
     "StateBackend",
     "DictStateBackend",
+    # dataset loaders
+    "DatasetLoader",
+    "JSONLDatasetLoader",
+    "YAMLDatasetLoader",
+    "HFDatasetLoader",
     # rollout strategies + simulators
     "RolloutStrategy",
     "SingleTurnRollout",
