@@ -240,7 +240,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -250,8 +250,8 @@
       "parallelism_notes": "Read-only LifecycleEvent subclasses wired into the runner; FEAT-176 merged on dev.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1426-eval-events.md"
+      "completed_at": "2026-06-03T17:15:27+00:00",
+      "file": "sdd/tasks/completed/TASK-1426-eval-events.md"
     },
     {
       "id": "TASK-1427",
