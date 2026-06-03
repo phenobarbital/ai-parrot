@@ -216,7 +216,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -230,8 +230,8 @@
       "parallelism_notes": "Orchestrator; ties all five axes. Needs sandbox, evaluator ABC, rollout.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1425-eval-runner.md"
+      "completed_at": "2026-06-03T17:11:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1425-eval-runner.md"
     },
     {
       "id": "TASK-1426",
