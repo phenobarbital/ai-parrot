@@ -14,7 +14,7 @@
       "feature_id": "FEAT-218",
       "feature": "structured-table",
       "spec": "sdd/specs/structured-table.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation model in models/outputs.py. Shares no files with TASK-1430; both can run concurrently before the renderer.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1429-contract-models.md"
+      "completed_at": "2026-06-03T16:06:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1429-contract-models.md"
     },
     {
       "id": "TASK-1430",
