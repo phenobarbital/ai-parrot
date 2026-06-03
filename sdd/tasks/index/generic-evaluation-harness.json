@@ -153,7 +153,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,8 +165,8 @@
       "parallelism_notes": "Subset-diff scorer; needs registry + backend + evaluator ABCs.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1422-state-based-evaluator.md"
+      "completed_at": "2026-06-03T17:04:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1422-state-based-evaluator.md"
     },
     {
       "id": "TASK-1423",
