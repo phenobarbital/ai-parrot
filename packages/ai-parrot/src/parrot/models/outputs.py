@@ -70,6 +70,7 @@ class OutputMode(str, Enum):
     INFOGRAPHIC = "infographic"
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
+    STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
 
 @dataclass
 class StructuredOutputConfig:
@@ -389,4 +390,113 @@ class StructuredChartConfig(BaseModel):
             missing = [c for c in [self.x, *self.y] if c not in cols]
             if missing:
                 raise ValueError(f"columns not present in data rows: {missing}")
+        return self
+
+
+# ── FEAT-218: Structured Table Output Mode ─────────────────────────────────────
+
+
+class TableColumn(BaseModel):
+    """Per-column contract for a structured table output.
+
+    Carries the minimum information a frontend grid library needs to
+    render a column correctly: the key name, its storage type, a human
+    label, and an optional display-format hint.
+
+    Attributes:
+        name: Column key — must match a key in every data row dict.
+        type: Storage type vocabulary: ``string`` | ``integer`` | ``number`` |
+            ``boolean`` | ``date`` | ``datetime`` | ``time`` | ``duration`` | ``any``.
+        title: Human-readable column label (defaults to ``name`` as-is; the
+            renderer may refine it via a narrow LLM pass).
+        format: Optional display hint for ambiguous columns:
+            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
+            ``id`` | ``code``.
+            This is a *hint* for the frontend — it does NOT change the base
+            storage type.
+    """
+
+    name: str = Field(..., description="Column key (matches a key in data rows)")
+    type: str = Field(
+        ...,
+        description=(
+            "Storage type: string | integer | number | boolean"
+            " | date | datetime | time | duration | any"
+        ),
+    )
+    title: str = Field(..., description="Human-readable column label")
+    format: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional display hint: currency | percent | email | uri | enum | id | code"
+        ),
+    )
+
+
+class StructuredTableConfig(BaseModel):
+    """Framework-agnostic table configuration for FEAT-218.
+
+    Accepts data rows on input (for column-name validation), but the renderer
+    excludes the ``data`` field from the serialized output — rows are routed
+    to ``response.data`` instead (mirroring ``StructuredChartConfig``).
+
+    Attributes:
+        columns: Per-column contract list (name / type / title / optional format).
+        data: Flat row list — INPUT-ONLY; excluded from ``output``,
+            routed to ``response.data`` by the renderer.
+        explanation: Optional prose description of how the table was derived
+            (reused from the producing agent; absent → omitted).
+        total_rows: Total number of rows before truncation (set when data
+            originates from a larger dataset).
+        truncated: ``True`` when the dataset was capped at ``row_limit``
+            and rows were dropped.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    columns: List[TableColumn] = Field(
+        ..., description="Per-column contract (name / type / title / format)"
+    )
+    data: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Flat data rows; INPUT-ONLY — excluded from ``output``, "
+            "routed to response.data by the renderer."
+        ),
+    )
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Prose description of how the table was derived (best-effort).",
+    )
+    total_rows: Optional[int] = Field(
+        default=None,
+        description="Total row count before any truncation.",
+    )
+    truncated: bool = Field(
+        default=False,
+        description="True when the dataset was capped at row_limit.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_column_names(self) -> "StructuredTableConfig":
+        """Validate that every declared column name exists in the data rows.
+
+        When ``data`` is non-empty, every ``column.name`` must appear as a key
+        in ``data[0]``.  This mirrors the ``StructuredChartConfig`` x/y column
+        presence check.
+
+        Returns:
+            The validated ``StructuredTableConfig`` instance.
+
+        Raises:
+            ValueError: When a ``column.name`` is absent from ``data[0].keys()``
+                and ``data`` is non-empty.
+        """
+        if self.data:
+            cols = set(self.data[0].keys())
+            missing = [c.name for c in self.columns if c.name not in cols]
+            if missing:
+                raise ValueError(
+                    f"column names not present in data rows: {missing}"
+                )
         return self
