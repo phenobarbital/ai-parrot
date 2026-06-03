@@ -364,6 +364,7 @@ class DatabaseAgent(BasicAgent):
         session_id: Optional[str] = None,
         user_id: Optional[str] = None,
         structured_output: Optional[Any] = None,
+        output_mode: Optional[OutputMode] = None,
         **kwargs: Any,
     ) -> AIMessage:
         """Process a database query using registered toolkits and the LLM.
@@ -383,6 +384,10 @@ class DatabaseAgent(BasicAgent):
             session_id: Session identifier for memory tracking.
             user_id: User identifier.
             structured_output: Override the default ``QueryResponse`` structured output.
+            output_mode: Override the default ``OutputMode.SQL_ANALYSIS`` envelope mode.
+                Pass ``OutputMode.STRUCTURED_TABLE`` to route the ``QueryDataset``
+                and ``QueryResponse.explanation`` through ``StructuredTableRenderer``
+                instead of the SQL artifact card path.
             **kwargs: Forwarded to the LLM client.
 
         Returns:
@@ -589,10 +594,19 @@ class DatabaseAgent(BasicAgent):
             response.is_structured = True
             response.response = qr.explanation
             response.data = self._materialise_query_dataset(qr.data)
-            # Signal to the HTTP layer that this AIMessage carries a structured
-            # QueryResponse the frontend should render as a SQL artifact card
-            # (explanation + dedicated SQL block) rather than plain markdown.
-            response.output_mode = OutputMode.SQL_ANALYSIS
+            if output_mode == OutputMode.STRUCTURED_TABLE:
+                # FEAT-218: caller requested STRUCTURED_TABLE.
+                # response.response (qr.explanation) and response.data
+                # (materialised QueryDataset) are already set above; the
+                # StructuredTableRenderer will consume them deterministically.
+                # We signal the mode so the formatter dispatches correctly.
+                response.output_mode = OutputMode.STRUCTURED_TABLE
+            else:
+                # Default: signal to the HTTP layer that this AIMessage carries a
+                # structured QueryResponse the frontend should render as a SQL
+                # artifact card (explanation + dedicated SQL block) rather than
+                # plain markdown.
+                response.output_mode = OutputMode.SQL_ANALYSIS
         else:
             # Free-text fallback
             response.is_structured = False
