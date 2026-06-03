@@ -3,6 +3,7 @@ from typing import (
     List,
     Optional,
     Any,
+    Tuple,
     Union,
     Callable,
     Literal,
@@ -71,6 +72,7 @@ class OutputMode(str, Enum):
     SQL_ANALYSIS = "sql_analysis"  # DBA helper: QueryResponse with explanation + SQL artifact
     STRUCTURED_CHART = "structured_chart"  # Library-agnostic chart config (AppChartConfig mirror)
     STRUCTURED_TABLE = "structured_table"  # Framework-agnostic table config (FEAT-218)
+    STRUCTURED_MAP = "structured_map"      # Framework-agnostic map config (FEAT-221)
 
 @dataclass
 class StructuredOutputConfig:
@@ -572,4 +574,223 @@ class StructuredTableConfig(BaseModel):
                 raise ValueError(
                     f"column names not present in data rows: {missing}"
                 )
+        return self
+
+
+# ── FEAT-221: Structured Map Output Mode ──────────────────────────────────────
+
+
+class MapColumn(BaseModel):
+    """Per-column contract for a map layer (same vocabulary as TableColumn).
+
+    Carries the minimum information a frontend map library needs to
+    render a column correctly: the key name, its storage type, a human
+    label, and an optional display-format hint.
+
+    Attributes:
+        name: Column key — must match a key in every data row dict /
+            feature.properties.
+        type: Storage type vocabulary: ``string`` | ``integer`` | ``number`` |
+            ``boolean`` | ``date`` | ``datetime`` | ``time`` | ``duration`` | ``any``.
+        title: Human-readable column label (defaults to ``name`` as-is; the
+            renderer may refine it via a narrow LLM pass).
+        format: Optional display hint for ambiguous columns:
+            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
+            ``id`` | ``code``.
+            This is a *hint* for the frontend — it does NOT change the base
+            storage type.
+    """
+
+    name: str = Field(..., description="Column key (matches a key in data rows / feature.properties)")
+    type: str = Field(
+        ...,
+        description=(
+            "Storage type: string | integer | number | boolean"
+            " | date | datetime | time | duration | any"
+        ),
+    )
+    title: str = Field(..., description="Human-readable column label")
+    format: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional display hint: currency | percent | email | uri | enum | id | code"
+        ),
+    )
+
+
+class MapLayer(BaseModel):
+    """One layer per dataset — data schema + presentation schema (FEAT-221).
+
+    Attributes:
+        layer: Leaflet layer id / GeoJSON source discriminator.
+        columns: Per-column contract for this layer (name / type / title / format).
+        tooltip_template: Python ``str.format_map`` template applied client-side
+            over ``feature.properties`` (compact, G8 — no per-element strings).
+        label_field: Property key used for the marker label.
+        data_shape: Per-layer data payload shape: ``"geojson"`` passes features
+            through; ``"rows"`` flattens to canonical row dicts (G6).
+        total_count: Per-dataset true count before capping (G10).
+        capped: True when the per-dataset result was truncated at the hard cap.
+        geodesic: Whether the executed path was geodesic (True) or
+            spherical-approximate (False). Sourced from ``SpatialLayerResult``.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    layer: str = Field(..., description="Leaflet layer id / GeoJSON source discriminator.")
+    columns: List[MapColumn] = Field(
+        ..., description="Per-column contract (name / type / title / format)"
+    )
+    tooltip_template: Optional[str] = Field(
+        default=None,
+        alias="tooltipTemplate",
+        description="str.format_map template for client-side tooltip rendering.",
+    )
+    label_field: Optional[str] = Field(
+        default=None,
+        alias="labelField",
+        description="Property key used for the marker label.",
+    )
+    data_shape: Literal["geojson", "rows"] = Field(
+        default="geojson",
+        alias="dataShape",
+        description="Per-layer data payload shape: geojson or rows.",
+    )
+    total_count: int = Field(
+        default=0,
+        alias="totalCount",
+        description="Per-dataset true count before capping.",
+    )
+    capped: bool = Field(
+        default=False,
+        description="True when the per-dataset result was truncated at the hard cap.",
+    )
+    geodesic: Optional[bool] = Field(
+        default=None,
+        description="True = geodesic path; False = spherical-approx. From SpatialLayerResult.",
+    )
+
+
+class MapViewport(BaseModel):
+    """Map viewport hints — computed from feature bounds (FEAT-221).
+
+    Attributes:
+        bbox: [min_lng, min_lat, max_lng, max_lat] bounding box.
+        center: (lat, lng) optional center — frontend may derive from bbox.
+        zoom: Optional zoom-level hint.
+    """
+
+    bbox: Optional[List[float]] = Field(
+        default=None,
+        description="[min_lng, min_lat, max_lng, max_lat] bounding box.",
+    )
+    center: Optional[Tuple[float, float]] = Field(
+        default=None,
+        description="(lat, lng) optional center — frontend may derive from bbox.",
+    )
+    zoom: Optional[int] = Field(
+        default=None,
+        description="Optional zoom-level hint.",
+    )
+
+
+class MapQuery(BaseModel):
+    """Echoed spatial filter query — carries the originating search parameters (FEAT-221).
+
+    Attributes:
+        point: (lat, lng) echoed from ``SpatialFilterSpec.point``.
+        radius: Search radius.
+        unit: Distance unit.
+    """
+
+    point: Tuple[float, float] = Field(
+        ...,
+        description="(lat, lng) in decimal degrees — echoed from SpatialFilterSpec.",
+    )
+    radius: float = Field(..., description="Search radius.")
+    unit: Literal["mi", "km", "m"] = Field(..., description="Distance unit: mi, km, or m.")
+
+
+class StructuredMapConfig(BaseModel):
+    """Framework-agnostic map configuration for FEAT-221.
+
+    Mirrors ``StructuredTableConfig``/``StructuredChartConfig`` — accepts data
+    on input (for column-name validation), but the renderer excludes the ``data``
+    field from the serialized output and routes per-layer payloads to
+    ``response.data`` instead.
+
+    Attributes:
+        layers: One ``MapLayer`` per dataset with data-schema + presentation hints.
+        data: Flat data rows or per-layer payloads — INPUT-ONLY; excluded from
+            ``output``, routed to ``response.data`` by the renderer.
+        viewport: Viewport hints (bbox + optional center/zoom).
+        query: Echoed ``SpatialFilterSpec`` parameters (point / radius / unit).
+        base_layer: Optional base-tile/style hint for the frontend (e.g. an OSM
+            tile URL template or a Mapbox style id).
+        title: Short map title.
+        description: Short prose description.
+        explanation: Longer LLM-authored prose explanation of the spatial result.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    layers: List[MapLayer] = Field(
+        ..., description="One MapLayer per dataset."
+    )
+    data: List[dict] = Field(
+        default_factory=list,
+        description=(
+            "Per-layer payloads; INPUT-ONLY — excluded from ``output``, "
+            "routed to response.data by the renderer."
+        ),
+    )
+    viewport: Optional[MapViewport] = Field(
+        default=None,
+        description="Viewport hints (bbox + optional center/zoom).",
+    )
+    query: Optional[MapQuery] = Field(
+        default=None,
+        description="Echoed SpatialFilterSpec parameters.",
+    )
+    base_layer: Optional[str] = Field(
+        default=None,
+        alias="baseLayer",
+        description="Optional base-tile/style hint (e.g. OSM tile URL or Mapbox style id).",
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="Short map title.",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Short prose description of the map.",
+    )
+    explanation: Optional[str] = Field(
+        default=None,
+        description="Longer LLM-authored prose explanation of the spatial result.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_column_names(self) -> "StructuredMapConfig":
+        """Validate that every declared column name exists in the data rows.
+
+        When ``data`` is non-empty, every ``layer.columns[*].name`` must appear
+        as a key in ``data[0]``.  This mirrors the ``StructuredTableConfig``
+        column-name check.
+
+        Returns:
+            The validated ``StructuredMapConfig`` instance.
+
+        Raises:
+            ValueError: When a ``column.name`` is absent from ``data[0].keys()``
+                and ``data`` is non-empty.
+        """
+        if self.data:
+            cols = set(self.data[0].keys())
+            for layer in self.layers:
+                missing = [c.name for c in layer.columns if c.name not in cols]
+                if missing:
+                    raise ValueError(
+                        f"column names not present in data rows: {missing}"
+                    )
         return self
