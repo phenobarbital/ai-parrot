@@ -14,7 +14,7 @@
       "feature_id": "FEAT-220",
       "feature": "telegram-integration-menu-registration",
       "spec": "sdd/specs/telegram-integration-menu-registration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation task — both TASK-1443 and TASK-1444 depend on this method existing. Must land first.",
       "assigned_to": null,
       "started_at": "2026-06-03T22:14:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1442-wrapper-register-command-menu.md"
+      "completed_at": "2026-06-03T22:17:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1442-wrapper-register-command-menu.md"
     },
     {
       "id": "TASK-1443",
