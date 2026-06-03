@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-221
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Source brainstorm: `sdd/proposals/structured-map-output.brainstorm.md`
@@ -565,15 +565,15 @@ async def spatial_filter(self, spec: "SpatialFilterSpec",
   populated by the `spatial_filter` tool call.
 - [ ] FEAT-219 contract migration: hard break vs. versioned/compat envelope?
   *Spec default = versioned `SpatialResult` + `as_feature_collection()` shim.*
-  Confirm before merging. — *Owner: Jesus / frontend*
+  Confirm before merging. — *Owner: Jesus / frontend*: versioned
 - [ ] Exact `StructuredMapConfig` wire field names — must be agreed with the Leaflet
-  frontend consumer. *Spec proposes the §2 shape as default.* — *Owner: Jesus / frontend*
+  frontend consumer. *Spec proposes the §2 shape as default.* — *Owner: Jesus / frontend*: proposed
 - [ ] Viewport contract: `center`+`zoom`, `bbox`, or both, and the zoom heuristic?
-  *Spec default = `bbox` + optional `center`/`zoom`.* — *Owner: Jesus / frontend*
+  *Spec default = `bbox` + optional `center`/`zoom`.* — *Owner: Jesus / frontend*: both
 - [ ] Should `bots/database/agent.py` also gain a `STRUCTURED_MAP` branch, or is
-  `PandasAgent` sufficient for v1? *Spec default = PandasAgent only (Non-Goal).* — *Owner: Jesus*
-- [ ] Coordinate with `structured-artifact-contract` (taxonomy + `ArtifactType.map`):
-  should `StructuredMapConfig` field names anticipate that convergence now? — *Owner: Jesus / Juan Ruffato*
+  `PandasAgent` sufficient for v1? *Spec default = PandasAgent only (Non-Goal).* — *Owner: Jesus*: gain access
+- [ ] Coordinate with `structured-artifact-contract` (taxonomy + `ArtifactType.map`): 
+  should `StructuredMapConfig` field names anticipate that convergence now? — *Owner: Jesus / Juan Ruffato*: agree
 
 ---
 

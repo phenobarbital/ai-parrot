@@ -76,6 +76,7 @@ class TelegramAgentConfig:
     reply_in_thread: bool = True
     enable_channel_posts: bool = False
     register_menu: bool = True
+    enable_attachments: bool = True
     # Authentication settings
     auth_url: Optional[str] = None
     login_page_url: Optional[str] = None
