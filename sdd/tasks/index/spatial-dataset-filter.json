@@ -73,7 +73,7 @@
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Modifies compiler.py (created in TASK-1438) and table.py _build_filter_clause (overlaps in-flight FEAT-218). Not parallel due to shared seam + cross-feature conflict.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1439-spatial-compiler-pandas-bbox-fallback.md"
+      "completed_at": "2026-06-03T16:56:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1439-spatial-compiler-pandas-bbox-fallback.md"
     },
     {
       "id": "TASK-1440",

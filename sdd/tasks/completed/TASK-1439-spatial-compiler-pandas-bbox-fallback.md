@@ -146,7 +146,12 @@ in-flight FEAT-218 (spec Worktree Strategy) and keep the change additive.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Notes**: Fallback branch (_compile_pandas, _execute_pandas, _build_bbox_sql, _haversine_refine)
+was already implemented in TASK-1438's compiler.py. This task added: (1) BETWEEN range predicate
+to TableSource._build_filter_clause — uses dict{'min':..., 'max':...} value form; equality/IN
+path unchanged byte-identical; (2) confirmed bbox injection order — _build_bbox_sql constructs
+the bbox WHERE directly then calls source._inject_permanent_filter on top, so permanent filters
+stack on after the bbox predicate. Records geodesic=False for the pandas path.
+**Deviations from spec**: none
