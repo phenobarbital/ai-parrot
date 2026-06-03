@@ -95,6 +95,64 @@ def test_telegram_channel_does_not_import_botbuilder() -> None:
     )
 
 
+def test_integrations_models_does_not_import_pywa() -> None:
+    """Importing the shared config models must not pull pywa into sys.modules.
+
+    ``parrot.integrations.models`` imports each channel's ``.models``, which
+    in turn runs that channel's package ``__init__``.  The WhatsApp package
+    must defer its pywa-dependent ``wrapper`` (PEP 562 lazy re-exports) so
+    that ``IntegrationBotManager`` / the config models are importable in
+    environments without the optional ``pywa`` dependency installed.
+    """
+    _clean_modules("parrot.integrations.models", "parrot.integrations.whatsapp", "pywa")
+
+    assert "pywa" not in sys.modules
+
+    mod = importlib.import_module("parrot.integrations.models")
+
+    assert "pywa" not in sys.modules, (
+        "Importing parrot.integrations.models pulled pywa into sys.modules — "
+        "the WhatsApp package must lazily defer its pywa-dependent wrapper."
+    )
+    assert hasattr(mod, "WhatsAppAgentConfig")
+
+
+def test_integration_manager_does_not_import_aiogram_or_pywa() -> None:
+    """``IntegrationBotManager`` must import without aiogram or pywa.
+
+    The manager coordinates every channel but only needs a channel's optional
+    SDK when that channel is actually started.  Both ``aiogram`` (Telegram) and
+    ``pywa`` (WhatsApp) are deferred — via ``from __future__ import annotations``
+    plus lazy imports inside ``_start_telegram_bot`` — so a non-Telegram /
+    non-WhatsApp deployment can construct the manager without them installed.
+    """
+    import builtins
+
+    _clean_modules("parrot.integrations.manager", "aiogram", "pywa")
+
+    real_import = builtins.__import__
+
+    def _blocked_import(name, *args, **kwargs):
+        top = name.split(".", 1)[0]
+        if top in ("aiogram", "pywa"):
+            raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+        return real_import(name, *args, **kwargs)
+
+    builtins.__import__ = _blocked_import
+    try:
+        mod = importlib.import_module("parrot.integrations.manager")
+    finally:
+        builtins.__import__ = real_import
+
+    assert "aiogram" not in sys.modules, (
+        "Importing parrot.integrations.manager pulled aiogram into sys.modules."
+    )
+    assert "pywa" not in sys.modules, (
+        "Importing parrot.integrations.manager pulled pywa into sys.modules."
+    )
+    assert hasattr(mod, "IntegrationBotManager")
+
+
 def test_hitl_adapter_imports_botbuilder() -> None:
     """Sanity-check: the HITL adapter module does use botbuilder.
 
