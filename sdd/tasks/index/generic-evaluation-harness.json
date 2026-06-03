@@ -32,7 +32,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Logically independent of TASK-1417 (different files), but sequential per chosen per-spec strategy.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1416-eval-registry.md"
+      "completed_at": "2026-06-03T16:51:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1416-eval-registry.md"
     },
     {
       "id": "TASK-1417",
