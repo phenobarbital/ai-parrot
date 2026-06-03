@@ -157,10 +157,12 @@ class TestTelegramBotManagerMenuDelegation:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Replaced `_register_bot_menu` body with `await wrapper.register_command_menu()`.
+Removed now-dead `_register_commands_individually` (only caller was `_register_bot_menu`).
+Removed five unused aiogram type imports (BotCommand, BotCommandScope*, MenuButtonCommands)
+that were only used by the relocated logic. 3/3 regression tests pass.
+Pre-existing `TestEnrichQuestion` failures confirmed unrelated to TASK-1443.
 
 **Deviations from spec**: none | describe if any

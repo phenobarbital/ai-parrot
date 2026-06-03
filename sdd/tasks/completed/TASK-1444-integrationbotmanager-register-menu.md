@@ -199,10 +199,14 @@ class TestIntegrationManagerMenuParity:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Added `if config.register_menu: try: await wrapper.register_command_menu() except Exception: self.logger.warning(...)` 
+in `IntegrationBotManager._start_telegram_bot` after wrapper construction (line ~197). Also removed
+pre-existing unused `TelegramHumanChannel` TYPE_CHECKING import (bonus fix, not breaking).
+Added docs note to `docs/telegram_integration.md`. 4 unit tests in test_telegram_integration.py
+(TestIntegrationBotManagerMenuRegistration) + 6 integration parity tests in
+test_integration_menu_parity.py all pass. 3 pre-existing TestEnrichQuestion failures confirmed
+unrelated.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

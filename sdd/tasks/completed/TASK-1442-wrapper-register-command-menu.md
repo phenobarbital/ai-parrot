@@ -287,10 +287,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Added `register_command_menu()` and `_register_commands_individually()` to
+`TelegramAgentWrapper`. Added the four missing aiogram type imports
+(`BotCommandScopeDefault`, `BotCommandScopeAllPrivateChats`, `BotCommandScopeAllGroupChats`,
+`MenuButtonCommands`). Logic mirrors `TelegramBotManager._register_bot_menu` exactly but
+reads from `self.bot` / `self.get_bot_commands()` / `self.logger`. 10/10 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

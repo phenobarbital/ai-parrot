@@ -31,7 +31,6 @@ from .models import (
 )
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher
-    from parrot.human import TelegramHumanChannel
     from .telegram.wrapper import TelegramAgentWrapper
     from .msteams.wrapper import MSTeamsAgentWrapper
     from .whatsapp.wrapper import WhatsAppAgentWrapper
@@ -195,6 +194,23 @@ class IntegrationBotManager:
         except RuntimeError:
             app = None
         wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
+
+        # Publish the Telegram command menu (setMyCommands + chat menu button)
+        # so platform/agent commands (e.g. /connect_jira from JiraSpecialist)
+        # appear in Telegram Desktop and mobile autocomplete.  The wrapper is
+        # fully constructed here, so _platform_commands (Jira/Office365/MCP)
+        # is already populated and flows into the published menu automatically.
+        # Wrapped defensively: a menu failure must never abort bot startup.
+        # Parity with TelegramBotManager._start_bot (FEAT-220).
+        if config.register_menu:
+            try:
+                await wrapper.register_command_menu()
+            except Exception:
+                self.logger.warning(
+                    "Failed to register Telegram command menu for '%s'",
+                    name,
+                    exc_info=True,
+                )
 
         # HITL channel: shares the aiogram Bot. MUST be included BEFORE the
         # wrapper router so HITL replies (free_text / button callbacks) are

@@ -119,3 +119,33 @@ agents:
 Try /help in Telegram to see all available commands and callable methods!
 
 That's it! When your app starts, NavParrotBot will respond to messages via Telegram.
+
+---
+
+## Command Menu Registration (FEAT-220)
+
+Both startup paths — `TelegramBotManager` (standalone bots from
+`telegram_bots.yaml`) and `IntegrationBotManager` (integrated bots from
+`integrations_bots.yaml`) — publish the bot's command menu to Telegram on
+startup via `TelegramAgentWrapper.register_command_menu()`.
+
+This means:
+
+- Platform/integration commands such as `/connect_jira`, `/disconnect_jira`,
+  and `/jira_status` (registered by `JiraSpecialist` via `_platform_commands`)
+  automatically appear in the **Telegram Desktop command menu** (the menu
+  button) and in the **`/`-autocomplete** list while typing.
+- The full list published includes built-in commands (`/start`, `/help`,
+  `/clear`, etc.), authentication commands (`/login`, `/logout` when enabled),
+  platform-integration commands (Jira/Office365/MCP), YAML `config.commands`,
+  and any `@telegram_command`-decorated agent methods.
+- Registration is **idempotent**: stale commands at `BotCommandScopeDefault`,
+  `BotCommandScopeAllPrivateChats`, and `BotCommandScopeAllGroupChats` are
+  cleared first, then the full list is re-published atomically.
+- A batch failure (e.g. one invalid entry returning HTTP 400) automatically
+  falls back to per-command registration so one bad entry cannot blank the
+  entire menu.
+- Menu publication is gated on `config.register_menu` (default `True`).
+  Set `register_menu: false` in the bot YAML to suppress it.
+- Any Telegram API error during menu registration is logged and swallowed —
+  it never aborts bot startup or polling.
