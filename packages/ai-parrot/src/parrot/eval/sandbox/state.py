@@ -1,8 +1,11 @@
 """State-based sandbox components for the Generic Agent Evaluation Harness.
 
-FEAT-217 — Module 4 (partial — TASK-1418 contributes StateBackend and
-DictStateBackend; TASK-1419 adds ToolkitBinder, InMemoryStateSandbox, and
-the DB binder; TASK-1420 adds the Jira binder).
+FEAT-217 — Module 4.
+
+TASK-1418: ``StateBackend`` + ``DictStateBackend``
+TASK-1419: ``ToolkitBinder``, ``InMemoryStateSandbox``,
+           ``InMemoryStateSandboxProvider``, ``DatabaseToolkitBinder``
+TASK-1420: ``JiraToolkitBinder`` (added later)
 
 ``DictStateBackend`` is the resettable, in-memory world state owned by the
 sandbox.  It is keyed as ``{collection: {entity_id: {field: value}}}``
@@ -14,7 +17,11 @@ from __future__ import annotations
 import copy
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    pass  # TYPE_CHECKING only — no runtime imports needed here
 
 logger = logging.getLogger(__name__)
 
@@ -248,3 +255,223 @@ class DictStateBackend(StateBackend):
             col[entity_id].update(copy.deepcopy(fields))
         else:
             col[entity_id] = copy.deepcopy(fields)
+
+
+# ---------------------------------------------------------------------------
+# ToolkitBinder ABC (TASK-1419)
+# ---------------------------------------------------------------------------
+
+
+class ToolkitBinder(ABC):
+    """Abstract binder that wires a StateBackend into a concrete toolkit.
+
+    Each toolkit family (Database, Jira, …) has its own ``ToolkitBinder``
+    subclass that knows the toolkit's internal injection points.  This keeps
+    all toolkit-specific code out of the generic sandbox classes.
+    """
+
+    @abstractmethod
+    def bind(self, toolkit: Any, backend: "DictStateBackend") -> None:
+        """Inject *backend* into *toolkit* so tool calls mutate the backend.
+
+        Args:
+            toolkit: The toolkit instance to bind (e.g. ``PostgresToolkit``).
+            backend: The ``DictStateBackend`` that acts as the world store.
+        """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# InMemoryStateSandbox (TASK-1419)
+# ---------------------------------------------------------------------------
+
+
+class InMemoryStateSandbox:
+    """State-based sandbox that owns a ``DictStateBackend``.
+
+    Implements the ``Sandbox`` protocol without inheriting to avoid the
+    abstract-method requirement — imported at runtime to avoid a circular
+    dependency with ``base.py``.
+
+    Args:
+        backend: The ``DictStateBackend`` holding world state.
+        binder: The ``ToolkitBinder`` used to wire toolkits into the backend.
+    """
+
+    def __init__(self, backend: "DictStateBackend", binder: ToolkitBinder) -> None:
+        self._backend = backend
+        self._binder = binder
+        self.logger = logging.getLogger(__name__)
+
+    async def __aenter__(self) -> "InMemoryStateSandbox":
+        """Enter the sandbox context.
+
+        Returns:
+            Self.
+        """
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        """Exit the sandbox context (no-op — state is GC'd with the object).
+
+        Args:
+            exc: Exception info (ignored).
+        """
+        pass
+
+    async def reset(self, seed_state: dict[str, Any] | None) -> None:
+        """Reset the backend to *seed_state*.
+
+        Args:
+            seed_state: Initial state, or ``None`` to empty.
+        """
+        await self._backend.reset(seed_state)
+
+    async def health_check(self) -> bool:
+        """Always healthy (in-memory, no external dependency).
+
+        Returns:
+            ``True``.
+        """
+        return True
+
+    async def snapshot(self) -> dict[str, Any]:
+        """Return a sorted, deep-copied snapshot of the backend state.
+
+        Returns:
+            Snapshot dict from the backend.
+        """
+        return await self._backend.snapshot()
+
+    async def exec(self, cmd: list[str]) -> Any:
+        """Not supported — raises ``NotImplementedError``.
+
+        Args:
+            cmd: Command list.
+
+        Raises:
+            NotImplementedError: Always.
+        """
+        raise NotImplementedError(
+            "InMemoryStateSandbox does not support exec(); "
+            "use DockerSandbox for code-execution tasks."
+        )
+
+    def bind(self, toolkit: Any) -> None:
+        """Bind *toolkit* to the sandbox's backend.
+
+        This is called by ``AgentFactory`` before the agent starts its
+        rollout so tool calls mutate the in-memory backend.
+
+        Args:
+            toolkit: The toolkit instance to wire.
+        """
+        self._binder.bind(toolkit, self._backend)
+
+
+# ---------------------------------------------------------------------------
+# InMemoryStateSandboxProvider (TASK-1419)
+# ---------------------------------------------------------------------------
+
+
+class InMemoryStateSandboxProvider:
+    """Provider that provisions a fresh ``InMemoryStateSandbox`` per attempt.
+
+    No pooling — each ``acquire()`` returns a brand-new backend so attempts
+    are fully independent.
+
+    Args:
+        binder: The ``ToolkitBinder`` shared across all sandboxes produced by
+            this provider.
+    """
+
+    def __init__(self, binder: ToolkitBinder) -> None:
+        self._binder = binder
+
+    async def acquire(self, spec: Any = None) -> InMemoryStateSandbox:
+        """Return a fresh ``InMemoryStateSandbox`` with an empty backend.
+
+        Args:
+            spec: ``SandboxSpec`` (seed_state is applied during ``reset``).
+
+        Returns:
+            A new ``InMemoryStateSandbox``.
+        """
+        backend = DictStateBackend()
+        return InMemoryStateSandbox(backend, self._binder)
+
+    async def release(self, sandbox: InMemoryStateSandbox) -> None:
+        """GC the sandbox (no pool).
+
+        Args:
+            sandbox: Ignored.
+        """
+        pass
+
+
+# ---------------------------------------------------------------------------
+# DatabaseToolkitBinder (TASK-1419)
+# ---------------------------------------------------------------------------
+
+
+class DatabaseToolkitBinder(ToolkitBinder):
+    """Binder for ``DatabaseToolkit`` (``PostgresToolkit``) subclasses.
+
+    Sets ``toolkit._connected = True`` to bypass ``start()`` and patches
+    ``toolkit._acquire_asyncdb_connection`` to yield a ``FakeRawConnection``
+    backed by the ``DictStateBackend``.  Also patches ``toolkit._resolve_table``
+    to return a minimal ``TableMetadata`` stub so CRUD method internals work
+    without a warm metadata cache.
+
+    The net effect: CRUD tool calls (``insert_row``, ``update_row``, …) go
+    through the full ``PostgresToolkit`` parameter-binding pipeline but the
+    final SQL is routed to ``FakeRawConnection`` → ``DictStateBackend`` with
+    NO real database connection.
+    """
+
+    def bind(self, toolkit: Any, backend: "DictStateBackend") -> None:
+        """Inject *backend* into *toolkit*.
+
+        Args:
+            toolkit: A ``DatabaseToolkit`` subclass instance.
+            backend: The ``DictStateBackend`` to use as the world store.
+        """
+        from parrot.eval.sandbox.fakes import FakeRawConnection
+
+        # 1. Mark as connected so start() is never called.
+        toolkit._connected = True
+
+        # 2. Build the fake raw connection once and share it.
+        fake_conn = FakeRawConnection(backend)
+
+        # 3. Patch _acquire_asyncdb_connection to yield the fake connection.
+        @asynccontextmanager
+        async def _fake_acquire():
+            yield fake_conn
+
+        toolkit._acquire_asyncdb_connection = _fake_acquire
+
+        # 4. Patch _resolve_table to return a minimal stub for any table.
+        def _fake_resolve_table(table: str) -> tuple:
+            from parrot.eval.sandbox.fakes import FakeTableMetadata
+
+            if "." in table:
+                parts = table.split(".", 1)
+                schema = parts[0].strip().strip('"').lower()
+                table_name = parts[1].strip().strip('"').lower()
+            else:
+                schema = getattr(toolkit, "primary_schema", None) or "public"
+                table_name = table.strip().strip('"').lower()
+
+            meta = FakeTableMetadata(
+                schema=schema,
+                tablename=table_name,
+            )
+            return schema, table_name, meta
+
+        toolkit._resolve_table = _fake_resolve_table
+
+        logger.debug(
+            "DatabaseToolkitBinder: bound %r to DictStateBackend",
+            type(toolkit).__name__,
+        )
