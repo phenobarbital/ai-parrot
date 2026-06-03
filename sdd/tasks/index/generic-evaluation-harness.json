@@ -92,7 +92,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Proves the binding pattern (brainstorm §13.7 step 3). Requires reading PostgresToolkit._execute_crud.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1419-inmemory-sandbox-db-binder.md"
+      "completed_at": "2026-06-03T17:00:01+00:00",
+      "file": "sdd/tasks/completed/TASK-1419-inmemory-sandbox-db-binder.md"
     },
     {
       "id": "TASK-1420",
