@@ -34,10 +34,29 @@ REQUIREMENTS:
    - First, fetch the data using the appropriate tool.
    - Then map the fetched column names to x/y in the config.
 2. Emit ONLY a single JSON object matching the schema below — no prose, no markdown, no code fences.
-3. Put the data rows inside the JSON under "data" (a list of flat row dicts).
+3. CRITICAL — column names: set "x" and "y" to the EXACT column names of the
+   DataFrame you computed with your tools (the column headers shown in your tool
+   output). These names are matched against the real data, which the system takes
+   directly from the DataFrame you computed. Do NOT invent semantic names such as
+   "category", "metric" or "value" unless those are the actual column headers —
+   a name that is not a real column produces an empty chart. The "data" field is
+   OPTIONAL: you may leave it as an empty list [], because the system uses the
+   DataFrame you computed as the data source (you do not need to retype the rows).
+   MANDATORY data-delivery convention: your LAST tool call before emitting the
+   JSON MUST be a `python_repl_pandas` step that assigns the exact, final chart
+   rows to a flat pandas DataFrame named EXACTLY `chart_data`, and you MUST set
+   "dataVariable": "chart_data". If you obtained the data with
+   `dataset_fetch_dataset`, `database_query` or SQL, load/rebuild it into
+   `chart_data` in that final step (e.g. `chart_data = <your_dataframe>`). This is
+   what guarantees the rows reach the chart — data fetched only via
+   `dataset_fetch_dataset` and NOT placed into `chart_data` may not render. The
+   columns of `chart_data` MUST include your x and y.
 4. For xAxisMode="time", the x column values MUST be ISO 8601 date strings (e.g. "2024-01-15").
 5. For type="map", mapName is required.
 6. The y field is a list — include all series columns.
+7. ALWAYS include a short "title" (≤1 line, no trailing punctuation) and a one-paragraph
+   "description" in natural language summarizing the chart's key takeaway (this is the text
+   shown to the user next to the chart).
 
 SCHEMA (your output must match this exactly):
 {json.dumps(_SCHEMA, indent=2)}
@@ -160,31 +179,135 @@ class StructuredChartRenderer(BaseChart):
             # 3. Build output — camelCase, data key excluded
             out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
 
-            # 4. Route chart rows to response.data.
-            #    cfg.data contains the rows the LLM selected and matched to
-            #    x/y — they take priority over any raw DataFrame the agent
-            #    placed in response.data before the renderer ran.
-            #    Explicit None/empty check avoids DataFrame truthiness crash:
-            #    `not response.data` raises "truth value of a DataFrame is
-            #    ambiguous" when the agent pre-populated response.data with a
-            #    pd.DataFrame.
-            if cfg.data:
-                # cfg.data rows always win — they match the chart config.
-                response.data = cfg.data
-            # else: leave response.data as-is (e.g. aggregated DataFrame from
-            # agent — data.py will serialise it to records if still a DataFrame)
+            # 4. Resolve the data rows and reconcile the config's x/y columns.
+            #    Reality (FEAT-215): the LLM does NOT reliably embed rows — it
+            #    emits a placeholder like `[{}]` even when asked. The
+            #    authoritative data is the DataFrame the agent computed, which
+            #    PandasAgent injects into ``response.data`` *before* the renderer
+            #    runs. We pick the best available rows, then ensure out["x"] /
+            #    out["y"] name columns that actually exist in those rows —
+            #    otherwise the frontend (LayerChart) builds a scale over
+            #    `undefined` and renders nothing.
+            rows = self._resolve_rows(cfg, getattr(response, "data", None))
+            if rows:
+                self._reconcile_columns(out, cfg, rows)
+                response.data = rows
+            # else: no usable rows — leave response.data as-is (the frontend
+            # shows a graceful "no data" fallback).
+
+            # Diagnostic: log the FINAL config axes vs the actual data columns so
+            # a config/data mismatch (the frontend "columns don't match" guard)
+            # can be pinpointed from the server log without guesswork.
+            logger.info(
+                "structured_chart render: type=%s x=%r y=%r data_cols=%s rows=%d",
+                out.get("type"),
+                out.get("x"),
+                out.get("y"),
+                list(rows[0].keys()) if rows else None,
+                len(rows) if rows else 0,
+            )
 
             # response.code is left untouched (renderer never sets it)
-            # Return the explanation as `wrapped` so that data.py's
+            # Return the natural-language text as `wrapped` so that data.py's
             #   response.response = wrapped
-            # preserves the LLM's natural-language text instead of setting it
-            # to None (the previous behaviour when render returned (out, None)).
-            return out, explanation
+            # surfaces it as the message body. Prefer the config's own
+            # `description` (the LLM's chart summary); fall back to any
+            # pre-existing explanation the agent set before the renderer ran.
+            return out, (cfg.description or explanation)
 
         except Exception as exc:  # noqa: BLE001
             msg = f"Unexpected error in StructuredChartRenderer: {exc}"
             logger.exception(msg)
             return None, msg
+
+    # ── Data resolution + column reconciliation ──────────────────────────────
+
+    @staticmethod
+    def _resolve_rows(cfg: StructuredChartConfig, existing: Any) -> Optional[list]:
+        """Pick the authoritative data rows for the chart.
+
+        Priority:
+            1. Real rows the LLM embedded in ``cfg.data`` (non-empty first row).
+            2. The agent-injected pandas DataFrame in ``response.data``
+               (converted to records). Duck-typed (``to_dict`` + ``empty``) so
+               this module doesn't need to import pandas.
+            3. A pre-existing plain ``list[dict]`` with a non-empty first row.
+
+        Args:
+            cfg: The validated chart configuration.
+            existing: The current ``response.data`` (may be a DataFrame, list,
+                or None).
+
+        Returns:
+            A list of row dicts, or ``None`` when nothing usable is available.
+        """
+        # 1. LLM embedded real rows
+        if cfg.data and cfg.data[0]:
+            return cfg.data
+        # 2. Agent-injected pandas DataFrame (duck-typed)
+        if existing is not None and hasattr(existing, "to_dict") and hasattr(existing, "empty"):
+            return None if existing.empty else existing.to_dict("records")
+        # 3. Pre-existing list of non-empty dicts
+        if isinstance(existing, list) and existing and existing[0]:
+            return existing
+        return None
+
+    @staticmethod
+    def _reconcile_columns(
+        out: dict, cfg: StructuredChartConfig, rows: list
+    ) -> None:
+        """Ensure ``out['x']`` and ``out['y']`` reference columns present in rows.
+
+        The LLM frequently names semantic axes (e.g. ``x="category"``) that do
+        not match the real DataFrame columns. When a configured column is absent
+        we infer a sensible replacement from the data: the first non-numeric
+        column becomes ``x`` and the numeric columns become ``y``. This mutates
+        ``out`` in place so the frontend receives a config whose x/y exist in
+        ``response.data``.
+
+        Index-like columns (``index``, ``level_0``, ``Unnamed: 0``) — typically
+        the pandas row index that leaked in via ``reset_index`` or dataset
+        materialization — are never used as a ``y`` series: they are row counters,
+        not metrics, and would otherwise show up as a meaningless extra series in
+        the legend (e.g. an "index" entry alongside "total_amount").
+
+        Args:
+            out: The camelCase config dict (mutated in place).
+            cfg: The validated chart configuration (source x/y).
+            rows: The resolved data rows (first row used for column inference).
+        """
+        first = rows[0]
+        cols = list(first.keys())
+        col_set = set(cols)
+
+        def _is_number(v: Any) -> bool:
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+        def _is_index_like(c: Any) -> bool:
+            return str(c).strip().lower() in {"index", "level_0", "unnamed: 0", ""}
+
+        # x: keep when present, else first non-numeric column, else first column.
+        if cfg.x not in col_set:
+            categorical = next(
+                (c for c in cols if not _is_number(first.get(c))), None
+            )
+            out["x"] = categorical or cols[0]
+
+        # y: keep the configured columns that exist and are real metrics (drop
+        # index-like columns); otherwise infer from the numeric columns. Either
+        # way, never emit an index column as a series.
+        present_y = [
+            c for c in cfg.y if c in col_set and not _is_index_like(c)
+        ]
+        if not present_y:
+            x_col = out.get("x")
+            present_y = [
+                c
+                for c in cols
+                if c != x_col and _is_number(first.get(c)) and not _is_index_like(c)
+            ]
+        if present_y:
+            out["y"] = present_y
 
     # ── JSON extraction helper (mirrors EChartsRenderer._extract_json_code) ──
 

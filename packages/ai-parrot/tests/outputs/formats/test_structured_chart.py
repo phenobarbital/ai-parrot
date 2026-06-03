@@ -48,13 +48,16 @@ def test_structured_chart_config_alias_roundtrip():
     """camelCase aliases serialize correctly; snake_case input also accepted."""
     from parrot.models.outputs import StructuredChartConfig
 
-    cfg = StructuredChartConfig(type="bar", x="m", y=["v"], splitSeries=True, xAxisMode="time")
+    rows = [{"m": "Jan", "v": 1}]
+    cfg = StructuredChartConfig(
+        type="bar", x="m", y=["v"], splitSeries=True, xAxisMode="time", data=rows
+    )
     dumped = cfg.model_dump(by_alias=True)
     assert "splitSeries" in dumped and "xAxisMode" in dumped
     assert "split_series" not in dumped
 
     # snake_case input also accepted (populate_by_name=True)
-    cfg2 = StructuredChartConfig(type="bar", x="m", y=["v"], split_series=True)
+    cfg2 = StructuredChartConfig(type="bar", x="m", y=["v"], split_series=True, data=rows)
     assert cfg2.split_series is True
 
 
@@ -72,6 +75,7 @@ def test_structured_chart_config_all_aliases_in_dump():
         colorBySign=True,
         negativeColor="#ff0000",
         mapName="world",
+        data=[{"country": "US", "sales": 1}],
     )
     dumped = cfg.model_dump(by_alias=True)
     for alias in ("splitSeries", "showLegend", "xAxisMode", "colorBySign", "negativeColor", "mapName"):
@@ -91,36 +95,96 @@ def test_structured_chart_config_map_with_mapname_ok():
     """type='map' with mapName does NOT raise."""
     from parrot.models.outputs import StructuredChartConfig
 
-    cfg = StructuredChartConfig(type="map", x="country", y=["sales"], mapName="world")
+    cfg = StructuredChartConfig(
+        type="map", x="country", y=["sales"], mapName="world",
+        data=[{"country": "US", "sales": 1}],
+    )
     assert cfg.map_name == "world"
 
 
-def test_structured_chart_config_y_columns_present():
-    """y referencing absent column raises ValidationError when data is non-empty."""
-    from pydantic import ValidationError
+def test_structured_chart_config_mismatched_columns_accepted():
+    """x/y not matching the embedded data is ACCEPTED (renderer reconciles).
+
+    The model_validator no longer rejects column mismatches: the LLM often names
+    semantic axes that differ from the embedded keys, and StructuredChartRenderer
+    reconciles x/y downstream. Raising here would force a slow reformat and
+    pre-empt that reconciliation.
+    """
     from parrot.models.outputs import StructuredChartConfig
 
-    with pytest.raises(ValidationError):
-        StructuredChartConfig(type="bar", x="m", y=["missing"],
-                              data=[{"m": "Jan", "v": 1}])
+    cfg = StructuredChartConfig(type="bar", x="m", y=["missing"],
+                                data=[{"m": "Jan", "v": 1}])
+    assert cfg.y == ["missing"]  # kept as-is; renderer reconciles at render time
 
-
-def test_structured_chart_config_x_column_present():
-    """x referencing absent column raises ValidationError when data is non-empty."""
-    from pydantic import ValidationError
-    from parrot.models.outputs import StructuredChartConfig
-
-    with pytest.raises(ValidationError):
-        StructuredChartConfig(type="bar", x="bad_col", y=["v"],
-                              data=[{"m": "Jan", "v": 1}])
+    cfg2 = StructuredChartConfig(type="bar", x="bad_col", y=["v"],
+                                 data=[{"m": "Jan", "v": 1}])
+    assert cfg2.x == "bad_col"
 
 
 def test_structured_chart_config_empty_data_skips_column_check():
-    """Empty data list does not trigger column-check validation."""
+    """Empty/placeholder data does not trigger column-check validation.
+
+    The LLM does not reliably embed rows (emits [{}]); the renderer reconciles
+    columns against the agent-injected DataFrame, so an empty/placeholder data
+    list is accepted at the model level.
+    """
     from parrot.models.outputs import StructuredChartConfig
 
     cfg = StructuredChartConfig(type="bar", x="anything", y=["whatever"], data=[])
     assert cfg.data == []
+
+    cfg2 = StructuredChartConfig(type="bar", x="anything", y=["whatever"], data=[{}])
+    assert cfg2.data == [{}]
+
+
+def test_structured_chart_config_data_split_orientation_normalized():
+    """data in pandas 'split' orientation ({columns, data}) is coerced to records."""
+    from parrot.models.outputs import StructuredChartConfig
+
+    cfg = StructuredChartConfig(
+        type="radar",
+        x="cat",
+        y=["val"],
+        data={
+            "columns": ["cat", "val"],
+            "data": [["A", 1], ["B", 2]],
+        },
+    )
+    assert cfg.data == [
+        {"cat": "A", "val": 1},
+        {"cat": "B", "val": 2},
+    ]
+
+
+def test_structured_chart_config_data_split_rows_key_normalized():
+    """split orientation with the 'rows' key (not 'data') is also coerced.
+
+    Replays the exact radar failure: the model emitted
+    {"columns": [...], "rows": [[...]]} which previously got wrapped as one bogus
+    row with columns ['columns','rows'].
+    """
+    from parrot.models.outputs import StructuredChartConfig
+
+    cfg = StructuredChartConfig(
+        type="radar",
+        x="cat",
+        y=["val"],
+        data={"columns": ["cat", "val"], "rows": [["A", 1], ["B", 2]]},
+    )
+    assert cfg.data == [{"cat": "A", "val": 1}, {"cat": "B", "val": 2}]
+
+
+def test_structured_chart_config_data_dict_orientation_normalized():
+    """data in pandas default 'dict' orientation ({col: {idx: val}}) → records."""
+    from parrot.models.outputs import StructuredChartConfig
+
+    cfg = StructuredChartConfig(
+        type="bar",
+        x="m",
+        y=["v"],
+        data={"m": {0: "Jan", 1: "Feb"}, "v": {0: 1, 1: 2}},
+    )
+    assert cfg.data == [{"m": "Jan", "v": 1}, {"m": "Feb", "v": 2}]
 
 
 def test_structured_chart_config_data_excluded_from_output_dump():
@@ -267,25 +331,147 @@ async def test_renderer_cfg_data_wins_over_dataframe(bar_config_json):
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_preserves_data_when_cfg_data_empty():
-    """When cfg.data is empty, existing response.data is left untouched."""
+async def test_renderer_uses_existing_data_when_cfg_data_empty():
+    """When cfg.data is empty, the renderer uses the pre-existing response.data.
+
+    The LLM does not embed rows reliably; the agent-injected data is the source.
+    When the config's x/y already match the existing rows, they are kept as-is.
+    """
     import json
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
-    # A valid config with no data rows
     config_no_data = json.dumps({"type": "bar", "x": "m", "y": ["v"]})
     pre_existing = [{"m": "Jan", "v": 1}]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
     resp = SimpleNamespace(code=config_no_data, data=pre_existing, output=None, response=None)
     output, wrapped = await r.render(resp)
 
-    # wrapped = explanation (None since resp.response is None)
     assert wrapped is None
+    assert output is not None
     assert "data" not in output
-    # No cfg.data → existing data must be preserved
+    assert output["x"] == "m" and output["y"] == ["v"]  # already valid → unchanged
     assert resp.data is pre_existing
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_reconciles_mismatched_columns():
+    """LLM names x/y that don't exist → renderer infers them from the data.
+
+    Mirrors the real failure shape: the config says x="category" but the injected
+    DataFrame has columns grp / sub / amount. The renderer rewrites x to the
+    first non-numeric column and y to the numeric columns so the frontend can
+    actually render. (Placeholder column names/values only.)
+    """
+    import json
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    config = json.dumps({"type": "pie", "x": "category", "y": ["amount"]})
+    injected = [
+        {"grp": "X", "sub": "A", "amount": 10},
+        {"grp": "X", "sub": "B", "amount": 20},
+    ]
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=config, data=injected, output=None, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None
+    assert output is not None
+    # x was "category" (absent) → first non-numeric column
+    assert output["x"] == "grp"
+    # y "amount" exists → kept
+    assert output["y"] == ["amount"]
+    assert resp.data is injected
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_reconciles_from_dataframe():
+    """A pandas DataFrame in response.data is converted to records + reconciled."""
+    import json
+    import pandas as pd
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    # config invents x/y that don't match the DataFrame columns
+    config = json.dumps({"type": "bar", "x": "metric", "y": ["value"]})
+    df = pd.DataFrame({"region": ["N", "S"], "sales": [100, 200]})
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=config, data=df, output=None, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None
+    assert output is not None
+    assert output["x"] == "region"      # first non-numeric column
+    assert output["y"] == ["sales"]     # numeric column
+    assert isinstance(resp.data, list) and len(resp.data) == 2
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_output_columns_always_match_data():
+    """INVARIANT: after render, config.x and every config.y exist in response.data.
+
+    This is exactly what the frontend guard checks before rendering. We exercise
+    several shapes the radar/finance agent produced (matching cols, mismatched
+    cols, index column, DataFrame source) and assert the config/data stay aligned
+    so the frontend never shows "columns don't match".
+    """
+    import json
+    import pandas as pd
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    cases = [
+        # radar: config matches the injected DataFrame columns
+        (json.dumps({"type": "radar", "x": "cat", "y": ["amount"]}),
+         pd.DataFrame({"cat": ["A", "B"], "amount": [10, 20]})),
+        # config invents x/y; data has different real columns
+        (json.dumps({"type": "radar", "x": "expense_category", "y": ["total_amount"]}),
+         pd.DataFrame({"grp": ["A", "B"], "amt": [1, 2]})),
+        # data carries a leaked pandas index column
+        (json.dumps({"type": "bar", "x": "cat", "y": ["amount"]}),
+         [{"index": 0, "cat": "A", "amount": 10}, {"index": 1, "cat": "B", "amount": 20}]),
+    ]
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    for code, data in cases:
+        resp = SimpleNamespace(code=code, data=data, output=None, response=None)
+        output, wrapped = await r.render(resp)
+        assert output is not None, f"render failed for {code}"
+        rows = resp.data
+        assert isinstance(rows, list) and rows, "response.data must be non-empty rows"
+        cols = set(rows[0].keys())
+        # The exact invariant the frontend's hasValidColumns enforces:
+        assert output["x"] in cols, f"x={output['x']} not in {cols}"
+        assert all(y in cols for y in output["y"]), f"y={output['y']} not all in {cols}"
+        assert "index" not in output["y"], "index must never be a y series"
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_drops_index_column_from_y():
+    """An 'index' column (pandas row index) is never emitted as a y series."""
+    import json
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    # Model named both an index column and the real metric in y.
+    config = json.dumps({"type": "radar", "x": "cat", "y": ["index", "val"]})
+    rows = [{"index": 0, "cat": "A", "val": 10}, {"index": 1, "cat": "B", "val": 20}]
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=config, data=rows, output=None, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert wrapped is None
+    assert output["x"] == "cat"
+    assert output["y"] == ["val"]  # "index" dropped → single meaningful series
 
 
 @satellite_available
