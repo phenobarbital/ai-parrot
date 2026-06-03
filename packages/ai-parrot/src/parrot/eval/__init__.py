@@ -35,6 +35,7 @@ from parrot.eval.sandbox.base import (
     SandboxProvider,
     SandboxSpec,
 )
+from parrot.eval.evaluators.base import AbstractEvaluator, Metric
 from parrot.eval.sandbox.state import (
     DatabaseToolkitBinder,
     DictStateBackend,
@@ -77,6 +78,9 @@ __all__ = [
     # state backend
     "StateBackend",
     "DictStateBackend",
+    # evaluator ABCs
+    "Metric",
+    "AbstractEvaluator",
     # state sandbox + binders
     "ToolkitBinder",
     "InMemoryStateSandbox",
