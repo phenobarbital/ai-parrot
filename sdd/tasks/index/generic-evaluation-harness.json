@@ -72,7 +72,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Deterministic snapshot store; consumed by sandbox + binders + evaluator.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1418-state-backend.md"
+      "completed_at": "2026-06-03T16:53:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1418-state-backend.md"
     },
     {
       "id": "TASK-1419",
