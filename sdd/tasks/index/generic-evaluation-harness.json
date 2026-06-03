@@ -196,7 +196,7 @@
       "feature_id": "FEAT-217",
       "feature": "generic-evaluation-harness",
       "spec": "sdd/specs/generic-evaluation-harness.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -206,8 +206,8 @@
       "parallelism_notes": "Distinct DatasetLoader (not AbstractLoader). Only depends on models.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1424-dataset-loaders.md"
+      "completed_at": "2026-06-03T17:09:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1424-dataset-loaders.md"
     },
     {
       "id": "TASK-1425",
