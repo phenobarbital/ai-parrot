@@ -145,6 +145,45 @@ class DatasetSpatialProfile(BaseModel):
         description="Declared hint: True = native geography precision expected.",
     )
 
+    # ── FEAT-221 Presentation Hints (optional, backward-compatible) ───────────
+
+    label_col: Optional[str] = Field(
+        default=None,
+        description=(
+            "Property key for the marker label (e.g. 'name'). "
+            "Used by StructuredMapRenderer to set MapLayer.label_field."
+        ),
+    )
+    tooltip_template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Per-layer tooltip template distinct from description_template. "
+            "Falls back to description_template when unset. "
+            "Applied client-side over feature.properties via str.format_map."
+        ),
+    )
+    column_titles: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional human-readable column titles keyed by property column name. "
+            "Renderer default = column name when absent."
+        ),
+    )
+    column_formats: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional display format hints keyed by property column name. "
+            "Allowed values: currency | percent | email | uri | enum | id | code."
+        ),
+    )
+    default_data_shape: Literal["geojson", "rows"] = Field(
+        default="geojson",
+        description=(
+            "Per-dataset default data payload shape for MapLayer.data_shape (G6). "
+            "'geojson' passes features through; 'rows' flattens to canonical row dicts."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_geometry_source(self) -> "DatasetSpatialProfile":  # noqa: F821
         """Validate that at least one geometry source is provided.
