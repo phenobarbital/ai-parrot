@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -391,19 +391,37 @@ class TableSource(DataSource):
     def _build_filter_clause(self) -> str:
         """Build a SQL WHERE fragment from the permanent_filter dict.
 
-        Scalar values produce ``column = 'value'``.
-        List/tuple values produce ``column IN ('a', 'b')``.
+        Supported value forms (all others raise ``ValueError``):
+
+        - **Scalar** (str / int / float): ``column = 'value'``
+        - **list / tuple**: ``column IN ('a', 'b')``
+        - **dict with keys ``"min"`` and ``"max"``**: ``column BETWEEN min AND max``
+          (additive range predicate — does NOT disturb the equality/IN path).
 
         Returns:
             SQL fragment (without leading WHERE/AND), or empty string
             if no permanent filter is set.
+
+        Raises:
+            ValueError: If a filter value is a dict without both ``"min"`` and
+                ``"max"`` keys (guard against misuse of the range form).
         """
         if not self._permanent_filter:
             return ''
 
         parts: List[str] = []
         for col, val in self._permanent_filter.items():
-            if isinstance(val, (list, tuple)):
+            if isinstance(val, dict):
+                # Range / BETWEEN predicate: {"min": lo, "max": hi}
+                if "min" not in val or "max" not in val:
+                    raise ValueError(
+                        f"Range filter for column '{col}' must be a dict with "
+                        f"'min' and 'max' keys; got keys: {sorted(val.keys())}"
+                    )
+                lo = self._escape_value(val["min"])
+                hi = self._escape_value(val["max"])
+                parts.append(f"{col} BETWEEN {lo} AND {hi}")
+            elif isinstance(val, (list, tuple)):
                 escaped = ', '.join(self._escape_value(v) for v in val)
                 parts.append(f"{col} IN ({escaped})")
             else:
