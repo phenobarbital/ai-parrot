@@ -35,6 +35,7 @@ from parrot.eval.sandbox.base import (
     SandboxProvider,
     SandboxSpec,
 )
+from parrot.eval.runner import EvalReport, EvalRunConfig, EvalRunner
 from parrot.eval.datasets import (
     DatasetLoader,
     HFDatasetLoader,
@@ -92,6 +93,10 @@ __all__ = [
     # state backend
     "StateBackend",
     "DictStateBackend",
+    # runner
+    "EvalRunConfig",
+    "EvalRunner",
+    "EvalReport",
     # dataset loaders
     "DatasetLoader",
     "JSONLDatasetLoader",
