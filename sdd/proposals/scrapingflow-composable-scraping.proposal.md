@@ -1,5 +1,5 @@
 ---
-id: FEAT-221
+id: FEAT-222
 title: "ScrapingFlow: composable long-horizon scraping via TemplatePlan, ScrapingFlow DAG, and FlowExecutor"
 slug: scrapingflow-composable-scraping
 type: feature
@@ -13,17 +13,17 @@ source:
   summary_oneline: "ScrapingFlow: composable long-horizon scraping via TemplatePlan, ScrapingFlow DAG, and FlowExecutor"
 overall_confidence: high
 base_branch: dev
-research_state: sdd/state/FEAT-221/
+research_state: sdd/state/FEAT-222/
 created: 2026-06-04
 updated: 2026-06-04
 ---
 
-# FEAT-221 — ScrapingFlow: Composable Long-Horizon Scraping
+# FEAT-222 — ScrapingFlow: Composable Long-Horizon Scraping
 
 > **Mode**: enrichment
 > **Confidence**: high
 > **Source**: `file: sdd/proposals/scrapingflow.proposal.md` (brainstorm document, Option A recommended)
-> **Audit**: [`sdd/state/FEAT-221/`](../state/FEAT-221/)
+> **Audit**: [`sdd/state/FEAT-222/`](../state/FEAT-222/)
 
 ---
 
@@ -71,7 +71,7 @@ the standalone executor alike.
 
 ## 2. Codebase Findings
 
-> All entries grounded in findings at `sdd/state/FEAT-221/findings/`. No fabricated paths.
+> All entries grounded in findings at `sdd/state/FEAT-222/findings/`. No fabricated paths.
 
 ### 2.1 Localization
 
@@ -159,7 +159,7 @@ the standalone executor alike.
 | Mar 2026 | ~7 | ExtractionPlanRegistry, BasePlanRegistry generics, RecallProcessor, pre-built plans | extraction_registry.py, base_registry.py |
 
 20 commits in 60 days. Active development on the extraction/registry layer (March) and
-driver abstraction (April) — both directly relevant to FEAT-221's design. No conflicts
+driver abstraction (April) — both directly relevant to FEAT-222's design. No conflicts
 with recent work; the module is stable. *Evidence*: F009
 
 ---
@@ -320,7 +320,7 @@ Distribution: **10** high, **2** medium, **0** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-221`** — *Rationale*: Localization is high-confidence across all 12
+**`/sdd-spec FEAT-222`** — *Rationale*: Localization is high-confidence across all 12
 affected code areas, the scope is well-defined with 9 new components (including the
 `advanced_actions` extraction) and clear integration points, and the brainstorm already
 explored and rejected alternatives. The remaining unresolved question (inputs resolver
@@ -328,9 +328,9 @@ grammar) is an implementation-level decision best resolved during spec writing.
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-221`** — not needed; the source document already IS a brainstorm
+- **`/sdd-brainstorm FEAT-222`** — not needed; the source document already IS a brainstorm
   with Option A validated. Research confirms the design, with corrections noted above.
-- **`/sdd-task FEAT-221`** — premature; the scope is too large for direct task decomposition
+- **`/sdd-task FEAT-222`** — premature; the scope is too large for direct task decomposition
   without a spec.
 - **Manual review** — not needed; research was complete (not truncated) and confidence is high.
 
@@ -340,10 +340,10 @@ grammar) is an implementation-level decision best resolved during spec writing.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-221/state.json` |
-| Source (raw) | `sdd/state/FEAT-221/source.md` |
-| Findings (digests) | `sdd/state/FEAT-221/findings/F001-*.md` through `F011-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-221/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-222/state.json` |
+| Source (raw) | `sdd/state/FEAT-222/source.md` |
+| Findings (digests) | `sdd/state/FEAT-222/findings/F001-*.md` through `F011-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-222/synthesis.json` |
 
 **Budget consumed**:
 - Files read: ~35 / 100 (loose)
@@ -365,4 +365,4 @@ grammar) is an implementation-level decision best resolved during spec writing.
 | Synthesis prompt | `sdd/templates/synthesis.prompt.md v1.0` |
 | Plan prompt | `sdd/templates/research_plan.prompt.md v1.0` |
 | Schema versions | state=1.0, synthesis=1.0, research_plan=1.0 |
-| Operator | Claude (FEAT-221 research session) |
+| Operator | Claude (FEAT-222 research session) |

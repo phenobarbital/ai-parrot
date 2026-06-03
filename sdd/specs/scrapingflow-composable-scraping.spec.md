@@ -8,13 +8,13 @@ base_branch: dev
 
 # Feature Specification: ScrapingFlow — Composable Long-Horizon Scraping
 
-**Feature ID**: FEAT-221
+**Feature ID**: FEAT-222
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Proposal**: `sdd/proposals/scrapingflow-composable-scraping.proposal.md`
-**Research audit**: `sdd/state/FEAT-221/`
+**Research audit**: `sdd/state/FEAT-222/`
 
 ---
 
@@ -893,4 +893,4 @@ in 60 days, no conflicting features in progress).
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-04 | Jesus Lara / Claude | Initial draft from FEAT-221 proposal |
+| 0.1 | 2026-06-04 | Jesus Lara / Claude | Initial draft from FEAT-222 proposal |

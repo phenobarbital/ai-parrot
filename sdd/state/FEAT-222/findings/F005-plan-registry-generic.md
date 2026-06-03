@@ -43,4 +43,4 @@ depth: 0
 
 ## Notes
 
-For FEAT-221, the recommended pattern is: create a `TemplatePlanRegistry(BasePlanRegistry[TemplatePlan])` with `index_filename="template_registry.json"`. Flow checkpoints could be a separate registry or a simple JSON file per flow execution run. The fingerprint scheme needs adjustment for templates: `template_name + param_hash` instead of URL-only.
+For FEAT-222, the recommended pattern is: create a `TemplatePlanRegistry(BasePlanRegistry[TemplatePlan])` with `index_filename="template_registry.json"`. Flow checkpoints could be a separate registry or a simple JSON file per flow execution run. The fingerprint scheme needs adjustment for templates: `template_name + param_hash` instead of URL-only.

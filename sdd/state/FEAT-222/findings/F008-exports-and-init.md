@@ -34,4 +34,4 @@ depth: 0
 
 ## Notes
 
-New exports needed for FEAT-221: TemplatePlan, ParamSpec, ScrapingFlow, FlowNode, FlowExecutor, FlowResult, and potentially TemplatePlanRegistry.
+New exports needed for FEAT-222: TemplatePlan, ParamSpec, ScrapingFlow, FlowNode, FlowExecutor, FlowResult, and potentially TemplatePlanRegistry.
