@@ -262,9 +262,7 @@ async def test_renderer_malformed_graceful_degradation():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-06-02
+**Notes**: Created StructuredChartRenderer in satellite package. Added _MODULE_MAP entry in core __init__.py. System prompt embeds full JSON schema, demands JSON-only, instructs fetch-via-tools, requires ISO 8601 for time mode. Renderer: reads code first, falls back to text extraction, validates into StructuredChartConfig, dumps without data, routes rows to response.data without clobbering, graceful degradation. Added _render_chart_content stub to satisfy BaseChart abstract method. All 20 tests pass.
+**Deviations from spec**: Added sys.path.insert in test file (parents[5] = worktree root) to wire the satellite path so satellite tests run. This is a necessary infrastructure addition since ai-parrot-visualizations is not installed in the venv.
