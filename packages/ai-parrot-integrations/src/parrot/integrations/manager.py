@@ -4,20 +4,22 @@ Integration Bot Manager.
 Manages lifecycle of bots (Telegram, MS Teams, WhatsApp) exposing AI-Parrot agents.
 Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml fallback).
 """
+# ``annotations`` future-import keeps every annotation a string, so the
+# aiogram symbols (``Bot``/``Dispatcher``) referenced in instance-attribute
+# and method annotations are never evaluated at import time. Combined with the
+# lazy imports inside ``_start_telegram_bot``, this lets ``IntegrationBotManager``
+# be imported without the optional ``aiogram`` (Telegram) dependency installed.
+from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
 
-from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
 from navconfig.logging import logging
 from parrot.conf import AGENTS_DIR, REDIS_URL
 from parrot.human import (
     HumanInteractionManager,
-    TelegramHumanChannel,
     set_default_human_manager,
 )
 from .models import (
@@ -28,6 +30,8 @@ from .models import (
     SlackAgentConfig,
 )
 if TYPE_CHECKING:
+    from aiogram import Bot, Dispatcher
+    from parrot.human import TelegramHumanChannel
     from .telegram.wrapper import TelegramAgentWrapper
     from .msteams.wrapper import MSTeamsAgentWrapper
     from .whatsapp.wrapper import WhatsAppAgentWrapper
@@ -171,6 +175,13 @@ class IntegrationBotManager:
         agent = await self._get_agent(config.chatbot_id, config.system_prompt_override)
         if not agent:
             return
+
+        # Lazy aiogram + Telegram HITL imports: keep the optional Telegram
+        # dependency out of the import path for non-Telegram deployments.
+        from aiogram import Bot, Dispatcher
+        from aiogram.client.default import DefaultBotProperties
+        from aiogram.enums import ParseMode
+        from parrot.human import TelegramHumanChannel
 
         bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
         dp = Dispatcher()

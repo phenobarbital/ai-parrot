@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-216
 **Date**: 2026-06-02
 **Author**: jesuslarag (via Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 > Source proposal: `sdd/proposals/odoo-fieldservice-toolkit.proposal.md`
