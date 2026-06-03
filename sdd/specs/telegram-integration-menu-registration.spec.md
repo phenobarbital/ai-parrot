@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-220
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: (next minor)
 
 > Source brainstorm: `sdd/proposals/telegram-integration-menu-registration.brainstorm.md`
@@ -436,9 +436,9 @@ class JiraSpecialist(...):
 - [ ] Do any deployments set **per-chat scoped** command menus
       (`BotCommandScopeChat`) that would override the default-scope menu? If so,
       a follow-up is needed to clear/refresh those. — *Owner: Jesus*
-- [ ] Confirm `register_menu=False` is the only intended opt-out (i.e. no
+- [x] Confirm `register_menu=False` is the only intended opt-out (i.e. no
       deployment relies on `IntegrationBotManager` silently never registering a
-      menu). — *Owner: Jesus*
+      menu). — *Owner: Jesus*: confirmed
 
 ---
 

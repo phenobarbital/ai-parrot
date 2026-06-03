@@ -27,11 +27,18 @@ from ..toolkit import AbstractToolkit
 from ...conf import REDIS_DATASET_URL
 from .sources.base import DataSource
 
+# Runtime import (not TYPE_CHECKING): these contracts are referenced as string
+# forward refs in tool method signatures (e.g. spatial_filter). Because this
+# module uses `from __future__ import annotations`, ToolkitTool resolves those
+# annotations via get_type_hints() at runtime — the names must exist in module
+# globals or schema generation fails (NameError → empty args_schema). The
+# contracts module is I/O-free (typing + pydantic only), so no circular import.
+from .spatial.contracts import SpatialFilterSpec, SpatialFeatureCollection
+
 if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
     from ...auth.permission import PermissionContext
     from ...auth.resolver import AbstractPermissionResolver
-    from .spatial.contracts import SpatialFilterSpec, SpatialFeatureCollection
 
 # Module-level ContextVar that isolates the per-call PermissionContext for each
 # asyncio task running on a shared DatasetManager instance.  Set by

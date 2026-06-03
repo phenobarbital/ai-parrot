@@ -1765,6 +1765,16 @@ Available documentation UIs:
             self.logger.info("ArtifactStore initialized and published to app['artifact_store']")
         except Exception as exc:
             self.logger.warning("ArtifactStore initialization failed: %s", exc)
+        # Bootstrap the web HITL stack BEFORE loading bots so the process-wide
+        # HumanInteractionManager exists when at_startup agents run configure()
+        # (e.g. ExpenseApprovalAgent wires its escalation policy there). This
+        # call is idempotent: the deferred _hitl_deferred_startup on_startup
+        # hook still runs later to attach the "web" channel once
+        # app['user_socket_manager'] is populated.
+        try:
+            await setup_web_hitl(app)
+        except Exception as exc:
+            self.logger.warning("Early setup_web_hitl failed: %s", exc)
         # configure all pre-configured chatbots:
         await self.load_bots(app)
         # Initialize BotConfigStorage and attach to app

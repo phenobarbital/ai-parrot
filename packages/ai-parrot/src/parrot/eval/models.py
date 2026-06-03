@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    pass  # SandboxSpec imported at runtime via model_rebuild()
+    from parrot.eval.sandbox.base import SandboxSpec
 
 
 class EvalTask(BaseModel):
@@ -37,7 +37,7 @@ class EvalTask(BaseModel):
     task_id: str
     inputs: dict[str, Any]
     expected: dict[str, Any] | None = None
-    sandbox_spec: "Any | None" = None  # forward ref: SandboxSpec | None
+    sandbox_spec: "SandboxSpec | None" = None  # forward ref resolved via model_rebuild()
     user_scenario: str | None = None
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

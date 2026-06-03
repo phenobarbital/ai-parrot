@@ -73,7 +73,10 @@ from parrot.human.models import (
     EscalationPolicy,
     EscalationTier,
 )
-
+from parrot.human.channels.teams import (
+    TeamsHitlConfig,
+    setup_teams_hitl,
+)
 
 _BACKSTORY = """
 You are the Expense Approval Concierge. You help employees get expense and
@@ -426,10 +429,7 @@ class ExpenseApprovalAgent(Agent):
         target_app = app or getattr(self, "app", None)
         if "teams" not in getattr(manager, "channels", {}):
             try:
-                from parrot.human.channels.teams import (
-                    TeamsHitlConfig,
-                    setup_teams_hitl,
-                )
+
 
                 cfg = TeamsHitlConfig()
                 if target_app is not None and getattr(cfg, "app_id", None):
@@ -477,8 +477,10 @@ class ExpenseApprovalAgent(Agent):
             )
             return
 
-        tier1_timeout = float(config.get("EXPENSE_TIER1_TIMEOUT", fallback=180))
-        tier2_timeout = float(config.get("EXPENSE_TIER2_TIMEOUT", fallback=3600))
+        tier1_timeout = float(
+            config.get("EXPENSE_TIER1_TIMEOUT", fallback=180))
+        tier2_timeout = float(
+            config.get("EXPENSE_TIER2_TIMEOUT", fallback=3600))
         self._policy = self._build_policy(
             approver_email, tier1_timeout, tier2_timeout
         )

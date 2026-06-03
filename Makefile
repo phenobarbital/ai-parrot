@@ -186,6 +186,7 @@ endif
 develop:
 	uv sync --all-packages --all-extras --no-extra gemma4
 	uv pip install querysource
+	$(MAKE) build-inplace
 	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
 # Fast dev install: all packages but skip heavy ML deps
@@ -314,7 +315,7 @@ build-cython:
 # Build Cython extensions in place (for development)
 build-inplace:
 	@echo "Building Cython extensions in place..."
-	python setup.py build_ext --inplace
+	cd packages/ai-parrot && python setup.py build_ext --inplace
 
 # Full build using uv (builds all workspace packages)
 build: clean
