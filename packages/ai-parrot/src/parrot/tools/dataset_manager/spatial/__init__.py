@@ -7,6 +7,7 @@ Exposes the public surface:
 """
 from .contracts import SpatialFilterSpec, DatasetSpatialProfile, SpatialFeatureCollection
 from .registry import SPATIAL_PROFILE_REGISTRY, register_spatial_profile, get_spatial_profile
+from .compiler import SpatialCompiler, CompiledQuery
 
 __all__ = [
     "SpatialFilterSpec",
@@ -15,4 +16,6 @@ __all__ = [
     "SPATIAL_PROFILE_REGISTRY",
     "register_spatial_profile",
     "get_spatial_profile",
+    "SpatialCompiler",
+    "CompiledQuery",
 ]
