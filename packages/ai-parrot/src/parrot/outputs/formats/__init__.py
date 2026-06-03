@@ -28,6 +28,7 @@ _MODULE_MAP: dict = {
     OutputMode.ALTAIR:          ('.altair',),
     OutputMode.STRUCTURED_CHART: ('.structured_chart',),
     OutputMode.STRUCTURED_TABLE: ('.structured_table',),
+    OutputMode.STRUCTURED_MAP:   ('.structured_map',),
     OutputMode.JINJA2:          ('.jinja2',),
     OutputMode.TEMPLATE_REPORT: ('.template_report',),
     OutputMode.BOKEH:           ('.bokeh',),
