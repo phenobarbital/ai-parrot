@@ -92,7 +92,7 @@
       "feature_id": "FEAT-218",
       "feature": "structured-table",
       "spec": "sdd/specs/structured-table.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,8 @@
       "parallelism_notes": "Reference producer #1. Touches PandasAgent only; runnable in parallel with TASK-1434 (DB/SQL agent) — disjoint files.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:04:13+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1433-pandasagent-producer.md"
+      "completed_at": "2026-06-03T16:15:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1433-pandasagent-producer.md"
     },
     {
       "id": "TASK-1434",
