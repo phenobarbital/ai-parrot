@@ -14,7 +14,7 @@
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation: all other tasks import its contracts/registry. Touches tool.py (get_manifest). Run first.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1436-spatial-contracts-registry-manifest.md"
+      "completed_at": "2026-06-03T16:47:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1436-spatial-contracts-registry-manifest.md"
     },
     {
       "id": "TASK-1437",
