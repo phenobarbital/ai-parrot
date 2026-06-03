@@ -165,6 +165,88 @@ class DatasetSpatialProfile(BaseModel):
         return self
 
 
+class SpatialLayerResult(BaseModel):
+    """Per-dataset slice of a spatial filter result (FEAT-221 G4).
+
+    Attributes:
+        layer: Leaflet layer id / GeoJSON source discriminator (from DatasetSpatialProfile).
+        features: GeoJSON Feature dicts for this dataset.
+        total_count: True count of matching features before capping.
+        capped: True when the result was truncated at the hard cap.
+        geodesic: Whether the executed path was geodesic (True) or
+            spherical-approximate (False).
+    """
+
+    layer: str = Field(..., description="Leaflet layer id / GeoJSON source discriminator.")
+    features: List[Dict] = Field(
+        default_factory=list,
+        description="GeoJSON Feature objects for this dataset.",
+    )
+    total_count: int = Field(
+        default=0,
+        ge=0,
+        description="True count of matching features (>= len(features) when capped).",
+    )
+    capped: bool = Field(
+        default=False,
+        description="True when the result was truncated at the hard cap.",
+    )
+    geodesic: bool = Field(
+        default=True,
+        description="True = geodesic path; False = spherical-approx.",
+    )
+
+
+class SpatialResult(BaseModel):
+    """Versioned per-dataset result returned by spatial_filter (FEAT-221 G4).
+
+    Replaces the merged ``SpatialFeatureCollection`` with per-dataset grouping.
+    The ``as_feature_collection()`` method reproduces the legacy merged shape for
+    backward-compatible callers (e.g. the transport handler).
+
+    Attributes:
+        version: Schema version — always 2 for this model.
+        layers: Per-dataset results keyed by resolved dataset name.
+    """
+
+    version: Literal[2] = Field(
+        default=2,
+        description="Schema version — always 2.",
+    )
+    layers: Dict[str, SpatialLayerResult] = Field(
+        default_factory=dict,
+        description="Per-dataset results keyed by resolved dataset name.",
+    )
+
+    def as_feature_collection(self) -> "SpatialFeatureCollection":
+        """Reproduce the legacy merged SpatialFeatureCollection shape.
+
+        Concatenates all per-dataset features, sums ``total_count`` values,
+        ORs the ``capped`` flags, and builds ``geodesic_paths`` from each
+        layer's ``geodesic`` flag.
+
+        Returns:
+            A ``SpatialFeatureCollection`` compatible with pre-FEAT-221 callers.
+        """
+        all_features: List[Dict] = []
+        total_count = 0
+        capped = False
+        geodesic_paths: Dict[str, bool] = {}
+
+        for dataset_name, layer_result in self.layers.items():
+            all_features.extend(layer_result.features)
+            total_count += layer_result.total_count
+            capped = capped or layer_result.capped
+            geodesic_paths[dataset_name] = layer_result.geodesic
+
+        return SpatialFeatureCollection(
+            features=all_features,
+            total_count=total_count,
+            capped=capped,
+            geodesic_paths=geodesic_paths,
+        )
+
+
 class SpatialFeatureCollection(BaseModel):
     """GeoJSON FeatureCollection returned by DatasetManager.spatial_filter.
 
