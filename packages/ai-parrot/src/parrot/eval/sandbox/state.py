@@ -475,3 +475,58 @@ class DatabaseToolkitBinder(ToolkitBinder):
             "DatabaseToolkitBinder: bound %r to DictStateBackend",
             type(toolkit).__name__,
         )
+
+
+# ---------------------------------------------------------------------------
+# JiraToolkitBinder (TASK-1420)
+# ---------------------------------------------------------------------------
+
+
+class JiraToolkitBinder(ToolkitBinder):
+    """Binder for ``JiraToolkit``.
+
+    Pre-seeds ``toolkit.jira = FakeJiraClient(backend)`` so all tool calls
+    that access ``self.jira`` go to the in-memory backend.  No network calls
+    and no ``credential_resolver`` resolution occur.
+
+    For non-oauth2_3lo auth modes (e.g. ``basic_auth``, ``token_auth``),
+    ``JiraToolkit._pre_execute`` is a no-op and ``self.jira`` is used
+    directly by every tool method — patching ``toolkit.jira`` is sufficient.
+
+    For ``oauth2_3lo`` mode the binder additionally pre-seeds
+    ``toolkit._client_cache`` with the ``FakeJiraClient`` so the cache
+    hit path in ``_pre_execute`` returns the fake without network I/O.
+    """
+
+    def bind(self, toolkit: Any, backend: "DictStateBackend") -> None:
+        """Inject *backend* into *toolkit*.
+
+        Args:
+            toolkit: A ``JiraToolkit`` instance.
+            backend: The ``DictStateBackend`` to use as the Jira store.
+        """
+        from parrot.eval.sandbox.fakes import FakeJiraClient, StaticResolver
+
+        fake_client = FakeJiraClient(backend)
+
+        # Direct assignment works for basic_auth / token_auth / oauth modes.
+        toolkit.jira = fake_client
+
+        # For oauth2_3lo: ensure _client_cache is seeded so the cache-hit
+        # path in _pre_execute returns the fake without calling the resolver.
+        if getattr(toolkit, "auth_type", None) == "oauth2_3lo":
+            # Use the StaticResolver's token fingerprint as the cache key.
+            fake_token = "fake-eval-token-0000000000000000"
+            token_hash = (fake_token[:16] + fake_token[-8:])
+            # Pre-seed a catch-all user key so any (channel, user_id) hits.
+            toolkit.credential_resolver = StaticResolver(fake_client, fake_token)
+            if not hasattr(toolkit, "_client_cache"):
+                toolkit._client_cache = {}
+            # Store under a sentinel key — actual lookups use f"{channel}:{user_id}".
+            # Also store under the empty user key as a fallback.
+            toolkit._client_cache["eval:eval"] = (fake_client, token_hash)
+
+        logger.debug(
+            "JiraToolkitBinder: bound %r to FakeJiraClient",
+            type(toolkit).__name__,
+        )

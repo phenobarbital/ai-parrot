@@ -40,6 +40,7 @@ from parrot.eval.sandbox.state import (
     DictStateBackend,
     InMemoryStateSandbox,
     InMemoryStateSandboxProvider,
+    JiraToolkitBinder,
     StateBackend,
     ToolkitBinder,
 )
@@ -81,4 +82,5 @@ __all__ = [
     "InMemoryStateSandbox",
     "InMemoryStateSandboxProvider",
     "DatabaseToolkitBinder",
+    "JiraToolkitBinder",
 ]
