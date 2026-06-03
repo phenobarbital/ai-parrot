@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-03T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-03T17:03:20+00:00",
   "tasks": [
     {
       "id": "TASK-1436",
@@ -116,7 +116,7 @@
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -126,8 +126,8 @@
       "parallelism_notes": "Exposes spatial_filter over transport; needs the orchestration method. Final task.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1441-transport-handler-agentalk-envelope.md"
+      "completed_at": "2026-06-03T17:03:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1441-transport-handler-agentalk-envelope.md"
     }
   ]
 }
