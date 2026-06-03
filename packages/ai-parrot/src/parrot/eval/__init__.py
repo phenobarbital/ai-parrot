@@ -35,6 +35,10 @@ from parrot.eval.sandbox.base import (
     SandboxProvider,
     SandboxSpec,
 )
+from parrot.eval.sandbox.state import (
+    DictStateBackend,
+    StateBackend,
+)
 
 # Resolve the forward reference in EvalTask.sandbox_spec now that SandboxSpec
 # is importable.
@@ -65,4 +69,7 @@ __all__ = [
     "AgentFactory",
     "NoopSandbox",
     "NoopSandboxProvider",
+    # state backend
+    "StateBackend",
+    "DictStateBackend",
 ]
