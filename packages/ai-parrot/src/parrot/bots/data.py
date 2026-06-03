@@ -25,7 +25,7 @@ from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
-from ..models.outputs import OutputMode, StructuredOutputConfig
+from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..memory.abstract import ConversationTurn
 from ..conf import STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
@@ -1496,8 +1496,20 @@ class PandasAgent(BasicAgent):
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
                 elif return_structured:
+                    # FEAT-215: for STRUCTURED_CHART the structured output IS the
+                    # chart config (mirrors the frontend AppChartConfig), not the
+                    # generic PandasAgentResponse. Forcing PandasAgentResponse here
+                    # made the model emit a prose-only {explanation} and omit the
+                    # chart config; advertising StructuredChartConfig (incl. the
+                    # fast-path JSON addendum below) makes it reliably emit the
+                    # config + embedded data rows.
+                    _forced_output_type = (
+                        StructuredChartConfig
+                        if output_mode == OutputMode.STRUCTURED_CHART
+                        else PandasAgentResponse
+                    )
                     llm_kwargs["structured_output"] = StructuredOutputConfig(
-                        output_type=PandasAgentResponse
+                        output_type=_forced_output_type
                     )
 
                 # Fast-path optimization for clients that split tools +
@@ -1539,6 +1551,31 @@ class PandasAgent(BasicAgent):
                 response.turn_id = getattr(response, 'turn_id', None) or turn_id
                 data_response: Optional[PandasAgentResponse] = response.output \
                     if isinstance(response.output, PandasAgentResponse) else None
+
+                # FEAT-215: in STRUCTURED_CHART mode the structured output IS the
+                # chart config (StructuredChartConfig), not a PandasAgentResponse, so
+                # the branch below is skipped. Route the config to response.code where
+                # StructuredChartRenderer reads and validates it (it accepts a dict).
+                if output_mode == OutputMode.STRUCTURED_CHART and data_response is None:
+                    _cfg_out = response.output
+                    _chart_data_var: Optional[str] = None
+                    if isinstance(_cfg_out, StructuredChartConfig):
+                        response.code = _cfg_out.model_dump(mode="json", by_alias=True)
+                        _chart_data_var = _cfg_out.data_variable
+                    elif isinstance(_cfg_out, dict):
+                        response.code = _cfg_out
+                        _chart_data_var = (
+                            _cfg_out.get("data_variable")
+                            or _cfg_out.get("dataVariable")
+                        )
+                    # The chart config may name the DataFrame variable to chart.
+                    # Inject it explicitly: this disambiguates turns that produced
+                    # multiple DataFrames, where blind inference refuses to guess
+                    # (see _infer_data_variable_from_tools).
+                    if _chart_data_var:
+                        await self._inject_data_from_variable(
+                            response, _chart_data_var
+                        )
 
                 missing_data_variables: List[str] = []
                 if data_response:
@@ -1600,8 +1637,18 @@ class PandasAgent(BasicAgent):
                     response.tool_calls
                 )
                 if not inferred_var:
+                    # FEAT-215: in STRUCTURED_CHART mode the prompt asks the
+                    # agent to place the final chart rows in a conventionally
+                    # named DataFrame (`chart_data`). Prefer it when present so a
+                    # multi-DataFrame turn still resolves instead of refusing.
+                    _prefer = (
+                        ("chart_data", "chart_df")
+                        if output_mode == OutputMode.STRUCTURED_CHART
+                        else ()
+                    )
                     inferred_var = self._infer_data_variable_from_tools(
-                        response.tool_calls
+                        response.tool_calls,
+                        prefer_names=_prefer,
                     )
 
                 response_data_is_empty = (
@@ -2036,7 +2083,7 @@ class PandasAgent(BasicAgent):
         return None
 
     def _infer_data_variable_from_tools(
-        self, tool_calls: List[Any]
+        self, tool_calls: List[Any], prefer_names: tuple = ()
     ) -> Optional[str]:
         """Strict-mode inference of a ``data_variable`` from the current turn.
 
@@ -2104,6 +2151,15 @@ class PandasAgent(BasicAgent):
             and isinstance(pandas_tool.locals[var], pd.DataFrame)
             and not pandas_tool.locals[var].empty
         ]
+
+        # Convention-aware preference: when the caller passes conventional names
+        # (e.g. the structured_chart `chart_data` DataFrame), prefer the first
+        # one that is live this turn. This breaks a multi-candidate tie WITHOUT
+        # relaxing the anti-stale guard — we still only ever return a DataFrame
+        # created and live in the current turn's REPL context.
+        for name in prefer_names:
+            if name in live_dataframes:
+                return name
 
         # Strict disambiguation: return only when there is exactly one.
         if len(live_dataframes) == 1:

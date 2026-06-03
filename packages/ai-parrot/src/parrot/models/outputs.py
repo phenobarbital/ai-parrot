@@ -15,7 +15,7 @@ from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
 import os
 import uuid
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from .basic import OutputFormat
 
 
@@ -364,32 +364,105 @@ class StructuredChartConfig(BaseModel):
         default=None, alias="mapName",
         description="GeoJSON map name (frontend-validated, free-form; required for type='map')",
     )
+    title: Optional[str] = Field(
+        default=None,
+        description="Short chart title (≤1 line) shown as the card header.",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description=(
+            "One short paragraph (natural language) summarizing the chart's key "
+            "takeaway; shown as the message text alongside the chart."
+        ),
+    )
     data: List[dict] = Field(
         default_factory=list,
         description=(
-            "Flat data rows; INPUT-ONLY — excluded from `output`, "
-            "routed to response.data by the renderer."
+            "Optional: the rows to chart, as a list of flat dicts whose keys "
+            "include the x and y column names. When omitted, the renderer uses "
+            "the DataFrame the agent computed (injected into response.data) as "
+            "the data source instead — see StructuredChartRenderer."
+        ),
+    )
+    data_variable: Optional[str] = Field(
+        default=None,
+        alias="dataVariable",
+        description=(
+            "The name of the pandas DataFrame variable you created in a tool "
+            "(e.g. 'expense_breakdown') that holds the rows to chart. ALWAYS set "
+            "this to the variable that contains the chart data. It is REQUIRED "
+            "when the turn produced more than one DataFrame, so the system knows "
+            "which one to use; x and y must be columns of that DataFrame."
         ),
     )
 
+    @field_validator("data", mode="before")
+    @classmethod
+    def _normalize_data_orientation(cls, v):
+        """Accept any pandas-style orientation for ``data`` and coerce to records.
+
+        The LLM serializes the DataFrame inconsistently — sometimes as a list of
+        row dicts (``records``), sometimes as ``split`` orientation
+        ``{"columns": [...], "data": [[...], ...]}``, sometimes as the default
+        ``{col: {idx: val}}``. Only ``records`` matches ``List[dict]``; the others
+        used to fail validation and trigger a slow (~13s) reformat call. Normalize
+        them here so the chart pipeline is resilient to the serialization shape.
+
+        Args:
+            v: The raw ``data`` value from the LLM (list or dict orientation).
+
+        Returns:
+            A list of row dicts, or the value unchanged when already a list / not
+            a recognized orientation (lets normal validation handle it).
+        """
+        if not isinstance(v, dict):
+            return v
+        # 'split'/'tight' orientation: {"columns": [...], "data"|"rows"|"values": [[...]]}.
+        # The values key varies by serializer/LLM ('data' is pandas-canonical, but
+        # models also emit 'rows' or 'values'); accept any of them.
+        cols = v.get("columns")
+        rows = v.get("data")
+        if rows is None:
+            rows = v.get("rows")
+        if rows is None:
+            rows = v.get("values")
+        if isinstance(cols, list) and isinstance(rows, list):
+            return [
+                dict(zip(cols, r)) if isinstance(r, (list, tuple)) else r
+                for r in rows
+            ]
+        # pandas default 'dict' orientation: {col: {row_idx: value}}
+        if v and all(isinstance(col_vals, dict) for col_vals in v.values()):
+            indices = list(next(iter(v.values())).keys())
+            return [
+                {col: col_vals.get(idx) for col, col_vals in v.items()}
+                for idx in indices
+            ]
+        # A single row dict → wrap as one-row list
+        return [v]
+
     @model_validator(mode="after")
     def _validate_chart_constraints(self) -> "StructuredChartConfig":
-        """Validate map-name requirement and column presence.
+        """Validate the map-name requirement only.
+
+        We deliberately do NOT reject configs whose ``x``/``y`` don't match the
+        embedded data columns. The LLM frequently names semantic axes
+        (``x="expense_category"``) that differ from the keys it actually embeds,
+        and it delivers data through several paths (embedded rows, a python
+        variable, or a materialized dataset). Raising here forced a slow
+        reformat call and — worse — pre-empted ``StructuredChartRenderer``, which
+        is responsible for reconciling x/y against whatever rows are available.
+        So the only hard constraint left is the map-name requirement; column
+        alignment is handled downstream by the renderer.
 
         Returns:
             The validated StructuredChartConfig instance.
 
         Raises:
-            ValueError: When type='map' and mapName is absent, or when x/y
-                columns are missing from non-empty data rows.
+            ValueError: When type='map' and mapName is absent.
         """
         if self.type == "map" and not self.map_name:
             raise ValueError("type='map' requires 'mapName'")
-        if self.data:
-            cols = set(self.data[0].keys())
-            missing = [c for c in [self.x, *self.y] if c not in cols]
-            if missing:
-                raise ValueError(f"columns not present in data rows: {missing}")
         return self
 
 
