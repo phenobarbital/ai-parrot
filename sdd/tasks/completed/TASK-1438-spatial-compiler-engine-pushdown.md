@@ -150,9 +150,13 @@ you use Ibis or hand-written dialect templates and whether to touch `pyproject.t
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Notes**: Used hand-written SQL dialect templates (TASK-1437 NO-GO outcome). Two templates
+per driver (geom_col path and lat/lng path): _PG_PUSHDOWN_GEOM_TEMPLATE,
+_PG_PUSHDOWN_LATLON_TEMPLATE, _BQ_PUSHDOWN_GEOM_TEMPLATE, _BQ_PUSHDOWN_LATLON_TEMPLATE.
+Geodesic declare+verify: pg geography → True, pg geometry → False + warning,
+BigQuery GEOGRAPHY → always True. compile() is I/O-free (no AsyncDB import needed).
+execute() uses AsyncDB via source._get_connection_args() following the TableSource._run_query
+pattern. pyproject.toml NOT modified (ibis-framework not added per NO-GO decision).
+**Deviations from spec**: none
