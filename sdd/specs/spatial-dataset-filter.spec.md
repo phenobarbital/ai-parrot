@@ -490,10 +490,13 @@ class InMemorySource(DataSource): ...                         # l.14 (no driver,
 - [ ] **bbox prefilter as a range predicate** — *Owner: Module 4*: Can `_build_filter_clause`
   (or a sibling) gain `BETWEEN`/range predicates without disturbing the equality/`IN` path?
   Confirm bbox WHERE injection order relative to `_inject_permanent_filter` (table.py:414).
-- [ ] **Ibis ⇄ navconfig connection mapping** — *Owner: Module 2 spike*: Does
-  `_get_connection_args()`'s `(credentials_dict, dsn)` map onto `ibis.postgres.connect`
-  (host/port/user/password/database) and `ibis.bigquery.connect` (project_id + credentials),
-  or is a translation shim required? Decision gate for Ibis vs dialect templates.
+- [x] **Ibis ⇄ navconfig connection mapping** — *Resolved: TASK-1437 spike, 2026-06-03*:
+  **NO-GO** — do NOT use Ibis. pg credentials map cleanly (host/port/database/user/password
+  → direct match), but: (a) asyncpg DSN format ≠ psycopg/ibis DSN format (non-trivial gap);
+  (b) BigQuery requires `google.oauth2.service_account.Credentials.from_service_account_file()`
+  shim to convert the navconfig `Path` → Ibis credentials object; (c) `ibis-framework` is not
+  a project dependency and adding it introduces risk. **TASK-1438 uses ~2 hand-written SQL
+  dialect templates (pg + bigquery); `ibis-framework` is NOT added to `pyproject.toml`.**
 - [ ] **Cross-backend concurrency limits** — *Owner: Module 5*: Does `asyncio.gather` across
   grouped backends hit an AsyncDB per-connection pool ceiling that bounds fan-out?
 - [ ] **Partial backend-failure policy during gather** — *Owner: Module 5*: On one group
