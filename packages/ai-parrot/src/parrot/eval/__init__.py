@@ -36,6 +36,27 @@ from parrot.eval.sandbox.base import (
     SandboxSpec,
 )
 from parrot.eval.runner import EvalReport, EvalRunConfig, EvalRunner
+
+# Lifecycle events — imported lazily to avoid pulling in parrot.core.events
+# at module level (which transitively requires navconfig). Access them via
+# ``parrot.eval.events`` or from ``parrot.eval`` directly; the __getattr__
+# below handles deferred resolution.
+try:
+    from parrot.eval.events import (
+        EvalRolloutCompleted,
+        EvalRolloutFailed,
+        EvalRolloutStarted,
+        EvalRunCompleted,
+        EvalRunStarted,
+    )
+    _EVENTS_AVAILABLE = True
+except ImportError:
+    _EVENTS_AVAILABLE = False
+    EvalRunStarted = None  # type: ignore[assignment,misc]
+    EvalRolloutStarted = None  # type: ignore[assignment,misc]
+    EvalRolloutCompleted = None  # type: ignore[assignment,misc]
+    EvalRolloutFailed = None  # type: ignore[assignment,misc]
+    EvalRunCompleted = None  # type: ignore[assignment,misc]
 from parrot.eval.datasets import (
     DatasetLoader,
     HFDatasetLoader,
@@ -93,6 +114,12 @@ __all__ = [
     # state backend
     "StateBackend",
     "DictStateBackend",
+    # lifecycle events
+    "EvalRunStarted",
+    "EvalRolloutStarted",
+    "EvalRolloutCompleted",
+    "EvalRolloutFailed",
+    "EvalRunCompleted",
     # runner
     "EvalRunConfig",
     "EvalRunner",

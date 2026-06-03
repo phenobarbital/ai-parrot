@@ -30,6 +30,7 @@ from parrot.eval.sandbox.base import AgentFactory, Sandbox, SandboxProvider, San
 
 if TYPE_CHECKING:
     from parrot.core.events.evb import EventBus
+    from parrot.core.events.lifecycle.registry import EventRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ class EvalRunner:
         sandbox_provider: SandboxProvider,
         config: EvalRunConfig,
         event_bus: "EventBus | None" = None,
+        event_registry: "EventRegistry | None" = None,
         sink: Any | None = None,
     ) -> None:
         self._dataset = dataset
@@ -150,6 +152,7 @@ class EvalRunner:
         self._sandbox_provider = sandbox_provider
         self._config = config
         self._event_bus = event_bus
+        self._event_registry = event_registry
         self._sink = sink
         self.logger = logging.getLogger(__name__)
 
@@ -176,7 +179,19 @@ class EvalRunner:
             rng = random.Random(self._config.seed)
             rng.shuffle(tasks)
 
-        # Emit run-started event hook (populated by TASK-1426)
+        # Create a root trace context for this run
+        trace_ctx = self._make_trace_context()
+
+        # Emit run-started lifecycle event
+        await self._emit_lifecycle_event(
+            "EvalRunStarted",
+            trace_ctx,
+            run_id=report.run_id,
+            dataset_name=self._dataset.name,
+            k=self._config.k,
+            total_tasks=len(tasks),
+        )
+        # Legacy hook for EventBus
         await self._emit_event("run_started", {"dataset": self._dataset.name})
 
         # Gather all (task, attempt) pairs
@@ -202,7 +217,18 @@ class EvalRunner:
             except Exception as exc:
                 self.logger.warning("EvalReportSink.persist failed: %s", exc)
 
-        # Emit run-completed event hook (populated by TASK-1426)
+        # Emit run-completed lifecycle event
+        await self._emit_lifecycle_event(
+            "EvalRunCompleted",
+            trace_ctx,
+            run_id=report.run_id,
+            dataset_name=self._dataset.name,
+            pass_k=report.pass_k,
+            pass_at_1=report.pass_at_1,
+            total_tasks=report.total_tasks,
+            total_attempts=report.total_attempts,
+        )
+        # Legacy hook for EventBus
         await self._emit_event(
             "run_completed",
             {"dataset": self._dataset.name, "pass_k": report.pass_k},
@@ -247,6 +273,14 @@ class EvalRunner:
                 setup_latency_ms = (time.perf_counter() - t_setup) * 1000.0
 
                 # Step 4: Rollout
+                rollout_trace = self._make_trace_context()
+                await self._emit_lifecycle_event(
+                    "EvalRolloutStarted",
+                    rollout_trace,
+                    run_id=None,
+                    task_id=task.task_id,
+                    attempt=attempt,
+                )
                 await self._emit_event(
                     "rollout_started",
                     {"task_id": task.task_id, "attempt": attempt},
@@ -269,6 +303,16 @@ class EvalRunner:
                 result = result.model_copy(update={"attempt": attempt})
 
                 results.append(result)
+                await self._emit_lifecycle_event(
+                    "EvalRolloutCompleted",
+                    rollout_trace,
+                    run_id=None,
+                    task_id=task.task_id,
+                    attempt=attempt,
+                    passed=result.passed,
+                    latency_ms=trajectory.latency_ms,
+                    setup_latency_ms=trajectory.setup_latency_ms,
+                )
                 await self._emit_event(
                     "rollout_completed",
                     {"task_id": task.task_id, "attempt": attempt, "passed": result.passed},
@@ -292,6 +336,14 @@ class EvalRunner:
                     trajectory=error_trajectory,
                 )
                 results.append(failed_result)
+                await self._emit_lifecycle_event(
+                    "EvalRolloutFailed",
+                    self._make_trace_context(),
+                    run_id=None,
+                    task_id=task.task_id,
+                    attempt=attempt,
+                    error=str(exc),
+                )
                 await self._emit_event(
                     "rollout_failed",
                     {"task_id": task.task_id, "attempt": attempt, "error": str(exc)},
@@ -387,8 +439,60 @@ class EvalRunner:
             report.p50_cost_usd = statistics.median(costs)
             report.p95_cost_usd = _percentile(costs, 95)
 
+    def _make_trace_context(self) -> Any:
+        """Create a new root ``TraceContext`` for a run or rollout.
+
+        Returns:
+            ``TraceContext.new_root()`` if the module is importable,
+            otherwise a simple sentinel object (for environments where
+            core.events is not available).
+        """
+        try:
+            from parrot.core.events.lifecycle.trace import TraceContext
+            return TraceContext.new_root()
+        except Exception:
+            return None
+
+    async def _emit_lifecycle_event(
+        self,
+        event_class_name: str,
+        trace_ctx: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Emit a typed ``LifecycleEvent`` via the ``EventRegistry``.
+
+        Falls back silently if the registry is not configured or if the
+        event class cannot be imported.
+
+        Args:
+            event_class_name: Name of the event class in
+                ``parrot.eval.events``.
+            trace_ctx: ``TraceContext`` for the event.
+            kwargs: Additional fields for the event dataclass.
+        """
+        if self._event_registry is None:
+            return
+        try:
+            import parrot.eval.events as _ev_module
+            event_cls = getattr(_ev_module, event_class_name, None)
+            if event_cls is None:
+                return
+            from parrot.core.events.lifecycle.trace import TraceContext
+            tc = trace_ctx if isinstance(trace_ctx, TraceContext) else TraceContext.new_root()
+            # Filter kwargs to only those accepted by the dataclass
+            import dataclasses
+            field_names = {f.name for f in dataclasses.fields(event_cls)}
+            filtered = {k: v for k, v in kwargs.items() if k in field_names and v is not None}
+            event = event_cls(trace_context=tc, **filtered)
+            await self._event_registry.emit(event)
+        except Exception as exc:
+            self.logger.debug(
+                "Lifecycle event %s emission failed (non-fatal): %s",
+                event_class_name, exc,
+            )
+
     async def _emit_event(self, event_type: str, payload: dict[str, Any]) -> None:
-        """Emit a lifecycle event to the event bus (if configured).
+        """Emit a raw payload to the event bus (if configured).
 
         Args:
             event_type: Short event name.
@@ -399,7 +503,7 @@ class EvalRunner:
         try:
             await self._event_bus.emit(f"lifecycle.eval.{event_type}", payload)
         except Exception as exc:
-            self.logger.debug("Event emission failed (non-fatal): %s", exc)
+            self.logger.debug("Event bus emission failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
