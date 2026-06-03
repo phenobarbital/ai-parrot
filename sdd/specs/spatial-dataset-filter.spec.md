@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-219
 **Date**: 2026-06-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Source brainstorm: `sdd/proposals/spatial-dataset-filter.brainstorm.md`
