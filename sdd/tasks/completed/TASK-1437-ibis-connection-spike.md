@@ -123,11 +123,12 @@ the spec §8 update — make both explicit and unambiguous, because TASK-1438 br
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Decision**: GO (use Ibis) | NO-GO (hand-written dialect templates)
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Decision**: NO-GO — TASK-1438 uses hand-written SQL dialect templates; `ibis-framework` is NOT added to `pyproject.toml`.
 **Credentials → Ibis mapping**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+  - pg: host/port/database/user/password → direct match (no shim needed for dict form)
+  - pg DSN: asyncpg DSN format (asyncpg://...) ≠ psycopg/libpq format — non-trivial translation gap
+  - bigquery: project_id → direct match; credentials (navconfig Path) → ibis expects google.oauth2.Credentials object — requires from_service_account_file() shim
+**Notes**: ibis-framework is not installed in the project. pg dict credentials map cleanly, but the DSN path has a format mismatch and bigquery requires a google-auth shim. The brainstorm pre-approved hand-written dialect templates (Option C) as the fallback. Two short SQL template strings are far simpler than adding a new heavy dependency with credential translation complexity.
+**Deviations from spec**: none

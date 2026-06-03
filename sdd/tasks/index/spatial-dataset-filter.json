@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-03T00:00:00Z",
-  "completed_at": "2026-06-03T18:38:56+00:00",
+  "completed_at": "2026-06-03T17:03:20+00:00",
   "tasks": [
     {
       "id": "TASK-1436",
@@ -22,14 +22,13 @@
       "parallelism_notes": "Foundation: all other tasks import its contracts/registry. Touches tool.py (get_manifest). Run first.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1436-spatial-contracts-registry-manifest.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T16:47:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1436-spatial-contracts-registry-manifest.md"
     },
     {
       "id": "TASK-1437",
       "slug": "ibis-connection-spike",
-      "title": "Ibis \u21c4 navconfig connection spike (decision gate)",
+      "title": "Ibis ⇄ navconfig connection spike (decision gate)",
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
@@ -40,17 +39,16 @@
         "TASK-1436"
       ],
       "parallel": false,
-      "parallelism_notes": "Decision gate for TASK-1438 (Ibis vs hand-written dialect templates). Mostly investigation; modifies spec \u00a78. Must resolve before TASK-1438.",
+      "parallelism_notes": "Decision gate for TASK-1438 (Ibis vs hand-written dialect templates). Mostly investigation; modifies spec §8. Must resolve before TASK-1438.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1437-ibis-connection-spike.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T16:49:26+00:00",
+      "file": "sdd/tasks/completed/TASK-1437-ibis-connection-spike.md"
     },
     {
       "id": "TASK-1438",
       "slug": "spatial-compiler-engine-pushdown",
-      "title": "SpatialCompiler \u2014 engine push-down (pg + bigquery)",
+      "title": "SpatialCompiler — engine push-down (pg + bigquery)",
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
@@ -65,14 +63,13 @@
       "parallelism_notes": "Creates compiler.py (shared with TASK-1439) and conditionally edits pyproject.toml. Strategy gated on TASK-1437 outcome.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1438-spatial-compiler-engine-pushdown.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T16:53:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1438-spatial-compiler-engine-pushdown.md"
     },
     {
       "id": "TASK-1439",
       "slug": "spatial-compiler-pandas-bbox-fallback",
-      "title": "SpatialCompiler \u2014 Pandas bbox fallback + table.py BETWEEN predicate",
+      "title": "SpatialCompiler — Pandas bbox fallback + table.py BETWEEN predicate",
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
@@ -87,9 +84,8 @@
       "parallelism_notes": "Modifies compiler.py (created in TASK-1438) and table.py _build_filter_clause (overlaps in-flight FEAT-218). Not parallel due to shared seam + cross-feature conflict.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1439-spatial-compiler-pandas-bbox-fallback.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T16:56:54+00:00",
+      "file": "sdd/tasks/completed/TASK-1439-spatial-compiler-pandas-bbox-fallback.md"
     },
     {
       "id": "TASK-1440",
@@ -110,14 +106,13 @@
       "parallelism_notes": "Ties compiler branches together in tool.py; needs both compiler branches present. Not parallel.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1440-spatial-filter-orchestration.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T16:59:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1440-spatial-filter-orchestration.md"
     },
     {
       "id": "TASK-1441",
       "slug": "transport-handler-agentalk-envelope",
-      "title": "Transport \u2014 HTTP handler + typed AgenTalk pass-through envelope",
+      "title": "Transport — HTTP handler + typed AgenTalk pass-through envelope",
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
@@ -131,9 +126,8 @@
       "parallelism_notes": "Exposes spatial_filter over transport; needs the orchestration method. Final task.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": "2026-06-03T18:38:56+00:00",
-      "file": "sdd/tasks/active/TASK-1441-transport-handler-agentalk-envelope.md",
-      "verification": "verified"
+      "completed_at": "2026-06-03T17:03:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1441-transport-handler-agentalk-envelope.md"
     }
   ]
 }

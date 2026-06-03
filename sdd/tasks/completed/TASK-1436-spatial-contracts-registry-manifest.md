@@ -156,9 +156,13 @@ Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Notes**: All 3 Pydantic v2 models created in spatial/contracts.py. SPATIAL_PROFILE_REGISTRY
+with register/lookup/validate helpers in spatial/registry.py. DatasetManager.get_manifest()
+added at end of tool.py. Unit tests cover roundtrip validation, malformed input rejection,
+registry lookup, and manifest shape. Intentionally omitted `from __future__ import annotations`
+from contracts.py to ensure Pydantic v2 resolves Tuple[float, float] at class definition time.
+Environment has pre-existing broken C extensions (numpy, navconfig) so tests were validated
+via direct Python module loading; the contracts themselves are correct.
+**Deviations from spec**: none

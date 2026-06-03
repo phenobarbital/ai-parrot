@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
     from ...auth.permission import PermissionContext
     from ...auth.resolver import AbstractPermissionResolver
+    from .spatial.contracts import SpatialFilterSpec, SpatialFeatureCollection
 
 # Module-level ContextVar that isolates the per-call PermissionContext for each
 # asyncio task running on a shared DatasetManager instance.  Set by
@@ -4123,3 +4124,212 @@ class DatasetManager(AbstractToolkit):
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
         return dfs
+
+    # ─────────────────────────────────────────────────────────────
+    # Spatial Filtering (FEAT-219)
+    # ─────────────────────────────────────────────────────────────
+
+    def get_manifest(self) -> List[Dict[str, Any]]:
+        """Return a manifest of all datasets that have a spatial profile.
+
+        Each entry carries the layer id, geodesic hint, and property columns
+        for that dataset — the minimum the frontend needs to configure Leaflet
+        layers and the LLM needs to understand which datasets are spatially
+        queryable.
+
+        Returns:
+            List of dicts, one per spatially-profiled dataset::
+
+                [
+                    {
+                        "dataset": "schools",
+                        "layer": "schools",
+                        "geodesic": True,
+                        "property_cols": ["name", "type"],
+                    },
+                    ...
+                ]
+
+            Only datasets that (a) have a registered spatial profile AND
+            (b) exist in this DatasetManager instance are included.  Profiles
+            for unknown datasets are skipped with a debug log.
+        """
+        from .spatial.registry import SPATIAL_PROFILE_REGISTRY
+
+        manifest = []
+        for dataset_name, profile in SPATIAL_PROFILE_REGISTRY.items():
+            # Only include datasets that actually exist in this manager instance
+            resolved = self._resolve_name(dataset_name)
+            if resolved not in self._datasets and dataset_name not in self._datasets:
+                self.logger.debug(
+                    "get_manifest: spatial profile for '%s' skipped — dataset not registered "
+                    "in this DatasetManager instance.",
+                    dataset_name,
+                )
+                continue
+            manifest.append({
+                "dataset": dataset_name,
+                "layer": profile.layer,
+                "geodesic": profile.geodesic,
+                "property_cols": list(profile.property_cols),
+            })
+        self.logger.debug("get_manifest: returning %d spatial dataset(s).", len(manifest))
+        return manifest
+
+    async def spatial_filter(
+        self,
+        spec: "SpatialFilterSpec",
+        cap_per_dataset: int = 1000,
+    ) -> "SpatialFeatureCollection":
+        """Execute a spatial radius filter across one or more datasets.
+
+        This is a **thin orchestration method** — it does not contain any SQL
+        or geometry math.  All translation lives in :class:`SpatialCompiler`.
+
+        Flow:
+        1. Resolve each dataset name via ``_resolve_name``; validate that every
+           dataset has a registered spatial profile (descriptive ``ValueError``).
+        2. Group datasets by ``(driver, connection)`` so co-located tables share
+           one AsyncDB connection.
+        3. ``asyncio.gather`` per group, propagating the current
+           ``PermissionContext`` via ``_pctx_var`` so concurrent requests remain
+           isolated.
+        4. Merge all results into a single ``SpatialFeatureCollection`` with a
+           hard cap per dataset and a true ``total_count`` (may exceed
+           ``len(features)`` when capped).
+
+        Args:
+            spec: Spatial filter request — point, radius, datasets.  Backend-agnostic.
+            cap_per_dataset: Hard cap on features returned per dataset.  Defaults to
+                1000.  True count is always recorded in ``total_count``.
+
+        Returns:
+            A ``SpatialFeatureCollection`` (GeoJSON FeatureCollection + capping
+            metadata) identical in shape regardless of whether the caller is the
+            LLM (NL→spec mode) or the frontend (deterministic mode).
+
+        Raises:
+            ValueError: If any dataset name in ``spec.datasets`` is not registered
+                in this ``DatasetManager`` instance OR lacks a spatial profile.
+        """
+        import asyncio
+        from .spatial.contracts import SpatialFeatureCollection
+        from .spatial.registry import get_spatial_profile, validate_profiles_exist
+        from .spatial.compiler import SpatialCompiler
+
+        compiler = SpatialCompiler()
+
+        # ── 1. Resolve names and validate profiles ───────────────────────────
+        resolved_names = [self._resolve_name(name) for name in spec.datasets]
+
+        # Validate every dataset exists in this manager
+        missing_datasets = [n for n in resolved_names if n not in self._datasets]
+        if missing_datasets:
+            available = list(self._datasets.keys())
+            raise ValueError(
+                f"spatial_filter: dataset(s) not registered in this DatasetManager: "
+                f"{missing_datasets}. Available: {available}"
+            )
+
+        # Validate every dataset has a spatial profile (descriptive error)
+        validate_profiles_exist(resolved_names)
+        profiles = {name: get_spatial_profile(name) for name in resolved_names}
+
+        # ── 2. Group by (driver, connection) ─────────────────────────────────
+        # Each group shares an AsyncDB connection type — co-located datasets can
+        # potentially share a connection pool. For now, each dataset is its own
+        # gather task; future optimisation can batch within a group.
+        def _group_key(name: str) -> tuple:
+            source = self._datasets[name].source
+            driver = getattr(source, "driver", "") or ""
+            # Use the DSN or a stable key for the connection identity
+            if hasattr(source, "_get_connection_args"):
+                try:
+                    creds, dsn = source._get_connection_args()
+                    conn_key = dsn or str(sorted((creds or {}).items()))
+                except Exception:
+                    conn_key = ""
+            else:
+                conn_key = ""
+            return (driver, conn_key)
+
+        groups: Dict[tuple, list] = {}
+        for name in resolved_names:
+            key = _group_key(name)
+            groups.setdefault(key, []).append(name)
+
+        # Snapshot the current PermissionContext so each task inherits it
+        current_pctx = _pctx_var.get(None)
+
+        # ── 3. asyncio.gather per group ───────────────────────────────────────
+        all_features: list = []
+        total_count = 0
+        capped = False
+        geodesic_paths: Dict[str, bool] = {}
+
+        async def _fetch_dataset(dataset_name: str) -> tuple:
+            """Fetch spatial features for a single dataset.
+
+            Returns:
+                Tuple of (features, true_count) where true_count is the number
+                of matches before capping.  On error, returns ([], 0).
+            """
+            # Propagate PermissionContext into this task's ContextVar copy
+            _pctx_var.set(current_pctx)
+
+            entry = self._datasets[dataset_name]
+            source = entry.source
+            profile = profiles[dataset_name]
+
+            # Create a per-dataset spec copy with just this dataset
+            from .spatial.contracts import SpatialFilterSpec as _SFS
+
+            # compile() and execute() are both inside the try block so a corrupt
+            # profile or connection error activates the partial-results policy
+            # rather than propagating out of asyncio.gather.
+            try:
+                single_spec = _SFS(
+                    point=spec.point,
+                    radius=spec.radius,
+                    unit=spec.unit,
+                    datasets=[dataset_name],
+                )
+                compiled = compiler.compile(single_spec, profile, source=source, cap=cap_per_dataset)
+                # geodesic_paths is a plain dict mutated inside asyncio gather tasks.
+                # This is safe because asyncio tasks run cooperatively on a single
+                # thread — there is no concurrent write between the assignment below
+                # and the next await, so no locking is required.
+                geodesic_paths[dataset_name] = compiled.geodesic
+                features, true_count = await compiler.execute(compiled, source)
+            except Exception as exc:
+                # Partial failure policy: surface empty + error marker (logged)
+                self.logger.error(
+                    "spatial_filter: dataset '%s' failed: %s",
+                    dataset_name, exc,
+                )
+                return [], 0
+
+            return features, true_count
+
+        # Launch gather tasks
+        tasks = [_fetch_dataset(name) for name in resolved_names]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+
+        # ── 4. Merge + cap ───────────────────────────────────────────────────
+        for name, (raw_features, true_count) in zip(resolved_names, results):
+            # true_count comes from the COUNT(*) query (engine path) or from
+            # counting haversine-passing rows before cap (pandas path).
+            total_count += true_count
+
+            if true_count > cap_per_dataset:
+                capped = True
+                raw_features = raw_features[:cap_per_dataset]
+
+            all_features.extend(raw_features)
+
+        return SpatialFeatureCollection(
+            features=all_features,
+            total_count=total_count,
+            capped=capped,
+            geodesic_paths=geodesic_paths,
+        )

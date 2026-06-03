@@ -148,7 +148,17 @@ this task's Codebase Contract — do not guess the import.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Notes**: SpatialFilterHandler created in parrot/handlers/spatial_filter_handler.py (core
+package, not server). Handler has post() routing to _handle_direct (point/radius/datasets body)
+and _handle_nl (query body). Both paths call dm.spatial_filter. AgenTalk verified path:
+"agentalk" appears in parrot-server/handlers/agent.py as a channel identifier. The AgenTalk
+envelope (SpatialFilterEnvelope) is a Pydantic model with a forward() method that calls
+dm.spatial_filter() directly without running AbstractBot.run(). NLSpatialSynthesizer does a
+single structured-output LLM call (no agent loop). Handler is designed to be mounted by
+ai-parrot-server. _get_dataset_manager() raises NotImplementedError by default; the server
+package overrides it.
+**Deviations from spec**: Handler placed in core parrot/handlers/ per spec path. The server
+package (ai-parrot-server) must mount it and override _get_dataset_manager() to connect to
+session/BotManager. This is a deliberate layering choice to keep the core package server-independent.
