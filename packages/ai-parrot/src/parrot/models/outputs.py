@@ -410,7 +410,8 @@ class TableColumn(BaseModel):
         title: Human-readable column label (defaults to ``name`` as-is; the
             renderer may refine it via a narrow LLM pass).
         format: Optional display hint for ambiguous columns:
-            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum``.
+            ``currency`` | ``percent`` | ``email`` | ``uri`` | ``enum`` |
+            ``id`` | ``code``.
             This is a *hint* for the frontend — it does NOT change the base
             storage type.
     """
@@ -427,7 +428,7 @@ class TableColumn(BaseModel):
     format: Optional[str] = Field(
         default=None,
         description=(
-            "Optional display hint: currency | percent | email | uri | enum"
+            "Optional display hint: currency | percent | email | uri | enum | id | code"
         ),
     )
 

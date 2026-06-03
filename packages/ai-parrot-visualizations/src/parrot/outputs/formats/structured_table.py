@@ -39,8 +39,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_ROW_LIMIT: int = 1000
 
 #: Base types that are NOT ambiguous — LLM may NOT change these.
+#: NOTE: "integer" is intentionally excluded — integer columns CAN receive
+#: format hints ("id", "code") from the LLM refine pass.  The LLM may NOT
+#: change the base type, but it may annotate the display format.
 _HARD_TYPES: frozenset[str] = frozenset(
-    {"integer", "number", "datetime", "boolean"}
+    {"number", "datetime", "boolean"}
 )
 
 #: Allowed finer format hints the LLM may add to ambiguous columns.
@@ -236,8 +239,9 @@ class StructuredTableRenderer(BaseChart):
 
         The LLM may ONLY suggest a ``format`` hint for columns whose base type
         is ``"string"`` or ``"integer"``.  It may NOT change any base type.
-        **Deterministic wins**: hard-typed columns (``integer`` with numeric
-        semantics, ``number``, ``datetime``, ``boolean``) are never touched.
+        **Deterministic wins**: hard-typed columns (``number``, ``datetime``,
+        ``boolean``) are never touched.  ``integer`` columns may receive
+        format hints (e.g. ``"id"``, ``"code"``) but their base type is fixed.
 
         If the refine pass fails for any reason, the deterministic-only schema
         (original ``columns``) is returned unchanged.

@@ -177,3 +177,12 @@ def test_bool_passthrough():
     rows, _, _ = canonical_records(df, row_limit=10)
     assert rows[0]["flag"] is True
     assert rows[1]["flag"] is False
+
+
+def test_canonical_row_limit_zero():
+    """row_limit=0 returns empty rows list, total=original length, truncated=True."""
+    df = pd.DataFrame({"a": [1, 2, 3]})
+    rows, total, truncated = canonical_records(df, row_limit=0)
+    assert rows == []
+    assert total == 3
+    assert truncated is True

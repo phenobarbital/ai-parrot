@@ -37,16 +37,6 @@ from .toolkits.base import DatabaseToolkit
 # every Postgres schema we've seen in practice.
 _QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
 
-# ---------------------------------------------------------------------------
-# Module-level compiled patterns
-# ---------------------------------------------------------------------------
-
-# Matches the schema part of a ``schema.table`` reference. Conservative:
-# unicode-aware via ``\w`` would be too permissive (matches Spanish accents
-# we don't want flowing into identifier checks); ASCII identifiers cover
-# every Postgres schema we've seen in practice.
-_QUALIFIED_REF_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\b")
-
 # FEAT-172: Pattern for a valid, identifier-safe tool_prefix.
 # Must start with an ASCII letter; may contain letters, digits, and underscores.
 # Checked at configure() time before any toolkit tool-name is resolved.

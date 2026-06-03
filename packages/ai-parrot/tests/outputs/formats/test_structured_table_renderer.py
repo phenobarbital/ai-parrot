@@ -361,6 +361,44 @@ async def test_llm_refine_failure_falls_back():
 
 @satellite_available
 @pytest.mark.asyncio
+async def test_llm_refine_accepts_id_hint_on_integer_column():
+    """LLM 'id' or 'code' format hint on an integer column is accepted (not blocked).
+
+    Regression test for the bug where 'integer' was in _HARD_TYPES, causing
+    format hints on integer columns to be silently discarded.
+    """
+    import json
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    df = pd.DataFrame({
+        "user_id": pd.array([1, 2, 3], dtype="int64"),
+        "product_code": pd.array([101, 202, 303], dtype="int64"),
+    })
+    hints = json.dumps({"user_id": "id", "product_code": "code"})
+    resp = _make_response(data=df, code=hints)
+
+    renderer = get_renderer(OutputMode.STRUCTURED_TABLE)()
+    out, _ = await renderer.render(resp)
+
+    assert out is not None
+    col_map = {c["name"]: c for c in out["columns"]}
+
+    # Base type must remain "integer" — LLM cannot change it
+    assert col_map["user_id"]["type"] == "integer"
+    assert col_map["product_code"]["type"] == "integer"
+
+    # Format hints MUST be applied (integer is not hard-typed for format hints)
+    assert col_map["user_id"].get("format") == "id", (
+        "Expected 'id' format hint to be applied to integer column user_id"
+    )
+    assert col_map["product_code"].get("format") == "code", (
+        "Expected 'code' format hint to be applied to integer column product_code"
+    )
+
+
+@satellite_available
+@pytest.mark.asyncio
 async def test_dataframe_response_data_replaced():
     """Pre-existing pd.DataFrame in response.data is replaced by a plain list."""
     from parrot.models.outputs import OutputMode

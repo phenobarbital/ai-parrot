@@ -126,7 +126,7 @@ def _canonical_value(value: Any) -> Any:
         return None
 
     # pandas / numpy datetime types → ISO-8601 UTC string
-    if isinstance(value, (pd.Timestamp,)):
+    if isinstance(value, pd.Timestamp):
         if pd.isna(value):
             return None
         # Normalize to UTC; emit Z suffix for maximum compatibility
