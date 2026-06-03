@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import types
+from pathlib import Path as _Path
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
@@ -48,19 +49,17 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 _ensure_stubs()
 
-_SPATIAL_BASE = (
-    "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees/"
-    "feat-219-spatial-dataset-filter/packages/ai-parrot/src/parrot/"
-    "tools/dataset_manager/spatial"
+_SPATIAL_BASE = str(
+    _Path(__file__).parents[2] / "src" / "parrot" / "tools" / "dataset_manager" / "spatial"
 )
 
 _contracts = _load_module(
     "parrot.tools.dataset_manager.spatial.contracts",
-    f"{_SPATIAL_BASE}/contracts.py",
+    str(_Path(_SPATIAL_BASE) / "contracts.py"),
 )
 _registry = _load_module(
     "parrot.tools.dataset_manager.spatial.registry",
-    f"{_SPATIAL_BASE}/registry.py",
+    str(_Path(_SPATIAL_BASE) / "registry.py"),
 )
 
 # Stub InMemorySource
@@ -76,7 +75,7 @@ sys.modules["parrot.tools.dataset_manager.sources.memory"] = _mem_stub
 
 _compiler_mod = _load_module(
     "parrot.tools.dataset_manager.spatial.compiler",
-    f"{_SPATIAL_BASE}/compiler.py",
+    str(_Path(_SPATIAL_BASE) / "compiler.py"),
 )
 
 SpatialFilterSpec = _contracts.SpatialFilterSpec

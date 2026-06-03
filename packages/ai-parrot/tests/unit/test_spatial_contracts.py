@@ -129,6 +129,34 @@ class TestSpatialFilterSpec:
         )
         assert len(spec.datasets) == 3
 
+    def test_spec_rejects_latitude_out_of_bounds(self):
+        """Latitude outside [-90, 90] raises ValidationError."""
+        with pytest.raises((ValidationError, ValueError)):
+            SpatialFilterSpec(point=(91.0, 0.0), radius=5, datasets=["schools"])
+        with pytest.raises((ValidationError, ValueError)):
+            SpatialFilterSpec(point=(-91.0, 0.0), radius=5, datasets=["schools"])
+
+    def test_spec_rejects_longitude_out_of_bounds(self):
+        """Longitude outside [-180, 180] raises ValidationError."""
+        with pytest.raises((ValidationError, ValueError)):
+            SpatialFilterSpec(point=(0.0, 181.0), radius=5, datasets=["schools"])
+        with pytest.raises((ValidationError, ValueError)):
+            SpatialFilterSpec(point=(0.0, -181.0), radius=5, datasets=["schools"])
+
+    def test_spec_accepts_polar_coordinates(self):
+        """Points at or near the poles (lat=±90) are valid."""
+        spec_north = SpatialFilterSpec(point=(90.0, 0.0), radius=5, datasets=["schools"])
+        assert spec_north.point == (90.0, 0.0)
+        spec_south = SpatialFilterSpec(point=(-90.0, 0.0), radius=5, datasets=["schools"])
+        assert spec_south.point == (-90.0, 0.0)
+
+    def test_spec_accepts_date_line_longitude(self):
+        """Longitude at exactly ±180 is valid."""
+        spec = SpatialFilterSpec(point=(0.0, 180.0), radius=5, datasets=["schools"])
+        assert spec.point == (0.0, 180.0)
+        spec2 = SpatialFilterSpec(point=(0.0, -180.0), radius=5, datasets=["schools"])
+        assert spec2.point == (0.0, -180.0)
+
 
 # ---------------------------------------------------------------------------
 # DatasetSpatialProfile tests
@@ -311,6 +339,34 @@ class TestSpatialProfileRegistry:
 
 class TestGetManifest:
     """Tests for DatasetManager.get_manifest()."""
+
+    @pytest.fixture(autouse=True)
+    def _sync_registry(self):
+        """Ensure DatasetManager.get_manifest() sees the same registry object.
+
+        The compiler test files load the spatial modules via importlib which can
+        create a separate module instance in sys.modules.  When tool.py calls
+        ``from .spatial.registry import SPATIAL_PROFILE_REGISTRY``, it gets the
+        module that is currently registered under the canonical name
+        ``parrot.tools.dataset_manager.spatial.registry``.  If that module instance
+        is different from the one imported by this test file, registrations done
+        here are invisible to get_manifest().
+
+        Fix: replace the canonical sys.modules entry with this test file's module
+        instance so all code paths share the same dict.
+        """
+        import sys
+        canonical = "parrot.tools.dataset_manager.spatial.registry"
+        # Build a reference to this file's own registry module instance
+        import parrot.tools.dataset_manager.spatial.registry as _this_registry_mod
+        original = sys.modules.get(canonical)
+        sys.modules[canonical] = _this_registry_mod
+        yield
+        # Restore original module (if it was different)
+        if original is not None:
+            sys.modules[canonical] = original
+        elif canonical in sys.modules:
+            del sys.modules[canonical]
 
     def test_manifest_shape(self, pg_school_profile):
         """get_manifest() returns entries with layer, geodesic, property_cols."""

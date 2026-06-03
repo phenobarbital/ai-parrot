@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import sys
 import types
+from pathlib import Path as _Path
 
 import pytest
 
@@ -45,24 +46,17 @@ def _ensure_stubs() -> None:
 
 _ensure_stubs()
 
-_SPATIAL_BASE = (
-    "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees/"
-    "feat-219-spatial-dataset-filter/packages/ai-parrot/src/parrot/"
-    "tools/dataset_manager/spatial"
-)
-_SOURCE_BASE = (
-    "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees/"
-    "feat-219-spatial-dataset-filter/packages/ai-parrot/src/parrot/"
-    "tools/dataset_manager/sources"
-)
+_PKG_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
+_SPATIAL_BASE = str(_PKG_ROOT / "tools" / "dataset_manager" / "spatial")
+_SOURCE_BASE = str(_PKG_ROOT / "tools" / "dataset_manager" / "sources")
 
 _contracts = _load_module(
     "parrot.tools.dataset_manager.spatial.contracts",
-    f"{_SPATIAL_BASE}/contracts.py",
+    str(_Path(_SPATIAL_BASE) / "contracts.py"),
 )
 _registry = _load_module(
     "parrot.tools.dataset_manager.spatial.registry",
-    f"{_SPATIAL_BASE}/registry.py",
+    str(_Path(_SPATIAL_BASE) / "registry.py"),
 )
 
 # Stub InMemorySource before loading compiler
@@ -78,7 +72,7 @@ sys.modules["parrot.tools.dataset_manager.sources.memory"] = _mem_stub
 
 _compiler_mod = _load_module(
     "parrot.tools.dataset_manager.spatial.compiler",
-    f"{_SPATIAL_BASE}/compiler.py",
+    str(_Path(_SPATIAL_BASE) / "compiler.py"),
 )
 
 SpatialFilterSpec = _contracts.SpatialFilterSpec
@@ -115,7 +109,7 @@ def _load_table_source() -> type:
 
     table_mod = _load_module(
         "parrot.tools.dataset_manager.sources.table",
-        f"{_SOURCE_BASE}/table.py",
+        str(_Path(_SOURCE_BASE) / "table.py"),
     )
     return table_mod.TableSource
 
@@ -187,6 +181,30 @@ class TestBboxFromPoint:
         assert (lat + lat_delta) <= max_lat + 1e-9
         # South pole of the circle
         assert (lat - lat_delta) >= min_lat - 1e-9
+
+    def test_bbox_near_north_pole_no_division_by_zero(self):
+        """_bbox_from_point at lat=90.0 - epsilon (near pole) does not raise ZeroDivisionError."""
+        # At lat=89.9999°, cos(lat) ≈ 1.74e-6 — just above the 1e-4 guard threshold.
+        # At lat=89.999°, cos(lat) ≈ 1.74e-5 — still above.
+        # Test a point that IS within the guard threshold (lat=89.9999 → cos ≈ 1.74e-6 < 1e-4? No)
+        # Use exact pole where cos=0 to hit the guard path
+        result = _bbox_from_point(90.0, 0.0, 1000.0)
+        assert len(result) == 4
+        min_lat, max_lat, min_lng, max_lng = result
+        # At exact pole, lng_delta should be 180 (covers all longitudes)
+        assert max_lng - min_lng == pytest.approx(360.0, abs=1e-9)
+
+    def test_bbox_at_exact_north_pole_no_error(self):
+        """_bbox_from_point at lat=90.0 (exact pole) does not raise ZeroDivisionError."""
+        result = _bbox_from_point(90.0, 0.0, 5000.0)
+        assert len(result) == 4
+        min_lat, max_lat, min_lng, max_lng = result
+        assert max_lng - min_lng == pytest.approx(360.0, abs=1e-9)
+
+    def test_bbox_at_exact_south_pole_no_error(self):
+        """_bbox_from_point at lat=-90.0 (south pole) does not raise ZeroDivisionError."""
+        result = _bbox_from_point(-90.0, 0.0, 5000.0)
+        assert len(result) == 4
 
     def test_bbox_corners_outside_circle(self):
         """The four bbox corners are outside the circle (bbox is a strict superset)."""

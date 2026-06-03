@@ -4129,7 +4129,7 @@ class DatasetManager(AbstractToolkit):
     # Spatial Filtering (FEAT-219)
     # ─────────────────────────────────────────────────────────────
 
-    def get_manifest(self) -> list:
+    def get_manifest(self) -> List[Dict[str, Any]]:
         """Return a manifest of all datasets that have a spatial profile.
 
         Each entry carries the layer id, geodesic hint, and property columns
@@ -4267,8 +4267,13 @@ class DatasetManager(AbstractToolkit):
         capped = False
         geodesic_paths: Dict[str, bool] = {}
 
-        async def _fetch_dataset(dataset_name: str) -> list:
-            """Fetch spatial features for a single dataset."""
+        async def _fetch_dataset(dataset_name: str) -> tuple:
+            """Fetch spatial features for a single dataset.
+
+            Returns:
+                Tuple of (features, true_count) where true_count is the number
+                of matches before capping.  On error, returns ([], 0).
+            """
             # Propagate PermissionContext into this task's ContextVar copy
             _pctx_var.set(current_pctx)
 
@@ -4278,44 +4283,47 @@ class DatasetManager(AbstractToolkit):
 
             # Create a per-dataset spec copy with just this dataset
             from .spatial.contracts import SpatialFilterSpec as _SFS
-            single_spec = _SFS(
-                point=spec.point,
-                radius=spec.radius,
-                unit=spec.unit,
-                datasets=[dataset_name],
-            )
-            compiled = compiler.compile(single_spec, profile, source=source, cap=cap_per_dataset)
-            geodesic_paths[dataset_name] = compiled.geodesic
 
+            # compile() and execute() are both inside the try block so a corrupt
+            # profile or connection error activates the partial-results policy
+            # rather than propagating out of asyncio.gather.
             try:
-                features = await compiler.execute(compiled, source)
+                single_spec = _SFS(
+                    point=spec.point,
+                    radius=spec.radius,
+                    unit=spec.unit,
+                    datasets=[dataset_name],
+                )
+                compiled = compiler.compile(single_spec, profile, source=source, cap=cap_per_dataset)
+                # geodesic_paths is a plain dict mutated inside asyncio gather tasks.
+                # This is safe because asyncio tasks run cooperatively on a single
+                # thread — there is no concurrent write between the assignment below
+                # and the next await, so no locking is required.
+                geodesic_paths[dataset_name] = compiled.geodesic
+                features, true_count = await compiler.execute(compiled, source)
             except Exception as exc:
                 # Partial failure policy: surface empty + error marker (logged)
                 self.logger.error(
                     "spatial_filter: dataset '%s' failed: %s",
                     dataset_name, exc,
                 )
-                geodesic_paths[dataset_name] = compiled.geodesic
-                return []
+                return [], 0
 
-            return features
+            return features, true_count
 
         # Launch gather tasks
         tasks = [_fetch_dataset(name) for name in resolved_names]
         results = await asyncio.gather(*tasks, return_exceptions=False)
 
         # ── 4. Merge + cap ───────────────────────────────────────────────────
-        for name, raw_features in zip(resolved_names, results):
-            true_count = len(raw_features)
+        for name, (raw_features, true_count) in zip(resolved_names, results):
+            # true_count comes from the COUNT(*) query (engine path) or from
+            # counting haversine-passing rows before cap (pandas path).
             total_count += true_count
 
             if true_count > cap_per_dataset:
                 capped = True
                 raw_features = raw_features[:cap_per_dataset]
-            elif true_count == cap_per_dataset:
-                # At the cap; we don't know the true count beyond what was returned
-                # (the compiler already applied LIMIT) — mark as potentially capped
-                capped = True
 
             all_features.extend(raw_features)
 

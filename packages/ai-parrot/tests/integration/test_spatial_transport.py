@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 import types
+from pathlib import Path as _Path
 from typing import List
 from unittest.mock import AsyncMock, MagicMock
 
@@ -47,19 +48,17 @@ def _load_module(name: str, path: str) -> types.ModuleType:
 
 _ensure_stubs()
 
-_WORKTREE = (
-    "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees/"
-    "feat-219-spatial-dataset-filter/packages/ai-parrot/src/parrot/"
-)
-_SPATIAL_BASE = f"{_WORKTREE}tools/dataset_manager/spatial"
+_PARROT_ROOT = _Path(__file__).parents[2] / "src" / "parrot"
+_WORKTREE = str(_PARROT_ROOT) + "/"
+_SPATIAL_BASE = str(_PARROT_ROOT / "tools" / "dataset_manager" / "spatial")
 
 _contracts = _load_module(
     "parrot.tools.dataset_manager.spatial.contracts",
-    f"{_SPATIAL_BASE}/contracts.py",
+    str(_Path(_SPATIAL_BASE) / "contracts.py"),
 )
 _registry = _load_module(
     "parrot.tools.dataset_manager.spatial.registry",
-    f"{_SPATIAL_BASE}/registry.py",
+    str(_Path(_SPATIAL_BASE) / "registry.py"),
 )
 
 _mem_stub = types.ModuleType("parrot.tools.dataset_manager.sources.memory")
@@ -74,7 +73,7 @@ sys.modules["parrot.tools.dataset_manager.sources.memory"] = _mem_stub
 
 _compiler_mod = _load_module(
     "parrot.tools.dataset_manager.spatial.compiler",
-    f"{_SPATIAL_BASE}/compiler.py",
+    str(_Path(_SPATIAL_BASE) / "compiler.py"),
 )
 
 # Stub aiohttp before loading the handler
@@ -103,7 +102,7 @@ sys.modules["parrot._imports"] = _imports_stub
 
 _handler_mod = _load_module(
     "parrot.handlers.spatial_filter_handler",
-    f"{_WORKTREE}handlers/spatial_filter_handler.py",
+    str(_PARROT_ROOT / "handlers" / "spatial_filter_handler.py"),
 )
 
 SpatialFilterSpec = _contracts.SpatialFilterSpec
@@ -115,6 +114,14 @@ register_spatial_profile = _registry.register_spatial_profile
 SpatialFilterHandler = _handler_mod.SpatialFilterHandler
 SpatialFilterEnvelope = _handler_mod.SpatialFilterEnvelope
 NLSpatialSynthesizer = _handler_mod.NLSpatialSynthesizer
+
+# Resolve the forward reference `"SpatialFilterSpec"` inside SpatialFilterEnvelope.
+# When the handler is loaded via importlib, Pydantic defers resolution of string
+# annotations.  We supply the resolved class and call model_rebuild() to finalise.
+SpatialFilterEnvelope.model_rebuild(
+    _types_namespace={"SpatialFilterSpec": SpatialFilterSpec},
+    force=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +262,7 @@ class TestSpatialFilterHandlerNL:
         register_spatial_profile(school_profile)
         dm = _make_mock_dm()
 
-        # Mock the synthesizer to return a canned spec
+        # Build a canned spec that the mock synthesizer will return
         synth_spec = SpatialFilterSpec(
             point=(40.7128, -74.006),
             radius=5.0,
@@ -263,16 +270,21 @@ class TestSpatialFilterHandlerNL:
             datasets=["schools"],
         )
 
-        # Patch NLSpatialSynthesizer.synthesize
         from unittest.mock import patch, AsyncMock as _AM
-        with patch.object(NLSpatialSynthesizer, "synthesize", new_callable=lambda: lambda *a, **k: _AM(return_value=synth_spec)()):
-            pass  # Can't easily patch async method this way without running
 
-        # Direct test: simulate what the handler would do if synthesis succeeded
-        # (the handler calls synthesizer.synthesize then dm.spatial_filter)
-        result = await dm.spatial_filter(synth_spec)
-        assert result.type == "FeatureCollection"
-        assert "schools" in result.geodesic_paths
+        with patch.object(
+            NLSpatialSynthesizer, "synthesize", new=_AM(return_value=synth_spec)
+        ) as mock_synth:
+            handler = _make_handler_with_dm(dm)
+            handler.request.json = _AM(return_value={"query": "schools near me"})
+
+            response = await handler.post()
+
+            assert response.status == 200
+            mock_synth.assert_awaited_once()
+            body = json.loads(response.text)
+            assert body["type"] == "FeatureCollection"
+            assert "schools" in body["geodesic_paths"]
 
     @pytest.mark.asyncio
     async def test_nl_and_direct_return_same_shape(self, school_profile):
@@ -309,6 +321,87 @@ class TestSpatialFilterHandlerNL:
         body = json.loads(response.text)
         assert "datasets" in body
         assert len(body["datasets"]) >= 0  # May be empty in mock
+
+
+class TestMixedBackendMerge:
+    """Tests that results from different backends are merged correctly."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_backend_merge(self):
+        """spatial_filter merges features from pg and in-memory datasets into one collection.
+
+        Mocks two datasets with different drivers (pg + pandas/in-memory) and verifies
+        that results from both are merged into a single SpatialFeatureCollection.
+        """
+        # Register profiles for two datasets
+        pg_profile = DatasetSpatialProfile(
+            dataset="schools",
+            geom_col="geog",
+            layer="schools",
+            property_cols=["name"],
+            description_template="{name}",
+            geodesic=True,
+        )
+        mem_profile = DatasetSpatialProfile(
+            dataset="hospitals",
+            lat_col="lat",
+            lng_col="lng",
+            layer="hospitals",
+            property_cols=["name"],
+            description_template="{name}",
+            geodesic=False,
+        )
+        register_spatial_profile(pg_profile)
+        register_spatial_profile(mem_profile)
+
+        # Build a mock DatasetManager that returns merged results from both datasets
+        pg_features = [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.0, 40.7]},
+             "properties": {"name": "School A", "source": "schools"}},
+        ]
+        mem_features = [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-74.1, 40.8]},
+             "properties": {"name": "Hospital B", "source": "hospitals"}},
+        ]
+        all_features = pg_features + mem_features
+
+        dm = MagicMock()
+        dm.get_manifest = MagicMock(return_value=[
+            {"dataset": "schools", "layer": "schools", "geodesic": True, "property_cols": ["name"]},
+            {"dataset": "hospitals", "layer": "hospitals", "geodesic": False, "property_cols": ["name"]},
+        ])
+        dm.spatial_filter = AsyncMock(return_value=SpatialFeatureCollection(
+            features=all_features,
+            total_count=2,
+            capped=False,
+            geodesic_paths={"schools": True, "hospitals": False},
+        ))
+
+        spec = SpatialFilterSpec(
+            point=(40.7128, -74.006),
+            radius=5.0,
+            unit="mi",
+            datasets=["schools", "hospitals"],
+        )
+
+        result = await dm.spatial_filter(spec, cap_per_dataset=1000)
+
+        assert result.type == "FeatureCollection"
+        assert len(result.features) == 2
+
+        # Both datasets must be represented
+        sources = {f["properties"]["source"] for f in result.features}
+        assert "schools" in sources
+        assert "hospitals" in sources
+
+        # Both datasets must appear in geodesic_paths
+        assert "schools" in result.geodesic_paths
+        assert "hospitals" in result.geodesic_paths
+        assert result.geodesic_paths["schools"] is True
+        assert result.geodesic_paths["hospitals"] is False
+
+        assert result.total_count == 2
+        assert result.capped is False
 
 
 class TestAgenTalkEnvelope:

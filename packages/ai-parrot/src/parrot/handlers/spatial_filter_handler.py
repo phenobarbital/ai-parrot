@@ -252,7 +252,7 @@ class NLSpatialRequest(BaseModel):
         cap_per_dataset: Hard cap per dataset.
     """
 
-    query: str = Field(..., min_length=1)
+    query: str = Field(..., min_length=1, max_length=4096)
     datasets: Optional[List[str]] = Field(default=None)
     cap_per_dataset: int = Field(default=1000, ge=1)
 
@@ -336,7 +336,7 @@ class SpatialFilterHandler:
 
         try:
             body = await self.request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return await self._json_response({"error": "Invalid JSON body"}, status=400)
 
         # Detect which path to use

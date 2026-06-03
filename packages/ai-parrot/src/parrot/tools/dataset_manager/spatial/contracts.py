@@ -52,7 +52,7 @@ class SpatialFilterSpec(BaseModel):
     @field_validator("point", mode="before")
     @classmethod
     def _validate_point(cls, v: object) -> Tuple[float, float]:
-        """Validate that point is a 2-tuple of floats.
+        """Validate that point is a 2-tuple of floats with valid coordinate bounds.
 
         Args:
             v: Raw value for point.
@@ -61,7 +61,8 @@ class SpatialFilterSpec(BaseModel):
             Validated (lat, lng) tuple.
 
         Raises:
-            ValueError: If value is not a 2-element sequence.
+            ValueError: If value is not a 2-element sequence, or if latitude is
+                outside [-90, 90], or if longitude is outside [-180, 180].
         """
         try:
             seq = tuple(v)  # type: ignore[arg-type]
@@ -71,7 +72,16 @@ class SpatialFilterSpec(BaseModel):
             raise ValueError(
                 f"point must be exactly 2 elements (lat, lng); got {len(seq)}"
             )
-        return (float(seq[0]), float(seq[1]))
+        lat, lng = float(seq[0]), float(seq[1])
+        if not (-90.0 <= lat <= 90.0):
+            raise ValueError(
+                f"latitude must be in [-90, 90]; got {lat}"
+            )
+        if not (-180.0 <= lng <= 180.0):
+            raise ValueError(
+                f"longitude must be in [-180, 180]; got {lng}"
+            )
+        return (lat, lng)
 
     @field_validator("datasets", mode="before")
     @classmethod

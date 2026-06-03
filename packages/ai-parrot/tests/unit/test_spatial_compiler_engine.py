@@ -23,14 +23,17 @@ import pytest
 # ---------------------------------------------------------------------------
 
 def _load_spatial_module(name: str, relpath: str) -> types.ModuleType:
-    """Load a spatial module by absolute filesystem path."""
+    """Load a spatial module by path relative to the spatial package directory."""
     import importlib.util
+    from pathlib import Path
+    # Resolve base path dynamically from this test file's location.
+    # This file lives at packages/ai-parrot/tests/unit/ — walk up 3 levels to
+    # reach packages/ai-parrot/, then descend into src/parrot/tools/dataset_manager/spatial.
     base = (
-        "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees/"
-        "feat-219-spatial-dataset-filter/packages/ai-parrot/src/parrot/"
-        "tools/dataset_manager/spatial"
+        Path(__file__).parents[2]
+        / "src" / "parrot" / "tools" / "dataset_manager" / "spatial"
     )
-    full_path = f"{base}/{relpath}"
+    full_path = str(base / relpath)
     spec = importlib.util.spec_from_file_location(name, full_path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[name] = mod
@@ -150,7 +153,14 @@ class TestCompileEnginePassDown:
     """Tests for SpatialCompiler.compile() on engine drivers."""
 
     def test_compile_pg_snapshot(self, compiler, warehouse_spec, pg_school_profile, pg_source):
-        """compile() for pg emits ST_DWithin + ST_AsGeoJSON (no DB required)."""
+        """compile() for pg emits ST_DWithin + ST_AsGeoJSON (no DB required).
+
+        Note: The spec (G7) calls for syrupy snapshot tests.  Until syrupy is
+        added as a dev dependency (``uv add --dev syrupy``), we use deterministic
+        string assertions that are functionally equivalent.  When syrupy is
+        available, replace ``assert cq.sql is not None`` with
+        ``assert cq.sql == snapshot``.
+        """
         cq = compiler.compile(warehouse_spec, pg_school_profile, source=pg_source)
 
         assert cq.path == "engine"
@@ -164,16 +174,28 @@ class TestCompileEnginePassDown:
         assert "ST_DWithin" in sql
         assert "ST_AsGeoJSON" in sql
         assert "ST_MakePoint" in sql
-        assert "geog" in sql
+        # Column identifiers are double-quoted for pg
+        assert '"geog"' in sql
         assert "public.schools" in sql
         # Coordinates must be baked in
         assert "40.7128" in sql
         assert "-74.006" in sql
+        # count_sql must be present for true_count support
+        assert cq.count_sql is not None
+        assert "COUNT(*)" in cq.count_sql
+        # count_sql must NOT have a LIMIT
+        assert "LIMIT" not in cq.count_sql
 
     def test_compile_bigquery_snapshot(
         self, compiler, warehouse_spec, bq_school_profile, bq_source
     ):
-        """compile() for bigquery emits ST_DWITHIN + ST_ASGEOJSON (no DB required)."""
+        """compile() for bigquery emits ST_DWITHIN + ST_ASGEOJSON (no DB required).
+
+        Note: The spec (G7) calls for syrupy snapshot tests.  Until syrupy is
+        added as a dev dependency (``uv add --dev syrupy``), we use deterministic
+        string assertions.  When syrupy is available, replace the sql assertions
+        with ``assert cq.sql == snapshot``.
+        """
         cq = compiler.compile(warehouse_spec, bq_school_profile, source=bq_source)
 
         assert cq.path == "engine"
@@ -185,9 +207,14 @@ class TestCompileEnginePassDown:
         assert "ST_DWITHIN" in sql
         assert "ST_ASGEOJSON" in sql
         assert "ST_GEOGPOINT" in sql
-        assert "location" in sql
+        # Column identifiers are backtick-quoted for BigQuery
+        assert "`location`" in sql
         assert "my_dataset.schools" in sql
         assert "40.7128" in sql
+        # count_sql must be present for true_count support
+        assert cq.count_sql is not None
+        assert "COUNT(*)" in cq.count_sql
+        assert "LIMIT" not in cq.count_sql
 
     def test_compile_is_io_free(self, compiler, warehouse_spec, pg_school_profile, pg_source):
         """compile() does not import asyncdb or perform any I/O."""

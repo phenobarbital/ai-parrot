@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .contracts import DatasetSpatialProfile, SpatialFilterSpec
@@ -94,8 +94,19 @@ def _bbox_from_point(lat: float, lng: float, radius_m: float) -> tuple:
     """
     # 1 degree latitude ≈ 111_320 m (approximately constant)
     lat_delta = radius_m / 111_320.0
-    # 1 degree longitude ≈ cos(lat) * 111_320 m
-    lng_delta = radius_m / (111_320.0 * math.cos(math.radians(lat)))
+    # 1 degree longitude ≈ cos(lat) * 111_320 m.
+    # Guard against division by zero near the poles (cos ≈ 0 at ±90°): when the
+    # absolute cosine is below 1e-6 the point is essentially at a pole and all
+    # longitudes are equidistant, so we expand the bbox to cover all longitudes.
+    cos_lat = math.cos(math.radians(lat))
+    # Threshold: cos(lat) < 1e-4 means lat is within ~0.006° of a pole.
+    # At that proximity the longitude degree length approaches zero, so the bbox
+    # expands to cover all longitudes (full 360° wrap) rather than dividing by
+    # a near-zero value.
+    if abs(cos_lat) < 1e-4:
+        lng_delta = 180.0  # near poles: bbox covers all longitudes
+    else:
+        lng_delta = radius_m / (111_320.0 * cos_lat)
     return (
         lat - lat_delta,
         lat + lat_delta,
@@ -152,6 +163,7 @@ class CompiledQuery:
     geom_col: Optional[str] = None
     cap: int = _DEFAULT_ENGINE_CAP
     geodesic_warning: str = ""
+    count_sql: Optional[str] = None  # COUNT(*) query without LIMIT for true_count
     extra: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -177,40 +189,71 @@ class SpatialCompiler:
 
     _PG_PUSHDOWN_GEOM_TEMPLATE = (
         "SELECT {property_cols}, "
-        "ST_AsGeoJSON({geom_col}) AS __geojson__ "
+        'ST_AsGeoJSON("{geom_col}") AS __geojson__ '
         "FROM {table} "
-        "WHERE ST_DWithin({geom_col}::geography, "
+        'WHERE ST_DWithin("{geom_col}"::geography, '
         "ST_MakePoint({lng}, {lat})::geography, {radius_m}) "
         "LIMIT {cap}"
+    )
+
+    # COUNT(*) counterpart for true_count — same WHERE, no LIMIT, no projection.
+    _PG_COUNT_GEOM_TEMPLATE = (
+        "SELECT COUNT(*) AS __count__ "
+        "FROM {table} "
+        'WHERE ST_DWithin("{geom_col}"::geography, '
+        "ST_MakePoint({lng}, {lat})::geography, {radius_m})"
     )
 
     _PG_PUSHDOWN_LATLON_TEMPLATE = (
         "SELECT {property_cols}, "
-        "ST_AsGeoJSON(ST_MakePoint({lng_col}, {lat_col})) AS __geojson__ "
+        'ST_AsGeoJSON(ST_MakePoint("{lng_col}", "{lat_col}")) AS __geojson__ '
         "FROM {table} "
         "WHERE ST_DWithin("
-        "ST_MakePoint({lng_col}, {lat_col})::geography, "
+        'ST_MakePoint("{lng_col}", "{lat_col}")::geography, '
         "ST_MakePoint({lng}, {lat})::geography, {radius_m}) "
         "LIMIT {cap}"
     )
 
+    _PG_COUNT_LATLON_TEMPLATE = (
+        "SELECT COUNT(*) AS __count__ "
+        "FROM {table} "
+        "WHERE ST_DWithin("
+        'ST_MakePoint("{lng_col}", "{lat_col}")::geography, '
+        "ST_MakePoint({lng}, {lat})::geography, {radius_m})"
+    )
+
     _BQ_PUSHDOWN_GEOM_TEMPLATE = (
         "SELECT {property_cols}, "
-        "ST_ASGEOJSON({geom_col}) AS __geojson__ "
+        "ST_ASGEOJSON(`{geom_col}`) AS __geojson__ "
         "FROM `{table}` "
-        "WHERE ST_DWITHIN({geom_col}, "
+        "WHERE ST_DWITHIN(`{geom_col}`, "
         "ST_GEOGPOINT({lng}, {lat}), {radius_m}) "
         "LIMIT {cap}"
     )
 
+    _BQ_COUNT_GEOM_TEMPLATE = (
+        "SELECT COUNT(*) AS __count__ "
+        "FROM `{table}` "
+        "WHERE ST_DWITHIN(`{geom_col}`, "
+        "ST_GEOGPOINT({lng}, {lat}), {radius_m})"
+    )
+
     _BQ_PUSHDOWN_LATLON_TEMPLATE = (
         "SELECT {property_cols}, "
-        "ST_ASGEOJSON(ST_GEOGPOINT({lng_col}, {lat_col})) AS __geojson__ "
+        "ST_ASGEOJSON(ST_GEOGPOINT(`{lng_col}`, `{lat_col}`)) AS __geojson__ "
         "FROM `{table}` "
         "WHERE ST_DWITHIN("
-        "ST_GEOGPOINT({lng_col}, {lat_col}), "
+        "ST_GEOGPOINT(`{lng_col}`, `{lat_col}`), "
         "ST_GEOGPOINT({lng}, {lat}), {radius_m}) "
         "LIMIT {cap}"
+    )
+
+    _BQ_COUNT_LATLON_TEMPLATE = (
+        "SELECT COUNT(*) AS __count__ "
+        "FROM `{table}` "
+        "WHERE ST_DWITHIN("
+        "ST_GEOGPOINT(`{lng_col}`, `{lat_col}`), "
+        "ST_GEOGPOINT({lng}, {lat}), {radius_m})"
     )
 
     # ── Column-type → geodesic resolution ────────────────────────────────
@@ -290,9 +333,10 @@ class SpatialCompiler:
             driver=driver, profile=profile, source=source
         )
 
-        # Build property columns projection
-        property_cols_sql = self._build_property_projection(profile.property_cols)
+        # Build property columns projection (with dialect-appropriate quoting)
+        property_cols_sql = self._build_property_projection(profile.property_cols, driver=driver)
 
+        count_sql: Optional[str] = None
         if profile.geom_col:
             geom_col = profile.geom_col
             if driver == "pg":
@@ -301,11 +345,19 @@ class SpatialCompiler:
                     geom_col=geom_col, table=table,
                     lat=lat, lng=lng, radius_m=radius_m, cap=cap,
                 )
+                count_sql = self._PG_COUNT_GEOM_TEMPLATE.format(
+                    geom_col=geom_col, table=table,
+                    lat=lat, lng=lng, radius_m=radius_m,
+                )
             else:  # bigquery
                 sql = self._BQ_PUSHDOWN_GEOM_TEMPLATE.format(
                     property_cols=property_cols_sql,
                     geom_col=geom_col, table=table,
                     lat=lat, lng=lng, radius_m=radius_m, cap=cap,
+                )
+                count_sql = self._BQ_COUNT_GEOM_TEMPLATE.format(
+                    geom_col=geom_col, table=table,
+                    lat=lat, lng=lng, radius_m=radius_m,
                 )
         elif profile.lat_col and profile.lng_col:
             lat_col = profile.lat_col
@@ -316,11 +368,19 @@ class SpatialCompiler:
                     lat_col=lat_col, lng_col=lng_col, table=table,
                     lat=lat, lng=lng, radius_m=radius_m, cap=cap,
                 )
+                count_sql = self._PG_COUNT_LATLON_TEMPLATE.format(
+                    lat_col=lat_col, lng_col=lng_col, table=table,
+                    lat=lat, lng=lng, radius_m=radius_m,
+                )
             else:  # bigquery
                 sql = self._BQ_PUSHDOWN_LATLON_TEMPLATE.format(
                     property_cols=property_cols_sql,
                     lat_col=lat_col, lng_col=lng_col, table=table,
                     lat=lat, lng=lng, radius_m=radius_m, cap=cap,
+                )
+                count_sql = self._BQ_COUNT_LATLON_TEMPLATE.format(
+                    lat_col=lat_col, lng_col=lng_col, table=table,
+                    lat=lat, lng=lng, radius_m=radius_m,
                 )
         else:
             raise ValueError(
@@ -341,6 +401,7 @@ class SpatialCompiler:
             geom_col=profile.geom_col,
             cap=cap,
             geodesic_warning=geodesic_warning,
+            count_sql=count_sql,
         )
 
     def _compile_pandas(
@@ -448,18 +509,31 @@ class SpatialCompiler:
         return declared, ""
 
     @staticmethod
-    def _build_property_projection(property_cols: List[str]) -> str:
+    def _build_property_projection(property_cols: List[str], driver: str = "") -> str:
         """Build the SQL SELECT projection for property columns.
+
+        Column identifiers are quoted per dialect so that reserved words (e.g.
+        ``order``, ``type``) and names containing spaces or special characters
+        are handled correctly:
+
+        - PostgreSQL: ``"double_quotes"``
+        - BigQuery: `` `backticks` ``
+        - Other/unknown: unquoted (safe for most simple names)
 
         Args:
             property_cols: List of column names.
+            driver: Normalised driver name (``"pg"``, ``"bigquery"``, etc.).
 
         Returns:
-            Comma-separated column list string, or ``'*'`` if empty.
+            Comma-separated, dialect-quoted column list, or ``'*'`` if empty.
         """
         if not property_cols:
             return "*"
-        # Simple identity projection — no aliasing needed
+        if driver == "pg":
+            return ", ".join(f'"{col}"' for col in property_cols)
+        if driver == "bigquery":
+            return ", ".join(f"`{col}`" for col in property_cols)
+        # Fallback: unquoted (non-spatial drivers go through pandas path)
         return ", ".join(property_cols)
 
     # ── execute() ────────────────────────────────────────────────────────
@@ -468,7 +542,7 @@ class SpatialCompiler:
         self,
         compiled: CompiledQuery,
         source: Any,
-    ) -> List[dict]:
+    ) -> Tuple[List[dict], int]:
         """Execute a compiled query against the given DataSource.
 
         Routes to the engine push-down or pandas fallback path based on
@@ -480,7 +554,9 @@ class SpatialCompiler:
             source: The DataSource for this dataset.
 
         Returns:
-            List of GeoJSON Feature dicts.
+            Tuple of (features, true_count) where true_count is the total
+            number of matching rows BEFORE any cap is applied.  When the
+            engine path has a count_sql, true_count may exceed len(features).
         """
         if compiled.path == "engine":
             return await self._execute_engine(compiled, source)
@@ -490,18 +566,26 @@ class SpatialCompiler:
         self,
         compiled: CompiledQuery,
         source: Any,
-    ) -> List[dict]:
+    ) -> Tuple[List[dict], int]:
         """Execute the engine push-down SQL via AsyncDB.
+
+        When ``compiled.count_sql`` is set, runs a COUNT(*) query first to
+        obtain the true number of matching rows (before the LIMIT cap), then
+        runs the main query.  This allows ``total_count`` in the response to
+        accurately reflect how many rows matched — not just how many were
+        returned.
 
         Args:
             compiled: A CompiledQuery with path="engine".
             source: TableSource instance.
 
         Returns:
-            List of GeoJSON Feature dicts.
+            Tuple of (features, true_count).  ``true_count`` is the number of
+            rows that satisfied the spatial predicate before the LIMIT cap;
+            ``features`` is the capped list of GeoJSON Feature dicts.
 
         Raises:
-            RuntimeError: If the query fails.
+            RuntimeError: If either query fails.
         """
         from asyncdb import AsyncDB  # type: ignore[import]
 
@@ -513,9 +597,25 @@ class SpatialCompiler:
             db = AsyncDB(source.driver, params=credentials)
 
         features: List[dict] = []
+        true_count: int = 0
 
         async with await db.connection() as conn:
             conn.output_format("pandas")
+
+            # Run COUNT(*) first if we have a count query (for true total_count)
+            if compiled.count_sql:
+                count_result, count_errors = await conn.query(compiled.count_sql)
+                if count_errors:
+                    logger.warning(
+                        "SpatialCompiler: count query failed for '%s': %s — "
+                        "true_count will fall back to len(features).",
+                        compiled.profile_dataset, count_errors,
+                    )
+                else:
+                    import pandas as _pd
+                    if isinstance(count_result, _pd.DataFrame) and not count_result.empty:
+                        true_count = int(count_result.iloc[0]["__count__"])
+
             result, errors = await conn.query(compiled.sql)
 
             if errors:
@@ -525,7 +625,7 @@ class SpatialCompiler:
                 )
 
             if result is None or (hasattr(result, "empty") and result.empty):
-                return features
+                return features, true_count
 
             import pandas as _pd
             if isinstance(result, _pd.DataFrame):
@@ -537,25 +637,33 @@ class SpatialCompiler:
                     if feature:
                         features.append(feature)
 
-        return features
+        # If count query was not available or failed, use returned feature count
+        if true_count == 0:
+            true_count = len(features)
+
+        return features, true_count
 
     async def _execute_pandas(
         self,
         compiled: CompiledQuery,
         source: Any,
-    ) -> List[dict]:
+    ) -> Tuple[List[dict], int]:
         """Execute bbox prefilter + haversine refine for non-spatial backends.
 
         For InMemorySource: uses the in-memory DataFrame directly.
         For TableSource with non-spatial driver: fetches via AsyncDB with a
         BETWEEN WHERE clause, then refines with haversine.
 
+        The true count (matches BEFORE cap) is recorded by counting the full
+        haversine-refined result before slicing to ``compiled.cap``.
+
         Args:
             compiled: A CompiledQuery with path="pandas".
             source: DataSource instance (TableSource or InMemorySource).
 
         Returns:
-            List of GeoJSON Feature dicts (after haversine refine).
+            Tuple of (features[:cap], total_matches) where ``total_matches`` is
+            the count of haversine-passing rows before the cap is applied.
         """
         # Determine how to get the bbox-filtered DataFrame
         from ..sources.memory import InMemorySource
@@ -569,12 +677,12 @@ class SpatialCompiler:
             df = await source._run_query(bbox_sql)
 
         if df is None or (hasattr(df, "empty") and df.empty):
-            return []
+            return [], 0
 
         # Haversine refine: keep only rows inside the exact circle
         df = self._haversine_refine(df, compiled)
 
-        # Convert surviving rows to GeoJSON features
+        # Convert ALL surviving rows to GeoJSON features (count BEFORE cap)
         features: List[dict] = []
         for _, row in df.iterrows():
             feature = self._row_to_latlon_geojson_feature(
@@ -584,8 +692,11 @@ class SpatialCompiler:
             if feature:
                 features.append(feature)
 
+        # Record the true match count before applying the cap
+        total_matches = len(features)
+
         # Apply cap
-        return features[:compiled.cap]
+        return features[:compiled.cap], total_matches
 
     @staticmethod
     def _build_bbox_sql(compiled: CompiledQuery, source: Any) -> str:
@@ -627,7 +738,12 @@ class SpatialCompiler:
         sql = source._inject_permanent_filter(sql)
 
         if compiled.cap:
-            sql += f" LIMIT {compiled.cap * 4}"  # over-fetch to account for refine loss
+            # Over-fetch by 4× to account for haversine refinement loss: a bbox covers
+            # ~(4/π ≈ 1.27) times the area of the inscribed circle, so corners add ~27%
+            # extra rows.  The 4× factor is conservative to handle non-uniform data
+            # distributions.  Configure ``bbox_overfetch_factor`` on SpatialCompiler
+            # if a different multiplier is needed for a specific dataset.
+            sql += f" LIMIT {compiled.cap * 4}"
 
         return sql
 
