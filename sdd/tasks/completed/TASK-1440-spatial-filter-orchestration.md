@@ -154,7 +154,13 @@ compiler. Document your partial-failure and concurrency-bound choices in the Com
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet (sdd-worker)
+**Date**: 2026-06-03
+**Notes**: DatasetManager.spatial_filter added at end of tool.py. Orchestration: resolves names
+via _resolve_name, validates profiles via validate_profiles_exist, groups by (driver, connection)
+using _get_connection_args for connection identity, asyncio.gather per dataset with _pctx_var
+propagation into each task, merges into SpatialFeatureCollection with cap_per_dataset hard cap.
+Partial-failure policy: one dataset failing surfaces empty features + error log (not fatal).
+AsyncDB pool ceiling: documented choice — no concurrency bound applied beyond asyncio.gather
+default (each dataset is one task); real pool-ceiling limits are AsyncDB's responsibility.
+**Deviations from spec**: none

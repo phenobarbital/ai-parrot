@@ -94,7 +94,7 @@
       "feature_id": "FEAT-219",
       "feature": "spatial-dataset-filter",
       "spec": "sdd/specs/spatial-dataset-filter.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Ties compiler branches together in tool.py; needs both compiler branches present. Not parallel.",
       "assigned_to": null,
       "started_at": "2026-06-03T16:42:25+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1440-spatial-filter-orchestration.md"
+      "completed_at": "2026-06-03T16:59:45+00:00",
+      "file": "sdd/tasks/completed/TASK-1440-spatial-filter-orchestration.md"
     },
     {
       "id": "TASK-1441",
