@@ -49,3 +49,5 @@ class FieldType(str, Enum):
     RANKING = "ranking"
     # Phase 3 — new field type (FEAT-170)
     REST = "rest"
+    # Phase 4 — audio form renderer (FEAT-224)
+    AUDIO = "audio"

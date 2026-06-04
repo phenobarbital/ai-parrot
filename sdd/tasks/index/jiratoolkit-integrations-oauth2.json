@@ -1,0 +1,172 @@
+{
+  "feature": "jiratoolkit-integrations-oauth2",
+  "feature_id": "FEAT-225",
+  "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-04T00:00:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1467",
+      "slug": "lift-shared-auth-primitives",
+      "title": "Lift Shared Auth Primitives to integrations/core/auth/",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Gating task — all other tasks depend on the import-path lift completing first.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1467-lift-shared-auth-primitives.md"
+    },
+    {
+      "id": "TASK-1468",
+      "slug": "slack-command-router-jira",
+      "title": "Slack Command Router + Jira Commands",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1467"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could theoretically run in parallel with TASK-1471 (Teams commands) after TASK-1467, but per-spec isolation means sequential execution.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1468-slack-command-router-jira.md"
+    },
+    {
+      "id": "TASK-1469",
+      "slug": "slack-oauth-callback-notification",
+      "title": "Slack OAuth Callback + DM Notification",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1468"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on Slack commands being defined (TASK-1468) for extra_state contract.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1469-slack-oauth-callback-notification.md"
+    },
+    {
+      "id": "TASK-1470",
+      "slug": "slack-wrapper-wiring",
+      "title": "Slack Wrapper + Socket Handler Wiring",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1468",
+        "TASK-1469"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires both the command router and OAuth notifier into the Slack wrapper.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1470-slack-wrapper-wiring.md"
+    },
+    {
+      "id": "TASK-1471",
+      "slug": "msteams-command-router-jira",
+      "title": "MS Teams Command Router + Jira Commands",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1467"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could theoretically run in parallel with TASK-1468 (Slack commands), but per-spec isolation means sequential.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1471-msteams-command-router-jira.md"
+    },
+    {
+      "id": "TASK-1472",
+      "slug": "msteams-oauth-callback-notification",
+      "title": "MS Teams OAuth Callback + Proactive Notification",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1471"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on Teams commands being defined (TASK-1471) for extra_state contract.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1472-msteams-oauth-callback-notification.md"
+    },
+    {
+      "id": "TASK-1473",
+      "slug": "msteams-wrapper-wiring",
+      "title": "MS Teams Wrapper Wiring",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1471",
+        "TASK-1472"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires both the command router and OAuth notifier into the Teams wrapper.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1473-msteams-wrapper-wiring.md"
+    },
+    {
+      "id": "TASK-1474",
+      "slug": "callback-route-extension",
+      "title": "Config + Callback Route Extension (Integration Test)",
+      "feature_id": "FEAT-225",
+      "feature": "jiratoolkit-integrations-oauth2",
+      "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1470",
+        "TASK-1473"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration task — requires all Slack and Teams tasks to be complete.",
+      "assigned_to": null,
+      "started_at": "2026-06-04T14:53:31+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1474-callback-route-extension.md"
+    }
+  ]
+}
