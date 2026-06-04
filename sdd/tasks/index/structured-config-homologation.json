@@ -71,7 +71,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Modifies handlers/agent.py; consumes the envelope built by 1461 and the ArtifactType.TABLE / from_structured_config from 1459.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1462-handler-feat103-autosave-alignment.md"
+      "completed_at": "2026-06-04T13:24:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1462-handler-feat103-autosave-alignment.md"
     },
     {
       "id": "TASK-1463",
