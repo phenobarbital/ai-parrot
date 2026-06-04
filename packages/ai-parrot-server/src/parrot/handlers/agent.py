@@ -40,7 +40,7 @@ from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager
 from .user_objects import UserObjectsHandler
-from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_map as _get_factory_map
+from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 from ..auth.exceptions import AuthorizationRequired
@@ -244,7 +244,6 @@ class AgentTalk(BaseView):
                 evaluator = getattr(pdp, '_evaluator', None)
                 if evaluator is None:
                     return
-                from navigator_auth.abac.context import EvalContext
                 from navigator_auth.abac.policies.environment import Environment
                 eval_ctx = await self._build_eval_context()
                 if eval_ctx is None:
@@ -1779,7 +1778,6 @@ class AgentTalk(BaseView):
         original_pandas_tool = None
         session_pandas_tool = None
         if isinstance(agent, PandasAgent):
-            from ..tools.pythonpandas import PythonPandasTool
             original_pandas_tool = agent._get_python_pandas_tool()
             if original_pandas_tool:
                 dm = user_dataset_manager or getattr(agent, '_dataset_manager', None)
