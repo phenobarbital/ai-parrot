@@ -120,4 +120,19 @@ async def test_executor_dispatches_conditional():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Split `loop` and `conditional` out of the stub `elif` block in
+`executor._dispatch_step` into dedicated branches that call
+`advanced_actions.exec_loop` / `exec_conditional`. Each branch builds a
+`_dispatch` closure `(d, s, u, t, _se)` that forwards back into
+`_dispatch_step` while preserving the outer `step_extracted` accumulator —
+this enables recursive loop-within-loop execution and lets nested `extract`
+steps accumulate into the plan's result. The remaining advanced actions
+(`get_cookies`, `set_cookies`, `authenticate`, `await_*`, `upload_file`,
+`wait_for_download`) stay stubbed unchanged.
+
+Added `from .advanced_actions import exec_conditional, exec_loop`.
+
+5 new tests added (loop dispatch, value substitution, conditional true/false
+branches, nested loop); all 35 executor tests pass. Pre-existing lint findings
+(`EXTRACTOR_REGISTRY` unused import, test `asyncio`/`patch`/`result`) were left
+untouched per no-scope-creep rule; no new lint introduced.

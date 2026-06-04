@@ -233,4 +233,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `advanced_actions.py` with three stateless helpers:
+`substitute_template_vars` (sync), `exec_loop` and `exec_conditional` (async).
+Functions accept an `AbstractDriver` + a `dispatch_step_fn` callback matching
+`executor._dispatch_step`'s signature `(driver, step, url, timeout, step_extracted)`.
+
+- `substitute_template_vars` supports `{i}`, `{index}`, `{iteration}`,
+  arithmetic (`{i+1}`, `{i-1}`, `{i*2}`, `{index+1}`) via no-builtins `eval`,
+  `{value}` / `{<value_name>}` substitution, and recursive dict/list walking.
+  Arithmetic token replacement uses word boundaries (longest-first) to fix the
+  legacy bug where `{index+1}` was corrupted by the single-letter `i` replace.
+- `exec_loop` handles fixed iterations, value-list iteration, JS condition
+  gating (via `driver.evaluate`), `break_on_error`, `max_iterations`, and
+  `start_index`.
+- `exec_conditional` evaluates all 5 condition types (`exists`, `not_exists`,
+  `text_contains`, `text_equals`, `attribute_equals`) through `AbstractDriver`
+  and dispatches the true/false branch.
+
+`_substitute_action_vars` was extracted as a private helper (model_dump →
+substitute → reconstruct) since it is reused by `exec_loop` and is generic.
+
+28 unit tests pass; `ruff` clean. Did NOT modify `executor.py` or `tool.py`
+(reserved for TASK-1446 / TASK-1447).

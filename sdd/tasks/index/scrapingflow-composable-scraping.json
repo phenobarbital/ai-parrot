@@ -14,7 +14,7 @@
       "feature_id": "FEAT-222",
       "feature": "scrapingflow-composable-scraping",
       "spec": "sdd/specs/scrapingflow-composable-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No dependencies; creates new module only",
       "assigned_to": null,
       "started_at": "2026-06-03T23:56:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1445-advanced-actions-extraction.md"
+      "completed_at": "2026-06-04T00:07:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1445-advanced-actions-extraction.md"
     },
     {
       "id": "TASK-1446",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-222",
       "feature": "scrapingflow-composable-scraping",
       "spec": "sdd/specs/scrapingflow-composable-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Modifies executor.py which depends on TASK-1445 advanced_actions",
       "assigned_to": null,
       "started_at": "2026-06-03T23:56:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1446-executor-loop-conditional-integration.md"
+      "completed_at": "2026-06-04T00:10:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1446-executor-loop-conditional-integration.md"
     },
     {
       "id": "TASK-1447",
