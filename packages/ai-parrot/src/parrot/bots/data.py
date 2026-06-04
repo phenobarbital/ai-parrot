@@ -1886,7 +1886,14 @@ class PandasAgent(BasicAgent):
                 }
                 _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
                 if _art_type and isinstance(content, dict) and content:
-                    _art_id = f"{output_mode.value}-{uuid.uuid4().hex[:8]}"
+                    # output_mode may arrive as a plain str (not an OutputMode
+                    # enum) — mirror the hasattr guard used in the log line below.
+                    _mode_str = (
+                        output_mode.value
+                        if hasattr(output_mode, "value")
+                        else output_mode
+                    )
+                    _art_id = f"{_mode_str}-{uuid.uuid4().hex[:8]}"
                     # G2 safety net: the renderer already excludes rows, but strip
                     # any stray `data` key defensively so the envelope definition
                     # never carries rows (rows live in response.data only).
