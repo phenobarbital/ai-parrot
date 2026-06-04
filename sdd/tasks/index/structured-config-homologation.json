@@ -50,7 +50,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +61,8 @@
       "parallelism_notes": "Modifies bots/data.py and relies on the generic constructor (1459) and the chart renderer input migration (1460). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1461-pandasagent-artifact-envelope-wiring.md"
+      "completed_at": "2026-06-04T13:22:05+00:00",
+      "file": "sdd/tasks/completed/TASK-1461-pandasagent-artifact-envelope-wiring.md"
     },
     {
       "id": "TASK-1462",
