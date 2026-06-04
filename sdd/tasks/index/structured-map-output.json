@@ -134,7 +134,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "End-to-end; depends on every prior task.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1451-structured-map-integration-tests.md"
+      "completed_at": "2026-06-04T00:05:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1451-structured-map-integration-tests.md"
     }
   ]
 }
