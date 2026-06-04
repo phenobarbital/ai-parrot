@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-04T20:32:11+00:00",
   "tasks": [
     {
       "id": "TASK-1464",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Creates an isolated new package (filtering/contracts.py); shares no files with other tasks. Safe to start first / in its own worktree.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1464-filter-contracts.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1464-filter-contracts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1465",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Edits tool.py (shared hotspot). Must follow contracts (TASK-1464).",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1465-instance-store-define-filters.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1465-instance-store-define-filters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1466",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +65,9 @@
       "parallelism_notes": "Edits _apply_filter in tool.py and adds filtering/compiler.py; depends on contracts + store.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1466-filter-compiler.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1466-filter-compiler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1467",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -85,8 +88,9 @@
       "parallelism_notes": "Core orchestration in tool.py; consumes compiler + store; delegates to spatial_filter().",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1467-apply-filters-orchestration.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1467-apply-filters-orchestration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1468",
@@ -95,7 +99,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -106,8 +110,9 @@
       "parallelism_notes": "Adds filtering/values.py + get_filter_values() in tool.py; independent of compiler/orchestration but shares tool.py, so sequential under per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1468-value-catalogs.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1468-value-catalogs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1469",
@@ -116,7 +121,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -127,8 +132,9 @@
       "parallelism_notes": "Adds get_filter_schema()/suggest_filters() in tool.py; shares tool.py, sequential under per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1469-schema-and-suggest.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1469-schema-and-suggest.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1470",
@@ -137,7 +143,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -149,8 +155,9 @@
       "parallelism_notes": "Wires @tool exposure in tool.py and a new handler; needs the public methods from 1467/1468/1469.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1470-tools-and-transport.md"
+      "completed_at": "2026-06-04T20:32:11+00:00",
+      "file": "sdd/tasks/active/TASK-1470-tools-and-transport.md",
+      "verification": "verified"
     }
   ]
 }
