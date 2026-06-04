@@ -92,7 +92,7 @@
       "feature_id": "FEAT-223",
       "feature": "structured-artifact-contract",
       "spec": "sdd/specs/structured-artifact-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Cross-cutting tests; needs chart, convergence and map conformance complete. Runs last.",
       "assigned_to": null,
       "started_at": "2026-06-04T04:27:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1458-tests-and-migration.md"
+      "completed_at": "2026-06-04T04:49:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1458-tests-and-migration.md"
     }
   ]
 }
