@@ -156,9 +156,7 @@ class TestDeterministicChart:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-03
+**Notes**: Rebuilt `StructuredChartRenderer(StructuredOutputBase, BaseChart)`. Rows come exclusively from `_extract_rows(response)` → `canonical_records`. Removed `_resolve_rows`, `_reconcile_columns`, `_extract_json_code` (latter inherited). Added `_safe_x`/`_safe_y` for deterministic column fallback preserving index-like column filtering. Uses `_route_envelope` via `cfg.model_copy(update={"x":x,"y":y,"data":rows})`. Updated system prompt to say LLM must NOT emit rows. 9 reconciliation-era tests updated; 5 new deterministic tests added. 37/37 chart tests + 48/48 table tests pass. Linting clean.
+**Deviations from spec**: none
