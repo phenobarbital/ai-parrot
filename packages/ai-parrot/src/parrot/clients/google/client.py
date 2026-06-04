@@ -746,6 +746,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
+        # Gemini requires every array schema to carry an `items` schema and does
+        # NOT understand `prefixItems` (the draft-2020-12 keyword Pydantic v2
+        # emits for fixed-length tuples, e.g. `Tuple[float, float]`). Since
+        # `prefixItems` is stripped below as unsupported, an array would be left
+        # with no item schema at all — Google then rejects the whole request
+        # with "...properties[<field>].items: missing field". Backfill `items`
+        # from the first `prefixItems` entry (tuples are homogeneous in practice,
+        # e.g. coordinate pairs), or fall back to a permissive string item.
+        if cleaned.get('type') == 'array' and 'items' not in cleaned:
+            prefix_items = schema.get('prefixItems')
+            if isinstance(prefix_items, list) and prefix_items:
+                cleaned['items'] = self.clean_google_schema(prefix_items[0])
+            else:
+                cleaned['items'] = {'type': 'string'}
+
         # Vertex AI requires function parameters to be of type OBJECT.
         # Keep empty-property objects as OBJECT (don't coerce to string).
 
