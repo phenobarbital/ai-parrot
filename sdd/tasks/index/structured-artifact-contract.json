@@ -52,7 +52,7 @@
       "feature_id": "FEAT-223",
       "feature": "structured-artifact-contract",
       "spec": "sdd/specs/structured-artifact-contract.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": false,
       "parallelism_notes": "Shares StructuredChartConfig with TASK-1455 (may add a field) + touches infographic.py/storage/models.py. Sequence after chart refactor to avoid outputs.py conflicts.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-04T03:42:26+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1456-chart-config-convergence.md"
     },
