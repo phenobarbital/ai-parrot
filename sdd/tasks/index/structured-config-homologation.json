@@ -14,7 +14,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Touches only storage/models.py — shares no files with TASK-1460. Both can run in parallel worktrees.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1459-artifacttype-table-and-structured-constructor.md"
+      "completed_at": "2026-06-04T13:13:09+00:00",
+      "file": "sdd/tasks/completed/TASK-1459-artifacttype-table-and-structured-constructor.md"
     },
     {
       "id": "TASK-1460",
