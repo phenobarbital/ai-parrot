@@ -14,7 +14,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "No file overlap with TASK-1460. Both can run independently.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1459-fieldtype-audio-enum.md"
+      "completed_at": "2026-06-04T14:16:25+00:00",
+      "file": "sdd/tasks/completed/TASK-1459-fieldtype-audio-enum.md"
     },
     {
       "id": "TASK-1460",
