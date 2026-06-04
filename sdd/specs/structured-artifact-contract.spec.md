@@ -9,7 +9,7 @@ base_branch: dev
 **Feature ID**: FEAT-221
 **Date**: 2026-06-03
 **Author**: Juan Ruffato
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/structured-artifact-contract.brainstorm.md`
 
@@ -258,3 +258,5 @@ class StructuredChartRenderer(BaseChart): ...  # current LLM-owns-data renderer 
 
 ## Revision History
 - 2026-06-03 — draft created from accepted brainstorm `structured-artifact-contract` (Juan Ruffato).
+- 2026-06-03 — approved (Juan Ruffato). Open items are non-blocking: Q4 deferred to Option C;
+  Impl-1/Impl-2 resolved during Module 1/3 implementation.
