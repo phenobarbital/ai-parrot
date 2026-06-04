@@ -138,10 +138,8 @@ class TestChartConfigConvergence:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Impl-2 audit result**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-04
+**Notes**: Added `positive_color`, `x_axis_label`, `y_axis_label` to `StructuredChartConfig`. Added `ChartBlock.to_chart_config()` (labels+series → x/y/data) and `ChartBlock.from_chart_config()` (classmethod, inverse) to `infographic.py` — existing fields preserved. Added `Artifact.from_chart_config()` and `Artifact.as_chart_config()` to `storage/models.py`. 23 new convergence tests pass; 85 existing chart/table tests unaffected. Linting clean.
+**Impl-2 audit result**: ChartBlock has 4 fields absent from StructuredChartConfig: `positive_color` (complement to `negative_color` — **ADDED**), `x_axis_label` / `y_axis_label` (axis display labels — **ADDED**), `layout` (infographic half/full layout hint — **NOT added**; it is infographic-composition concern, not chart-config).
+**Deviations from spec**: none
