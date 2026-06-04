@@ -35,6 +35,10 @@ from .sources.base import DataSource
 # contracts module is I/O-free (typing + pydantic only), so no circular import.
 from .spatial.contracts import SpatialFilterSpec, SpatialResult, SpatialLayerResult
 
+# FEAT-225: filtering contracts are I/O-free Pydantic models; safe to import at
+# module level (no circular import).
+from .filtering.contracts import FilterDefinition
+
 if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
     from ...auth.permission import PermissionContext
@@ -546,6 +550,9 @@ class DatasetManager(AbstractToolkit):
         # PBAC dataset-level policy enforcement (FEAT-151).
         # None → no enforcement (opt-in backwards compat).
         self._policy_guard: Optional["DatasetPolicyGuard"] = policy_guard
+        # FEAT-225: instance-scoped filter definition store.
+        # Keyed by FilterDefinition.name.  Never shared across instances.
+        self._filter_defs: Dict[str, FilterDefinition] = {}
         # Per-call permission context is stored in the module-level _pctx_var
         # ContextVar (set by _pre_execute, read by _get_current_pctx).
         # Using a ContextVar instead of an instance attribute isolates concurrent
@@ -4131,6 +4138,88 @@ class DatasetManager(AbstractToolkit):
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
         return dfs
+
+    # ─────────────────────────────────────────────────────────────
+    # Common-Field Filtering (FEAT-225)
+    # ─────────────────────────────────────────────────────────────
+
+    def define_filters(self, definitions: List[FilterDefinition]) -> None:
+        """Validate and store common-field filter definitions on this instance.
+
+        Each definition is validated against the datasets registered on *this*
+        DatasetManager:
+
+        - **Column coverage** — at least one registered dataset with a known
+          schema should contain the target column(s).  If no such dataset is
+          found a warning is logged (non-fatal: datasets may not be materialized
+          yet or may be added later).
+        - **Spatial kind** — when ``kind="spatial"`` every registered dataset
+          is checked against the spatial profile registry via
+          ``get_spatial_profile``.  If no registered dataset has a spatial
+          profile a ``ValueError`` is raised.
+        - **Duplicate names** — replacing an existing definition is allowed and
+          logged at DEBUG level.
+
+        The definitions are stored in ``self._filter_defs`` (instance-scoped,
+        never global).
+
+        Args:
+            definitions: List of validated :class:`FilterDefinition` instances.
+
+        Raises:
+            ValueError: When ``kind="spatial"`` and no registered dataset has
+                a registered spatial profile.
+        """
+        from .filtering.store import columns_present_in_any, warn_if_no_coverage
+
+        for defn in definitions:
+            if defn.name in self._filter_defs:
+                self.logger.debug(
+                    "define_filters: replacing existing definition '%s'.", defn.name
+                )
+
+            if defn.kind == "spatial":
+                # Spatial definitions require at least one registered dataset to
+                # have a spatial profile. Validate against all known datasets.
+                spatial_datasets = [
+                    name
+                    for name in self._datasets
+                    if self._try_get_spatial_profile(name) is not None
+                ]
+                if not spatial_datasets:
+                    raise ValueError(
+                        f"define_filters: kind='spatial' for filter '{defn.name}' "
+                        f"requires at least one registered dataset with a spatial "
+                        f"profile, but none were found. "
+                        f"Register a DatasetSpatialProfile via "
+                        f"register_spatial_profile() first."
+                    )
+            else:
+                compatible = columns_present_in_any(defn.columns, self._datasets)
+                warn_if_no_coverage(defn.name, defn.columns, compatible, self.logger)
+
+            self._filter_defs[defn.name] = defn
+            self.logger.debug(
+                "define_filters: stored filter '%s' (kind=%s, ops=%s).",
+                defn.name,
+                defn.kind,
+                defn.ops,
+            )
+
+    def _try_get_spatial_profile(self, dataset_name: str) -> Any:
+        """Return the spatial profile for *dataset_name*, or None if absent.
+
+        Helper to avoid raising inside a list comprehension.
+
+        Args:
+            dataset_name: Canonical dataset name.
+
+        Returns:
+            DatasetSpatialProfile if registered, else None.
+        """
+        from .spatial.registry import SPATIAL_PROFILE_REGISTRY
+
+        return SPATIAL_PROFILE_REGISTRY.get(dataset_name)
 
     # ─────────────────────────────────────────────────────────────
     # Spatial Filtering (FEAT-219)
