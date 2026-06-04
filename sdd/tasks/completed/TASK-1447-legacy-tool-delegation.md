@@ -76,4 +76,23 @@ class WebScrapingTool:  # line 119
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Converted the three legacy methods into thin wrappers over `advanced_actions`:
+
+- `_exec_loop(action, base_url)` and `_exec_conditional(action, base_url, args)`
+  now build a `_dispatch(driver, step, url, timeout, step_extracted)` closure
+  forwarding to `self._execute_step(step, url[, args])`, and call
+  `advanced_actions.exec_loop` / `exec_conditional` passing
+  `self._abstract_driver` and `self.default_timeout`.
+- `_substitute_template_vars(value, iteration, start_index, current_value)`
+  preserves its legacy single-`current_value` signature by positioning the
+  value at `values[iteration]` and delegating to
+  `advanced_actions.substitute_template_vars`.
+
+Added `from .advanced_actions import exec_conditional, exec_loop,
+substitute_template_vars`. Removed the now-dead `import random` and `import re`
+(their only users were the methods just replaced). `_substitute_action_vars`
+and `_evaluate_condition` left in place (not in scope to delete).
+
+7 new delegation tests added to `test_toolkit.py`; affected suite
+(test_toolkit, test_tool_integration, test_executor, test_advanced_actions)
+= 123 passing. No new lint introduced.
