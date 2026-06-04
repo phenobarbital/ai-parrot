@@ -13,7 +13,7 @@ closes. A provider is responsible for:
 
 This module defines only the **generic framework** (protocol + registry).
 Concrete providers (e.g., ``JiraPostAuthProvider``) live in their own
-modules (see ``post_auth_jira.py``).
+modules (see ``parrot.integrations.telegram.post_auth_jira``).
 """
 from __future__ import annotations
 

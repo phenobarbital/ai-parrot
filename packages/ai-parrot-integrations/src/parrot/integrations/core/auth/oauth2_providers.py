@@ -1,8 +1,12 @@
-"""OAuth2 provider registry for Telegram bot authentication.
+"""OAuth2 provider registry for integration authentication flows.
 
 Defines provider configurations (authorization URLs, token endpoints, etc.)
 for OAuth2-based login flows. Adding a new provider requires only a new
 entry in the OAUTH2_PROVIDERS dict.
+
+This module was lifted from ``parrot.integrations.telegram.oauth2_providers``
+to ``parrot.integrations.core.auth.oauth2_providers`` so that all integrations
+(Telegram, Slack, MS Teams) can share the same provider catalog.
 """
 
 from dataclasses import dataclass, field

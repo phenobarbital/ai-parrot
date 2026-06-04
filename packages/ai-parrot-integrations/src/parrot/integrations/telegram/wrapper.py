@@ -49,7 +49,7 @@ from .auth import (
 )
 from .filters import BotMentionedFilter
 from .operator_commands import OperatorCommandsMixin
-from .post_auth import PostAuthRegistry
+from parrot.integrations.core.auth.post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
 from ...auth.context import UserContext
