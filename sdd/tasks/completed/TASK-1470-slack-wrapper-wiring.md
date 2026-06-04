@@ -216,10 +216,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Modified `wrapper.py` to accept optional `oauth_manager`, create `SlackCommandRouter`, register Jira commands, and register `SlackOAuthNotifier` on app. Modified `socket_handler.py` to delegate to command router before built-in commands. Added `jira_client_id`, `jira_client_secret`, `jira_redirect_uri` fields to `SlackAgentConfig`. Tests created.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
