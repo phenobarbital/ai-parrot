@@ -837,35 +837,59 @@ class DatasetManager(AbstractToolkit):
         df: pd.DataFrame,
         filter_dict: Dict[str, Any],
     ) -> pd.DataFrame:
-        """Apply dictionary-based equality filters to a DataFrame.
+        """Apply dictionary-based filters to a DataFrame.
 
-        Each key is a column name. Each value is either:
-        - A scalar: rows where ``column == value`` are kept.
-        - A list/tuple/set: rows where column value is in the collection are kept.
+        Each key is a column name. Each value is one of:
+
+        - A **scalar**: rows where ``column == value`` are kept (``eq``).
+        - A **list/tuple/set**: rows where column value is in the collection
+          (``in`` / ``isin``).
+        - A :class:`FilterCondition` instance: the condition's ``op`` field
+          controls the comparison:
+
+          - ``eq``     → ``column == value``
+          - ``ne``     → ``column != value``
+          - ``in``     → ``column.isin(value)``
+          - ``not_in`` → ``~column.isin(value)``
+          - ``range``  → ``column.between(min, max)``
+            (value must be ``{"min": …, "max": …}`` or a 2-element sequence)
 
         All conditions are ANDed together.
 
         Args:
             df: The DataFrame to filter.
-            filter_dict: Mapping of column names to required values.
+            filter_dict: Mapping of column names to required values or
+                ``FilterCondition`` instances.
 
         Returns:
             Filtered DataFrame with reset index.
 
         Raises:
-            ValueError: If a filter column is not found in the DataFrame.
+            ValueError: If a filter column is not found in the DataFrame or
+                if a ``FilterCondition`` carries an unsupported operator.
         """
+        from .filtering.compiler import FilterCompiler
+        from .filtering.contracts import FilterCondition as _FC
+
+        compiler = FilterCompiler()
         mask = pd.Series(True, index=df.index)
+
         for col, value in filter_dict.items():
             if col not in df.columns:
                 raise ValueError(
                     f"Filter column '{col}' not found in DataFrame. "
                     f"Available: {list(df.columns)}"
                 )
-            if isinstance(value, (list, tuple, set)):
+            if isinstance(value, _FC):
+                # FEAT-225: delegate to FilterCompiler for structured conditions.
+                mask &= compiler.compile_pandas(df, col, value)
+            elif isinstance(value, (list, tuple, set)):
+                # Legacy: list/tuple/set → isin (eq/in semantics)
                 mask &= df[col].isin(value)
             else:
+                # Legacy: scalar → equality
                 mask &= df[col] == value
+
         return df.loc[mask].reset_index(drop=True)
 
     async def add_dataset(
