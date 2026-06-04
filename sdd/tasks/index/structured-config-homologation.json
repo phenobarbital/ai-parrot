@@ -32,7 +32,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Touches only structured_chart.py — shares no files with TASK-1459. Coupled conceptually with TASK-1461 (staging removal) but testable in isolation via response.output.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1460-chart-renderer-config-input-source.md"
+      "completed_at": "2026-06-04T13:18:53+00:00",
+      "file": "sdd/tasks/completed/TASK-1460-chart-renderer-config-input-source.md"
     },
     {
       "id": "TASK-1461",
