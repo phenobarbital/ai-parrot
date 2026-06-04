@@ -72,7 +72,7 @@
       "feature_id": "FEAT-222",
       "feature": "scrapingflow-composable-scraping",
       "spec": "sdd/specs/scrapingflow-composable-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +80,8 @@
       "parallelism_notes": "No dependencies; creates new module only",
       "assigned_to": null,
       "started_at": "2026-06-03T23:56:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1448-template-plan-model.md"
+      "completed_at": "2026-06-04T00:20:11+00:00",
+      "file": "sdd/tasks/completed/TASK-1448-template-plan-model.md"
     },
     {
       "id": "TASK-1449",

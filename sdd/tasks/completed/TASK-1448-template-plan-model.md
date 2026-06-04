@@ -161,4 +161,22 @@ class TestTemplatePlanBind:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `template_plan.py` with `ParamSpec` and `TemplatePlan` Pydantic v2
+models.
+
+- `ParamSpec` has a `model_validator` rejecting `type="enum"` without `choices`.
+- `TemplatePlan.bind(**kwargs)` validates params (missing-required, per-type
+  checks for string/int/date/enum/url, bool explicitly rejected for int),
+  fills defaults for optional params, then renders `{{param}}` placeholders via
+  `re.sub(r'\{\{(\w+)\}\}', ...)` (NOT `str.format()`) recursively across
+  url/objective/steps/selectors. Single-brace `{i}` tokens and unknown
+  `{{placeholders}}` pass through unchanged.
+- The rendered URL is exposed as an implicit `{{url}}` placeholder for steps
+  (matches the spec fixture `{"action":"navigate","url":"{{url}}"}`).
+- The produced `ScrapingPlan` fingerprint is set in the constructor to
+  `_compute_fingerprint(name + sorted(params))` (declared params only, url
+  excluded) so distinct param sets get distinct fingerprints and identical
+  sets are stable. `TemplatePlan.fingerprint` is a separate name-based
+  computed_field.
+
+19 unit tests pass; ruff clean.
