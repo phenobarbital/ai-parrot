@@ -126,4 +126,22 @@ class TestScrapingFlow:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `flow_models.py` with `FlowNode`, `ScrapingFlow`, and `FlowResult`
+Pydantic v2 models.
+
+- `FlowNode`: id, plan_ref, inputs, session ("default"), on_error
+  (abort|skip|retry, default abort), max_retries (ge=1, default 3).
+- `ScrapingFlow.validate_dag()` is a `model_validator(mode="after")` that runs
+  `_compute_topological_order()`: checks unique ids, parses each input ref's
+  source node (`ref.split(".",1)[0]`, so `node.field`, `node.field[N]`, and
+  `node.field[*]` all resolve to their source), rejects dangling refs and
+  self-references, then runs Kahn's algorithm. Cycles raise a "cycle" error
+  listing the involved nodes; dangling refs name the missing node.
+- `topological_order()` recomputes the order (deterministic — declaration
+  order is the stable tiebreaker, so independent nodes preserve declared
+  order; dependencies always precede dependents).
+- `FlowResult`: flow_name, node_results, success, error_message,
+  elapsed_seconds, nodes_completed, nodes_total, checkpoint_path, resumed_from.
+
+14 unit tests pass (linear/diamond/cycle/self-cycle/dangling/duplicate/fan-out
+refs/multi-input); ruff clean.
