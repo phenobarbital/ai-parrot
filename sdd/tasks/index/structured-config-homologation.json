@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-04T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-04T16:17:32.714773+00:00",
   "tasks": [
     {
       "id": "TASK-1459",
@@ -14,16 +14,17 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Touches only storage/models.py — shares no files with TASK-1460. Both can run in parallel worktrees.",
+      "parallelism_notes": "Touches only storage/models.py \u2014 shares no files with TASK-1460. Both can run in parallel worktrees.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1459-artifacttype-table-and-structured-constructor.md"
+      "completed_at": "2026-06-04T16:17:32.714773+00:00",
+      "file": "sdd/tasks/completed/TASK-1459-artifacttype-table-and-structured-constructor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1460",
@@ -32,16 +33,17 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Touches only structured_chart.py — shares no files with TASK-1459. Coupled conceptually with TASK-1461 (staging removal) but testable in isolation via response.output.",
+      "parallelism_notes": "Touches only structured_chart.py \u2014 shares no files with TASK-1459. Coupled conceptually with TASK-1461 (staging removal) but testable in isolation via response.output.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1460-chart-renderer-config-input-source.md"
+      "completed_at": "2026-06-04T16:17:32.714773+00:00",
+      "file": "sdd/tasks/completed/TASK-1460-chart-renderer-config-input-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1461",
@@ -50,7 +52,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -61,8 +63,9 @@
       "parallelism_notes": "Modifies bots/data.py and relies on the generic constructor (1459) and the chart renderer input migration (1460). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1461-pandasagent-artifact-envelope-wiring.md"
+      "completed_at": "2026-06-04T16:17:32.714773+00:00",
+      "file": "sdd/tasks/completed/TASK-1461-pandasagent-artifact-envelope-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1462",
@@ -71,7 +74,7 @@
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,17 +85,18 @@
       "parallelism_notes": "Modifies handlers/agent.py; consumes the envelope built by 1461 and the ArtifactType.TABLE / from_structured_config from 1459.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1462-handler-feat103-autosave-alignment.md"
+      "completed_at": "2026-06-04T16:17:32.714773+00:00",
+      "file": "sdd/tasks/completed/TASK-1462-handler-feat103-autosave-alignment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-1463",
       "slug": "integration-tests-and-doc-update",
-      "title": "End-to-end tests + flip frontend guide §2.5 to implemented",
+      "title": "End-to-end tests + flip frontend guide \u00a72.5 to implemented",
       "feature_id": "FEAT-224",
       "feature": "structured-config-homologation",
       "spec": "sdd/specs/structured-config-homologation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -105,8 +109,9 @@
       "parallelism_notes": "Final integration coverage + doc update; depends on all implementation tasks.",
       "assigned_to": null,
       "started_at": "2026-06-04T13:10:37+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1463-integration-tests-and-doc-update.md"
+      "completed_at": "2026-06-04T16:17:32.714773+00:00",
+      "file": "sdd/tasks/completed/TASK-1463-integration-tests-and-doc-update.md",
+      "verification": "verified"
     }
   ]
 }
