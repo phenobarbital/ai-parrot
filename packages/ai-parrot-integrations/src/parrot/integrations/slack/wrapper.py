@@ -12,9 +12,12 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from aiohttp import web, ClientSession
 
 from .assistant import SlackAssistantHandler
+from .commands import SlackCommandRouter
+from .commands.jira_commands import register_jira_commands
 from .dedup import EventDeduplicator
 from .interactive import SlackInteractiveHandler
 from .models import SlackAgentConfig
+from .oauth_callback import SlackOAuthNotifier
 from .security import verify_slack_signature_raw
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
@@ -63,6 +66,7 @@ def convert_markdown_to_mrkdwn(text: str) -> str:
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
+    from parrot.auth.jira_oauth import JiraOAuthManager
 
 
 class SlackAgentWrapper:
@@ -81,6 +85,7 @@ class SlackAgentWrapper:
         agent: 'AbstractBot',
         config: SlackAgentConfig,
         app: web.Application,
+        oauth_manager: Optional['JiraOAuthManager'] = None,
     ):
         """Initialize the Slack wrapper.
 
@@ -88,6 +93,11 @@ class SlackAgentWrapper:
             agent: The AI-Parrot agent to wrap.
             config: Slack configuration including tokens and settings.
             app: The aiohttp application to register routes on.
+            oauth_manager: Optional :class:`JiraOAuthManager` for Jira OAuth
+                commands (``/connect_jira``, ``/disconnect_jira``,
+                ``/jira_status``).  When provided, the Jira commands are
+                registered on the command router and a
+                :class:`SlackOAuthNotifier` is stored on the app.
         """
         self.agent = agent
         self.config = config
@@ -103,6 +113,17 @@ class SlackAgentWrapper:
 
         # Background tasks tracking (for graceful shutdown)
         self._background_tasks: set[asyncio.Task] = set()
+
+        # Command router (Jira commands delegated here before built-in dispatch)
+        self._command_router = SlackCommandRouter()
+        if oauth_manager is not None:
+            register_jira_commands(self._command_router, oauth_manager)
+            # Register the OAuth notifier on the app so the callback route
+            # can send DMs after the Atlassian consent redirect.
+            if config.bot_token:
+                app["slack_jira_oauth_notifier"] = SlackOAuthNotifier(
+                    bot_token=config.bot_token
+                )
 
         # Route setup
         safe_id = self.config.chatbot_id.replace(" ", "_").lower()
@@ -292,7 +313,9 @@ class SlackAgentWrapper:
         data = await request.post()
         channel = data.get("channel_id", "")
         user = data.get("user_id", "unknown")
+        team_id = data.get("team_id", "")
         text = (data.get("text") or "").strip()
+        response_url = data.get("response_url", "")
 
         if not channel or not self._is_authorized(channel, user):
             self.logger.warning(
@@ -304,6 +327,24 @@ class SlackAgentWrapper:
                 "response_type": "ephemeral",
                 "text": "Unauthorized."
             })
+
+        # Try the command router first (Jira commands and any future extensions).
+        # Build the full payload that command handlers expect.
+        command_payload = {
+            "team_id": team_id,
+            "user_id": user,
+            "channel_id": channel,
+            "text": text,
+            "response_url": response_url,
+        }
+        # Extract the command word: first token of the text (without leading /)
+        command_word = text.split()[0].lstrip("/") if text else ""
+        if command_word:
+            router_result = await self._command_router.dispatch(
+                command_word, command_payload
+            )
+            if router_result is not None:
+                return web.json_response(router_result)
 
         if text.lower() in {"help", "/help"}:
             return web.json_response({
