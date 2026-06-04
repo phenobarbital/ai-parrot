@@ -43,6 +43,9 @@ from .handlers import FormAPIHandler
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+    from parrot.voice.handler import TokenValidator
+    from parrot.voice.tts.synthesizer import VoiceSynthesizer
+    from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
 
     from ..services.blob_storage import AbstractBlobStorage
     from ..services.forwarder import SubmissionForwarder
@@ -93,6 +96,9 @@ def setup_form_api(
     blob_storage: "AbstractBlobStorage | None" = None,
     resolver: "RestFieldResolver | None" = None,
     partial_store: "PartialSaveStore | None" = None,
+    synthesizer: "VoiceSynthesizer | None" = None,
+    transcriber: "FasterWhisperBackend | None" = None,
+    token_validator: "TokenValidator | None" = None,
 ) -> None:
     """Mount the JSON REST surface on ``app`` under ``base_path``.
 
@@ -233,5 +239,27 @@ def setup_form_api(
         f"{bp}/forms/{{form_id}}/events/{{event_name}}",
         _wrap_auth(handler.remote_event),
     )
+
+    # Audio WebSocket endpoint (FEAT-224) — NOT wrapped with _wrap_auth.
+    # JWT auth is handled inside AudioFormWSHandler via TokenValidator because
+    # navigator-auth decorators return HTTP 401, which is incompatible with
+    # the WebSocket upgrade handshake.
+    if synthesizer is not None or transcriber is not None:
+        from .audio_ws import AudioFormWSHandler
+        from ..services.validators import FormValidator
+
+        audio_handler = AudioFormWSHandler(
+            registry=registry,
+            synthesizer=synthesizer,
+            transcriber=transcriber,
+            validator=FormValidator(),
+            token_validator=token_validator,
+            submission_storage=submission_storage,
+        )
+        app.router.add_get(
+            f"{bp}/forms/{{form_id}}/audio/ws",
+            audio_handler.handle_websocket,
+        )
+        logger.info("setup_form_api: audio WS endpoint mounted at %s/forms/{form_id}/audio/ws", bp)
 
     logger.info("setup_form_api: mounted on %s", bp)

@@ -47,6 +47,7 @@ def _seed_default_renderers() -> None:
     and the loud ``ImportError`` is the right outcome.
     """
     from ..renderers.adaptive_card import AdaptiveCardRenderer
+    from ..renderers.audio import AudioFormRenderer
     from ..renderers.html5 import HTML5Renderer
     from ..renderers.pdf import PdfRenderer
     from ..renderers.xforms import XFormsRenderer
@@ -55,6 +56,7 @@ def _seed_default_renderers() -> None:
     _RENDERERS.setdefault("adaptive", AdaptiveCardRenderer())
     _RENDERERS.setdefault("xml", XFormsRenderer())
     _RENDERERS.setdefault("pdf", PdfRenderer())
+    _RENDERERS.setdefault("audio", AudioFormRenderer())
 
 
 def register_renderer(format_key: str, renderer: AbstractFormRenderer) -> None:
