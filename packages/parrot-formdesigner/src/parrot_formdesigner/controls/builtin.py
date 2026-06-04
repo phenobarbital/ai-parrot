@@ -308,6 +308,16 @@ _BUILTIN_METADATA: dict[FieldType, dict[str, Any]] = {
         "supports_constraints": True,
         "is_container": False,
     },
+    # Phase 4 — FEAT-224
+    FieldType.AUDIO: {
+        "label": "Audio",
+        "description": "Audio recording input with speech-to-text transcription.",
+        "category": "advanced",
+        "icon": "microphone",
+        "render_hint": "audio-recorder",
+        "supports_constraints": False,
+        "is_container": False,
+    },
 }
 
 
