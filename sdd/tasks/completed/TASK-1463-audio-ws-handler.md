@@ -293,10 +293,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Created `api/audio_ws.py` with `AudioFormWSHandler`. Implements JWT auth via Sec-WebSocket-Protocol header (with auth-message fallback), start_session, answer_text, binary audio (temp file → FasterWhisperBackend), skip_question, go_back, repeat_question, end_session, ping/pong. TTS pre-synthesis at session start with per-question cache. 13 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: TASK-1465 (builtin.py) had to be implemented first to unblock import of `parrot_formdesigner.api` in tests. Implementation order followed correctly: 1465 was done before 1463 tests ran.

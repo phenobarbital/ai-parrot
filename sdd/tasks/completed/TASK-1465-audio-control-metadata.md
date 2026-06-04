@@ -153,10 +153,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Added `FieldType.AUDIO` entry to `_BUILTIN_METADATA` in `controls/builtin.py` with all required fields (label, description, category='advanced', icon='microphone', render_hint='audio-recorder', supports_constraints=False, is_container=False). This was necessary to fix a KeyError when importing `parrot_formdesigner.api` after adding FieldType.AUDIO to the enum. 7 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

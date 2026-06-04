@@ -237,8 +237,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Created `conftest.py` with shared fixtures (sample_audio_form, mock_synthesizer, mock_transcriber). Created `test_audio_integration.py` with 14 tests covering: render endpoint (using handle_render directly to bypass auth middleware), WS session lifecycle, auth rejection, text answer flow, full Q&A completion, ping/pong, skip-required rejection, unknown message error. Used FormRegistry(require_tenant=False) for tests. All 89 formdesigner audio tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Render endpoint tests use handle_render directly (no _wrap_auth) since navigator-auth requires a running backend. WS tests connect with protocols= for JWT token delivery.

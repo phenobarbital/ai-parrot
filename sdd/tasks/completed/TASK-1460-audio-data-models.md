@@ -198,10 +198,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Created `parrot_formdesigner/audio/__init__.py` and `audio/models.py` with all 5 Pydantic models (AudioSessionConfig, AudioQuestion, AudioFormManifest, AudioAnswer, AudioSessionState). All models use ConfigDict(extra="forbid"). AudioAnswer.source uses Literal["text","speech"]. 18 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
