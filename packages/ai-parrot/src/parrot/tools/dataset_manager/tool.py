@@ -37,7 +37,7 @@ from .spatial.contracts import SpatialFilterSpec, SpatialResult, SpatialLayerRes
 
 # FEAT-225: filtering contracts are I/O-free Pydantic models; safe to import at
 # module level (no circular import).
-from .filtering.contracts import FilterDefinition
+from .filtering.contracts import FilterDefinition, FilterResult
 
 if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
@@ -4244,6 +4244,231 @@ class DatasetManager(AbstractToolkit):
         from .spatial.registry import SPATIAL_PROFILE_REGISTRY
 
         return SPATIAL_PROFILE_REGISTRY.get(dataset_name)
+
+    async def apply_filters(
+        self,
+        request: Dict[str, Any],
+        *,
+        persist: bool = False,
+    ) -> "FilterResult":
+        """Apply a filter request recursively across all matching datasets.
+
+        Resolves each key in ``request`` against the stored filter catalog
+        (``self._filter_defs``), then applies the condition to every registered
+        dataset that contains the target column(s).
+
+        Execution strategy per source type:
+        - **In-memory DataFrames** (``InMemorySource`` or already materialized):
+          filtered via the extended :meth:`_apply_filter` (pandas path).
+        - **SQL-backed sources** (``TableSource``/``QuerySlugSource``): materialized
+          first (fetching from the database if needed), then filtered via pandas.
+          The :class:`FilterCompiler` SQL compile path is available for future
+          in-database push-down; this orchestrator currently uses the
+          materialize-then-filter strategy for reliability.
+        - **kind="spatial"**: delegates entirely to :meth:`spatial_filter`.
+
+        Datasets that lack the target column(s) are:
+        - Silently skipped and recorded in ``result.skipped`` when
+          ``definition.required is False`` (default).
+        - Cause a ``ValueError`` naming the dataset when ``required is True``.
+
+        Args:
+            request: Mapping of filter name → value.  A bare scalar becomes
+                ``FilterCondition(op="eq", value=scalar)``; a bare list becomes
+                ``FilterCondition(op="in", value=list)``; a ``FilterCondition``
+                or dict with ``{"op": ..., "value": ...}`` is used as-is.
+            persist: When True, the filtered DataFrame for each dataset is
+                registered in this manager under the name ``<original>__filtered``
+                (with a collision guard).  Default is False (ephemeral).
+
+        Returns:
+            :class:`FilterResult` with ``applied`` and ``skipped`` lists.
+
+        Raises:
+            KeyError: When a request key does not match any stored definition.
+            ValueError: When a ``required=True`` filter targets a dataset that
+                lacks the column(s).
+        """
+        from .filtering.contracts import FilterCondition as _FC
+
+        result = FilterResult()
+        all_filtered: Dict[str, pd.DataFrame] = {}
+
+        # ── Resolve request keys to FilterCondition objects ──────────
+        resolved_conditions: Dict[str, _FC] = {}
+        for req_key, req_val in request.items():
+            if req_key not in self._filter_defs:
+                raise KeyError(
+                    f"apply_filters: no filter definition named '{req_key}'. "
+                    f"Known filters: {sorted(self._filter_defs.keys())}"
+                )
+            if isinstance(req_val, _FC):
+                condition = req_val
+            elif isinstance(req_val, dict) and "op" in req_val:
+                condition = _FC(**req_val)
+            elif isinstance(req_val, (list, tuple, set)):
+                condition = _FC(op="in", value=list(req_val))
+            else:
+                condition = _FC(op="eq", value=req_val)
+            resolved_conditions[req_key] = condition
+
+        # ── Spatial path ──────────────────────────────────────────────
+        spatial_filter_names = [
+            k for k, v in self._filter_defs.items()
+            if v.kind == "spatial" and k in resolved_conditions
+        ]
+        for fname in spatial_filter_names:
+            defn = self._filter_defs[fname]
+            cond = resolved_conditions[fname]
+            # Build SpatialFilterSpec from the condition's value.
+            # value must be {"point": (lat, lng), "radius": r, "unit": "mi"/"km"/"m"}
+            # or a similar structure.
+            val = cond.value or {}
+            if not isinstance(val, dict):
+                raise ValueError(
+                    f"apply_filters: spatial filter '{fname}' requires a dict value "
+                    f"with 'point', 'radius', and 'unit' keys; got {type(val).__name__}."
+                )
+            # Find datasets that have this filter's spatial profile
+            spatial_datasets = [
+                name for name in self._datasets
+                if self._try_get_spatial_profile(name) is not None
+            ]
+            if not spatial_datasets:
+                if defn.required:
+                    raise ValueError(
+                        f"apply_filters: required spatial filter '{fname}' found no "
+                        f"datasets with a registered spatial profile."
+                    )
+                result.skipped.extend(list(self._datasets.keys()))
+                continue
+
+            from .spatial.contracts import SpatialFilterSpec as _SFS
+            spec = _SFS(
+                point=val.get("point", (0.0, 0.0)),
+                radius=val.get("radius", 0.0),
+                unit=val.get("unit", "mi"),
+                datasets=spatial_datasets,
+            )
+            spatial_result = await self.spatial_filter(spec)
+            # Mark spatial datasets as applied
+            for ds_name in spatial_datasets:
+                result.applied.append(ds_name)
+            # Return the spatial result embedded — callers can inspect it
+            # via the returned FilterResult's extra data.
+            # For now we store a reference in all_filtered under a sentinel key.
+            all_filtered["__spatial__"] = spatial_result  # type: ignore[assignment]
+
+        # ── Non-spatial path ──────────────────────────────────────────
+        non_spatial_conditions = {
+            k: v for k, v in resolved_conditions.items()
+            if self._filter_defs[k].kind != "spatial"
+        }
+
+        for ds_name, entry in self._datasets.items():
+            applicable: Dict[str, _FC] = {}
+
+            for fname, cond in non_spatial_conditions.items():
+                defn = self._filter_defs[fname]
+                target_cols = defn.columns
+
+                # Determine column presence
+                col_types = entry._column_types or {}
+                df_loaded = entry._df
+
+                if col_types:
+                    has_cols = all(c in col_types for c in target_cols)
+                elif df_loaded is not None:
+                    has_cols = all(c in df_loaded.columns for c in target_cols)
+                else:
+                    # Schema not yet known; skip (cannot confirm column presence).
+                    has_cols = False
+
+                if not has_cols:
+                    if defn.required:
+                        raise ValueError(
+                            f"apply_filters: required filter '{fname}' targets "
+                            f"column(s) {target_cols!r} not present in dataset "
+                            f"'{ds_name}'. Either remove 'required=True' or ensure "
+                            f"the dataset has these columns."
+                        )
+                    # Non-required missing column: skip for this dataset
+                    continue
+
+                # Condition is applicable to this dataset
+                # For multi-column filters (currently all single-column in v1),
+                # use the first column.
+                applicable[target_cols[0]] = cond
+
+            if not applicable:
+                # No conditions applied to this dataset (missing column(s)).
+                # Only record as skipped if there were non-spatial conditions
+                # in the request — otherwise the dataset is simply not targeted.
+                if non_spatial_conditions:
+                    result.skipped.append(ds_name)
+                continue
+
+            # Materialize the dataset if not already loaded
+            if entry._df is None:
+                try:
+                    df = await self.materialize(ds_name)
+                except Exception as exc:
+                    self.logger.warning(
+                        "apply_filters: could not materialize dataset '%s': %s",
+                        ds_name,
+                        exc,
+                    )
+                    result.skipped.append(ds_name)
+                    continue
+            else:
+                df = entry._df
+
+            # Apply all applicable conditions via extended _apply_filter
+            try:
+                filtered_df = self._apply_filter(df, applicable)
+            except Exception as exc:
+                self.logger.warning(
+                    "apply_filters: filtering dataset '%s' failed: %s",
+                    ds_name,
+                    exc,
+                )
+                result.skipped.append(ds_name)
+                continue
+
+            all_filtered[ds_name] = filtered_df
+            result.applied.append(ds_name)
+            self.logger.debug(
+                "apply_filters: dataset '%s' filtered — %d → %d rows.",
+                ds_name,
+                len(df),
+                len(filtered_df),
+            )
+
+        # ── Persist ───────────────────────────────────────────────────
+        if persist:
+            for ds_name, filtered_df in all_filtered.items():
+                if ds_name == "__spatial__":
+                    continue  # spatial results are not DataFrames
+                new_name = f"{ds_name}__filtered"
+                # Collision guard: append suffix until unique
+                suffix = 1
+                candidate = new_name
+                while candidate in self._datasets:
+                    candidate = f"{new_name}_{suffix}"
+                    suffix += 1
+                entry = DatasetEntry(
+                    name=candidate,
+                    df=filtered_df,
+                    description=f"Filtered view of '{ds_name}'.",
+                )
+                self._datasets[candidate] = entry
+                self.logger.info(
+                    "apply_filters: persisted filtered dataset '%s' as '%s'.",
+                    ds_name,
+                    candidate,
+                )
+
+        return result
 
     # ─────────────────────────────────────────────────────────────
     # Spatial Filtering (FEAT-219)
