@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-224
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -635,11 +635,11 @@ class AuthenticatedUser:  # line 49
 
 ## 8. Open Questions
 
-- [ ] Should we support concurrent audio form sessions per user, or limit to one active session? — *Owner: Jesus*
-- [ ] What is the maximum form size (number of questions) we should support in the audio flow before recommending splitting? — *Owner: Jesus*
-- [ ] Should the WebSocket handler support resuming a session after disconnect (persist state to Redis)? — *Owner: Jesus*
-- [ ] Should we add an `audio_hint` field to `FormField.meta` so form authors can customize the TTS prompt per question (e.g., "Please spell your name letter by letter")? — *Owner: Jesus*
-- [ ] For SELECT/MULTI_SELECT fields, how should options be read aloud — enumerate all, or ask the user to pick from a described set? — *Owner: Jesus*
+- [x] Should we support concurrent audio form sessions per user, or limit to one active session? — *Owner: Jesus*: one active session per-user
+- [x] What is the maximum form size (number of questions) we should support in the audio flow before recommending splitting? — *Owner: Jesus*: 10 questions max.
+- [x] Should the WebSocket handler support resuming a session after disconnect (persist state to Redis)? — *Owner: Jesus*: yes
+- [x] Should we add an `audio_hint` field to `FormField.meta` so form authors can customize the TTS prompt per question (e.g., "Please spell your name letter by letter")? — *Owner: Jesus*: yes, add an audio-hint and text-based version of question to be rendered if user can't listen the question clearly.
+- [x] For SELECT/MULTI_SELECT fields, how should options be read aloud — enumerate all, or ask the user to pick from a described set? — *Owner: Jesus*: configurable if enumerated or ask the user to pick one from selector.
 
 ---
 
