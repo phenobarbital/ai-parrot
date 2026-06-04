@@ -32,7 +32,7 @@
       "feature_id": "FEAT-223",
       "feature": "structured-artifact-contract",
       "spec": "sdd/specs/structured-artifact-contract.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -41,7 +41,7 @@
       "parallel": false,
       "parallelism_notes": "Imports StructuredOutputBase from TASK-1454; rewrites structured_chart.py. Sequential after base.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-04T03:27:48+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1455-chart-deterministic-refactor.md"
     },
