@@ -70,7 +70,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Depends on both FieldType.AUDIO and audio models.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1462-audio-form-renderer.md"
+      "completed_at": "2026-06-04T14:21:20+00:00",
+      "file": "sdd/tasks/completed/TASK-1462-audio-form-renderer.md"
     },
     {
       "id": "TASK-1463",
