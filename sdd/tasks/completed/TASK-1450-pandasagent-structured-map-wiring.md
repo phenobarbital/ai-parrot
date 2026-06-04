@@ -148,9 +148,15 @@ async def test_chart_branch_unaffected(pandas_agent, chart_query):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Added `STRUCTURED_MAP` branch in `bots/data.py`:
+- Pre-LLM block: calls `_extract_spatial_result_from_tools` to route SpatialResult to `response.data`
+- Added `_extract_spatial_result_from_tools` helper method
+- Added STRUCTURED_MAP to the override guard (alongside STRUCTURED_CHART/STRUCTURED_TABLE)
+- Added STRUCTURED_MAP to the `response.data` serialization branch to skip the DataFrame conversion warning
+Tests test the extraction logic standalone (not the full PandasAgent.ask() path which
+requires a full project build with compiled Cython extensions). 8 tests pass.
+**Deviations from spec**: Tests are standalone logic tests rather than full end-to-end
+agent tests (which require compiled Cython). The integration tests in TASK-1451 cover
+the full pipeline.

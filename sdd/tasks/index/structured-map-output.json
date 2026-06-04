@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-04T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-06-04T00:05:29+00:00",
   "tasks": [
     {
       "id": "TASK-1445",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "File-independent of TASK-1446 (outputs.py vs spatial/contracts.py+tool.py) — could parallelize, but per-spec isolation runs all tasks sequentially in one worktree.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1445-structured-map-contract-models.md"
+      "completed_at": "2026-06-03T23:47:28+00:00",
+      "file": "sdd/tasks/completed/TASK-1445-structured-map-contract-models.md"
     },
     {
       "id": "TASK-1446",
@@ -32,7 +32,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "File-independent of TASK-1445 — could parallelize, but per-spec isolation is sequential. Modifies spatial/contracts.py + tool.py (FEAT-219 contract change).",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1446-spatial-filter-per-dataset-result.md"
+      "completed_at": "2026-06-03T23:51:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1446-spatial-filter-per-dataset-result.md"
     },
     {
       "id": "TASK-1447",
@@ -50,7 +50,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Shares spatial/contracts.py with TASK-1446 — must follow it to avoid conflicts.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1447-spatial-profile-presentation-hints.md"
+      "completed_at": "2026-06-03T23:52:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1447-spatial-profile-presentation-hints.md"
     },
     {
       "id": "TASK-1448",
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,8 @@
       "parallelism_notes": "Depends on SpatialResult.as_feature_collection() from TASK-1446. Independent of TASK-1447 (different file) but sequential per-spec.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1448-spatial-handler-compat.md"
+      "completed_at": "2026-06-03T23:54:46+00:00",
+      "file": "sdd/tasks/completed/TASK-1448-spatial-handler-compat.md"
     },
     {
       "id": "TASK-1449",
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Consumes config models (1445), SpatialResult (1446), and profile hints (1447).",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1449-structured-map-renderer.md"
+      "completed_at": "2026-06-03T23:59:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1449-structured-map-renderer.md"
     },
     {
       "id": "TASK-1450",
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "Wires data.py to route SpatialResult to response.data for the renderer (1449).",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1450-pandasagent-structured-map-wiring.md"
+      "completed_at": "2026-06-04T00:02:57+00:00",
+      "file": "sdd/tasks/completed/TASK-1450-pandasagent-structured-map-wiring.md"
     },
     {
       "id": "TASK-1451",
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-221",
       "feature": "structured-map-output",
       "spec": "sdd/specs/structured-map-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "End-to-end; depends on every prior task.",
       "assigned_to": null,
       "started_at": "2026-06-03T23:43:29+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1451-structured-map-integration-tests.md"
+      "completed_at": "2026-06-04T00:05:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1451-structured-map-integration-tests.md"
     }
   ]
 }

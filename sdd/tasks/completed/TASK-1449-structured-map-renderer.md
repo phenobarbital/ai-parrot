@@ -208,9 +208,14 @@ async def test_empty_layer_preserved(map_response_with_empty_layer):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Created `structured_map.py` in `ai-parrot-visualizations` with
+`StructuredMapRenderer(BaseChart)` decorated with
+`@register_renderer(OutputMode.STRUCTURED_MAP, ...)`. Registered in `_MODULE_MAP`.
+Implements: per-dataset layer building from SpatialResult, column type inference via
+`base_column_types`, profile-based titles/formats/tooltip/label, geojson and rows
+data shapes, viewport computation from feature bounds, LLM refine with deterministic-
+wins guard, never-raise contract. 14 tests pass.
+**Deviations from spec**: Used inline rows builder instead of canonical_records (since
+we need to include _geometry reference; canonical_records doesn't carry geometry).

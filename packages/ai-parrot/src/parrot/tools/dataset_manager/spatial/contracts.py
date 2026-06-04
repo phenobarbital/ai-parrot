@@ -16,6 +16,11 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Allowed display-format hint values for DatasetSpatialProfile.column_formats.
+_ALLOWED_COLUMN_FORMATS: frozenset = frozenset(
+    {"currency", "percent", "email", "uri", "enum", "id", "code"}
+)
+
 
 class SpatialFilterSpec(BaseModel):
     """Describes a spatial radius filter request.
@@ -145,6 +150,67 @@ class DatasetSpatialProfile(BaseModel):
         description="Declared hint: True = native geography precision expected.",
     )
 
+    # ── FEAT-221 Presentation Hints (optional, backward-compatible) ───────────
+
+    label_col: Optional[str] = Field(
+        default=None,
+        description=(
+            "Property key for the marker label (e.g. 'name'). "
+            "Used by StructuredMapRenderer to set MapLayer.label_field."
+        ),
+    )
+    tooltip_template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Per-layer tooltip template distinct from description_template. "
+            "Falls back to description_template when unset. "
+            "Applied client-side over feature.properties via str.format_map."
+        ),
+    )
+    column_titles: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional human-readable column titles keyed by property column name. "
+            "Renderer default = column name when absent."
+        ),
+    )
+    column_formats: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Optional display format hints keyed by property column name. "
+            "Allowed values: currency | percent | email | uri | enum | id | code."
+        ),
+    )
+    default_data_shape: Literal["geojson", "rows"] = Field(
+        default="geojson",
+        description=(
+            "Per-dataset default data payload shape for MapLayer.data_shape (G6). "
+            "'geojson' passes features through; 'rows' flattens to canonical row dicts."
+        ),
+    )
+
+    @field_validator("column_formats", mode="after")
+    @classmethod
+    def _validate_column_formats(cls, v: Dict[str, str]) -> Dict[str, str]:
+        """Validate that all column_formats values are recognised format hints.
+
+        Args:
+            v: The ``column_formats`` dict to validate.
+
+        Returns:
+            The validated dict unchanged.
+
+        Raises:
+            ValueError: If any value is not in ``_ALLOWED_COLUMN_FORMATS``.
+        """
+        bad = {k: fmt for k, fmt in v.items() if fmt not in _ALLOWED_COLUMN_FORMATS}
+        if bad:
+            raise ValueError(
+                f"column_formats contains invalid format hints: {bad!r}. "
+                f"Allowed: {sorted(_ALLOWED_COLUMN_FORMATS)}"
+            )
+        return v
+
     @model_validator(mode="after")
     def _validate_geometry_source(self) -> "DatasetSpatialProfile":  # noqa: F821
         """Validate that at least one geometry source is provided.
@@ -163,6 +229,88 @@ class DatasetSpatialProfile(BaseModel):
                 "geom_col or both lat_col and lng_col."
             )
         return self
+
+
+class SpatialLayerResult(BaseModel):
+    """Per-dataset slice of a spatial filter result (FEAT-221 G4).
+
+    Attributes:
+        layer: Leaflet layer id / GeoJSON source discriminator (from DatasetSpatialProfile).
+        features: GeoJSON Feature dicts for this dataset.
+        total_count: True count of matching features before capping.
+        capped: True when the result was truncated at the hard cap.
+        geodesic: Whether the executed path was geodesic (True) or
+            spherical-approximate (False).
+    """
+
+    layer: str = Field(..., description="Leaflet layer id / GeoJSON source discriminator.")
+    features: List[Dict] = Field(
+        default_factory=list,
+        description="GeoJSON Feature objects for this dataset.",
+    )
+    total_count: int = Field(
+        default=0,
+        ge=0,
+        description="True count of matching features (>= len(features) when capped).",
+    )
+    capped: bool = Field(
+        default=False,
+        description="True when the result was truncated at the hard cap.",
+    )
+    geodesic: bool = Field(
+        default=True,
+        description="True = geodesic path; False = spherical-approx.",
+    )
+
+
+class SpatialResult(BaseModel):
+    """Versioned per-dataset result returned by spatial_filter (FEAT-221 G4).
+
+    Replaces the merged ``SpatialFeatureCollection`` with per-dataset grouping.
+    The ``as_feature_collection()`` method reproduces the legacy merged shape for
+    backward-compatible callers (e.g. the transport handler).
+
+    Attributes:
+        version: Schema version — always 2 for this model.
+        layers: Per-dataset results keyed by resolved dataset name.
+    """
+
+    version: Literal[2] = Field(
+        default=2,
+        description="Schema version — always 2.",
+    )
+    layers: Dict[str, SpatialLayerResult] = Field(
+        default_factory=dict,
+        description="Per-dataset results keyed by resolved dataset name.",
+    )
+
+    def as_feature_collection(self) -> "SpatialFeatureCollection":
+        """Reproduce the legacy merged SpatialFeatureCollection shape.
+
+        Concatenates all per-dataset features, sums ``total_count`` values,
+        ORs the ``capped`` flags, and builds ``geodesic_paths`` from each
+        layer's ``geodesic`` flag.
+
+        Returns:
+            A ``SpatialFeatureCollection`` compatible with pre-FEAT-221 callers.
+        """
+        all_features: List[Dict] = []
+        total_count = 0
+        capped = False
+        geodesic_paths: Dict[str, bool] = {}
+
+        for dataset_name, layer_result in self.layers.items():
+            all_features.extend(layer_result.features)
+            total_count += layer_result.total_count
+            capped = capped or layer_result.capped
+            geodesic_paths[dataset_name] = layer_result.geodesic
+
+        return SpatialFeatureCollection(
+            features=all_features,
+            total_count=total_count,
+            capped=capped,
+            geodesic_paths=geodesic_paths,
+        )
 
 
 class SpatialFeatureCollection(BaseModel):

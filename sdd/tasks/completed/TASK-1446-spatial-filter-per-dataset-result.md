@@ -161,9 +161,12 @@ def test_as_feature_collection_back_compat(two_dataset_spatial_result):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Added `SpatialLayerResult` and `SpatialResult` (with `as_feature_collection()`)
+to `contracts.py`. Updated `spatial/__init__.py` to export both. Changed `spatial_filter`
+return type from `SpatialFeatureCollection` to `SpatialResult`, grouping results per
+dataset (one `SpatialLayerResult` per dataset). The `as_feature_collection()` shim
+preserves full backward compat. Removed the now-unused `SpatialFeatureCollection` import
+from the module-level runtime import in `tool.py`. All 15 tests pass.
+**Deviations from spec**: none

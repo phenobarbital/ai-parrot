@@ -136,9 +136,16 @@ async def test_deterministic_handler_unchanged(spatial_client, deterministic_spe
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Created `test_structured_map_e2e.py` with 8 tests covering:
+- e2e LLM mode (config + response.data produced)
+- multi-dataset (two layers, viewport union, per-layer counts)
+- capping preserved (capped=True, total_count in MapLayer)
+- deterministic handler unchanged (legacy FeatureCollection shape)
+- homologation invariants (data excluded, never raises, no HTML)
+- no regression on STRUCTURED_TABLE
+All 8 tests pass. `satellite_available` marker skips renderer tests when
+ai-parrot-visualizations is not installed.
+**Deviations from spec**: No `conftest.py` modifications needed (no shared fixtures
+with other integration tests; fixtures defined inline).

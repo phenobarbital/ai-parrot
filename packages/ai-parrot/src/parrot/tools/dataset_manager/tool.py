@@ -33,7 +33,7 @@ from .sources.base import DataSource
 # annotations via get_type_hints() at runtime — the names must exist in module
 # globals or schema generation fails (NameError → empty args_schema). The
 # contracts module is I/O-free (typing + pydantic only), so no circular import.
-from .spatial.contracts import SpatialFilterSpec, SpatialFeatureCollection
+from .spatial.contracts import SpatialFilterSpec, SpatialResult, SpatialLayerResult
 
 if TYPE_CHECKING:
     from ...auth.dataset_guard import DatasetPolicyGuard
@@ -4187,7 +4187,7 @@ class DatasetManager(AbstractToolkit):
         self,
         spec: "SpatialFilterSpec",
         cap_per_dataset: int = 1000,
-    ) -> "SpatialFeatureCollection":
+    ) -> "SpatialResult":
         """Execute a spatial radius filter across one or more datasets.
 
         This is a **thin orchestration method** — it does not contain any SQL
@@ -4201,9 +4201,10 @@ class DatasetManager(AbstractToolkit):
         3. ``asyncio.gather`` per group, propagating the current
            ``PermissionContext`` via ``_pctx_var`` so concurrent requests remain
            isolated.
-        4. Merge all results into a single ``SpatialFeatureCollection`` with a
-           hard cap per dataset and a true ``total_count`` (may exceed
-           ``len(features)`` when capped).
+        4. Build a per-dataset ``SpatialResult`` (FEAT-221 G4) with one
+           ``SpatialLayerResult`` per dataset, preserving individual capping
+           and geodesic flags.  A back-compat ``as_feature_collection()`` helper
+           is available for callers that still need the legacy merged shape.
 
         Args:
             spec: Spatial filter request — point, radius, datasets.  Backend-agnostic.
@@ -4211,16 +4212,15 @@ class DatasetManager(AbstractToolkit):
                 1000.  True count is always recorded in ``total_count``.
 
         Returns:
-            A ``SpatialFeatureCollection`` (GeoJSON FeatureCollection + capping
-            metadata) identical in shape regardless of whether the caller is the
-            LLM (NL→spec mode) or the frontend (deterministic mode).
+            A ``SpatialResult`` (versioned per-dataset grouping, FEAT-221 G4).
+            Use ``result.as_feature_collection()`` to get the legacy merged shape.
 
         Raises:
             ValueError: If any dataset name in ``spec.datasets`` is not registered
                 in this ``DatasetManager`` instance OR lacks a spatial profile.
         """
         import asyncio
-        from .spatial.contracts import SpatialFeatureCollection
+        from .spatial.contracts import SpatialResult, SpatialLayerResult
         from .spatial.registry import get_spatial_profile, validate_profiles_exist
         from .spatial.compiler import SpatialCompiler
 
@@ -4269,17 +4269,13 @@ class DatasetManager(AbstractToolkit):
         current_pctx = _pctx_var.get(None)
 
         # ── 3. asyncio.gather per group ───────────────────────────────────────
-        all_features: list = []
-        total_count = 0
-        capped = False
-        geodesic_paths: Dict[str, bool] = {}
 
         async def _fetch_dataset(dataset_name: str) -> tuple:
             """Fetch spatial features for a single dataset.
 
             Returns:
-                Tuple of (features, true_count) where true_count is the number
-                of matches before capping.  On error, returns ([], 0).
+                Tuple of (features, true_count, geodesic) where true_count is the
+                number of matches before capping.  On error, returns ([], 0, True).
             """
             # Propagate PermissionContext into this task's ContextVar copy
             _pctx_var.set(current_pctx)
@@ -4302,11 +4298,6 @@ class DatasetManager(AbstractToolkit):
                     datasets=[dataset_name],
                 )
                 compiled = compiler.compile(single_spec, profile, source=source, cap=cap_per_dataset)
-                # geodesic_paths is a plain dict mutated inside asyncio gather tasks.
-                # This is safe because asyncio tasks run cooperatively on a single
-                # thread — there is no concurrent write between the assignment below
-                # and the next await, so no locking is required.
-                geodesic_paths[dataset_name] = compiled.geodesic
                 features, true_count = await compiler.execute(compiled, source)
             except Exception as exc:
                 # Partial failure policy: surface empty + error marker (logged)
@@ -4314,29 +4305,29 @@ class DatasetManager(AbstractToolkit):
                     "spatial_filter: dataset '%s' failed: %s",
                     dataset_name, exc,
                 )
-                return [], 0
+                return [], 0, True
 
-            return features, true_count
+            return features, true_count, compiled.geodesic
 
         # Launch gather tasks
         tasks = [_fetch_dataset(name) for name in resolved_names]
         results = await asyncio.gather(*tasks, return_exceptions=False)
 
-        # ── 4. Merge + cap ───────────────────────────────────────────────────
-        for name, (raw_features, true_count) in zip(resolved_names, results):
-            # true_count comes from the COUNT(*) query (engine path) or from
-            # counting haversine-passing rows before cap (pandas path).
-            total_count += true_count
-
-            if true_count > cap_per_dataset:
-                capped = True
+        # ── 4. Build per-dataset SpatialResult (FEAT-221 G4) ─────────────────
+        layer_results: Dict[str, SpatialLayerResult] = {}
+        for name, (raw_features, true_count, geodesic) in zip(resolved_names, results):
+            profile = profiles[name]
+            # Per-dataset cap: cap the returned features, keep the true count
+            this_capped = true_count > cap_per_dataset
+            if this_capped:
                 raw_features = raw_features[:cap_per_dataset]
 
-            all_features.extend(raw_features)
+            layer_results[name] = SpatialLayerResult(
+                layer=profile.layer,
+                features=raw_features,
+                total_count=true_count,
+                capped=this_capped,
+                geodesic=geodesic,
+            )
 
-        return SpatialFeatureCollection(
-            features=all_features,
-            total_count=total_count,
-            capped=capped,
-            geodesic_paths=geodesic_paths,
-        )
+        return SpatialResult(layers=layer_results)

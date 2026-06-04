@@ -188,9 +188,10 @@ def test_validate_column_names():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Added `OutputMode.STRUCTURED_MAP`, `MapColumn`, `MapLayer`, `MapViewport`,
+`MapQuery`, and `StructuredMapConfig` to `packages/ai-parrot/src/parrot/models/outputs.py`.
+Also added `Tuple` to the typing imports. All 18 unit tests pass. Pre-existing ruff
+F401 errors (datetime, os, uuid) were NOT introduced by this task.
+**Deviations from spec**: none

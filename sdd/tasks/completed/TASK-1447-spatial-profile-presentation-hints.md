@@ -146,9 +146,11 @@ def test_presentation_fields_set():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Extended `DatasetSpatialProfile` with 5 optional presentation hint fields:
+`label_col`, `tooltip_template`, `column_titles`, `column_formats`, `default_data_shape`.
+All have safe defaults; existing profiles and FEAT-219 deterministic path unaffected.
+The existing `_validate_geometry_source` validator was preserved intact. registry.py
+had no seed profiles to update. 12 tests pass.
+**Deviations from spec**: none

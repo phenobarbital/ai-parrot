@@ -93,12 +93,16 @@ class SpatialFilterEnvelope(BaseModel):
         Does NOT call AbstractBot.run() or touch conversation memory.
         This is a direct, stateless call to the spatial filter method.
 
+        Returns the legacy ``SpatialFeatureCollection`` merged shape via
+        ``SpatialResult.as_feature_collection()`` for backward compatibility
+        with existing AgenTalk callers (FEAT-221 compat shim).
+
         Args:
             dataset_manager: A ready DatasetManager instance with the relevant
                 datasets registered.
 
         Returns:
-            SpatialFeatureCollection — identical shape to the deterministic path.
+            SpatialFeatureCollection — identical shape to the pre-FEAT-221 path.
         """
         logger.info(
             "SpatialFilterEnvelope: forwarding spec to spatial_filter "
@@ -107,10 +111,13 @@ class SpatialFilterEnvelope(BaseModel):
             self.spec.datasets,
             self.channel,
         )
-        return await dataset_manager.spatial_filter(
+        result = await dataset_manager.spatial_filter(
             self.spec,
             cap_per_dataset=self.cap_per_dataset,
         )
+        # spatial_filter now returns SpatialResult (FEAT-221 G4); return the
+        # legacy merged shape so existing AgenTalk callers are not broken.
+        return result.as_feature_collection()
 
 
 # ---------------------------------------------------------------------------
@@ -384,20 +391,33 @@ class SpatialFilterHandler:
         except (KeyError, NotImplementedError) as exc:
             return await self._json_response({"error": str(exc)}, status=404)
 
+        # FEAT-221: detect optional version=2 toggle
+        version = self.request.rel_url.query.get("version", "1")
+
         try:
-            result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
+            spatial_result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
         except ValueError as exc:
             return await self._json_response({"error": str(exc)}, status=422)
         except Exception as exc:
             self.logger.error("SpatialFilterHandler: direct path failed: %s", exc)
             return await self._json_response({"error": "Internal server error"}, status=500)
 
-        self.logger.info(
-            "SpatialFilterHandler[%s]: direct path returned %d features "
-            "(total=%d, capped=%s)",
-            agent_id, len(result.features), result.total_count, result.capped,
-        )
-        return await self._json_response(result)
+        if version == "2":
+            # Return the new per-dataset SpatialResult shape
+            self.logger.info(
+                "SpatialFilterHandler[%s]: direct path (v2) returned %d layers",
+                agent_id, len(spatial_result.layers),
+            )
+            return await self._json_response(spatial_result)
+        else:
+            # Default: return the legacy merged SpatialFeatureCollection shape
+            result = spatial_result.as_feature_collection()
+            self.logger.info(
+                "SpatialFilterHandler[%s]: direct path returned %d features "
+                "(total=%d, capped=%s)",
+                agent_id, len(result.features), result.total_count, result.capped,
+            )
+            return await self._json_response(result)
 
     async def _handle_nl(self, agent_id: str, body: Dict) -> web.Response:
         """Handle the NL→spec synthesis spatial filter path.
@@ -446,14 +466,25 @@ class SpatialFilterHandler:
             self.logger.error("SpatialFilterHandler: NL synthesis failed: %s", exc)
             return await self._json_response({"error": "Synthesis failed"}, status=500)
 
+        # FEAT-221: detect optional version=2 toggle
+        version = self.request.rel_url.query.get("version", "1")
+
         try:
-            result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
+            spatial_result = await dm.spatial_filter(spec, cap_per_dataset=req.cap_per_dataset)
         except ValueError as exc:
             return await self._json_response({"error": str(exc)}, status=422)
         except Exception as exc:
             self.logger.error("SpatialFilterHandler: NL path execution failed: %s", exc)
             return await self._json_response({"error": "Internal server error"}, status=500)
 
+        if version == "2":
+            self.logger.info(
+                "SpatialFilterHandler[%s]: NL path (v2) returned %d layers",
+                agent_id, len(spatial_result.layers),
+            )
+            return await self._json_response(spatial_result)
+
+        result = spatial_result.as_feature_collection()
         self.logger.info(
             "SpatialFilterHandler[%s]: NL path returned %d features "
             "(total=%d, capped=%s)",

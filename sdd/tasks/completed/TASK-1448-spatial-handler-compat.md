@@ -139,9 +139,10 @@ async def test_handler_version2_returns_layers(client, deterministic_spec):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-06-04
+**Notes**: Updated `spatial_filter_handler.py`: `SpatialFilterEnvelope.forward()` now
+calls `as_feature_collection()` to return the legacy shape; `_handle_direct` and
+`_handle_nl` both support `?version=2` toggle to return the new `SpatialResult` shape.
+Default behaviour is byte-compatible with the pre-FEAT-221 response. 7 tests pass.
+**Deviations from spec**: none
