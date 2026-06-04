@@ -168,37 +168,21 @@ If `--force`, close all tasks regardless.
 For each task being closed, update the per-spec index in place. We are
 already on `BASE_BRANCH` (verified in Step 1).
 
+> **CRITICAL — use the script, do NOT hand-roll the move.** See the note in
+> `/sdd-start`: closing a task is a *move*, and agents that copy instead leave
+> `active/` orphans that survive the merge. `scripts/sdd/close_task.sh` does the
+> `git mv` + index stamp + a hard post-condition (exit 3 if an `active/` copy
+> survives).
+
 ```bash
-INDEX="sdd/tasks/index/<feature-slug>.json"
-NOW=$(date -u +%Y-%m-%dT%H:%M:%S+00:00)
+# Close each task being closed (idempotent; stamps the index header when the
+# whole feature is done). Repeat per task id:
+scripts/sdd/close_task.sh TASK-<NNN> <feature-slug> verified
 
-# Move task files to completed
-mkdir -p sdd/tasks/completed/
-mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
-# Repeat for each closed task...
+# Update task file headers (Status/Completed/Verification) in the completed/ copy.
 
-# Update per-spec index: status → "done", completed_at → now, verification → verified|partial|forced
-jq --arg id "TASK-<NNN>" --arg now "$NOW" --arg ver "verified" '
-  (.tasks[] | select(.id == $id) | .status) = "done" |
-  (.tasks[] | select(.id == $id) | .completed_at) = $now |
-  (.tasks[] | select(.id == $id) | .verification) = $ver |
-  (.tasks[] | select(.id == $id) | .file) = ("sdd/tasks/completed/TASK-<NNN>-<slug>.md")
-' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
-
-# When every task in this index has status="done", also stamp the index header:
-# (.completed_at) = $now
-
-# Update task file headers: Status, Completed date, Verification
-
-# CRITICAL: Unstage everything first — NEVER commit unrelated changes
-git reset HEAD
-# Stage ONLY the SDD task state files — NEVER use "git add ." or "git add -A"
-git add "$INDEX"
-# Add each moved task file explicitly by name:
-git add sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
-# Verify ONLY task-related files are staged
-git diff --cached --name-only
-# If ANY unrelated files appear, run "git reset HEAD" and start over
+# Commit ONLY the staged SDD state — never "git add ." / "git add -A".
+git diff --cached --name-only      # sanity-check: only index + task files
 git commit -m "sdd: close tasks for FEAT-<ID> — <title>"
 ```
 
@@ -260,7 +244,23 @@ If the merge has conflicts:
 If conflicts are resolved, commit the merge. If the user aborts, STOP and
 do NOT proceed to cleanup.
 
-After a successful merge, push `<BASE_BRANCH>`:
+**Self-heal — reap stalled `active/` orphans (runs after every merge):**
+
+> The merge can carry an `active/` copy of a task back onto `<BASE_BRANCH>` if
+> the feature branch ever copied-instead-of-moved during completion. This sweep
+> removes any `active/` file whose task is `done` in the index AND has a
+> `completed/` twin (leaves others for manual review). It is idempotent and
+> safe to run unconditionally.
+
+```bash
+scripts/sdd/heal_orphans.sh <feature-slug>
+# If it reaped anything, commit the cleanup before pushing:
+if ! git diff --cached --quiet -- sdd/tasks/active sdd/tasks/completed; then
+  git commit -m "sdd: reap stalled active task orphans for FEAT-<ID> — <title>"
+fi
+```
+
+After a successful merge and self-heal, push `<BASE_BRANCH>`:
 ```bash
 git push origin "$BASE_BRANCH"
 ```
