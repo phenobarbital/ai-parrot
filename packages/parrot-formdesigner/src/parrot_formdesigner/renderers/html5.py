@@ -27,6 +27,7 @@ from ..core.schema import (
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
 from .base import AbstractFormRenderer, FallbackRenderer, FieldRenderer
+from .fields.audio import AudioFieldRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +283,8 @@ class HTML5Renderer(AbstractFormRenderer):
             FieldType.NPS: _NpsRenderer(self),
             FieldType.LIKERT: _ScaleRenderer(self),
             FieldType.RANKING: _ScaleRenderer(self),
+            # Phase 4 — audio form renderer (FEAT-224)
+            FieldType.AUDIO: AudioFieldRenderer(),
         }
 
     async def render(
