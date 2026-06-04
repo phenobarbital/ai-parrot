@@ -21,10 +21,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any, Optional, Tuple
 
 from .chart import BaseChart
+from .structured_base import StructuredOutputBase
 from . import register_renderer
 from ...models.outputs import OutputMode, StructuredTableConfig, TableColumn
 from ...outputs.formats.table import TableRenderer
@@ -85,7 +85,7 @@ OUTPUT FORMAT:
 
 
 @register_renderer(OutputMode.STRUCTURED_TABLE, system_prompt=STRUCTURED_TABLE_SYSTEM_PROMPT)
-class StructuredTableRenderer(BaseChart):
+class StructuredTableRenderer(StructuredOutputBase, BaseChart):
     """Library-agnostic table renderer for the STRUCTURED_TABLE output mode.
 
     Extracts rows deterministically from ``response.data`` / ``response.output``
@@ -156,18 +156,10 @@ class StructuredTableRenderer(BaseChart):
             #   If absent: omit gracefully (never block render).
             explanation: Optional[str] = getattr(response, "response", None) or None
 
-            # Step 2: Extract DataFrame.
-            #   Re-use TableRenderer._extract_data which handles
-            #   PandasAgentResponse, response.data (DataFrame/list/dict), etc.
-            try:
-                df = self._table_renderer._extract_data(response)
-            except Exception as exc:  # noqa: BLE001
-                msg = f"StructuredTableRenderer: failed to extract data: {exc}"
-                logger.warning(msg)
-                return None, msg
-
-            if df is None or df.empty:
-                msg = "StructuredTableRenderer: no data found in response"
+            # Step 2: Extract DataFrame via shared base (never raises).
+            df = self._extract_rows(response)
+            if df is None:
+                msg = "StructuredTableRenderer: failed to extract data or no data found"
                 logger.warning(msg)
                 return None, msg
 
@@ -212,18 +204,7 @@ class StructuredTableRenderer(BaseChart):
                 return None, msg
 
             # Step 7: Exclude data from output; route rows to response.data.
-            out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
-
-            # Explicit None/empty-list check to avoid DataFrame truthiness crash:
-            # if response.data is still a pd.DataFrame at this point, `if cfg.data`
-            # would raise "truth value of a DataFrame is ambiguous".
-            if cfg.data:
-                # cfg.data (canonical list[dict]) takes priority over any raw
-                # DataFrame the agent may have pre-populated in response.data.
-                response.data = cfg.data
-            # else: no rows — leave response.data untouched.
-
-            return out, explanation
+            return self._route_envelope(response, cfg, explanation)
 
         except Exception as exc:  # noqa: BLE001
             msg = f"Unexpected error in StructuredTableRenderer: {exc}"
@@ -319,37 +300,6 @@ class StructuredTableRenderer(BaseChart):
             )
 
         return list(col_map.values())
-
-    # ── JSON extraction helper (mirrors StructuredChartRenderer) ──────────────
-
-    @staticmethod
-    def _extract_json_code(content: str) -> Optional[str]:
-        """Extract a JSON object string from markdown code blocks or bare text.
-
-        Args:
-            content: Raw text that may contain embedded JSON.
-
-        Returns:
-            The extracted JSON string, or ``None`` if nothing suitable was found.
-        """
-        # 1. Explicit JSON code block
-        pattern = r"```json\n(.*?)```"
-        if matches := re.findall(pattern, content, re.DOTALL):
-            return matches[0].strip()
-
-        # 2. Generic code block — accept if it looks like JSON
-        pattern = r"```\n(.*?)```"
-        if matches := re.findall(pattern, content, re.DOTALL):
-            potential = matches[0].strip()
-            if potential.startswith("{") or potential.startswith("["):
-                return potential
-
-        # 3. Bare JSON
-        content = content.strip()
-        if content.startswith("{") and content.endswith("}"):
-            return content
-
-        return None
 
     # ── Abstract method stub (BaseChart requires this) ────────────────────────
 
