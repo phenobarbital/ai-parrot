@@ -1582,16 +1582,19 @@ class PandasAgent(BasicAgent):
 
                 # FEAT-215: in STRUCTURED_CHART mode the structured output IS the
                 # chart config (StructuredChartConfig), not a PandasAgentResponse, so
-                # the branch below is skipped. Route the config to response.code where
-                # StructuredChartRenderer reads and validates it (it accepts a dict).
+                # the branch below is skipped.
+                # FEAT-224 (G3): response.code is NO LONGER populated with the config
+                # here — the StructuredChartRenderer now reads its input config from
+                # response.output / response.structured_output (TASK-1460). Only the
+                # data_variable injection is kept so rows still land in response.data.
                 if output_mode == OutputMode.STRUCTURED_CHART and data_response is None:
                     _cfg_out = response.output
                     _chart_data_var: Optional[str] = None
                     if isinstance(_cfg_out, StructuredChartConfig):
-                        response.code = _cfg_out.model_dump(mode="json", by_alias=True)
+                        # response.code no longer set here (FEAT-224 G3)
                         _chart_data_var = _cfg_out.data_variable
                     elif isinstance(_cfg_out, dict):
-                        response.code = _cfg_out
+                        # response.code no longer set here (FEAT-224 G3)
                         _chart_data_var = (
                             _cfg_out.get("data_variable")
                             or _cfg_out.get("dataVariable")
@@ -1870,6 +1873,31 @@ class PandasAgent(BasicAgent):
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
+
+                # FEAT-224 (G1): Build the canonical artifacts[] envelope for the
+                # three structured output modes.  A typed artifact entry is appended to
+                # response.artifacts and response.artifact_id is set to the minted id.
+                # response.output is kept as a deprecated mirror (G6) so existing
+                # consumers keep working during the migration window.
+                _STRUCTURED_ARTIFACT_TYPE = {
+                    OutputMode.STRUCTURED_CHART: "chart",
+                    OutputMode.STRUCTURED_MAP:   "map",
+                    OutputMode.STRUCTURED_TABLE: "table",
+                }
+                _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
+                if _art_type and isinstance(content, dict) and content:
+                    _art_id = f"{output_mode.value}-{uuid.uuid4().hex[:8]}"
+                    response.artifacts.append({
+                        "type": _art_type,
+                        "artifactId": _art_id,
+                        "definition": content,   # camelCase config, data excluded by renderer
+                    })
+                    response.artifact_id = _art_id
+                    self.logger.info(
+                        "FEAT-224: structured artifact envelope minted — mode=%s artifact_id=%s",
+                        output_mode.value if hasattr(output_mode, "value") else output_mode,
+                        _art_id,
+                    )
 
                 if output_mode == OutputMode.MSTEAMS:
                      # Suppress code output for MS Teams to avoid clutter in Adaptive Card
