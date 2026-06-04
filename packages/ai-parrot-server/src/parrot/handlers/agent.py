@@ -2664,16 +2664,12 @@ class AgentTalk(BaseView):
             except Exception as ex:
                 self.logger.warning("Error scheduling chat turn save: %s", ex)
 
-            # FEAT-103: Auto-save data artifact if response includes structured data
+            # FEAT-103: Auto-save data artifact if response includes structured data.
+            # FEAT-224 (G5): Extended to recognise structured_* modes and persist the
+            # artifact definition (the presentation config), not response.data (the rows).
             try:
                 artifact_store = self.request.app.get('artifact_store')
-                if (
-                    artifact_store
-                    and user_id
-                    and session_id
-                    and response.data is not None
-                    and output_mode in ('chart', 'dataframe', 'export')
-                ):
+                if artifact_store and user_id and session_id:
                     from datetime import datetime as _dt, timezone as _tz
                     from parrot.storage.models import (  # noqa: E501 pylint: disable=import-outside-toplevel
                         Artifact,
@@ -2681,35 +2677,90 @@ class AgentTalk(BaseView):
                         ArtifactCreator,
                     )
                     import uuid as _uuid
-                    _type_map = {
+
+                    # Legacy type map (chart / dataframe / export — rows path).
+                    _legacy_type_map = {
                         'chart': ArtifactType.CHART,
                         'dataframe': ArtifactType.DATAFRAME,
                         'export': ArtifactType.EXPORT,
                     }
-                    _now = _dt.now(_tz.utc)
-                    _art_id = f"{output_mode}-{_uuid.uuid4().hex[:8]}"
-                    _definition = (
-                        response.data if isinstance(response.data, dict)
-                        else {"raw": str(response.data)[:10000]}
+                    # FEAT-224: structured_* type map (config path).
+                    _structured_type_map = {
+                        'structured_chart': ArtifactType.CHART,
+                        'structured_map':   ArtifactType.MAP,
+                        'structured_table': ArtifactType.TABLE,
+                    }
+                    _type_map = {**_legacy_type_map, **_structured_type_map}
+
+                    _is_structured = output_mode in _structured_type_map
+                    _is_legacy = (
+                        output_mode in _legacy_type_map
+                        and response.data is not None
                     )
-                    _artifact = Artifact(
-                        artifact_id=_art_id,
-                        artifact_type=_type_map.get(output_mode, ArtifactType.EXPORT),
-                        title=f"{output_mode.title()} — {(response.input or '')[:60]}",
-                        created_at=_now,
-                        updated_at=_now,
-                        source_turn_id=client_message_id,
-                        created_by=ArtifactCreator.AGENT,
-                        definition=_definition,
-                    )
-                    asyncio.get_running_loop().create_task(
-                        artifact_store.save_artifact(
-                            user_id=user_id,
-                            agent_id=agent_name or '',
-                            session_id=session_id,
-                            artifact=_artifact,
+
+                    if _is_structured and getattr(response, 'artifacts', None):
+                        # FEAT-224 path: persist the envelope definition (config),
+                        # not response.data (rows), and reuse the agent-minted id.
+                        _env = next(
+                            (a for a in response.artifacts if a.get("definition")),
+                            None,
                         )
-                    )
+                        if _env is not None:
+                            _now = _dt.now(_tz.utc)
+                            # Prefer the id the agent already minted (stable across
+                            # envelope + persistence; avoids double id divergence).
+                            _art_id = (
+                                getattr(response, 'artifact_id', None)
+                                or _env.get("artifactId")
+                                or f"{output_mode}-{_uuid.uuid4().hex[:8]}"
+                            )
+                            _definition = _env["definition"]  # config, NOT rows
+                            _atype = _structured_type_map[output_mode]
+                            _artifact = Artifact(
+                                artifact_id=_art_id,
+                                artifact_type=_atype,
+                                title=f"{output_mode.title()} — {(getattr(response, 'input', None) or '')[:60]}",
+                                created_at=_now,
+                                updated_at=_now,
+                                source_turn_id=client_message_id,
+                                created_by=ArtifactCreator.AGENT,
+                                definition=_definition,
+                            )
+                            asyncio.get_running_loop().create_task(
+                                artifact_store.save_artifact(
+                                    user_id=user_id,
+                                    agent_id=agent_name or '',
+                                    session_id=session_id,
+                                    artifact=_artifact,
+                                )
+                            )
+
+                    elif _is_legacy:
+                        # Legacy path (chart / dataframe / export): persist response.data.
+                        _now = _dt.now(_tz.utc)
+                        _art_id = f"{output_mode}-{_uuid.uuid4().hex[:8]}"
+                        _definition = (
+                            response.data if isinstance(response.data, dict)
+                            else {"raw": str(response.data)[:10000]}
+                        )
+                        _artifact = Artifact(
+                            artifact_id=_art_id,
+                            artifact_type=_type_map.get(output_mode, ArtifactType.EXPORT),
+                            title=f"{output_mode.title()} — {(getattr(response, 'input', None) or '')[:60]}",
+                            created_at=_now,
+                            updated_at=_now,
+                            source_turn_id=client_message_id,
+                            created_by=ArtifactCreator.AGENT,
+                            definition=_definition,
+                        )
+                        asyncio.get_running_loop().create_task(
+                            artifact_store.save_artifact(
+                                user_id=user_id,
+                                agent_id=agent_name or '',
+                                session_id=session_id,
+                                artifact=_artifact,
+                            )
+                        )
             except Exception as ex:
                 self.logger.warning("Error scheduling artifact auto-save: %s", ex)
 
