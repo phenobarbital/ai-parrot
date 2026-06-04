@@ -85,4 +85,20 @@ from parrot_tools.scraping.flow_models import FlowNode  # created in TASK-1449
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `session_manager.py` with `SessionManager`:
+
+- `__init__(browser, default_context_kwargs=None, session_configs=None)`.
+- `get_context(session)` lazily creates a context (merging
+  `default_context_kwargs` with the per-session override from
+  `session_configs`), caches and returns it; subsequent calls reuse the cache.
+- `new_page(session)` → `await (await get_context(session)).new_page()`.
+- `precompute_last_use(topo_order)` iterates nodes in execution order so the
+  final per-session assignment is the last-using node; returns the mapping.
+- `close_if_last(session, node_id)` closes + evicts the context only when the
+  node is the recorded last user (no-op otherwise / for unknown sessions).
+- `close_all()` closes every remaining context, suppressing per-context close
+  errors, then clears the cache.
+
+10 unit tests pass against a mocked Browser (lazy/cache, distinct sessions,
+default+override kwargs, last-use, close-if-last gating, close_all + error
+suppression); ruff clean.
