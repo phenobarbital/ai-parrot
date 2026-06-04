@@ -271,6 +271,7 @@ class SlackSocketHandler:
         """
         channel = payload.get("channel_id", "")
         user = payload.get("user_id", "unknown")
+        team_id = payload.get("team_id", "")
         text = (payload.get("text") or "").strip()
         response_url = payload.get("response_url")
 
@@ -282,6 +283,28 @@ class SlackSocketHandler:
                     {"response_type": "ephemeral", "text": "Unauthorized channel."},
                 )
             return
+
+        # Try the command router first (Jira commands and future extensions).
+        # For dedicated slash commands, Slack sends ``command="/connect_jira"``
+        # and ``text=""`` — read ``payload["command"]`` first and fall back to
+        # the first word of text.
+        raw_command = (payload.get("command") or "").lstrip("/")
+        command_word = raw_command or (text.split()[0].lstrip("/") if text else "")
+        if command_word:
+            command_payload = {
+                "team_id": team_id,
+                "user_id": user,
+                "channel_id": channel,
+                "text": text,
+                "response_url": response_url or "",
+            }
+            router_result = await self.wrapper._command_router.dispatch(
+                command_word, command_payload
+            )
+            if router_result is not None:
+                if response_url:
+                    await self._send_response(response_url, router_result)
+                return
 
         # Handle built-in commands
         if text.lower() in {"help", "/help"}:

@@ -30,7 +30,7 @@ from aiogram.types import (
 from navconfig import config as navconfig_settings
 from navconfig.logging import logging
 
-from .oauth2_providers import get_provider, OAuth2ProviderConfig
+from parrot.integrations.core.auth.oauth2_providers import get_provider, OAuth2ProviderConfig
 
 
 logger = logging.getLogger("parrot.Telegram.Auth")

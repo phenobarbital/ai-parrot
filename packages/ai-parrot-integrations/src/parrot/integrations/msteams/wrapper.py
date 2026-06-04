@@ -28,12 +28,22 @@ from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
+from .commands import MSTeamsCommandRouter
+from .commands.jira_commands import register_jira_commands
+from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
 from parrot.forms import FormCache
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from parrot.auth.jira_oauth import JiraOAuthManager
+
 
 logging.getLogger('msrest').setLevel(logging.WARNING)
+
+_debug_storage_logger = logging.getLogger(__name__)
+
 
 class DebugMemoryStorage(MemoryStorage):
     async def write(self, changes):
@@ -41,14 +51,14 @@ class DebugMemoryStorage(MemoryStorage):
             try:
                 jsonpickle.encode(v)
             except Exception:
-                print("\n=== JSONPICKLE FAILED ===")
-                print("storage key:", k)
-                print("value type:", type(v))
+                _debug_storage_logger.error("=== JSONPICKLE FAILED ===")
+                _debug_storage_logger.error("storage key: %s", k)
+                _debug_storage_logger.error("value type: %s", type(v))
                 # if it's a dict, dump top-level types
                 if isinstance(v, dict):
-                    print("top-level dict keys/types:")
+                    _debug_storage_logger.debug("top-level dict keys/types:")
                     for kk, vv in v.items():
-                        print(" ", kk, type(vv))
+                        _debug_storage_logger.debug("  %s %s", kk, type(vv))
                 raise
         return await super().write(changes)
 
@@ -80,6 +90,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         app: web.Application,
         forms_directory: Optional[str] = None,
         voice_config: Optional[VoiceTranscriberConfig] = None,
+        oauth_manager: Optional['JiraOAuthManager'] = None,
     ):
         super().__init__()
         self.agent = agent
@@ -131,6 +142,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             conversation_state=self.conversation_state
         )
 
+        # Command router — Jira commands wired here (FEAT-225)
+        self._command_router: Optional[MSTeamsCommandRouter] = None
+        if oauth_manager is not None:
+            self._command_router = MSTeamsCommandRouter()
+            register_jira_commands(self._command_router, oauth_manager)
+            # Register the OAuth notifier for proactive messaging after callback
+            app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
+                adapter=self.adapter,
+                app_id=config.client_id or "",
+            )
+
         # Route
         # Clean chatbot_id to be safe for URL
         safe_id = self.config.chatbot_id.replace(' ', '_').lower()
@@ -138,14 +160,14 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Register Handler
         self.app.router.add_post(self.route, self.handle_request)
         self.logger.info(
-            f"Registered MS Teams webhook at {self.route}"
+            "Registered MS Teams webhook at %s", self.route
         )
 
         # Register route as auth exclusion
         if auth := self.app.get("auth"):
             auth.add_exclude_list(self.route)
             self.logger.info(
-                f"Excluded {self.route} from auth middleware"
+                "Excluded %s from auth middleware", self.route
             )
 
         # Load predefined YAML forms (if a directory was supplied)
@@ -377,6 +399,23 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             )
             await turn_context.send_activity("You are not authorized to use this bot.")
             return
+
+        # Command interception — Jira commands (FEAT-225)
+        # Strip mentions first so "/connect_jira" is detected after "@BotName"
+        if self._command_router is not None and turn_context.activity.text:
+            raw_text = turn_context.activity.text
+            clean_text = self._remove_mentions(turn_context.activity, raw_text).strip()
+            dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
+            if not dispatched:
+                # Secondary plain-text dispatch for discoverability keywords
+                # like "jira" or "integrations" that don't carry a "/" prefix.
+                plain = clean_text.lower().strip()
+                if plain in ("jira", "integrations"):
+                    dispatched = await self._command_router.try_dispatch_plain(
+                        plain, turn_context
+                    )
+            if dispatched:
+                return  # command handled — skip agent processing
 
         # DEBUG: Log activity details
         self.logger.info(

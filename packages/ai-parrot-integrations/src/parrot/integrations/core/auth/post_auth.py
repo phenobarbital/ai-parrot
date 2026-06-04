@@ -1,9 +1,9 @@
 """
 PostAuthProvider protocol and registry for secondary authentication flows.
 
-Secondary auth providers run AFTER a primary authentication succeeds
-(e.g., BasicAuth against navigator-auth) and before the Telegram WebApp
-closes. A provider is responsible for:
+Secondary auth providers run AFTER a primary authentication succeeds and
+before the auth flow completes on the client side. A provider is responsible
+for:
 
 1. Building a provider-specific authorization URL that the login page can
    redirect to after the primary auth completes.
@@ -13,7 +13,7 @@ closes. A provider is responsible for:
 
 This module defines only the **generic framework** (protocol + registry).
 Concrete providers (e.g., ``JiraPostAuthProvider``) live in their own
-modules (see ``post_auth_jira.py``).
+modules (see ``parrot.integrations.telegram.post_auth_jira``).
 """
 from __future__ import annotations
 
@@ -24,13 +24,8 @@ from typing import (
     List,
     Optional,
     Protocol,
-    TYPE_CHECKING,
     runtime_checkable,
 )
-
-if TYPE_CHECKING:
-    from parrot.integrations.telegram.auth import TelegramUserSession
-    from parrot.integrations.telegram.models import TelegramAgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +47,19 @@ class PostAuthProvider(Protocol):
 
     async def build_auth_url(
         self,
-        session: "TelegramUserSession",
-        config: "TelegramAgentConfig",
+        session: Any,
+        config: Any,
         callback_base_url: str,
     ) -> str:
         """Return the authorization URL the login page should redirect to.
 
         Args:
-            session: The current Telegram user session.
-            config: The Telegram agent configuration.
+            session: The current user session (type depends on the calling
+                integration, e.g. ``TelegramUserSession`` for the Telegram
+                integration).
+            config: The agent configuration for the calling integration.
             callback_base_url: Public base URL of the combined callback
-                endpoint (e.g., ``https://host/api/auth/telegram``).
+                endpoint (e.g., ``https://host/api/auth/callback``).
 
         Returns:
             An absolute authorization URL for this provider's consent page.
@@ -72,17 +69,17 @@ class PostAuthProvider(Protocol):
     async def handle_result(
         self,
         data: Dict[str, Any],
-        session: "TelegramUserSession",
+        session: Any,
         primary_auth_data: Dict[str, Any],
     ) -> bool:
-        """Process the secondary auth result received via WebApp.sendData.
+        """Process the secondary auth result payload from the callback.
 
         Args:
             data: Provider-specific payload (e.g., ``{"code", "state"}``
                 for OAuth2 providers).
-            session: The Telegram user session already populated by the
-                primary auth handler.
-            primary_auth_data: The payload from the primary auth (BasicAuth
+            session: The user session already populated by the primary auth
+                handler (type depends on the calling integration).
+            primary_auth_data: The payload from the primary auth (e.g.,
                 user_id / token / display_name / email).
 
         Returns:
