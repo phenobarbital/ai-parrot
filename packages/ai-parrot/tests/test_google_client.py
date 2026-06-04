@@ -1053,3 +1053,64 @@ class TestAskStreamCombinedModeGate:
 
         # Two-phase: reformat call should fire.
         assert m["models.generate_content"].call_count >= 1
+
+
+class TestCleanGoogleSchemaArrayItems:
+    """Regression for the Gemini 400 'array.items: missing field' error.
+
+    Pydantic v2 emits ``prefixItems`` (not ``items``) for fixed-length tuples
+    such as ``Tuple[float, float]`` (e.g. SpatialFilterSpec.point). Gemini does
+    not understand ``prefixItems`` and rejects any array schema lacking
+    ``items``. ``clean_google_schema`` must backfill ``items`` from
+    ``prefixItems`` so the function declaration is accepted.
+    """
+
+    def _clean(self, schema):
+        # Skip __init__ — clean_google_schema only needs self for recursion
+        # and _resolve_schema_refs (also a method on the class).
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        return client.clean_google_schema(schema)
+
+    def test_tuple_prefixitems_backfills_items(self):
+        """A Tuple-style array (prefixItems, no items) gets items backfilled."""
+        schema = {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [{"type": "number"}, {"type": "number"}],
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["type"] == "array"
+        assert cleaned["items"] == {"type": "number"}
+        assert "prefixItems" not in cleaned
+
+    def test_array_without_any_item_schema_gets_permissive_items(self):
+        """An array with neither items nor prefixItems still gets an items schema."""
+        cleaned = self._clean({"type": "array"})
+        assert cleaned["type"] == "array"
+        assert cleaned["items"] == {"type": "string"}
+
+    def test_regular_list_items_preserved(self):
+        """A normal List[str] array keeps its existing items untouched."""
+        cleaned = self._clean({"type": "array", "items": {"type": "string"}})
+        assert cleaned["items"] == {"type": "string"}
+
+    def test_nested_tuple_property_in_object(self):
+        """Tuple inside an object property (the SpatialFilterSpec.point shape)."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "point": {
+                    "type": "array",
+                    "prefixItems": [{"type": "number"}, {"type": "number"}],
+                    "minItems": 2,
+                    "maxItems": 2,
+                },
+            },
+            "required": ["point"],
+        }
+        cleaned = self._clean(schema)
+        pt = cleaned["properties"]["point"]
+        assert pt["type"] == "array"
+        assert pt["items"] == {"type": "number"}
+        assert "prefixItems" not in pt
