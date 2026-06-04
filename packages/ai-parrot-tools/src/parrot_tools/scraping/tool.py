@@ -50,7 +50,6 @@ from .plan import ScrapingPlan
 from .plan_io import save_plan_to_disk, load_plan_from_disk
 from .registry import PlanRegistry
 from .models import (
-    BrowserAction,
     Navigate,
     Click,
     Fill,
@@ -2484,6 +2483,14 @@ return 1;
 
         Thin wrapper retained for backward compatibility. The implementation
         now lives in the shared ``advanced_actions`` module (FEAT-222).
+
+        Known limitation (FEAT-222): the legacy per-iteration ``args`` dict
+        (``{"iteration": i, "data": {"index": ..., value_name: ...}}``) is no
+        longer threaded to ``_execute_step``, because ``exec_loop`` substitutes
+        ``{i}`` / ``{value}`` directly into each action's fields before
+        dispatch. Steps that previously read iteration context from ``args``
+        (e.g. ``get_html`` metadata enrichment inside a loop) will see an empty
+        context. Templated selectors/URLs/values are unaffected.
         """
         async def _dispatch(driver, step, url, timeout, step_extracted):
             return await self._execute_step(step, url)
@@ -2495,19 +2502,6 @@ return 1;
             base_url,
             self.default_timeout,
         )
-
-    async def _evaluate_condition(self, condition: str) -> bool:
-        """Evaluate a JavaScript condition"""
-        if self.driver_type == 'selenium':
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: self.driver.execute_script(f"return Boolean({condition})")
-            )
-        else:  # Playwright
-            result = await self.page.evaluate(f"() => Boolean({condition})")
-
-        return bool(result)
 
     async def _extract_content(
         self,
@@ -3129,52 +3123,13 @@ return 1;
         Returns:
             Value with substituted variables.
         """
-        values = None
-        if current_value is not None:
-            # Place current_value at index `iteration` so the shared helper's
-            # values[index] lookup resolves to it.
-            values = [None] * iteration + [current_value]
         return substitute_template_vars(
             value,
             iteration,
             start_index=start_index,
-            values=values,
+            current_value=current_value,
             value_name="value",
         )
-
-    def _substitute_action_vars(
-        self,
-        action: BrowserAction,
-        iteration: int,
-        start_index: int = 0,
-        current_value: Any = None
-    ) -> BrowserAction:
-        """
-        Create a copy of the action with template variables substituted.
-
-        Args:
-            action: Original action
-            iteration: Current iteration number (0-based internally)
-            start_index: Starting index for display
-            current_value: Current value from values list (if provided)
-
-        Returns:
-            New action instance with substituted values
-        """
-        # Get the action as a dictionary
-        action_dict = action.model_dump()
-
-        # Substitute variables in all string fields
-        substituted_dict = self._substitute_template_vars(
-            action_dict,
-            iteration,
-            start_index,
-            current_value
-        )
-
-        # Create new action instance from substituted dict
-        action_class = type(action)
-        return action_class(**substituted_dict)
 
     def _collect_cookies(self) -> Dict[str, str]:
         if not self.driver:

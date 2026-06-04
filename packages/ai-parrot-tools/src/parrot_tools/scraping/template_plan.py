@@ -28,6 +28,47 @@ from .plan import ScrapingPlan, _compute_fingerprint
 _PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
 
+def _validate_param_value(
+    name: str,
+    ptype: str,
+    choices: Optional[List[Any]],
+    value: Any,
+) -> None:
+    """Validate *value* against a parameter's declared *ptype* / *choices*.
+
+    Raises:
+        ValueError: On a type mismatch or enum/choice violation.
+    """
+    if ptype == "string":
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Parameter '{name}' expects a string, got {type(value).__name__}"
+            )
+    elif ptype == "int":
+        # bool is a subclass of int — reject it explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(
+                f"Parameter '{name}' expects an int, got {type(value).__name__}"
+            )
+    elif ptype == "date":
+        try:
+            datetime.fromisoformat(str(value))
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Parameter '{name}' expects an ISO date string, got {value!r}"
+            ) from exc
+    elif ptype == "url":
+        if not (isinstance(value, str) and value.startswith(("http://", "https://"))):
+            raise ValueError(
+                f"Parameter '{name}' expects an http(s) URL, got {value!r}"
+            )
+    elif ptype == "enum":
+        if choices is None or value not in choices:
+            raise ValueError(
+                f"Parameter '{name}' must be one of {choices}, got {value!r}"
+            )
+
+
 class ParamSpec(BaseModel):
     """Typed parameter definition for a :class:`TemplatePlan`.
 
@@ -48,12 +89,14 @@ class ParamSpec(BaseModel):
     description: str = ""
 
     @model_validator(mode="after")
-    def _validate_enum_choices(self) -> "ParamSpec":
-        """An ``enum`` parameter must declare a non-empty ``choices`` list."""
+    def _validate_spec(self) -> "ParamSpec":
+        """Validate enum→choices coupling and that any ``default`` is well-typed."""
         if self.type == "enum" and not self.choices:
             raise ValueError(
                 f"ParamSpec '{self.name}' has type 'enum' but no 'choices' provided"
             )
+        if self.default is not None:
+            _validate_param_value(self.name, self.type, self.choices, self.default)
         return self
 
 
@@ -147,38 +190,7 @@ class TemplatePlan(BaseModel):
     @staticmethod
     def _validate_type(spec: ParamSpec, value: Any) -> None:
         """Validate *value* against *spec*'s declared type / choices."""
-        if spec.type == "string":
-            if not isinstance(value, str):
-                raise ValueError(
-                    f"Parameter '{spec.name}' expects a string, got "
-                    f"{type(value).__name__}"
-                )
-        elif spec.type == "int":
-            # bool is a subclass of int — reject it explicitly.
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(
-                    f"Parameter '{spec.name}' expects an int, got "
-                    f"{type(value).__name__}"
-                )
-        elif spec.type == "date":
-            try:
-                datetime.fromisoformat(str(value))
-            except (ValueError, TypeError) as exc:
-                raise ValueError(
-                    f"Parameter '{spec.name}' expects an ISO date string, "
-                    f"got {value!r}"
-                ) from exc
-        elif spec.type == "url":
-            if not (isinstance(value, str) and value.startswith(("http://", "https://"))):
-                raise ValueError(
-                    f"Parameter '{spec.name}' expects an http(s) URL, got {value!r}"
-                )
-        elif spec.type == "enum":
-            if spec.choices is None or value not in spec.choices:
-                raise ValueError(
-                    f"Parameter '{spec.name}' must be one of {spec.choices}, "
-                    f"got {value!r}"
-                )
+        _validate_param_value(spec.name, spec.type, spec.choices, value)
 
     def _param_fingerprint(self, resolved: Dict[str, Any]) -> str:
         """Compute ``hash(template_name + sorted(params))`` for the plan."""

@@ -39,6 +39,19 @@ class TestParamSpec:
         spec = ParamSpec(name="cls", type="enum", choices=["economy", "business"])
         assert spec.choices == ["economy", "business"]
 
+    def test_bad_default_rejected_at_construction(self):
+        with pytest.raises(ValueError, match="int"):
+            ParamSpec(name="n", type="int", required=False, default="nope")
+
+    def test_valid_default_ok(self):
+        spec = ParamSpec(name="n", type="int", required=False, default=5)
+        assert spec.default == 5
+
+    def test_bad_enum_default_rejected(self):
+        with pytest.raises(ValueError, match="must be one of"):
+            ParamSpec(name="c", type="enum", choices=["a", "b"],
+                      required=False, default="z")
+
 
 # ── TemplatePlan.bind ─────────────────────────────────────────────────
 

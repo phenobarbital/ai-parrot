@@ -1,4 +1,5 @@
 """Tests for FlowExecutor — FEAT-222 TASK-1452."""
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bs4 import BeautifulSoup
@@ -284,6 +285,24 @@ class TestMultiSession:
         # Two distinct sessions → two contexts created.
         assert browser.new_context.call_count == 2
 
+    async def test_instance_reusable_concurrently(self):
+        """Session state is local to run(); one instance drives concurrent flows."""
+        import asyncio
+
+        templates = {"plan-a": simple_template("plan-a")}
+
+        async def fake(driver, plan, **kw):
+            await asyncio.sleep(0)  # yield to interleave the two runs
+            return make_result({"ok": plan.name})
+
+        ex = FlowExecutor(make_browser(), templates=templates)
+        flow1 = ScrapingFlow(name="f1", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        flow2 = ScrapingFlow(name="f2", nodes=[FlowNode(id="A", plan_ref="plan-a")])
+        with patch(EPS, new=AsyncMock(side_effect=fake)):
+            r1, r2 = await asyncio.gather(ex.run(flow1), ex.run(flow2))
+        assert r1.success and r2.success
+        assert r1.nodes_completed == 1 and r2.nodes_completed == 1
+
 
 # ── Checkpoint & resume ───────────────────────────────────────────────
 
@@ -301,9 +320,12 @@ class TestCheckpointResume:
         with patch(EPS, new=AsyncMock(side_effect=fake)):
             result = await ex.run(flow)
 
-        cp = tmp_path / "cpflow.checkpoint.json"
+        # Filename is keyed by a params token: cpflow.<token>.checkpoint.json
+        assert result.checkpoint_path is not None
+        cp = Path(result.checkpoint_path)
         assert cp.exists()
-        assert result.checkpoint_path == str(cp)
+        assert cp.parent == tmp_path
+        assert cp.name.startswith("cpflow.") and cp.name.endswith(".checkpoint.json")
 
     async def test_resume_skips_completed(self, tmp_path):
         flow = ScrapingFlow(name="cpflow2", nodes=[

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 
 class FlowNode(BaseModel):
@@ -49,8 +49,11 @@ class ScrapingFlow(BaseModel):
 
     name: str
     description: str = ""
-    nodes: List[FlowNode]
+    nodes: List[FlowNode] = Field(min_length=1)
     global_params: Dict[str, Any] = Field(default_factory=dict)
+
+    # Cached execution order, computed once in ``validate_dag``.
+    _topo_order: List[FlowNode] = PrivateAttr(default_factory=list)
 
     @staticmethod
     def _source_node(ref: str) -> str:
@@ -125,17 +128,20 @@ class ScrapingFlow(BaseModel):
 
     @model_validator(mode="after")
     def validate_dag(self) -> "ScrapingFlow":
-        """Validate the DAG: unique ids, no dangling refs, no cycles."""
-        self._compute_topological_order()
+        """Validate the DAG (unique ids, no dangling refs, no cycles) and
+        cache the resulting execution order."""
+        self._topo_order = self._compute_topological_order()
         return self
 
     def topological_order(self) -> List[FlowNode]:
         """Return the flow's nodes in dependency (execution) order.
 
         Dependencies always precede their dependents. Declaration order is
-        the stable tiebreaker among independent nodes.
+        the stable tiebreaker among independent nodes. The order is computed
+        once during validation and cached; a fresh list is returned each call
+        so callers cannot mutate the cache.
         """
-        return self._compute_topological_order()
+        return list(self._topo_order)
 
 
 class FlowResult(BaseModel):

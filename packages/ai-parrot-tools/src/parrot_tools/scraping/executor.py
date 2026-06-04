@@ -282,12 +282,16 @@ async def _dispatch_step(
         # Recursive closure: forwards each sub-step back through this same
         # dispatcher (enabling loop-within-loop) while preserving the shared
         # ``step_extracted`` accumulator for nested ``extract`` actions.
-        async def _dispatch(d, s, u, t, _se):
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
             return await _dispatch_step(d, s, u, t, step_extracted)
 
         return await exec_loop(driver, action, _dispatch, base_url, timeout)
     elif action_type == "conditional":
-        async def _dispatch(d, s, u, t, _se):
+        async def _dispatch(d, s, u, t, _caller_se):
+            # Ignore the callee-supplied accumulator on purpose: we forward the
+            # enclosing ``step_extracted`` so nested extracts share one dict.
             return await _dispatch_step(d, s, u, t, step_extracted)
 
         return await exec_conditional(driver, action, _dispatch, base_url, timeout)

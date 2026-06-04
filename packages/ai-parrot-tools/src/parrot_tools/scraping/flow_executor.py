@@ -9,6 +9,7 @@ error policies, and checkpoint persistence/resumption (FEAT-222, Module 8).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -172,7 +173,7 @@ class FlowExecutor:
     # ── Node execution ───────────────────────────────────────────────
 
     async def _run_single(
-        self, node: FlowNode, plan: ScrapingPlan
+        self, node: FlowNode, plan: ScrapingPlan, session: SessionManager
     ) -> Tuple[Optional[ScrapingResult], Optional[str]]:
         """Execute a single (non-fanned) node, honouring retry on a fresh page.
 
@@ -184,7 +185,7 @@ class FlowExecutor:
         last_error: Optional[str] = None
 
         for attempt in range(1, attempts + 1):
-            page = await self._session.new_page(node.session)
+            page = await session.new_page(node.session)
             driver = PageDriver(page)
             try:
                 result = await execute_plan_steps(
@@ -219,15 +220,22 @@ class FlowExecutor:
         base_params: Dict[str, Any],
         fanout_key: str,
         items: List[Any],
+        session: SessionManager,
     ) -> Tuple[Optional[ScrapingResult], Optional[str]]:
-        """Execute a fan-out node once per item with bounded concurrency."""
+        """Execute a fan-out node once per item with bounded concurrency.
+
+        Note: fan-out items of the same node share one session/BrowserContext;
+        concurrent pages in a single context may race on cookies/storage. This
+        is documented deferred debt (spec §Non-Goals) and is safe at the
+        default ``concurrency=1``.
+        """
         semaphore = asyncio.Semaphore(self._concurrency)
 
         async def _bounded(item: Any) -> Tuple[Optional[ScrapingResult], Optional[str]]:
             async with semaphore:
                 params = {**base_params, fanout_key: item}
                 plan = await self._resolve_plan(node, params)
-                return await self._run_single(node, plan)
+                return await self._run_single(node, plan, session)
 
         outcomes = await asyncio.gather(
             *[_bounded(it) for it in items], return_exceptions=True
@@ -246,7 +254,9 @@ class FlowExecutor:
                 errors.append(err or "fan-out item failed")
 
         aggregate = ScrapingResult(
-            url=node.plan_ref,
+            # No single URL represents a fan-out; leave empty rather than
+            # misrepresenting the plan reference as a URL.
+            url="",
             content="",
             bs_soup=BeautifulSoup("", "html.parser"),
             extracted_data={"items": [r.extracted_data for r in sub_results]},
@@ -257,17 +267,40 @@ class FlowExecutor:
 
     # ── Checkpointing ────────────────────────────────────────────────
 
-    def _checkpoint_path(self, flow: ScrapingFlow) -> Optional[Path]:
-        """Return the checkpoint file path for *flow* (or ``None`` if disabled)."""
+    @staticmethod
+    def _checkpoint_token(global_params: Dict[str, Any]) -> str:
+        """Stable 8-char key identifying a run by its parameter set.
+
+        Distinct parameter sets get distinct checkpoint files (so concurrent
+        runs of the same flow with different params do not clobber each other),
+        while an identical parameter set resolves deterministically — which is
+        what ``resume_from`` relies on to locate the prior run.
+        """
+        blob = json.dumps(global_params, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:8]
+
+    def _checkpoint_path(
+        self, flow: ScrapingFlow, token: str
+    ) -> Optional[Path]:
+        """Return the checkpoint file path for *flow*/*token* (``None`` if off)."""
         if self._checkpoint_dir is None:
             return None
-        return self._checkpoint_dir / f"{flow.name}.checkpoint.json"
+        return self._checkpoint_dir / f"{flow.name}.{token}.checkpoint.json"
 
     async def _write_checkpoint(
-        self, flow: ScrapingFlow, node_results: Dict[str, ScrapingResult]
+        self,
+        flow: ScrapingFlow,
+        token: str,
+        node_results: Dict[str, ScrapingResult],
     ) -> Optional[str]:
-        """Persist completed-node extracted_data; return the checkpoint path."""
-        path = self._checkpoint_path(flow)
+        """Persist completed-node ``extracted_data``; return the checkpoint path.
+
+        Only ``extracted_data`` is persisted (not the full ``ScrapingResult``),
+        since ``bs_soup`` is not JSON-serializable and ``content`` is large.
+        Nodes restored on resume therefore expose ``extracted_data`` only —
+        ``content``/``metadata`` come back empty.
+        """
+        path = self._checkpoint_path(flow, token)
         if path is None:
             return None
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -279,9 +312,11 @@ class FlowExecutor:
             await f.write(json.dumps(payload))
         return str(path)
 
-    async def _load_checkpoint(self, flow: ScrapingFlow) -> Dict[str, Any]:
+    async def _load_checkpoint(
+        self, flow: ScrapingFlow, token: str
+    ) -> Dict[str, Any]:
         """Load a previously persisted checkpoint (empty dict if none)."""
-        path = self._checkpoint_path(flow)
+        path = self._checkpoint_path(flow, token)
         if path is None or not path.exists():
             return {}
         async with aiofiles.open(path, "r") as f:
@@ -324,9 +359,12 @@ class FlowExecutor:
 
         order = flow.topological_order()
         global_params = {**flow.global_params, **(params or {})}
+        checkpoint_token = self._checkpoint_token(global_params)
 
-        self._session = SessionManager(self._browser)
-        self._session.precompute_last_use(order)
+        # Session lifecycle is local to this run() invocation, so the same
+        # FlowExecutor instance can drive multiple flows without cross-talk.
+        session = SessionManager(self._browser)
+        session.precompute_last_use(order)
 
         node_results: Dict[str, ScrapingResult] = {}
         skipped: set[str] = set()
@@ -337,7 +375,7 @@ class FlowExecutor:
 
         # ── Resume: pre-populate completed nodes from checkpoint ──────
         if resume_from is not None:
-            checkpoint = await self._load_checkpoint(flow)
+            checkpoint = await self._load_checkpoint(flow, checkpoint_token)
             for node in order:
                 if node.id == resume_from:
                     break
@@ -380,17 +418,19 @@ class FlowExecutor:
                 # Execute (fan-out or single).
                 if fanout_key is not None:
                     result, error = await self._run_fanout(
-                        node, base_params, fanout_key, fanout_items
+                        node, base_params, fanout_key, fanout_items, session
                     )
                 else:
                     plan = await self._resolve_plan(node, base_params)
-                    result, error = await self._run_single(node, plan)
+                    result, error = await self._run_single(node, plan, session)
 
                 if error is None:
                     node_results[node.id] = result
                     nodes_completed += 1
-                    checkpoint_path = await self._write_checkpoint(flow, node_results)
-                    await self._session.close_if_last(node.session, node.id)
+                    checkpoint_path = await self._write_checkpoint(
+                        flow, checkpoint_token, node_results
+                    )
+                    await session.close_if_last(node.session, node.id)
                     continue
 
                 # ── Failure handling per node policy ──────────────────
@@ -400,7 +440,7 @@ class FlowExecutor:
                         node.id, error,
                     )
                     skipped.add(node.id)
-                    await self._session.close_if_last(node.session, node.id)
+                    await session.close_if_last(node.session, node.id)
                     continue
 
                 # "abort" and exhausted "retry" both stop the flow.
@@ -411,7 +451,7 @@ class FlowExecutor:
                     node_results[node.id] = result
                 break
         finally:
-            await self._session.close_all()
+            await session.close_all()
 
         elapsed = loop.time() - start_time
         return FlowResult(

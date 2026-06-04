@@ -75,6 +75,16 @@ class TestScrapingFlow:
                 FlowNode(id="a", plan_ref="q"),
             ])
 
+    def test_empty_nodes_rejected(self):
+        with pytest.raises(ValueError):
+            ScrapingFlow(name="empty", nodes=[])
+
+    def test_topological_order_returns_fresh_list(self):
+        flow = ScrapingFlow(name="t", nodes=[FlowNode(id="a", plan_ref="p")])
+        o1 = flow.topological_order()
+        o1.clear()  # mutating the returned list must not corrupt the cache
+        assert [n.id for n in flow.topological_order()] == ["a"]
+
     def test_diamond_dag(self):
         flow = ScrapingFlow(name="test", nodes=[
             FlowNode(id="root", plan_ref="p"),

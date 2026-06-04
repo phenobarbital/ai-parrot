@@ -129,10 +129,20 @@ class TestContentExtraction:
         mock_page.get_attribute.assert_awaited_once_with("a", "href", timeout=10000)
 
     async def test_get_all_texts(self, driver, mock_page):
-        mock_page.eval_on_selector_all.return_value = ["a", "b"]
-        result = await driver.get_all_texts(".row")
+        # PageDriver waits for the first match, then reads inner_text of all.
+        el_a, el_b = MagicMock(), MagicMock()
+        el_a.inner_text = AsyncMock(return_value="a")
+        el_b.inner_text = AsyncMock(return_value="b")
+        locator = MagicMock()
+        locator.first = MagicMock()
+        locator.first.wait_for = AsyncMock()
+        locator.all = AsyncMock(return_value=[el_a, el_b])
+        mock_page.locator = MagicMock(return_value=locator)
+
+        result = await driver.get_all_texts(".row", timeout=5)
         assert result == ["a", "b"]
-        assert mock_page.eval_on_selector_all.call_args[0][0] == ".row"
+        mock_page.locator.assert_called_once_with(".row")
+        locator.first.wait_for.assert_awaited_once_with(timeout=5000)
 
     async def test_screenshot(self, driver, mock_page):
         mock_page.screenshot.return_value = b"img"

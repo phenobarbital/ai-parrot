@@ -132,11 +132,17 @@ class PageDriver(AbstractDriver):
         )
 
     async def get_all_texts(self, selector: str, timeout: int = 10) -> List[str]:
-        """Return the inner text of every matching element."""
-        return await self._page.eval_on_selector_all(
-            self._resolve_selector(selector),
-            "els => els.map(e => e.innerText)",
-        )
+        """Return the inner text of every matching element.
+
+        Waits for the first match to appear before collecting, matching
+        :class:`PlaywrightDriver` so dynamically-loaded lists are not silently
+        returned empty.
+        """
+        sel = self._resolve_selector(selector)
+        locator = self._page.locator(sel)
+        await locator.first.wait_for(timeout=timeout * 1000)
+        elements = await locator.all()
+        return [await el.inner_text() for el in elements]
 
     async def screenshot(self, path: str, full_page: bool = False) -> bytes:
         """Take a screenshot and save it to *path*."""

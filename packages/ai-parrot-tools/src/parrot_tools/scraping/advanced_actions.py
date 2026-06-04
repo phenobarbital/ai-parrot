@@ -21,6 +21,7 @@ The ``dispatch_step_fn`` callback signature mirrors
 """
 from __future__ import annotations
 
+import ast
 import asyncio
 import logging
 import random
@@ -41,6 +42,62 @@ DispatchStepFn = Callable[
 # (i / index / iteration). Mirrors the legacy regex at tool.py:3326.
 _TEMPLATE_VAR_RE = re.compile(r"\{([^}]*(?:i|index|iteration)[^}]*)\}")
 
+# AST node types permitted in a loop-variable arithmetic expression. This is a
+# strict allow-list — anything else (attribute access, calls, subscripts,
+# names, etc.) is rejected, closing the ``eval`` sandbox-escape vector that a
+# bare ``eval(expr, {"__builtins__": {}})`` leaves open (e.g.
+# ``().__class__.__bases__[index].__subclasses__()``).
+_ALLOWED_ARITH_NODES = (
+    ast.Expression,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Constant,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.FloorDiv,
+    ast.Mod,
+    ast.USub,
+    ast.UAdd,
+)  # ast.Pow is intentionally excluded (e.g. 2**999999 is a DoS vector).
+
+# Dangerous JavaScript primitives that must never appear in a Loop ``condition``
+# evaluated in the live page context (defence-in-depth against injection via
+# scraped/LLM-authored plans). Conservative deny-list; matched case-insensitively.
+_DANGEROUS_JS_RE = re.compile(
+    r"""(?xi)
+    \bfetch\b | \bXMLHttpRequest\b | \bimport\b | \beval\b | \bFunction\b |
+    \bsetTimeout\b | \bsetInterval\b | \brequire\b | \bWebSocket\b |
+    \bcookie\b | \blocalStorage\b | \bsessionStorage\b | \bindexedDB\b |
+    \blocation\b | \bnavigator\b | \bdocument\s*\.\s*write\b |
+    =>          |   # arrow functions
+    `           |   # template literals
+    ;               # statement separators
+    """
+)
+
+
+def _safe_arithmetic(expr: str) -> Optional[str]:
+    """Evaluate an arithmetic-only expression, returning ``None`` if unsafe.
+
+    Only integer/float literals and the operators ``+ - * // %`` (plus unary
+    ``+``/``-``) are permitted. Any other AST node — names, attribute access,
+    calls, subscripts — causes a rejection. This replaces the historical
+    ``eval(expr, {"__builtins__": {}})`` which is *not* a real sandbox.
+    """
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if not isinstance(node, _ALLOWED_ARITH_NODES):
+            return None
+    try:
+        return str(eval(compile(tree, "<arith>", "eval"), {"__builtins__": {}}, {}))  # noqa: S307
+    except Exception:  # noqa: BLE001
+        return None
+
 
 def substitute_template_vars(
     value: Any,
@@ -48,6 +105,7 @@ def substitute_template_vars(
     start_index: int = 0,
     values: Optional[List[Any]] = None,
     value_name: str = "value",
+    current_value: Any = None,
 ) -> Any:
     """Recursively substitute loop template variables in *value*.
 
@@ -55,7 +113,8 @@ def substitute_template_vars(
         - ``{i}``, ``{index}``, ``{iteration}`` — the current iteration,
           offset by *start_index*.
         - Arithmetic expressions — ``{i+1}``, ``{i-1}``, ``{i*2}``,
-          ``{index+1}`` — evaluated with a no-builtins ``eval`` for safety.
+          ``{index+1}`` — evaluated by a strict arithmetic-only AST parser
+          (:func:`_safe_arithmetic`), never a general ``eval``.
         - ``{value}`` (and ``{<value_name>}``) — the current value when
           iterating over a *values* list.
 
@@ -70,15 +129,19 @@ def substitute_template_vars(
             the current value.
         value_name: Variable name exposed for the current value (default
             ``"value"``).
+        current_value: Explicit current value. When given it takes precedence
+            over ``values[index]`` (lets callers pass a single value without
+            allocating a positional list).
 
     Returns:
         The value with all template variables substituted.
     """
+    # Resolve the effective current value once (explicit arg wins).
+    if current_value is None and values is not None and 0 <= index < len(values):
+        current_value = values[index]
+
     if isinstance(value, str):
         actual_index = start_index + index
-        current_value: Any = None
-        if values is not None and 0 <= index < len(values):
-            current_value = values[index]
 
         # Replace standalone tokens first (longest-first is unnecessary here
         # because each is brace-delimited and mutually exclusive).
@@ -98,22 +161,25 @@ def substitute_template_vars(
             expr = re.sub(r"\biteration\b", str(actual_index), expr)
             expr = re.sub(r"\bindex\b", str(actual_index), expr)
             expr = re.sub(r"\bi\b", str(actual_index), expr)
-            try:
-                return str(eval(expr, {"__builtins__": {}}, {}))  # noqa: S307
-            except Exception:  # noqa: BLE001 — keep original on any failure
-                return match.group(0)
+            result = _safe_arithmetic(expr)
+            # Unsafe / non-arithmetic expressions are left verbatim.
+            return result if result is not None else match.group(0)
 
         return _TEMPLATE_VAR_RE.sub(_eval_expr, value)
 
     if isinstance(value, dict):
         return {
-            k: substitute_template_vars(v, index, start_index, values, value_name)
+            k: substitute_template_vars(
+                v, index, start_index, values, value_name, current_value
+            )
             for k, v in value.items()
         }
 
     if isinstance(value, list):
         return [
-            substitute_template_vars(item, index, start_index, values, value_name)
+            substitute_template_vars(
+                item, index, start_index, values, value_name, current_value
+            )
             for item in value
         ]
 
@@ -141,7 +207,21 @@ def _substitute_action_vars(
 
 
 async def _evaluate_js_condition(driver: AbstractDriver, condition: str) -> bool:
-    """Evaluate a JavaScript boolean condition through the driver."""
+    """Evaluate a JavaScript boolean *condition* through the driver.
+
+    The condition is executed in the live page context, so a conservative
+    deny-list (:data:`_DANGEROUS_JS_RE`) screens out exfiltration/escape
+    primitives (``fetch``, ``cookie``, arrow functions, ``;`` statement
+    separators, …) that could be injected via scraped or LLM-authored plans.
+    A rejected condition fails safe — it evaluates to ``False`` so the loop
+    stops rather than running attacker-controlled JavaScript.
+    """
+    if _DANGEROUS_JS_RE.search(condition):
+        logger.error(
+            "Refusing to evaluate loop condition containing a disallowed "
+            "JavaScript construct: %r", condition,
+        )
+        return False
     result = await driver.evaluate(f"Boolean({condition})")
     return bool(result)
 
