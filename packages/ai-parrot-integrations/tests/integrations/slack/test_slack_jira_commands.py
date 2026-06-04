@@ -54,14 +54,12 @@ class TestSlackCommandRouter:
         router.register("test_cmd", handler)
         assert "test_cmd" in router.registered_commands
 
-    def test_dispatch_unknown_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_dispatch_unknown_returns_none(self):
         """dispatch returns None for an unregistered command."""
         router = SlackCommandRouter()
 
-        import asyncio
-        result = asyncio.get_event_loop().run_until_complete(
-            router.dispatch("unknown_cmd", {})
-        )
+        result = await router.dispatch("unknown_cmd", {})
         assert result is None
 
     def test_register_normalizes_slash_prefix(self):

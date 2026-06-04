@@ -110,7 +110,7 @@ class MSTeamsOAuthNotifier:
         try:
             from botbuilder.schema import ConversationReference
 
-            conv_ref = ConversationReference().deserialize(conversation_ref_dict)
+            conv_ref = ConversationReference.deserialize(conversation_ref_dict)
 
             async def _callback(turn_context: Any) -> None:
                 from botbuilder.schema import Activity
@@ -146,7 +146,7 @@ class MSTeamsOAuthNotifier:
         try:
             from botbuilder.schema import ConversationReference
 
-            conv_ref = ConversationReference().deserialize(conversation_ref_dict)
+            conv_ref = ConversationReference.deserialize(conversation_ref_dict)
 
             async def _callback(turn_context: Any) -> None:
                 from botbuilder.schema import Activity
@@ -178,11 +178,14 @@ async def handle_msteams_jira_callback(
     """Process a Jira OAuth callback originating from the MS Teams integration.
 
     Responsibilities:
-    1. Write an ``auth.user_identities`` row (if
+    1. Return an HTML error page when Atlassian reports a consent denial
+       (``?error=`` query param is present), and optionally send a proactive
+       Teams message to the user.
+    2. Write an ``auth.user_identities`` row (if
        ``identity_mapping_service`` is available on the app).
-    2. Fire a proactive Teams notification via
+    3. Fire a proactive Teams notification via
        ``app["msteams_jira_oauth_notifier"]`` (fire-and-forget).
-    3. Return an HTML success page that instructs the user to return to Teams.
+    4. Return an HTML success page that instructs the user to return to Teams.
 
     Args:
         request: The incoming aiohttp request.
@@ -193,6 +196,33 @@ async def handle_msteams_jira_callback(
         HTML :class:`aiohttp.web.Response` for the browser.
     """
     from aiohttp import web
+
+    # Handle Atlassian consent denial or other OAuth errors carried as query params.
+    error_code = request.rel_url.query.get("error")
+    if error_code:
+        error_description = request.rel_url.query.get(
+            "error_description", error_code
+        )
+        logger.warning(
+            "MS Teams Jira OAuth callback received error: %s — %s",
+            error_code,
+            error_description,
+        )
+        conv_ref_err: Dict[str, Any] = state_payload.get("conversation_reference") or {}
+        notifier_err: Optional[MSTeamsOAuthNotifier] = request.app.get(
+            "msteams_jira_oauth_notifier"
+        )
+        if notifier_err is not None and conv_ref_err:
+            asyncio.create_task(
+                notifier_err.notify_failure(
+                    conversation_ref_dict=conv_ref_err,
+                    reason=error_description,
+                )
+            )
+        return web.Response(
+            text=_MSTEAMS_ERROR_HTML.format(error=html.escape(error_description)),
+            content_type="text/html",
+        )
 
     conv_ref: Dict[str, Any] = state_payload.get("conversation_reference") or {}
     nav_user_id: str = state_payload.get("user_id", "")

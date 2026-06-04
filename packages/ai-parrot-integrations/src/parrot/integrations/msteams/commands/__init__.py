@@ -74,7 +74,7 @@ class MSTeamsCommandRouter:
     async def try_dispatch(
         self, text: str, turn_context: "TurnContext"
     ) -> bool:
-        """Attempt to dispatch *text* as a command.
+        """Attempt to dispatch *text* as a slash command.
 
         Args:
             text: The message text (already stripped of @mentions).
@@ -104,6 +104,47 @@ class MSTeamsCommandRouter:
                 Activity(
                     type="message",
                     text="An error occurred processing your command. Please try again.",
+                )
+            )
+        return True
+
+    async def try_dispatch_plain(
+        self, text: str, turn_context: "TurnContext"
+    ) -> bool:
+        """Attempt to dispatch *text* as a plain-text (non-slash) trigger.
+
+        Used for discoverability keywords like ``"jira"`` or
+        ``"integrations"`` that are registered without a ``/`` prefix
+        (e.g. the ``"jira_menu"`` handler).  This method does **not** require
+        the text to start with ``/``, so it acts as a secondary dispatch path
+        called after :meth:`try_dispatch` returns ``False``.
+
+        Args:
+            text: The lowercase, stripped message text.
+            turn_context: The current Bot Framework turn context.
+
+        Returns:
+            ``True`` if a matching plain-text handler was found and called;
+            ``False`` otherwise.
+        """
+        if not text:
+            return False
+
+        handler = self._handlers.get(text)
+        if handler is None:
+            return False
+
+        try:
+            await handler(turn_context)
+        except Exception:
+            logger.exception(
+                "MSTeamsCommandRouter: error in plain-text handler for '%s'", text
+            )
+            from botbuilder.schema import Activity
+            await turn_context.send_activity(
+                Activity(
+                    type="message",
+                    text="An error occurred processing your request. Please try again.",
                 )
             )
         return True

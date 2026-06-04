@@ -20,8 +20,9 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict
 
+from botbuilder.core import TurnContext
+
 if TYPE_CHECKING:
-    from botbuilder.core import TurnContext
     from parrot.auth.jira_oauth import JiraOAuthManager
     from parrot.integrations.msteams.commands import MSTeamsCommandRouter
 
@@ -131,7 +132,7 @@ def _get_user_id(turn_context: "TurnContext") -> str:
     return turn_context.activity.from_property.id
 
 
-def _get_conversation_reference(turn_context: "TurnContext") -> Dict[str, Any]:
+def _get_conversation_reference(turn_context: TurnContext) -> Dict[str, Any]:
     """Serialise the conversation reference for proactive messaging.
 
     Args:
@@ -141,8 +142,7 @@ def _get_conversation_reference(turn_context: "TurnContext") -> Dict[str, Any]:
         A JSON-safe dict representation of the conversation reference.
     """
     try:
-        from botbuilder.core import TurnContext as TC
-        conv_ref = TC.get_conversation_reference(turn_context.activity)
+        conv_ref = TurnContext.get_conversation_reference(turn_context.activity)
         # serialize — ConversationReference is a Serializable object
         return json.loads(json.dumps(conv_ref.serialize()))
     except Exception:
@@ -215,6 +215,7 @@ async def connect_jira_handler(
         user_id,
         extra_state={
             "channel": _MSTEAMS_CHANNEL,
+            "user_id": user_id,
             "conversation_reference": conv_ref,
         },
     )
@@ -324,12 +325,10 @@ def register_jira_commands(
     router.register("connect_jira", _connect)
     router.register("disconnect_jira", _disconnect)
     router.register("jira_status", _status)
-    # Plain-text triggers for discoverability (handled by the router
-    # even though they don't start with '/' — we register them with '/'
-    # stripped so they resolve when the router does text.startswith("/") check).
-    # NOTE: The menu triggers ("jira", "integrations") are NOT slash commands,
-    # so they won't be caught by try_dispatch's startswith("/") guard.
-    # They are registered separately for use by the wrapper via a secondary
-    # plain-text lookup.
-    router.register("jira_menu", _menu)
+    # Plain-text triggers for discoverability.  "jira" and "integrations" are
+    # NOT slash commands, so they won't be caught by try_dispatch's
+    # startswith("/") guard.  Register them directly under the plain-text keys
+    # so that try_dispatch_plain can resolve them by exact match.
+    router.register("jira", _menu)
+    router.register("integrations", _menu)
     logger.info("Registered Jira commands on MSTeamsCommandRouter")

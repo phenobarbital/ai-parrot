@@ -42,20 +42,23 @@ if TYPE_CHECKING:
 
 logging.getLogger('msrest').setLevel(logging.WARNING)
 
+_debug_storage_logger = logging.getLogger(__name__)
+
+
 class DebugMemoryStorage(MemoryStorage):
     async def write(self, changes):
         for k, v in changes.items():
             try:
                 jsonpickle.encode(v)
             except Exception:
-                print("\n=== JSONPICKLE FAILED ===")
-                print("storage key:", k)
-                print("value type:", type(v))
+                _debug_storage_logger.error("=== JSONPICKLE FAILED ===")
+                _debug_storage_logger.error("storage key: %s", k)
+                _debug_storage_logger.error("value type: %s", type(v))
                 # if it's a dict, dump top-level types
                 if isinstance(v, dict):
-                    print("top-level dict keys/types:")
+                    _debug_storage_logger.debug("top-level dict keys/types:")
                     for kk, vv in v.items():
-                        print(" ", kk, type(vv))
+                        _debug_storage_logger.debug("  %s %s", kk, type(vv))
                 raise
         return await super().write(changes)
 
@@ -157,14 +160,14 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Register Handler
         self.app.router.add_post(self.route, self.handle_request)
         self.logger.info(
-            f"Registered MS Teams webhook at {self.route}"
+            "Registered MS Teams webhook at %s", self.route
         )
 
         # Register route as auth exclusion
         if auth := self.app.get("auth"):
             auth.add_exclude_list(self.route)
             self.logger.info(
-                f"Excluded {self.route} from auth middleware"
+                "Excluded %s from auth middleware", self.route
             )
 
         # Load predefined YAML forms (if a directory was supplied)
@@ -402,7 +405,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if self._command_router is not None and turn_context.activity.text:
             raw_text = turn_context.activity.text
             clean_text = self._remove_mentions(turn_context.activity, raw_text).strip()
-            if await self._command_router.try_dispatch(clean_text, turn_context):
+            dispatched = await self._command_router.try_dispatch(clean_text, turn_context)
+            if not dispatched:
+                # Secondary plain-text dispatch for discoverability keywords
+                # like "jira" or "integrations" that don't carry a "/" prefix.
+                plain = clean_text.lower().strip()
+                if plain in ("jira", "integrations"):
+                    dispatched = await self._command_router.try_dispatch_plain(
+                        plain, turn_context
+                    )
+            if dispatched:
                 return  # command handled — skip agent processing
 
         # DEBUG: Log activity details

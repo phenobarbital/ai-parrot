@@ -79,13 +79,16 @@ def _make_event_request(channel: str, user: str, text: str = "hello"):
 
 def _make_command_request(channel: str, user: str, text: str = "help"):
     """Create a mock aiohttp request for a Slack slash command."""
+    import urllib.parse
     form_data = {
         "channel_id": channel,
         "user_id": user,
         "text": text,
         "command": "/ask",
     }
+    raw_body = urllib.parse.urlencode(form_data).encode("utf-8")
     request = MagicMock(spec=web.Request)
+    request.read = AsyncMock(return_value=raw_body)
     request.post = AsyncMock(return_value=form_data)
     return request
 
@@ -181,7 +184,11 @@ class TestSlackCommandWhitelistIntegration:
             channel="C001", user="U999", text="ask something"
         )
 
-        response = await wrapper._handle_command(request)
+        with patch(
+            "parrot.integrations.slack.wrapper.verify_slack_signature_raw",
+            return_value=True,
+        ):
+            response = await wrapper._handle_command(request)
 
         body = json.loads(response.body)
         assert body["response_type"] == "ephemeral"

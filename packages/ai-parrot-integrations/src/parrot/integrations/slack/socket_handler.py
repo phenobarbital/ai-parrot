@@ -285,7 +285,11 @@ class SlackSocketHandler:
             return
 
         # Try the command router first (Jira commands and future extensions).
-        command_word = text.split()[0].lstrip("/") if text else ""
+        # For dedicated slash commands, Slack sends ``command="/connect_jira"``
+        # and ``text=""`` — read ``payload["command"]`` first and fall back to
+        # the first word of text.
+        raw_command = (payload.get("command") or "").lstrip("/")
+        command_word = raw_command or (text.split()[0].lstrip("/") if text else "")
         if command_word:
             command_payload = {
                 "team_id": team_id,

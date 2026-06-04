@@ -37,6 +37,15 @@ def msteams_state_payload():
 # MSTeamsOAuthNotifier tests
 # ---------------------------------------------------------------------------
 
+def _make_success_request(app=None):
+    """Build a mock request that simulates a successful OAuth callback (no ?error=)."""
+    mock_request = MagicMock()
+    mock_request.app = app if app is not None else {}
+    # Ensure rel_url.query.get("error") returns None (no error in the callback URL)
+    mock_request.rel_url.query.get.return_value = None
+    return mock_request
+
+
 class TestMSTeamsOAuthNotifier:
     @pytest.mark.asyncio
     async def test_notify_connected_calls_continue_conversation(self):
@@ -55,12 +64,12 @@ class TestMSTeamsOAuthNotifier:
             "serviceUrl": "https://smba.trafficmanager.net/",
         }
 
+        # Patch at the botbuilder.schema level since ConversationReference is
+        # imported inside the function body at runtime.
         with patch(
-            "parrot.integrations.msteams.oauth_callback.ConversationReference"
-        ) as mock_conv_ref_cls:
-            mock_conv_ref = MagicMock()
-            mock_conv_ref_cls.return_value.deserialize = MagicMock(return_value=mock_conv_ref)
-
+            "botbuilder.schema.ConversationReference.deserialize",
+            return_value=MagicMock(),
+        ):
             await notifier.notify_connected(conv_ref_dict, "Jane Doe", "myco.atlassian.net")
 
         adapter.continue_conversation.assert_called_once()
@@ -77,11 +86,9 @@ class TestMSTeamsOAuthNotifier:
         conv_ref_dict = {"conversation": {"id": "conv-123"}}
 
         with patch(
-            "parrot.integrations.msteams.oauth_callback.ConversationReference"
-        ) as mock_conv_ref_cls:
-            mock_conv_ref = MagicMock()
-            mock_conv_ref_cls.return_value.deserialize = MagicMock(return_value=mock_conv_ref)
-
+            "botbuilder.schema.ConversationReference.deserialize",
+            return_value=MagicMock(),
+        ):
             await notifier.notify_failure(conv_ref_dict, "expired nonce")
 
         adapter.continue_conversation.assert_called_once()
@@ -96,11 +103,9 @@ class TestMSTeamsOAuthNotifier:
         notifier = MSTeamsOAuthNotifier(adapter=adapter, app_id="test-app-id")
 
         with patch(
-            "parrot.integrations.msteams.oauth_callback.ConversationReference"
-        ) as mock_conv_ref_cls:
-            mock_conv_ref = MagicMock()
-            mock_conv_ref_cls.return_value.deserialize = MagicMock(return_value=mock_conv_ref)
-
+            "botbuilder.schema.ConversationReference.deserialize",
+            return_value=MagicMock(),
+        ):
             # Should not raise
             await notifier.notify_connected({"conversation": {"id": "c"}}, "Jane", "site")
 
@@ -115,8 +120,7 @@ class TestHandleMSTeamsJiraCallback:
         """Returns an HTML response with 200 status."""
         from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
 
-        mock_request = MagicMock()
-        mock_request.app = {}
+        mock_request = _make_success_request()
 
         response = await handle_msteams_jira_callback(
             mock_request, mock_token_set, msteams_state_payload
@@ -130,8 +134,7 @@ class TestHandleMSTeamsJiraCallback:
         """HTML success page includes Jira display name."""
         from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
 
-        mock_request = MagicMock()
-        mock_request.app = {}
+        mock_request = _make_success_request()
 
         response = await handle_msteams_jira_callback(
             mock_request, mock_token_set, msteams_state_payload
@@ -146,8 +149,7 @@ class TestHandleMSTeamsJiraCallback:
         """HTML success page tells user to return to Teams."""
         from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
 
-        mock_request = MagicMock()
-        mock_request.app = {}
+        mock_request = _make_success_request()
 
         response = await handle_msteams_jira_callback(
             mock_request, mock_token_set, msteams_state_payload
@@ -164,8 +166,9 @@ class TestHandleMSTeamsJiraCallback:
         mock_identity_service = MagicMock()
         mock_identity_service.upsert_identity = AsyncMock()
 
-        mock_request = MagicMock()
-        mock_request.app = {"identity_mapping_service": mock_identity_service}
+        mock_request = _make_success_request(
+            app={"identity_mapping_service": mock_identity_service}
+        )
 
         await handle_msteams_jira_callback(
             mock_request, mock_token_set, msteams_state_payload
@@ -186,8 +189,9 @@ class TestHandleMSTeamsJiraCallback:
         mock_notifier = MagicMock()
         mock_notifier.notify_connected = AsyncMock()
 
-        mock_request = MagicMock()
-        mock_request.app = {"msteams_jira_oauth_notifier": mock_notifier}
+        mock_request = _make_success_request(
+            app={"msteams_jira_oauth_notifier": mock_notifier}
+        )
 
         with patch("asyncio.create_task") as mock_create_task:
             await handle_msteams_jira_callback(
@@ -209,9 +213,30 @@ class TestHandleMSTeamsJiraCallback:
         mock_notifier = MagicMock()
         mock_notifier.notify_connected = AsyncMock()
 
-        mock_request = MagicMock()
-        mock_request.app = {"msteams_jira_oauth_notifier": mock_notifier}
+        mock_request = _make_success_request(
+            app={"msteams_jira_oauth_notifier": mock_notifier}
+        )
 
         with patch("asyncio.create_task") as mock_create_task:
             await handle_msteams_jira_callback(mock_request, mock_token_set, state_payload)
             mock_create_task.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_error_param_returns_error_html(self, mock_token_set, msteams_state_payload):
+        """When Atlassian sends ?error=access_denied, returns error HTML."""
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+
+        mock_request = MagicMock()
+        mock_request.app = {}
+
+        def _query_get(key, default=None):
+            values = {"error": "access_denied", "error_description": "User denied access"}
+            return values.get(key, default)
+        mock_request.rel_url.query.get.side_effect = _query_get
+
+        response = await handle_msteams_jira_callback(
+            mock_request, mock_token_set, msteams_state_payload
+        )
+        assert response.status == 200
+        assert "Authorization Failed" in response.text
+        assert "User denied access" in response.text

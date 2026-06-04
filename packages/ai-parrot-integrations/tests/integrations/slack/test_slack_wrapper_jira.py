@@ -116,6 +116,8 @@ class TestSlackWrapperJiraWiring:
     @pytest.mark.asyncio
     async def test_handle_command_dispatches_connect_jira(self):
         """_handle_command delegates /connect_jira to the command router."""
+        import urllib.parse
+
         manager = MagicMock()
         manager.validate_token = AsyncMock(return_value=None)
         manager.create_authorization_url = AsyncMock(
@@ -124,39 +126,55 @@ class TestSlackWrapperJiraWiring:
 
         wrapper, _ = _make_minimal_wrapper(oauth_manager=manager)
 
-        from aiohttp import web
-        mock_request = MagicMock()
-        mock_request.post = AsyncMock(return_value={
+        form_data = {
             "team_id": "T0001",
             "user_id": "U1234",
             "channel_id": "C5678",
-            "text": "connect_jira",
+            "text": "",
+            "command": "/connect_jira",
             "response_url": "https://hooks.slack.com/...",
-        })
+        }
+        raw_body = urllib.parse.urlencode(form_data).encode("utf-8")
+
+        mock_request = MagicMock()
+        mock_request.read = AsyncMock(return_value=raw_body)
         mock_request.headers = {}
 
-        response = await wrapper._handle_command(mock_request)
-        data = response.text if hasattr(response, 'text') else str(response)
+        with patch(
+            "parrot.integrations.slack.wrapper.verify_slack_signature_raw",
+            return_value=True,
+        ):
+            response = await wrapper._handle_command(mock_request)
         # verify it came from the command router (returns ephemeral with blocks)
         assert response.status == 200
 
     @pytest.mark.asyncio
     async def test_handle_command_fallthrough_for_unknown(self):
         """Unknown commands still fall through to existing processing."""
+        import urllib.parse
+
         wrapper, _ = _make_minimal_wrapper(oauth_manager=None)
 
-        from aiohttp import web
-        mock_request = MagicMock()
-        mock_request.post = AsyncMock(return_value={
+        form_data = {
             "team_id": "T0001",
             "user_id": "U1234",
             "channel_id": "C5678",
             "text": "some random message",
+            "command": "",
             "response_url": "",
-        })
+        }
+        raw_body = urllib.parse.urlencode(form_data).encode("utf-8")
 
-        with patch.object(wrapper, "_safe_answer", new_callable=AsyncMock) as mock_safe:
-            response = await wrapper._handle_command(mock_request)
+        mock_request = MagicMock()
+        mock_request.read = AsyncMock(return_value=raw_body)
+        mock_request.headers = {}
+
+        with patch(
+            "parrot.integrations.slack.wrapper.verify_slack_signature_raw",
+            return_value=True,
+        ):
+            with patch.object(wrapper, "_safe_answer", new_callable=AsyncMock):
+                response = await wrapper._handle_command(mock_request)
         # Should return "Processing..." for unknown commands passed to agent
         assert response.status == 200
 

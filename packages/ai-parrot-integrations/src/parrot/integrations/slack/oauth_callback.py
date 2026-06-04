@@ -161,11 +161,13 @@ async def handle_slack_jira_callback(
     """Process a Jira OAuth callback originating from the Slack integration.
 
     Responsibilities:
-    1. Write an ``auth.user_identities`` row (if
+    1. Return an HTML error page when Atlassian reports a consent denial
+       (``?error=`` query param is present), and optionally DM the user.
+    2. Write an ``auth.user_identities`` row (if
        ``identity_mapping_service`` is available on the app).
-    2. Fire a DM notification via ``app["slack_jira_oauth_notifier"]``
+    3. Fire a DM notification via ``app["slack_jira_oauth_notifier"]``
        (fire-and-forget).
-    3. Return an HTML success page that instructs the user to return to Slack.
+    4. Return an HTML success page that instructs the user to return to Slack.
 
     Args:
         request: The incoming aiohttp request.
@@ -176,6 +178,35 @@ async def handle_slack_jira_callback(
         HTML :class:`aiohttp.web.Response` for the browser.
     """
     from aiohttp import web
+
+    # Handle Atlassian consent denial or other OAuth errors carried as query params.
+    error_code = request.rel_url.query.get("error")
+    if error_code:
+        error_description = request.rel_url.query.get(
+            "error_description", error_code
+        )
+        logger.warning(
+            "Slack Jira OAuth callback received error: %s — %s",
+            error_code,
+            error_description,
+        )
+        team_id_err: str = state_payload.get("team_id", "")
+        slack_user_id_err: str = state_payload.get("slack_user_id", "")
+        notifier_err: Optional[SlackOAuthNotifier] = request.app.get(
+            "slack_jira_oauth_notifier"
+        )
+        if notifier_err is not None and slack_user_id_err:
+            asyncio.create_task(
+                notifier_err.notify_failure(
+                    team_id=team_id_err,
+                    slack_user_id=slack_user_id_err,
+                    reason=error_description,
+                )
+            )
+        return web.Response(
+            text=_SLACK_ERROR_HTML.format(error=html.escape(error_description)),
+            content_type="text/html",
+        )
 
     team_id: str = state_payload.get("team_id", "")
     slack_user_id: str = state_payload.get("slack_user_id", "")
