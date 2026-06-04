@@ -52,7 +52,7 @@
       "feature_id": "FEAT-225",
       "feature": "jiratoolkit-integrations-oauth2",
       "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Depends on Slack commands being defined (TASK-1468) for extra_state contract.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1469-slack-oauth-callback-notification.md"
+      "completed_at": "2026-06-04T15:00:41+00:00",
+      "file": "sdd/tasks/completed/TASK-1469-slack-oauth-callback-notification.md"
     },
     {
       "id": "TASK-1470",
