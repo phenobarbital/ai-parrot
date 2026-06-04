@@ -1,4 +1,4 @@
-"""FEAT-215 (FEAT-223 Module 2): Structured Chart Output Mode renderer.
+"""FEAT-215 (FEAT-223 Module 2 / FEAT-224 Module 2): Structured Chart Output Mode renderer.
 
 Validates LLM-emitted JSON into :class:`StructuredChartConfig`, sets
 ``response.output`` to the camelCase config dict **without the data key**, routes
@@ -9,11 +9,19 @@ FEAT-223 deterministic refactor: rows come exclusively from the agent's DataFram
 The LLM contributes **presentation only** (type, x, y, palette, color_by_sign, …);
 it must NOT emit data rows.  If the LLM picks an absent x/y column, the renderer
 applies a deterministic fallback so the frontend always receives a valid config.
+
+FEAT-224 (Module 2 — G3): The renderer now reads its config from
+``response.output`` / ``response.structured_output`` (where PandasAgent stores the
+LLM's StructuredChartConfig) rather than from ``response.code``, which is reserved
+for genuine interpretable Python/TS code.  ``response.code`` is no longer consulted
+as a config source; a text-fallback path is retained for any client that sends
+the raw JSON string in the response body.
 """
 from __future__ import annotations
 
 import json
 import logging
+from types import SimpleNamespace
 from typing import Any, Optional, Tuple
 
 from .chart import BaseChart
@@ -96,10 +104,14 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
     ) -> Tuple[Any, Optional[Any]]:
         """Render a structured chart configuration from the LLM response.
 
-        Pipeline:
+        Pipeline (FEAT-224):
         1. Capture ``explanation`` from ``response.response`` (best-effort).
-        2. Parse the LLM-emitted JSON into :class:`StructuredChartConfig`
-           (three sources: pre-parsed dict, string, text fallback).
+        2. Parse the LLM-emitted config into :class:`StructuredChartConfig`
+           (three sources, in priority order):
+           a. ``response.output`` — a StructuredChartConfig instance or dict.
+           b. ``response.structured_output`` — same types as (a).
+           c. Text fallback via :meth:`_extract_json_code` on response content.
+           NOTE: ``response.code`` is NO LONGER consulted (G3).
         3. Extract real rows deterministically from ``response.data`` via
            :meth:`StructuredOutputBase._extract_rows` — **never** from ``cfg.data``.
         4. Serialize rows canonically via :func:`canonical_records`.
@@ -109,8 +121,9 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
         On any error: return ``(None, error_message)`` — never raise.
 
         Args:
-            response: An AIMessage-like object with ``code``, ``data``,
-                ``output``, and ``response`` attributes.
+            response: An AIMessage-like object with ``output``, ``structured_output``,
+                ``data``, and ``response`` attributes.  ``code`` is ignored as a
+                config source (FEAT-224 G3).
             environment: Rendering environment (unused; kept for protocol compat).
             **kwargs: Forwarded to base class (unused by this renderer).
 
@@ -124,28 +137,54 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
             explanation: Optional[str] = getattr(response, "response", None) or None
 
             # 1. Parse presentation config from LLM.
-            #    Sources (in priority order):
-            #    a) response.code as a pre-parsed dict
-            #    b) response.code as a string
-            #    c) response.response / content (text fallback)
-            raw_code = getattr(response, "code", None)
+            #    Sources (in priority order — FEAT-224 G3, response.code removed):
+            #    a) response.output — StructuredChartConfig instance or dict
+            #    b) response.structured_output — same types as (a)
+            #    c) text fallback via _extract_json_code on response content
             cfg: Optional[StructuredChartConfig] = None
 
-            # 1a. response.code is already a dict
-            if isinstance(raw_code, dict):
+            # Prefer response.output; fall back to structured_output if output
+            # is absent or is a plain string (non-structured turn).
+            candidate = getattr(response, "output", None)
+            if candidate is None or isinstance(candidate, str):
+                candidate = getattr(response, "structured_output", None)
+
+            # 1a. candidate is already a StructuredChartConfig instance (or duck-type)
+            # Use duck-typing in addition to isinstance to handle cross-module
+            # identity issues that can arise when different test suites load the
+            # same module through different sys.path entries (FEAT-224 test isolation).
+            _is_chart_cfg = isinstance(candidate, StructuredChartConfig) or (
+                candidate is not None
+                and not isinstance(candidate, (str, dict, list))
+                and hasattr(candidate, "model_dump")
+                and hasattr(candidate, "x")
+                and hasattr(candidate, "y")
+                and hasattr(candidate, "type")
+            )
+            if _is_chart_cfg:
+                if not isinstance(candidate, StructuredChartConfig):
+                    # Re-validate through the canonical class to normalise the object.
+                    try:
+                        candidate = StructuredChartConfig.model_validate(
+                            candidate.model_dump(mode="python")
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass  # keep original; model_dump will still work
+                cfg = candidate  # type: ignore[assignment]
+
+            # 1b. candidate is a dict — validate into StructuredChartConfig
+            elif isinstance(candidate, dict):
                 try:
-                    cfg = StructuredChartConfig.model_validate(raw_code)
+                    cfg = StructuredChartConfig.model_validate(candidate)
                 except Exception as exc:
                     msg = f"Invalid structured chart config (dict): {exc}"
                     logger.warning(msg)
                     return None, msg
 
-            # 1b. response.code is a string
+            # 1c. text fallback — extract JSON from response body
             if cfg is None:
-                raw: Optional[str] = raw_code if isinstance(raw_code, str) else None
-                if not raw:
-                    content = self._get_content(response)
-                    raw = self._extract_json_code(content)
+                content = self._get_content(response)
+                raw: Optional[str] = self._extract_json_code(content)
 
                 if not raw:
                     msg = "No structured chart configuration found in response"
@@ -160,7 +199,13 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
                     return None, msg
 
             # 2. Extract real rows deterministically from response.data.
-            df = self._extract_rows(response)
+            # NOTE: _extract_data looks at response.output first.  When output
+            # holds a StructuredChartConfig (FEAT-224 new path), its .data field
+            # is the LLM's presentation config payload — not the canonical row
+            # source.  We pass a shim with output=None so _extract_data falls
+            # through to response.data (the agent-injected DataFrame).
+            _row_shim = SimpleNamespace(output=None, data=getattr(response, "data", None))
+            df = self._extract_rows(_row_shim)
             if df is None:
                 msg = "StructuredChartRenderer: no data available for chart"
                 logger.warning(msg)

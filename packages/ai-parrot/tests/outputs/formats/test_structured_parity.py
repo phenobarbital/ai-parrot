@@ -72,13 +72,16 @@ class TestEnvelopeParity:
 
     @pytest.mark.asyncio
     async def test_chart_envelope(self):
-        """StructuredChartRenderer: data excluded; rows in response.data; explanation wrapped."""
-        from parrot.models.outputs import OutputMode
+        """StructuredChartRenderer: data excluded; rows in response.data; explanation wrapped.
+
+        FEAT-224: config is now supplied via response.output (not response.code).
+        """
+        from parrot.models.outputs import OutputMode, StructuredChartConfig
         from parrot.outputs.formats import get_renderer
 
         df = pd.DataFrame({"month": ["Jan", "Feb"], "sales": [100, 120]})
-        cfg_json = json.dumps({"type": "bar", "x": "month", "y": ["sales"], "data": []})
-        resp = _resp(data=df, code=cfg_json, response="chart explanation")
+        cfg = StructuredChartConfig(type="bar", x="month", y=["sales"])
+        resp = _resp(data=df, output=cfg, response="chart explanation")
         out, wrapped = await get_renderer(OutputMode.STRUCTURED_CHART)().render(resp)
 
         _assert_envelope(out, wrapped, resp, explanation="chart explanation")
@@ -127,10 +130,11 @@ class TestEnvelopeParity:
         out_t, _ = await get_renderer(OutputMode.STRUCTURED_TABLE)().render(resp_t)
         assert out_t is not None and "data" not in out_t
 
-        # chart
+        # chart — FEAT-224: config via response.output (not response.code)
+        from parrot.models.outputs import StructuredChartConfig
         df2 = pd.DataFrame({"x": ["A", "B"], "y": [10, 20]})
-        cfg = json.dumps({"type": "bar", "x": "x", "y": ["y"], "data": []})
-        resp_c = _resp(data=df2, code=cfg)
+        cfg_obj = StructuredChartConfig(type="bar", x="x", y=["y"])
+        resp_c = _resp(data=df2, output=cfg_obj)
         out_c, _ = await get_renderer(OutputMode.STRUCTURED_CHART)().render(resp_c)
         assert out_c is not None and "data" not in out_c
 
@@ -164,16 +168,17 @@ class TestChartDeterminismIntegration:
 
     @pytest.mark.asyncio
     async def test_rows_from_response_data_not_cfg_data(self):
-        """Rows in response.data come from the injected DataFrame, not cfg.data."""
-        from parrot.models.outputs import OutputMode
+        """Rows in response.data come from the injected DataFrame, not cfg.data.
+
+        FEAT-224: config is now supplied via response.output (not response.code).
+        """
+        from parrot.models.outputs import OutputMode, StructuredChartConfig
         from parrot.outputs.formats import get_renderer
 
         df = pd.DataFrame({"region": ["N", "S", "E"], "revenue": [10, 20, 30]})
-        cfg_json = json.dumps({
-            "type": "bar", "x": "region", "y": ["revenue"],
-            "data": []   # LLM emits no rows
-        })
-        resp = _resp(data=df, code=cfg_json)
+        # LLM emits no rows (data=[]) — real rows come from the DataFrame
+        cfg = StructuredChartConfig(type="bar", x="region", y=["revenue"], data=[])
+        resp = _resp(data=df, output=cfg)
         out, _ = await get_renderer(OutputMode.STRUCTURED_CHART)().render(resp)
 
         assert out is not None
@@ -182,13 +187,16 @@ class TestChartDeterminismIntegration:
 
     @pytest.mark.asyncio
     async def test_xy_in_real_columns(self):
-        """x/y in the emitted config are always members of the real column set."""
-        from parrot.models.outputs import OutputMode
+        """x/y in the emitted config are always members of the real column set.
+
+        FEAT-224: config is now supplied via response.output (not response.code).
+        """
+        from parrot.models.outputs import OutputMode, StructuredChartConfig
         from parrot.outputs.formats import get_renderer
 
         df = pd.DataFrame({"cat": ["A", "B"], "amount": [5, 10]})
-        cfg_json = json.dumps({"type": "line", "x": "cat", "y": ["amount"], "data": []})
-        resp = _resp(data=df, code=cfg_json)
+        cfg = StructuredChartConfig(type="line", x="cat", y=["amount"], data=[])
+        resp = _resp(data=df, output=cfg)
         out, _ = await get_renderer(OutputMode.STRUCTURED_CHART)().render(resp)
 
         assert out is not None
@@ -198,13 +206,16 @@ class TestChartDeterminismIntegration:
 
     @pytest.mark.asyncio
     async def test_absent_xy_deterministic_fallback(self):
-        """Absent LLM x/y → first categorical = x, first numeric = y."""
-        from parrot.models.outputs import OutputMode
+        """Absent LLM x/y → first categorical = x, first numeric = y.
+
+        FEAT-224: config is now supplied via response.output (not response.code).
+        """
+        from parrot.models.outputs import OutputMode, StructuredChartConfig
         from parrot.outputs.formats import get_renderer
 
         df = pd.DataFrame({"grp": ["X", "Y"], "cnt": [5, 10]})
-        cfg_json = json.dumps({"type": "bar", "x": "absent_col", "y": ["also_absent"], "data": []})
-        resp = _resp(data=df, code=cfg_json)
+        cfg = StructuredChartConfig(type="bar", x="absent_col", y=["also_absent"], data=[])
+        resp = _resp(data=df, output=cfg)
         out, _ = await get_renderer(OutputMode.STRUCTURED_CHART)().render(resp)
 
         assert out is not None
