@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from parrot.human.actions.ticket import TicketAction
+from parrot.human.actions.backends import ActionBackendError
 from parrot.human.models import EscalationActionType, EscalationTier, HumanInteraction
 
 
@@ -61,13 +62,12 @@ class TestTicketActionDispatcher:
         mock_get.assert_called_once_with("zammad")
         assert any("jira" in r.message.lower() for r in caplog.records)
 
-    async def test_unknown_kind_returns_error_dict(self, interaction):
-        """Unknown kind returns error=True dict without raising."""
+    async def test_unknown_kind_raises_backend_error(self, interaction):
+        """Unknown kind re-raises ActionBackendError so the manager advances."""
         tier = _tier({"kind": "zendesk"})
         action = TicketAction()
-        result = await action.execute(interaction, tier)
-        assert result.get("error") is True
-        assert "zendesk" in result["message"]
+        with pytest.raises(ActionBackendError, match="zendesk"):
+            await action.execute(interaction, tier)
 
     async def test_default_kind_is_zammad(self, interaction):
         """No kind or platform key defaults to zammad."""

@@ -73,22 +73,20 @@ class TestNotifyActionDispatcher:
 
         mock_get.assert_called_once_with("webhook")
 
-    async def test_unknown_kind_returns_error_dict(self, interaction):
-        """Unknown kind does not raise — returns error=True dict."""
+    async def test_unknown_kind_raises_backend_error(self, interaction):
+        """Unknown kind re-raises ActionBackendError so the manager advances."""
         tier = _tier({"kind": "sms"})
         action = NotifyAction()
-        result = await action.execute(interaction, tier)
-        assert result.get("error") is True
-        assert "sms" in result["message"]
+        with pytest.raises(ActionBackendError, match="sms"):
+            await action.execute(interaction, tier)
 
-    async def test_backend_exception_returns_error_dict(self, interaction):
-        """Backend exception is caught; returns error=True dict."""
+    async def test_backend_exception_reraised(self, interaction):
+        """Backend failure is re-raised so the manager can advance the chain."""
         tier = _tier({"kind": "email", "to": []})
         action = NotifyAction()
-        # EmailBackend raises on empty 'to'
-        result = await action.execute(interaction, tier)
-        assert result.get("error") is True
-        assert "message" in result
+        # EmailBackend raises EmailBackendError (an ActionBackendError) on empty 'to'
+        with pytest.raises(EmailBackendError):
+            await action.execute(interaction, tier)
 
     async def test_default_kind_is_email(self, interaction):
         """No kind or channel key defaults to email."""
