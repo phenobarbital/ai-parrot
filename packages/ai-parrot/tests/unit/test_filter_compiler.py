@@ -121,16 +121,16 @@ def test_pandas_range_bad_dict_raises(compiler, numeric_df) -> None:
 
 
 def test_sql_eq_fragment(compiler) -> None:
-    """eq produces 'column = value' fragment."""
+    """eq produces '"column" = value' fragment (column name is double-quoted)."""
     frag, params = compiler.compile_where("region", FilterCondition(op="eq", value="North"))
-    assert frag == "region = 'North'"
+    assert frag == '"region" = \'North\''
     assert params == []
 
 
 def test_sql_ne_fragment(compiler) -> None:
-    """ne produces 'column <> value' fragment."""
+    """ne produces '"column" <> value' fragment."""
     frag, params = compiler.compile_where("region", FilterCondition(op="ne", value="North"))
-    assert frag == "region <> 'North'"
+    assert frag == '"region" <> \'North\''
     assert params == []
 
 
@@ -182,9 +182,9 @@ def test_sql_escapes_single_quotes(compiler) -> None:
 
 
 def test_sql_numeric_value_not_quoted(compiler) -> None:
-    """Numeric values are not single-quoted in SQL output."""
+    """Numeric values are not single-quoted in SQL output; column is double-quoted."""
     frag, _ = compiler.compile_where("x", FilterCondition(op="eq", value=42))
-    assert frag == "x = 42"
+    assert frag == '"x" = 42'
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +233,14 @@ def test_apply_filter_missing_column_raises(region_df) -> None:
     """_apply_filter raises ValueError for a missing column."""
     with pytest.raises(ValueError, match="missing_col"):
         DatasetManager._apply_filter(region_df, {"missing_col": "X"})
+
+
+def test_sql_column_injection_raises(compiler) -> None:
+    """compile_where raises ValueError if column name contains a double-quote."""
+    with pytest.raises(ValueError, match="double-quote"):
+        compiler.compile_where(
+            'bad"name', FilterCondition(op="eq", value="X")
+        )
 
 
 def test_apply_filter_reset_index(region_df) -> None:

@@ -11,7 +11,7 @@ Functions:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
@@ -41,7 +41,7 @@ def infer_values_from_datasets(
         Sorted, de-duplicated list of values.  Empty list if no dataset has
         the column in its loaded DataFrame.
     """
-    collected: set = set()
+    collected: Set[Any] = set()
 
     for ds_name, entry in datasets.items():
         if restrict_to_dataset is not None and ds_name != restrict_to_dataset:

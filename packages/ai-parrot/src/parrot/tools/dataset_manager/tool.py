@@ -553,6 +553,9 @@ class DatasetManager(AbstractToolkit):
         # FEAT-225: instance-scoped filter definition store.
         # Keyed by FilterDefinition.name.  Never shared across instances.
         self._filter_defs: Dict[str, FilterDefinition] = {}
+        # FEAT-225: per-instance TTL-free cache for get_filter_values results.
+        # Keyed by filter name. Invalidated via clear_filter_values_cache().
+        self._filter_values_cache: Dict[str, List[Any]] = {}
         # Per-call permission context is stored in the module-level _pctx_var
         # ContextVar (set by _pre_execute, read by _get_current_pctx).
         # Using a ContextVar instead of an instance attribute isolates concurrent
@@ -1084,6 +1087,10 @@ class DatasetManager(AbstractToolkit):
         if self.auto_detect_types:
             entry._column_types = self.categorize_columns(entry._df)
         self._datasets[name] = entry
+
+        # Evict any cached filter-values entries for this dataset name so that
+        # a subsequent get_filter_values call re-scans the new data.
+        self.clear_filter_values_cache(name)
 
         # Regenerate guide if enabled
         if self.generate_guide:
@@ -4287,10 +4294,9 @@ class DatasetManager(AbstractToolkit):
             )
 
         # Simple per-instance TTL-free cache to avoid repeated scans in a session.
-        cache_attr = "_filter_values_cache"
-        if not hasattr(self, cache_attr):
-            object.__setattr__(self, cache_attr, {})  # type: ignore[misc]
-        cache: Dict[str, List[Any]] = getattr(self, cache_attr)
+        # Initialized in __init__ as self._filter_values_cache; invalidated via
+        # clear_filter_values_cache().
+        cache: Dict[str, List[Any]] = self._filter_values_cache
 
         if name in cache:
             self.logger.debug("get_filter_values: cache hit for filter '%s'.", name)
@@ -4349,6 +4355,22 @@ class DatasetManager(AbstractToolkit):
         )
         return values
 
+    def clear_filter_values_cache(self, name: Optional[str] = None) -> None:
+        """Invalidate the filter-values cache.
+
+        Called automatically by ``add_dataframe`` and related dataset-mutation
+        methods to evict stale entries when datasets change.  May also be
+        called explicitly to force a full re-scan on the next
+        ``get_filter_values`` call.
+
+        Args:
+            name: Dataset name to invalidate. If None, clears the entire cache.
+        """
+        if name is None:
+            self._filter_values_cache.clear()
+        else:
+            self._filter_values_cache.pop(name, None)
+
     def get_filter_schema(self) -> List[Dict[str, Any]]:
         """Serialize the filter catalog for the frontend.
 
@@ -4396,12 +4418,12 @@ class DatasetManager(AbstractToolkit):
             schema.append({
                 "name": defn.name,
                 "kind": defn.kind,
-                "ops": list(defn.ops),
+                "ops": defn.ops,
                 "label": defn.label,
                 "description": defn.description,
                 "required": defn.required,
                 "datasets": applicable,
-                "columns": list(defn.columns),
+                "columns": defn.columns,
             })
         return schema
 
@@ -4478,8 +4500,11 @@ class DatasetManager(AbstractToolkit):
                     label=col.replace("_", " ").title(),
                 ))
 
-        # Spatial suggestions from registered profiles intersecting this manager
-        for ds_name, profile in SPATIAL_PROFILE_REGISTRY.items():
+        # Spatial suggestions from registered profiles intersecting this manager.
+        # Snapshot before iterating to prevent RuntimeError if the registry is
+        # mutated by a concurrent async task (FIX-5 / FEAT-225 code review).
+        registry_snapshot = dict(SPATIAL_PROFILE_REGISTRY)
+        for ds_name, profile in registry_snapshot.items():
             if ds_name not in self._datasets:
                 continue
             # Build column list from profile
@@ -4503,10 +4528,16 @@ class DatasetManager(AbstractToolkit):
                     label=f"{ds_name} Location",
                 ))
 
+        skip_count = sum(
+            1 for entry in self._datasets.values()
+            if not entry.loaded and not getattr(entry.source, '_schema', None)
+        )
         self.logger.debug(
-            "suggest_filters: proposed %d filter(s) from %d column(s).",
+            "suggest_filters: proposed %d filter(s) from column census of %d column(s) "
+            "(%d unloaded datasets skipped).",
             len(proposals),
             len(col_census),
+            skip_count,
         )
         return proposals
 
@@ -4702,7 +4733,11 @@ class DatasetManager(AbstractToolkit):
                             f"'{ds_name}'. Either remove 'required=True' or ensure "
                             f"the dataset has these columns."
                         )
-                    # Non-required missing column: skip for this dataset
+                    # Non-required missing column: record the per-filter skip and
+                    # continue — this dataset may still match other filters.
+                    if ds_name not in result.partial_skips:
+                        result.partial_skips[ds_name] = []
+                    result.partial_skips[ds_name].append(fname)
                     continue
 
                 # Condition is applicable to this dataset
@@ -4718,7 +4753,13 @@ class DatasetManager(AbstractToolkit):
                     result.skipped.append(ds_name)
                 continue
 
-            # Materialize the dataset if not already loaded
+            # Materialize the dataset if not already loaded.
+            # TODO(FEAT-225-SQL-PUSHDOWN): For SQL-backed sources (TableSource,
+            # QuerySlugSource) consider pushing predicates down to the database
+            # using FilterCompiler.compile_where() instead of materializing the
+            # full DataFrame here. The SQL compile path exists in FilterCompiler
+            # but is deferred until we can reliably detect source capabilities
+            # and handle partial push-down for mixed source types.
             if entry._df is None:
                 try:
                     df = await self.materialize(ds_name)
@@ -4759,13 +4800,59 @@ class DatasetManager(AbstractToolkit):
             for ds_name, filtered_df in all_filtered.items():
                 if ds_name == "__spatial__":
                     continue  # spatial results are not DataFrames
-                new_name = f"{ds_name}__filtered"
-                # Collision guard: append suffix until unique
+
+                # Derive a name from the active filter conditions applied to
+                # this dataset.  Use the filter value (slugified) so the
+                # resulting dataset name is descriptive and reproducible.
+                # E.g. stores__region_eq_North, stores__x_range_5_10
+                def _sanitize(v: Any, max_len: int = 32) -> str:
+                    """Slugify a filter value for use as a name fragment."""
+                    import re as _re
+                    s = str(v).replace(" ", "_")
+                    s = _re.sub(r"[^\w\-]", "", s)
+                    return s[:max_len]
+
+                # Build a slug from the first applicable condition for this ds
+                applied_conditions = {
+                    k: v for k, v in resolved_conditions.items()
+                    if self._filter_defs[k].kind != "spatial"
+                    and all(
+                        c in (entry._column_types or {})
+                        or (entry._df is not None and c in entry._df.columns)
+                        for c in self._filter_defs[k].columns
+                    )
+                } if ds_name in self._datasets else {}
+
+                if applied_conditions:
+                    fname, cond = next(iter(applied_conditions.items()))
+                    op = cond.op
+                    val = cond.value
+                    if op == "eq":
+                        slug = _sanitize(val)
+                    elif op in ("in", "not_in"):
+                        # Use first item for brevity
+                        items = list(val) if isinstance(val, (list, tuple, set)) else [val]
+                        slug = f"{op}_{_sanitize(items[0])}" if items else op
+                    elif op == "range":
+                        try:
+                            lo = val.get("min", val[0]) if isinstance(val, dict) else val[0]
+                            hi = val.get("max", val[1]) if isinstance(val, dict) else val[1]
+                        except (KeyError, IndexError, TypeError):
+                            lo, hi = "", ""
+                        slug = f"range_{_sanitize(lo)}_{_sanitize(hi)}"
+                    else:
+                        slug = f"{op}_{_sanitize(val)}"
+                    new_name = f"{ds_name}__{fname}_{slug}"
+                else:
+                    new_name = f"{ds_name}__filtered"
+
+                # Collision guard: append numeric suffix until unique
                 suffix = 1
                 candidate = new_name
                 while candidate in self._datasets:
                     candidate = f"{new_name}_{suffix}"
                     suffix += 1
+
                 entry = DatasetEntry(
                     name=candidate,
                     df=filtered_df,
@@ -4812,7 +4899,10 @@ class DatasetManager(AbstractToolkit):
         from .spatial.registry import SPATIAL_PROFILE_REGISTRY
 
         manifest = []
-        for dataset_name, profile in SPATIAL_PROFILE_REGISTRY.items():
+        # Snapshot before iterating to prevent RuntimeError if the registry is
+        # mutated by a concurrent async task (FIX-5 / FEAT-225 code review).
+        registry_snapshot = dict(SPATIAL_PROFILE_REGISTRY)
+        for dataset_name, profile in registry_snapshot.items():
             # Only include datasets that actually exist in this manager instance
             resolved = self._resolve_name(dataset_name)
             if resolved not in self._datasets and dataset_name not in self._datasets:

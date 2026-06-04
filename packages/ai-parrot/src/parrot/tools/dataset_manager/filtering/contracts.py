@@ -13,7 +13,7 @@ Note: ``from __future__ import annotations`` is intentionally omitted here to
 ensure Pydantic v2 can resolve Literal annotations at class definition time
 without requiring a manual ``model_rebuild()`` call.
 """
-from typing import Any, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -162,12 +162,30 @@ class FilterResult(BaseModel):
 
     Attributes:
         applied: Names of datasets that were successfully filtered.
-        skipped: Names of datasets that were skipped because they lack the
-            target column(s) and the filter's ``required`` flag is False.
+        skipped: Names of datasets that were skipped entirely because they
+            lack ALL target columns and the filter's ``required`` flag is False.
+        partial_skips: Per-dataset mapping of filter names that were skipped
+            for that dataset because the target column was absent (but the
+            filter was not ``required``).  A dataset may appear in both
+            ``applied`` (at least one filter matched) and ``partial_skips``
+            (at least one other filter was skipped).
+            Example::
+
+                {
+                    "stores": ["temperature"],   # temperature col absent
+                }
     """
 
     applied: List[str] = Field(default_factory=list)
     skipped: List[str] = Field(
         default_factory=list,
-        description="Datasets skipped because they lack the target column (required=False).",
+        description="Datasets skipped entirely because they lack all target columns (required=False).",
+    )
+    partial_skips: Dict[str, List[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Per-dataset mapping of filter names that were individually skipped "
+            "because the target column was absent (required=False). "
+            "Keys are dataset names; values are lists of skipped filter names."
+        ),
     )

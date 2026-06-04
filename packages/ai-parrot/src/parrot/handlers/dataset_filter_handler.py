@@ -171,9 +171,17 @@ class DatasetFilterHandler:
     async def get(self) -> web.Response:
         """Handle GET requests.
 
-        Routes:
-        - ``/schema`` suffix → ``get_filter_schema()``
-        - ``/values/{name}`` suffix → ``get_filter_values(name)``
+        Routes are distinguished by the aiohttp match_info populated from the
+        registered URL patterns:
+
+        - ``/api/v1/filters/{agent_id}/schema`` → no ``name`` in match_info
+          → ``get_filter_schema()``
+        - ``/api/v1/filters/{agent_id}/values/{name}`` → ``name`` present in
+          match_info → ``get_filter_values(name)``
+
+        Using match_info (rather than path string suffix matching) means a
+        dataset named ``"schema"`` can still be queried via the values endpoint
+        without ambiguity.
 
         Returns:
             JSON response with schema list or values list.
@@ -187,20 +195,14 @@ class DatasetFilterHandler:
         except (KeyError, NotImplementedError) as exc:
             return await self._json_response({"error": str(exc)}, status=404)
 
-        # Check if this is a schema or values request
-        path = self.request.path
-        if path.endswith("/schema"):
-            return await self._handle_schema(dm)
-
-        # Check for /values/{name}
-        filter_name = self.request.match_info.get("name")
-        if filter_name:
+        # Use match_info to distinguish routes — the router populates "name"
+        # only for the /values/{name} route, so this is unambiguous even when
+        # a filter is literally named "schema".
+        if "name" in self.request.match_info:
+            filter_name = self.request.match_info["name"]
             return await self._handle_values(dm, filter_name)
 
-        return await self._json_response(
-            {"error": "Unknown GET endpoint. Use /schema or /values/{name}"},
-            status=400,
-        )
+        return await self._handle_schema(dm)
 
     async def _handle_schema(self, dm: "DatasetManager") -> web.Response:
         """GET .../schema → filter catalog.

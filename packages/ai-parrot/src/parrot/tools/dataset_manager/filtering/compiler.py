@@ -24,6 +24,11 @@ import pandas as pd
 
 from parrot.tools.dataset_manager.filtering.contracts import FilterCondition
 
+# NOTE (FIX-10 / FEAT-225): operator constant sets (_SPATIAL_ONLY_OPS,
+# _NUMERIC_TEMPORAL_OPS, _EQUALITY_OPS) are defined in contracts.py.
+# Import from there if operator validation is added to this compiler in the
+# future — do NOT redefine them here.
+
 
 class FilterCompiler:
     """Stateless compiler that translates FilterCondition to SQL or pandas.
@@ -32,6 +37,8 @@ class FilterCompiler:
     easily unit-testable.
 
     SQL dialect notes:
+    - Column names are always double-quoted via ``_quote_column`` to prevent
+      SQL injection through column name interpolation.
     - Values are escaped with single-quoting (strings) or left as literals
       (numbers), matching the ``TableSource._build_filter_clause`` pattern.
     - ``ne`` emits ``<>``; ``not_in`` emits ``NOT IN``.
@@ -51,10 +58,19 @@ class FilterCompiler:
     ) -> Tuple[str, List[Any]]:
         """Translate a FilterCondition to a SQL WHERE fragment.
 
+        Reserved for future in-database push-down (SQL path).  The current
+        ``DatasetManager.apply_filters`` implementation materializes datasets
+        to pandas first and uses ``compile_pandas`` instead.
+
+        # TODO(FEAT-225-SQL-PUSHDOWN): Wire this method into apply_filters
+        # once in-database predicate push-down is implemented. Currently dead
+        # code — all filtering goes through the pandas path for reliability.
+
         Returns a ``(fragment, params)`` pair.  ``fragment`` is a safe SQL
-        predicate string ready to be AND-ed into a WHERE clause.  ``params``
-        is currently empty (values are inlined via escaping), reserved for
-        future parameterised-query support.
+        predicate string ready to be AND-ed into a WHERE clause.  Column names
+        are double-quoted to prevent SQL injection.  ``params`` is currently
+        empty (values are inlined via escaping), reserved for future
+        parameterised-query support.
 
         Args:
             column: The column name to filter on.
@@ -64,27 +80,29 @@ class FilterCompiler:
             Tuple of (sql_fragment, params_list).
 
         Raises:
-            ValueError: When ``condition.op`` is not supported or
-                ``range`` value is malformed.
+            ValueError: When ``condition.op`` is not supported, ``range``
+                value is malformed, or the column name contains a double-quote
+                character.
         """
+        quoted = self._quote_column(column)
         op = condition.op
         val = condition.value
 
         if op == "eq":
-            return f"{column} = {self._escape(val)}", []
+            return f"{quoted} = {self._escape(val)}", []
         if op == "ne":
-            return f"{column} <> {self._escape(val)}", []
+            return f"{quoted} <> {self._escape(val)}", []
         if op == "in":
             items = self._coerce_list(val, op)
             escaped = ", ".join(self._escape(v) for v in items)
-            return f"{column} IN ({escaped})", []
+            return f"{quoted} IN ({escaped})", []
         if op == "not_in":
             items = self._coerce_list(val, op)
             escaped = ", ".join(self._escape(v) for v in items)
-            return f"{column} NOT IN ({escaped})", []
+            return f"{quoted} NOT IN ({escaped})", []
         if op == "range":
             lo, hi = self._unpack_range(val)
-            return f"{column} BETWEEN {self._escape(lo)} AND {self._escape(hi)}", []
+            return f"{quoted} BETWEEN {self._escape(lo)} AND {self._escape(hi)}", []
         raise ValueError(
             f"FilterCompiler.compile_where: unsupported operator '{op}'. "
             f"SQL compilation supports eq, ne, in, not_in, range."
@@ -142,6 +160,27 @@ class FilterCompiler:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _quote_column(column: str) -> str:
+        """Double-quote a SQL identifier. Rejects names containing double-quotes.
+
+        Args:
+            column: The column name to quote.
+
+        Returns:
+            The column name wrapped in double-quotes (e.g. ``'"region"'``).
+
+        Raises:
+            ValueError: When *column* contains a double-quote character, which
+                is not allowed in SQL identifiers.
+        """
+        if '"' in column:
+            raise ValueError(
+                f"FilterCompiler: column name '{column}' contains a double-quote "
+                "character, which is not allowed in SQL identifiers."
+            )
+        return f'"{column}"'
 
     @staticmethod
     def _escape(value: Any) -> str:
