@@ -272,9 +272,11 @@ class ArtifactSummary(BaseModel):
 class Artifact(BaseModel):
     """Full artifact with definition payload.
 
-    The ``definition`` field holds the artifact data inline (e.g. an
-    ECharts spec, canvas blocks, infographic response). When the
-    serialised definition exceeds 200 KB it is offloaded to S3 and
+    The ``definition`` field holds the artifact data inline.  For CHART
+    artifacts the definition carries a :class:`~parrot.models.outputs.StructuredChartConfig`
+    dump (camelCase, ``data`` excluded).  For other artifact types it holds
+    the type-specific payload (canvas blocks, infographic response, …).
+    When the serialised definition exceeds 200 KB it is offloaded to S3 and
     ``definition_ref`` holds the S3 URI instead.
     """
     artifact_id: str
@@ -286,6 +288,60 @@ class Artifact(BaseModel):
     created_by: ArtifactCreator = ArtifactCreator.USER
     definition: Optional[Dict[str, Any]] = None
     definition_ref: Optional[str] = None  # S3 URI if overflow
+
+    @classmethod
+    def from_chart_config(
+        cls,
+        cfg: Any,
+        artifact_id: str,
+        title: str,
+        created_at: datetime,
+        updated_at: datetime,
+        **kwargs: Any,
+    ) -> "Artifact":
+        """Create a CHART Artifact whose definition carries the converged config.
+
+        Serialises *cfg* with camelCase aliases and without the ``data`` key
+        (rows live in ``response.data``, not the persisted definition).
+
+        Args:
+            cfg: A :class:`~parrot.models.outputs.StructuredChartConfig` instance.
+            artifact_id: Unique artifact identifier.
+            title: Display title for the artifact.
+            created_at: Creation timestamp.
+            updated_at: Last-updated timestamp.
+            **kwargs: Additional ``Artifact`` fields (e.g. ``source_turn_id``).
+
+        Returns:
+            An :class:`Artifact` of type :attr:`ArtifactType.CHART`.
+        """
+        return cls(
+            artifact_id=artifact_id,
+            artifact_type=ArtifactType.CHART,
+            title=title,
+            created_at=created_at,
+            updated_at=updated_at,
+            definition=cfg.model_dump(mode="json", by_alias=True, exclude={"data"}),
+            **kwargs,
+        )
+
+    def as_chart_config(self) -> Any:
+        """Parse ``definition`` as a :class:`~parrot.models.outputs.StructuredChartConfig`.
+
+        Returns ``None`` when this is not a CHART artifact, ``definition`` is
+        absent, or parsing fails.
+
+        Returns:
+            A :class:`~parrot.models.outputs.StructuredChartConfig` on success,
+            ``None`` otherwise.
+        """
+        if self.artifact_type != ArtifactType.CHART or not self.definition:
+            return None
+        try:
+            from parrot.models.outputs import StructuredChartConfig
+            return StructuredChartConfig.model_validate(self.definition)
+        except Exception:  # noqa: BLE001
+            return None
 
 
 class ThreadMetadata(BaseModel):

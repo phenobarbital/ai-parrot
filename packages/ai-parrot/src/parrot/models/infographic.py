@@ -461,6 +461,87 @@ class ChartBlock(BaseModel):
         """Validate CSS color value — silently drops invalid values."""
         return _validate_css_color(v)
 
+    def to_chart_config(self) -> Any:
+        """Convert to the agnostic StructuredChartConfig shape.
+
+        Translates the infographic ``labels`` / ``series`` representation to
+        the ``x`` / ``y`` / ``data`` column-oriented format used by the
+        frontend-agnostic config.
+
+        Returns:
+            A :class:`~parrot.models.outputs.StructuredChartConfig` instance.
+        """
+        from parrot.models.outputs import StructuredChartConfig as _SCC
+
+        x_col: str = self.x_axis_label or "category"
+        y_cols: List[str] = [s.name for s in self.series]
+        rows: List[dict] = [
+            {x_col: label, **{
+                s.name: s.values[i] if i < len(s.values) else None
+                for s in self.series
+            }}
+            for i, label in enumerate(self.labels)
+        ]
+
+        return _SCC(
+            type=self.chart_type.value,
+            x=x_col,
+            y=y_cols,
+            title=self.title,
+            description=self.description,
+            stacked=self.stacked,
+            show_legend=self.show_legend,
+            color_by_sign=self.color_by_sign,
+            positive_color=self.positive_color,
+            negative_color=self.negative_color,
+            x_axis_label=self.x_axis_label,
+            y_axis_label=self.y_axis_label,
+            data=rows,
+        )
+
+    @classmethod
+    def from_chart_config(cls, cfg: Any, **kwargs: Any) -> "ChartBlock":
+        """Create a ChartBlock from an agnostic StructuredChartConfig.
+
+        Translates the ``x`` / ``y`` / ``data`` column-oriented format back
+        to the ``labels`` / ``series`` representation.
+
+        Args:
+            cfg: A :class:`~parrot.models.outputs.StructuredChartConfig` instance.
+            **kwargs: Additional fields to pass to the ChartBlock constructor
+                (e.g. ``layout``).
+
+        Returns:
+            A :class:`ChartBlock` instance.
+        """
+        rows: List[dict] = cfg.data or []
+        labels: List[str] = [str(row.get(cfg.x, "")) for row in rows]
+        series: List[ChartDataSeries] = [
+            ChartDataSeries(name=col, values=[row.get(col) for row in rows])
+            for col in cfg.y
+        ]
+
+        try:
+            chart_type = ChartType(cfg.type)
+        except ValueError:
+            chart_type = ChartType.BAR
+
+        return cls(
+            chart_type=chart_type,
+            title=cfg.title,
+            description=cfg.description,
+            labels=labels,
+            series=series,
+            stacked=cfg.stacked,
+            show_legend=cfg.show_legend,
+            color_by_sign=cfg.color_by_sign,
+            positive_color=getattr(cfg, "positive_color", None),
+            negative_color=cfg.negative_color,
+            x_axis_label=getattr(cfg, "x_axis_label", None),
+            y_axis_label=getattr(cfg, "y_axis_label", None),
+            **kwargs,
+        )
+
 
 class BulletListBlock(BaseModel):
     """Ordered or unordered list of items."""

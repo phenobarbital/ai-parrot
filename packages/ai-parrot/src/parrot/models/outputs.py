@@ -359,6 +359,18 @@ class StructuredChartConfig(BaseModel):
         default=None, alias="negativeColor",
         description="Hex colour for negative values when colorBySign is True",
     )
+    positive_color: Optional[str] = Field(
+        default=None, alias="positiveColor",
+        description="Hex colour for positive values when colorBySign is True",
+    )
+    x_axis_label: Optional[str] = Field(
+        default=None, alias="xAxisLabel",
+        description="Human-readable x-axis display label (overrides column name)",
+    )
+    y_axis_label: Optional[str] = Field(
+        default=None, alias="yAxisLabel",
+        description="Human-readable y-axis display label",
+    )
     map_name: Optional[str] = Field(
         default=None, alias="mapName",
         description="GeoJSON map name (frontend-validated, free-form; required for type='map')",
