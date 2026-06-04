@@ -4245,6 +4245,110 @@ class DatasetManager(AbstractToolkit):
 
         return SPATIAL_PROFILE_REGISTRY.get(dataset_name)
 
+    async def get_filter_values(
+        self,
+        name: str,
+        *,
+        cardinality_cap: int = 1000,
+    ) -> List[Any]:
+        """Return distinct values for a named filter.
+
+        Resolution order:
+
+        1. **Declared ``values_source``** (from the FilterDefinition):
+           - ``query_slug`` → run the slug via the query loader and extract the
+             column (``values_source.column``) from the result.
+           - ``column`` only → infer from datasets; restrict to
+             ``values_source.dataset`` if specified.
+        2. **Inference fallback** — union of distinct values from every
+           in-memory dataset that has the target column.
+
+        Results are de-duplicated, sorted, and capped at *cardinality_cap*
+        (default 1000).  A simple per-instance in-memory cache avoids
+        redundant work within a session.
+
+        Args:
+            name: The filter definition name to look up.
+            cardinality_cap: Maximum number of distinct values to return.
+                Values beyond the cap are truncated (a warning is logged).
+
+        Returns:
+            Sorted, de-duplicated list of distinct values.
+
+        Raises:
+            KeyError: When no filter definition with *name* exists.
+        """
+        from .filtering.values import apply_cardinality_cap, infer_values_from_datasets
+
+        if name not in self._filter_defs:
+            raise KeyError(
+                f"get_filter_values: no filter definition named '{name}'. "
+                f"Known filters: {sorted(self._filter_defs.keys())}"
+            )
+
+        # Simple per-instance TTL-free cache to avoid repeated scans in a session.
+        cache_attr = "_filter_values_cache"
+        if not hasattr(self, cache_attr):
+            object.__setattr__(self, cache_attr, {})  # type: ignore[misc]
+        cache: Dict[str, List[Any]] = getattr(self, cache_attr)
+
+        if name in cache:
+            self.logger.debug("get_filter_values: cache hit for filter '%s'.", name)
+            return cache[name]
+
+        defn = self._filter_defs[name]
+        vs = defn.values_source
+
+        values: List[Any] = []
+
+        if vs is not None and vs.query_slug:
+            # Declared query_slug source: run the slug and extract the column.
+            col = vs.column or (defn.columns[0] if defn.columns else None)
+            if col is None:
+                self.logger.warning(
+                    "get_filter_values: filter '%s' has query_slug but no column "
+                    "to extract; falling back to inference.",
+                    name,
+                )
+            else:
+                try:
+                    df = await self.materialize(vs.query_slug)
+                    if col in df.columns:
+                        values = df[col].dropna().unique().tolist()
+                        try:
+                            values = sorted(values)
+                        except TypeError:
+                            values = sorted(values, key=str)
+                    else:
+                        self.logger.warning(
+                            "get_filter_values: query_slug '%s' result does not "
+                            "have column '%s'; falling back to inference.",
+                            vs.query_slug,
+                            col,
+                        )
+                except Exception as exc:
+                    self.logger.warning(
+                        "get_filter_values: query_slug '%s' failed (%s); "
+                        "falling back to inference.",
+                        vs.query_slug,
+                        exc,
+                    )
+
+        if not values:
+            # Inference: union DISTINCT across in-memory datasets with the column.
+            col = (vs.column if vs else None) or (defn.columns[0] if defn.columns else None)
+            restrict = vs.dataset if vs else None
+            if col:
+                values = infer_values_from_datasets(col, self._datasets, restrict)
+
+        # Apply cardinality cap and cache.
+        values = apply_cardinality_cap(values, cardinality_cap, name, self.logger)
+        cache[name] = values
+        self.logger.debug(
+            "get_filter_values: filter '%s' → %d values.", name, len(values)
+        )
+        return values
+
     async def apply_filters(
         self,
         request: Dict[str, Any],
