@@ -57,6 +57,7 @@ excel = ["openpyxl>=3.1", "odfpy>=1.4"]
 sandbox = ["docker>=7.1"]
 codeinterpreter = ["docker>=7.1"]
 pulumi = ["pulumi>=3.0"]
+kubernetes = ["kubernetes-asyncio>=24.2", "pyyaml>=6.0"]
 sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
 office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
 scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
@@ -70,7 +71,7 @@ weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
 security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
 ]
 
 [project.urls]
