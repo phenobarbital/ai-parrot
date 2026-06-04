@@ -133,4 +133,18 @@ class AbstractDriver(ABC):  # line 11
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `drivers/page_driver.py` with `PageDriver(AbstractDriver)` wrapping a
+single live Playwright `Page`. All 21 abstract members (19 methods + 2 lifecycle
++ `current_url` property) are implemented, delegating to the page API per the
+task's mapping, converting seconds→milliseconds (`timeout * 1000`).
+
+- `start()` is a no-op (page already alive); `quit()` closes only the page
+  (`await page.close()`), never the context/browser.
+- `_resolve_selector` prefixes selectors starting with `/` or `./` with
+  `xpath=` (same logic as PlaywrightDriver).
+- `get_all_texts` uses `page.eval_on_selector_all(sel, "els => els.map(e =>
+  e.innerText)")`; `select_option` maps by=value/text(label)/index and raises
+  ValueError on an unknown mode.
+
+28 unit tests pass against a mocked Page; `isinstance(driver, AbstractDriver)`
+confirmed (class is concrete/instantiable). ruff clean.
