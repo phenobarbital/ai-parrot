@@ -113,7 +113,7 @@
       "feature_id": "FEAT-225",
       "feature": "jiratoolkit-integrations-oauth2",
       "spec": "sdd/specs/jiratoolkit-integrations-oauth2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Depends on Teams commands being defined (TASK-1471) for extra_state contract.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:53:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1472-msteams-oauth-callback-notification.md"
+      "completed_at": "2026-06-04T15:07:32+00:00",
+      "file": "sdd/tasks/completed/TASK-1472-msteams-oauth-callback-notification.md"
     },
     {
       "id": "TASK-1473",
