@@ -133,7 +133,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -143,8 +143,8 @@
       "parallelism_notes": "Only depends on TASK-1459 and touches a separate file (controls/builtin.py). Can run in parallel with TASK-1461.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1465-audio-control-metadata.md"
+      "completed_at": "2026-06-04T14:26:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1465-audio-control-metadata.md"
     },
     {
       "id": "TASK-1466",
