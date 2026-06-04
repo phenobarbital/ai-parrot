@@ -95,7 +95,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -106,8 +106,8 @@
       "parallelism_notes": "Adds filtering/values.py + get_filter_values() in tool.py; independent of compiler/orchestration but shares tool.py, so sequential under per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1468-value-catalogs.md"
+      "completed_at": "2026-06-04T16:26:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1468-value-catalogs.md"
     },
     {
       "id": "TASK-1469",
