@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-225
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -498,10 +498,10 @@ class SlackAgentConfig:  # line 8
 - [x] Disconnect policy — *Resolved in brainstorm*: `/disconnect_jira` revokes the Jira token only; the `auth.user_identities` row is preserved for audit.
 - [x] Re-connect semantics — *Resolved*: Short-circuit with "Already connected. Use /jira_status to see details." Matches current Telegram behavior.
 - [x] MS Teams command UX — *Resolved*: Both text command detection in `on_message_activity` AND an optional Adaptive Card menu for discoverability.
-- [ ] Navigator Azure endpoint `redirect_uri` parameter — *Owner: Jesus Lara*: Does `/api/v1/auth/azure/` accept a `redirect_uri` query param for Slack/Teams callbacks, or is the redirect target fixed server-side? (Only relevant if Azure SSO is added later.)
-- [ ] Slack app install model — *Owner: Jesus Lara*: Single-tenant install vs multi-tenant? The feature is multi-workspace-safe at the identity layer, but the `signing_secret` rotation story differs.
-- [ ] MS Teams tenant isolation — *Owner: Jesus Lara*: Should the Teams user_id be `aad_object_id` (globally unique) or `f"{tenant_id}:{aad_object_id}"` (explicit tenant isolation)? `aad_object_id` is unique across tenants per Azure AD spec, but explicit tenant prefixing is safer for multi-tenant bot deployments.
-- [ ] JIRA_REDIRECT_URI per integration — *Owner: Jesus Lara*: Does each integration (Telegram, Slack, Teams) need its own `redirect_uri` registered with Atlassian, or can they share one callback URL that dispatches by `extra_state["channel"]`? A single callback URL is simpler but requires all integrations to use the same Atlassian app registration.
+- [ ] Navigator Azure endpoint `redirect_uri` parameter — *Owner: Jesus Lara*: Does `/api/v1/auth/azure/` accept a `redirect_uri` query param for Slack/Teams callbacks, or is the redirect target fixed server-side? (Only relevant if Azure SSO is added later.): accepts the redirect_uri
+- [x] Slack app install model — *Owner: Jesus Lara*: Single-tenant install vs multi-tenant? The feature is multi-workspace-safe at the identity layer, but the `signing_secret` rotation story differs.: multi-tenant
+- [x] MS Teams tenant isolation — *Owner: Jesus Lara*: Should the Teams user_id be `aad_object_id` (globally unique) or `f"{tenant_id}:{aad_object_id}"` (explicit tenant isolation)? `aad_object_id` is unique across tenants per Azure AD spec, but explicit tenant prefixing is safer for multi-tenant bot deployments.: multi-tenant
+- [x] JIRA_REDIRECT_URI per integration — *Owner: Jesus Lara*: Does each integration (Telegram, Slack, Teams) need its own `redirect_uri` registered with Atlassian, or can they share one callback URL that dispatches by `extra_state["channel"]`? A single callback URL is simpler but requires all integrations to use the same Atlassian app registration.: single callback with extra_state channel
 
 ---
 
