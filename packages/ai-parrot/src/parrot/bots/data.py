@@ -1887,10 +1887,16 @@ class PandasAgent(BasicAgent):
                 _art_type = _STRUCTURED_ARTIFACT_TYPE.get(output_mode)
                 if _art_type and isinstance(content, dict) and content:
                     _art_id = f"{output_mode.value}-{uuid.uuid4().hex[:8]}"
+                    # G2 safety net: the renderer already excludes rows, but strip
+                    # any stray `data` key defensively so the envelope definition
+                    # never carries rows (rows live in response.data only).
+                    _definition = {
+                        _k: _v for _k, _v in content.items() if _k != "data"
+                    }
                     response.artifacts.append({
                         "type": _art_type,
                         "artifactId": _art_id,
-                        "definition": content,   # camelCase config, data excluded by renderer
+                        "definition": _definition,   # camelCase config, data excluded
                     })
                     response.artifact_id = _art_id
                     self.logger.info(

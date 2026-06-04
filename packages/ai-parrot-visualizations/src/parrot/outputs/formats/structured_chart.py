@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+from types import SimpleNamespace
 from typing import Any, Optional, Tuple
 
 from .chart import BaseChart
@@ -203,9 +204,7 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
             # is the LLM's presentation config payload — not the canonical row
             # source.  We pass a shim with output=None so _extract_data falls
             # through to response.data (the agent-injected DataFrame).
-            _row_shim = type(
-                "_RowShim", (), {"output": None, "data": getattr(response, "data", None)}
-            )()
+            _row_shim = SimpleNamespace(output=None, data=getattr(response, "data", None))
             df = self._extract_rows(_row_shim)
             if df is None:
                 msg = "StructuredChartRenderer: no data available for chart"
