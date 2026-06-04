@@ -50,7 +50,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,8 @@
       "parallelism_notes": "Depends on TASK-1459 (FieldType.AUDIO) and modifies html5.py.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1461-audio-field-renderer.md"
+      "completed_at": "2026-06-04T14:19:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1461-audio-field-renderer.md"
     },
     {
       "id": "TASK-1462",
