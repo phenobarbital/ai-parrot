@@ -170,7 +170,7 @@
       "feature_id": "FEAT-222",
       "feature": "scrapingflow-composable-scraping",
       "spec": "sdd/specs/scrapingflow-composable-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -185,8 +185,8 @@
       "parallelism_notes": "Must run after all modules exist",
       "assigned_to": null,
       "started_at": "2026-06-03T23:56:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1453-scraping-exports.md"
+      "completed_at": "2026-06-04T00:37:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1453-scraping-exports.md"
     }
   ]
 }

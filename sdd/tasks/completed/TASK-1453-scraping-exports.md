@@ -67,4 +67,16 @@ from parrot_tools.scraping.session_manager import SessionManager  # TASK-1451
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added imports and `__all__` entries to `scraping/__init__.py` for the eight
+new public symbols: `TemplatePlan`, `ParamSpec`, `ScrapingFlow`, `FlowNode`,
+`FlowResult`, `FlowExecutor`, `PageDriver`, `SessionManager`. The internal
+`advanced_actions` module is intentionally NOT exported.
+
+All eight import correctly from `parrot.tools.scraping` /
+`parrot_tools.scraping`; ruff clean.
+
+Full-suite regression: 710 passed. The 7 failures in
+`test_toolkit_integration.py` are PRE-EXISTING (verified against the
+unmodified main-repo source) — they stem from a missing `crawl_engine` module
+(FEAT-013) in `toolkit.py`, which FEAT-222 never touched. No regressions
+introduced by this feature.
