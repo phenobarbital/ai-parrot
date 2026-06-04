@@ -160,10 +160,8 @@ class TestStructuredOutputBase:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Impl-1 decision (base class vs mixin)**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-03
+**Notes**: Created `structured_base.py` with `StructuredOutputBase` mixin. Moved `_extract_json_code` static helper into the base (was duplicated in table renderer). Refactored `StructuredTableRenderer(StructuredOutputBase, BaseChart)` — `render()` now calls `self._extract_rows()` and `self._route_envelope()`. All 48 existing table tests pass. Linting clean.
+**Impl-1 decision (base class vs mixin)**: **Mixin**. `StructuredOutputBase` has no `__init__`, no abstract methods, and no mandatory base. Inserted via multiple inheritance `(StructuredOutputBase, BaseChart)` with correct MRO. This avoids diamond-inheritance issues, doesn't affect `@register_renderer` wiring, and lets chart/map renderers adopt it identically.
+**Deviations from spec**: none
