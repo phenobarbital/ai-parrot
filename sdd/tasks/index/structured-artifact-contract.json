@@ -1,0 +1,111 @@
+{
+  "feature": "structured-artifact-contract",
+  "feature_id": "FEAT-223",
+  "spec": "sdd/specs/structured-artifact-contract.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-06-04T03:13:34.712528+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-1454",
+      "slug": "structured-output-base",
+      "title": "StructuredOutputBase \u2014 extract the shared structured-output contract",
+      "feature_id": "FEAT-223",
+      "feature": "structured-artifact-contract",
+      "spec": "sdd/specs/structured-artifact-contract.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module. Touches structured_base.py (new) + structured_table.py; every other task imports it. Must land first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1454-structured-output-base.md"
+    },
+    {
+      "id": "TASK-1455",
+      "slug": "chart-deterministic-refactor",
+      "title": "Refactor STRUCTURED_CHART onto the deterministic base",
+      "feature_id": "FEAT-223",
+      "feature": "structured-artifact-contract",
+      "spec": "sdd/specs/structured-artifact-contract.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-1454"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports StructuredOutputBase from TASK-1454; rewrites structured_chart.py. Sequential after base.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1455-chart-deterministic-refactor.md"
+    },
+    {
+      "id": "TASK-1456",
+      "slug": "chart-config-convergence",
+      "title": "Converge the chart config \u2014 one agnostic shape",
+      "feature_id": "FEAT-223",
+      "feature": "structured-artifact-contract",
+      "spec": "sdd/specs/structured-artifact-contract.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1455"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Shares StructuredChartConfig with TASK-1455 (may add a field) + touches infographic.py/storage/models.py. Sequence after chart refactor to avoid outputs.py conflicts.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1456-chart-config-convergence.md"
+    },
+    {
+      "id": "TASK-1457",
+      "slug": "artifacttype-map-and-conform",
+      "title": "Add ArtifactType.MAP + conform StructuredMapRenderer to the base",
+      "feature_id": "FEAT-223",
+      "feature": "structured-artifact-contract",
+      "spec": "sdd/specs/structured-artifact-contract.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1454"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends only on the base (TASK-1454). Touches storage/models.py + structured_map.py \u2014 disjoint from the chart files (1455/1456), so CAN run in a parallel worktree alongside them.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1457-artifacttype-map-and-conform.md"
+    },
+    {
+      "id": "TASK-1458",
+      "slug": "tests-and-migration",
+      "title": "Homologation tests + migration note",
+      "feature_id": "FEAT-223",
+      "feature": "structured-artifact-contract",
+      "spec": "sdd/specs/structured-artifact-contract.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-1455",
+        "TASK-1456",
+        "TASK-1457"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Cross-cutting tests; needs chart, convergence and map conformance complete. Runs last.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-1458-tests-and-migration.md"
+    }
+  ]
+}
