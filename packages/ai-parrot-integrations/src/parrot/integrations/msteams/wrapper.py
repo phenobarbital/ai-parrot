@@ -28,9 +28,16 @@ from .handler import MessageHandler
 from ..parser import parse_response, ParsedResponse
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
+from .commands import MSTeamsCommandRouter
+from .commands.jira_commands import register_jira_commands
+from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
 from parrot.forms import FormCache
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from parrot.auth.jira_oauth import JiraOAuthManager
 
 
 logging.getLogger('msrest').setLevel(logging.WARNING)
@@ -80,6 +87,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         app: web.Application,
         forms_directory: Optional[str] = None,
         voice_config: Optional[VoiceTranscriberConfig] = None,
+        oauth_manager: Optional['JiraOAuthManager'] = None,
     ):
         super().__init__()
         self.agent = agent
@@ -130,6 +138,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             logger=self.logger,
             conversation_state=self.conversation_state
         )
+
+        # Command router — Jira commands wired here (FEAT-225)
+        self._command_router: Optional[MSTeamsCommandRouter] = None
+        if oauth_manager is not None:
+            self._command_router = MSTeamsCommandRouter()
+            register_jira_commands(self._command_router, oauth_manager)
+            # Register the OAuth notifier for proactive messaging after callback
+            app["msteams_jira_oauth_notifier"] = MSTeamsOAuthNotifier(
+                adapter=self.adapter,
+                app_id=config.client_id or "",
+            )
 
         # Route
         # Clean chatbot_id to be safe for URL
@@ -377,6 +396,14 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             )
             await turn_context.send_activity("You are not authorized to use this bot.")
             return
+
+        # Command interception — Jira commands (FEAT-225)
+        # Strip mentions first so "/connect_jira" is detected after "@BotName"
+        if self._command_router is not None and turn_context.activity.text:
+            raw_text = turn_context.activity.text
+            clean_text = self._remove_mentions(turn_context.activity, raw_text).strip()
+            if await self._command_router.try_dispatch(clean_text, turn_context):
+                return  # command handled — skip agent processing
 
         # DEBUG: Log activity details
         self.logger.info(
