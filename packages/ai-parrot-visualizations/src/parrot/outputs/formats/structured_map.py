@@ -23,12 +23,12 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 
 from .chart import BaseChart
+from .structured_base import StructuredOutputBase
 from . import register_renderer
 from ...models.outputs import (
     OutputMode,
@@ -94,7 +94,7 @@ OUTPUT FORMAT:
 
 
 @register_renderer(OutputMode.STRUCTURED_MAP, system_prompt=STRUCTURED_MAP_SYSTEM_PROMPT)
-class StructuredMapRenderer(BaseChart):
+class StructuredMapRenderer(StructuredOutputBase, BaseChart):
     """Library-agnostic map renderer for the STRUCTURED_MAP output mode (FEAT-221).
 
     Reads the per-dataset ``SpatialResult`` from ``response.data``, builds one
@@ -295,13 +295,13 @@ class StructuredMapRenderer(BaseChart):
                 logger.warning(msg)
                 return None, msg
 
-            # Step 8: Exclude data from output; route per-layer payloads to response.data.
-            out = cfg.model_dump(mode="json", by_alias=True, exclude={"data"})
-
+            # Step 8: Route envelope via shared base (data excluded; explanation wrapped).
+            # cfg.data is [] by design so _route_envelope skips data routing; we
+            # route all_payloads explicitly below.
+            out, wrapped = self._route_envelope(response, cfg, explanation)
             if all_payloads:
                 response.data = all_payloads
-
-            return out, explanation
+            return out, wrapped
 
         except Exception as exc:  # noqa: BLE001
             msg = f"Unexpected error in StructuredMapRenderer: {exc}"
@@ -618,34 +618,6 @@ class StructuredMapRenderer(BaseChart):
             )
 
         return list(col_map.values())
-
-    # ── JSON extraction helper ─────────────────────────────────────────────────
-
-    @staticmethod
-    def _extract_json_code(content: str) -> Optional[str]:
-        """Extract a JSON object string from markdown code blocks or bare text.
-
-        Args:
-            content: Raw text that may contain embedded JSON.
-
-        Returns:
-            The extracted JSON string, or ``None`` if nothing suitable was found.
-        """
-        pattern = r"```json\n(.*?)```"
-        if matches := re.findall(pattern, content, re.DOTALL):
-            return matches[0].strip()
-
-        pattern = r"```\n(.*?)```"
-        if matches := re.findall(pattern, content, re.DOTALL):
-            potential = matches[0].strip()
-            if potential.startswith("{") or potential.startswith("["):
-                return potential
-
-        content = content.strip()
-        if content.startswith("{") and content.endswith("}"):
-            return content
-
-        return None
 
     # ── Abstract method stub (BaseChart requires this) ────────────────────────
 

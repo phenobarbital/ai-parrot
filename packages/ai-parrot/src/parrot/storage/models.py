@@ -244,6 +244,7 @@ def _safe_serialize(obj: Any) -> Any:
 class ArtifactType(str, Enum):
     """Type of artifact produced by an agent or user."""
     CHART = "chart"
+    MAP = "map"
     CANVAS = "canvas"
     INFOGRAPHIC = "infographic"
     DATAFRAME = "dataframe"

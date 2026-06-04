@@ -370,3 +370,87 @@ def test_compute_viewport_empty_result():
     viewport = r._compute_viewport(SpatialResult())
 
     assert viewport is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEAT-223 TASK-1457 — ArtifactType.MAP + envelope conformance
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_artifacttype_map_exists():
+    """ArtifactType.MAP = 'map' now exists in the enum."""
+    import sys
+    import importlib.util
+    from pathlib import Path
+    # File: packages/ai-parrot/tests/outputs/formats/<file>.py
+    # parents[3] = packages/ai-parrot → "src" = packages/ai-parrot/src
+    _wt_src = Path(__file__).resolve().parents[3] / "src"
+
+    _spec = importlib.util.spec_from_file_location(
+        "parrot.storage.models_task1457",
+        _wt_src / "parrot" / "storage" / "models.py",
+    )
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+
+    assert hasattr(_mod.ArtifactType, "MAP")
+    assert _mod.ArtifactType.MAP == "map"
+    assert _mod.ArtifactType("map") is _mod.ArtifactType.MAP
+
+
+class TestMapEnvelopeConformance:
+    """FEAT-223: verify StructuredMapRenderer uses the shared StructuredOutputBase contract."""
+
+    @pytest.mark.asyncio
+    async def test_output_excludes_data(self, two_layer_result):
+        """After retrofit, the map config output has no 'data' key."""
+        from parrot.outputs.formats import get_renderer
+        from parrot.models.outputs import OutputMode
+
+        r = get_renderer(OutputMode.STRUCTURED_MAP)()
+        resp = make_response(data=two_layer_result)
+        out, _ = await r.render(resp)
+
+        assert out is not None
+        assert "data" not in out, "data key must be excluded from output via _route_envelope"
+
+    @pytest.mark.asyncio
+    async def test_payloads_routed_to_response_data(self, two_layer_result):
+        """Per-layer payloads are routed to response.data after the retrofit."""
+        from parrot.outputs.formats import get_renderer
+        from parrot.models.outputs import OutputMode
+
+        r = get_renderer(OutputMode.STRUCTURED_MAP)()
+        resp = make_response(data=two_layer_result)
+        out, _ = await r.render(resp)
+
+        assert out is not None
+        assert isinstance(resp.data, list) and len(resp.data) > 0
+        # Each entry is a per-layer payload dict
+        for entry in resp.data:
+            assert "dataset" in entry
+            assert "payload" in entry
+
+    @pytest.mark.asyncio
+    async def test_existing_behavior_preserved(self, two_layer_result):
+        """Viewport, geojson shape, and MapQuery extraction are unchanged after retrofit."""
+        from parrot.outputs.formats import get_renderer
+        from parrot.models.outputs import OutputMode
+
+        r = get_renderer(OutputMode.STRUCTURED_MAP)()
+        resp = make_response(
+            data=two_layer_result,
+            response_text="Schools and malls near downtown.",
+        )
+        out, explanation = await r.render(resp)
+
+        assert out is not None
+        assert explanation == "Schools and malls near downtown."
+        # Viewport computed
+        assert out.get("viewport") is not None
+        assert len(out["viewport"]["bbox"]) == 4
+        # Layers present
+        assert "layers" in out
+        assert len(out["layers"]) == 2
+        # Payload entries available on response.data
+        assert isinstance(resp.data, list) and len(resp.data) == 2
