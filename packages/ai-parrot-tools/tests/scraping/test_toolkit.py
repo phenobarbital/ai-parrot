@@ -521,3 +521,95 @@ class TestEnsureRegistry:
         # Second call returns same instance
         reg2 = await toolkit._ensure_registry()
         assert reg is reg2
+
+
+# ── TestLegacyAdvancedActionDelegation (FEAT-222 TASK-1447) ───────────
+
+class TestLegacyAdvancedActionDelegation:
+    """The legacy WebScrapingTool delegates loop/conditional/substitution
+    to the shared ``advanced_actions`` module."""
+
+    @pytest.fixture
+    def legacy_tool(self):
+        from parrot.tools.scraping.tool import WebScrapingTool
+
+        tool = WebScrapingTool(driver_type="playwright", headless=True)
+        # Replace the real driver + step executor with mocks.
+        tool._abstract_driver = AsyncMock()
+        tool._execute_step = AsyncMock(return_value=True)
+        return tool
+
+    @pytest.mark.asyncio
+    async def test_exec_loop_delegates(self, legacy_tool):
+        from parrot.tools.scraping.models import Loop
+
+        action = Loop(
+            actions=[{"action": "click", "selector": ".btn"}],
+            iterations=3,
+        )
+        result = await legacy_tool._exec_loop(action, "https://example.com")
+        assert result is True
+        # The dispatch closure forwards each iteration to _execute_step.
+        assert legacy_tool._execute_step.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_exec_loop_uses_advanced_actions(self, legacy_tool):
+        from parrot.tools.scraping.models import Loop
+
+        action = Loop(
+            actions=[{"action": "click", "selector": ".btn"}], iterations=1
+        )
+        with patch(
+            "parrot.tools.scraping.tool.exec_loop", new=AsyncMock(return_value=True)
+        ) as mock_exec_loop:
+            await legacy_tool._exec_loop(action, "https://example.com")
+        mock_exec_loop.assert_awaited_once()
+        # First positional arg is the abstract driver.
+        assert mock_exec_loop.call_args[0][0] is legacy_tool._abstract_driver
+
+    @pytest.mark.asyncio
+    async def test_exec_conditional_delegates(self, legacy_tool):
+        from parrot.tools.scraping.models import Conditional
+
+        legacy_tool._abstract_driver.wait_for_selector = AsyncMock()
+        action = Conditional(
+            target=".element",
+            condition_type="exists",
+            expected_value="true",
+            actions_if_true=[{"action": "click", "selector": ".btn"}],
+        )
+        result = await legacy_tool._exec_conditional(action, "https://example.com")
+        assert result is True
+        assert legacy_tool._execute_step.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_exec_conditional_uses_advanced_actions(self, legacy_tool):
+        from parrot.tools.scraping.models import Conditional
+
+        action = Conditional(
+            target=".element", condition_type="exists", expected_value="true"
+        )
+        with patch(
+            "parrot.tools.scraping.tool.exec_conditional",
+            new=AsyncMock(return_value=True),
+        ) as mock_cond:
+            await legacy_tool._exec_conditional(action, "https://example.com")
+        mock_cond.assert_awaited_once()
+
+    def test_substitute_template_vars_delegates(self, legacy_tool):
+        # Index substitution (legacy single-value convention).
+        assert legacy_tool._substitute_template_vars("item-{i}", 3) == "item-3"
+        assert legacy_tool._substitute_template_vars("page-{i+1}", 0) == "page-1"
+
+    def test_substitute_template_vars_current_value(self, legacy_tool):
+        # current_value positioned at values[iteration] by the wrapper.
+        out = legacy_tool._substitute_template_vars(
+            "{value}", 2, current_value="hello"
+        )
+        assert out == "hello"
+
+    def test_substitute_template_vars_nested(self, legacy_tool):
+        out = legacy_tool._substitute_template_vars(
+            {"url": "p-{i}", "n": 5}, 4
+        )
+        assert out == {"url": "p-4", "n": 5}
