@@ -116,7 +116,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -127,8 +127,8 @@
       "parallelism_notes": "Adds get_filter_schema()/suggest_filters() in tool.py; shares tool.py, sequential under per-spec isolation.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1469-schema-and-suggest.md"
+      "completed_at": "2026-06-04T16:26:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1469-schema-and-suggest.md"
     },
     {
       "id": "TASK-1470",
