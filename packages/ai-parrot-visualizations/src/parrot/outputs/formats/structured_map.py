@@ -78,6 +78,17 @@ OUTPUT FORMAT:
 - Empty object {} if no hints apply.
 """
 
+# TODO(FEAT-221): The system prompt above instructs the LLM to emit a JSON object
+# with column format hints.  However, in the STRUCTURED_MAP agent flow the LLM
+# emits *tool calls* (spatial_filter), not a bare JSON string.  As a result,
+# ``response.code`` is typically None in this flow and the refine pass always
+# falls back to the deterministic schema.
+#
+# The system prompt will only become effective when a second dedicated LLM call
+# is wired for the refine pass (analogous to ``StructuredTableRenderer``'s
+# approach).  Do NOT remove the prompt — it is the correct contract for that
+# future wiring.  Until then, the deterministic schema is always used.
+
 
 # ── Renderer ──────────────────────────────────────────────────────────────────
 
@@ -193,6 +204,12 @@ class StructuredMapRenderer(BaseChart):
             layers: List[MapLayer] = []
             all_payloads: List[Dict] = []
 
+            # Extract LLM format hints ONCE before the loop — _apply_llm_refine
+            # parses response.code which does not change between layers.  Parsing
+            # it per-layer (old behaviour) was wasteful and potentially inconsistent
+            # when the same response object is reused across layers.
+            llm_hints: Dict[str, str] = self._extract_llm_hints(response)
+
             for dataset_name, layer_result in spatial_result.layers.items():
                 # Load profile for this dataset (fail-open: empty columns if absent)
                 profile = None
@@ -214,8 +231,8 @@ class StructuredMapRenderer(BaseChart):
                     row_limit=effective_row_limit,
                 )
 
-                # Optional LLM-refine pass
-                columns = await self._apply_llm_refine(columns, response)
+                # Apply pre-extracted LLM hints (deterministic wins — hard types untouched)
+                columns = self._apply_hints_to_columns(columns, llm_hints)
 
                 # Build per-layer payload
                 if data_shape == "rows":
@@ -341,6 +358,20 @@ class StructuredMapRenderer(BaseChart):
             try:
                 df = pd.DataFrame(rows)[prop_cols]
                 col_types = base_column_types(df)
+            except KeyError as exc:
+                # Some profile columns are absent from the actual feature properties.
+                # Fall back to only the columns that are actually present.
+                available_cols = [c for c in prop_cols if c in (rows[0] if rows else {})]
+                logger.warning(
+                    "StructuredMapRenderer: profile columns %s absent from feature properties "
+                    "for dataset — falling back to available columns %s",
+                    exc, available_cols,
+                )
+                if available_cols:
+                    df = pd.DataFrame(rows)[available_cols]
+                    col_types = base_column_types(df)
+                else:
+                    col_types = {}
             except Exception:
                 col_types = {}
         else:
@@ -385,9 +416,13 @@ class StructuredMapRenderer(BaseChart):
         rows = []
         for feat in features[:row_limit]:
             props = dict(feat.get("properties") or {})
-            geom = feat.get("geometry")
-            if geom:
-                props["_geometry"] = geom
+            geometry = feat.get("geometry")
+            # Always include _geometry — None when geometry is null (frontend must handle)
+            props["_geometry"] = geometry
+            if geometry is None:
+                logger.debug(
+                    "StructuredMapRenderer: feature with null geometry included in rows payload"
+                )
             rows.append(props)
         return {
             "rows": rows,
@@ -445,6 +480,16 @@ class StructuredMapRenderer(BaseChart):
 
         min_lng, max_lng = min(lngs), max(lngs)
         min_lat, max_lat = min(lats), max(lats)
+
+        if min_lng == max_lng and min_lat == max_lat:
+            # Single-point result: expand bbox slightly so map libraries (e.g. Leaflet fitBounds)
+            # do not produce a zero-area view.
+            padding = 0.005
+            min_lng -= padding
+            max_lng += padding
+            min_lat -= padding
+            max_lat += padding
+
         center_lat = (min_lat + max_lat) / 2.0
         center_lng = (min_lng + max_lng) / 2.0
 
@@ -481,36 +526,26 @@ class StructuredMapRenderer(BaseChart):
 
     # ── LLM-refine pass ────────────────────────────────────────────────────────
 
-    async def _apply_llm_refine(
-        self,
-        columns: List[MapColumn],
-        response: Any,
-    ) -> List[MapColumn]:
-        """Optionally refine ambiguous column format hints via a narrow LLM pass.
+    def _extract_llm_hints(self, response: Any) -> Dict[str, str]:
+        """Extract column format hints from ``response.code`` (LLM refine pass).
 
-        The LLM may ONLY suggest a ``format`` hint for columns whose base type
-        is ``"string"`` or ``"integer"``.  Hard types (``number``, ``datetime``,
-        ``boolean``) are NEVER touched.  **Deterministic wins**.
+        Parses the raw JSON emitted by the LLM (if any) into a
+        ``{column_name: format_hint}`` dict.  Returns an empty dict on any
+        failure — callers must always treat this as best-effort.
 
-        If the refine pass fails for any reason, the deterministic-only schema
-        (original ``columns``) is returned unchanged.
+        This is called ONCE per ``render()`` invocation (not once per layer) to
+        avoid redundant parsing and to ensure consistent hints across all layers.
 
         Args:
-            columns: The deterministically-derived column list.
             response: The AIMessage-like response object (checked for ``code``).
 
         Returns:
-            The refined column list, or the original list on any error.
+            A ``{column_name: format_hint}`` mapping, possibly empty.
         """
-        ambiguous = [c for c in columns if c.type in ("string", "integer")]
-        if not ambiguous:
-            return columns
-
         raw_code = getattr(response, "code", None)
         if raw_code is None:
-            return columns
+            return {}
 
-        hints: Optional[dict] = None
         try:
             if isinstance(raw_code, dict):
                 hints = raw_code
@@ -519,13 +554,41 @@ class StructuredMapRenderer(BaseChart):
                 extracted = self._extract_json_code(raw_code_stripped)
                 if extracted:
                     hints = json.loads(extracted)
+                else:
+                    return {}
+            else:
+                return {}
         except Exception as exc:  # noqa: BLE001
             logger.debug(
-                "StructuredMapRenderer: LLM refine parse failed (falling back): %s", exc
+                "StructuredMapRenderer: LLM hint parse failed (falling back to deterministic): %s",
+                exc,
             )
-            return columns
+            return {}
 
-        if not hints or not isinstance(hints, dict):
+        if not isinstance(hints, dict):
+            return {}
+        return hints  # type: ignore[return-value]
+
+    @staticmethod
+    def _apply_hints_to_columns(
+        columns: List[MapColumn],
+        hints: Dict[str, str],
+    ) -> List[MapColumn]:
+        """Apply pre-parsed LLM format hints to a column list.
+
+        The LLM may ONLY annotate columns whose base type is ``"string"`` or
+        ``"integer"``.  Hard types (``number``, ``datetime``, ``boolean``) are
+        NEVER touched.  **Deterministic wins**.
+
+        Args:
+            columns: The deterministically-derived column list for one layer.
+            hints: Pre-parsed ``{column_name: format_hint}`` mapping (may be empty).
+
+        Returns:
+            The refined column list.  The original list is returned unchanged when
+            ``hints`` is empty or contains no applicable entries.
+        """
+        if not hints:
             return columns
 
         col_map = {c.name: c for c in columns}

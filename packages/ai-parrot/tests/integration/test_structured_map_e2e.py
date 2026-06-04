@@ -22,7 +22,7 @@ if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
     sys.path.insert(0, str(_SATELLITE_SRC))
 
 satellite_available = pytest.mark.skipif(
-    importlib.util.find_spec("parrot.outputs.formats.version") is None,
+    importlib.util.find_spec("parrot.outputs.formats.structured_map") is None,
     reason="ai-parrot-visualizations not installed",
 )
 

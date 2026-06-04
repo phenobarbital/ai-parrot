@@ -4269,8 +4269,6 @@ class DatasetManager(AbstractToolkit):
         current_pctx = _pctx_var.get(None)
 
         # ── 3. asyncio.gather per group ───────────────────────────────────────
-        # Per-dataset geodesic flags (populated inside gather tasks)
-        geodesic_flags: Dict[str, bool] = {}
 
         async def _fetch_dataset(dataset_name: str) -> tuple:
             """Fetch spatial features for a single dataset.
@@ -4300,11 +4298,6 @@ class DatasetManager(AbstractToolkit):
                     datasets=[dataset_name],
                 )
                 compiled = compiler.compile(single_spec, profile, source=source, cap=cap_per_dataset)
-                # geodesic_flags is a plain dict mutated inside asyncio gather tasks.
-                # This is safe because asyncio tasks run cooperatively on a single
-                # thread — there is no concurrent write between the assignment below
-                # and the next await, so no locking is required.
-                geodesic_flags[dataset_name] = compiled.geodesic
                 features, true_count = await compiler.execute(compiled, source)
             except Exception as exc:
                 # Partial failure policy: surface empty + error marker (logged)

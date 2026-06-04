@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import (
     List,
     Optional,
@@ -14,8 +13,6 @@ from typing import (
 from enum import Enum
 from dataclasses import dataclass, fields, is_dataclass, MISSING
 import json
-import os
-import uuid
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from .basic import OutputFormat
 
@@ -777,6 +774,20 @@ class StructuredMapConfig(BaseModel):
         When ``data`` is non-empty, every ``layer.columns[*].name`` must appear
         as a key in ``data[0]``.  This mirrors the ``StructuredTableConfig``
         column-name check.
+
+        MULTI-LAYER LIMITATION:
+        ``data`` in this context is expected to be a *flat union* of all layer
+        columns (or left empty, which is the normal renderer path).  For
+        multi-layer configs where each layer has distinct property columns, the
+        check against a single ``data[0]`` row is a footgun: a column present
+        only in layer B will appear missing when ``data[0]`` is a row from
+        layer A.
+
+        **The renderer always passes ``data=[]``** (see ``StructuredMapRenderer``),
+        which skips this validator entirely.  The validator only fires when a
+        caller constructs ``StructuredMapConfig`` directly with non-empty ``data``
+        rows — in that case, ``data`` MUST be a flat union of all layer columns,
+        or the caller should omit ``data`` altogether.
 
         Returns:
             The validated ``StructuredMapConfig`` instance.

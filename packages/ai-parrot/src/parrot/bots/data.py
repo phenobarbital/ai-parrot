@@ -3,7 +3,7 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
+from typing import Any, List, Dict, Tuple, Union, Optional
 import ast
 import asyncio
 import inspect
@@ -1574,6 +1574,11 @@ class PandasAgent(BasicAgent):
                             "STRUCTURED_MAP: no SpatialResult found in tool calls; "
                             "response.data may be empty for the renderer."
                         )
+                    # Attach the originating SpatialFilterSpec so StructuredMapRenderer
+                    # can build MapQuery.  This must be set BEFORE the renderer runs.
+                    spec = self._extract_spatial_filter_spec_from_tools(response.tool_calls)
+                    if spec is not None:
+                        response.spatial_filter_spec = spec
 
                 # FEAT-215: in STRUCTURED_CHART mode the structured output IS the
                 # chart config (StructuredChartConfig), not a PandasAgentResponse, so
@@ -1853,7 +1858,7 @@ class PandasAgent(BasicAgent):
                                 output_mode, response, **format_kwargs
                             )
                          except Exception as e:
-                            self.logger.error(f"Error extracting content on formatter: {e}")
+                            self.logger.error("Error extracting content on formatter: %s", e)
                             content = f"Error extracting content: {e}"
                             wrapped = content
                 else:
@@ -2129,7 +2134,8 @@ class PandasAgent(BasicAgent):
             tool_calls: The current turn's tool calls (may be None or empty).
 
         Returns:
-            The first ``SpatialResult`` found in tool call results, or ``None``.
+            The **most recent** (last) ``SpatialResult`` found in tool call results,
+            or ``None``.
         """
         if not tool_calls:
             return None
@@ -2150,6 +2156,53 @@ class PandasAgent(BasicAgent):
                 if isinstance(result, dict) and "layers" in result and "version" in result:
                     try:
                         return SpatialResult(**result)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        return None
+
+    def _extract_spatial_filter_spec_from_tools(
+        self, tool_calls: Optional[List[Any]]
+    ) -> Optional[Any]:
+        """Extract a ``SpatialFilterSpec`` from tool call arguments (FEAT-221).
+
+        Iterates the current turn's tool calls in reverse order, looking for a
+        ``spatial_filter`` tool call whose ``arguments`` contain a ``spec`` key
+        that is (or can be parsed as) a ``SpatialFilterSpec``.  Used by the
+        ``STRUCTURED_MAP`` branch to populate ``response.spatial_filter_spec``
+        so that ``StructuredMapRenderer._extract_map_query`` can build the
+        ``MapQuery``.
+
+        Args:
+            tool_calls: The current turn's tool calls (may be None or empty).
+
+        Returns:
+            The **most recent** (last) ``SpatialFilterSpec`` found in tool call
+            arguments, or ``None``.
+        """
+        if not tool_calls:
+            return None
+
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialFilterSpec
+        except ImportError:
+            return None
+
+        for tc in reversed(tool_calls):
+            try:
+                tc_name = getattr(tc, "name", "") or ""
+                if tc_name != "spatial_filter":
+                    continue
+                args = getattr(tc, "arguments", {}) or {}
+                spec_raw = args.get("spec") if isinstance(args, dict) else None
+                if spec_raw is None:
+                    continue
+                if isinstance(spec_raw, SpatialFilterSpec):
+                    return spec_raw
+                if isinstance(spec_raw, dict):
+                    try:
+                        return SpatialFilterSpec(**spec_raw)
                     except Exception:
                         pass
             except Exception:

@@ -12,8 +12,19 @@ Verifies the renderer contract:
 """
 from __future__ import annotations
 
-import pytest
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
+
+# ── Satellite path wiring ──────────────────────────────────────────────────────
+# Add ai-parrot-visualizations/src to sys.path so the PEP 420 namespace merge
+# can discover the satellite renderer modules (e.g. structured_map.py).
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+_SATELLITE_SRC = _REPO_ROOT / "packages" / "ai-parrot-visualizations" / "src"
+if _SATELLITE_SRC.exists() and str(_SATELLITE_SRC) not in sys.path:
+    sys.path.insert(0, str(_SATELLITE_SRC))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -315,6 +326,18 @@ async def test_llm_refine_does_not_change_hard_types(two_layer_result):
 
     # The output should not have had its layer destroyed
     assert out is not None
+    school_layer = next(
+        (l for l in out["layers"] if l["layer"] == "schools"), None
+    )
+    assert school_layer is not None
+    enrollment_col = next(
+        (c for c in school_layer["columns"] if c["name"] == "enrollment"), None
+    )
+    assert enrollment_col is not None
+    # enrollment values are integers (500, 320) — LLM hint must NOT override inferred type
+    assert enrollment_col["type"] in ("integer", "number"), (
+        f"LLM hint must not override inferred integer type; got {enrollment_col['type']!r}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

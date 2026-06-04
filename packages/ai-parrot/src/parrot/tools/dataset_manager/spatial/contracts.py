@@ -16,6 +16,11 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Allowed display-format hint values for DatasetSpatialProfile.column_formats.
+_ALLOWED_COLUMN_FORMATS: frozenset = frozenset(
+    {"currency", "percent", "email", "uri", "enum", "id", "code"}
+)
+
 
 class SpatialFilterSpec(BaseModel):
     """Describes a spatial radius filter request.
@@ -183,6 +188,28 @@ class DatasetSpatialProfile(BaseModel):
             "'geojson' passes features through; 'rows' flattens to canonical row dicts."
         ),
     )
+
+    @field_validator("column_formats", mode="after")
+    @classmethod
+    def _validate_column_formats(cls, v: Dict[str, str]) -> Dict[str, str]:
+        """Validate that all column_formats values are recognised format hints.
+
+        Args:
+            v: The ``column_formats`` dict to validate.
+
+        Returns:
+            The validated dict unchanged.
+
+        Raises:
+            ValueError: If any value is not in ``_ALLOWED_COLUMN_FORMATS``.
+        """
+        bad = {k: fmt for k, fmt in v.items() if fmt not in _ALLOWED_COLUMN_FORMATS}
+        if bad:
+            raise ValueError(
+                f"column_formats contains invalid format hints: {bad!r}. "
+                f"Allowed: {sorted(_ALLOWED_COLUMN_FORMATS)}"
+            )
+        return v
 
     @model_validator(mode="after")
     def _validate_geometry_source(self) -> "DatasetSpatialProfile":  # noqa: F821
