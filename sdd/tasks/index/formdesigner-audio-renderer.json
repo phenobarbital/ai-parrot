@@ -32,7 +32,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "New standalone subpackage. No file overlap with TASK-1459.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1460-audio-data-models.md"
+      "completed_at": "2026-06-04T14:17:51+00:00",
+      "file": "sdd/tasks/completed/TASK-1460-audio-data-models.md"
     },
     {
       "id": "TASK-1461",
