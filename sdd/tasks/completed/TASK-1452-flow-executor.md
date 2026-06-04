@@ -160,4 +160,35 @@ async with aiofiles.open(checkpoint_path, "w") as f:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `flow_executor.py` with `FlowExecutor`. `run(flow, params, resume_from)`:
+topo-sorts the flow, precomputes session last-use, then executes each node —
+resolving inputs, binding/resolving its plan, creating a session Page wrapped
+in `PageDriver`, running `execute_plan_steps`, checkpointing, and closing the
+context when it was the session's last node. `close_all()` runs in `finally`.
+
+- **Input resolution** `_resolve_input`: `"node.field"` → `extracted_data[field]`;
+  `"node.field[N]"` → list index; `"node.field[*]"` → fan-out (returns the list).
+- **Plan resolution** `_resolve_plan`: prefers a registered `TemplatePlan`
+  (bound with merged global+resolved params; bind ignores extra kwargs),
+  falling back to a `ScrapingPlan` loaded from the registry by name.
+- **Fan-out** `_run_fanout`: clones the node per item under
+  `asyncio.Semaphore(concurrency)`, aggregating into one `ScrapingResult`
+  (`extracted_data={"items":[...]}`).
+- **Error policy** per node: `abort` (stop, success=False), `skip` (continue;
+  dependents referencing a skipped node cascade-skip), `retry` (fresh page up
+  to `max_retries`, exhausted → abort).
+- **Checkpoint/resume**: writes `{node_id: extracted_data}` to
+  `<checkpoint_dir>/<flow.name>.checkpoint.json` after each node; `resume_from`
+  pre-loads earlier nodes from the checkpoint and starts at the named node.
+
+**Implementer decision** (spec Open Question — template source / resolver
+grammar): added an optional `templates: Dict[str, TemplatePlan]` constructor
+kwarg as the TemplatePlan source, since the dedicated `TemplatePlanRegistry`
+is deferred. All spec'd `__init__` params are preserved in order; `templates`
+is appended. Fan-out within a single session shares one context (concurrent
+new_page) — documented deferred debt per spec; safe at default concurrency=1.
+
+11 unit/integration tests pass (linear, input resolution incl. index, fan-out
+with bounded concurrency, abort/skip-cascade/retry/retry-exhausted, multi-
+session distinct contexts, checkpoint write + resume-skips-completed). ruff
+clean.
