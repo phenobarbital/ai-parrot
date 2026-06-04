@@ -24,6 +24,12 @@ from .base_registry import BasePlanRegistry
 from .extraction_registry import ExtractionPlanRegistry
 from .extraction_plan_generator import ExtractionPlanGenerator
 from .recall_processor import RecallProcessor
+# ScrapingFlow — composable long-horizon scraping (FEAT-222)
+from .template_plan import TemplatePlan, ParamSpec
+from .flow_models import ScrapingFlow, FlowNode, FlowResult
+from .flow_executor import FlowExecutor
+from .drivers.page_driver import PageDriver
+from .session_manager import SessionManager
 
 
 __all__ = (
@@ -66,4 +72,13 @@ __all__ = (
     # Generators
     "ExtractionPlanGenerator",
     "RecallProcessor",
+    # ScrapingFlow — composable long-horizon scraping (FEAT-222)
+    "TemplatePlan",
+    "ParamSpec",
+    "ScrapingFlow",
+    "FlowNode",
+    "FlowResult",
+    "FlowExecutor",
+    "PageDriver",
+    "SessionManager",
 )
