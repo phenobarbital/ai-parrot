@@ -112,7 +112,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -123,8 +123,8 @@
       "parallelism_notes": "Modifies routes.py and render.py — must follow handler and renderer tasks.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1464-audio-route-registration.md"
+      "completed_at": "2026-06-04T14:27:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1464-audio-route-registration.md"
     },
     {
       "id": "TASK-1465",
