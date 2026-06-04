@@ -52,7 +52,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +63,8 @@
       "parallelism_notes": "Edits _apply_filter in tool.py and adds filtering/compiler.py; depends on contracts + store.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1466-filter-compiler.md"
+      "completed_at": "2026-06-04T16:26:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1466-filter-compiler.md"
     },
     {
       "id": "TASK-1467",
