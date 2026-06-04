@@ -148,9 +148,28 @@ class StructuredChartRenderer(StructuredOutputBase, BaseChart):
             if candidate is None or isinstance(candidate, str):
                 candidate = getattr(response, "structured_output", None)
 
-            # 1a. candidate is already a StructuredChartConfig instance
-            if isinstance(candidate, StructuredChartConfig):
-                cfg = candidate
+            # 1a. candidate is already a StructuredChartConfig instance (or duck-type)
+            # Use duck-typing in addition to isinstance to handle cross-module
+            # identity issues that can arise when different test suites load the
+            # same module through different sys.path entries (FEAT-224 test isolation).
+            _is_chart_cfg = isinstance(candidate, StructuredChartConfig) or (
+                candidate is not None
+                and not isinstance(candidate, (str, dict, list))
+                and hasattr(candidate, "model_dump")
+                and hasattr(candidate, "x")
+                and hasattr(candidate, "y")
+                and hasattr(candidate, "type")
+            )
+            if _is_chart_cfg:
+                if not isinstance(candidate, StructuredChartConfig):
+                    # Re-validate through the canonical class to normalise the object.
+                    try:
+                        candidate = StructuredChartConfig.model_validate(
+                            candidate.model_dump(mode="python")
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass  # keep original; model_dump will still work
+                cfg = candidate  # type: ignore[assignment]
 
             # 1b. candidate is a dict — validate into StructuredChartConfig
             elif isinstance(candidate, dict):
