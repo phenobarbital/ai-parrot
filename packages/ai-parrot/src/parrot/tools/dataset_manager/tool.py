@@ -4510,6 +4510,51 @@ class DatasetManager(AbstractToolkit):
         )
         return proposals
 
+    # ─────────────────────────────────────────────────────────────
+    # LLM-facing tool wrappers (FEAT-225 Module 7)
+    # AbstractToolkit.get_tools() auto-collects async public methods.
+    # ─────────────────────────────────────────────────────────────
+
+    async def list_filters(self) -> List[Dict[str, Any]]:
+        """List all defined common-field filters and their applicable datasets.
+
+        Returns the filter schema — one entry per stored filter definition with
+        its name, kind, supported operators, applicable datasets, and metadata.
+        Call this to discover what filters are available before applying them.
+
+        Returns:
+            List of filter schema dicts (name, kind, ops, datasets, required, ...).
+        """
+        return self.get_filter_schema()
+
+    async def set_filters(
+        self,
+        filter_definitions: List[Dict[str, Any]],
+    ) -> str:
+        """Define (or replace) common-field filters on this DatasetManager.
+
+        Validates each definition against registered datasets and stores it
+        on this instance (no global state). Existing definitions with the
+        same name are replaced.
+
+        Args:
+            filter_definitions: List of filter definition dicts. Each must
+                include "name" (str), "columns" (list of str), "kind"
+                (categorical/numeric/temporal/text/spatial), and "ops"
+                (list of operators). Optional: "required" (bool), "label" (str),
+                "description" (str).
+
+        Returns:
+            Confirmation string listing stored filter names.
+
+        Raises:
+            ValueError: When a spatial filter has no registered spatial profile.
+        """
+        defs = [FilterDefinition(**d) for d in filter_definitions]
+        self.define_filters(defs)
+        names = [d.name for d in defs]
+        return f"Stored {len(names)} filter(s): {names}"
+
     async def apply_filters(
         self,
         request: Dict[str, Any],
