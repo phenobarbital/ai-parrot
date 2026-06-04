@@ -148,9 +148,7 @@ class TestMapEnvelopeConformance:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-06-04
+**Notes**: Added MAP="map" to ArtifactType. Retrofitted StructuredMapRenderer(StructuredOutputBase, BaseChart) — removed inline _extract_json_code (inherited), replaced step-8 with _route_envelope + explicit payload routing. 18/18 map tests pass, 103 renderer tests green. Linting clean.
+**Deviations from spec**: none

@@ -72,7 +72,7 @@
       "feature_id": "FEAT-223",
       "feature": "structured-artifact-contract",
       "spec": "sdd/specs/structured-artifact-contract.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -82,8 +82,8 @@
       "parallelism_notes": "Depends only on the base (TASK-1454). Touches storage/models.py + structured_map.py \u2014 disjoint from the chart files (1455/1456), so CAN run in a parallel worktree alongside them.",
       "assigned_to": null,
       "started_at": "2026-06-04T04:12:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1457-artifacttype-map-and-conform.md"
+      "completed_at": "2026-06-04T04:25:56+00:00",
+      "file": "sdd/tasks/completed/TASK-1457-artifacttype-map-and-conform.md"
     },
     {
       "id": "TASK-1458",
