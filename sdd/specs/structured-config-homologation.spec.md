@@ -11,7 +11,7 @@ base_branch: dev
 **Feature ID**: FEAT-224
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Closes the last 10% of the FEAT-223 (`structured-artifact-contract`)
@@ -474,13 +474,13 @@ class AIMessage(BaseModel):                          # line 72
   renderer reads input from `response.output`/`structured_output`; `code` left
   `null` unless real interpretable code.
 - [x] `ArtifactType.TABLE`? — *Resolved (user decision)*: add `TABLE = "table"`.
-- [ ] Drop `response.output` mirror now, or keep for one deprecation cycle?
-  *Spec default = keep (G6, non-breaking).* — *Owner: Jesus / frontend*
-- [ ] Should `as_table_config` / `as_map_config` round-trip helpers be added
+- [x] Drop `response.output` mirror now, or keep for one deprecation cycle?
+  *Spec default = keep (G6, non-breaking).* — *Owner: Jesus / frontend*: keep
+- [x] Should `as_table_config` / `as_map_config` round-trip helpers be added
   alongside `as_chart_config`, or deferred until a consumer needs them?
-  *Spec default = defer.* — *Owner: Jesus*
-- [ ] `artifactId` scheme: reuse `f"{mode}-{uuid4().hex[:8]}"` or adopt a typed
-  prefix (`chart_…`/`map_…`/`table_…`)? *Spec default = reuse existing.* — *Owner: Jesus*
+  *Spec default = defer.* — *Owner: Jesus*: add, no defer
+- [x] `artifactId` scheme: reuse `f"{mode}-{uuid4().hex[:8]}"` or adopt a typed
+  prefix (`chart_…`/`map_…`/`table_…`)? *Spec default = reuse existing.* — *Owner: Jesus*: reuse existing
 
 ---
 
