@@ -208,10 +208,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-04
+**Notes**: Created `integrations/core/auth/__init__.py`, `post_auth.py`, and `oauth2_providers.py` with content moved from `telegram/`. Updated imports in `telegram/auth.py`, `telegram/wrapper.py`, and all test files referencing the old paths. Deleted originals using `git rm`. Created core auth import tests in `tests/integrations/core/test_auth_imports.py`. Pre-existing ruff warnings in `telegram/__init__.py` are unrelated to this task.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
