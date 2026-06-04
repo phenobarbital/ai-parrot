@@ -208,7 +208,11 @@ def test_structured_chart_config_data_excluded_from_output_dump():
 
 @pytest.fixture
 def bar_config_json() -> str:
-    """Valid StructuredChartConfig JSON for a bar chart (no embedded data rows)."""
+    """Valid StructuredChartConfig JSON for a bar chart (no embedded data rows).
+
+    FEAT-224: kept for the text-fallback path test. Prefer bar_config_obj
+    for renderer tests (config now travels via response.output).
+    """
     import json
     return json.dumps({
         "type": "bar",
@@ -217,6 +221,22 @@ def bar_config_json() -> str:
         "splitSeries": False,
         "data": [],
     })
+
+
+@pytest.fixture
+def bar_config_obj():
+    """Valid StructuredChartConfig instance for bar chart tests.
+
+    FEAT-224: chart config now travels via response.output, not response.code.
+    Use this fixture when testing the renderer directly.
+    """
+    from parrot.models.outputs import StructuredChartConfig
+    return StructuredChartConfig(
+        type="bar",
+        x="month",
+        y=["sales", "expenses"],
+        data=[],
+    )
 
 
 @pytest.fixture
@@ -271,38 +291,40 @@ def test_system_prompt_embeds_schema():
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_output_excludes_data(bar_config_json, bar_data_df):
-    """Valid config + DataFrame: output lacks data key; response.data carries rows; code untouched."""
-    from types import SimpleNamespace
-    from parrot.models.outputs import OutputMode
-    from parrot.outputs.formats import get_renderer
+async def test_renderer_output_excludes_data(bar_config_obj, bar_data_df):
+    """Valid config + DataFrame: output lacks data key; response.data carries rows.
 
-    r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    original_code = bar_config_json
-    resp = SimpleNamespace(code=original_code, data=bar_data_df, output=None, response=None)
-    output, wrapped = await r.render(resp)
-
-    assert output is not None
-    assert "data" not in output, "data key must be excluded from output"
-    assert isinstance(resp.data, list) and len(resp.data) == 2, "Rows routed to response.data"
-    # code must be left untouched by the renderer
-    assert resp.code == original_code, "renderer must not modify response.code"
-
-
-@satellite_available
-@pytest.mark.asyncio
-async def test_renderer_response_data_is_authoritative_source(bar_config_json, bar_data_df):
-    """FEAT-223: response.data (DataFrame) is the authoritative row source — not cfg.data.
-
-    The renderer ignores any rows the LLM embedded in the config JSON and uses the
-    agent-injected DataFrame exclusively.
+    FEAT-224: config now travels via response.output (not response.code).
     """
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=bar_config_json, data=bar_data_df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=bar_data_df, output=bar_config_obj, response=None)
+    output, wrapped = await r.render(resp)
+
+    assert output is not None
+    assert "data" not in output, "data key must be excluded from output"
+    assert isinstance(resp.data, list) and len(resp.data) == 2, "Rows routed to response.data"
+    # code must remain None — renderer no longer reads/writes response.code for config
+    assert resp.code is None, "renderer must not set response.code"
+
+
+@satellite_available
+@pytest.mark.asyncio
+async def test_renderer_response_data_is_authoritative_source(bar_config_obj, bar_data_df):
+    """FEAT-223: response.data (DataFrame) is the authoritative row source — not cfg.data.
+
+    The renderer ignores any rows the LLM embedded in the config JSON and uses the
+    agent-injected DataFrame exclusively. FEAT-224: config via response.output.
+    """
+    from types import SimpleNamespace
+    from parrot.models.outputs import OutputMode
+    from parrot.outputs.formats import get_renderer
+
+    r = get_renderer(OutputMode.STRUCTURED_CHART)()
+    resp = SimpleNamespace(code=None, data=bar_data_df, output=bar_config_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert output is not None
@@ -315,11 +337,12 @@ async def test_renderer_response_data_is_authoritative_source(bar_config_json, b
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_large_dataframe_rows_used(bar_config_json):
+async def test_renderer_large_dataframe_rows_used(bar_config_obj):
     """FEAT-223: a large DataFrame in response.data provides ALL rows to the chart.
 
     The LLM does not emit rows; the backend uses the full DataFrame.
     No truthiness crash — pd.DataFrame truthiness is never evaluated.
+    FEAT-224: config via response.output.
     """
     import pandas as pd
     from types import SimpleNamespace
@@ -332,7 +355,7 @@ async def test_renderer_large_dataframe_rows_used(bar_config_json):
         "expenses": range(142),
     })
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=bar_config_json, data=big_df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=big_df, output=bar_config_obj, response=None)
 
     # Must NOT raise "truth value of a DataFrame is ambiguous"
     output, wrapped = await r.render(resp)
@@ -351,15 +374,15 @@ async def test_renderer_uses_existing_data_when_cfg_data_empty():
 
     When the config's x/y match the real columns, they are preserved unchanged.
     """
-    import json
     from types import SimpleNamespace
-    from parrot.models.outputs import OutputMode
+    from parrot.models.outputs import OutputMode, StructuredChartConfig
     from parrot.outputs.formats import get_renderer
 
-    config_no_data = json.dumps({"type": "bar", "x": "m", "y": ["v"]})
+    # FEAT-224: config via response.output, not response.code
+    config_obj = StructuredChartConfig(type="bar", x="m", y=["v"])
     pre_existing = [{"m": "Jan", "v": 1}]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=config_no_data, data=pre_existing, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=pre_existing, output=config_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert output is not None
@@ -380,18 +403,18 @@ async def test_renderer_reconciles_mismatched_columns():
     first non-numeric column and y to the numeric columns so the frontend can
     actually render. (Placeholder column names/values only.)
     """
-    import json
     from types import SimpleNamespace
-    from parrot.models.outputs import OutputMode
+    from parrot.models.outputs import OutputMode, StructuredChartConfig
     from parrot.outputs.formats import get_renderer
 
-    config = json.dumps({"type": "pie", "x": "category", "y": ["amount"]})
+    # FEAT-224: config via response.output
+    config_obj = StructuredChartConfig(type="pie", x="category", y=["amount"])
     injected = [
         {"grp": "X", "sub": "A", "amount": 10},
         {"grp": "X", "sub": "B", "amount": 20},
     ]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=config, data=injected, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=injected, output=config_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert wrapped is None
@@ -409,17 +432,17 @@ async def test_renderer_reconciles_mismatched_columns():
 @pytest.mark.asyncio
 async def test_renderer_reconciles_from_dataframe():
     """A pandas DataFrame in response.data is converted to records + reconciled."""
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
-    # config invents x/y that don't match the DataFrame columns
-    config = json.dumps({"type": "bar", "x": "metric", "y": ["value"]})
+    # FEAT-224: config via response.output; config invents x/y that don't match df cols
+    from parrot.models.outputs import StructuredChartConfig
+    config_obj = StructuredChartConfig(type="bar", x="metric", y=["value"])
     df = pd.DataFrame({"region": ["N", "S"], "sales": [100, 200]})
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=config, data=df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=df, output=config_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert wrapped is None
@@ -439,28 +462,29 @@ async def test_renderer_output_columns_always_match_data():
     cols, index column, DataFrame source) and assert the config/data stay aligned
     so the frontend never shows "columns don't match".
     """
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
+    # FEAT-224: config via response.output (StructuredChartConfig instances)
+    from parrot.models.outputs import StructuredChartConfig
     cases = [
         # radar: config matches the injected DataFrame columns
-        (json.dumps({"type": "radar", "x": "cat", "y": ["amount"]}),
+        (StructuredChartConfig(type="radar", x="cat", y=["amount"]),
          pd.DataFrame({"cat": ["A", "B"], "amount": [10, 20]})),
         # config invents x/y; data has different real columns
-        (json.dumps({"type": "radar", "x": "expense_category", "y": ["total_amount"]}),
+        (StructuredChartConfig(type="radar", x="expense_category", y=["total_amount"]),
          pd.DataFrame({"grp": ["A", "B"], "amt": [1, 2]})),
         # data carries a leaked pandas index column
-        (json.dumps({"type": "bar", "x": "cat", "y": ["amount"]}),
+        (StructuredChartConfig(type="bar", x="cat", y=["amount"]),
          [{"index": 0, "cat": "A", "amount": 10}, {"index": 1, "cat": "B", "amount": 20}]),
     ]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    for code, data in cases:
-        resp = SimpleNamespace(code=code, data=data, output=None, response=None)
+    for cfg_obj, data in cases:
+        resp = SimpleNamespace(code=None, data=data, output=cfg_obj, response=None)
         output, wrapped = await r.render(resp)
-        assert output is not None, f"render failed for {code}"
+        assert output is not None, f"render failed for {cfg_obj}"
         rows = resp.data
         assert isinstance(rows, list) and rows, "response.data must be non-empty rows"
         cols = set(rows[0].keys())
@@ -474,16 +498,16 @@ async def test_renderer_output_columns_always_match_data():
 @pytest.mark.asyncio
 async def test_renderer_drops_index_column_from_y():
     """An 'index' column (pandas row index) is never emitted as a y series."""
-    import json
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
-    # Model named both an index column and the real metric in y.
-    config = json.dumps({"type": "radar", "x": "cat", "y": ["index", "val"]})
+    # FEAT-224: config via response.output
+    from parrot.models.outputs import StructuredChartConfig
+    config_obj = StructuredChartConfig(type="radar", x="cat", y=["index", "val"])
     rows = [{"index": 0, "cat": "A", "val": 10}, {"index": 1, "cat": "B", "val": 20}]
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=config, data=rows, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=rows, output=config_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert wrapped is None
@@ -494,17 +518,20 @@ async def test_renderer_drops_index_column_from_y():
 @satellite_available
 @pytest.mark.asyncio
 async def test_renderer_code_as_dict(bar_config_json, bar_data_df):
-    """response.code as a pre-parsed dict (PandasAgentResponse.code) is validated directly."""
+    """response.output as a pre-parsed dict is validated directly.
+
+    FEAT-224: config dict now travels via response.output (not response.code).
+    This test verifies the dict path in the new renderer logic.
+    """
     import json
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
-    # PandasAgentResponse.code may be a dict when the LLM emits the chart
-    # config as a JSON object (not Python code).
+    # The config dict (as the PandasAgent would place it in response.output).
     config_dict = json.loads(bar_config_json)   # dict, not string
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=config_dict, data=bar_data_df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=bar_data_df, output=config_dict, response=None)
     output, wrapped = await r.render(resp)
 
     assert output is not None
@@ -514,19 +541,22 @@ async def test_renderer_code_as_dict(bar_config_json, bar_data_df):
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_preserves_explanation_as_wrapped(bar_config_json, bar_data_df):
-    """Explanation from PandasAgentResponse is returned as wrapped so callers see prose."""
+async def test_renderer_preserves_explanation_as_wrapped(bar_config_obj, bar_data_df):
+    """Explanation from PandasAgentResponse is returned as wrapped so callers see prose.
+
+    FEAT-224: config via response.output.
+    """
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     explanation = "For Q1 2026, here is the expense breakdown by category."
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    # Simulate PandasAgent state: code = chart JSON, response = explanation text
+    # Simulate PandasAgent state: output = config object, response = explanation text
     resp = SimpleNamespace(
-        code=bar_config_json,
+        code=None,
         data=bar_data_df,
-        output=None,
+        output=bar_config_obj,
         response=explanation,
     )
     output, wrapped = await r.render(resp)
@@ -564,17 +594,21 @@ async def test_renderer_explanation_preserved_on_failure():
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_outer_exception_graceful_degradation(bar_config_json):
-    """An unexpected exception inside render() returns (None, msg), never raises."""
+async def test_renderer_outer_exception_graceful_degradation():
+    """An unexpected exception inside render() returns (None, msg), never raises.
+
+    FEAT-224: the renderer reads response.output first (not response.code).
+    A broken output property triggers the outer exception handler.
+    """
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
 
-    # Pass a completely broken response object (no attributes at all)
+    # Pass a broken response where output raises (not code, which is no longer read).
     class _Broken:
         @property
-        def code(self):
+        def output(self):
             raise RuntimeError("simulated unexpected crash")
 
     output, wrapped = await r.render(_Broken())  # MUST NOT raise
@@ -600,21 +634,23 @@ async def test_renderer_malformed_graceful_degradation():
 
 @satellite_available
 @pytest.mark.asyncio
-async def test_renderer_reads_code_first(bar_config_json, bar_data_df):
-    """Renderer reads response.code before falling back to text extraction."""
+async def test_renderer_reads_output_first(bar_config_obj, bar_data_df):
+    """Renderer reads response.output before falling back to text extraction (FEAT-224).
+
+    Previously tested response.code priority; now verifies response.output priority.
+    """
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    # code is set; response text is explanation prose — code must win for the
-    # config, and the explanation is preserved as wrapped.
+    # output is set (config object); response text is explanation prose — output wins.
     explanation = "some unrelated text"
-    resp = SimpleNamespace(code=bar_config_json, data=bar_data_df, output=None,
+    resp = SimpleNamespace(code=None, data=bar_data_df, output=bar_config_obj,
                            response=explanation)
     output, wrapped = await r.render(resp)
     assert output is not None
-    # wrapped = the preserved explanation (not None — renderer now surfaces it)
+    # wrapped = the preserved explanation (not None — renderer surfaces it)
     assert wrapped == explanation
 
 
@@ -731,18 +767,18 @@ def test_echarts_altair_unchanged():
 @pytest.mark.asyncio
 async def test_rows_from_dataframe_not_llm():
     """FEAT-223: Given a DataFrame in response.data, rows come from it — not from cfg.data."""
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     df = pd.DataFrame({"region": ["N", "S", "E"], "revenue": [10, 20, 30]})
-    # cfg.data is empty — LLM did not embed rows (correct new behavior)
-    cfg_json = json.dumps({"type": "bar", "x": "region", "y": ["revenue"], "data": []})
+    # cfg.data is empty — LLM did not embed rows (correct behavior); FEAT-224: output=
+    from parrot.models.outputs import StructuredChartConfig
+    cfg_obj = StructuredChartConfig(type="bar", x="region", y=["revenue"], data=[])
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=cfg_json, data=df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=df, output=cfg_obj, response=None)
     output, wrapped = await r.render(resp)
 
     assert output is not None
@@ -755,17 +791,18 @@ async def test_rows_from_dataframe_not_llm():
 @pytest.mark.asyncio
 async def test_xy_always_real_columns():
     """FEAT-223: x/y in the emitted config are always members of the real column set."""
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     df = pd.DataFrame({"cat": ["A", "B"], "val": [1, 2]})
-    cfg_json = json.dumps({"type": "line", "x": "cat", "y": ["val"]})
+    # FEAT-224: config via response.output
+    from parrot.models.outputs import StructuredChartConfig
+    cfg_obj = StructuredChartConfig(type="line", x="cat", y=["val"])
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=cfg_json, data=df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=df, output=cfg_obj, response=None)
     output, _ = await r.render(resp)
 
     assert output is not None
@@ -778,17 +815,18 @@ async def test_xy_always_real_columns():
 @pytest.mark.asyncio
 async def test_absent_xy_falls_back_deterministically():
     """FEAT-223: LLM picks absent x/y → first categorical = x, first numeric = y."""
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
     from parrot.outputs.formats import get_renderer
 
     df = pd.DataFrame({"grp": ["X", "Y"], "amount": [5, 10]})
-    cfg_json = json.dumps({"type": "bar", "x": "nonexistent_col", "y": ["also_missing"]})
+    # FEAT-224: config via response.output
+    from parrot.models.outputs import StructuredChartConfig
+    cfg_obj = StructuredChartConfig(type="bar", x="nonexistent_col", y=["also_missing"])
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=cfg_json, data=df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=df, output=cfg_obj, response=None)
     output, _ = await r.render(resp)
 
     assert output is not None
@@ -802,7 +840,6 @@ async def test_absent_xy_falls_back_deterministically():
 @pytest.mark.asyncio
 async def test_negative_values_render():
     """FEAT-223: bar/line charts render correctly with negative values after determinism."""
-    import json
     import pandas as pd
     from types import SimpleNamespace
     from parrot.models.outputs import OutputMode
@@ -812,15 +849,17 @@ async def test_negative_values_render():
         "month": ["Jan", "Feb", "Mar"],
         "profit": [100, -50, 75],
     })
-    cfg_json = json.dumps({
-        "type": "bar",
-        "x": "month",
-        "y": ["profit"],
-        "colorBySign": True,
-    })
+    # FEAT-224: config via response.output
+    from parrot.models.outputs import StructuredChartConfig
+    cfg_obj = StructuredChartConfig(
+        type="bar",
+        x="month",
+        y=["profit"],
+        color_by_sign=True,
+    )
 
     r = get_renderer(OutputMode.STRUCTURED_CHART)()
-    resp = SimpleNamespace(code=cfg_json, data=df, output=None, response=None)
+    resp = SimpleNamespace(code=None, data=df, output=cfg_obj, response=None)
     output, _ = await r.render(resp)
 
     assert output is not None

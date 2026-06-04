@@ -39,11 +39,11 @@ Cada artefacto se divide en **dos mitades**:
 | **Presentación (config / `definition`)** | Cómo pintar: tipo de gráfico, columnas, ejes, tooltips, viewport, paleta… | LLM y/o reglas deterministas | Dentro del envelope de artefacto **`response.artifacts[]`**, en el campo `definition` — **sin las filas** |
 | **Datos (rows)** | Las filas / features reales | Determinista (el DataFrame que computó el agente, o el resultado espacial) | En el campo **`response.data`** |
 
-> ⚠️ **Lee primero la [§2.5 — Ubicación canónica de la config](#25-ubicación-canónica-de-la-config-contrato-definitivo).**
-> El **contrato canónico decidido** es el envelope de artefacto en
-> `response.artifacts[]`. El backend de hoy todavía expone la config en
-> `response.output` (y, en chart, duplicada en `response.code`); esa §2.5
-> detalla **objetivo vs estado actual** y la migración.
+> **Lee primero la [§2.5 — Ubicación canónica de la config](#25-ubicación-canónica-de-la-config-contrato-definitivo).**
+> El **contrato canónico implementado (FEAT-224)** es el envelope de artefacto en
+> `response.artifacts[]`. La config viaja en `artifacts[].definition` (camelCase,
+> sin `data`). `response.output` sigue como mirror depreciado (G6); `response.code`
+> ya no lleva config en el path chart. Ver §2.5 para el estado completo.
 
 Reglas invariantes que el backend **garantiza** (verificado en
 `packages/ai-parrot-visualizations/.../structured_base.py` y en los tests de
@@ -219,24 +219,27 @@ Reglas del contrato canónico:
 > homologación. Hasta entonces, una tabla podría llegar tipada como `dataframe`
 > — confírmalo con backend antes de fijar el enum en el cliente.
 
-#### Estado actual del backend (lo que recibes HOY, antes del refactor)
+#### Estado actual del backend — contrato implementado (FEAT-224)
 
-El pipeline real (`bots/data.py:1869-1872`) asigna `response.output = <config dict>`
-para los tres modos, con estas particularidades **aún sin homologar**:
+El pipeline (`bots/data.py` + `structured_chart.py`) implementa el contrato
+canónico desde **FEAT-224**. Los tres modos producen:
 
-| Modo | `response.output` (hoy) | `response.data` (hoy) | `response.code` (hoy) | `artifacts[]` (hoy) |
+| Modo | `response.output` | `response.data` | `response.code` | `artifacts[]` |
 |---|---|---|---|---|
-| `structured_table` | ✅ config tabla (dict) | filas (records) | código pandas de análisis | — (no pobla `definition`) |
-| `structured_map` | ✅ config mapa (dict) | payloads por capa | normalmente `null` | — |
-| `structured_chart` | ✅ config final reconciliada | filas (records) | ⚠️ **config cruda duplicada** (staging no limpiado) | — |
+| `structured_table` | ⚠️ mirror depreciado (G6) — config tabla (dict) | filas (records) | código pandas o `null` | ✅ **`[{type:"table", artifactId, definition}]`** |
+| `structured_map` | ⚠️ mirror depreciado (G6) — config mapa (dict) | payloads por capa | normalmente `null` | ✅ **`[{type:"map", artifactId, definition}]`** |
+| `structured_chart` | ⚠️ mirror depreciado (G6) — config reconciliada | filas (records) | ✅ `null` (config ya no duplicada) | ✅ **`[{type:"chart", artifactId, definition}]`** |
 
-Diferencias clave objetivo ↔ actual:
+Contrato implementado:
 
-- **Config**: hoy en `response.output`; objetivo en `response.artifacts[].definition`.
-- **Chart `code`**: hoy duplica la config (y el `StructuredChartRenderer` la *lee*
-  de `response.code`); objetivo = el renderer lee su input de
-  `response.output`/`structured_output` y `code` se deja `null` salvo código real.
-- **`artifacts[]`/`artifact_id`**: hoy no se poblan para estos tipos; objetivo = sí.
+- **Config**: canónicamente en `response.artifacts[].definition` (camelCase, sin `data`).
+- **Chart `code`**: `null` — la config ya no se duplica aquí (FEAT-224 G3); el
+  `StructuredChartRenderer` lee su input de `response.output`/`structured_output`.
+- **`artifacts[]`/`artifact_id`**: poblados para los tres modos estructurados.
+- **`response.output`**: sigue espejando la config durante la ventana de migración
+  (G6) para no romper consumidores existentes; **deprecado** — migrar a `artifacts[]`.
+- **Persistencia (FEAT-103)**: el handler auto-save persiste `definition` (la config,
+  no las filas) con `ArtifactType` correcto por modo.
 
 #### Estrategia de lectura recomendada para el Frontend (resiliente a la migración)
 

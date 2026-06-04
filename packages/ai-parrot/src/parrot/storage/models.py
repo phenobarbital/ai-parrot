@@ -245,6 +245,7 @@ class ArtifactType(str, Enum):
     """Type of artifact produced by an agent or user."""
     CHART = "chart"
     MAP = "map"
+    TABLE = "table"          # FEAT-224: structured table output
     CANVAS = "canvas"
     INFOGRAPHIC = "infographic"
     DATAFRAME = "dataframe"
@@ -291,6 +292,48 @@ class Artifact(BaseModel):
     definition_ref: Optional[str] = None  # S3 URI if overflow
 
     @classmethod
+    def from_structured_config(
+        cls,
+        cfg: Any,
+        artifact_type: "ArtifactType",
+        artifact_id: str,
+        title: str,
+        created_at: datetime,
+        updated_at: datetime,
+        **kwargs: Any,
+    ) -> "Artifact":
+        """Create an Artifact for any structured output type (chart / map / table).
+
+        Serialises *cfg* with camelCase aliases and without the ``data`` key so
+        that the wire definition carries only the *presentation config* (rows
+        live in ``response.data``).  This is the canonical constructor for the
+        ``artifacts[]`` envelope introduced by FEAT-224.
+
+        Args:
+            cfg: A ``Structured{Chart,Table,Map}Config`` instance.
+            artifact_type: One of :attr:`ArtifactType.CHART`,
+                :attr:`ArtifactType.MAP`, or :attr:`ArtifactType.TABLE`.
+            artifact_id: Unique artifact identifier (mint once per turn).
+            title: Display title for the artifact.
+            created_at: Creation timestamp.
+            updated_at: Last-updated timestamp.
+            **kwargs: Additional :class:`Artifact` fields (e.g. ``source_turn_id``).
+
+        Returns:
+            An :class:`Artifact` whose ``definition`` is the camelCase config
+            dict with ``data`` excluded.
+        """
+        return cls(
+            artifact_id=artifact_id,
+            artifact_type=artifact_type,
+            title=title,
+            created_at=created_at,
+            updated_at=updated_at,
+            definition=cfg.model_dump(mode="json", by_alias=True, exclude={"data"}),
+            **kwargs,
+        )
+
+    @classmethod
     def from_chart_config(
         cls,
         cfg: Any,
@@ -302,8 +345,8 @@ class Artifact(BaseModel):
     ) -> "Artifact":
         """Create a CHART Artifact whose definition carries the converged config.
 
-        Serialises *cfg* with camelCase aliases and without the ``data`` key
-        (rows live in ``response.data``, not the persisted definition).
+        Backward-compatible wrapper around :meth:`from_structured_config` — returns
+        an identical artifact to the pre-FEAT-224 implementation.
 
         Args:
             cfg: A :class:`~parrot.models.outputs.StructuredChartConfig` instance.
@@ -316,14 +359,8 @@ class Artifact(BaseModel):
         Returns:
             An :class:`Artifact` of type :attr:`ArtifactType.CHART`.
         """
-        return cls(
-            artifact_id=artifact_id,
-            artifact_type=ArtifactType.CHART,
-            title=title,
-            created_at=created_at,
-            updated_at=updated_at,
-            definition=cfg.model_dump(mode="json", by_alias=True, exclude={"data"}),
-            **kwargs,
+        return cls.from_structured_config(
+            cfg, ArtifactType.CHART, artifact_id, title, created_at, updated_at, **kwargs,
         )
 
     def as_chart_config(self) -> Any:
