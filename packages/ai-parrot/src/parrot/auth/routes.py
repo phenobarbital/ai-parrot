@@ -221,6 +221,16 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
     if channel == "web":
         return await _handle_web_callback(request, token_set, state_payload)
 
+    # Slack channel branch (FEAT-225).
+    if channel == "slack":
+        from parrot.integrations.slack.oauth_callback import handle_slack_jira_callback
+        return await handle_slack_jira_callback(request, token_set, state_payload)
+
+    # MS Teams channel branch (FEAT-225).
+    if channel == "msteams":
+        from parrot.integrations.msteams.oauth_callback import handle_msteams_jira_callback
+        return await handle_msteams_jira_callback(request, token_set, state_payload)
+
     # Stamp the Telegram user session with the Jira identity so prompt
     # enrichment and tool context use the connected Jira account instead
     # of the primary Navigator login identity. The wrapper registers this
