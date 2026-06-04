@@ -143,4 +143,10 @@ have shifted). Coordinate edits with FEAT-224 if both touch `tool.py`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Created `filtering/compiler.py` with `FilterCompiler`
+(stateless, I/O-free) that provides `compile_where(column, condition)` returning
+a SQL fragment + params list, and `compile_pandas(df, column, condition)` returning
+a boolean Series. Handles eq/ne/in/not_in/range for both paths. Extended
+`DatasetManager._apply_filter` to accept `FilterCondition` instances as dict
+values (legacy scalar/list semantics preserved). 26 unit tests pass. No linting
+errors.

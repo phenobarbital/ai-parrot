@@ -161,4 +161,10 @@ symbol, keep edits surgical, and coordinate with FEAT-224.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added `async def apply_filters(request, persist=False)` to
+`DatasetManager`. Resolves request keys against `_filter_defs`, coerces bare scalar/list
+to `FilterCondition(eq/in)`, routes spatial kind to `spatial_filter()`, applies pandas
+filter to in-memory datasets, skips datasets missing target columns (records in
+`result.skipped`), raises `ValueError` for `required=True` missing columns. `persist=True`
+registers filtered DataFrames as `<name>__filtered` with collision guard. 11 unit tests
+and 7 integration tests pass. No linting errors.

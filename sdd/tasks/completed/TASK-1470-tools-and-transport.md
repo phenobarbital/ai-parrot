@@ -145,4 +145,9 @@ registration convention used by the server package.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added async LLM-facing tool wrappers `list_filters()` and
+`set_filters()` to DatasetManager (auto-exposed via AbstractToolkit.get_tools() for
+async public methods; `apply_filters` and `get_filter_values` already auto-exposed).
+Created `handlers/dataset_filter_handler.py` with `DatasetFilterEnvelope` (AgenTalk
+pass-through) and `DatasetFilterHandler` class (GET schema, GET values, POST apply
+endpoints). 10 integration tests + 2 envelope tests pass. No linting errors.

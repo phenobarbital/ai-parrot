@@ -152,4 +152,9 @@ completion note).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Created `filtering/__init__.py` (package + exports) and
+`filtering/contracts.py` with all four models: `ValuesSource`, `FilterDefinition`,
+`FilterCondition`, `FilterResult`. The `model_validator` in `FilterDefinition`
+enforces op-kind rules: `radius` requires `kind=spatial`, `range` requires
+`kind in {numeric, temporal}`, and `kind=spatial` restricts ops to `radius` only.
+28 unit tests pass. No linting errors.

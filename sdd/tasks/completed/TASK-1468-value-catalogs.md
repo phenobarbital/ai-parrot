@@ -140,4 +140,9 @@ before adding caching — reuse it.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Created `filtering/values.py` with `infer_values_from_datasets`
+and `apply_cardinality_cap` helpers. Added `get_filter_values(name, cardinality_cap=1000)`
+to DatasetManager. Supports declared `values_source` (query_slug or column/dataset
+restriction) and inference fallback from in-memory datasets. Per-instance in-memory
+cache avoids redundant scans. Cardinality cap (default 1000) truncates and logs. 12
+unit tests pass. No linting errors.

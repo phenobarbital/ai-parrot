@@ -148,4 +148,9 @@ by symbol, not by absolute line.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added `self._filter_defs: Dict[str, FilterDefinition] = {}`
+to `DatasetManager.__init__`. Added `define_filters()` method that validates column
+coverage (warns for non-spatial if no dataset exposes the column) and raises
+`ValueError` for spatial kind when no dataset has a registered spatial profile.
+Created `filtering/store.py` with `columns_present_in_any` and `warn_if_no_coverage`
+helpers. 9 unit tests pass. No linting errors.

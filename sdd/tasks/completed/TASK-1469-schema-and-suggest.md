@@ -140,4 +140,8 @@ in `tool.py`. Coordinate with FEAT-224.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified. Added `get_filter_schema()` to DatasetManager — returns one
+dict per stored FilterDefinition including per-filter applicable dataset list. Added
+`suggest_filters(min_datasets=1)` — proposes FilterDefinitions from column introspection
+with no side effects: categorical→eq/ne/in/not_in, numeric→range/eq, temporal→range,
+spatial profiles→radius. 14 unit tests pass. No linting errors.
