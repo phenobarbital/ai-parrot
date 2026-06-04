@@ -137,7 +137,7 @@
       "feature_id": "FEAT-225",
       "feature": "datasetmanager-filtering",
       "spec": "sdd/specs/datasetmanager-filtering.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -149,8 +149,8 @@
       "parallelism_notes": "Wires @tool exposure in tool.py and a new handler; needs the public methods from 1467/1468/1469.",
       "assigned_to": null,
       "started_at": "2026-06-04T16:26:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1470-tools-and-transport.md"
+      "completed_at": "2026-06-04T16:26:07+00:00",
+      "file": "sdd/tasks/completed/TASK-1470-tools-and-transport.md"
     }
   ]
 }
