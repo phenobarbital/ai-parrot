@@ -4349,6 +4349,167 @@ class DatasetManager(AbstractToolkit):
         )
         return values
 
+    def get_filter_schema(self) -> List[Dict[str, Any]]:
+        """Serialize the filter catalog for the frontend.
+
+        Returns one entry per stored ``FilterDefinition``, including which
+        registered datasets have the target column(s) (the "applicable" set).
+
+        Returns:
+            List of dicts, one per filter::
+
+                [
+                    {
+                        "name": "region",
+                        "kind": "categorical",
+                        "ops": ["eq", "ne", "in"],
+                        "label": "Region",
+                        "required": False,
+                        "datasets": ["stores", "sites"],  # datasets with the column
+                    },
+                    ...
+                ]
+
+            Datasets whose schema has not been loaded yet (``_column_types`` is
+            empty and ``_df`` is None) are omitted from ``datasets`` — they are
+            not excluded, just unknown.
+        """
+        schema: List[Dict[str, Any]] = []
+        for defn in self._filter_defs.values():
+            if defn.kind == "spatial":
+                # Spatial filter: applicable datasets are those with a spatial profile.
+                applicable = [
+                    name for name in self._datasets
+                    if self._try_get_spatial_profile(name) is not None
+                ]
+            else:
+                applicable = []
+                for ds_name, entry in self._datasets.items():
+                    col_types = entry._column_types or {}
+                    if col_types:
+                        if all(c in col_types for c in defn.columns):
+                            applicable.append(ds_name)
+                    elif entry._df is not None:
+                        if all(c in entry._df.columns for c in defn.columns):
+                            applicable.append(ds_name)
+
+            schema.append({
+                "name": defn.name,
+                "kind": defn.kind,
+                "ops": list(defn.ops),
+                "label": defn.label,
+                "description": defn.description,
+                "required": defn.required,
+                "datasets": applicable,
+                "columns": list(defn.columns),
+            })
+        return schema
+
+    def suggest_filters(self, min_datasets: int = 1) -> List[FilterDefinition]:
+        """Propose FilterDefinitions from column introspection (opt-in, no side effects).
+
+        Scans loaded datasets and proposes filter definitions for columns that
+        are present in at least *min_datasets* datasets with a known schema.
+
+        Mapping from column kind to FilterDefinition:
+
+        - ``categorical`` / ``categorical_text`` → ``kind="categorical"``, ops
+          ``["eq","ne","in","not_in"]``.
+        - ``integer`` / ``float`` → ``kind="numeric"``, ops ``["range","eq"]``.
+        - ``datetime`` → ``kind="temporal"``, ops ``["range"]``.
+        - Columns in a registered spatial profile (lat/lng pairs or geom col)
+          → ``kind="spatial"``, ops ``["radius"]``.
+
+        Args:
+            min_datasets: Minimum number of datasets that must have the column
+                for a suggestion to be made (default 1).
+
+        Returns:
+            List of proposed :class:`FilterDefinition` instances.
+            This method has **no side effects** — definitions are NOT stored.
+
+        Note:
+            This method reads ``_column_types`` from each DatasetEntry.  Entries
+            that have not been materialized yet will not contribute to the column
+            census.
+        """
+        # Build a census: column → {semantic_type: ..., dataset_names: [...]}
+        col_census: Dict[str, Dict] = {}
+
+        for ds_name, entry in self._datasets.items():
+            col_types = entry._column_types or {}
+            for col, sem_type in col_types.items():
+                if col not in col_census:
+                    col_census[col] = {"sem_type": sem_type, "datasets": []}
+                col_census[col]["datasets"].append(ds_name)
+
+        # Also scan spatial profiles for lat/lng hints.
+        from .spatial.registry import SPATIAL_PROFILE_REGISTRY
+
+        proposals: List[FilterDefinition] = []
+        seen_names: set = set()
+
+        # Non-spatial suggestions
+        _CAT_TYPES = {"categorical", "categorical_text"}
+        _NUM_TYPES = {"integer", "float"}
+        _KIND_MAP = {
+            "categorical": ("categorical", ["eq", "ne", "in", "not_in"]),
+            "categorical_text": ("categorical", ["eq", "ne", "in", "not_in"]),
+            "integer": ("numeric", ["range", "eq"]),
+            "float": ("numeric", ["range", "eq"]),
+            "datetime": ("temporal", ["range"]),
+        }
+
+        for col, info in col_census.items():
+            if len(info["datasets"]) < min_datasets:
+                continue
+            sem_type = info["sem_type"]
+            if sem_type not in _KIND_MAP:
+                continue  # boolean, text — no auto-suggestion
+            kind, ops = _KIND_MAP[sem_type]
+            if col not in seen_names:
+                seen_names.add(col)
+                proposals.append(FilterDefinition(
+                    name=col,
+                    columns=[col],
+                    kind=kind,
+                    ops=ops,
+                    required=False,
+                    label=col.replace("_", " ").title(),
+                ))
+
+        # Spatial suggestions from registered profiles intersecting this manager
+        for ds_name, profile in SPATIAL_PROFILE_REGISTRY.items():
+            if ds_name not in self._datasets:
+                continue
+            # Build column list from profile
+            if profile.lat_col and profile.lng_col:
+                cols = [profile.lat_col, profile.lng_col]
+                suggestion_name = f"{ds_name}_spatial"
+            elif profile.geom_col:
+                cols = [profile.geom_col]
+                suggestion_name = f"{ds_name}_spatial"
+            else:
+                continue
+
+            if suggestion_name not in seen_names:
+                seen_names.add(suggestion_name)
+                proposals.append(FilterDefinition(
+                    name=suggestion_name,
+                    columns=cols,
+                    kind="spatial",
+                    ops=["radius"],
+                    required=False,
+                    label=f"{ds_name} Location",
+                ))
+
+        self.logger.debug(
+            "suggest_filters: proposed %d filter(s) from %d column(s).",
+            len(proposals),
+            len(col_census),
+        )
+        return proposals
+
     async def apply_filters(
         self,
         request: Dict[str, Any],
