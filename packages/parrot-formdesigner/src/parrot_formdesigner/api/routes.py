@@ -244,7 +244,7 @@ def setup_form_api(
     # JWT auth is handled inside AudioFormWSHandler via TokenValidator because
     # navigator-auth decorators return HTTP 401, which is incompatible with
     # the WebSocket upgrade handshake.
-    if synthesizer is not None or transcriber is not None:
+    if synthesizer is not None or transcriber is not None or token_validator is not None:
         from .audio_ws import AudioFormWSHandler
         from ..services.validators import FormValidator
 

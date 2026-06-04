@@ -85,8 +85,8 @@ class AudioFieldRenderer:
             HTML string with the recording button, waveform, hidden input,
             and inline JavaScript.
         """
-        field_id = html.escape(field.field_id)
-        label_text = html.escape(_resolve_label(field.label, locale))
+        field_id = html.escape(field.field_id, quote=True)
+        label_text = html.escape(_resolve_label(field.label, locale), quote=True)
         required_attr = " required" if field.required else ""
         error_html = (
             f'<div class="field-error" id="{field_id}-error">'
@@ -142,13 +142,16 @@ class AudioFieldRenderer:
     btn.addEventListener('click', function() {{
       if (btn.dataset.recording === 'false') {{
         navigator.mediaDevices.getUserMedia({{ audio: true }}).then(function(stream) {{
-          mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'audio/webm' }});
+          var mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
+                         MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+          var options = mimeType ? {{ mimeType: mimeType }} : {{}};
+          mediaRecorder = new MediaRecorder(stream, options);
           audioChunks = [];
           mediaRecorder.addEventListener('dataavailable', function(e) {{
             audioChunks.push(e.data);
           }});
           mediaRecorder.addEventListener('stop', function() {{
-            var blob = new Blob(audioChunks, {{ type: 'audio/webm' }});
+            var blob = new Blob(audioChunks, mimeType ? {{ type: mimeType }} : {{}});
             var event = new CustomEvent('audio-recorded', {{
               detail: {{ fieldId: '{field_id}', blob: blob }},
               bubbles: true

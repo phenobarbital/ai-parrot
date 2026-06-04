@@ -96,6 +96,7 @@ class AudioFormWSHandler:
         *,
         token_validator: Optional["TokenValidator"] = None,
         submission_storage: Optional["FormSubmissionStorage"] = None,
+        max_msg_size: int = 10 * 1024 * 1024,
     ) -> None:
         """Initialize the AudioFormWSHandler."""
         self.registry = registry
@@ -104,6 +105,7 @@ class AudioFormWSHandler:
         self.validator = validator
         self._token_validator = token_validator
         self._submission_storage = submission_storage
+        self._max_msg_size = max_msg_size
         self.logger = logging.getLogger(__name__)
 
     # -------------------------------------------------------------------------
@@ -122,7 +124,7 @@ class AudioFormWSHandler:
         Returns:
             Completed WebSocketResponse.
         """
-        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=10 * 1024 * 1024)
+        ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=self._max_msg_size)
         await ws.prepare(request)
 
         # Step 1: Authenticate
@@ -206,6 +208,10 @@ class AudioFormWSHandler:
         """
         if self._token_validator is None:
             # No validator configured — anonymous access for testing/dev.
+            self.logger.warning(
+                "AudioFormWSHandler: no token_validator configured — "
+                "accepting anonymous connection (not for production use)"
+            )
             from parrot.voice.handler import AuthenticatedUser  # type: ignore[import-untyped]
             return AuthenticatedUser(user_id="anonymous", username="anonymous")
 
@@ -226,7 +232,7 @@ class AudioFormWSHandler:
 
         # Fallback: wait for first message of type "auth".
         try:
-            msg = await asyncio.wait_for(ws.__anext__(), timeout=10.0)  # type: ignore[attr-defined]
+            msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
             if msg.type == WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
@@ -327,7 +333,6 @@ class AudioFormWSHandler:
                 form_id, MAX_QUESTIONS, MAX_QUESTIONS,
             )
 
-        from parrot_formdesigner.core.types import LocalizedString  # noqa: F401 — for _resolve usage
 
         def _resolve_str(v: Any) -> str:
             if isinstance(v, str):
@@ -365,7 +370,7 @@ class AudioFormWSHandler:
         if questions:
             await self._send_question(ws, questions[0], audio_cache)
         else:
-            await self._finish_session(ws, session, request)
+            await self._finish_session(ws, session)
 
     async def _handle_answer_text(
         self,
@@ -597,6 +602,23 @@ class AudioFormWSHandler:
             confidence=confidence,
             raw_transcript=raw_transcript,
         )
+
+        # Validate the answer if a form registry and manifest are available.
+        if self.validator is not None and session.manifest is not None:
+            # Look up the current question's required flag for basic validation.
+            current_q: Optional[Any] = None
+            for q in session.manifest.questions:
+                if q.field_id == field_id:
+                    current_q = q
+                    break
+            if current_q is not None and current_q.required and not value.strip():
+                await ws.send_json({
+                    "type": "answer_rejected",
+                    "field_id": field_id,
+                    "reason": "This field is required",
+                })
+                return False
+
         session.answers[field_id] = answer
 
         await ws.send_json({
@@ -626,7 +648,7 @@ class AudioFormWSHandler:
         session.current_index += 1
 
         if session.current_index >= len(manifest.questions):
-            await self._finish_session(ws, session, request)
+            await self._finish_session(ws, session)
         else:
             next_q = manifest.questions[session.current_index]
             await self._send_question(ws, next_q, audio_cache)
@@ -645,17 +667,7 @@ class AudioFormWSHandler:
         session.current_index += 1
 
         if session.current_index >= len(manifest.questions):
-            # Cannot submit without request context — send form_complete only.
-            answers_out = {
-                fid: {"value": a.value, "source": a.source}
-                for fid, a in session.answers.items()
-            }
-            session.completed = True
-            await ws.send_json({
-                "type": "form_complete",
-                "submission_id": None,
-                "answers": answers_out,
-            })
+            await self._finish_session(ws, session)
         else:
             next_q = manifest.questions[session.current_index]
             await self._send_question(ws, next_q, audio_cache)
@@ -664,7 +676,6 @@ class AudioFormWSHandler:
         self,
         ws: web.WebSocketResponse,
         session: AudioSessionState,
-        request: web.Request,
     ) -> None:
         """Submit form data and send form_complete message."""
         session.completed = True
@@ -674,17 +685,19 @@ class AudioFormWSHandler:
         }
         submission_id: Optional[str] = None
 
-        # Attempt form submission via FormAPIHandler.submit_data equivalent.
+        # Attempt form submission using FormSubmission model and store().
         if self._submission_storage is not None and session.manifest is not None:
             try:
-                from ..services.submissions import SubmissionData
+                from ..services.submissions import FormSubmission
 
-                submission = SubmissionData(
+                submission = FormSubmission(
                     form_id=session.form_id,
+                    form_version="1",
                     data={fid: a.value for fid, a in session.answers.items()},
+                    is_valid=True,
+                    user_id=session.user_id,
                 )
-                saved = await self._submission_storage.save(submission)
-                submission_id = str(saved.submission_id) if saved else None
+                submission_id = await self._submission_storage.store(submission)
             except Exception as exc:
                 self.logger.warning(
                     "Form submission failed for session %s: %s",

@@ -734,6 +734,16 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_rest_uploader(field))
 
+        # Phase 4 — FEAT-224 audio form renderer
+        elif ft == FieldType.AUDIO:
+            audio_renderer = self._registry.get(FieldType.AUDIO)
+            if audio_renderer is not None:
+                # AudioFieldRenderer.render() is async but performs only
+                # synchronous string operations — call _render_audio_field
+                # directly to avoid event-loop re-entrancy issues.
+                parts.append(self._render_audio_field(field, value, locale, error))
+            # else: fallback — no audio renderer registered, render nothing
+
         else:
             parts.append(
                 f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
@@ -1162,6 +1172,54 @@ class HTML5Renderer(AbstractFormRenderer):
             )
 
         return "".join(parts)
+
+    def _render_audio_field(
+        self,
+        field: FormField,
+        value: Any,
+        locale: str,
+        error: str | None = None,
+    ) -> str:
+        """Render an AUDIO field as a record button + hidden input.
+
+        Delegates to ``AudioFieldRenderer`` internals synchronously to
+        avoid async/sync impedance in ``_render_field_html``.
+
+        Args:
+            field: AUDIO FormField.
+            value: Pre-filled transcription value.
+            locale: Locale for i18n label resolution.
+            error: Optional validation error message.
+
+        Returns:
+            HTML string for the audio recorder widget.
+        """
+        from .fields.audio import AudioFieldRenderer as _AudioFieldRenderer
+        renderer = _AudioFieldRenderer()
+        # We use asyncio to run the coroutine synchronously because the
+        # AudioFieldRenderer.render() is pure string manipulation (no I/O).
+        import asyncio
+        import concurrent.futures
+
+        async def _render_coro() -> str:
+            return await renderer.render(
+                field, locale=locale, prefilled=value, error=error
+            )
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            # Already inside a running event loop (e.g. called from Jinja2
+            # template during an async request). Run in a thread executor so
+            # we don't block the loop and don't get re-entrancy errors.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(asyncio.run, _render_coro())
+                return future.result()
+        else:
+            return asyncio.run(_render_coro())
 
     def _render_subsection_html(
         self,

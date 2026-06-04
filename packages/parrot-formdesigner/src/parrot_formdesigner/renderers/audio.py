@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 
 # Field types that should be excluded from the audio question list.
 # HIDDEN fields are invisible; ARRAY fields cannot be voiced as a single Q.
+# REST fields require file upload interaction that is not voice-compatible.
 _SKIP_FIELD_TYPES: frozenset[FieldType] = frozenset(
-    {FieldType.HIDDEN, FieldType.ARRAY}
+    {FieldType.HIDDEN, FieldType.ARRAY, FieldType.REST}
 )
 
 # Field types that carry options (SELECT / MULTI_SELECT).
@@ -182,7 +183,8 @@ class AudioFormRenderer(AbstractFormRenderer):
         if field.constraints is not None:
             try:
                 constraints = field.constraints.model_dump(exclude_none=True)
-            except Exception:
+            except Exception as exc:
+                self.logger.warning("Failed to serialize field constraints: %s", exc)
                 constraints = None
 
         return [
