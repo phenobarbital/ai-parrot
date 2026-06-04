@@ -91,7 +91,7 @@
       "feature_id": "FEAT-224",
       "feature": "formdesigner-audio-renderer",
       "spec": "sdd/specs/formdesigner-audio-renderer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -102,8 +102,8 @@
       "parallelism_notes": "Depends on models and renderer. Most complex task — sequential.",
       "assigned_to": null,
       "started_at": "2026-06-04T14:13:08+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1463-audio-ws-handler.md"
+      "completed_at": "2026-06-04T14:25:43+00:00",
+      "file": "sdd/tasks/completed/TASK-1463-audio-ws-handler.md"
     },
     {
       "id": "TASK-1464",
