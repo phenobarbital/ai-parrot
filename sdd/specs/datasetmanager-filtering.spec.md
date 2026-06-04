@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-225
 **Date**: 2026-06-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.26.0
 
 ---
@@ -518,9 +518,9 @@ No new third-party dependencies.
   `suggest_filters()` (no side effects).
 - [x] Operator vocabulary v1 — *Resolved in /sdd-spec*: `eq, ne, in, not_in, range, radius`;
   text ops (`like`/`contains`) deferred.
-- [ ] `persist=True` naming convention for filtered datasets (`<name>__<value>`?) — *Owner: Jesus*
-- [ ] Inferred value-catalog cardinality cap + cache TTL defaults — *Owner: Jesus*
-- [ ] Coordinate `tool.py` edits with the in-flight FEAT-224 worktree — *Owner: Jesus*
+- [x] `persist=True` naming convention for filtered datasets (`<name>__<value>`?) — *Owner: Jesus*: yes, name__<value>
+- [x] Inferred value-catalog cardinality cap + cache TTL defaults — *Owner: Jesus*: under your suggestion
+- [ ] Coordinate `tool.py` edits with the in-flight FEAT-224 worktree — *Owner: Jesus*: yes
 
 ---
 
