@@ -6,12 +6,21 @@ base_branch: dev
 
 # Feature Specification: Structured Artifact Contract — homologate the `structured_` family
 
-**Feature ID**: FEAT-221
+**Feature ID**: FEAT-223
 **Date**: 2026-06-03
 **Author**: Juan Ruffato
 **Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/structured-artifact-contract.brainstorm.md`
+
+> **Reassigned FEAT-221 → FEAT-223** (2026-06-03): `FEAT-221` is already owned by the
+> completed `structured-map-output` spec (Jesus Lara). This spec is the **homologation
+> umbrella**; the per-leaf features below are **completed dependencies**:
+> - **FEAT-215** `structured-chart-output` — `STRUCTURED_CHART` (LLM-owns-data; refactored here).
+> - **FEAT-218** `structured-table` — the `STRUCTURED_TABLE` deterministic pattern (the contract to extract).
+> - **FEAT-221** `structured-map-output` — `STRUCTURED_MAP` + `StructuredMapConfig` +
+>   `StructuredMapRenderer` already shipped. This FEAT only adds `ArtifactType.MAP` and
+>   retrofits that renderer onto the shared base.
 
 ---
 
@@ -43,7 +52,9 @@ FEAT-103), and the infographic `ChartBlock`. And `ArtifactType` has no `map`.
   **existing** columns are `x`/`y` (+ palette/colorBySign). Retire the reactive patches.
 - **Converge the chart config** onto the single agnostic `AppChartConfig`/`StructuredChartConfig`
   shape, used by `STRUCTURED_CHART`, the infographic `ChartBlock`, and `Artifact` CHART definition.
-- **Add `map`** as a structured artifact (`ArtifactType.MAP` + `STRUCTURED_MAP`) mirroring the chart contract.
+- **Complete the `map` artifact**: `OutputMode.STRUCTURED_MAP`, `StructuredMapConfig`, and
+  `StructuredMapRenderer` already shipped under FEAT-221 (`structured-map-output`). This FEAT only adds
+  the missing `ArtifactType.MAP` and retrofits the existing renderer onto the shared base.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -97,13 +108,15 @@ StructuredOutputBase (NEW shared contract)
 
 ```
 # parrot/models/outputs.py
-# - StructuredChartConfig (:310): data becomes informational-only (rows come deterministically);
-#   x/y validated against real columns by the renderer, not the LLM.
-# - NEW StructuredMapConfig: mirrors the chart/table contract (geo + value columns + presentation).
-# - OutputMode (:39): add STRUCTURED_MAP = "structured_map".
+# - StructuredChartConfig (:309): `data` is ALREADY input-only; the renderer must STOP using
+#   cfg.data as a row source and extract rows deterministically instead; x/y validated against
+#   real columns by the renderer, not the LLM. (Today the LLM still owns rows via
+#   _resolve_rows / _reconcile_columns — Module 2 removes those.)
+# - OutputMode (:37): STRUCTURED_MAP = "structured_map" — ALREADY EXISTS (:72, FEAT-221). No change.
+# - StructuredMapConfig (:711) — ALREADY EXISTS (FEAT-221). No change.
 
 # parrot/storage/models.py
-# - ArtifactType (:244): add MAP = "map".
+# - ArtifactType (:244): add MAP = "map"  — the ONLY missing enum member.
 ```
 
 ### New Public Interfaces
@@ -135,9 +148,12 @@ input-only/ignored as a source.
 Make the infographic `ChartBlock` and `Artifact` CHART `definition` use the single agnostic config
 (`AppChartConfig`/`StructuredChartConfig`) instead of their own shapes.
 
-### Module 4: `map` structured artifact
-Add `ArtifactType.MAP`, `OutputMode.STRUCTURED_MAP`, `StructuredMapConfig`, and a
-`StructuredMapRenderer` conforming to Module 1.
+### Module 4: `map` structured artifact (complete + conform)
+`OutputMode.STRUCTURED_MAP`, `StructuredMapConfig`, and `StructuredMapRenderer` already shipped
+under FEAT-221 (`structured-map-output`). This module only: (a) adds the missing `ArtifactType.MAP`
+enum member, and (b) retrofits the existing `StructuredMapRenderer` onto the Module 1 base (envelope
+routing + graceful degradation) so it conforms to the homologated contract. No new config or renderer
+is created.
 
 ### Module 5: Tests + migration
 Update/extend tests; document that library-specific modes remain (retire next release).
@@ -170,7 +186,8 @@ Update/extend tests; document that library-specific modes remain (retire next re
 - [ ] `STRUCTURED_CHART` rows are deterministic (from the agent DataFrame); the LLM never owns the row set.
 - [ ] The chart x/y always reference real columns; "No data"/column-mismatch failures cannot occur for valid data.
 - [ ] One chart config shape used by `STRUCTURED_CHART`, infographic `ChartBlock`, and `Artifact` CHART definition.
-- [ ] `ArtifactType.MAP` + `OutputMode.STRUCTURED_MAP` + `StructuredMapConfig` + renderer exist and round-trip.
+- [ ] `ArtifactType.MAP` added; the pre-existing `OutputMode.STRUCTURED_MAP` / `StructuredMapConfig` /
+      `StructuredMapRenderer` (FEAT-221) now conform to `StructuredOutputBase` and round-trip.
 - [ ] Library-specific `OutputMode`s remain functional (no removal this FEAT).
 - [ ] All `structured_*` tests pass; no real client data in fixtures/prompts.
 
@@ -186,33 +203,56 @@ from parrot.storage.models import ArtifactType
 
 ### Existing Class Signatures
 ```python
-# parrot/models/outputs.py
-class OutputMode(str, Enum):                 # :39
-    STRUCTURED_CHART = "structured_chart"    # :72
-    STRUCTURED_TABLE = "structured_table"    # :73
-class StructuredChartConfig(BaseModel): ...  # :310 (type, x, y, data, palette, colorBySign, dataVariable, ...)
-class TableColumn(BaseModel): ...            # :472 (name, type, title, format)
-class StructuredTableConfig(BaseModel): ...  # :509 (columns, data, explanation, total_rows, truncated)
+# packages/ai-parrot/src/parrot/models/outputs.py
+class OutputMode(str, Enum):                 # :37
+    STRUCTURED_CHART = "structured_chart"    # :70
+    STRUCTURED_TABLE = "structured_table"    # :71
+    STRUCTURED_MAP   = "structured_map"      # :72  (FEAT-221 — already exists)
+class StructuredChartConfig(BaseModel): ...  # :309 (type, x, y, data[input-only], palette, colorBySign, dataVariable, ...)
+class TableColumn(BaseModel): ...            # :471 (name, type, title, format)
+class StructuredTableConfig(BaseModel): ...  # :508 (columns, data, explanation, total_rows, truncated)
+class StructuredMapConfig(BaseModel): ...    # :711 (layers, data[input-only], viewport, query, ...) — FEAT-221
 
-# parrot/storage/models.py
-class ArtifactType(str, Enum):               # :244  CHART, CANVAS, INFOGRAPHIC, DATAFRAME, EXPORT  (no MAP)
+# packages/ai-parrot/src/parrot/storage/models.py
+class ArtifactType(str, Enum):               # :244  CHART, CANVAS, INFOGRAPHIC, DATAFRAME, EXPORT  (MAP still missing)
+class Artifact(BaseModel):                   # :272  definition: Optional[Dict[str, Any]] (:287) — CHART carries echarts-style spec
 
-# parrot/outputs/formats/table.py
-class TableRenderer:
+# packages/ai-parrot/src/parrot/outputs/formats/base.py
+class BaseRenderer(ABC): ...                 # :54   (_get_content :69)
+# packages/ai-parrot-visualizations/src/parrot/outputs/formats/chart.py
+class BaseChart(BaseRenderer): ...           # :20   — shared by ALL three structured renderers today
+
+# packages/ai-parrot/src/parrot/outputs/formats/table.py
+class TableRenderer(BaseRenderer):           # :52
     def _extract_data(self, response: Any) -> pd.DataFrame: ...   # :57  (deterministic row extraction)
 
-# parrot/tools/dataset_manager/tool.py
-class DatasetManager:
+# packages/ai-parrot/src/parrot/outputs/formats/table_types.py
+def base_column_types(df: pd.DataFrame) -> dict[str, str]: ...    # :42  (deterministic dtype→vocabulary)
+def canonical_records(df, row_limit=None): ...                    # :70  (flat list[dict] + count + truncated)
+
+# packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py
+class DatasetManager(AbstractToolkit):       # :500
     @staticmethod
     def categorize_columns(df: pd.DataFrame) -> Dict[str, str]: ...  # :633
 
 # packages/ai-parrot-visualizations/src/parrot/outputs/formats/structured_table.py
-class StructuredTableRenderer(BaseChart):    # :88  — THE deterministic pattern to mirror
-    async def render(self, response, *, environment="html", **kwargs): ...  # :117
-    # uses self._table_renderer._extract_data(response); sets response.data = cfg.data
+class StructuredTableRenderer(BaseChart):    # :88  — THE deterministic pattern to EXTRACT into the base
+    async def render(self, response, *, environment="html", row_limit=None, **kwargs): ...  # :117
+    # _extract_data → base_column_types → canonical_records → TableColumn list → _apply_llm_refine;
+    # output excludes data (model_dump exclude={"data"}); routes response.data = cfg.data
 
 # packages/ai-parrot-visualizations/src/parrot/outputs/formats/structured_chart.py
-class StructuredChartRenderer(BaseChart): ...  # current LLM-owns-data renderer (to refactor)
+@register_renderer(OutputMode.STRUCTURED_CHART, ...)              # :75
+class StructuredChartRenderer(BaseChart):    # :76  — CURRENT LLM-owns-data renderer (to refactor onto base)
+    # reactive patches to REMOVE: _resolve_rows (:226), _reconcile_columns (:256);
+    # output already excludes data (:180)
+
+# packages/ai-parrot-visualizations/src/parrot/outputs/formats/structured_map.py
+@register_renderer(OutputMode.STRUCTURED_MAP, ...)               # :96
+class StructuredMapRenderer(BaseChart):      # :97  — FEAT-221, already deterministic; retrofit onto base only
+
+# Dispatch: packages/ai-parrot/src/parrot/outputs/formats/__init__.py
+#   _MODULE_MAP (:20) wires STRUCTURED_CHART/TABLE/MAP; register_renderer (:50)
 ```
 
 ### Integration Points
@@ -222,9 +262,16 @@ class StructuredChartRenderer(BaseChart): ...  # current LLM-owns-data renderer 
 - Envelope writeback unchanged in `bots/data.py` (formatter call) and `handlers/agent.py`.
 
 ### Does NOT Exist (Anti-Hallucination)
-- No `ArtifactType.MAP`, no `OutputMode.STRUCTURED_MAP`, no `StructuredMapConfig` yet.
-- No `StructuredOutputBase` / shared mixin yet (logic currently lives inside `StructuredTableRenderer`).
-- No single shared chart config — three shapes exist (FEAT-215 config, Artifact echarts-spec, infographic ChartBlock).
+- No `ArtifactType.MAP` yet — this is the ONLY missing map symbol.
+- `OutputMode.STRUCTURED_MAP` (:72), `StructuredMapConfig` (:711) and `StructuredMapRenderer`
+  DO exist (shipped by FEAT-221, `structured-map-output`). **Do NOT recreate them.**
+- No `StructuredOutputBase` / shared structured base or mixin yet — the three renderers inherit
+  `BaseChart` directly and each reimplements envelope routing + JSON extraction. The deterministic
+  pattern currently lives inside `StructuredTableRenderer`.
+- No single shared chart config — three shapes exist (FEAT-215 `StructuredChartConfig`,
+  `Artifact.definition` echarts-spec, infographic `ChartBlock`).
+- `StructuredChartRenderer` is NOT yet deterministic — it still uses `_resolve_rows` /
+  `_reconcile_columns` (LLM-owns-data with reactive healing). Module 2 removes these.
 - No output-side `kind` selector (FEAT-070 is input-side routing).
 
 ---
@@ -260,3 +307,8 @@ class StructuredChartRenderer(BaseChart): ...  # current LLM-owns-data renderer 
 - 2026-06-03 — draft created from accepted brainstorm `structured-artifact-contract` (Juan Ruffato).
 - 2026-06-03 — approved (Juan Ruffato). Open items are non-blocking: Q4 deferred to Option C;
   Impl-1/Impl-2 resolved during Module 1/3 implementation.
+- 2026-06-03 — **reassigned FEAT-221 → FEAT-223** (FEAT-221 owned by the completed
+  `structured-map-output` spec). Reconciled Module 4 + Codebase Contract with current reality:
+  `STRUCTURED_MAP` / `StructuredMapConfig` / `StructuredMapRenderer` already shipped — only
+  `ArtifactType.MAP` + base-conformance remain. FEAT-215 / FEAT-218 / FEAT-221 noted as completed
+  dependencies (Juan Ruffato).
