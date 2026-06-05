@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-05T13:40:00Z",
-  "completed_at": null,
+  "completed_at": "2026-06-05T17:52:55+00:00",
   "tasks": [
     {
       "id": "TASK-1484",
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-224",
       "feature": "intent-router-mixin-embedding-routing",
       "spec": "sdd/specs/intent-router-mixin-embedding-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -124,8 +124,8 @@
       "parallelism_notes": "End-to-end acceptance gate; requires all prior tasks merged. Sequential, runs last.",
       "assigned_to": null,
       "started_at": "2026-06-05T14:05:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1489-integration-and-no-regression-tests.md"
+      "completed_at": "2026-06-05T17:52:55+00:00",
+      "file": "sdd/tasks/completed/TASK-1489-integration-and-no-regression-tests.md"
     }
   ]
 }
