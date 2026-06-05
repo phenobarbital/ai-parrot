@@ -38,6 +38,85 @@ See [examples/README.md](examples/README.md) for the full quickstart.
 
 ---
 
+## Pluggable usage logging (no OpenTelemetry required)
+
+For the common case — "just log model usage, tokens, and cost" — you do **not**
+need the OTel SDK or a collector. A pluggable recorder layer fronted by a single
+`AbstractLogger` interface lets you start with structured logs and swap to
+Prometheus (or full OTel) by changing one environment variable.
+
+### Auto-boot from environment variables
+
+Set `OBSERVABILITY_ENABLED=true` and AI-Parrot activates usage recording
+automatically on the first bot/client construction — no code changes:
+
+```bash
+export OBSERVABILITY_ENABLED=true       # backend defaults to "logging"
+# optional:
+export OBSERVABILITY_BACKEND=logging    # logging | prometheus | otel
+export OBSERVABILITY_LOG_LEVEL=INFO
+```
+
+Each LLM call then emits one line on the `parrot.usage` logger:
+
+```
+llm-usage provider=openai model=gpt-4o input_tokens=1000 output_tokens=500 \
+  total_tokens=1500 cost_usd=0.005000 cumulative_cost_usd=0.005000 \
+  duration_ms=842.0 finish_reason=stop trace=<id>
+```
+
+The `logging` backend pulls in **no third-party dependency** and never imports
+the OpenTelemetry SDK. Cost is computed via the bundled `CostCalculator`
+(disable with `OBSERVABILITY_COST=false`).
+
+### Backends
+
+| Backend | Install | When |
+|---|---|---|
+| `logging` (default) | none | Start here. Zero infra, zero network, minimal latency. |
+| `prometheus` | `pip install 'ai-parrot[observability-prometheus]'` | Pull-based metrics + Grafana dashboards. Exposes `:9464/metrics`. |
+| `otel` | `pip install 'ai-parrot[observability]'` | Full OTLP traces + metrics (delegates to `setup_telemetry`). |
+
+The Prometheus backend exposes `parrot_llm_requests_total`,
+`parrot_llm_input_tokens_total`, `parrot_llm_output_tokens_total`,
+`parrot_llm_cost_usd_total` (all labelled `{provider, model}`),
+`parrot_llm_request_duration_seconds`, and `parrot_llm_tokens{type}`. A starter
+dashboard ships at
+[`examples/grafana-dashboards/parrot-usage.json`](examples/grafana-dashboards/parrot-usage.json).
+
+### Programmatic use / custom backends
+
+```python
+from parrot.observability import (
+    UsageRecord, AbstractLogger, UsageRecordingSubscriber, LoggingUsageRecorder,
+)
+from parrot.observability.cost import CostCalculator
+from parrot.core.events.lifecycle.global_registry import get_global_registry
+
+class MyRecorder(AbstractLogger):
+    name = "my-sink"
+    async def record(self, record: UsageRecord) -> None:
+        ...  # ship `record` (provider, model, tokens, cost_usd, …) anywhere
+
+sub = UsageRecordingSubscriber(
+    recorders=[LoggingUsageRecorder(), MyRecorder()],
+    cost_calculator=CostCalculator(),
+)
+get_global_registry().add_provider(sub)
+```
+
+### How events reach the recorder
+
+LLM clients emit their call lifecycle events on an **isolated** registry
+(`forward_to_global=False`) so high-frequency stream chunks stay local. The
+three call events (`Before`/`After`/`Failed`) are explicitly bridged to the
+**global** registry via `EventRegistry.forward_to_global`, which is a guarded
+no-op when no global subscriber is listening. This is what lets a single
+globally-registered subscriber (the usage recorder *or* the OTel
+`MetricsSubscriber`) observe every agent's LLM calls.
+
+---
+
 ## Configuration
 
 `ObservabilityConfig` is a Pydantic v2 model. All fields have safe defaults.
@@ -78,8 +157,12 @@ See [examples/README.md](examples/README.md) for the full quickstart.
 | `OBSERVABILITY_SAMPLING` | `config.sampling_ratio` | Float string `"0.1"` → 10% sampling. |
 | `PARROT_PRICING_PATH` | `config.pricing_override_path` | Path to a custom pricing directory. |
 
-Note: `setup_telemetry` only reads `PARROT_PRICING_PATH` automatically. For the other
-env vars, configure `ObservabilityConfig` directly or use a navconfig integration layer.
+Note: `setup_telemetry` itself only auto-reads `PARROT_PRICING_PATH`. To build a
+config from **all** the variables above, use `ObservabilityConfig.from_env()`, or
+rely on the auto-boot (`OBSERVABILITY_ENABLED=true`) which calls it for you. The
+auto-boot additionally reads `OBSERVABILITY_BACKEND`, `OBSERVABILITY_LOG_LEVEL`,
+`OBSERVABILITY_PROM_PORT`, and `OBSERVABILITY_PROM_ADDR` (see the pluggable
+usage-logging section above).
 
 ---
 

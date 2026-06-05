@@ -12,12 +12,31 @@ Public surface:
   * ``GenAIOpenTelemetrySubscriber`` — rich span subscriber (TASK-1230).
   * ``MetricsSubscriber`` — counters + histograms subscriber (TASK-1231).
   * ``CostCalculator`` — USD cost calculator (TASK-1232).
+
+Pluggable usage-logging layer (no OpenTelemetry SDK required for the logging
+path):
+  * ``AbstractLogger`` — the pluggable recorder interface.
+  * ``UsageRecord`` — normalized, PII-free per-call record.
+  * ``LoggingUsageRecorder`` — zero-infra structured-log backend.
+  * ``UsageRecordingSubscriber`` — builds records + fans out to recorders.
+  * ``ensure_observability_bootstrapped`` / ``shutdown_usage_recording`` —
+    env-driven auto-boot helpers.
 """
 
+from parrot.observability.bootstrap import (
+    ensure_observability_bootstrapped,
+    shutdown_usage_recording,
+)
 from parrot.observability.config import ObservabilityConfig
 from parrot.observability.cost.calculator import CostCalculator
 from parrot.observability.errors import ConfigurationError
 from parrot.observability.provider import ParrotTelemetryProvider
+from parrot.observability.recorders import (
+    AbstractLogger,
+    LoggingUsageRecorder,
+    UsageRecord,
+    UsageRecordingSubscriber,
+)
 from parrot.observability.setup import setup_telemetry, shutdown_telemetry
 from parrot.observability.subscribers.metrics import MetricsSubscriber
 from parrot.observability.subscribers.trace import GenAIOpenTelemetrySubscriber
@@ -31,4 +50,10 @@ __all__: list[str] = [
     "GenAIOpenTelemetrySubscriber",
     "MetricsSubscriber",
     "CostCalculator",
+    "AbstractLogger",
+    "UsageRecord",
+    "LoggingUsageRecorder",
+    "UsageRecordingSubscriber",
+    "ensure_observability_bootstrapped",
+    "shutdown_usage_recording",
 ]

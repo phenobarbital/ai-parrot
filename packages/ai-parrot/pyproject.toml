@@ -444,6 +444,12 @@ observability-openlit = [
     "openlit>=1.40.0",
 ]
 
+# Pluggable usage-logging: Prometheus backend (pull-based metrics + cost).
+# The default "logging" usage backend needs NO extra — it uses stdlib logging.
+observability-prometheus = [
+    "prometheus-client>=0.20,<1.0",
+]
+
 # Developer / CI tooling (not shipped to end users)
 dev = [
     "pytest>=8.0",
