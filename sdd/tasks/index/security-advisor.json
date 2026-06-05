@@ -70,7 +70,7 @@
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -81,8 +81,8 @@
       "parallelism_notes": "Module 3 — mounts SOC2AdvisoryToolkit (TASK-1481) and persists ReportKind.ADVISORY (TASK-1479). New file under gitignored agents/ — needs git add -f.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1482-security-advisor-agent.md"
+      "completed_at": "2026-06-05T13:51:23+00:00",
+      "file": "sdd/tasks/completed/TASK-1482-security-advisor-agent.md"
     },
     {
       "id": "TASK-1483",
