@@ -114,7 +114,7 @@
       "feature_id": "FEAT-227",
       "feature": "computer-use-agent",
       "spec": "sdd/specs/computer-use-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -122,8 +122,8 @@
       "parallelism_notes": "No code deps but sequential for clean commit history",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1480-google-model-entries.md"
+      "completed_at": "2026-06-05T17:55:18+00:00",
+      "file": "sdd/tasks/completed/TASK-1480-google-model-entries.md"
     },
     {
       "id": "TASK-1481",
