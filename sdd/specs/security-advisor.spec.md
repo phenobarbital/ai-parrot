@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-226
 **Date**: 2026-06-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: v1
 
 ---
@@ -541,12 +541,12 @@ class SecurityAgent(Agent):                                         # :125
 - [x] SOC2 mapping approach? — *Resolved at intake*: **structured SOC2 controls
       module** (CC1–CC9) with deterministic finding→control mapping (Modules 1–2),
       not LLM-only.
-- [ ] Exact daily `@schedule` hour for `run_daily_soc2_advisory` — *Owner: Jesus*:
+- [x] Exact daily `@schedule` hour for `run_daily_soc2_advisory` — *Owner: Jesus*:
       should land **after** the `SecurityAgent` scans complete (its latest scan
       schedules at 23:29 UTC). Proposed default: **09:30 UTC**. Decide during
-      implementation; non-blocking.
-- [ ] Which frameworks to iterate in the daily task — *Owner: Jesus*: default to
-      `["soc2"]`, optionally also `query_distinct_frameworks()`. Non-blocking.
+      implementation; non-blocking.: 12:00 UTC
+- [x] Which frameworks to iterate in the daily task — *Owner: Jesus*: default to
+      `["soc2"]`, optionally also `query_distinct_frameworks()`. Non-blocking.: ok
 
 ---
 
