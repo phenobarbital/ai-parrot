@@ -113,7 +113,14 @@ class MediaGen(BaseView):
                         return self.error("Missing required field: 'prompt'", status=400)
                     
                     self.logger.info(f"Generating single image using model: {model}")
-                    prompt_data = ImageGenerationPrompt(prompt=prompt, model=model, **{k: v for k, v in data.items() if k not in {"action", "batch", "prompt", "model", "download_mode", "use_flex"}})
+                    
+                    # Filter payload to only include fields accepted by ImageGenerationPrompt schema
+                    model_fields = set(ImageGenerationPrompt.model_fields.keys())
+                    filtered_inputs = {k: v for k, v in data.items() if k in model_fields}
+                    filtered_inputs["prompt"] = prompt
+                    filtered_inputs["model"] = model
+                    
+                    prompt_data = ImageGenerationPrompt(**filtered_inputs)
                     r = await client.generate_images(prompt_data=prompt_data)
                     results_metadata.append(r.model_dump(mode="json"))
                     if r.images:
@@ -143,8 +150,15 @@ class MediaGen(BaseView):
                         return self.error("Missing required field: 'prompt'", status=400)
                     
                     self.logger.info(f"Generating single video using model: {model}")
-                    prompt_data = VideoGenerationPrompt(prompt=prompt, model=model, **{k: v for k, v in data.items() if k not in {"action", "batch", "prompt", "model", "download_mode", "use_flex"}})
-                    r = await client.generate_videos(prompt_data=prompt_data)
+                    
+                    # Filter payload to only include fields accepted by VideoGenerationPrompt schema
+                    model_fields = set(VideoGenerationPrompt.model_fields.keys())
+                    filtered_inputs = {k: v for k, v in data.items() if k in model_fields}
+                    filtered_inputs["prompt"] = prompt
+                    filtered_inputs["model"] = model
+                    
+                    prompt_data = VideoGenerationPrompt(**filtered_inputs)
+                    r = await client.generate_videos(prompt=prompt_data)
                     results_metadata.append(r.model_dump(mode="json"))
                     files_list = r.files or r.media or []
                     if files_list:

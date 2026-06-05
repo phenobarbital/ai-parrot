@@ -28,6 +28,7 @@ def _make_client():
     client.enable_tools = False
     client.temperature = 0.7
     client.max_tokens = 100
+    client.vertexai = False
     client.logger = MagicMock()
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
@@ -294,3 +295,77 @@ class TestGoogleBatch:
             data = json_decoder(f.read())
             assert copied_images[0].name in data["images"][0]
             assert copied_videos[0].name in data["files"][0]
+
+    async def test_generate_image_auto_upscale(self, mock_google_client):
+        """Verify generate_image executes auto_upscale when requested."""
+        sdk_client = await mock_google_client._ensure_client()
+        
+        # Mock generate_content response with an image part
+        mock_part = MagicMock()
+        mock_part.text = None
+        
+        mock_image = MagicMock()
+        mock_part.as_image.return_value = mock_image
+        del mock_part.image # prevent direct image attribute fallback
+        
+        mock_response = MagicMock()
+        mock_response.parts = [mock_part]
+        sdk_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        
+        # Mock upscale_image response
+        mock_upscale_part = MagicMock()
+        mock_upscaled_image = MagicMock()
+        mock_upscale_part.image = mock_upscaled_image
+        
+        mock_upscale_response = MagicMock()
+        mock_upscale_response.generated_images = [mock_upscale_part]
+        sdk_client.aio.models.upscale_image = AsyncMock(return_value=mock_upscale_response)
+        
+        # Call generate_image with auto_upscale=True
+        from parrot.clients.google.client import GoogleGenAIClient
+        google_client = _make_client()
+        google_client._ensure_client = mock_google_client._ensure_client
+        google_client.get_client = AsyncMock(return_value=sdk_client)
+        
+        # Patch client property
+        type(google_client).client = property(lambda self: sdk_client)
+        
+        msg = await google_client.generate_image(
+            prompt="a cute parrot",
+            auto_upscale=True
+        )
+        
+        # Assertions
+        assert msg.output == mock_upscaled_image
+        sdk_client.aio.models.generate_content.assert_called_once()
+        sdk_client.aio.models.upscale_image.assert_called_once()
+
+    async def test_generate_images_initializes_client(self, mock_google_client):
+        """Verify generate_images calls _ensure_client before using SDK."""
+        sdk_client = await mock_google_client._ensure_client()
+        
+        # Mock generate_images response
+        mock_img_part = MagicMock()
+        mock_img_part.image = MagicMock()
+        mock_img_response = MagicMock()
+        mock_img_response.generated_images = [mock_img_part]
+        sdk_client.aio.models.generate_images = AsyncMock(return_value=mock_img_response)
+        
+        google_client = _make_client()
+        google_client._ensure_client = mock_google_client._ensure_client
+        google_client.get_client = AsyncMock(return_value=sdk_client)
+        
+        # Patch client property
+        type(google_client).client = property(lambda self: sdk_client)
+        
+        from parrot.models import ImageGenerationPrompt
+        prompt_data = ImageGenerationPrompt(
+            prompt="renaissance parrot",
+            model="imagen-3.0-generate-002"
+        )
+        
+        # Call generate_images
+        msg = await google_client.generate_images(prompt_data=prompt_data)
+        
+        assert msg is not None
+        sdk_client.aio.models.generate_images.assert_called_once()

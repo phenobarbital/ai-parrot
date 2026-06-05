@@ -54,9 +54,12 @@ class VideoGenInput(BaseModel):
         "allow_adult",
         description=(
             "Controls person generation. "
-            "VEO 3.1 text-to-video: 'allow_all' only. "
-            "VEO 3.1 image-to-video / reference images: 'allow_adult' only. "
-            "VEO 2.0: 'allow_all', 'allow_adult', or 'dont_allow'."
+            "VEO 3.x text-to-video & extension: 'allow_all' only. "
+            "VEO 3.x image-to-video / interpolation / reference images: "
+            "'allow_adult' only. "
+            "VEO 2.0 text-to-video: 'allow_all', 'allow_adult', or 'dont_allow'; "
+            "VEO 2.0 image-to-video: 'allow_adult' or 'dont_allow'. "
+            "Note: EU/UK/CH/MENA regions restrict VEO 3.x to 'allow_adult'."
         ),
     )
     include_audio: bool = Field(

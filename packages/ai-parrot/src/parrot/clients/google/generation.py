@@ -93,6 +93,10 @@ class GoogleGeneration:
         if prompt_data.model:
             model = GoogleModel.IMAGEN_4.value
         model = model.value if isinstance(model, GoogleModel) else model
+        
+        # Ensure client is fully initialized and cached for the current loop
+        await self._ensure_client(model=model)
+        
         self.logger.info(
             f"Starting image generation with model: {model}"
         )
@@ -815,6 +819,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         seed: Optional[int] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        **kwargs: Any
     ) -> AIMessage:
         """
         Generates videos using Google's Veo models.
@@ -917,11 +922,32 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             return types.Image(image_bytes=buf.getvalue(), mime_type="image/jpeg")
 
         # --- Build GenerateVideosConfig ----------------------------------------
+        pg_val = person_generation.upper() if isinstance(person_generation, str) else person_generation
+        # VEO 3.x only accepts specific personGeneration values, and they differ
+        # by modality (per https://ai.google.dev/gemini-api/docs/video):
+        #   - text-to-video & extension: 'allow_all' only
+        #   - image-to-video / interpolation / reference images: 'allow_adult' only
+        # 'dont_allow' is never supported on VEO 3.x. Force the correct value to
+        # avoid a 400 INVALID_ARGUMENT.
+        if is_veo31:
+            is_image_to_video = (
+                ref_img_pil is not None
+                or bool(reference_images)
+                or last_frame is not None
+            )
+            required = "ALLOW_ADULT" if is_image_to_video else "ALLOW_ALL"
+            if pg_val != required:
+                self.logger.warning(
+                    f"person_generation={pg_val!r} is not supported by VEO 3.x for "
+                    f"{'image-to-video' if is_image_to_video else 'text-to-video'}; "
+                    f"overriding to {required!r}."
+                )
+                pg_val = required
         config_kwargs: dict = {
             "aspect_ratio": ar_str,
             "negative_prompt": negative_prompt,
             "number_of_videos": number_of_videos,
-            "person_generation": person_generation,
+            "person_generation": pg_val,
             "duration_seconds": duration,
         }
 
@@ -1520,7 +1546,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
         output_directory: Optional[str] = None,
         as_base64: bool = False,
-        service_tier: Optional[str] = None
+        service_tier: Optional[str] = None,
+        **kwargs: Any
     ) -> AIMessage:
         """
         Generate images using Google's Gemini/Imagen models.
@@ -1590,6 +1617,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             service_tier=service_tier
         )
 
+        auto_upscale = bool(kwargs.get("auto_upscale", False))
+
         try:
             # 3. Call API
             response = await client.aio.models.generate_content(
@@ -1626,6 +1655,32 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         pass
 
                     if img:
+                        if auto_upscale:
+                            try:
+                                self.logger.info("Auto upscaling generated image using Google upscaler...")
+                                import io
+                                buffered = io.BytesIO()
+                                if isinstance(img, Image.Image):
+                                    img.save(buffered, format="PNG")
+                                else:
+                                    img.save(buffered)
+                                
+                                img_bytes = buffered.getvalue()
+                                google_image = types.Image(image_bytes=img_bytes, mime_type="image/png")
+                                
+                                upscale_resp = await client.aio.models.upscale_image(
+                                    model="imagen-3.0-generate-002",
+                                    image=google_image,
+                                    upscale_factor="x2"
+                                )
+                                if upscale_resp.generated_images:
+                                    img = upscale_resp.generated_images[0].image
+                                    self.logger.info("Image upscaled successfully!")
+                            except Exception as ue:
+                                self.logger.warning(
+                                    f"Auto-upscaling failed (upscaler may require Vertex AI or is unsupported in this region): {ue}"
+                                )
+
                         generated_images.append(img)
                         if output_directory:
                             filename = f"gen_{uuid.uuid4().hex[:8]}.png"

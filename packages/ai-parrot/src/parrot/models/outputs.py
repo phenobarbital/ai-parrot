@@ -268,6 +268,8 @@ class VideoGenerationPrompt(BaseModel):
     )
     resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
     smoothing: Optional[bool] = Field(default=False, description="Whether to apply frame rate smoothing to the generated video.")
+    seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
+    include_audio: bool = Field(default=True, description="Whether to include generated audio.")
 
 class SentimentAnalysis(BaseModel):
     """Structured sentiment analysis response."""
