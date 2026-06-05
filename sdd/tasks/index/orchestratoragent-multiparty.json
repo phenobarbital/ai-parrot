@@ -52,7 +52,7 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -62,8 +62,8 @@
       "parallelism_notes": "Builds on the helpers from TASK-1476 in the same orchestrator.py file. Sequential.",
       "assigned_to": null,
       "started_at": "2026-06-05T00:20:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1477-voting-tally-convergence-confer.md"
+      "completed_at": "2026-06-05T00:46:35+00:00",
+      "file": "sdd/tasks/completed/TASK-1477-voting-tally-convergence-confer.md"
     },
     {
       "id": "TASK-1478",
