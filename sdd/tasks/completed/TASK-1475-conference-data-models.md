@@ -172,9 +172,12 @@ update the per-spec index to `done`, and fill the Completion Note.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-05
+**Notes**: Created `parrot/models/conference.py` with `PeerVote`, `ConferenceRound`,
+and `ConferenceResult` (Pydantic v2, field names/semantics identical to spec §2).
+Exported all three from `parrot/models/__init__.py` (import + `__all__`). Added
+`test_conference_models.py` covering confidence bounds (0/100 edges + out-of-range
+rejection), round round-trip, result fields, and package-root re-export. All 6 tests
+pass; `ruff check` clean.
+**Deviations from spec**: none

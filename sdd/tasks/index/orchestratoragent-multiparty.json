@@ -14,7 +14,7 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Foundation module; later tasks import these models. Could technically be authored independently, but kept sequential as the first link in the chain.",
       "assigned_to": null,
       "started_at": "2026-06-05T00:20:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1475-conference-data-models.md"
+      "completed_at": "2026-06-05T00:22:48+00:00",
+      "file": "sdd/tasks/completed/TASK-1475-conference-data-models.md"
     },
     {
       "id": "TASK-1476",
