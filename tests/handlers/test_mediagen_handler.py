@@ -204,3 +204,29 @@ class TestMediaGenHandler:
                 [{"prompt": "video 1"}, {"prompt": "video 2"}],
                 persist_results=True
             )
+
+    async def test_post_video_error_comprehensive(self, aiohttp_client, mock_client_methods):
+        """Verify that MediaGen dynamically parses embedded error dictionaries on failure."""
+        app = web.Application()
+        MediaGen.setup(app, route="/api/v1/google/media")
+        client = await aiohttp_client(app)
+
+        with mock_client_methods as ctx:
+            # Simulate a Google/Veo 3.1 RuntimeError with a dictionary in the string representation
+            err_msg = "Video generation failed: {'code': 13, 'message': 'Video generation failed due to an internal server issue.'}"
+            ctx.client_instance.generate_videos.side_effect = RuntimeError(err_msg)
+
+            payload = {
+                "action": "video",
+                "batch": False,
+                "prompt": "flying parrot"
+            }
+
+            resp = await client.post("/api/v1/google/media", json=payload)
+            assert resp.status == 500
+            
+            data = await resp.json()
+            assert "error" in data
+            assert data["error"]["code"] == 13
+            assert "internal server issue" in data["error"]["message"]
+            assert err_msg in data["error"]["details"]

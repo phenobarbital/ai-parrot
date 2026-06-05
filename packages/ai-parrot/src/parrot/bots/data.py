@@ -24,6 +24,8 @@ from ..tools.dataset_manager import DatasetManager
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
+from .mixins.intent_router import IntentRouterMixin
+from ..registry.capabilities.models import IntentRouterConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, StructuredChartConfig
 from ..memory.abstract import ConversationTurn
@@ -426,7 +428,35 @@ def _detect_map_intent(question: str, df: Optional[pd.DataFrame]) -> bool:
     return len(cols & _INDIRECT_GEO_COLS) >= 2
 
 
-class PandasAgent(BasicAgent):
+# --- Output-mode routing (FEAT-224) ---------------------------------------
+# Default bilingual (EN/ES) phrase bank for PandasAgent's optional pre-LLM
+# output-mode router. Maps user phrasing to the framework-agnostic STRUCTURED_*
+# modes the agent already renders (chart: FEAT-215, table: FEAT-218,
+# map: FEAT-221). The map route here supersedes the post-execution
+# ``_detect_map_intent`` heuristic whenever the router is active.
+DEFAULT_OUTPUT_MODE_ROUTES: Dict[str, List[str]] = {
+    OutputMode.STRUCTURED_CHART.value: [
+        "create a chart", "make a bar chart", "draw a line chart",
+        "plot a pie chart", "show this as a graph", "visualize the trend",
+        "haz una gráfica", "crea un gráfico de barras", "dibuja una gráfica de líneas",
+        "muéstrame un gráfico de pastel", "grafica la tendencia",
+    ],
+    OutputMode.STRUCTURED_TABLE.value: [
+        "show as a table", "display this in a table", "give me a table",
+        "list the rows in a table", "tabular view",
+        "muéstrame una tabla", "ponlo en una tabla", "dame una tabla",
+        "lista los datos en una tabla", "vista tabular",
+    ],
+    OutputMode.STRUCTURED_MAP.value: [
+        "show on a map", "plot these locations on a map", "map the results",
+        "render a map", "display geographically",
+        "muéstralo en un mapa", "ubica estos puntos en un mapa", "dibuja un mapa",
+        "renderiza un mapa", "muéstralo geográficamente",
+    ],
+}
+
+
+class PandasAgent(IntentRouterMixin, BasicAgent):
     """
     A specialized agent for data analysis using pandas DataFrames.
 
@@ -467,6 +497,8 @@ class PandasAgent(BasicAgent):
         cache_expiration: int = 24,
         temperature: float = 0.0,
         max_iterations: Optional[int] = None,
+        output_routing: bool = False,
+        output_routing_config: Optional[IntentRouterConfig] = None,
         **kwargs
     ):
         """
@@ -481,8 +513,20 @@ class PandasAgent(BasicAgent):
             capabilities: Agent capabilities description
             generate_eda: Generate exploratory data analysis
             cache_expiration: Cache expiration in hours
+            output_routing: When True, activate the pre-LLM embedding-based
+                output-mode router (FEAT-224) so the agent auto-selects
+                STRUCTURED_CHART/TABLE/MAP from the user's phrasing. Opt-in
+                because it lazy-loads a SentenceTransformer (``embeddings``
+                extra) and encodes a phrase bank at ``configure()`` time.
+            output_routing_config: Optional :class:`IntentRouterConfig` to
+                override the default bilingual phrase bank / thresholds. When
+                provided, it takes precedence over the ``output_routing`` flag's
+                default config (and must set ``enable_output_mode_routing=True``
+                to activate).
             **kwargs: Additional configuration
         """
+        self._output_routing_enabled = output_routing
+        self._output_routing_config = output_routing_config
         self._queries = query or self.queries
         self._capabilities = capabilities
         self._generate_eda = generate_eda
@@ -979,6 +1023,18 @@ class PandasAgent(BasicAgent):
         # Call parent configure (handles LLM, tools, memory, etc.)
         await super().configure(app=app)
 
+        # FEAT-224: optionally activate the pre-LLM output-mode router so the
+        # agent auto-selects STRUCTURED_CHART/TABLE/MAP from the user's phrasing
+        # (e.g. "create a pie chart of Q1 sales"). Opt-in: loading the encoder
+        # and encoding the phrase bank is CPU-bound, so it runs off the event
+        # loop and only when explicitly enabled.
+        if self._output_routing_enabled or self._output_routing_config is not None:
+            router_cfg = self._output_routing_config or IntentRouterConfig(
+                enable_output_mode_routing=True,
+                output_mode_routes=DEFAULT_OUTPUT_MODE_ROUTES,
+            )
+            await asyncio.to_thread(self.configure_output_router, router_cfg)
+
         # Cache data after configuration
 
 
@@ -1032,8 +1088,6 @@ class PandasAgent(BasicAgent):
         self, tool_calls: Optional[List[Any]],
     ) -> Optional[Any]:
         """Return the last ``InfographicRenderResult`` from the tool calls list.
-
-        Placed adjacent to ``_rerun_for_map`` for reviewability (FEAT-197).
 
         When multiple ``infographic_render`` calls occurred in the same turn,
         only the LAST one is returned (spec §7 documents this design).
@@ -1107,63 +1161,39 @@ class PandasAgent(BasicAgent):
 
         return explanation
 
-    async def _rerun_for_map(
-        self,
-        *,
-        client: Any,
-        question: str,
-        result_var: str,
-        result_df: pd.DataFrame,
-        base_llm_kwargs: Dict[str, Any],
-        prev_response: AIMessage,
-    ) -> AIMessage:
-        """Re-invoke the LLM with the Folium system prompt so it produces
-        map code referencing the result DataFrame already living in the
-        PythonPandasTool REPL.
+    def _spatial_result_from_dataframe(
+        self, df: pd.DataFrame,
+    ) -> Optional[Any]:
+        """Convert a result DataFrame into a ``SpatialResult`` for STRUCTURED_MAP.
 
-        The first ``client.ask`` call ran without ``FOLIUM_SYSTEM_PROMPT``
-        because the user did not explicitly request ``OutputMode.MAP`` —
-        auto-detection happens after the result is materialised. This
-        helper performs the second pass and preserves the original
-        ``response.data`` on the returned AIMessage so the FoliumRenderer
-        sees the same DataFrame the user asked about.
+        FEAT-224: replaces the deprecated Folium re-render path. The backend no
+        longer generates map HTML — it builds the GeoJSON wire contract the
+        ``StructuredMapRenderer`` consumes (via
+        :meth:`SpatialResult.from_dataframe`), so the frontend renders the map.
+
+        Args:
+            df: The result DataFrame produced for the current question.
+
+        Returns:
+            A ``SpatialResult`` when the rows yield at least one feature, or
+            ``None`` when no coordinates/geometry can be resolved (caller then
+            falls through to the default output instead of an empty map).
         """
-        cols = [str(c) for c in result_df.columns]
-        augmented_prompt = (
-            f"Generate a Folium map using the DataFrame already stored "
-            f"in the variable `{result_var}` (columns: {cols}, "
-            f"rows: {len(result_df)}). Do not re-derive or filter that "
-            f"DataFrame — reference it directly. "
-            f"Original user request: {question}"
-        )
-
-        folium_addon = self.formatter.get_system_prompt(OutputMode.MAP) or ""
-        rerun_system_prompt = (
-            base_llm_kwargs["system_prompt"]
-            + OUTPUT_SYSTEM_PROMPT.format(output_mode="map")
-            + folium_addon
-        )
-
-        rerun_kwargs = dict(base_llm_kwargs)
-        rerun_kwargs["prompt"] = augmented_prompt
-        rerun_kwargs["system_prompt"] = rerun_system_prompt
-
-        map_response: AIMessage = await client.ask(**rerun_kwargs)
-
-        # Preserve the original result DataFrame — the second call's job
-        # is to produce Folium code, not to recompute the data. Pulling
-        # the live ``data_variable`` again risks the LLM truncating to a
-        # preview or fabricating rows.
-        map_response.data = result_df
-        map_response.session_id = prev_response.session_id
-        map_response.turn_id = prev_response.turn_id
-
-        if self._dataset_manager:
-            map_response.artifacts.extend(
-                self._dataset_manager.drain_artifacts()
+        try:
+            from ..tools.dataset_manager.spatial.contracts import SpatialResult
+        except ImportError:
+            self.logger.debug(
+                "SpatialResult unavailable; skipping STRUCTURED_MAP conversion."
             )
-
-        return map_response
+            return None
+        try:
+            result = SpatialResult.from_dataframe(df)
+        except ValueError:
+            # No geometry column and no lat/lon pair — not mappable.
+            return None
+        if not any(layer.features for layer in result.layers.values()):
+            return None
+        return result
 
     @staticmethod
     def _client_uses_split_structured_with_tools(client: Any) -> bool:
@@ -1786,49 +1816,54 @@ class PandasAgent(BasicAgent):
                         missing_data_variables or "none",
                     )
 
-                # Auto-switch to MAP when the caller did not explicitly
-                # pick a mode but the question phrases a map request AND
-                # the result DataFrame has the geographic signal to back
-                # it. Source DataFrames cannot be inspected for this —
-                # the DatasetManager exposes dozens of datasets, many
-                # with lat/lon, so the only honest signal is the result
-                # the LLM actually produced for this question.
+                # Auto-switch to STRUCTURED_MAP when the caller did not
+                # explicitly pick a mode but the question phrases a map request
+                # AND the result DataFrame carries the geographic signal to back
+                # it. Source DataFrames cannot be inspected for this — the
+                # DatasetManager exposes dozens of datasets, many with lat/lon,
+                # so the only honest signal is the result the LLM produced.
+                #
+                # FEAT-224: the backend no longer renders a Folium map (deprecated
+                # — that made the backend produce a frontend artifact). It now
+                # converts the result rows into a ``SpatialResult`` and emits a
+                # framework-agnostic STRUCTURED_MAP config the frontend renders.
+                # Complements the pre-LLM Intent Router (which routes clearly
+                # phrased map requests to STRUCTURED_MAP up front); this is the
+                # data-aware fallback. Skipped — falls through to the default
+                # output — when the rows lack real coordinates/geometry (e.g.
+                # city/country names only), since a map cannot be built without
+                # geocoding.
                 if (
                     output_mode == OutputMode.DEFAULT
                     and isinstance(response.data, pd.DataFrame)
                     and _detect_map_intent(question, response.data)
                 ):
-                    map_var = inferred_var
-                    if not map_var and data_response:
-                        map_var = data_response.data_variable
-                        if not map_var and data_response.data_variables:
-                            candidate = data_response.data_variables[0]
-                            map_var = candidate if isinstance(candidate, str) else None
-                    if map_var:
+                    spatial_result = self._spatial_result_from_dataframe(
+                        response.data
+                    )
+                    if spatial_result is not None:
+                        feature_count = sum(
+                            len(lyr.features)
+                            for lyr in spatial_result.layers.values()
+                        )
                         self.logger.info(
-                            "Map intent detected for variable '%s' — "
-                            "re-running with FOLIUM_SYSTEM_PROMPT",
-                            map_var,
+                            "Map intent detected — emitting STRUCTURED_MAP "
+                            "config (%d feature(s))",
+                            feature_count,
                         )
-                        output_mode = OutputMode.MAP
-                        response = await self._rerun_for_map(
-                            client=client,
-                            question=question,
-                            result_var=map_var,
-                            result_df=response.data,
-                            base_llm_kwargs=llm_kwargs,
-                            prev_response=response,
-                        )
+                        output_mode = OutputMode.STRUCTURED_MAP
+                        response.data = spatial_result
                     else:
                         self.logger.debug(
-                            "Map intent matched but no result variable "
-                            "could be resolved; skipping auto-switch."
+                            "Map intent matched but result rows lack "
+                            "coordinates/geometry; skipping STRUCTURED_MAP "
+                            "auto-switch."
                         )
 
                 # FEAT-197: Post-loop branch for InfographicRenderResult.
-                # Pattern mirrors _rerun_for_map: isinstance check on the last
-                # tool result → mutate response in place → return early,
-                # bypassing the formatter and structured-output reformat.
+                # isinstance check on the last tool result → mutate response in
+                # place → return early, bypassing the formatter and
+                # structured-output reformat.
                 infographic_envelope = self._extract_last_infographic_result(
                     response.tool_calls
                 )

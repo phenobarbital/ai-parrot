@@ -153,6 +153,14 @@ class GoogleGeneration:
         negative_prompt = _resolve(negative_prompt, "negative_prompt", None)
         person_generation = _resolve(person_generation, "person_generation", "allow_adult")
         safety_filter_level = _resolve(safety_filter_level, "safety_filter_level", "BLOCK_ONLY_HIGH")
+        # In Gemini Developer API mode, Imagen only supports "BLOCK_LOW_AND_ABOVE" for safety settings.
+        if not getattr(self, 'vertexai', False):
+            if safety_filter_level != "BLOCK_LOW_AND_ABOVE":
+                self.logger.warning(
+                    f"safety_filter_level={safety_filter_level!r} is not supported by "
+                    "Imagen under Gemini Developer API mode. Forcing 'BLOCK_LOW_AND_ABOVE'."
+                )
+                safety_filter_level = "BLOCK_LOW_AND_ABOVE"
         seed = _resolve(seed, "seed", None)
         add_watermark = bool(_resolve(add_watermark, "add_watermark", False))
         output_mime_type = _resolve(output_mime_type, "output_mime_type", "image/png")
@@ -191,14 +199,34 @@ class GoogleGeneration:
             "safety_filter_level": safety_filter_level,
             "person_generation": person_generation,
             "aspect_ratio": aspect_ratio,
-            "add_watermark": add_watermark,
         }
         if resolution is not None:
             config_kwargs["image_size"] = resolution
-        if negative_prompt:
-            config_kwargs["negative_prompt"] = negative_prompt
-        if seed is not None:
-            config_kwargs["seed"] = seed
+
+        # add_watermark, negative_prompt, and seed are only supported in Vertex AI (Enterprise) mode
+        # inside GenerateImagesConfig; Gemini Developer API raises ValueError if passed.
+        if getattr(self, 'vertexai', False):
+            config_kwargs["add_watermark"] = add_watermark
+            if negative_prompt:
+                config_kwargs["negative_prompt"] = negative_prompt
+            if seed is not None:
+                config_kwargs["seed"] = seed
+        else:
+            if add_watermark:
+                self.logger.warning(
+                    "add_watermark parameter is only supported in Gemini Enterprise "
+                    "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
+                )
+            if negative_prompt:
+                self.logger.warning(
+                    "negative_prompt parameter is only supported in Gemini Enterprise "
+                    "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
+                )
+            if seed is not None:
+                self.logger.warning(
+                    "seed parameter is only supported in Gemini Enterprise "
+                    "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
+                )
         config = types.GenerateImagesConfig(**config_kwargs)
 
         try:
@@ -1757,10 +1785,25 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         image_config_kwargs: dict = {
             "aspect_ratio": ar_str,
             "image_size": image_size,
-            "output_mime_type": output_mime_type,
         }
-        if person_generation:
-            image_config_kwargs["person_generation"] = person_generation
+        # output_mime_type and person_generation are only supported in Vertex AI (Enterprise) mode
+        # inside GenerateContentConfig's ImageConfig; Gemini Developer API raises ValueError if passed.
+        if getattr(self, 'vertexai', False):
+            if output_mime_type:
+                image_config_kwargs["output_mime_type"] = output_mime_type
+            if person_generation:
+                image_config_kwargs["person_generation"] = person_generation
+        else:
+            if person_generation:
+                self.logger.warning(
+                    "person_generation parameter is only supported in Gemini Enterprise "
+                    "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
+                )
+            if output_mime_type and output_mime_type != "image/png":
+                self.logger.warning(
+                    f"output_mime_type={output_mime_type!r} is only supported in Gemini Enterprise "
+                    "Agent Platform mode (Vertex AI) and is ignored in Developer API mode."
+                )
 
         threshold = getattr(
             types.HarmBlockThreshold, safety_filter_level, types.HarmBlockThreshold.BLOCK_ONLY_HIGH

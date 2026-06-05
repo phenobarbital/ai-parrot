@@ -221,6 +221,57 @@ class BotManager:
         )
         return None
 
+    def _resolve_database_bot_class(self, bot_model: Any) -> Type[AbstractBot]:
+        """Resolve a DB bot class, falling back to the DB model default."""
+        bot_name = getattr(bot_model, "name", "<unnamed>")
+        bot_class_name = getattr(bot_model, "bot_class", None)
+
+        if not isinstance(bot_class_name, str) or not bot_class_name.strip():
+            self.logger.warning(
+                "Database bot %r has empty bot_class; using default %s.",
+                bot_name,
+                BasicBot.__name__,
+            )
+            return BasicBot
+
+        bot_class_name = bot_class_name.strip()
+        bot_class = self.get_bot_class(bot_class_name)
+        if bot_class is None or not callable(bot_class):
+            self.logger.error(
+                "Database bot %r configured bot_class %r could not be resolved; "
+                "using default %s.",
+                bot_name,
+                bot_class_name,
+                BasicBot.__name__,
+            )
+            return BasicBot
+
+        return bot_class
+
+    def _normalize_database_bot_permissions(self, bot_model: Any) -> dict:
+        """Return DB bot permissions in the canonical policy wrapper shape."""
+        bot_name = getattr(bot_model, "name", "<unnamed>")
+        permissions = getattr(bot_model, "permissions", None)
+
+        if permissions is None:
+            return {}
+        if not isinstance(permissions, dict):
+            self.logger.warning(
+                "Bot %r has non-dict 'permissions' JSON (%s); ignoring it.",
+                bot_name,
+                type(permissions).__name__,
+            )
+            return {}
+        if permissions and "permissions" not in permissions:
+            self.logger.warning(
+                "Bot %r has legacy 'permissions' JSON without canonical "
+                "'permissions' key; ignoring keys %r.",
+                bot_name,
+                list(permissions.keys()),
+            )
+            return {}
+        return permissions
+
     def get_or_create_bot(self, bot_name: str, **kwargs):
         """
         Get existing bot or create new one from class name.
@@ -345,12 +396,8 @@ class BotManager:
                     continue
                 try:
                     # Use the factory function from models.py or create bot directly
-                    if hasattr(self, 'get_bot_class') and hasattr(bot_model, 'bot_class'):
-                        # If you have a bot_class field and get_bot_class method
-                        class_name = self.get_bot_class(getattr(bot_model, 'bot_class', None))
-                    else:
-                        # Default to BasicBot or your default bot class
-                        class_name = BasicBot
+                    class_name = self._resolve_database_bot_class(bot_model)
+                    bot_permissions = self._normalize_database_bot_permissions(bot_model)
 
                     # FEAT-133 Step 1: Build reranker BEFORE bot construction.
                     # Reranker has no dependency on the store — can be resolved now.
@@ -418,7 +465,7 @@ class BotManager:
                         max_context_turns=bot_model.max_context_turns,
                         use_conversation_history=bot_model.use_conversation_history,
                         # Security and permissions
-                        permissions=bot_model.permissions,
+                        permissions=bot_permissions,
                         # Metadata
                         language=bot_model.language,
                         disclaimer=bot_model.disclaimer,
@@ -477,7 +524,7 @@ class BotManager:
                     try:
                         n_policies = self.registry.register_db_bot_policies(
                             bot_model.name,
-                            bot_model.permissions,
+                            bot_permissions,
                         )
                         if n_policies:
                             self.logger.info(

@@ -21,6 +21,10 @@ os.environ['GRPC_VERBOSITY'] = 'ERROR'
 # setting it here kills the noise at the earliest possible moment.
 logging.getLogger("botocore").setLevel(logging.INFO)
 logging.getLogger("aiobotocore").setLevel(logging.INFO)
+# Silence JAX/XLA compilation diagnostics when the app root logger runs at DEBUG.
+logging.getLogger("jax").setLevel(logging.WARNING)
+logging.getLogger("jaxlib").setLevel(logging.WARNING)
+logging.getLogger("absl").setLevel(logging.WARNING)
 # logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # # Suppress tiktoken warnings
 # logging.getLogger("tiktoken").setLevel(logging.ERROR)

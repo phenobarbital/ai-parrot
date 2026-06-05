@@ -111,17 +111,23 @@ class MediaGen(BaseView):
                     prompt = data.get("prompt", "")
                     if not prompt:
                         return self.error("Missing required field: 'prompt'", status=400)
-                    
+
                     self.logger.info(f"Generating single image using model: {model}")
-                    
+
                     # Filter payload to only include fields accepted by ImageGenerationPrompt schema
                     model_fields = set(ImageGenerationPrompt.model_fields.keys())
                     filtered_inputs = {k: v for k, v in data.items() if k in model_fields}
                     filtered_inputs["prompt"] = prompt
                     filtered_inputs["model"] = model
-                    
+
                     prompt_data = ImageGenerationPrompt(**filtered_inputs)
-                    
+
+                    # The image backends only persist files to disk when an
+                    # output_directory is provided; without it ``r.images`` is
+                    # empty and nothing can be streamed back. Always generate
+                    # into a temp directory so the file can be delivered.
+                    image_output_dir = tempfile.mkdtemp(prefix="mediagen_img_")
+
                     # Route to either Gemini/Nano Banana or Imagen based on model prefix
                     if str(model).startswith("gemini"):
                         self.logger.info(f"Routing image generation to Gemini generate_image() for: {model}")
@@ -131,12 +137,16 @@ class MediaGen(BaseView):
                             aspect_ratio=prompt_data.aspect_ratio,
                             resolution=prompt_data.resolution,
                             auto_upscale=prompt_data.auto_upscale,
-                            service_tier="flex" if use_flex else None
+                            service_tier="flex" if use_flex else None,
+                            output_directory=image_output_dir
                         )
                     else:
                         self.logger.info(f"Routing image generation to Imagen generate_images() for: {model}")
-                        r = await client.generate_images(prompt=prompt_data)
-                        
+                        r = await client.generate_images(
+                            prompt=prompt_data,
+                            output_directory=Path(image_output_dir)
+                        )
+
                     results_metadata.append(r.model_dump(mode="json"))
                     if r.images:
                         generated_files.extend([Path(p) for p in r.images])
@@ -204,7 +214,36 @@ class MediaGen(BaseView):
 
         except Exception as exc:
             self.logger.exception(f"Media generation failed: {exc}")
-            return self.error(f"Media generation failed: {exc}", status=500)
+            
+            error_message = str(exc)
+            error_code = 500
+            
+            # Dynamic parsing for embedded JSON/Dict representations (e.g. {'code': 13, ...})
+            if "{" in error_message and "}" in error_message:
+                try:
+                    import re
+                    match = re.search(r"\{.*?\}", error_message.replace("'", '"'))
+                    if match:
+                        from datamodel.parsers.json import json_decoder
+                        err_dict = json_decoder(match.group(0))
+                        if isinstance(err_dict, dict):
+                            error_message = err_dict.get("message", error_message)
+                            error_code = err_dict.get("code", error_code)
+                except Exception:
+                    pass
+            
+            # Direct attribute check for native google-genai ClientError/APIError
+            if hasattr(exc, "code") and hasattr(exc, "message"):
+                error_message = getattr(exc, "message")
+                error_code = getattr(exc, "code")
+                
+            return self.json_response({
+                "error": {
+                    "message": error_message,
+                    "code": error_code,
+                    "details": str(exc)
+                }
+            }, status=500)
         finally:
             await client.close()
 

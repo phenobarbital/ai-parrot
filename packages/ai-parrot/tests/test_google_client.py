@@ -1114,3 +1114,175 @@ class TestCleanGoogleSchemaArrayItems:
         assert pt["type"] == "array"
         assert pt["items"] == {"type": "number"}
         assert "prefixItems" not in pt
+
+
+@pytest.mark.asyncio
+async def test_generate_image_config_developer_api():
+    """In Developer API mode (vertexai=False), output_mime_type and person_generation must be omitted from ImageConfig."""
+    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
+         patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls, \
+         patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls:
+
+        mock_client_instance = MagicMock()
+        mock_genai_cls.return_value = mock_client_instance
+
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.parts = []
+
+        # In generate_image (stateless=True), we call aio.models.generate_content
+        mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        client = GoogleGenAIClient(api_key="fake_key", vertexai=False)
+        client.get_client = AsyncMock(return_value=mock_client_instance)
+
+        await client.generate_image(
+            prompt="A cute kitten",
+            output_mime_type="image/jpeg",
+            person_generation="dont_allow",
+            stateless=True
+        )
+
+        # Verify that ImageConfig was called WITHOUT output_mime_type and person_generation
+        mock_image_config_cls.assert_called_once()
+        called_kwargs = mock_image_config_cls.call_args.kwargs
+        assert "output_mime_type" not in called_kwargs
+        assert "person_generation" not in called_kwargs
+
+
+@pytest.mark.asyncio
+async def test_generate_image_config_vertexai():
+    """In Vertex AI mode (vertexai=True), output_mime_type and person_generation must be included in ImageConfig."""
+    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
+         patch("parrot.clients.google.generation.types.ImageConfig") as mock_image_config_cls, \
+         patch("parrot.clients.google.generation.types.GenerateContentConfig") as mock_generate_content_config_cls:
+
+        mock_client_instance = MagicMock()
+        mock_genai_cls.return_value = mock_client_instance
+
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.parts = []
+
+        # In generate_image (stateless=True), we call aio.models.generate_content
+        mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+        client = GoogleGenAIClient(
+            api_key="fake_key",
+            vertexai=True,
+            vertex_project="fake_project",
+            vertex_location="us-central1"
+        )
+        client.get_client = AsyncMock(return_value=mock_client_instance)
+
+        await client.generate_image(
+            prompt="A cute kitten",
+            output_mime_type="image/jpeg",
+            person_generation="dont_allow",
+            stateless=True
+        )
+
+        # Verify that ImageConfig was called WITH output_mime_type and person_generation
+        mock_image_config_cls.assert_called_once()
+        called_kwargs = mock_image_config_cls.call_args.kwargs
+        assert called_kwargs["output_mime_type"] == "image/jpeg"
+        assert called_kwargs["person_generation"] == "dont_allow"
+
+
+@pytest.mark.asyncio
+async def test_generate_images_config_developer_api():
+    """In Developer API mode (vertexai=False), add_watermark, negative_prompt, and seed must be omitted from GenerateImagesConfig."""
+    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
+         patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls, \
+         patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls:
+
+        mock_aimessage_factory_cls.from_imagen.return_value = AIMessage(
+            input="A majestic eagle",
+            output=[],
+            response="Image generated successfully.",
+            model="imagen-4.0-generate-001",
+            provider="google",
+            usage=CompletionUsage(),
+        )
+
+        mock_client_instance = MagicMock()
+        mock_genai_cls.return_value = mock_client_instance
+
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.generated_images = []
+
+        # In generate_images, we call aio.models.generate_images
+        mock_client_instance.aio.models.generate_images = AsyncMock(return_value=mock_response)
+
+        client = GoogleGenAIClient(api_key="fake_key", vertexai=False)
+        client.get_client = AsyncMock(return_value=mock_client_instance)
+
+        await client.generate_images(
+            prompt="A majestic eagle",
+            add_watermark=True,
+            negative_prompt="blurry",
+            seed=42,
+            safety_filter_level="BLOCK_ONLY_HIGH"
+        )
+
+        # Verify GenerateImagesConfig was called WITHOUT add_watermark, negative_prompt, and seed
+        mock_generate_images_config_cls.assert_called_once()
+        called_kwargs = mock_generate_images_config_cls.call_args.kwargs
+        assert "add_watermark" not in called_kwargs
+        assert "negative_prompt" not in called_kwargs
+        assert "seed" not in called_kwargs
+        # For Developer API, safety_filter_level must be forced to BLOCK_LOW_AND_ABOVE
+        assert called_kwargs["safety_filter_level"] == "BLOCK_LOW_AND_ABOVE"
+
+
+@pytest.mark.asyncio
+async def test_generate_images_config_vertexai():
+    """In Vertex AI mode (vertexai=True), add_watermark, negative_prompt, and seed must be included in GenerateImagesConfig."""
+    with patch("parrot.clients.google.client.genai.Client") as mock_genai_cls, \
+         patch("parrot.clients.google.generation.types.GenerateImagesConfig") as mock_generate_images_config_cls, \
+         patch("parrot.clients.google.generation.AIMessageFactory") as mock_aimessage_factory_cls:
+
+        mock_aimessage_factory_cls.from_imagen.return_value = AIMessage(
+            input="A majestic eagle",
+            output=[],
+            response="Image generated successfully.",
+            model="imagen-4.0-generate-001",
+            provider="google",
+            usage=CompletionUsage(),
+        )
+
+        mock_client_instance = MagicMock()
+        mock_genai_cls.return_value = mock_client_instance
+
+        # Setup mock response
+        mock_response = MagicMock()
+        mock_response.generated_images = []
+
+        # In generate_images, we call aio.models.generate_images
+        mock_client_instance.aio.models.generate_images = AsyncMock(return_value=mock_response)
+
+        client = GoogleGenAIClient(
+            api_key="fake_key",
+            vertexai=True,
+            vertex_project="fake_project",
+            vertex_location="us-central1"
+        )
+        client.get_client = AsyncMock(return_value=mock_client_instance)
+
+        await client.generate_images(
+            prompt="A majestic eagle",
+            add_watermark=True,
+            negative_prompt="blurry",
+            seed=42,
+            safety_filter_level="BLOCK_ONLY_HIGH"
+        )
+
+        # Verify GenerateImagesConfig was called WITH add_watermark, negative_prompt, and seed
+        mock_generate_images_config_cls.assert_called_once()
+        called_kwargs = mock_generate_images_config_cls.call_args.kwargs
+        assert called_kwargs["add_watermark"] is True
+        assert called_kwargs["negative_prompt"] == "blurry"
+        assert called_kwargs["seed"] == 42
+        # For Vertex AI, safety_filter_level remains what was specified
+        assert called_kwargs["safety_filter_level"] == "BLOCK_ONLY_HIGH"

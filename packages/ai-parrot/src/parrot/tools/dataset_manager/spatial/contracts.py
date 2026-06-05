@@ -12,7 +12,7 @@ Note: ``from __future__ import annotations`` is intentionally omitted here to
 ensure Pydantic v2 can resolve the ``Tuple[float, float]`` annotation at class
 definition time without requiring a manual ``model_rebuild()`` call.
 """
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -20,6 +20,11 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 _ALLOWED_COLUMN_FORMATS: frozenset = frozenset(
     {"currency", "percent", "email", "uri", "enum", "id", "code"}
 )
+
+# Recognised geo column names (lowercased) for SpatialResult.from_dataframe.
+_LAT_ALIASES: Tuple[str, ...] = ("lat", "latitude")
+_LON_ALIASES: Tuple[str, ...] = ("lon", "lng", "long", "longitude")
+_GEOM_ALIASES: Tuple[str, ...] = ("geometry", "geom")
 
 
 class SpatialFilterSpec(BaseModel):
@@ -311,6 +316,201 @@ class SpatialResult(BaseModel):
             capped=capped,
             geodesic_paths=geodesic_paths,
         )
+
+    # ── DataFrame ingestion (FEAT-224) ──────────────────────────────────────
+    @classmethod
+    def from_dataframe(
+        cls,
+        df: Any,
+        *,
+        lat_col: Optional[str] = None,
+        lon_col: Optional[str] = None,
+        geometry_col: Optional[str] = None,
+        dataset: str = "result",
+        layer: str = "result",
+        property_cols: Optional[List[str]] = None,
+        geodesic: bool = False,
+    ) -> "SpatialResult":
+        """Build a single-layer ``SpatialResult`` from a pandas DataFrame.
+
+        Lets callers (e.g. ``PandasAgent``) turn an arbitrary result DataFrame
+        into the GeoJSON wire contract the ``STRUCTURED_MAP`` renderer consumes —
+        no backend map rendering, no LLM call. Two input shapes are supported and
+        auto-detected when the ``*_col`` arguments are omitted:
+
+        * **Coordinate pair** — a latitude column (``lat``/``latitude``) and a
+          longitude column (``lon``/``lng``/``long``/``longitude``); each row
+          becomes a GeoJSON ``Point``.
+        * **Geo-structure column** — a ``geometry``/``geom`` column whose cells
+          are GeoJSON geometry dicts, GeoJSON ``Feature`` dicts, WKT strings, or
+          shapely geometries (anything exposing ``__geo_interface__``). The
+          geometry is preserved as-is, so Polygons, LineStrings, etc. survive.
+
+        Detection prefers a geometry column over a lat/lon pair. All columns
+        except the resolved geo columns become each feature's ``properties``.
+        Rows whose geometry cannot be resolved (missing/NaN coords, unparseable
+        WKT) are skipped.
+
+        Args:
+            df: A pandas DataFrame (or GeoDataFrame) of result rows.
+            lat_col: Latitude column name; auto-detected when omitted.
+            lon_col: Longitude column name; auto-detected when omitted.
+            geometry_col: Geometry column name; auto-detected when omitted.
+            dataset: Key under which the single layer is stored in ``layers``.
+            layer: Leaflet layer id / GeoJSON source discriminator.
+            property_cols: Columns to expose as feature properties. Defaults to
+                every column except the resolved geo columns.
+            geodesic: Whether downstream paths should be treated as geodesic.
+
+        Returns:
+            A version-2 ``SpatialResult`` with a single ``SpatialLayerResult``.
+            The layer may have zero features when no row yields a geometry.
+
+        Raises:
+            ValueError: When neither a geometry column nor a lat/lon pair can be
+                resolved from the DataFrame columns.
+        """
+        columns = [str(c) for c in df.columns]
+        lower = {c.lower().strip(): c for c in columns}
+
+        if geometry_col is None and lat_col is None and lon_col is None:
+            for alias in _GEOM_ALIASES:
+                if alias in lower:
+                    geometry_col = lower[alias]
+                    break
+            if geometry_col is None:
+                lat_col = next(
+                    (lower[a] for a in _LAT_ALIASES if a in lower), None
+                )
+                lon_col = next(
+                    (lower[a] for a in _LON_ALIASES if a in lower), None
+                )
+
+        if geometry_col is None and not (lat_col and lon_col):
+            raise ValueError(
+                "SpatialResult.from_dataframe: no geometry column and no "
+                f"lat/lon pair could be resolved from columns: {columns}"
+            )
+
+        geo_cols = {c for c in (lat_col, lon_col, geometry_col) if c}
+        if property_cols is None:
+            property_cols = [c for c in columns if c not in geo_cols]
+
+        features: List[Dict] = []
+        for row in df.to_dict(orient="records"):
+            if geometry_col is not None:
+                geometry = cls._geometry_from_value(row.get(geometry_col))
+            else:
+                geometry = cls._point_geometry(row.get(lat_col), row.get(lon_col))
+            if geometry is None:
+                continue
+            properties = {col: cls._jsonable(row.get(col)) for col in property_cols}
+            features.append(
+                {"type": "Feature", "geometry": geometry, "properties": properties}
+            )
+
+        return cls(
+            layers={
+                dataset: SpatialLayerResult(
+                    layer=layer,
+                    features=features,
+                    total_count=len(features),
+                    capped=False,
+                    geodesic=geodesic,
+                )
+            }
+        )
+
+    @staticmethod
+    def _is_missing(value: Any) -> bool:
+        """True when a cell is ``None`` or NaN/NaT (no eager pandas import).
+
+        NaN/NaT are the only values not equal to themselves, which lets this
+        detect numpy NaN and pandas NaT without importing either library.
+        """
+        if value is None:
+            return True
+        try:
+            return value != value  # noqa: PLR0124 — NaN/NaT self-inequality
+        except Exception:  # noqa: BLE001 — exotic objects compare fine
+            return False
+
+    @classmethod
+    def _point_geometry(cls, lat: Any, lon: Any) -> Optional[Dict]:
+        """Build a GeoJSON ``Point`` (``[lon, lat]``) or ``None`` if unusable."""
+        if cls._is_missing(lat) or cls._is_missing(lon):
+            return None
+        try:
+            return {"type": "Point", "coordinates": [float(lon), float(lat)]}
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _geometry_from_value(cls, value: Any) -> Optional[Dict]:
+        """Coerce a geometry-column cell into a GeoJSON geometry dict.
+
+        Accepts GeoJSON geometry dicts, GeoJSON ``Feature`` dicts (unwrapped),
+        shapely geometries (via ``__geo_interface__``), and WKT strings (parsed
+        with shapely when available). Returns ``None`` when unresolvable.
+        """
+        if cls._is_missing(value):
+            return None
+        if isinstance(value, dict):
+            if value.get("type") == "Feature" and isinstance(value.get("geometry"), dict):
+                return value["geometry"]
+            if value.get("type") and value.get("coordinates") is not None:
+                return value
+            return None
+        geo = getattr(value, "__geo_interface__", None)
+        if isinstance(geo, dict):
+            if geo.get("type") == "Feature" and isinstance(geo.get("geometry"), dict):
+                return geo["geometry"]
+            return geo
+        if isinstance(value, str):
+            return cls._wkt_to_geometry(value)
+        return None
+
+    @staticmethod
+    def _wkt_to_geometry(wkt: str) -> Optional[Dict]:
+        """Parse a WKT string into a GeoJSON geometry via shapely (optional dep)."""
+        text = wkt.strip()
+        if not text:
+            return None
+        try:
+            from shapely import wkt as _wkt
+            from shapely.geometry import mapping
+        except ImportError:
+            return None
+        try:
+            return mapping(_wkt.loads(text))
+        except Exception:  # noqa: BLE001 — invalid WKT -> no geometry
+            return None
+
+    @classmethod
+    def _jsonable(cls, value: Any) -> Any:
+        """Coerce a property cell to a JSON-native scalar.
+
+        numpy scalars (``.item()``) and datetimes (``.isoformat()``) are
+        unwrapped; NaN/NaT collapse to ``None``; anything exotic falls back to
+        ``str()``.
+        """
+        if cls._is_missing(value):
+            return None
+        if isinstance(value, (str, bool, int, float)):
+            return value
+        item = getattr(value, "item", None)
+        if callable(item):
+            try:
+                return item()
+            except Exception:  # noqa: BLE001
+                pass
+        iso = getattr(value, "isoformat", None)
+        if callable(iso):
+            try:
+                return iso()
+            except Exception:  # noqa: BLE001
+                pass
+        return str(value)
 
 
 class SpatialFeatureCollection(BaseModel):
