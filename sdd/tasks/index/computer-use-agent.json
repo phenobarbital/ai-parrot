@@ -94,7 +94,7 @@
       "feature_id": "FEAT-227",
       "feature": "computer-use-agent",
       "spec": "sdd/specs/computer-use-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,8 @@
       "parallelism_notes": "Only depends on models; could theoretically run in parallel with TASK-1476/1477 but sequential for safety since it modifies core client",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1479-google-client-computer-use.md"
+      "completed_at": "2026-06-05T17:51:50+00:00",
+      "file": "sdd/tasks/completed/TASK-1479-google-client-computer-use.md"
     },
     {
       "id": "TASK-1480",
