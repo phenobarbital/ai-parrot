@@ -88,7 +88,7 @@
       "feature_id": "FEAT-224",
       "feature": "intent-router-mixin-embedding-routing",
       "spec": "sdd/specs/intent-router-mixin-embedding-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -100,8 +100,8 @@
       "parallelism_notes": "Imports the engine (1484), the config fields (1485), and overrides the base hook from (1487). Sequential.",
       "assigned_to": null,
       "started_at": "2026-06-05T14:05:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1488-evolve-intentroutermixin-output-mode.md"
+      "completed_at": "2026-06-05T17:40:40+00:00",
+      "file": "sdd/tasks/completed/TASK-1488-evolve-intentroutermixin-output-mode.md"
     },
     {
       "id": "TASK-1489",

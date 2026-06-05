@@ -37,6 +37,11 @@ from parrot.registry.capabilities.models import (
     TraceEntry,
 )
 from parrot.registry.capabilities.registry import CapabilityRegistry
+from parrot.models.outputs import OutputMode  # FEAT-224 (output-mode routing)
+from parrot.registry.routing.embedding_router import (  # FEAT-224
+    EmbeddingIntentRouter,
+    RouteScore,
+)
 
 # Lazy import guard — ContextEnvelope and EnrichedContext are only available when
 # the knowledge.ontology package is installed.  We do a try/except at module level
@@ -142,6 +147,8 @@ class IntentRouterMixin:
         self._router_active = False
         self._router_config = None
         self._capability_registry = None
+        # FEAT-224: output-mode router (separate, optional second concern).
+        self._output_router: Optional[EmbeddingIntentRouter] = None
         super().__init__(**kwargs)  # type: ignore[call-arg]
 
     # ── Public API ────────────────────────────────────────────────────────────
@@ -162,6 +169,140 @@ class IntentRouterMixin:
         self._router_active = True
         logger = getattr(self, "logger", logging.getLogger(__name__))
         logger.info("Intent router configured and active.")
+
+    # ── FEAT-224: output-mode routing (CONFIGURE + REQUEST) ────────────────────
+
+    def configure_output_router(self, config: IntentRouterConfig) -> None:
+        """Build the deterministic output-mode router once (CONFIGURE phase).
+
+        Loads the embedding encoder and encodes the phrase bank exactly once.
+        A no-op unless ``config.enable_output_mode_routing`` is True, so existing
+        retrieval-routing configs are unaffected.
+
+        Args:
+            config: Router configuration carrying the output-mode fields
+                (``embedding_model``, ``output_mode_routes``,
+                ``output_mode_threshold``, ``discrepancy_margin``).
+        """
+        logger = getattr(self, "logger", logging.getLogger(__name__))
+        if not config.enable_output_mode_routing:
+            return
+        router = EmbeddingIntentRouter(
+            config.embedding_model,
+            config.output_mode_threshold,
+            config.discrepancy_margin,
+        )
+        for mode_value, utterances in config.output_mode_routes.items():
+            try:
+                router.add_route(OutputMode(mode_value), utterances)
+            except ValueError:
+                logger.warning(
+                    "Unknown OutputMode in output_mode_routes: %s", mode_value
+                )
+        self._output_router = router
+        logger.info(
+            "Output-mode router configured (%d routes, threshold=%.2f).",
+            len(config.output_mode_routes),
+            config.output_mode_threshold,
+        )
+
+    async def _resolve_output_mode(
+        self,
+        query: str,
+        ctx: Any,
+    ) -> "Optional[OutputMode]":
+        """Resolve an OutputMode for ``query`` (REQUEST phase, FEAT-224).
+
+        Threshold + margin policy:
+          * no router / abstain (best < threshold) -> chain ``super()``.
+          * clear winner -> the embedding mode (no LLM call).
+          * ambiguous (best >= threshold and gap < margin) -> bounded LLM
+            tie-breaker among the close candidates; fall back to the embedding
+            winner if the LLM is unavailable / invalid.
+
+        Mirrors the resolved mode's score onto ``ctx.intent_score``; the base
+        call site mirrors ``ctx.output_mode``. The blocking ``route()`` runs off
+        the event loop via :func:`asyncio.to_thread`.
+        """
+        router = getattr(self, "_output_router", None)
+        if router is None:
+            return await super()._resolve_output_mode(query, ctx)  # type: ignore[misc]
+
+        rs: RouteScore = await asyncio.to_thread(router.route, query)
+        if rs.mode is None:
+            # Below threshold -> abstain, cooperate with the rest of the MRO.
+            return await super()._resolve_output_mode(query, ctx)  # type: ignore[misc]
+
+        chosen = rs.mode
+        if rs.ambiguous:
+            # Assemble the close-candidate set off the event loop (re-uses the
+            # warm encoder); only modes within ``margin`` of the winner.
+            scores = await asyncio.to_thread(router.route_scores, query)
+            candidates = [
+                m for m, sc in scores if (rs.score - sc) < router.margin
+            ]
+            llm_choice = await self._llm_disambiguate_output_mode(query, candidates)
+            if llm_choice is not None:
+                chosen = llm_choice
+
+        if ctx is not None:
+            ctx.intent_score = rs.score
+        return chosen
+
+    async def _llm_disambiguate_output_mode(
+        self,
+        query: str,
+        candidates: "list[OutputMode]",
+    ) -> "Optional[OutputMode]":
+        """Bounded LLM tie-breaker over the close candidate modes (FEAT-224).
+
+        Consulted ONLY on genuine ambiguity. Uses ``self.invoke()`` (FEAT-069)
+        and abstains (returns ``None``) when invoke is unavailable, times out, or
+        returns a value that is not one of the close candidates.
+
+        Args:
+            query: The user query.
+            candidates: The close candidate modes (winner + any within margin).
+
+        Returns:
+            A candidate :class:`OutputMode`, or ``None`` to abstain to the
+            embedding winner.
+        """
+        invoke = getattr(self, "invoke", None)
+        if invoke is None or not candidates:
+            return None
+
+        logger = getattr(self, "logger", logging.getLogger(__name__))
+        candidate_values = [m.value for m in candidates]
+        prompt = (
+            "You pick the single best OUTPUT MODE for rendering an answer.\n"
+            f"User query: {query}\n"
+            f"Candidate output modes: {', '.join(candidate_values)}\n"
+            'Respond with JSON only: {"output_mode": "<one of the candidates>"}'
+        )
+        timeout = (
+            getattr(self._router_config, "strategy_timeout_s", 30.0)
+            if self._router_config is not None
+            else 30.0
+        )
+        try:
+            raw = await asyncio.wait_for(invoke(prompt), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning("Output-mode LLM tie-breaker timed out; abstaining.")
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Output-mode LLM tie-breaker failed: %s", exc)
+            return None
+
+        parsed = extract_json_from_response(raw)
+        if not parsed:
+            return None
+        try:
+            mode = OutputMode(parsed.get("output_mode"))
+        except ValueError:
+            return None
+        # Only accept a value that is one of the close candidates.
+        return mode if mode in candidates else None
 
     async def conversation(self, prompt: str, **kwargs: Any) -> Any:
         """Intercept conversation to route via intent router when active.

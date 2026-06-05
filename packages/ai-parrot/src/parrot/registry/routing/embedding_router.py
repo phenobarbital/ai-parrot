@@ -122,6 +122,33 @@ class EmbeddingIntentRouter:
         emb = enc.encode(texts, normalize_embeddings=True)
         self._routes[mode] = np.asarray(emb)
 
+    def route_scores(self, query: str) -> list[tuple[OutputMode, float]]:
+        """Return every mode's max-cosine score, sorted descending.
+
+        CPU-bound and synchronous — dispatch via ``asyncio.to_thread`` from
+        async callers. Unlike :meth:`route`, no thresholding is applied; this is
+        used to assemble the close-candidate set for an LLM tie-breaker.
+
+        Args:
+            query: The raw user query (the ``"query: "`` prefix is added here).
+
+        Returns:
+            A list of ``(OutputMode, score)`` pairs sorted by score desc; empty
+            when no routes are configured.
+        """
+        if not self._routes:
+            return []
+        enc = self._ensure_encoder()
+        q = np.asarray(
+            enc.encode([f"query: {query}"], normalize_embeddings=True)
+        )[0]
+        # Cosine == dot product on normalized vectors; max over each mode's bank.
+        return sorted(
+            ((m, float(np.max(emb @ q))) for m, emb in self._routes.items()),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )
+
     def route(self, query: str) -> RouteScore:
         """Score ``query`` against the phrase bank and return a RouteScore.
 
@@ -135,18 +162,9 @@ class EmbeddingIntentRouter:
             A :class:`RouteScore`. ``mode is None`` when the best score is below
             ``threshold`` (abstain) or when no routes are configured.
         """
-        if not self._routes:
+        scored = self.route_scores(query)
+        if not scored:
             return RouteScore(None, -1.0, -1.0, False)
-        enc = self._ensure_encoder()
-        q = np.asarray(
-            enc.encode([f"query: {query}"], normalize_embeddings=True)
-        )[0]
-        # Cosine == dot product on normalized vectors; max over each mode's bank.
-        scored = sorted(
-            ((m, float(np.max(emb @ q))) for m, emb in self._routes.items()),
-            key=lambda kv: kv[1],
-            reverse=True,
-        )
         best_mode, best = scored[0]
         runner_up = scored[1][1] if len(scored) > 1 else -1.0
         if best < self.threshold:
