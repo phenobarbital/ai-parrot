@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-223
 **Date**: 2026-06-05
 **Author**: Jesus Lara + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.x
 
 > Prior exploration: `sdd/proposals/orchestratoragent-multiparty.proposal.md`
@@ -417,7 +417,7 @@ class AgentCrew(...):
 - [ ] Valor de `confidence` por defecto del fallback sin structured output —
       *Owner: implementer* (propuesta: 50).
 - [ ] ¿Exponer también `confer()` vía `ask(..., mode="conference")` además del método
-      público? — *Owner: Jesus* (no bloquea; el método público es suficiente para v1).
+      público? — *Owner: Jesus* (no bloquea; el método público es suficiente para v1).: si, agregar ask(... mode='conference')
 
 ---
 
