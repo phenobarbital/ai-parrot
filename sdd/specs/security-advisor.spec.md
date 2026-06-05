@@ -42,13 +42,16 @@ We need a second, **read-only** agent — `SecurityAdvisor` — that:
    audit-ready.
 
 The read-side infrastructure already exists and must be **reused, not
-rebuilt**: `SecurityReportToolkit` (catalog queries) and
-`S3ReportReaderToolkit` (FEAT-184 — `compare_reports`, `summarize_report`,
-`filter_reports`, raw S3 browse). The new work is: a SOC2 control catalog +
-mapping, a deterministic advisory engine that diffs day-over-day and maps
-findings to SOC2 controls, an LLM-facing SOC2 advisory toolkit, and the
-`SecurityAdvisor` agent that orchestrates a scheduled daily advisory plus
-on-demand answers.
+rebuilt**: `SecurityReportToolkit` (catalog queries), `S3ReportReaderToolkit`
+(FEAT-184 — `compare_reports`, `summarize_report`, `filter_reports`, raw S3
+browse), and — critically — **`ComplianceMapper` + `soc2_controls.yaml`**
+(`parrot_tools/security/reports/`), which already provides a deterministic
+SOC2 control catalog (CC1–CC9) and `map_finding_to_controls()` /
+`get_framework_coverage()`. The new work is therefore narrow: a deterministic
+advisory **engine** that diffs day-over-day and maps the delta to SOC2 controls
+*via `ComplianceMapper`*, an LLM-facing **SOC2 advisory toolkit**, the
+`ReportKind.ADVISORY` enum value, and the read-only **`SecurityAdvisor`** agent
+that orchestrates a scheduled daily advisory plus on-demand answers.
 
 ### Goals
 
@@ -57,9 +60,10 @@ on-demand answers.
 - **Day-over-day drift**: compare the two most-recent reports per framework
   (today vs. the prior day) and surface new/resolved findings and severity
   deltas.
-- A **structured SOC2 control catalog** of the Trust Service Criteria
-  (CC1–CC9) with deterministic mapping from scanner findings to controls —
-  not LLM-only guesswork.
+- **Structured SOC2 mapping** of scanner findings to Trust Service Criteria
+  (CC1–CC9) — deterministic, not LLM-only guesswork. This **reuses the existing
+  `ComplianceMapper` + `soc2_controls.yaml`** (`parrot_tools/security/reports/`)
+  rather than building a new catalog.
 - **Actionable, SOC2-mapped recommendations** for each material incident.
 - **Flexible output**: the daily advisory is (a) persisted as a `ReportRef`
   in the same catalog, (b) raised as Jira tickets for material incidents,
@@ -102,20 +106,22 @@ on-demand answers.
   a report's findings to SOC2 controls and run a gap analysis.
 - `JiraToolkit` — to file actionable incidents (`basic_auth`, project `NAV`).
 
-The deterministic brains live in two NEW pure-logic modules (no agent, no
-LLM, no I/O of their own beyond the injected store):
+The SOC2 control catalog and finding→control mapping are **NOT new** — they
+already exist as `ComplianceMapper` (`parrot_tools/security/reports/compliance_mapper.py`)
+backed by `mappings/soc2_controls.yaml` (CC1–CC9). The only NEW deterministic
+brain is one pure-logic module (no agent, no LLM, no I/O beyond the injected
+store + mapper):
 
-- **`soc2_controls.py`** — the SOC2 Trust Service Criteria catalog (CC1–CC9)
-  as Pydantic data, plus `map_finding_to_controls()` — a deterministic
-  classifier from a finding's category / rule_id / scanner to SOC2 control
-  IDs. Precedent already exists: `parrot_tools.security.models` tags findings
-  with strings like `'SOC2-CC6.1'`.
 - **`advisory_engine.py`** — `SecurityAdvisoryEngine`, which, given a
-  `SecurityReportStore`, computes the day-over-day diff for a framework
-  (query latest two `ReportRef`s, diff their findings), maps the delta to
-  SOC2 controls via `soc2_controls`, and returns a structured
-  `AdvisoryReport` Pydantic model (no narrative — the agent's LLM writes prose
-  from it).
+  `SecurityReportStore` and a `ComplianceMapper`, computes the day-over-day
+  diff for a framework (query latest two `ReportRef`s, parse both into
+  `list[SecurityFinding]`, diff into new / resolved / persisting /
+  severity-changed sets), maps the delta to SOC2 controls via
+  `ComplianceMapper.map_finding_to_controls()` and
+  `get_framework_coverage()`, and returns a structured `AdvisoryReport`
+  Pydantic model (no narrative — the agent's LLM writes prose from it).
+  Where useful it reuses the existing `ComparisonDelta` model
+  (`parrot_tools.security.models`) instead of re-deriving diff lists.
 
 The agent's scheduled task is the orchestration seam: it calls the engine per
 framework, asks its own LLM to narrate the structured `AdvisoryReport`,
@@ -162,75 +168,68 @@ SecurityReport   S3ReportReader      SOC2AdvisoryToolkit   JiraToolkit
 
 ### Data Models
 
+SOC2 control data and finding→control mapping are provided by the EXISTING
+`ComplianceMapper` (returns `list[str]` control IDs and coverage `dict`s) —
+the engine consumes it; no new SOC2 model is defined. The NEW models live in
+`advisory_engine.py`:
+
 ```python
-# parrot_tools/security/soc2_controls.py
+# parrot_tools/security/advisory_engine.py
 from pydantic import BaseModel, Field
 
-class SOC2Control(BaseModel):
-    """A single SOC2 Trust Service Criteria control."""
-    control_id: str            # e.g. "CC6.1"
-    category: str              # e.g. "CC6 — Logical & Physical Access Controls"
-    title: str
-    description: str
-    keywords: list[str] = Field(default_factory=list)  # used by the mapper
-
-class SOC2ControlMapping(BaseModel):
-    """Result of mapping one finding to SOC2 controls."""
-    finding_id: str
-    severity: str
-    control_ids: list[str]     # one finding may touch several controls
-    rationale: str             # why these controls (deterministic, not LLM)
-
-# parrot_tools/security/advisory_engine.py
 class FindingDelta(BaseModel):
-    """Day-over-day change for a single finding."""
-    finding_id: str
+    """Day-over-day change for a single finding (aligned to SecurityFinding)."""
+    finding_id: str                 # SecurityFinding.id
     status: Literal["new", "resolved", "persisting", "severity_changed"]
-    severity: str
+    severity: str                   # SeverityLevel value
     previous_severity: str | None = None
     title: str
-    resource_id: str | None = None
+    resource: str | None = None     # SecurityFinding.resource
+    check_id: str | None = None     # SecurityFinding.check_id
+    soc2_control_ids: list[str] = Field(default_factory=list)  # from ComplianceMapper
 
 class AdvisoryRecommendation(BaseModel):
     """One actionable recommendation tied to SOC2 controls."""
     title: str
     severity: str
-    soc2_control_ids: list[str]
+    soc2_control_ids: list[str]     # from ComplianceMapper.map_finding_to_controls
     affected_resources: list[str] = Field(default_factory=list)
     recommended_action: str
-    is_material: bool          # gates Jira ticket creation
+    is_material: bool               # gates Jira ticket creation
 
 class AdvisoryReport(BaseModel):
     """Structured day-over-day SOC2 advisory for one framework. No narrative."""
     framework: str
-    baseline_report_id: str | None  # prior-day report (may be None on first run)
+    baseline_report_id: str | None  # prior-day report (None on first run)
     current_report_id: str
-    severity_delta: SeverityBreakdown   # current − baseline (signed counts)
+    severity_delta: SeverityBreakdown        # current − baseline (signed counts)
     deltas: list[FindingDelta]
-    control_coverage: dict[str, int]    # SOC2 control_id -> failing-finding count
+    soc2_coverage: dict                       # ComplianceMapper.get_framework_coverage()
+    control_findings: dict[str, int]          # control_id -> failing-finding count
     recommendations: list[AdvisoryRecommendation]
 ```
 
 ### New Public Interfaces
 
 ```python
-# parrot_tools/security/soc2_controls.py
-SOC2_CONTROL_CATALOG: list[SOC2Control]          # CC1..CC9, module-level constant
+# REUSED (already exists) — parrot_tools/security/reports/compliance_mapper.py
+class ComplianceMapper:
+    def __init__(self, mappings_dir: str | None = None) -> None: ...
+    def map_finding_to_controls(self, finding: SecurityFinding,
+                                framework: ComplianceFramework) -> list[str]: ...
+    def get_framework_coverage(self, findings: list[SecurityFinding],
+                               framework: ComplianceFramework) -> dict: ...
+    def get_findings_by_control(self, findings, framework) -> dict[str, list[SecurityFinding]]: ...
 
-def get_soc2_control(control_id: str) -> SOC2Control | None: ...
-def map_finding_to_controls(
-    *, category: str | None, rule_id: str | None, scanner: str | None,
-    compliance_tags: list[str] | None = None,
-) -> SOC2ControlMapping: ...
-
-# parrot_tools/security/advisory_engine.py
+# NEW — parrot_tools/security/advisory_engine.py
 class SecurityAdvisoryEngine:
-    def __init__(self, report_store: SecurityReportStore) -> None: ...
+    def __init__(self, report_store: SecurityReportStore,
+                 mapper: ComplianceMapper | None = None) -> None: ...
     async def build_daily_advisory(
         self, *, framework: str, provider: str = "aws",
     ) -> AdvisoryReport: ...
 
-# parrot_tools/security/soc2_advisory.py
+# NEW — parrot_tools/security/soc2_advisory.py
 class SOC2AdvisoryToolkit(AbstractToolkit):
     tool_prefix: str = "soc2"
     def __init__(self, report_store: SecurityReportStore, **kwargs) -> None: ...
@@ -254,35 +253,32 @@ class SOC2AdvisoryToolkit(AbstractToolkit):
   The `report_kind` Postgres column is text — **no DDL migration required**.
 - **Depends on**: none.
 
-### Module 1: SOC2 control catalog + mapper
-- **Path**: `packages/ai-parrot-tools/src/parrot_tools/security/soc2_controls.py`
-- **Responsibility**: Define `SOC2Control`, `SOC2ControlMapping`, the
-  `SOC2_CONTROL_CATALOG` (CC1–CC9 Trust Service Criteria), and the
-  deterministic `map_finding_to_controls()` classifier (keyword/scanner/
-  category based; honors existing `compliance_tags` like `"SOC2-CC6.1"`).
-- **Depends on**: none (pure data + logic).
-
-### Module 2: SecurityAdvisoryEngine (day-over-day diff)
+### Module 1: SecurityAdvisoryEngine (day-over-day diff + SOC2 mapping)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/security/advisory_engine.py`
 - **Responsibility**: `SecurityAdvisoryEngine.build_daily_advisory()` —
   query the two most-recent `ReportRef`s for a framework via
   `store.query(ReportFilter(..., order_by="produced_at_desc", limit=2))`,
-  fetch + parse both, compute `FindingDelta`s (new/resolved/persisting/
-  severity_changed), roll up a signed `severity_delta`, map the failing
-  findings to SOC2 controls via Module 1, and assemble `AdvisoryReport` with
-  `AdvisoryRecommendation`s. First-run (single report) yields baseline=None
-  and treats all findings as `new`.
-- **Depends on**: Module 1; `SecurityReportStore`; `get_report_parser`.
+  fetch + parse both into `list[SecurityFinding]`, compute `FindingDelta`s
+  (new/resolved/persisting/severity_changed), roll up a signed
+  `severity_delta`, map the delta to SOC2 controls via the EXISTING
+  `ComplianceMapper.map_finding_to_controls()` / `get_framework_coverage()`,
+  and assemble `AdvisoryReport` + `AdvisoryRecommendation`s. First-run
+  (single report) yields baseline=None and treats all findings as `new`.
+  Reuse `ComparisonDelta` (`parrot_tools.security.models`) where it fits.
+- **Depends on**: Module 0 (none, really); `ComplianceMapper` (exists);
+  `SecurityReportStore`; `get_report_parser`; `SecurityFinding` (exists).
 
-### Module 3: SOC2AdvisoryToolkit (LLM-facing, read-only)
+### Module 2: SOC2AdvisoryToolkit (LLM-facing, read-only)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/security/soc2_advisory.py`
 - **Responsibility**: `AbstractToolkit` with `tool_prefix="soc2"`, wrapping
-  Modules 1–2 as agent tools: `map_report_to_soc2`, `soc2_gap_analysis`,
-  `daily_soc2_advisory`. Returns structured dicts (no narrative). Catalog is
-  required; never writes.
-- **Depends on**: Modules 1, 2; `AbstractToolkit`; `SecurityReportStore`.
+  Module 1 + `ComplianceMapper` as agent tools: `map_report_to_soc2`,
+  `soc2_gap_analysis` (delegates to `ComplianceMapper.get_framework_coverage`
+  / `get_unmapped_findings`), `daily_soc2_advisory`. Returns structured dicts
+  (no narrative). Store required; never writes.
+- **Depends on**: Module 1; `ComplianceMapper`; `AbstractToolkit`;
+  `SecurityReportStore`.
 
-### Module 4: SecurityAdvisor agent
+### Module 3: SecurityAdvisor agent
 - **Path**: `agents/security_advisor.py`
 - **Responsibility**: `@register_agent(name="security_advisor")` `Agent`
   subclass. SOC2-oriented `BACKSTORY`. `agent_tools()` mounts (idempotently)
@@ -292,15 +288,17 @@ class SOC2AdvisoryToolkit(AbstractToolkit):
   the `AdvisoryReport` via `self.ask`, persists markdown as a `ReportRef`
   (`report_kind=ADVISORY`), creates a Jira `NAV` ticket per material
   recommendation, and emails the recipients via `send_notification`.
-- **Depends on**: Modules 0–3.
+- **Depends on**: Modules 0, 1, 2.
 
-### Module 5: Package exports & docs
+### Module 4: Package exports & docs
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/security/__init__.py`,
   `docs/` advisory note.
 - **Responsibility**: Export `SOC2AdvisoryToolkit`, `SecurityAdvisoryEngine`,
-  `SOC2Control`, `map_finding_to_controls`, `SOC2_CONTROL_CATALOG`; short doc
-  page describing the read-only advisor and SOC2 mapping.
-- **Depends on**: Modules 1–3.
+  `AdvisoryReport` (+ the new `advisory_engine` models); short doc page
+  describing the read-only advisor and its reuse of `ComplianceMapper` for
+  SOC2 mapping. (Do NOT export a new SOC2 catalog — it does not exist; the
+  catalog is `ComplianceMapper` + `soc2_controls.yaml`.)
+- **Depends on**: Modules 1, 2.
 
 ---
 
@@ -309,16 +307,15 @@ class SOC2AdvisoryToolkit(AbstractToolkit):
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_soc2_catalog_complete` | M1 | Catalog covers CC1–CC9; all `control_id`s unique |
-| `test_map_finding_honors_compliance_tag` | M1 | A `"SOC2-CC6.1"` tag maps to `CC6.1` deterministically |
-| `test_map_finding_keyword_fallback` | M1 | Unknown tag → keyword/scanner heuristic maps to a control |
-| `test_engine_first_run_all_new` | M2 | Single report → baseline None, all deltas `new` |
-| `test_engine_day_over_day_delta` | M2 | Two reports → correct new/resolved/severity_changed sets + signed `severity_delta` |
-| `test_engine_material_recommendation_flag` | M2 | New CRITICAL → `is_material=True`; resolved LOW → not material |
-| `test_toolkit_map_report_to_soc2` | M3 | Returns control mapping dict for a stored report |
-| `test_toolkit_requires_catalog` | M3 | Missing report → structured `{"error": ...}`, no raise |
-| `test_advisor_tools_are_read_only` | M4 | `agent_tools()` mounts no scanner toolkit (no CloudSploit/Prowler/Trivy/Checkov tool names) |
-| `test_advisor_registered` | M4 | `security_advisor` resolvable via registry |
+| `test_engine_reuses_compliance_mapper` | M1 | Engine maps a finding's controls via injected `ComplianceMapper` (e.g. S3 public → `CC6.x`); no bespoke catalog |
+| `test_engine_first_run_all_new` | M1 | Single report → baseline None, all deltas `new` |
+| `test_engine_day_over_day_delta` | M1 | Two reports → correct new/resolved/persisting/severity_changed sets + signed `severity_delta` |
+| `test_engine_material_recommendation_flag` | M1 | New CRITICAL → `is_material=True`; resolved LOW → not material |
+| `test_engine_soc2_coverage_present` | M1 | `AdvisoryReport.soc2_coverage` populated from `get_framework_coverage` |
+| `test_toolkit_map_report_to_soc2` | M2 | Returns SOC2 control mapping dict for a stored report |
+| `test_toolkit_requires_catalog` | M2 | Missing report → structured `{"error": ...}`, no raise |
+| `test_advisor_tools_are_read_only` | M3 | `agent_tools()` mounts no scanner toolkit (no CloudSploit/Prowler/Trivy/Checkov tool names) |
+| `test_advisor_registered` | M3 | `security_advisor` resolvable via registry |
 
 ### Integration Tests
 | Test | Description |
@@ -349,9 +346,10 @@ def two_soc2_reports(fake_store):
 - [ ] All integration tests pass (`pytest tests/ -k advisor -v`)
 - [ ] `SecurityAdvisor.agent_tools()` mounts **zero** scanner toolkits — asserted
       by `test_advisor_tools_are_read_only` (read-only is a hard constraint).
-- [ ] `SOC2_CONTROL_CATALOG` contains a control for each of CC1–CC9 with unique IDs.
-- [ ] `map_finding_to_controls()` is deterministic (same input → same output)
-      and prefers an explicit `"SOC2-CCx.y"` compliance tag when present.
+- [ ] SOC2 mapping is performed by the EXISTING `ComplianceMapper` (no new
+      catalog module is created) — asserted by `test_engine_reuses_compliance_mapper`.
+- [ ] `AdvisoryReport.soc2_coverage` is populated from
+      `ComplianceMapper.get_framework_coverage()`.
 - [ ] `SecurityAdvisoryEngine.build_daily_advisory()` returns an `AdvisoryReport`
       whose `deltas` correctly classify new/resolved/persisting/severity_changed
       against the two most-recent reports for the framework.
@@ -400,6 +398,15 @@ from parrot.storage.security_reports import (
 
 # Compliance framework enum (verified: parrot_tools/security/models.py:40)
 from parrot_tools.security import ComplianceFramework  # ComplianceFramework.SOC2 == "soc2"
+
+# SOC2 mapping — REUSE (verified: parrot_tools/security/reports/compliance_mapper.py:16)
+from parrot_tools.security.reports import ComplianceMapper  # verified: reports/__init__.py
+# Finding + diff models — REUSE (verified: parrot_tools/security/models.py)
+from parrot_tools.security.models import (
+    SecurityFinding,   # :62
+    SeverityLevel,     # :14  (has PASS member)
+    ComparisonDelta,   # :153 (new/resolved/unchanged_findings, severity_trend)
+)
 ```
 
 ### Existing Class Signatures
@@ -452,6 +459,27 @@ async def summarize_report(self, report_id_or_path: str) -> dict    # :326  (str
 async def markdown_report(self, content: str, filename=None, filename_prefix='report',
         directory=None, subdir='documents', **kwargs) -> str        # :444  (returns Path)
 
+# parrot_tools/security/reports/compliance_mapper.py  (ComplianceMapper — REUSE, do NOT rebuild)
+def __init__(self, mappings_dir: str | None = None)                                  # :40
+def map_finding_to_controls(self, finding: SecurityFinding, framework: ComplianceFramework) -> list[str]  # :142
+def get_framework_coverage(self, findings: list[SecurityFinding], framework: ComplianceFramework) -> dict  # :187
+def get_control_details(self, control_id: str, framework: ComplianceFramework) -> dict | None  # :279
+def get_all_controls(self, framework: ComplianceFramework) -> dict[str, dict]                   # :311
+def get_findings_by_control(self, findings, framework) -> dict[str, list[SecurityFinding]]      # :324
+def get_unmapped_findings(self, findings, framework) -> list[SecurityFinding]                   # :354
+# Backed by mappings/soc2_controls.yaml (CC1.1..CC9.x, framework: soc2, version "2017").
+
+# parrot_tools/security/models.py  (SecurityFinding — the finding shape, REUSE)
+class SecurityFinding(BaseModel):              # :62
+    id: str; source: FindingSource; severity: SeverityLevel; title: str    # :69-72
+    description: str|None; resource: str|None; resource_type: str|None      # :73-79
+    region: str="global"; provider: CloudProvider|None; service: str|None   # :82-86
+    check_id: str|None; compliance_tags: list[str]; remediation: str|None    # :89-96
+    raw: dict|None; timestamp: datetime|None                                 # :99-102
+class ComparisonDelta(BaseModel):              # :153  (reuse for diff if convenient)
+    new_findings; resolved_findings; unchanged_findings: list[SecurityFinding]
+    severity_trend: dict[str,int]                                            # :171
+
 # agents/security.py — patterns to mirror (verified)
 @register_agent(name="security_agent", at_startup=True)             # :124
 class SecurityAgent(Agent):                                         # :125
@@ -471,12 +499,21 @@ class SecurityAgent(Agent):                                         # :125
 | `SecurityAdvisor` | `JiraToolkit.get_tools()` | mount Jira tools | `agents/security.py:299-321` |
 | `SecurityAdvisor` | `send_notification` | email recipients | `agents/security.py:555` |
 
+### Already EXISTS — REUSE, do NOT rebuild
+- `ComplianceMapper` + `mappings/soc2_controls.yaml` — the SOC2 CC1–CC9 catalog
+  and deterministic `map_finding_to_controls()` ALREADY EXIST. **Do NOT create
+  a new `soc2_controls.py` / `SOC2_CONTROL_CATALOG` / `SOC2Control` /
+  `map_finding_to_controls` function.** Import `ComplianceMapper` instead.
+- `SecurityFinding`, `SeverityLevel` (has `PASS`), `ComparisonDelta` — exist in
+  `parrot_tools.security.models`. Reuse them; do not redefine.
+
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`ReportKind.ADVISORY`~~ — does **not** exist yet; Module 0 adds it.
-- ~~`SOC2AdvisoryToolkit`, `SecurityAdvisoryEngine`, `soc2_controls.py`~~ — new; do not import before creating.
+- ~~`SOC2AdvisoryToolkit`, `SecurityAdvisoryEngine`, `advisory_engine.py`~~ — new; do not import before creating.
+- ~~`soc2_controls.py` as a NEW module / `SOC2_CONTROL_CATALOG` constant~~ — must NOT be created; the catalog is the existing `ComplianceMapper` + YAML.
 - ~~A "SecurityAdvisor" agent~~ — does not exist; only `SecurityAgent` (`agents/security.py`).
 - ~~`store.diff()` / `store.compare()`~~ — the store has **no** diff method. Diffing
-  is done by `S3ReportReaderToolkit.compare_reports` or in the new engine.
+  is done by `S3ReportReaderToolkit.compare_reports`, `ComparisonDelta`, or in the new engine.
 - ~~`SecurityReportToolkit.compare_*`~~ — comparison lives in `S3ReportReaderToolkit`, not here.
 - ~~`self._build_weekly_summary` as an `Agent` base method~~ — referenced in
   `agents/security.py:723` but **not** defined on the read path here; do not assume
@@ -493,9 +530,13 @@ class SecurityAgent(Agent):                                         # :125
   return cached tools — mirror `SecurityAgent.agent_tools()` (security.py:168-187).
 - **Async-first**, Google-style docstrings, strict type hints, Pydantic for all
   structured data, `self.logger` (never `print`).
-- **Deterministic mapping**: `map_finding_to_controls()` must not call an LLM —
-  it is pure logic so results are auditable/repeatable. The LLM only narrates the
-  already-computed `AdvisoryReport`.
+- **Deterministic mapping via reuse**: SOC2 mapping is done by the existing
+  `ComplianceMapper` (pure logic, YAML-backed) — never by an LLM, and never by
+  a new bespoke catalog. The LLM only narrates the already-computed
+  `AdvisoryReport`. Note `ComplianceMapper.map_finding_to_controls` keys off
+  `finding.source` + `check_id` (`SOURCE_TO_KEY` / `_get_check_key`), so the
+  engine must parse report content into real `SecurityFinding`s (with `source`
+  and `check_id` set) for mapping to resolve.
 - **`produced_at` must be tz-aware UTC** (`datetime.now(timezone.utc)`) when
   building any `ReportRef` — the model does not validate this (models.py:99-100).
 
@@ -555,9 +596,9 @@ class SecurityAgent(Agent):                                         # :125
 - **Default isolation unit**: `per-spec` — all tasks run sequentially in one
   worktree (`feat-226-security-advisor`).
 - Tasks are largely sequential by dependency: Module 0 → Module 1 → Module 2 →
-  Module 3 → Module 4 → Module 5. Modules 0 and 1 have no dependencies and could
-  be parallelized, but the per-spec sequential worktree is simplest given the
-  small surface and shared package files.
+  Module 3 → Module 4. Module 0 (enum) is independent of Module 1 and could be
+  parallelized, but the per-spec sequential worktree is simplest given the small
+  surface and shared package files.
 - **Cross-feature dependencies**: none must be merged first — FEAT-162 (catalog)
   and FEAT-184 (`S3ReportReaderToolkit`) are already in `dev`.
 
@@ -568,3 +609,4 @@ class SecurityAgent(Agent):                                         # :125
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-05 | Jesus Lara | Initial draft (read-only SOC2 advisor; intake Q&A resolved) |
+| 0.2 | 2026-06-05 | Jesus Lara | Reuse existing `ComplianceMapper` + `soc2_controls.yaml` for SOC2 mapping (dropped duplicate catalog module); 5 modules → 4 build tasks |
