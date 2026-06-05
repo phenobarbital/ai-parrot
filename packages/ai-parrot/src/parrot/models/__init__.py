@@ -95,6 +95,11 @@ from .crew_definition import (
     FlowRelation,
     CrewDefinition,
 )
+from .conference import (
+    PeerVote,
+    ConferenceRound,
+    ConferenceResult,
+)
 
 __all__ = (
     "OutputFormat",
@@ -180,4 +185,8 @@ __all__ = (
     "AgentDefinition",
     "FlowRelation",
     "CrewDefinition",
+    # Conference models (FEAT-223)
+    "PeerVote",
+    "ConferenceRound",
+    "ConferenceResult",
 )
