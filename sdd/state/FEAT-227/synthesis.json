@@ -1,0 +1,277 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-227",
+  "mode": "enrichment",
+  "summary_oneline": "Add ComputerInteractionToolkit and ComputerAgent for vision-based browser automation using Gemini computer-use models with Playwright.",
+
+  "localization": [
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/playwright_driver.py",
+      "symbol": "PlaywrightDriver",
+      "lines": "1-395",
+      "role": "Existing async Playwright driver — reusable browser backend for ComputerInteraction",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/drivers/abstract.py",
+      "symbol": "AbstractDriver",
+      "lines": "11-352",
+      "role": "Abstract browser driver interface with screenshot/click/navigate/fill methods",
+      "evidence": ["F002"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+      "symbol": "GoogleGenAIClient._build_tools()",
+      "lines": "959-1037",
+      "role": "Tool builder that must be extended to emit types.Tool(computer_use=...) for computer-use models",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/models/google.py",
+      "symbol": "GoogleModel",
+      "lines": "9-37",
+      "role": "Model enum — needs new entries for computer-use model strings",
+      "evidence": ["F004"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/tools/toolkit.py",
+      "symbol": "AbstractToolkit",
+      "lines": "191-544",
+      "role": "Base class for ComputerInteractionToolkit — auto-discovers async methods as tools",
+      "evidence": ["F003", "F005"]
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/bots/agent.py",
+      "symbol": "BasicAgent",
+      "lines": "37-264",
+      "role": "Base class for ComputerAgent — provides tool management, ReAct loop, agent_tools() override",
+      "evidence": ["F003"]
+    },
+    {
+      "path": "packages/ai-parrot-tools/src/parrot_tools/scraping/toolkit.py",
+      "symbol": "WebScrapingToolkit",
+      "lines": "274-942",
+      "role": "Existing selector-based scraping toolkit — composable alongside ComputerInteraction",
+      "evidence": ["F002"]
+    }
+  ],
+
+  "constraints": [
+    {
+      "statement": "GoogleGenAIClient._build_tools() currently only handles FunctionDeclaration-based tools, not types.ComputerUse",
+      "evidence": ["F004"],
+      "implication": "Must extend _build_tools() to conditionally emit types.Tool(computer_use=...) when a ComputerUse configuration is present, without breaking existing FunctionDeclaration tools"
+    },
+    {
+      "statement": "Computer-use model returns predefined FunctionCalls (click_at, navigate, etc.) that are NOT declared as FunctionDeclarations — they are implicit from ComputerUse tool type",
+      "evidence": ["F001", "F006"],
+      "implication": "The tool result handling in GoogleGenAIClient must support FunctionResponseBlob (screenshot bytes) in addition to regular dict responses"
+    },
+    {
+      "statement": "Reference implementation uses sync Playwright; AI-Parrot's existing PlaywrightDriver uses async Playwright",
+      "evidence": ["F001", "F002"],
+      "implication": "ComputerInteraction must use async Playwright (matching AI-Parrot conventions) — cannot directly copy the reference sync implementation"
+    },
+    {
+      "statement": "Computer-use coordinates are normalized 0-1000, denormalized to viewport size",
+      "evidence": ["F001"],
+      "implication": "ComputerInteractionToolkit must handle coordinate normalization/denormalization"
+    },
+    {
+      "statement": "Screenshots must be returned as FunctionResponseBlob(mime_type='image/png', data=bytes) in the function response",
+      "evidence": ["F001", "F006"],
+      "implication": "The existing ToolResult model and GoogleGenAIClient response handling need extension for binary image data in function responses"
+    },
+    {
+      "statement": "Thinking mode (ThinkingConfig(include_thoughts=True)) is required for computer-use models",
+      "evidence": ["F001", "F006"],
+      "implication": "GoogleGenAIClient must auto-enable thinking for computer-use models, similar to existing _requires_thinking() for Gemini 2.5/3.x Pro"
+    },
+    {
+      "statement": "AI-Parrot async-first convention: all public methods must be async, no blocking I/O in async contexts",
+      "evidence": ["F003"],
+      "implication": "All ComputerInteraction methods and the agent loop must use async/await"
+    }
+  ],
+
+  "investigation": null,
+
+  "enrichment": {
+    "whats_new": [
+      {
+        "name": "ComputerInteractionToolkit",
+        "role": "AbstractToolkit subclass wrapping Gemini computer-use predefined actions (click_at, type_text_at, navigate, scroll, etc.) plus screenshot/recording capabilities (screenshot, start_recording, stop_recording, start_tracing, stop_tracing, record_har, save_pdf) with async Playwright backend"
+      },
+      {
+        "name": "ComputerAgent",
+        "role": "Agent subclass configured for computer-use models (Gemini 2.5/3.x computer-use) with ComputerInteractionToolkit + optional WebScrapingToolkit"
+      },
+      {
+        "name": "AsyncComputerBackend (or ComputerBackend)",
+        "role": "Async adaptation of the Computer abstract interface from the reference repo, backed by existing PlaywrightDriver"
+      },
+      {
+        "name": "GoogleModel.GEMINI_COMPUTER_USE entries",
+        "role": "New model enum entries for gemini-2.5-computer-use-preview-10-2025 and gemini-3-flash-preview"
+      },
+      {
+        "name": "ComputerTask / LoopResult models",
+        "role": "Pydantic models for defining reusable task sequences and loop execution results (count-based, condition-based, data-driven loops)"
+      }
+    ],
+    "whats_modified": [
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+        "symbol": "GoogleGenAIClient._build_tools()",
+        "change": "Extend to detect ComputerUse configuration and emit types.Tool(computer_use=...) alongside FunctionDeclaration tools",
+        "evidence": ["F004", "F006"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/clients/google/client.py",
+        "symbol": "GoogleGenAIClient (FunctionResponse handling)",
+        "change": "Support FunctionResponseBlob (screenshot bytes) in function response construction for computer-use actions",
+        "evidence": ["F004", "F006"]
+      },
+      {
+        "path": "packages/ai-parrot/src/parrot/models/google.py",
+        "symbol": "GoogleModel",
+        "change": "Add GEMINI_COMPUTER_USE and GEMINI_3_FLASH_PREVIEW entries",
+        "evidence": ["F004"]
+      }
+    ],
+    "non_goals": [
+      "Modifying the existing WebScrapingToolkit or its selector-based approach",
+      "Adding support for Browserbase backend (can be added later)",
+      "Implementing Anthropic computer-use (different protocol entirely)",
+      "Auto-detecting which model supports computer-use (explicit configuration)",
+      "Supporting non-browser computer-use environments (desktop, mobile apps)"
+    ],
+    "patterns_to_follow": [
+      {
+        "pattern": "FileManagerToolkit pattern: static async methods with tool_prefix for namespacing",
+        "evidence": ["F005"]
+      },
+      {
+        "pattern": "DriverRegistry pattern: register async Playwright backend via factory",
+        "evidence": ["F002"]
+      },
+      {
+        "pattern": "@register_agent for ComputerAgent registration with at_startup=False",
+        "evidence": ["F003"]
+      },
+      {
+        "pattern": "ToolResult with images field for returning screenshot data",
+        "evidence": ["F003"]
+      }
+    ],
+    "integration_risks": [
+      {
+        "risk": "google-genai SDK version may not include ComputerUse types",
+        "impact": "Import errors at runtime if SDK is outdated",
+        "mitigation": "Pin minimum SDK version, add try/except import with clear error message",
+        "evidence": ["F006"]
+      },
+      {
+        "risk": "Screenshot memory bloat in long conversations",
+        "impact": "Context window exhaustion and high token costs from PNG data",
+        "mitigation": "Implement screenshot pruning (keep last N turns) as in reference implementation",
+        "evidence": ["F001"]
+      },
+      {
+        "risk": "Coordinate denormalization precision across different viewport sizes",
+        "impact": "Clicks may miss targets on non-standard viewports",
+        "mitigation": "Use configurable viewport size with sensible defaults (1280x720), match reference 0-1000 normalization",
+        "evidence": ["F001"]
+      }
+    ]
+  },
+
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "Gemini computer-use requires types.Tool(computer_use=types.ComputerUse(...)) in GenerateContentConfig",
+      "evidence": ["F001", "F006"],
+      "confidence": "high",
+      "reasoning": "Directly read from the reference implementation source code"
+    },
+    {
+      "id": "C2",
+      "statement": "Existing PlaywrightDriver (async) provides all browser primitives needed for computer-use actions",
+      "evidence": ["F002"],
+      "confidence": "high",
+      "reasoning": "PlaywrightDriver has click, fill, navigate, screenshot, scroll, hover — maps 1:1 to computer-use actions"
+    },
+    {
+      "id": "C3",
+      "statement": "GoogleGenAIClient._build_tools() must be extended to support ComputerUse tool type",
+      "evidence": ["F004"],
+      "confidence": "high",
+      "reasoning": "Direct code read confirms only FunctionDeclaration is currently handled"
+    },
+    {
+      "id": "C4",
+      "statement": "ComputerInteractionToolkit should follow AbstractToolkit pattern with tool_prefix='computer'",
+      "evidence": ["F003", "F005"],
+      "confidence": "high",
+      "reasoning": "Consistent with FileManagerToolkit and JiraToolkit patterns"
+    },
+    {
+      "id": "C5",
+      "statement": "FunctionResponse must include FunctionResponseBlob with PNG screenshot bytes for computer-use actions",
+      "evidence": ["F001", "F006"],
+      "confidence": "high",
+      "reasoning": "Directly read from reference implementation — this is the API contract"
+    },
+    {
+      "id": "C6",
+      "statement": "WebScrapingToolkit extraction tools can complement ComputerInteraction for structured data extraction",
+      "evidence": ["F002"],
+      "confidence": "medium",
+      "reasoning": "Both toolkits operate on Playwright but use different targeting (selectors vs coordinates) — composition is reasonable but untested"
+    },
+    {
+      "id": "C7",
+      "statement": "The google-genai SDK in AI-Parrot's dependencies includes ComputerUse types",
+      "evidence": ["F006"],
+      "confidence": "medium",
+      "reasoning": "Reference repo uses these types, but AI-Parrot's pinned SDK version may be older — needs verification"
+    }
+  ],
+
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Should the ComputerInteractionToolkit be placed in parrot/tools/ (core) or packages/ai-parrot-tools/src/parrot_tools/ (satellite package)?",
+      "blocks_claims": ["C4"],
+      "plausible_answers": [
+        "parrot_tools/ (satellite) alongside WebScrapingToolkit — keeps core lightweight",
+        "parrot/tools/ (core) — since it requires Google client changes that live in core"
+      ],
+      "ask_user": true
+    },
+    {
+      "id": "U2",
+      "question": "Should ComputerAgent support safety_decision confirmations (the reference implementation prompts the user for confirmation on sensitive actions)?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "Yes — implement safety confirmation via agent event hooks",
+        "No — auto-acknowledge for autonomous operation, log the decision",
+        "Configurable — default to auto-acknowledge with option for interactive confirmation"
+      ],
+      "ask_user": true
+    }
+  ],
+
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence across all components (C1-C5 all high). The scope is well-defined with clear integration points. Multiple tasks will be needed (toolkit, agent, client changes, models) making this suitable for full spec + task decomposition."
+  },
+
+  "overall_confidence": "high",
+
+  "meta": {
+    "findings_used": ["F001", "F002", "F003", "F004", "F005", "F006"],
+    "findings_unused": [],
+    "notes": ""
+  }
+}
