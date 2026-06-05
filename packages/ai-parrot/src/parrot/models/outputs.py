@@ -219,12 +219,26 @@ class ObjectDetectionResult(BaseModel):
     )
 
 class ImageGenerationPrompt(BaseModel):
-    """Input schema for generating an image."""
+    """Input schema for generating an image.
+
+    Carries the full homologated attribute surface shared by both the Gemini
+    (``generate_image``) and Imagen (``generate_images``) backends. Individual
+    method kwargs always take precedence over the fields set here.
+    """
     prompt: str = Field(..., description="The main text prompt describing the desired image.")
     styles: Optional[List[str]] = Field(default_factory=list, description="Optional list of styles to apply (e.g., 'photorealistic', 'cinematic', 'anime').")
     model: str = Field(description="The image generation model to use.")
-    negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image.")
+    negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image (Imagen only).")
     aspect_ratio: str = Field(default="1:1", description="The desired aspect ratio (e.g., '1:1', '16:9', '9:16').")
+    resolution: Optional[str] = Field(default="1K", description="The desired resolution / image size (e.g., '1K', '2K', '4K').")
+    auto_upscale: Optional[bool] = Field(default=False, description="Whether to automatically upscale the generated image.")
+    number_of_images: int = Field(default=1, ge=1, le=8, description="How many images to generate per request.")
+    person_generation: str = Field(default="allow_adult", description="Person generation policy: 'allow_all', 'allow_adult', or 'dont_allow' (Imagen only).")
+    safety_filter_level: str = Field(default="BLOCK_ONLY_HIGH", description="Safety filter threshold (e.g., 'BLOCK_ONLY_HIGH', 'BLOCK_MEDIUM_AND_ABOVE', 'BLOCK_LOW_AND_ABOVE').")
+    seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
+    add_watermark: bool = Field(default=False, description="Whether to add a SynthID watermark (Imagen only).")
+    output_mime_type: str = Field(default="image/png", description="Output image MIME type (e.g., 'image/png', 'image/jpeg').")
+    service_tier: Optional[str] = Field(default=None, description="Optional service tier (e.g., 'flex'); applies to the Gemini backend.")
 
 
 class SpeakerConfig(BaseModel):
@@ -264,6 +278,10 @@ class VideoGenerationPrompt(BaseModel):
         default='',
         description="A description of what to avoid in the video."
     )
+    resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
+    smoothing: Optional[bool] = Field(default=False, description="Whether to apply frame rate smoothing to the generated video.")
+    seed: Optional[int] = Field(default=None, description="Optional seed for reproducible generation.")
+    include_audio: bool = Field(default=True, description="Whether to include generated audio.")
 
 class SentimentAnalysis(BaseModel):
     """Structured sentiment analysis response."""

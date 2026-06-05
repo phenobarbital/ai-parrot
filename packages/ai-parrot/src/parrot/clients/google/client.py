@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from collections import defaultdict
+import copy
 import re
 import asyncio
 import logging
@@ -3805,8 +3806,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             display_name (Optional[str]): Human-readable display name for the batch job.
             **kwargs: Extra arguments forwarded to batch creation or client initialization.
         """
-        import json
         import tempfile
+        from datamodel.parsers.json import json_encoder, json_decoder
         from google.genai import types
 
         if not requests:
@@ -3857,7 +3858,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "key": f"req_{i}",
                         "request": payload
                     }
-                    temp_file.write(json.dumps(line) + "\n")
+                    temp_file.write(json_encoder(line) + "\n")
                 temp_file.flush()
                 temp_file.close()
                 
@@ -3902,6 +3903,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             self.logger.info("Batch Job succeeded! Downloading and parsing results...")
             results = await self.download_and_parse_batch_results(batch_job, requests)
             
+            try:
+                await self.persist_batch_results(results, batch_id=batch_job.name)
+            except Exception as e:
+                self.logger.error(f"Failed to automatically persist batch results: {e}")
+            
             # Clean up uploaded input file
             try:
                 await self.client.aio.files.delete(name=uploaded_file.name)
@@ -3934,14 +3940,180 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             jobs.append(job)
         return jobs
 
+    async def persist_batch_results(
+        self,
+        results: List[AIMessage],
+        batch_id: str,
+        save_dir: Optional[Union[str, Path]] = None
+    ) -> Path:
+        """
+        Serialize and persist batch results (AIMessage objects, images, videos, and structured data)
+        to a local directory to prevent content loss.
+
+        Args:
+            results: List of AIMessage objects from a batch execution.
+            batch_id: A unique identifier for the batch (e.g. job name, timestamp).
+            save_dir: Destination directory. Defaults to BASE_DIR / "batch_results".
+
+        Returns:
+            The Path where the batch results were saved.
+        """
+        import shutil
+        from navconfig import BASE_DIR
+        from datamodel.parsers.json import json_encoder
+
+        # 1. Resolve and create base save directory
+        if save_dir is None:
+            save_dir = BASE_DIR.joinpath("batch_results")
+        else:
+            save_dir = Path(save_dir)
+
+        # Clean batch_id for filename/folder safety
+        clean_batch_id = str(batch_id).replace("/", "_").replace("\\", "_").replace(":", "_")
+        job_dir = save_dir.joinpath(clean_batch_id)
+        job_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info(f"Persisting {len(results)} batch results to: {job_dir}")
+
+        for i, msg in enumerate(results):
+            if isinstance(msg, Exception):
+                # Write exception details to a file
+                err_file = job_dir.joinpath(f"result_{i}_error.txt")
+                err_file.write_text(str(msg), encoding="utf-8")
+                continue
+
+            # Copy media files to the job directory and update their paths in serialized dict
+            msg_dict = msg.model_dump(mode="json")
+            
+            # Helper to copy list of files
+            def copy_files(file_paths, key_name):
+                new_paths = []
+                if file_paths:
+                    media_dir = job_dir.joinpath(key_name)
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                    for path_str in file_paths:
+                        src_path = Path(path_str)
+                        if src_path.exists() and src_path.is_file():
+                            timestamp = int(time.time() * 1000)
+                            unique_name = f"{src_path.stem}_{timestamp}{src_path.suffix}"
+                            dest_path = media_dir.joinpath(unique_name)
+                            shutil.copy2(src_path, dest_path)
+                            new_paths.append(str(dest_path))
+                        else:
+                            new_paths.append(path_str)
+                return new_paths
+
+            # Copy images, files, media, documents if present
+            if msg.images:
+                msg_dict["images"] = copy_files([str(p) for p in msg.images], "images")
+            if msg.files:
+                msg_dict["files"] = copy_files([str(p) for p in msg.files], "files")
+            if msg.media:
+                msg_dict["media"] = copy_files([str(p) for p in msg.media], "media")
+            if msg.documents:
+                msg_dict["documents"] = copy_files([str(p) for p in msg.documents], "documents")
+
+            # Write serialized AIMessage JSON
+            json_file = job_dir.joinpath(f"result_{i}_message.json")
+            with open(json_file, "w", encoding="utf-8") as f:
+                f.write(json_encoder(msg_dict))
+
+            # Write structured output separately for convenience
+            if msg.structured_output is not None:
+                struct_file = job_dir.joinpath(f"result_{i}_structured.json")
+                with open(struct_file, "w", encoding="utf-8") as f:
+                    if hasattr(msg.structured_output, "model_dump"):
+                        f.write(json_encoder(msg.structured_output.model_dump(mode="json")))
+                    elif isinstance(msg.structured_output, (dict, list)):
+                        f.write(json_encoder(msg.structured_output))
+                    else:
+                        f.write(str(msg.structured_output))
+
+            # Write plain response text separately
+            if msg.response:
+                text_file = job_dir.joinpath(f"result_{i}_response.txt")
+                text_file.write_text(msg.response, encoding="utf-8")
+
+        self.logger.info(f"Persisted batch results successfully.")
+        return job_dir
+
+    def _validate_genai_response(self, resp_dict: Dict[str, Any]) -> Any:
+        """Validate a raw batch ``response`` dict into a GenerateContentResponse.
+
+        The batch API may emit usage-metadata fields (e.g. ``serviceTier``)
+        that a given ``google-genai`` SDK version does not yet model. Those
+        models are configured with ``extra='forbid'``, so a strict
+        ``model_validate`` raises ``ValidationError`` on the unknown key and
+        the whole batch is lost. This validator strips any ``extra_forbidden``
+        keys reported by Pydantic and retries, so we degrade gracefully across
+        SDK versions instead of failing.
+
+        Args:
+            resp_dict: Raw ``response`` mapping from a batch JSONL line.
+
+        Returns:
+            A parsed ``types.GenerateContentResponse`` instance.
+        """
+        from google.genai import types
+        from pydantic import ValidationError
+
+        # Validate against a mutable copy so we never mutate the caller's dict.
+        payload = copy.deepcopy(resp_dict)
+        max_attempts = 8
+        for _ in range(max_attempts):
+            try:
+                return types.GenerateContentResponse.model_validate(payload)
+            except ValidationError as exc:
+                removed = False
+                for err in exc.errors():
+                    if err.get("type") != "extra_forbidden":
+                        continue
+                    # loc is the path to the offending key inside payload.
+                    if self._drop_nested_key(payload, err.get("loc", ())):
+                        removed = True
+                if not removed:
+                    raise
+                self.logger.warning(
+                    "Stripped %d unknown field(s) from batch GenerateContentResponse "
+                    "before validation (SDK schema mismatch).",
+                    len([e for e in exc.errors() if e.get("type") == "extra_forbidden"]),
+                )
+        # Final attempt; let it raise if it still fails.
+        return types.GenerateContentResponse.model_validate(payload)
+
+    @staticmethod
+    def _drop_nested_key(payload: Any, loc: tuple) -> bool:
+        """Remove the value at ``loc`` (a Pydantic error location path).
+
+        Walks ``payload`` (nested dicts/lists) following ``loc`` and deletes the
+        final key. Returns True if a key was removed.
+        """
+        if not loc:
+            return False
+        node = payload
+        for part in loc[:-1]:
+            if isinstance(node, dict):
+                node = node.get(part)
+            elif isinstance(node, list) and isinstance(part, int) and 0 <= part < len(node):
+                node = node[part]
+            else:
+                return False
+            if node is None:
+                return False
+        last = loc[-1]
+        if isinstance(node, dict) and last in node:
+            del node[last]
+            return True
+        return False
+
     async def download_and_parse_batch_results(
         self,
         job: Any,
         original_requests: List[Dict[str, Any]]
     ) -> List[AIMessage]:
         """Download output file from completed Batch Job and parse to List[AIMessage]."""
-        import json
         from google.genai import types
+        from datamodel.parsers.json import json_decoder
 
         if not getattr(job, "dest", None) or not getattr(job.dest, "file_name", None):
             raise ValueError(f"Job does not have a destination output file: {job}")
@@ -3957,14 +4129,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         for line in results_text.splitlines():
             if not line.strip():
                 continue
-            line_dict = json.loads(line)
+            line_dict = json_decoder(line)
             key = line_dict.get("key")
             if not key:
                 continue
             
             if "response" in line_dict:
                 resp_dict = line_dict["response"]
-                response_obj = types.GenerateContentResponse.model_validate(resp_dict)
+                response_obj = self._validate_genai_response(resp_dict)
                 output_map[key] = response_obj
             elif "error" in line_dict:
                 output_map[key] = line_dict["error"]
@@ -4017,10 +4189,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                             if hasattr(structured_output, "model_validate_json"):
                                 final_output = structured_output.model_validate_json(text_response)
                             elif hasattr(structured_output, "model_validate"):
-                                parsed_json = json.loads(text_response)
+                                parsed_json = json_decoder(text_response)
                                 final_output = structured_output.model_validate(parsed_json)
                         else:
-                            final_output = json.loads(text_response)
+                            final_output = json_decoder(text_response)
                     except Exception as e:
                         self.logger.error(f"Error parsing structured output for batch response: {e}")
                 

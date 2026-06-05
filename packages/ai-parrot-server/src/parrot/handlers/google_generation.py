@@ -121,7 +121,7 @@ class GoogleGeneration(BaseView):
 
     async def _generate_image(self, client: GoogleGenAIClient, data: Dict[str, Any]) -> web.Response:
         prompt_data = ImageGenerationPrompt(**data["prompt"])
-        response = await client.generate_images(prompt_data=prompt_data)
+        response = await client.generate_images(prompt=prompt_data)
         return self.json_response(json_encoder(response))
 
     async def _generate_music(self, client: GoogleGenAIClient, data: Dict[str, Any]) -> web.StreamResponse:

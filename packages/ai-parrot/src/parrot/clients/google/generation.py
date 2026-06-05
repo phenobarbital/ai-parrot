@@ -77,41 +77,106 @@ class GoogleGeneration:
 
     async def generate_images(
         self,
-        prompt_data: ImageGenerationPrompt,
-        model: Union[str, GoogleModel] = GoogleModel.IMAGEN_4,
+        prompt: Union[str, ImageGenerationPrompt],
+        model: Optional[Union[str, GoogleModel]] = None,
         reference_image: Optional[Path] = None,
         output_directory: Optional[Path] = None,
-        mime_format: str = "image/jpeg",
-        number_of_images: int = 1,
+        aspect_ratio: Optional[str] = None,
+        resolution: Optional[str] = None,
+        number_of_images: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        person_generation: Optional[str] = None,
+        safety_filter_level: Optional[str] = None,
+        seed: Optional[int] = None,
+        add_watermark: Optional[bool] = None,
+        output_mime_type: Optional[str] = None,
+        service_tier: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        add_watermark: bool = False
+        **kwargs: Any
     ) -> AIMessage:
         """
-        Generates images based on a text prompt using Imagen.
-        """
-        if prompt_data.model:
-            model = GoogleModel.IMAGEN_4.value
-        model = model.value if isinstance(model, GoogleModel) else model
-        self.logger.info(
-            f"Starting image generation with model: {model}"
-        )
-        if model == GoogleModel.GEMINI_2_5_FLASH_IMAGE.value:
-            image_provider = "google_genai"
-            config=types.GenerateContentConfig(
-                response_modalities=['TEXT', 'IMAGE']
-            )
-        else:
-            image_provider = "google_imagen"
+        Generates images using Google's Imagen models.
 
-        full_prompt = prompt_data.prompt
-        if prompt_data.styles:
-            full_prompt += ", " + ", ".join(prompt_data.styles)
+        Accepts either a plain ``str`` prompt or a fully-specified
+        :class:`~parrot.models.ImageGenerationPrompt`. Individual kwargs always
+        take precedence over fields inside ``ImageGenerationPrompt``.
+
+        This method is homologated with :meth:`generate_image` (the Gemini
+        backend): both share the same attribute surface. ``service_tier`` is
+        accepted here for signature parity but ignored with a debug log, since
+        the Imagen ``generate_images`` API does not support it.
+
+        Args:
+            prompt: Text prompt or ``ImageGenerationPrompt`` describing the image.
+            model: Imagen model to use (default: imagen-4).
+            reference_image: Optional reference image for guidance.
+            output_directory: Directory to save generated images.
+            aspect_ratio: Aspect ratio (e.g., '1:1', '16:9').
+            resolution: Desired image size (e.g., '1K', '2K').
+            number_of_images: Number of images to generate.
+            negative_prompt: Description of what to avoid in the image.
+            person_generation: Person generation policy ('allow_all',
+                'allow_adult', 'dont_allow').
+            safety_filter_level: Safety filter threshold.
+            seed: Optional seed for reproducible generation.
+            add_watermark: Whether to add a SynthID watermark.
+            output_mime_type: Output image MIME type.
+            service_tier: Gemini-only; ignored by the Imagen backend.
+            user_id: Conversation user id (reserved).
+            session_id: Conversation session id (reserved).
+
+        Returns:
+            AIMessage containing the generated image(s).
+        """
+        # --- Unpack ImageGenerationPrompt; explicit kwargs win -----------------
+        vin: Optional[ImageGenerationPrompt] = None
+        styles: List[str] = []
+        if isinstance(prompt, ImageGenerationPrompt):
+            vin = prompt
+            prompt_text = vin.prompt
+            styles = vin.styles or []
+        else:
+            prompt_text = prompt
+
+        def _resolve(value, field: str, default):
+            if value is not None:
+                return value
+            if vin is not None:
+                return getattr(vin, field)
+            return default
+
+        model = _resolve(model, "model", GoogleModel.IMAGEN_4)
+        aspect_ratio = _resolve(aspect_ratio, "aspect_ratio", "1:1")
+        resolution = _resolve(resolution, "resolution", None)
+        number_of_images = _resolve(number_of_images, "number_of_images", 1)
+        negative_prompt = _resolve(negative_prompt, "negative_prompt", None)
+        person_generation = _resolve(person_generation, "person_generation", "allow_adult")
+        safety_filter_level = _resolve(safety_filter_level, "safety_filter_level", "BLOCK_ONLY_HIGH")
+        seed = _resolve(seed, "seed", None)
+        add_watermark = bool(_resolve(add_watermark, "add_watermark", False))
+        output_mime_type = _resolve(output_mime_type, "output_mime_type", "image/png")
+        service_tier = _resolve(service_tier, "service_tier", None)
+
+        model = model.value if isinstance(model, GoogleModel) else model
+        if service_tier:
+            self.logger.debug(
+                f"service_tier={service_tier!r} is ignored by generate_images "
+                "(Imagen backend); use generate_image (Gemini) for that attribute."
+            )
+
+        # Ensure client is fully initialized and cached for the current loop
+        await self._ensure_client(model=model)
+
+        image_provider = "google_imagen"
+        self.logger.info(f"Starting image generation with model: {model}")
+
+        full_prompt = prompt_text
+        if styles:
+            full_prompt += ", " + ", ".join(styles)
 
         if reference_image:
-            self.logger.info(
-                f"Using reference image: {reference_image}"
-            )
+            self.logger.info(f"Using reference image: {reference_image}")
             if not reference_image.exists():
                 raise FileNotFoundError(
                     f"Reference image not found: {reference_image}"
@@ -120,19 +185,27 @@ class GoogleGeneration:
             ref_image = Image.open(reference_image)
             full_prompt = [full_prompt, ref_image]
 
-        config = types.GenerateImagesConfig(
-            number_of_images=number_of_images,
-            output_mime_type=mime_format,
-            safety_filter_level="BLOCK_ONLY_HIGH",
-            person_generation="ALLOW_ADULT",
-            aspect_ratio=prompt_data.aspect_ratio,
-        )
+        config_kwargs: dict = {
+            "number_of_images": number_of_images,
+            "output_mime_type": output_mime_type,
+            "safety_filter_level": safety_filter_level,
+            "person_generation": person_generation,
+            "aspect_ratio": aspect_ratio,
+            "add_watermark": add_watermark,
+        }
+        if resolution is not None:
+            config_kwargs["image_size"] = resolution
+        if negative_prompt:
+            config_kwargs["negative_prompt"] = negative_prompt
+        if seed is not None:
+            config_kwargs["seed"] = seed
+        config = types.GenerateImagesConfig(**config_kwargs)
 
         try:
             start_time = time.time()
             # Use the asynchronous client for image generation
             image_response = await self.client.aio.models.generate_images(
-                model=prompt_data.model,
+                model=model,
                 prompt=full_prompt,
                 config=config
             )
@@ -815,6 +888,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         seed: Optional[int] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        **kwargs: Any
     ) -> AIMessage:
         """
         Generates videos using Google's Veo models.
@@ -917,11 +991,32 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             return types.Image(image_bytes=buf.getvalue(), mime_type="image/jpeg")
 
         # --- Build GenerateVideosConfig ----------------------------------------
+        pg_val = person_generation.upper() if isinstance(person_generation, str) else person_generation
+        # VEO 3.x only accepts specific personGeneration values, and they differ
+        # by modality (per https://ai.google.dev/gemini-api/docs/video):
+        #   - text-to-video & extension: 'allow_all' only
+        #   - image-to-video / interpolation / reference images: 'allow_adult' only
+        # 'dont_allow' is never supported on VEO 3.x. Force the correct value to
+        # avoid a 400 INVALID_ARGUMENT.
+        if is_veo31:
+            is_image_to_video = (
+                ref_img_pil is not None
+                or bool(reference_images)
+                or last_frame is not None
+            )
+            required = "ALLOW_ADULT" if is_image_to_video else "ALLOW_ALL"
+            if pg_val != required:
+                self.logger.warning(
+                    f"person_generation={pg_val!r} is not supported by VEO 3.x for "
+                    f"{'image-to-video' if is_image_to_video else 'text-to-video'}; "
+                    f"overriding to {required!r}."
+                )
+                pg_val = required
         config_kwargs: dict = {
             "aspect_ratio": ar_str,
             "negative_prompt": negative_prompt,
             "number_of_videos": number_of_videos,
-            "person_generation": person_generation,
+            "person_generation": pg_val,
             "duration_seconds": duration,
         }
 
@@ -1512,93 +1607,203 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
     async def generate_image(
         self,
-        prompt: str,
+        prompt: Union[str, ImageGenerationPrompt],
+        model: Optional[Union[str, GoogleModel]] = None,
         reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
         google_search: bool = False,
-        aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
-        resolution: Union[str, ImageResolution] = ImageResolution.RES_2K,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
+        aspect_ratio: Optional[Union[str, AspectRatio]] = None,
+        resolution: Optional[Union[str, ImageResolution]] = None,
+        number_of_images: Optional[int] = None,
+        negative_prompt: Optional[str] = None,
+        person_generation: Optional[str] = None,
+        safety_filter_level: Optional[str] = None,
+        seed: Optional[int] = None,
+        add_watermark: Optional[bool] = None,
+        output_mime_type: Optional[str] = None,
+        service_tier: Optional[str] = None,
+        temperature: Optional[float] = None,
+        prompt_instruction: Optional[str] = None,
         output_directory: Optional[str] = None,
         as_base64: bool = False,
-        service_tier: Optional[str] = None
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        **kwargs: Any
     ) -> AIMessage:
         """
-        Generate images using Google's Gemini/Imagen models.
+        Generate images using Google's Gemini image models (a.k.a. Nano-Banana).
+
+        Accepts either a plain ``str`` prompt or a fully-specified
+        :class:`~parrot.models.ImageGenerationPrompt`. Individual kwargs always
+        take precedence over fields inside ``ImageGenerationPrompt``.
+
+        This method is homologated with :meth:`generate_images` (the Imagen
+        backend): both share the same attribute surface. Attributes that only
+        apply to the Imagen backend (``negative_prompt``, ``seed``,
+        ``add_watermark``) are accepted here for signature parity but ignored
+        with a debug log, since the Gemini ``generate_content`` API does not
+        support them.
 
         Args:
-            prompt: Text prompt for image generation.
+            prompt: Text prompt or ``ImageGenerationPrompt`` describing the image.
+            model: Model to use (default: gemini-3.1-flash-image-preview).
             reference_images: List of reference images (path or PIL.Image).
-            google_search: Whether to use Google Search for grounding (if supported).
+            google_search: Whether to use Google Search grounding (if supported).
             aspect_ratio: Aspect ratio for the generated image.
-            resolution: Desired resolution (e.g., '1K', '2K').
-            model: Model to use (default: gemini-3.1-pro-image-preview).
+            resolution: Desired image size (e.g., '1K', '2K', '4K').
+            number_of_images: Number of candidate images to request.
+            negative_prompt: Imagen-only; ignored by the Gemini backend.
+            person_generation: Person generation policy (ImageConfig).
+            safety_filter_level: Safety threshold mapped to safety_settings.
+            seed: Imagen-only; ignored by the Gemini backend.
+            add_watermark: Imagen-only; ignored by the Gemini backend.
+            output_mime_type: Output image MIME type.
+            service_tier: Optional service tier (e.g., 'flex').
+            temperature: Optional sampling temperature.
+            prompt_instruction: Optional system instruction.
             output_directory: Directory to save generated images.
-            as_base64: Whether to include base64 encoded string in the response.
-            service_tier: Optional service tier configuration (e.g., 'flex').
+            as_base64: Whether to include base64 encoded strings in the response.
+            user_id: Conversation user id (only used when ``stateless=False``).
+            session_id: Conversation session id (only used when ``stateless=False``).
+            stateless: When False, runs a stateful chat with conversation memory.
 
         Returns:
             AIMessage containing the generated image(s).
         """
+        # --- Unpack ImageGenerationPrompt; explicit kwargs win -----------------
+        vin: Optional[ImageGenerationPrompt] = None
+        styles: List[str] = []
+        if isinstance(prompt, ImageGenerationPrompt):
+            vin = prompt
+            prompt_text = vin.prompt
+            styles = vin.styles or []
+        else:
+            prompt_text = prompt
+
+        def _resolve(value, field: str, default):
+            if value is not None:
+                return value
+            if vin is not None:
+                return getattr(vin, field)
+            return default
+
+        model = _resolve(model, "model", GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW)
+        aspect_ratio = _resolve(aspect_ratio, "aspect_ratio", AspectRatio.RATIO_16_9)
+        resolution = _resolve(resolution, "resolution", ImageResolution.RES_2K)
+        number_of_images = _resolve(number_of_images, "number_of_images", 1)
+        person_generation = _resolve(person_generation, "person_generation", None)
+        safety_filter_level = _resolve(safety_filter_level, "safety_filter_level", "BLOCK_ONLY_HIGH")
+        output_mime_type = _resolve(output_mime_type, "output_mime_type", "image/png")
+        service_tier = _resolve(service_tier, "service_tier", None)
+        negative_prompt = _resolve(negative_prompt, "negative_prompt", None)
+        seed = _resolve(seed, "seed", None)
+        add_watermark = bool(_resolve(add_watermark, "add_watermark", False))
+        auto_upscale = bool(kwargs.get("auto_upscale", _resolve(None, "auto_upscale", False)))
+
+        # Imagen-only attributes are not supported by the Gemini backend.
+        for name, val in (("negative_prompt", negative_prompt), ("seed", seed),
+                          ("add_watermark", add_watermark or None)):
+            if val:
+                self.logger.debug(
+                    f"{name}={val!r} is ignored by generate_image (Gemini backend); "
+                    "use generate_images (Imagen) for that attribute."
+                )
+
         model_str = model.value if isinstance(model, GoogleModel) else model
         client = await self.get_client(model=model_str)
 
-        # 1. Prepare Content
-        contents = [prompt]
+        # --- Prepare prompt + reference content --------------------------------
+        full_prompt = prompt_text
+        if styles:
+            full_prompt += ", " + ", ".join(styles)
+
+        contents = [full_prompt]
         if reference_images:
             for img in reference_images:
                 try:
-                    loaded_img = self._load_image(img)
-                    contents.append(loaded_img)
+                    contents.append(self._load_image(img))
                 except Exception as e:
                     self.logger.warning(f"Failed to load reference image {img}: {e}")
 
-        # 2. Prepare Config
-        tools = []
-        if google_search:
-            tools.append({"google_search": {}})
+        # --- Conversation history (stateful mode) ------------------------------
+        history = []
+        conversation_session = None
+        turn_id = str(uuid.uuid4())
+        messages = []
+        if not stateless:
+            messages, conversation_session, _ = await self._prepare_conversation_context(
+                full_prompt, None, user_id, session_id, None
+            )
+            for msg in messages[:-1]:
+                role = msg['role'].lower()
+                parts = [
+                    Part(text=pc.get('text', ''))
+                    for pc in msg.get('content', [])
+                    if isinstance(pc, dict) and pc.get('type') == 'text'
+                ]
+                if not parts:
+                    continue
+                if role == 'user':
+                    history.append(UserContent(parts=parts))
+                elif role in ('assistant', 'model'):
+                    history.append(ModelContent(parts=parts))
 
-        if isinstance(model, GoogleModel):
-            model = model.value
+        # --- Build config ------------------------------------------------------
+        tools = [{"google_search": {}}] if google_search else []
 
+        ar_str = aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else aspect_ratio
         image_size = resolution.value if isinstance(resolution, ImageResolution) else resolution
 
-        config = types.GenerateContentConfig(
-            response_modalities=['TEXT', 'IMAGE'],
-            image_config=types.ImageConfig(
-                aspect_ratio=aspect_ratio,
-                image_size=image_size
-            ),
-            safety_settings=[
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
-                ),
-            ],
-            tools=tools,
-            service_tier=service_tier
+        image_config_kwargs: dict = {
+            "aspect_ratio": ar_str,
+            "image_size": image_size,
+            "output_mime_type": output_mime_type,
+        }
+        if person_generation:
+            image_config_kwargs["person_generation"] = person_generation
+
+        threshold = getattr(
+            types.HarmBlockThreshold, safety_filter_level, types.HarmBlockThreshold.BLOCK_ONLY_HIGH
         )
+        safety_settings = [
+            types.SafetySetting(category=cat, threshold=threshold)
+            for cat in (
+                types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            )
+        ]
+
+        config_kwargs: dict = {
+            "response_modalities": ['TEXT', 'IMAGE'],
+            "image_config": types.ImageConfig(**image_config_kwargs),
+            "safety_settings": safety_settings,
+            "tools": tools,
+            "service_tier": service_tier,
+        }
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+        if prompt_instruction:
+            config_kwargs["system_instruction"] = prompt_instruction
+        if number_of_images and number_of_images > 1:
+            config_kwargs["candidate_count"] = number_of_images
+
+        config = types.GenerateContentConfig(**config_kwargs)
 
         try:
-            # 3. Call API
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config
-            )
+            # --- Call API ------------------------------------------------------
+            if stateless:
+                response = await client.aio.models.generate_content(
+                    model=model_str,
+                    contents=contents,
+                    config=config
+                )
+            else:
+                chat = client.aio.chats.create(model=model_str, history=history, config=config)
+                response = await chat.send_message(message=contents)
 
-            # 4. Process Response
+            # --- Process response ---------------------------------------------
             generated_images = []
             image_paths = []
             base64_images = []
@@ -1613,75 +1818,105 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     if part.text:
                         text_output += part.text + "\n"
 
-                    # Handle Image Part
                     img = None
-                    # Check as_image() method which is standard in Google GenAI SDK v0.1+
                     if hasattr(part, 'as_image'):
                         try:
                             img = part.as_image()
                         except Exception:
                             pass
-                    elif hasattr(part, 'image'):
-                        # Direct image attribute?
-                        pass
 
                     if img:
+                        if auto_upscale:
+                            img = await self._maybe_upscale(client, img)
+
                         generated_images.append(img)
                         if output_directory:
                             filename = f"gen_{uuid.uuid4().hex[:8]}.png"
                             save_path = out_dir / filename
-                            # Use run_in_executor for blocking I/O
                             await asyncio.get_running_loop().run_in_executor(
                                 None, img.save, save_path
                             )
                             image_paths.append(str(save_path))
 
                         if as_base64:
-                            buffered = io.BytesIO()
-                            if isinstance(img, Image.Image):
-                                img.save(buffered, format="PNG")
-                            else:
-                                # Attempt to save without format argument if it's a custom wrapper
-                                # or handle accordingly (e.g. wrapper might not support BytesIO)
-                                try:
-                                    # If it's the Google wrapper, it might support save(fp) but maybe not format kwarg
-                                    img.save(buffered)
-                                except Exception:
-                                    # Try to convert if it has bytes
-                                    if hasattr(img, 'image_bytes'):
-                                        buffered.write(img.image_bytes)
-                                    elif hasattr(img, 'data'): # Some older or other types
-                                        buffered.write(img.data)
-                                    else:
-                                        self.logger.warning(f"Could not extract bytes from image object type: {type(img)}")
+                            b64 = self._image_to_base64(img)
+                            if b64:
+                                base64_images.append(b64)
 
-                            if buffered.tell() > 0:
-                                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                                base64_images.append(img_str)
-
-            # Construct AIMessage
-            # If no text, use a default message
             if not text_output.strip():
                 text_output = "Image generated successfully."
 
             raw_output = generated_images[0] if generated_images else None
 
-            # Construct AIMessage
-            message = AIMessage(
-                input=prompt,
-                output=raw_output,  # Raw output (PIL Image)
+            if not stateless:
+                await self._update_conversation_memory(
+                    user_id, session_id, conversation_session,
+                    messages + [{
+                        "role": "user",
+                        "content": [{"type": "text", "text": f"[Image Generation]: {full_prompt}"}],
+                    }],
+                    None, turn_id, prompt_text, text_output, []
+                )
+
+            return AIMessage(
+                input=prompt_text,
+                output=raw_output,
                 response=text_output,
-                model=model,
+                model=model_str,
                 provider="google",
-                usage=CompletionUsage(total_tokens=0), # Placeholder
+                usage=CompletionUsage(total_tokens=0),
                 images=[Path(p) for p in image_paths],
                 data={"base64_images": base64_images} if base64_images else None
             )
-            return message
 
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
             raise
+
+    async def _maybe_upscale(self, client, img):
+        """Best-effort x2 upscale of a generated image via Google's upscaler."""
+        try:
+            self.logger.info("Auto upscaling generated image using Google upscaler...")
+            buffered = io.BytesIO()
+            if isinstance(img, Image.Image):
+                img.save(buffered, format="PNG")
+            else:
+                img.save(buffered)
+            google_image = types.Image(image_bytes=buffered.getvalue(), mime_type="image/png")
+            upscale_resp = await client.aio.models.upscale_image(
+                model="imagen-3.0-generate-002",
+                image=google_image,
+                upscale_factor="x2"
+            )
+            if upscale_resp.generated_images:
+                self.logger.info("Image upscaled successfully!")
+                return upscale_resp.generated_images[0].image
+        except Exception as ue:
+            self.logger.warning(
+                f"Auto-upscaling failed (upscaler may require Vertex AI or is "
+                f"unsupported in this region): {ue}"
+            )
+        return img
+
+    @staticmethod
+    def _image_to_base64(img) -> Optional[str]:
+        """Encode a PIL image (or Google image wrapper) to a base64 string."""
+        buffered = io.BytesIO()
+        if isinstance(img, Image.Image):
+            img.save(buffered, format="PNG")
+        else:
+            try:
+                img.save(buffered)
+            except Exception:
+                if hasattr(img, 'image_bytes'):
+                    buffered.write(img.image_bytes)
+                elif hasattr(img, 'data'):
+                    buffered.write(img.data)
+                else:
+                    return None
+        if buffered.tell() > 0:
+            return base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return None
 
     async def _await_with_progress(
         self,
@@ -1714,159 +1949,6 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-            raise
-
-    async def image_generation(
-        self,
-        prompt_data: Union[str, ImageGenerationPrompt],
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
-        temperature: Optional[float] = None,
-        prompt_instruction: Optional[str] = None,
-        reference_images: List[Union[Optional[Path], Image.Image]] = None,
-        output_directory: Optional[Path] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        stateless: bool = True
-    ) -> AIMessage:
-        """
-        Generates images based on a text prompt using Nano-Banana.
-        """
-        if isinstance(prompt_data, str):
-            prompt_data = ImageGenerationPrompt(
-                prompt=prompt_data,
-                model=model,
-            )
-        if prompt_data.model:
-            model = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW.value
-        model = model.value if isinstance(model, GoogleModel) else model
-        turn_id = str(uuid.uuid4())
-        prompt_data.model = model
-
-        self.logger.info(
-            f"Starting image generation with model: {model}"
-        )
-
-        messages, conversation_session, _ = await self._prepare_conversation_context(
-            prompt_data.prompt, None, user_id, session_id, None
-        )
-
-        full_prompt = prompt_data.prompt
-        if prompt_data.styles:
-            full_prompt += ", " + ", ".join(prompt_data.styles)
-
-        # Prepare conversation history for Google GenAI format
-        history = []
-        if messages:
-            for msg in messages[:-1]: # Exclude the current user message (last in list)
-                role = msg['role'].lower()
-                if role == 'user':
-                    parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
-                    if parts:
-                        history.append(UserContent(parts=parts))
-                elif role in ['assistant', 'model']:
-                    parts = []
-                    for part_content in msg.get('content', []):
-                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
-                            parts.append(Part(text=part_content.get('text', '')))
-                    if parts:
-                        history.append(ModelContent(parts=parts))
-
-        ref_images = []
-        if reference_images:
-            self.logger.info(
-                f"Using reference image: {reference_images}"
-            )
-            for img_path in reference_images:
-                if not img_path.exists():
-                    raise FileNotFoundError(
-                        f"Reference image not found: {img_path}"
-                    )
-                # Load the reference image
-                ref_images.append(Image.open(img_path))
-
-        config=types.GenerateContentConfig(
-            response_modalities=['Text', 'Image'],
-            temperature=temperature or self.temperature,
-            system_instruction=prompt_instruction
-        )
-
-        try:
-            start_time = time.time()
-            content = [full_prompt, *ref_images] if ref_images else [full_prompt]
-            # Use the asynchronous client for image generation
-            if stateless:
-                response = await self.client.aio.models.generate_content(
-                    model=prompt_data.model,
-                    contents=content,
-                    config=config
-                )
-            else:
-                # Create the stateful chat session
-                chat = self.client.aio.chats.create(model=model, history=history, config=config)
-                response = await chat.send_message(
-                    message=content,
-                )
-            execution_time = time.time() - start_time
-
-            pil_images = []
-            saved_image_paths = []
-            raw_response = {}  # Initialize an empty dict for the raw response
-
-            raw_response['generated_images'] = []
-            for part in response.candidates[0].content.parts:
-                if part.text is not None:
-                    raw_response['text'] = part.text
-                elif part.inline_data is not None:
-                    image = Image.open(io.BytesIO(part.inline_data.data))
-                    pil_images.append(image)
-                    if output_directory:
-                        if isinstance(output_directory, str):
-                            output_directory = Path(output_directory).resolve()
-                        file_path = self._save_image(image, output_directory)
-                        saved_image_paths.append(file_path)
-                        raw_response['generated_images'].append({
-                            'uri': file_path,
-                            'seed': None
-                        })
-
-            usage = CompletionUsage(execution_time=execution_time)
-            if not stateless:
-                await self._update_conversation_memory(
-                    user_id,
-                    session_id,
-                    conversation_session,
-                    messages + [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"[Image Analysis]: {full_prompt}"}
-                            ]
-                        },
-                    ],
-                    None,
-                    turn_id,
-                    prompt_data.prompt,
-                    response.text,
-                    []
-                )
-            ai_message = AIMessageFactory.from_imagen(
-                output=pil_images,
-                images=saved_image_paths,
-                input=full_prompt,
-                model=model,
-                user_id=user_id,
-                session_id=session_id,
-                provider='nano-banana',
-                usage=usage,
-                raw_response=raw_response
-            )
-            return ai_message
-
-        except Exception as e:
-            self.logger.error(f"Image generation failed: {e}")
             raise
 
     async def generate_videos(
@@ -2514,6 +2596,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         requests: List[Dict[str, Any]],
         use_flex: bool = False,
+        persist_results: bool = True,
+        batch_id: Optional[str] = None,
+        save_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ) -> List[Union[AIMessage, Exception]]:
         """
@@ -2522,6 +2607,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Args:
             requests: List of request dicts matching `generate_image` parameters.
             use_flex: If True, set service_tier='flex' for Nano Banana models.
+            persist_results: If True, persist results to a local folder.
+            batch_id: Optional unique batch name/ID.
+            save_dir: Optional custom save directory path.
             **kwargs: Extra defaults to apply to each request.
         """
         self.logger.info(f"Processing {len(requests)} image generation requests in batch...")
@@ -2533,11 +2621,24 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for k, v in kwargs.items():
                 req_copy.setdefault(k, v)
             tasks.append(self.generate_image(**req_copy))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        if persist_results:
+            b_id = batch_id or f"image_batch_{int(time.time())}"
+            try:
+                if hasattr(self, "persist_batch_results"):
+                    await self.persist_batch_results(results, batch_id=b_id, save_dir=save_dir)
+            except Exception as e:
+                self.logger.error(f"Failed to persist image batch results: {e}")
+
+        return results
 
     async def generate_video_batch(
         self,
         requests: List[Dict[str, Any]],
+        persist_results: bool = True,
+        batch_id: Optional[str] = None,
+        save_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ) -> List[Union[AIMessage, Exception]]:
         """
@@ -2545,6 +2646,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         Args:
             requests: List of request dicts matching `video_generation` parameters.
+            persist_results: If True, persist results to a local folder.
+            batch_id: Optional unique batch name/ID.
+            save_dir: Optional custom save directory path.
             **kwargs: Extra defaults to apply to each request.
         """
         self.logger.info(f"Processing {len(requests)} video generation requests in batch...")
@@ -2554,4 +2658,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for k, v in kwargs.items():
                 req_copy.setdefault(k, v)
             tasks.append(self.video_generation(**req_copy))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        if persist_results:
+            b_id = batch_id or f"video_batch_{int(time.time())}"
+            try:
+                if hasattr(self, "persist_batch_results"):
+                    await self.persist_batch_results(results, batch_id=b_id, save_dir=save_dir)
+            except Exception as e:
+                self.logger.error(f"Failed to persist video batch results: {e}")
+
+        return results

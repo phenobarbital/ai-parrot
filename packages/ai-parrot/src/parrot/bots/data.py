@@ -1353,6 +1353,18 @@ class PandasAgent(BasicAgent):
             if output_mode is None:
                 output_mode = OutputMode.DEFAULT
 
+            # FEAT-224: pre-LLM output-mode routing for data/viz queries (the
+            # primary use case, e.g. "create a pie chart of Q1 sales"). Runs
+            # after the None->DEFAULT normalization above and only when the
+            # caller did not specify a mode (precedence: explicit > router >
+            # default). No-op unless a routing mixin (IntentRouterMixin) is present.
+            if output_mode == OutputMode.DEFAULT:
+                _resolved_mode = await self._resolve_output_mode(question, ctx)
+                if _resolved_mode is not None:
+                    output_mode = _resolved_mode
+                    if ctx is not None:
+                        ctx.output_mode = _resolved_mode
+
             # Build context from different sources (no vector context for PandasAgent)
             vector_metadata = {'activated_kbs': []}
 

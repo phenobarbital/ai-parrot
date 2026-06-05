@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic import BaseModel
 
+from datamodel.parsers.json import json_decoder, json_encoder
 from parrot.models.responses import AIMessage
 from parrot.models.basic import CompletionUsage
 from parrot.models.google import GoogleModel
@@ -27,6 +28,7 @@ def _make_client():
     client.enable_tools = False
     client.temperature = 0.7
     client.max_tokens = 100
+    client.vertexai = False
     client.logger = MagicMock()
     client._tool_manager = MagicMock()
     client._tool_manager.get_tool_schemas.return_value = []
@@ -243,3 +245,127 @@ class TestGoogleBatch:
         assert len(results) == 2
         mock_google_client.video_generation.assert_any_call(prompt="prompt 1")
         mock_google_client.video_generation.assert_any_call(prompt="prompt 2")
+
+    async def test_persist_batch_results(self, mock_google_client, tmp_path):
+        """Verify persist_batch_results writes JSON files, copies images/videos, and formats files correctly."""
+        # Create dummy image and video files
+        dummy_img = tmp_path / "dummy_image.png"
+        dummy_img.write_text("dummy image data")
+        dummy_vid = tmp_path / "dummy_video.mp4"
+        dummy_vid.write_text("dummy video data")
+
+        results = [
+            AIMessage(
+                input="prompt text",
+                output="output text",
+                response="response text",
+                model="gemini-2.5-flash",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
+                images=[dummy_img],
+                files=[dummy_vid],
+                structured_output={"key": "value"}
+            )
+        ]
+
+        # Call persist_batch_results
+        google_client = _make_client()
+        google_client.persist_batch_results = mock_google_client.persist_batch_results
+        google_client.logger = mock_google_client.logger
+        
+        dest_dir = await google_client.persist_batch_results(
+            results,
+            batch_id="test_batch_123",
+            save_dir=tmp_path / "custom_batch_results"
+        )
+
+        assert dest_dir.exists()
+        assert dest_dir.joinpath("result_0_message.json").exists()
+        assert dest_dir.joinpath("result_0_structured.json").exists()
+        assert dest_dir.joinpath("result_0_response.txt").exists()
+        
+        # Check files were copied with timestamps in their names
+        copied_images = list(dest_dir.joinpath("images").glob("dummy_image_*.png"))
+        copied_videos = list(dest_dir.joinpath("files").glob("dummy_video_*.mp4"))
+        assert len(copied_images) == 1
+        assert len(copied_videos) == 1
+
+        # Read JSON file and verify copied path updates
+        with open(dest_dir.joinpath("result_0_message.json"), "r") as f:
+            data = json_decoder(f.read())
+            assert copied_images[0].name in data["images"][0]
+            assert copied_videos[0].name in data["files"][0]
+
+    async def test_generate_image_auto_upscale(self, mock_google_client):
+        """Verify generate_image executes auto_upscale when requested."""
+        sdk_client = await mock_google_client._ensure_client()
+        
+        # Mock generate_content response with an image part
+        mock_part = MagicMock()
+        mock_part.text = None
+        
+        mock_image = MagicMock()
+        mock_part.as_image.return_value = mock_image
+        del mock_part.image # prevent direct image attribute fallback
+        
+        mock_response = MagicMock()
+        mock_response.parts = [mock_part]
+        sdk_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+        
+        # Mock upscale_image response
+        mock_upscale_part = MagicMock()
+        mock_upscaled_image = MagicMock()
+        mock_upscale_part.image = mock_upscaled_image
+        
+        mock_upscale_response = MagicMock()
+        mock_upscale_response.generated_images = [mock_upscale_part]
+        sdk_client.aio.models.upscale_image = AsyncMock(return_value=mock_upscale_response)
+        
+        # Call generate_image with auto_upscale=True
+        from parrot.clients.google.client import GoogleGenAIClient
+        google_client = _make_client()
+        google_client._ensure_client = mock_google_client._ensure_client
+        google_client.get_client = AsyncMock(return_value=sdk_client)
+        
+        # Patch client property
+        type(google_client).client = property(lambda self: sdk_client)
+        
+        msg = await google_client.generate_image(
+            prompt="a cute parrot",
+            auto_upscale=True
+        )
+        
+        # Assertions
+        assert msg.output == mock_upscaled_image
+        sdk_client.aio.models.generate_content.assert_called_once()
+        sdk_client.aio.models.upscale_image.assert_called_once()
+
+    async def test_generate_images_initializes_client(self, mock_google_client):
+        """Verify generate_images calls _ensure_client before using SDK."""
+        sdk_client = await mock_google_client._ensure_client()
+        
+        # Mock generate_images response
+        mock_img_part = MagicMock()
+        mock_img_part.image = MagicMock()
+        mock_img_response = MagicMock()
+        mock_img_response.generated_images = [mock_img_part]
+        sdk_client.aio.models.generate_images = AsyncMock(return_value=mock_img_response)
+        
+        google_client = _make_client()
+        google_client._ensure_client = mock_google_client._ensure_client
+        google_client.get_client = AsyncMock(return_value=sdk_client)
+        
+        # Patch client property
+        type(google_client).client = property(lambda self: sdk_client)
+        
+        from parrot.models import ImageGenerationPrompt
+        prompt_data = ImageGenerationPrompt(
+            prompt="renaissance parrot",
+            model="imagen-3.0-generate-002"
+        )
+        
+        # Call generate_images
+        msg = await google_client.generate_images(prompt=prompt_data)
+        
+        assert msg is not None
+        sdk_client.aio.models.generate_images.assert_called_once()

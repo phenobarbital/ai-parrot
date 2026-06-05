@@ -145,7 +145,11 @@ Standard SDD flow. Verify the contract, implement, make tests pass, move file to
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Added 5 fields to `IntentRouterConfig` after `custom_keywords`. Existing
+fields untouched. 3 unit tests pass. Pre-existing unrelated `F401 StoreScore` import
+warning at models.py:22 left as-is (out of scope; not introduced by this task).
+**Deviations from spec**: `output_mode_threshold` default 0.55 -> 0.85 (calibration
+fix, see TASK-1484 — e5 cosines cluster high; 0.55 made abstain dead). Other 4 fields
+exactly as specified.

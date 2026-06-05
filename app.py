@@ -44,6 +44,7 @@ from parrot.handlers.programs import ProgramsUserHandler
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot.handlers.understanding import UnderstandingHandler
+from parrot.handlers.mediagen import MediaGen
 from parrot.handlers.stores import VectorStoreHandler
 ## Jira Integration:
 from parrot.auth.jira_oauth import JiraOAuthManager
@@ -162,6 +163,8 @@ class Main(AppHandler):
             '/api/v1/google/understanding',
             UnderstandingHandler,
         )
+        # Google Media Generation (Imagen/Veo) API:
+        MediaGen.setup(self.app, "/api/v1/google/media")
         # # Office 365 delegated authentication endpoints
         # self.app['o365_auth_manager'] = RemoteAuthManager()
         # self.app.router.add_view(
