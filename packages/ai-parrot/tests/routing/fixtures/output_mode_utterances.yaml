@@ -1,0 +1,20 @@
+# FEAT-224 — seed phrase bank for the output-mode router (ES/EN).
+# Keys are OutputMode *values*; values are realistic full-request utterances.
+# Tuned for intfloat/multilingual-e5-small at threshold ~0.85. Swapping the
+# encoder requires re-sweeping the threshold (embedding-space drift).
+structured_chart:
+  - "hazme una gráfica de pastel"
+  - "create a pie chart"
+  - "gráfico de barras de esto"
+  - "show this as a chart"
+  - "muéstrame esto en una gráfica"
+structured_map:
+  - "muéstralo en un mapa"
+  - "plot it on a map"
+  - "ubícalo en el mapa"
+  - "show the locations on a map"
+structured_table:
+  - "dame una tabla"
+  - "show it as a table"
+  - "muéstrame los datos en una tabla"
+  - "list this in a table"

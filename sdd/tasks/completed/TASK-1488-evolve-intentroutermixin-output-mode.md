@@ -232,7 +232,15 @@ update index to `done`, fill Completion Note.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Added `configure_output_router` (CONFIGURE, load-once), `_resolve_output_mode`
+(REQUEST: threshold+margin policy, route() via asyncio.to_thread, super() chaining on
+abstain/no-router), and `_llm_disambiguate_output_mode` (bounded self.invoke tie-breaker,
+graceful abstain). `ctx.intent_score` set on resolve. Existing retrieval router
+(_route/_fast_path/_llm_route/conversation) untouched. 8 unit tests pass; ruff clean.
+**Deviations from spec**: Added a small `route_scores()` helper to the TASK-1484 engine
+(`embedding_router.py`) so the ambiguous tie-breaker can offer the close-candidate set
+to the LLM and compute it OFF the event loop (via to_thread); `route()` now delegates to
+it. RouteScore is mode-level only (per spec non-goal), so candidates = winner + any mode
+within `margin`. Engine's TASK-1484 tests still pass.

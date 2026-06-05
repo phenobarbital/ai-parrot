@@ -170,7 +170,18 @@ update index to `done`, fill Completion Note.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Added the no-op `_resolve_output_mode` hook to `AbstractBot`. Added the
+guarded (`output_mode == OutputMode.DEFAULT`) call sites to the REAL implementations.
+5 unit tests pass (real AbstractBot forced past the conftest stub via the codebase's
+established pop-and-import pattern); ruff clean.
+**Deviations from spec (REVIEW FIXES — approved by user 'fix all issues')**:
+- The spec/§6 contract claimed `ask()`/`conversation()` impls live in
+  `bots/abstract.py:3660,3107`, but those are abstract STUBS (`...`); a guard there
+  would be dead code (shadowed in the MRO). Call sites were instead placed in the
+  real bodies: `BaseBot.ask` and `BaseBot.conversation` (`bots/base.py`).
+- Added `bots/data.py` to scope: `PandasAgent.ask` fully overrides `ask` and is the
+  PRIMARY data/viz agent ("create a pie chart of Q1 sales"). Guard placed after its
+  `None -> DEFAULT` normalization so the headline use case is actually covered.
+File scope amended: abstract.py (hook) + base.py + data.py (call sites).

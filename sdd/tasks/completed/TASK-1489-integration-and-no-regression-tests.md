@@ -158,7 +158,20 @@ the feature — verify ALL spec §5 acceptance criteria before `/sdd-done`.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Added integration tests (ask/conversation end-to-end via a harness that
+mirrors the real BaseBot call site, composed with the REAL IntentRouterMixin),
+precedence (explicit mode never overwritten), off-event-loop encode (asyncio.to_thread
+spy), and a retrieval no-regression guard pinning real `_fast_path` keyword decisions.
+Added source-fidelity assertions that the REAL bots/base.py + bots/data.py still
+contain the guarded call site, tying the harness to production. Seed phrase-bank
+fixture added at tests/routing/fixtures/output_mode_utterances.yaml.
+Results: 43 FEAT-224 tests pass together; 134 pre-existing retrieval-router tests
+still green (G7 no-regression confirmed).
+**Deviations from spec**: The shared conftest heavily stubs the real bot stack, so a
+full real BaseBot.ask() cannot run offline. Per the task's own guidance ('stub the
+router where needed; gate real-model tests'), the ask/conversation contract is verified
+via a call-site-faithful harness + source-fidelity checks rather than instantiating a
+full BasicAgent. Embedding-dependent tests skip gracefully when the e5 model is
+unavailable.
