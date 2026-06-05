@@ -14,14 +14,14 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation module; later tasks import these models. Could technically be authored independently, but kept sequential as the first link in the chain.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-05T00:20:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1475-conference-data-models.md"
     },
@@ -32,14 +32,16 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-1475"],
+      "depends_on": [
+        "TASK-1475"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports PeerVote (TASK-1475) and edits orchestrator.py (same file as TASK-1477). Must be sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-05T00:20:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1476-broadcast-and-anonymous-peer-block.md"
     },
@@ -50,14 +52,16 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-1476"],
+      "depends_on": [
+        "TASK-1476"
+      ],
       "parallel": false,
       "parallelism_notes": "Builds on the helpers from TASK-1476 in the same orchestrator.py file. Sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-05T00:20:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1477-voting-tally-convergence-confer.md"
     },
@@ -68,14 +72,16 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-1477"],
+      "depends_on": [
+        "TASK-1477"
+      ],
       "parallel": false,
       "parallelism_notes": "Needs the full confer() implementation from TASK-1477. Sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-06-05T00:20:46+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-1478-integration-tests-and-no-regression.md"
     }
