@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-227
 **Date**: 2026-06-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 **Proposal**: `sdd/proposals/computer-use-agent.proposal.md`
 
@@ -651,7 +651,7 @@ TOOL_REGISTRY = {                                      # line 12
 
 - [x] **Should ComputerInteractionToolkit live in `parrot_tools/` (satellite) or `parrot/tools/` (core)?** — *Resolved in proposal*: `parrot_tools/` (satellite package, alongside WebScrapingToolkit). Keeps core lightweight.
 - [x] **How should safety_decision confirmations be handled?** — *Resolved in proposal*: Configurable. Default auto-acknowledge with logging; option for interactive confirmation. `safety_mode: Literal["auto", "interactive"] = "auto"`.
-- [ ] **Should condition-based loop evaluation use a separate lightweight model call (cheaper) or the same computer-use model?** — *Owner: tbd*
+- [x] **Should condition-based loop evaluation use a separate lightweight model call (cheaper) or the same computer-use model?** — *Owner: will use a gemini-flash-lite (cheaper model)
 
 ---
 
