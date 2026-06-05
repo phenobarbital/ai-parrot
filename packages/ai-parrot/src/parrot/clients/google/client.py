@@ -3528,13 +3528,376 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         finally:
             self._request_tools = {}
 
-    async def batch_ask(self, requests) -> List[AIMessage]:
-        """Process multiple requests in batch."""
-        # Google GenAI doesn't have a native batch API, so we process sequentially
+    async def batch_ask(self, requests: List[Dict[str, Any]]) -> List[AIMessage]:
+        """Process multiple requests in batch. Delegates to ask_batch for efficiency."""
+        return await self.ask_batch(requests, use_flex=True)
+
+    async def _build_batch_request_payload(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert a standard ask() call parameters dict into a Gemini Batch API request dict."""
+        import json
+        prompt = req.get("prompt", "")
+        model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        model = self._as_model_str(model) or model
+        
+        # Determine tools
+        use_tools = req.get("use_tools") if req.get("use_tools") is not None else self.enable_tools
+        tools = req.get("tools")
+        kw_tool_type = req.get("tool_type", None)
+
+        if kw_tool_type == "builtin_tools":
+            tool_type = kw_tool_type
+            use_tools = True
+        elif use_tools:
+            tool_type = kw_tool_type or "custom_functions"
+        else:
+            tool_type = kw_tool_type
+
+        built_tools = []
+        if use_tools:
+            built_tools = self._build_tools(tool_type) if tool_type else []
+
+        # System prompt
+        system_prompt = req.get("system_prompt")
+        
+        # Generation config
+        generation_config = {
+            "temperature": req.get("temperature") if req.get("temperature") is not None else self.temperature
+        }
+        max_tokens = req.get("max_tokens") or self.max_tokens
+        if max_tokens:
+            generation_config["max_output_tokens"] = max_tokens
+            
+        # Structured output
+        structured_output = req.get("structured_output")
+        if structured_output:
+            output_config = self._get_structured_config(structured_output)
+            if output_config:
+                self._apply_structured_output_schema(generation_config, output_config)
+
+        # Upload files if any
+        contents = []
+        files = req.get("files")
+        if files:
+            for file_path in files:
+                path = Path(file_path).resolve()
+                self.logger.info(f"Uploading {path.name} to Gemini File API for batch request...")
+                file_obj = await self.client.aio.files.upload(file=path)
+                
+                # Wait for file to process if it's a video/etc.
+                processing_start = time.monotonic()
+                while file_obj.state == "PROCESSING":
+                    if time.monotonic() - processing_start > 300:
+                        raise TimeoutError(f"File processing timed out for {path.name}")
+                    await asyncio.sleep(5)
+                    file_obj = await self.client.aio.files.get(name=file_obj.name)
+                
+                contents.append({
+                    "parts": [{
+                        "file_data": {
+                            "file_uri": file_obj.uri,
+                            "mime_type": file_obj.mime_type
+                        }
+                    }]
+                })
+
+        # Add the main prompt content
+        contents.append({
+            "parts": [{"text": prompt}]
+        })
+
+        request_payload = {
+            "contents": contents
+        }
+        if system_prompt:
+            request_payload["system_instruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+        
+        generation_config = {k: v for k, v in generation_config.items() if v is not None}
+        if generation_config:
+            request_payload["generation_config"] = generation_config
+            
+        if built_tools:
+            serialized_tools = []
+            for t in built_tools:
+                if hasattr(t, "model_dump"):
+                    serialized_tools.append(t.model_dump(mode="json", exclude_none=True))
+                else:
+                    serialized_tools.append(t)
+            request_payload["tools"] = serialized_tools
+
+        return request_payload
+
+    async def ask_batch(
+        self,
+        requests: List[Dict[str, Any]],
+        use_flex: bool = False,
+        wait_for_completion: bool = True,
+        poll_interval: int = 30,
+        webhook_uri: Optional[str] = None,
+        display_name: Optional[str] = None,
+        **kwargs
+    ) -> Union[Any, List[AIMessage]]:
+        """
+        Execute a list of requests using Gemini Batch Mode or Flex Inference.
+
+        Args:
+            requests (List[Dict[str, Any]]): List of request parameters matching ask() arguments.
+            use_flex (bool): If True, execute requests synchronously using Flex Inference tier (latency target 1-15 min).
+                             If False, execute asynchronously using Gemini's Batch API (turnaround up to 24 hours).
+            wait_for_completion (bool): If True, wait/poll until job finishes and return parsed AIMessage objects.
+                                       Only applicable when use_flex=False.
+            poll_interval (int): How often (in seconds) to poll for job completion.
+            webhook_uri (Optional[str]): Optional webhook URL to receive state notifications when job completes.
+            display_name (Optional[str]): Human-readable display name for the batch job.
+            **kwargs: Extra arguments forwarded to batch creation or client initialization.
+        """
+        import json
+        import tempfile
+        from google.genai import types
+
+        if not requests:
+            return []
+
+        # Ensure we have a valid client
+        await self._ensure_client()
+
+        if use_flex:
+            self.logger.info(f"Processing {len(requests)} batch requests using Flex Inference tier...")
+            tasks = []
+            for req in requests:
+                req_copy = req.copy()
+                req_copy["service_tier"] = "flex"
+                # Pass down standard defaults
+                for k, v in kwargs.items():
+                    req_copy.setdefault(k, v)
+                tasks.append(self.ask(**req_copy))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            processed_results = []
+            for r in results:
+                if isinstance(r, Exception):
+                    self.logger.error(f"Batch flex request failed: {r}")
+                    processed_results.append(r)
+                else:
+                    processed_results.append(r)
+            return processed_results
+
+        # Standard asynchronous Batch API
+        self.logger.info(f"Preparing {len(requests)} requests for Gemini asynchronous Batch API...")
+        
+        # Determine the model. Batch jobs require all requests to run on the same model.
+        first_req = requests[0]
+        batch_model = first_req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+        batch_model = self._as_model_str(batch_model) or batch_model
+        
+        # Build requests payloads
+        payload_tasks = [self._build_batch_request_payload(req) for req in requests]
+        payloads = await asyncio.gather(*payload_tasks)
+        
+        # Write .jsonl input file
+        with tempfile.NamedTemporaryFile(suffix=".jsonl", mode="w+", delete=False, encoding="utf-8") as temp_file:
+            temp_path = Path(temp_file.name)
+            try:
+                for i, payload in enumerate(payloads):
+                    line = {
+                        "key": f"req_{i}",
+                        "request": payload
+                    }
+                    temp_file.write(json.dumps(line) + "\n")
+                temp_file.flush()
+                temp_file.close()
+                
+                self.logger.info(f"Uploading input JSONL file to Gemini files service...")
+                uploaded_file = await self.client.aio.files.upload(
+                    file=temp_path,
+                    config={"mime_type": "application/jsonl"}
+                )
+                self.logger.info(f"Uploaded input file: {uploaded_file.name}")
+            finally:
+                if temp_path.exists():
+                    temp_path.unlink()
+
+        # Create config
+        config_args = {
+            "display_name": display_name or f"batch_job_{int(time.time())}"
+        }
+        if webhook_uri:
+            config_args["webhook_config"] = types.WebhookConfig(uris=[webhook_uri])
+            
+        create_config = types.CreateBatchJobConfig(**config_args)
+        
+        self.logger.info(f"Creating Gemini Batch Job with model: {batch_model}...")
+        batch_job = await self.client.aio.batches.create(
+            model=batch_model,
+            src=types.BatchJobSource(file_name=uploaded_file.name),
+            config=create_config
+        )
+        self.logger.info(f"Batch Job created successfully. Name: {batch_job.name}, State: {batch_job.state}")
+
+        if not wait_for_completion:
+            return batch_job
+
+        # Poll for completion
+        self.logger.info(f"Polling Gemini Batch Job state every {poll_interval}s until completion...")
+        while batch_job.state not in ("JOB_STATE_SUCCEEDED", "JOB_STATE_FAILED", "JOB_STATE_CANCELLED"):
+            await asyncio.sleep(poll_interval)
+            batch_job = await self.client.aio.batches.get(name=batch_job.name)
+            self.logger.debug(f"Batch Job state: {batch_job.state}")
+
+        if batch_job.state == "JOB_STATE_SUCCEEDED":
+            self.logger.info("Batch Job succeeded! Downloading and parsing results...")
+            results = await self.download_and_parse_batch_results(batch_job, requests)
+            
+            # Clean up uploaded input file
+            try:
+                await self.client.aio.files.delete(name=uploaded_file.name)
+            except Exception as e:
+                self.logger.warning(f"Failed to delete uploaded input file {uploaded_file.name}: {e}")
+                
+            return results
+        else:
+            error_msg = f"Gemini Batch Job finished with terminal state: {batch_job.state}."
+            if getattr(batch_job, "error", None):
+                error_msg += f" Error: {batch_job.error}"
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    async def get_batch_job(self, job_name: str) -> Any:
+        """Retrieve status of an active or completed Batch Job."""
+        await self._ensure_client()
+        return await self.client.aio.batches.get(name=job_name)
+
+    async def cancel_batch_job(self, job_name: str) -> Any:
+        """Cancel an active Batch Job."""
+        await self._ensure_client()
+        return await self.client.aio.batches.cancel(name=job_name)
+
+    async def list_batch_jobs(self) -> List[Any]:
+        """List active or past Batch Jobs."""
+        await self._ensure_client()
+        jobs = []
+        async for job in self.client.aio.batches.list():
+            jobs.append(job)
+        return jobs
+
+    async def download_and_parse_batch_results(
+        self,
+        job: Any,
+        original_requests: List[Dict[str, Any]]
+    ) -> List[AIMessage]:
+        """Download output file from completed Batch Job and parse to List[AIMessage]."""
+        import json
+        from google.genai import types
+
+        if not getattr(job, "dest", None) or not getattr(job.dest, "file_name", None):
+            raise ValueError(f"Job does not have a destination output file: {job}")
+
+        output_file_name = job.dest.file_name
+        self.logger.info(f"Downloading batch job results from: {output_file_name}")
+        
+        results_bytes = await self.client.aio.files.download(file=output_file_name)
+        results_text = results_bytes.decode("utf-8")
+        
+        # Parse output JSONL
+        output_map = {}
+        for line in results_text.splitlines():
+            if not line.strip():
+                continue
+            line_dict = json.loads(line)
+            key = line_dict.get("key")
+            if not key:
+                continue
+            
+            if "response" in line_dict:
+                resp_dict = line_dict["response"]
+                response_obj = types.GenerateContentResponse.model_validate(resp_dict)
+                output_map[key] = response_obj
+            elif "error" in line_dict:
+                output_map[key] = line_dict["error"]
+
+        # Map back to original requests in original order
         results = []
-        for request in requests:
-            result = await self.ask(**request)
-            results.append(result)
+        for i, req in enumerate(original_requests):
+            key = f"req_{i}"
+            prompt = req.get("prompt", "")
+            model = req.get("model") or self.model or GoogleModel.GEMINI_2_5_FLASH.value
+            model = self._as_model_str(model) or model
+            
+            if key not in output_map:
+                err_msg = AIMessage(
+                    input=prompt,
+                    output=f"Error: Missing response for {key} in batch output",
+                    response=f"Error: Missing response for {key} in batch output",
+                    model=str(model),
+                    provider="google_genai",
+                    usage=CompletionUsage(total_time=0)
+                )
+                results.append(err_msg)
+                continue
+                
+            item = output_map[key]
+            if isinstance(item, dict):  # Error dictionary
+                err_msg = AIMessage(
+                    input=prompt,
+                    output=f"Error {item.get('code', 'unknown')}: {item.get('message', 'unknown')}",
+                    response=f"Error {item.get('code', 'unknown')}: {item.get('message', 'unknown')}",
+                    model=str(model),
+                    provider="google_genai",
+                    usage=CompletionUsage(total_time=0)
+                )
+                results.append(err_msg)
+            else:  # types.GenerateContentResponse object
+                structured_output = req.get("structured_output")
+                final_output = None
+                text_response = self._safe_extract_text(item)
+                
+                if structured_output and text_response:
+                    try:
+                        output_config = self._get_structured_config(structured_output)
+                        if isinstance(output_config, StructuredOutputConfig):
+                            final_output = await self._parse_structured_output(
+                                text_response,
+                                output_config
+                            )
+                        elif isinstance(structured_output, type):
+                            if hasattr(structured_output, "model_validate_json"):
+                                final_output = structured_output.model_validate_json(text_response)
+                            elif hasattr(structured_output, "model_validate"):
+                                parsed_json = json.loads(text_response)
+                                final_output = structured_output.model_validate(parsed_json)
+                        else:
+                            final_output = json.loads(text_response)
+                    except Exception as e:
+                        self.logger.error(f"Error parsing structured output for batch response: {e}")
+                
+                # Check for any tool calls in response
+                all_tool_calls = []
+                if item.candidates and item.candidates[0].content and item.candidates[0].content.parts:
+                    for part in item.candidates[0].content.parts:
+                        if hasattr(part, "function_call") and part.function_call:
+                            tc = ToolCall(
+                                id=f"call_{uuid.uuid4().hex[:8]}",
+                                name=part.function_call.name,
+                                arguments=dict(part.function_call.args)
+                            )
+                            all_tool_calls.append(tc)
+
+                ai_message = AIMessageFactory.from_gemini(
+                    response=item,
+                    input_text=prompt,
+                    model=model,
+                    structured_output=final_output,
+                    tool_calls=all_tool_calls,
+                )
+                results.append(ai_message)
+
+        # Delete the destination file to keep files list tidy
+        try:
+            await self.client.aio.files.delete(name=output_file_name)
+        except Exception as e:
+            self.logger.warning(f"Failed to delete results output file {output_file_name}: {e}")
+
         return results
 
     async def ask_to_image(

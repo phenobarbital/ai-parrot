@@ -35,6 +35,7 @@ def _make_client():
     """Create GoogleGenAIClient without network setup."""
     from parrot.clients.google.client import GoogleGenAIClient
     client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+    client._clients_by_loop = {}
     client.model = "gemini-2.5-flash"
     client._lightweight_model = "gemini-3-flash-lite"
     client._fallback_model = None
@@ -50,14 +51,24 @@ def _make_client():
 @pytest.fixture
 def mock_google_client():
     """GoogleGenAIClient with mocked SDK."""
+    import asyncio
     client = _make_client()
     mock_models = MagicMock()
     mock_models.generate_content = AsyncMock(
         return_value=_make_mock_response()
     )
-    client.client = MagicMock()
-    client.client.aio = MagicMock()
-    client.client.aio.models = mock_models
+    sdk_client = MagicMock()
+    sdk_client.aio = MagicMock()
+    sdk_client.aio.models = mock_models
+    
+    # Redefine the client property to bypass loop cache entirely in testing
+    type(client).client = property(lambda self: sdk_client, lambda self, val: None)
+    
+    async def mock_ensure_client(model=None, **hints):
+        return sdk_client
+        
+    client._ensure_client = mock_ensure_client
+    
     return client
 
 
