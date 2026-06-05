@@ -14,7 +14,7 @@
       "feature_id": "FEAT-224",
       "feature": "intent-router-mixin-embedding-routing",
       "spec": "sdd/specs/intent-router-mixin-embedding-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "New file parrot/registry/routing/embedding_router.py; only imports OutputMode (existing). Shares no files with other tasks — safe in an isolated worktree.",
       "assigned_to": null,
       "started_at": "2026-06-05T14:05:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1484-embedding-intent-router-engine.md"
+      "completed_at": "2026-06-05T16:53:22+00:00",
+      "file": "sdd/tasks/completed/TASK-1484-embedding-intent-router-engine.md"
     },
     {
       "id": "TASK-1485",

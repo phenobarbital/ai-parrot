@@ -217,7 +217,14 @@ fill the Completion Note.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Implemented `EmbeddingIntentRouter` + `RouteScore` in
+`registry/routing/embedding_router.py`. Used the project `parrot._imports.lazy_import`
+helper (extra="embeddings") instead of a bare `import sentence_transformers as _st`
+(review fix — friendly error + house style). 8 unit tests pass against the real
+`multilingual-e5-small` model; model-dependent tests skip gracefully when offline.
+**Deviations from spec**: Default `threshold` changed 0.55 -> 0.85. Empirically,
+e5 cosine scores cluster high (on-topic ~0.92-0.95, off-topic ~0.77-0.82); 0.55
+accepted every query and made the abstain path dead. 0.85 cleanly separates.
+Sanctioned by spec §7 ("threshold tuning is load-bearing; re-sweep when encoder changes").
