@@ -2514,6 +2514,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         requests: List[Dict[str, Any]],
         use_flex: bool = False,
+        persist_results: bool = True,
+        batch_id: Optional[str] = None,
+        save_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ) -> List[Union[AIMessage, Exception]]:
         """
@@ -2522,6 +2525,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Args:
             requests: List of request dicts matching `generate_image` parameters.
             use_flex: If True, set service_tier='flex' for Nano Banana models.
+            persist_results: If True, persist results to a local folder.
+            batch_id: Optional unique batch name/ID.
+            save_dir: Optional custom save directory path.
             **kwargs: Extra defaults to apply to each request.
         """
         self.logger.info(f"Processing {len(requests)} image generation requests in batch...")
@@ -2533,11 +2539,24 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for k, v in kwargs.items():
                 req_copy.setdefault(k, v)
             tasks.append(self.generate_image(**req_copy))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        if persist_results:
+            b_id = batch_id or f"image_batch_{int(time.time())}"
+            try:
+                if hasattr(self, "persist_batch_results"):
+                    await self.persist_batch_results(results, batch_id=b_id, save_dir=save_dir)
+            except Exception as e:
+                self.logger.error(f"Failed to persist image batch results: {e}")
+
+        return results
 
     async def generate_video_batch(
         self,
         requests: List[Dict[str, Any]],
+        persist_results: bool = True,
+        batch_id: Optional[str] = None,
+        save_dir: Optional[Union[str, Path]] = None,
         **kwargs
     ) -> List[Union[AIMessage, Exception]]:
         """
@@ -2545,6 +2564,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         Args:
             requests: List of request dicts matching `video_generation` parameters.
+            persist_results: If True, persist results to a local folder.
+            batch_id: Optional unique batch name/ID.
+            save_dir: Optional custom save directory path.
             **kwargs: Extra defaults to apply to each request.
         """
         self.logger.info(f"Processing {len(requests)} video generation requests in batch...")
@@ -2554,4 +2576,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for k, v in kwargs.items():
                 req_copy.setdefault(k, v)
             tasks.append(self.video_generation(**req_copy))
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        if persist_results:
+            b_id = batch_id or f"video_batch_{int(time.time())}"
+            try:
+                if hasattr(self, "persist_batch_results"):
+                    await self.persist_batch_results(results, batch_id=b_id, save_dir=save_dir)
+            except Exception as e:
+                self.logger.error(f"Failed to persist video batch results: {e}")
+
+        return results

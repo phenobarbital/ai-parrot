@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from pydantic import BaseModel
 
+from datamodel.parsers.json import json_decoder, json_encoder
 from parrot.models.responses import AIMessage
 from parrot.models.basic import CompletionUsage
 from parrot.models.google import GoogleModel
@@ -243,3 +244,51 @@ class TestGoogleBatch:
         assert len(results) == 2
         mock_google_client.video_generation.assert_any_call(prompt="prompt 1")
         mock_google_client.video_generation.assert_any_call(prompt="prompt 2")
+
+    async def test_persist_batch_results(self, mock_google_client, tmp_path):
+        """Verify persist_batch_results writes JSON files, copies images/videos, and formats files correctly."""
+        # Create dummy image and video files
+        dummy_img = tmp_path / "dummy_image.png"
+        dummy_img.write_text("dummy image data")
+        dummy_vid = tmp_path / "dummy_video.mp4"
+        dummy_vid.write_text("dummy video data")
+
+        results = [
+            AIMessage(
+                input="prompt text",
+                output="output text",
+                response="response text",
+                model="gemini-2.5-flash",
+                provider="google",
+                usage=CompletionUsage(prompt_tokens=10, completion_tokens=10, total_tokens=20),
+                images=[dummy_img],
+                files=[dummy_vid],
+                structured_output={"key": "value"}
+            )
+        ]
+
+        # Call persist_batch_results
+        google_client = _make_client()
+        google_client.persist_batch_results = mock_google_client.persist_batch_results
+        google_client.logger = mock_google_client.logger
+        
+        dest_dir = await google_client.persist_batch_results(
+            results,
+            batch_id="test_batch_123",
+            save_dir=tmp_path / "custom_batch_results"
+        )
+
+        assert dest_dir.exists()
+        assert dest_dir.joinpath("result_0_message.json").exists()
+        assert dest_dir.joinpath("result_0_structured.json").exists()
+        assert dest_dir.joinpath("result_0_response.txt").exists()
+        
+        # Check files were copied
+        assert dest_dir.joinpath("images", "dummy_image.png").exists()
+        assert dest_dir.joinpath("files", "dummy_video.mp4").exists()
+
+        # Read JSON file and verify copied path updates
+        with open(dest_dir.joinpath("result_0_message.json"), "r") as f:
+            data = json_decoder(f.read())
+            assert dest_dir.joinpath("images", "dummy_image.png").name in data["images"][0]
+            assert dest_dir.joinpath("files", "dummy_video.mp4").name in data["files"][0]
