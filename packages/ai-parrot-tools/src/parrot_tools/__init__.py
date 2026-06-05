@@ -62,6 +62,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "kubernetes": "parrot_tools.kubernetes.toolkit.KubernetesToolkit",  # FEAT-214
     "sitesearch": "parrot_tools.sitesearch.toolkit.SiteSearchToolkit",
     "web_scraping": "parrot_tools.scraping.toolkit.WebScrapingToolkit",
+    "computer_interaction": "parrot_tools.computer.toolkit.ComputerInteractionToolkit",
     "cloudsploit": "parrot_tools.cloudsploit.toolkit.CloudSploitToolkit",
     "cloud_posture": "parrot_tools.security.cloud_posture_toolkit.CloudPostureToolkit",
     "container_security": "parrot_tools.security.container_security_toolkit.ContainerSecurityToolkit",

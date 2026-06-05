@@ -111,4 +111,4 @@ class TestComputerAgentIntegration:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Created `test_integration.py` with 18 tests across 4 test classes: `TestNavigateAndClickFlow` (4 tests — navigate/click dispatching and coordinate denormalization), `TestLoopPagination` (4 tests — count-based loops, max_iterations cap, abort signalling, undefined task error), `TestHybridAgentToolComposition` (4 tests — tool listing, graceful WebScrapingToolkit failure, screenshot pruning, safety mode), `TestGoogleClientComputerUseIntegration` (6 tests — computer_use tool building, excluded actions, custom_functions non-regression, model detection). All 18 tests pass. Full suite: 114 tests in ai-parrot-tools/computer + 21 in ai-parrot/clients, all passing.

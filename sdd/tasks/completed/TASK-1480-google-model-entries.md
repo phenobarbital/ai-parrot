@@ -79,4 +79,4 @@ GEMINI_3_FLASH_COMPUTER_USE = "gemini-3-flash-preview"
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `GEMINI_COMPUTER_USE = "gemini-2.5-computer-use-preview-10-2025"` and `GEMINI_3_FLASH_COMPUTER_USE = "gemini-3-flash-preview"` to the `GoogleModel` enum. `GEMINI_COMPUTER_USE` has the same value as the existing `GEMINI_COMPUTER_USE_PREVIEW` entry and thus becomes an enum alias (accessible via `GoogleModel.__members__['GEMINI_COMPUTER_USE']`). `GEMINI_3_FLASH_COMPUTER_USE` is a new unique entry. Tests use `__members__` lookup to correctly exercise the alias behavior. All 5 tests pass.

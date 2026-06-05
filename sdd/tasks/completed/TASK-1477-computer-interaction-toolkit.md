@@ -191,4 +191,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented ComputerInteractionToolkit with tool_prefix="computer". All 13 actions, 8 capture/recording methods, and 4 loop methods exposed as prefixed tools. Coordinate denormalization (0-1000 to viewport pixels). _pre_execute lazy-starts the browser. Loop modes: count-based, condition-based (deferred to model), data-driven. All 35 unit tests pass.

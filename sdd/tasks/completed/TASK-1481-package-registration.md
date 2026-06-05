@@ -64,4 +64,4 @@ TOOL_REGISTRY = {  # line 12
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added `"computer_interaction": "parrot_tools.computer.toolkit.ComputerInteractionToolkit"` to `TOOL_REGISTRY` in `parrot_tools/__init__.py`. The `computer/__init__.py` already exported all required public symbols (models via direct import, heavy components via `__getattr__` lazy loader). Verified `TOOL_REGISTRY["computer_interaction"]` resolves correctly and all 96 computer unit tests pass.

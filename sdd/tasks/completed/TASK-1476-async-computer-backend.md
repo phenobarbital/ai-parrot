@@ -193,4 +193,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented AsyncComputerBackend with all 13 predefined actions plus screenshot, recording (start/stop), tracing, HAR, PDF, and current_state(). Uses playwright.async_api throughout. Key mapping covers 40+ common keys. New-tab interception implemented via context.on("page"). All 29 unit tests pass with mocked Playwright page.

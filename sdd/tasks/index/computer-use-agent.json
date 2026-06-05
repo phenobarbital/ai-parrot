@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-06-05T00:00:00Z",
-  "completed_at": "2026-06-05T22:28:23+00:00",
+  "completed_at": null,
   "tasks": [
     {
       "id": "TASK-1475",
@@ -22,7 +22,7 @@
       "parallelism_notes": "Foundation models — all other tasks depend on these",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:42:06+00:00",
       "file": "sdd/tasks/completed/TASK-1475-computer-use-models.md"
     },
     {
@@ -42,7 +42,7 @@
       "parallelism_notes": "Depends on models from TASK-1475; toolkit depends on this",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:44:44+00:00",
       "file": "sdd/tasks/completed/TASK-1476-async-computer-backend.md"
     },
     {
@@ -63,7 +63,7 @@
       "parallelism_notes": "Depends on models and backend; agent depends on this",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:47:43+00:00",
       "file": "sdd/tasks/completed/TASK-1477-computer-interaction-toolkit.md"
     },
     {
@@ -84,7 +84,7 @@
       "parallelism_notes": "Depends on models and toolkit; registration depends on this",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:49:47+00:00",
       "file": "sdd/tasks/completed/TASK-1478-computer-agent.md"
     },
     {
@@ -104,7 +104,7 @@
       "parallelism_notes": "Only depends on models; could theoretically run in parallel with TASK-1476/1477 but sequential for safety since it modifies core client",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:51:50+00:00",
       "file": "sdd/tasks/completed/TASK-1479-google-client-computer-use.md"
     },
     {
@@ -122,7 +122,7 @@
       "parallelism_notes": "No code deps but sequential for clean commit history",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:55:18+00:00",
       "file": "sdd/tasks/completed/TASK-1480-google-model-entries.md"
     },
     {
@@ -145,7 +145,7 @@
       "parallelism_notes": "Wires up all prior components; must run after all are implemented",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:56:33+00:00",
       "file": "sdd/tasks/completed/TASK-1481-package-registration.md"
     },
     {
@@ -171,7 +171,7 @@
       "parallelism_notes": "Final task — depends on all prior tasks being complete",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": "2026-06-05T22:28:23+00:00",
+      "completed_at": "2026-06-05T17:59:03+00:00",
       "file": "sdd/tasks/completed/TASK-1482-integration-tests.md"
     }
   ]

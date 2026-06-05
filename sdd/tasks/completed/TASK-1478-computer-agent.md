@@ -167,4 +167,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented ComputerAgent registered as "computer_agent". agent_tools() returns ComputerInteractionToolkit tools plus optional WebScrapingToolkit. Implements prune_screenshots() for conversation history management, handle_safety_decision() for auto/interactive modes. All 14 unit tests pass.

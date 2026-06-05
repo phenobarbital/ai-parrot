@@ -152,4 +152,6 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented all 5 Pydantic v2 models: `EnvState`, `ComputerUseConfig`, `ComputerTask`, `TaskResult`, `LoopResult`.
+Created the `parrot_tools/computer/` package with lazy-import `__init__.py` to avoid circular imports.
+All 18 unit tests pass. Package importable as `from parrot_tools.computer.models import EnvState`.

@@ -194,4 +194,4 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added _is_computer_use_model() static method. Extended _requires_thinking() to include computer-use models. Added "computer_use" branch to _build_tools() that emits types.Tool(computer_use=types.ComputerUse(environment=ENVIRONMENT_BROWSER)). Existing custom_functions and builtin_tools paths unchanged. All 16 tests pass.
