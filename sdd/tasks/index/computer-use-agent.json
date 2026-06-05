@@ -73,7 +73,7 @@
       "feature_id": "FEAT-227",
       "feature": "computer-use-agent",
       "spec": "sdd/specs/computer-use-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,8 @@
       "parallelism_notes": "Depends on models and toolkit; registration depends on this",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1478-computer-agent.md"
+      "completed_at": "2026-06-05T17:49:47+00:00",
+      "file": "sdd/tasks/completed/TASK-1478-computer-agent.md"
     },
     {
       "id": "TASK-1479",
