@@ -14,7 +14,7 @@
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -22,8 +22,8 @@
       "parallelism_notes": "Module 0 — additive enum in parrot/storage; shares no files with the parrot_tools engine/toolkit tasks. Could run in parallel with TASK-1480.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1479-reportkind-advisory-enum.md"
+      "completed_at": "2026-06-05T13:35:02+00:00",
+      "file": "sdd/tasks/completed/TASK-1479-reportkind-advisory-enum.md"
     },
     {
       "id": "TASK-1480",
