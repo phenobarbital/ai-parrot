@@ -7,7 +7,8 @@ Import paths are recalculated for the new package depth
 (``flows/agents/`` is two levels deep under ``bots/``).
 All class signatures are preserved; no API changes.
 """
-from typing import Dict, List, Any, Optional, Union, Callable
+import asyncio
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 
 from ...agent import BasicAgent
 from ...abstract import AbstractBot
@@ -338,3 +339,138 @@ After gathering responses from one or more agents:
             stats['agent_tools'][tool_name] = agent_tool.get_usage_stats()
 
         return stats
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Multi-Party Conferencing (FEAT-223)
+    #
+    # A deterministic, additive path that broadcasts one question to every
+    # specialist, cross-pollinates their answers anonymously, and lets each
+    # agent vote. It does NOT use the ReAct ``ask()`` loop above.
+    # ──────────────────────────────────────────────────────────────────────
+
+    def _resolve_agents(self, agents: Optional[List[str]] = None) -> List[str]:
+        """Resolve the panel of specialist names for a conference.
+
+        Args:
+            agents: Explicit subset of specialist names, or ``None`` for all.
+
+        Returns:
+            The list of specialist names to consult.
+
+        Raises:
+            ValueError: If any requested name is not a registered specialist.
+        """
+        if agents is None:
+            return list(self.specialist_agents.keys())
+        unknown = [name for name in agents if name not in self.specialist_agents]
+        if unknown:
+            raise ValueError(
+                f"Unknown specialist agent(s): {unknown}. "
+                f"Available: {list(self.specialist_agents.keys())}"
+            )
+        return list(agents)
+
+    @staticmethod
+    def _extract_answer_text(response: Any) -> str:
+        """Extract plain answer text from a specialist's response.
+
+        Mirrors the precedent in ``AgentTool._execute`` (``parrot/tools/agent.py``):
+        prefer ``content``, fall back to ``output``, then ``str(response)``.
+        """
+        text = getattr(response, "content", None)
+        if text is None:
+            text = getattr(response, "output", None)
+        if text is None:
+            text = str(response)
+        return text
+
+    async def _invoke_specialist(
+        self,
+        agent: Union[BasicAgent, AbstractBot],
+        question: str,
+        **kwargs,
+    ) -> Any:
+        """Call a specialist, preferring ``ask`` then ``conversation``/``invoke``.
+
+        ``structured_output`` is only forwarded to ``ask`` (the only method that
+        accepts it); for ``conversation``/``invoke`` it is dropped so a
+        specialist that lacks ``ask`` still participates (degrades gracefully).
+        """
+        if hasattr(agent, "ask"):
+            return await agent.ask(question=question, **kwargs)
+        kwargs.pop("structured_output", None)
+        if hasattr(agent, "conversation"):
+            return await agent.conversation(
+                question=question, use_conversation_history=False, **kwargs
+            )
+        if hasattr(agent, "invoke"):
+            return await agent.invoke(
+                question=question, use_conversation_history=False, **kwargs
+            )
+        raise AttributeError(
+            f"Agent {getattr(agent, 'name', '?')} supports no "
+            "ask/conversation/invoke method"
+        )
+
+    async def _broadcast_round(
+        self,
+        question: str,
+        agents: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        """Broadcast one question to every selected specialist, in parallel.
+
+        Uses ``asyncio.gather`` (same fan-out pattern as
+        ``AgentCrew.run_parallel``) so all specialists answer concurrently.
+
+        Args:
+            question: The shared question for all specialists.
+            agents: Optional subset of specialist names; ``None`` = all.
+
+        Returns:
+            ``{agent_name: answer_text}`` — one answer per specialist.
+        """
+        names = self._resolve_agents(agents)
+        self.logger.info(
+            "Conference broadcast (round-0) to %d specialist(s): %s",
+            len(names), names,
+        )
+
+        async def _one(name: str) -> Tuple[str, str]:
+            agent = self.specialist_agents[name]
+            response = await self._invoke_specialist(
+                agent, question, use_conversation_history=False
+            )
+            return name, self._extract_answer_text(response)
+
+        pairs = await asyncio.gather(*[_one(name) for name in names])
+        return dict(pairs)
+
+    def _build_anonymous_peer_block(
+        self,
+        answers: Dict[str, str],
+        max_result_length: int = 2000,
+    ) -> Tuple[str, Dict[str, str]]:
+        """Build an anonymized peer-answer block + internal label map.
+
+        Each answer is labelled ``A``, ``B``, ``C``... and truncated to
+        ``max_result_length`` chars. The returned text contains NO agent name,
+        role, or goal — only anonymous labels — to avoid authority bias. The
+        ``label_to_agent`` map correlates labels back to authors internally and
+        MUST NOT be serialized into a prompt.
+
+        Args:
+            answers: ``{agent_name: answer_text}`` from a broadcast/vote round.
+            max_result_length: Per-answer truncation length (default 2000).
+
+        Returns:
+            ``(peer_block_text, label_to_agent)``.
+        """
+        labels = [chr(ord("A") + i) for i in range(len(answers))]
+        label_to_agent: Dict[str, str] = {}
+        lines = ["## Peer answers (anonymous)\n"]
+        for label, (agent_name, text) in zip(labels, answers.items()):
+            label_to_agent[label] = agent_name
+            if len(text) > max_result_length:
+                text = text[:max_result_length] + "\n... [truncated]"
+            lines.append(f"### Answer {label}\n{text}\n")
+        return "\n".join(lines), label_to_agent
