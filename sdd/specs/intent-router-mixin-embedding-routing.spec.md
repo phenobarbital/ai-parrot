@@ -8,7 +8,7 @@ base_branch: dev
 **Feature ID**: FEAT-224
 **Date**: 2026-06-05
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD (next minor)
 
 > **Source**: research-grounded proposal
@@ -481,14 +481,14 @@ class OutputMode(str, Enum):                                          # line 37
 
 ### Unresolved (defer to implementation)
 
-- [ ] **Where do the threshold/margin eval fixtures live, and what is the initial
+- [x] **Where do the threshold/margin eval fixtures live, and what is the initial
       labeled set per mode?** — *Owner*: tbd (proposed:
-      `packages/ai-parrot/tests/routing/fixtures/output_mode_utterances.yaml`).
-- [ ] **Initial phrase-bank contents and per-mode threshold overrides** — needs a
-      first realistic Spanish/English utterance set per `OutputMode`. *Owner*: tbd.
-- [ ] **`to_thread` vs a bounded `ThreadPoolExecutor`** under heavy concurrent
+      `packages/ai-parrot/tests/routing/fixtures/output_mode_utterances.yaml`).: accepted the proposed
+- [x] **Initial phrase-bank contents and per-mode threshold overrides** — needs a
+      first realistic Spanish/English utterance set per `OutputMode`. *Owner*: build the list imported from parrot.conf
+- [x] **`to_thread` vs a bounded `ThreadPoolExecutor`** under heavy concurrent
       routing (GIL contention with many agents). *Owner*: tbd — start with
-      `to_thread`, revisit if profiling shows saturation.
+      `to_thread`, revisit if profiling shows saturation: let's start with to_thread
 
 ---
 
