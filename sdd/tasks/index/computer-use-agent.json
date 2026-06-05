@@ -155,7 +155,7 @@
       "feature_id": "FEAT-227",
       "feature": "computer-use-agent",
       "spec": "sdd/specs/computer-use-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -171,8 +171,8 @@
       "parallelism_notes": "Final task — depends on all prior tasks being complete",
       "assigned_to": null,
       "started_at": "2026-06-05T17:39:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1482-integration-tests.md"
+      "completed_at": "2026-06-05T17:59:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1482-integration-tests.md"
     }
   ]
 }
