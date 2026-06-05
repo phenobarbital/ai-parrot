@@ -32,7 +32,7 @@
       "feature_id": "FEAT-224",
       "feature": "intent-router-mixin-embedding-routing",
       "spec": "sdd/specs/intent-router-mixin-embedding-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Edits only registry/capabilities/models.py (additive fields). No overlap with other tasks' files.",
       "assigned_to": null,
       "started_at": "2026-06-05T14:05:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1485-extend-intentrouterconfig.md"
+      "completed_at": "2026-06-05T16:54:39+00:00",
+      "file": "sdd/tasks/completed/TASK-1485-extend-intentrouterconfig.md"
     },
     {
       "id": "TASK-1486",

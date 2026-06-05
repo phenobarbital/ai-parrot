@@ -201,3 +201,38 @@ class IntentRouterConfig(BaseModel):
             "are RoutingType enum values (e.g. 'graph_pageindex')."
         ),
     )
+
+    # ── FEAT-224: deterministic output-mode routing (second, separate concern) ──
+    # These fields are independent of the retrieval-routing fields above; they
+    # drive the embedding-based output-mode router (EmbeddingIntentRouter).
+    enable_output_mode_routing: bool = Field(
+        False,
+        description="Activate the deterministic output-mode router",
+    )
+    embedding_model: str = Field(
+        "intfloat/multilingual-e5-small",
+        description="SentenceTransformer model id for the output-mode router",
+    )
+    output_mode_routes: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Phrase bank: OutputMode value (str) -> reference utterances. "
+            "Keys are OutputMode *values* (e.g. 'structured_chart')."
+        ),
+    )
+    output_mode_threshold: float = Field(
+        0.85,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Min max-cosine to accept a route; below -> abstain. Calibrated "
+            "for multilingual-e5-small (on-topic ~0.92+, off-topic ~0.82-); "
+            "re-sweep when changing 'embedding_model' (embedding-space drift)."
+        ),
+    )
+    discrepancy_margin: float = Field(
+        0.05,
+        ge=0.0,
+        le=1.0,
+        description="If (best-second) < margin, consult the LLM tie-breaker",
+    )
