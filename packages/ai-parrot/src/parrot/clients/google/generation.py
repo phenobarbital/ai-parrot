@@ -1519,7 +1519,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         resolution: Union[str, ImageResolution] = ImageResolution.RES_2K,
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
         output_directory: Optional[str] = None,
-        as_base64: bool = False
+        as_base64: bool = False,
+        service_tier: Optional[str] = None
     ) -> AIMessage:
         """
         Generate images using Google's Gemini/Imagen models.
@@ -1533,6 +1534,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             model: Model to use (default: gemini-3.1-pro-image-preview).
             output_directory: Directory to save generated images.
             as_base64: Whether to include base64 encoded string in the response.
+            service_tier: Optional service tier configuration (e.g., 'flex').
 
         Returns:
             AIMessage containing the generated image(s).
@@ -1584,7 +1586,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
                 ),
             ],
-            tools=tools
+            tools=tools,
+            service_tier=service_tier
         )
 
         try:
@@ -2506,3 +2509,49 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 await file_manager.upload_file(assembled_path, final_key)
 
             return final_key
+
+    async def generate_image_batch(
+        self,
+        requests: List[Dict[str, Any]],
+        use_flex: bool = False,
+        **kwargs
+    ) -> List[Union[AIMessage, Exception]]:
+        """
+        Generate multiple images in batch using Google's image models.
+
+        Args:
+            requests: List of request dicts matching `generate_image` parameters.
+            use_flex: If True, set service_tier='flex' for Nano Banana models.
+            **kwargs: Extra defaults to apply to each request.
+        """
+        self.logger.info(f"Processing {len(requests)} image generation requests in batch...")
+        tasks = []
+        for req in requests:
+            req_copy = req.copy()
+            if use_flex:
+                req_copy["service_tier"] = "flex"
+            for k, v in kwargs.items():
+                req_copy.setdefault(k, v)
+            tasks.append(self.generate_image(**req_copy))
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def generate_video_batch(
+        self,
+        requests: List[Dict[str, Any]],
+        **kwargs
+    ) -> List[Union[AIMessage, Exception]]:
+        """
+        Generate multiple videos in batch using Google's Veo models.
+
+        Args:
+            requests: List of request dicts matching `video_generation` parameters.
+            **kwargs: Extra defaults to apply to each request.
+        """
+        self.logger.info(f"Processing {len(requests)} video generation requests in batch...")
+        tasks = []
+        for req in requests:
+            req_copy = req.copy()
+            for k, v in kwargs.items():
+                req_copy.setdefault(k, v)
+            tasks.append(self.video_generation(**req_copy))
+        return await asyncio.gather(*tasks, return_exceptions=True)

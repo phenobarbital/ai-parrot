@@ -213,3 +213,33 @@ class TestGoogleBatch:
         assert len(jobs) == 2
         assert jobs[0].name == "batches/job-1"
         assert jobs[1].name == "batches/job-2"
+
+    async def test_generate_image_batch(self, mock_google_client):
+        """Verify generate_image_batch executes generate_image concurrently."""
+        mock_google_client.generate_image = AsyncMock()
+        mock_google_client.generate_image.side_effect = [
+            AIMessage(input="prompt 1", output=None, response="ok", model="gemini-3.1-flash-image", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)),
+            AIMessage(input="prompt 2", output=None, response="ok", model="gemini-3.1-flash-image", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+        ]
+        
+        requests = [{"prompt": "prompt 1"}, {"prompt": "prompt 2"}]
+        results = await mock_google_client.generate_image_batch(requests, use_flex=True)
+        
+        assert len(results) == 2
+        mock_google_client.generate_image.assert_any_call(prompt="prompt 1", service_tier="flex")
+        mock_google_client.generate_image.assert_any_call(prompt="prompt 2", service_tier="flex")
+
+    async def test_generate_video_batch(self, mock_google_client):
+        """Verify generate_video_batch executes video_generation concurrently."""
+        mock_google_client.video_generation = AsyncMock()
+        mock_google_client.video_generation.side_effect = [
+            AIMessage(input="prompt 1", output=None, response="ok", model="veo-3.1-generate-preview", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0)),
+            AIMessage(input="prompt 2", output=None, response="ok", model="veo-3.1-generate-preview", provider="google", usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0))
+        ]
+        
+        requests = [{"prompt": "prompt 1"}, {"prompt": "prompt 2"}]
+        results = await mock_google_client.generate_video_batch(requests)
+        
+        assert len(results) == 2
+        mock_google_client.video_generation.assert_any_call(prompt="prompt 1")
+        mock_google_client.video_generation.assert_any_call(prompt="prompt 2")
