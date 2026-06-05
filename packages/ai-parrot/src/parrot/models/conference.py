@@ -51,6 +51,7 @@ class ConferenceRound(BaseModel):
 
     round_index: int = Field(
         ...,
+        ge=1,
         description="1-based index of this round within the conference.",
     )
     answers: Dict[str, str] = Field(

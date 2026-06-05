@@ -56,6 +56,16 @@ class _NoStructuredAgent:
         return SimpleNamespace(content=self._answer)
 
 
+class _FailingAgent:
+    """Specialist whose ``ask`` always raises (broadcast/vote failure)."""
+
+    def __init__(self, name):
+        self.name = name
+
+    async def ask(self, question, structured_output=None, **kw):
+        raise RuntimeError("boom")
+
+
 class _OscillatingAgent:
     """Specialist whose chosen label flips A/B on every successive vote."""
 
@@ -196,7 +206,11 @@ class TestVotingAndConfer:
         msg = await o.confer("Q", max_rounds=3)
         assert isinstance(msg.structured_output, ConferenceResult)
         assert msg.is_structured is True
+        # Assert the literal final answer (not just content == final_answer,
+        # which is tautological since content aliases output).
+        assert msg.output == "best-answer"
         assert msg.content == msg.structured_output.final_answer
+        assert msg.structured_output.final_answer == "best-answer"
         assert msg.structured_output.converged is True
         assert msg.structured_output.winner_agent == "data"
         # Each round persisted to ExecutionMemory.
@@ -234,3 +248,57 @@ class TestVotingAndConfer:
         result = msg.structured_output
         assert len(result.rounds) == 3
         assert result.converged is False
+
+    # ── Robustness (post-review hardening) ───────────────────────────────────
+
+    async def test_vote_unknown_label_falls_back(self):
+        # A specialist that votes for a hallucinated label ("Z") must not crash
+        # the tally; its vote is normalized to its own answer.
+        o = _make_orch({
+            "data": _VotingAgent("data", "a-data", "A", 90),
+            "policy": _VotingAgent("policy", "a-policy", "Z", 80),  # invalid
+        })
+        answers = {"data": "a-data", "policy": "a-policy"}
+        block, label_to_agent = o._build_anonymous_peer_block(answers)
+        votes = await o._collect_votes("Q", block, label_to_agent)
+        assert votes["policy"].chosen_label == "B"  # own label
+        assert votes["policy"].confidence == 50      # fallback confidence
+        winner, _ = o._tally_weighted_votes(votes)
+        assert winner in label_to_agent              # never a phantom label
+
+    def test_tally_empty_votes_raises(self, orch):
+        with pytest.raises(ValueError):
+            orch._tally_weighted_votes({})
+
+    async def test_broadcast_skips_failed_specialist(self):
+        o = _make_orch({
+            "good": _VotingAgent("good", "ok", "A", 90),
+            "bad": _FailingAgent("bad"),
+        })
+        answers = await o._broadcast_round("Q")
+        assert set(answers) == {"good"}  # the failing specialist is skipped
+
+    async def test_confer_survives_failing_specialist(self):
+        o = _make_orch({
+            "good": _VotingAgent("good", "ok", "A", 95),
+            "bad": _FailingAgent("bad"),
+        })
+        msg = await o.confer("Q", max_rounds=2)
+        assert msg.structured_output.winner_agent == "good"
+        assert msg.output == "ok"
+
+    async def test_max_rounds_must_be_positive(self):
+        o = _make_orch({"data": _VotingAgent("data", "a", "A", 90)})
+        with pytest.raises(ValueError):
+            await o.confer("Q", max_rounds=0)
+
+    async def test_confer_single_specialist(self):
+        o = _make_orch({"solo": _VotingAgent("solo", "only-answer", "A", 70)})
+        msg = await o.confer("Q", max_rounds=2)
+        assert msg.structured_output.winner_agent == "solo"
+        assert msg.output == "only-answer"
+
+    async def test_confer_empty_panel_raises(self):
+        o = _make_orch({})
+        with pytest.raises(ValueError):
+            await o.confer("Q")

@@ -429,7 +429,9 @@ After gathering responses from one or more agents:
             agents: Optional subset of specialist names; ``None`` = all.
 
         Returns:
-            ``{agent_name: answer_text}`` — one answer per specialist.
+            ``{agent_name: answer_text}`` — one answer per specialist that
+            responded successfully. A specialist that raises during the broadcast
+            is logged and skipped (it does not abort the conference).
         """
         names = self._resolve_agents(agents)
         self.logger.info(
@@ -437,15 +439,22 @@ After gathering responses from one or more agents:
             len(names), names,
         )
 
-        async def _one(name: str) -> Tuple[str, str]:
+        async def _one(name: str) -> Optional[Tuple[str, str]]:
             agent = self.specialist_agents[name]
-            response = await self._invoke_specialist(
-                agent, question, use_conversation_history=False
-            )
+            try:
+                response = await self._invoke_specialist(
+                    agent, question, use_conversation_history=False
+                )
+            except Exception as exc:  # noqa: BLE001 - degrade gracefully
+                self.logger.warning(
+                    "Specialist %s failed during broadcast; skipping: %s",
+                    name, exc,
+                )
+                return None
             return name, self._extract_answer_text(response)
 
         pairs = await asyncio.gather(*[_one(name) for name in names])
-        return dict(pairs)
+        return {pair[0]: pair[1] for pair in pairs if pair is not None}
 
     def _build_anonymous_peer_block(
         self,
@@ -515,20 +524,26 @@ After gathering responses from one or more agents:
             question: The original conference question.
             peer_block: The anonymized peer-answer block.
             label_to_agent: Internal label -> agent map for this round.
-            agents: Optional subset of specialist names; ``None`` = all.
+            agents: Optional subset of specialist names; ``None`` = all. The
+                voting panel is intersected with the agents that produced an
+                answer this round, so a specialist skipped during the broadcast
+                does not vote on an answer set it is not part of.
 
         Returns:
             ``{agent_name: PeerVote}``.
         """
-        names = self._resolve_agents(agents)
         agent_to_label = {agent: label for label, agent in label_to_agent.items()}
+        # Only agents that produced an answer this round may vote.
+        names = [n for n in self._resolve_agents(agents) if n in agent_to_label]
         prompt = f"{question}\n\n{peer_block}"
 
         async def _one(name: str) -> Tuple[str, PeerVote]:
             agent = self.specialist_agents[name]
             try:
                 response = await self._invoke_specialist(
-                    agent, prompt, structured_output=PeerVote
+                    agent, prompt,
+                    structured_output=PeerVote,
+                    use_conversation_history=False,
                 )
             except Exception as exc:  # noqa: BLE001 - degrade gracefully
                 self.logger.warning(
@@ -539,7 +554,17 @@ After gathering responses from one or more agents:
 
             vote = getattr(response, "structured_output", None)
             if isinstance(vote, PeerVote):
-                return name, vote
+                if vote.chosen_label in label_to_agent:
+                    return name, vote
+                # Structured, but voted for a label that does not exist this
+                # round (LLM hallucination) -> normalize to its own answer.
+                self.logger.warning(
+                    "Specialist %s voted for unknown label '%s'; using fallback.",
+                    name, vote.chosen_label,
+                )
+                return name, self._fallback_vote(
+                    name, vote.revised_answer, agent_to_label
+                )
 
             content = self._extract_answer_text(response)
             self.logger.warning(
@@ -567,11 +592,18 @@ After gathering responses from one or more agents:
         Returns:
             ``(winner_label, breakdown)`` where ``breakdown`` is
             ``{label: accumulated_confidence}``.
+
+        Raises:
+            ValueError: If there are no votes to tally.
         """
         scores: Dict[str, float] = {}
         for vote in votes.values():
             scores[vote.chosen_label] = (
                 scores.get(vote.chosen_label, 0.0) + vote.confidence
+            )
+        if not scores:
+            raise ValueError(
+                "No votes to tally: every specialist failed to produce a vote."
             )
         # Highest score wins; tie-break -> lowest label (ascending).
         winner_label = min(scores, key=lambda lbl: (-scores[lbl], lbl))
@@ -626,8 +658,12 @@ After gathering responses from one or more agents:
             ``self._execution_memory``.
 
         Raises:
-            ValueError: If no specialist is available to answer.
+            ValueError: If ``max_rounds`` < 1, or no specialist is available
+                to answer.
         """
+        if max_rounds < 1:
+            raise ValueError(f"max_rounds must be >= 1; got {max_rounds}")
+
         self._init_execution_memory(question)
         answers = await self._broadcast_round(question, agents)
         if not answers:
