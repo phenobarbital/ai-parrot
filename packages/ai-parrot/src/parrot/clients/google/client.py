@@ -205,8 +205,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
 
-        Gemini 2.5 Pro and Gemini 3.x Pro models are thinking-only and
-        reject budget=0.
+        Gemini 2.5 Pro, Gemini 3.x Pro, and computer-use models are
+        thinking-only and reject budget=0.
         """
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
@@ -215,6 +215,30 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             model.startswith('gemini-2.5-pro')
             or model.startswith('gemini-3.1-pro')
             or model.startswith('gemini-3-pro')
+            or GoogleGenAIClient._is_computer_use_model(model)
+        )
+
+    @staticmethod
+    def _is_computer_use_model(model: str) -> bool:
+        """Check if a model is a Gemini computer-use model.
+
+        Computer-use models require the ``types.ComputerUse`` tool type in
+        the GenerateContentConfig and return predefined function calls
+        (click_at, type_text_at, etc.) rather than custom FunctionDeclarations.
+
+        Args:
+            model: Model identifier — accepts plain string, GoogleModel enum,
+                or None (returns False for falsy inputs).
+
+        Returns:
+            True if the model is a computer-use model.
+        """
+        model = GoogleGenAIClient._as_model_str(model)
+        if not model:
+            return False
+        return (
+            model.startswith("gemini-2.5-computer-use")
+            or model.startswith("gemini-3-flash-preview")
         )
 
     @staticmethod
@@ -957,7 +981,43 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         return self._json.loads(structured_text)
 
     def _build_tools(self, tool_type: str, filter_names: Optional[List[str]] = None) -> Optional[List[types.Tool]]:
-        """Build tools based on the specified type."""
+        """Build tools based on the specified type.
+
+        Supports three tool types:
+        - ``"custom_functions"`` — FunctionDeclaration tools from the ToolManager.
+        - ``"builtin_tools"`` — Google Search builtin tool.
+        - ``"computer_use"`` — ComputerUse tool for vision-based browser automation.
+          Requires ``self._computer_use_config`` to be set (a
+          :class:`~parrot_tools.computer.models.ComputerUseConfig` instance).
+
+        Args:
+            tool_type: One of ``"custom_functions"``, ``"builtin_tools"``,
+                or ``"computer_use"``.
+            filter_names: Optional list of tool names to include (custom_functions only).
+
+        Returns:
+            List of ``types.Tool`` instances, or None if tool_type is unrecognised.
+        """
+        if tool_type == "computer_use":
+            # ComputerUse tool type for vision-based browser automation.
+            # Requires self._computer_use_config (set by ComputerAgent or caller).
+            config = getattr(self, '_computer_use_config', None)
+            excluded = []
+            if config is not None:
+                excluded = getattr(config, 'excluded_actions', [])
+            try:
+                return [
+                    types.Tool(
+                        computer_use=types.ComputerUse(
+                            environment=types.Environment.ENVIRONMENT_BROWSER,
+                            excluded_predefined_functions=excluded,
+                        )
+                    )
+                ]
+            except Exception as exc:
+                self.logger.error("_build_tools(computer_use): failed to build ComputerUse tool: %s", exc)
+                return None
+
         if tool_type == "custom_functions":
             # migrate to use abstractool + tool definition:
             # Group function declarations by their category.
