@@ -7,7 +7,6 @@ and task/loop execution as agent-callable tools. Handles coordinate normalizatio
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -17,8 +16,6 @@ from parrot_tools.computer.backend import AsyncComputerBackend
 from parrot_tools.computer.models import (
     ComputerTask,
     EnvState,
-    LoopResult,
-    TaskResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -334,7 +331,7 @@ class ComputerInteractionToolkit(AbstractToolkit):
         png_bytes = await self._backend.screenshot(full_page=full_page)
         return {
             "screenshot_bytes": png_bytes,
-            "url": self._backend._page.url if self._backend._page else "",
+            "url": self._backend.current_url,
             "full_page": full_page,
         }
 
@@ -456,14 +453,21 @@ class ComputerInteractionToolkit(AbstractToolkit):
         task: str,
         params: Optional[dict] = None,
     ) -> dict:
-        """Execute a previously defined task once.
+        """Return a structured plan of steps for the agent to execute.
+
+        This is a **planning tool** — the returned steps are intended to be
+        actioned by the agent via individual computer_* tool calls (click_at,
+        type_text_at, navigate, etc.). ``run_task`` does NOT directly perform
+        the steps itself.
 
         Args:
-            task: Name of the task to run (must be defined via ``define_task``).
-            params: Optional parameters to substitute into step instructions.
+            task: Name of the task to plan (must be defined via ``define_task``).
+            params: Optional parameters to substitute into step instructions
+                (currently passed through but not applied to step text).
 
         Returns:
-            Dict with ``task_name``, ``success``, and ``steps``.
+            Dict with ``task_name``, ``success``, ``steps``, ``url``, and
+            ``screenshots``.
         """
         if task not in self._tasks:
             return {
@@ -523,12 +527,18 @@ class ComputerInteractionToolkit(AbstractToolkit):
                 "error": f"Task {task!r} is not defined.",
             }
 
-        # Only reset the abort flag if it wasn't pre-set by abort_loop().
-        # abort_loop() is typically called from an external coroutine running
-        # concurrently; if it was already set before run_loop started, we want
-        # to honour it immediately.
-        if not self._loop_abort:
-            self._loop_abort = False
+        # Check if abort was pre-set before this call, then always reset the
+        # flag so future loops work correctly regardless of the outcome here.
+        abort_was_pre_set = self._loop_abort
+        self._loop_abort = False  # reset so future loops work
+        if abort_was_pre_set:
+            return {
+                "task_name": task,
+                "iterations_completed": 0,
+                "stop_reason": "aborted",
+                "results": [],
+                "errors": [],
+            }
         results: list[dict] = []
         errors: list[str] = []
         iterations_completed = 0
@@ -549,7 +559,6 @@ class ComputerInteractionToolkit(AbstractToolkit):
                 stop_reason = "aborted"
                 break
 
-            params = params_list[i] if params_list is not None else None
             try:
                 state = await self._backend.current_state()
                 iteration_result: dict = {

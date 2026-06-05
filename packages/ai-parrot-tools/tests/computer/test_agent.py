@@ -15,18 +15,26 @@ class TestComputerAgentTools:
         agent._computer_toolkit = MagicMock()
         agent._computer_toolkit.get_tools.return_value = [MagicMock()] * 25
         agent._include_scraping = False
+        agent._scraping_toolkit = None
         tools = agent.agent_tools()
         assert len(tools) == 25
 
-    def test_agent_tools_with_scraping(self):
-        """agent_tools() includes >= 25 computer tools (plus optional scraping tools)."""
+    def test_agent_tools_with_scraping_toolkit_included(self):
+        """agent_tools() includes scraping tools when _scraping_toolkit is set."""
         agent = ComputerAgent.__new__(ComputerAgent)
         agent._computer_toolkit = MagicMock()
         agent._computer_toolkit.get_tools.return_value = [MagicMock()] * 25
-        agent._include_scraping = False
+        agent._include_scraping = True
+
+        # Mock the cached scraping toolkit with 5 additional tools
+        mock_scraping = MagicMock()
+        mock_scraping.get_tools.return_value = [MagicMock()] * 5
+        agent._scraping_toolkit = mock_scraping
+
         tools = agent.agent_tools()
-        # At least 25 computer tools returned without scraping
-        assert len(tools) == 25
+        # Should have 25 computer tools + 5 scraping tools
+        assert len(tools) == 30
+        mock_scraping.get_tools.assert_called_once()
 
     def test_agent_tools_include_scraping_flag(self):
         """include_scraping flag is stored on the agent."""
@@ -34,33 +42,22 @@ class TestComputerAgentTools:
         agent._computer_toolkit = MagicMock()
         agent._computer_toolkit.get_tools.return_value = []
         agent._include_scraping = True
+        agent._scraping_toolkit = None
         assert agent._include_scraping is True
 
     def test_agent_tools_scraping_exception_handled(self):
-        """Exceptions in WebScrapingToolkit init are caught gracefully."""
+        """When _scraping_toolkit is None (init failed), agent_tools() returns only computer tools."""
         agent = ComputerAgent.__new__(ComputerAgent)
         computer_tools = [MagicMock()] * 25
         agent._computer_toolkit = MagicMock()
         agent._computer_toolkit.get_tools.return_value = computer_tools
         agent._include_scraping = True
+        # Simulate that init-time WebScrapingToolkit creation failed
+        agent._scraping_toolkit = None
 
-        # Inject a WebScrapingToolkit that raises on instantiation
-        import parrot_tools.computer.agent as agent_module
-        import parrot_tools.scraping.toolkit as scraping_module
-
-        original = scraping_module.WebScrapingToolkit
-
-        class BrokenToolkit:
-            def __init__(self, *a, **kw):
-                raise RuntimeError("broken")
-
-        scraping_module.WebScrapingToolkit = BrokenToolkit
-        try:
-            tools = agent.agent_tools()
-            # Should fall back to computer tools only
-            assert len(tools) == 25
-        finally:
-            scraping_module.WebScrapingToolkit = original
+        tools = agent.agent_tools()
+        # Should fall back to computer tools only
+        assert len(tools) == 25
 
 
 class TestComputerAgentSafetyMode:
@@ -80,11 +77,12 @@ class TestComputerAgentSafetyMode:
     def test_handle_safety_interactive_emits_event(self):
         agent = ComputerAgent.__new__(ComputerAgent)
         agent._safety_mode = "interactive"
+        agent._safety_callback = None  # No callback — defaults to True
         agent.emit = MagicMock()
         decision = {"action": "fill", "warning": "sensitive_data"}
         result = agent.handle_safety_decision(decision)
         agent.emit.assert_called_once_with("safety_decision", decision)
-        assert result is True  # Default proceeds even in interactive mode
+        assert result is True  # Default proceeds even in interactive mode (no callback)
 
 
 class TestComputerAgentScreenshotPruning:

@@ -167,7 +167,11 @@ class AsyncComputerBackend:
         Args:
             page: The newly opened Playwright page.
         """
-        asyncio.ensure_future(self._redirect_new_page(page))
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._redirect_new_page(page))
+        except RuntimeError:
+            logger.debug("_handle_new_page: no running event loop, ignoring new tab")
 
     async def _redirect_new_page(self, new_page: Any) -> None:
         """Close new tabs and navigate current page to their URL.
@@ -181,7 +185,30 @@ class AsyncComputerBackend:
             if url and url not in ("about:blank", "chrome://newtab/"):
                 await self._page.goto(url)
         except Exception as exc:
-            logger.debug("_redirect_new_page: %s", exc)
+            logger.warning("_redirect_new_page: %s", exc)
+
+    # ── Guards ────────────────────────────────────────────────────────────────
+
+    def _ensure_started(self) -> None:
+        """Raise RuntimeError if the browser has not been started.
+
+        Raises:
+            RuntimeError: If start() has not been called yet.
+        """
+        if self._page is None:
+            raise RuntimeError(
+                "Browser not started. Call start() or use the toolkit which calls "
+                "_pre_execute() automatically."
+            )
+
+    @property
+    def current_url(self) -> str:
+        """Return the current page URL, or empty string if browser not started.
+
+        Returns:
+            Current URL string, or ``""`` if the browser has not been started.
+        """
+        return self._page.url if self._page else ""
 
     # ── State helpers ──────────────────────────────────────────────────────────
 
@@ -200,7 +227,11 @@ class AsyncComputerBackend:
 
         Returns:
             EnvState with PNG bytes and the current URL.
+
+        Raises:
+            RuntimeError: If the browser has not been started.
         """
+        self._ensure_started()
         try:
             await self._page.wait_for_load_state("domcontentloaded", timeout=10_000)
         except Exception:
@@ -321,15 +352,18 @@ class AsyncComputerBackend:
         await self._page.mouse.wheel(0, delta)
         return await self.current_state()
 
+    MAX_WAIT_SECONDS: int = 60
+
     async def wait_seconds(self, seconds: int = 5) -> EnvState:
-        """Wait for a number of seconds without interacting with the page.
+        """Wait for the specified number of seconds (capped at 60).
 
         Args:
-            seconds: Number of seconds to wait.
+            seconds: Number of seconds to wait (clamped to 0–60).
 
         Returns:
             EnvState after waiting.
         """
+        seconds = min(max(0, seconds), self.MAX_WAIT_SECONDS)
         await asyncio.sleep(seconds)
         return await self.current_state()
 
@@ -532,12 +566,26 @@ class AsyncComputerBackend:
         logger.info("Tracing stopped: output_path=%s", output_path)
 
     async def record_har(self, output_path: str) -> None:
-        """Begin recording a HAR archive.
+        """Start recording network traffic to a HAR file.
+
+        Recreates the browser context with HAR recording enabled via
+        ``record_har_path``. The previous context is closed and a new one is
+        opened, then the browser navigates back to the current URL.
 
         Args:
-            output_path: File path where the HAR file will be saved.
+            output_path: Path where the HAR file will be written.
         """
-        await self._context.route_from_har(output_path, not_found="abort")
+        current_url = self._page.url if self._page else self._initial_url
+        if self._context:
+            await self._context.close()
+        self._context = await self._browser.new_context(
+            viewport={"width": self._viewport[0], "height": self._viewport[1]},
+            record_har_path=output_path,
+        )
+        self._context.on("page", self._handle_new_page)
+        self._page = await self._context.new_page()
+        if current_url:
+            await self._page.goto(current_url)
         logger.info("HAR recording started: output_path=%s", output_path)
 
     async def save_pdf(self, output_path: str) -> bytes:

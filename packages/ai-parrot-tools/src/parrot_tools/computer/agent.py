@@ -8,7 +8,7 @@ screenshot memory pruning and safety decision handling.
 from __future__ import annotations
 
 import logging
-from typing import List, Literal, Optional
+from typing import Any, Callable, List, Literal, Optional
 
 from parrot.bots.agent import Agent
 from parrot.registry import register_agent
@@ -62,7 +62,8 @@ class ComputerAgent(Agent):
         safety_mode: Literal["auto", "interactive"] = "auto",
         max_screenshot_turns: int = 3,
         include_scraping: bool = False,
-        **kwargs,
+        safety_callback: Optional[Callable[..., Any]] = None,
+        **kwargs: Any,
     ) -> None:
         self._computer_toolkit = ComputerInteractionToolkit(
             viewport=viewport,
@@ -72,6 +73,24 @@ class ComputerAgent(Agent):
         self._include_scraping = include_scraping
         self._safety_mode = safety_mode
         self._max_screenshot_turns = max_screenshot_turns
+        self._safety_callback = safety_callback
+        # Cache WebScrapingToolkit at init time to avoid re-instantiation on
+        # every agent_tools() call. Import failure is caught here.
+        self._scraping_toolkit = None
+        if include_scraping:
+            try:
+                from parrot_tools.scraping.toolkit import WebScrapingToolkit
+                self._scraping_toolkit = WebScrapingToolkit(
+                    driver_type="playwright", headless=True
+                )
+            except ImportError as exc:
+                logger.warning(
+                    "ComputerAgent: WebScrapingToolkit not available (ImportError): %s", exc
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ComputerAgent: could not initialize WebScrapingToolkit: %s", exc
+                )
         super().__init__(
             agent_id=self.agent_id,
             llm=model,
@@ -82,21 +101,22 @@ class ComputerAgent(Agent):
         """Return the tools available to the ComputerAgent.
 
         Always includes all tools from ComputerInteractionToolkit.
-        When ``include_scraping=True``, also adds WebScrapingToolkit tools
-        for hybrid selector-based extraction.
+        When ``include_scraping=True``, also adds the cached
+        :class:`~parrot_tools.scraping.toolkit.WebScrapingToolkit` tools for
+        hybrid selector-based extraction.
 
         Returns:
             List of AbstractTool instances.
         """
         tools: List[AbstractTool] = self._computer_toolkit.get_tools()
-        if self._include_scraping:
-            try:
-                from parrot_tools.scraping.toolkit import WebScrapingToolkit
-                scraping = WebScrapingToolkit(driver_type="playwright", headless=True)
-                tools.extend(scraping.get_tools())
-                logger.info("ComputerAgent: WebScrapingToolkit tools added (%d tools)", len(tools))
-            except Exception as exc:
-                logger.warning("ComputerAgent: could not load WebScrapingToolkit: %s", exc)
+        if self._include_scraping and self._scraping_toolkit is not None:
+            scraping_tools = self._scraping_toolkit.get_tools()
+            tools.extend(scraping_tools)
+            logger.info(
+                "ComputerAgent: WebScrapingToolkit tools added (%d scraping, %d total)",
+                len(scraping_tools),
+                len(tools),
+            )
         return tools
 
     def prune_screenshots(self, history: list) -> list:
@@ -160,15 +180,20 @@ class ComputerAgent(Agent):
         """Process a safety decision from the model.
 
         In ``"auto"`` mode, logs the decision and returns True (proceed).
-        In ``"interactive"`` mode, emits a ``"safety_decision"`` event so
-        an external handler can decide whether to proceed.
+
+        In ``"interactive"`` mode, emits a ``"safety_decision"`` event and
+        then invokes ``self._safety_callback(decision)`` if one was provided at
+        construction time — returning its boolean result. When no callback is
+        set, defaults to True and logs a warning. Pass ``safety_callback=`` to
+        the constructor to get real abort behaviour in interactive mode.
 
         Args:
             decision: A dict describing the safety decision from the model.
 
         Returns:
-            True to proceed, False to abort (only in interactive mode; auto
-            always returns True).
+            True to proceed, False to abort. ``"auto"`` mode always returns
+            True. ``"interactive"`` mode returns the callback's result, or True
+            when no callback is configured.
         """
         if self._safety_mode == "auto":
             logger.warning(
@@ -176,10 +201,30 @@ class ComputerAgent(Agent):
             )
             return True
         else:
-            # Interactive mode: emit event and let external handler decide.
+            # Interactive mode: emit event for any listeners.
             try:
                 self.emit("safety_decision", decision)
             except Exception as exc:
                 logger.warning("ComputerAgent: could not emit safety_decision: %s", exc)
-            logger.info("ComputerAgent safety decision emitted (interactive mode): %s", decision)
-            return True  # Default to proceeding; external handler can override
+            # Invoke the injected callback if available.
+            if self._safety_callback is not None:
+                try:
+                    result = self._safety_callback(decision)
+                    logger.info(
+                        "ComputerAgent safety decision (interactive, callback=%s): %s",
+                        result,
+                        decision,
+                    )
+                    return bool(result)
+                except Exception as exc:
+                    logger.warning(
+                        "ComputerAgent: safety_callback raised, defaulting to proceed: %s",
+                        exc,
+                    )
+            # No callback configured — default to proceeding with a clear warning.
+            logger.warning(
+                "ComputerAgent safety decision (interactive mode, no callback set — "
+                "defaulting to proceed): %s",
+                decision,
+            )
+            return True

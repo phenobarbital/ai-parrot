@@ -1165,6 +1165,94 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return s[:max_chars] + "\n...[TRUNCATED]"
         return data
 
+    def _extract_screenshot_bytes(self, result: Any) -> Optional[bytes]:
+        """Extract raw PNG screenshot bytes from a computer-use tool result.
+
+        Computer-use tools (e.g. ``click_at``, ``navigate``) return a dict
+        that may contain a ``"screenshot_bytes"`` key with PNG bytes. This
+        helper pulls those bytes out so the caller can wrap them in a
+        ``FunctionResponseBlob`` instead of sending them as a JSON string.
+
+        Also handles :class:`~parrot.tools.abstract.ToolResult` wrappers.
+
+        Args:
+            result: Raw tool result (dict, ToolResult, or any other type).
+
+        Returns:
+            PNG bytes if found, otherwise ``None``.
+        """
+        # Unwrap ToolResult
+        if isinstance(result, ToolResult):
+            result = result.result
+
+        if not isinstance(result, dict):
+            return None
+
+        screenshot = result.get("screenshot_bytes")
+        if isinstance(screenshot, (bytes, bytearray)):
+            return bytes(screenshot)
+        return None
+
+    def _build_computer_use_function_response_part(
+        self,
+        tool_id: str,
+        tool_name: str,
+        result: Any,
+    ) -> "Part":
+        """Build a ``Part`` with ``FunctionResponse`` for a computer-use tool.
+
+        When the tool result contains screenshot bytes, wraps them in a
+        ``FunctionResponseBlob`` (``inline_data``) so Gemini can process
+        the screenshot visually. Non-screenshot fields are sent as the
+        ``response`` dict.
+
+        Args:
+            tool_id: The function call ID to correlate request and response.
+            tool_name: Name of the computer-use tool that produced the result.
+            result: Raw tool result (usually a dict from the backend).
+
+        Returns:
+            A ``Part`` with a populated ``function_response``.
+        """
+        screenshot_bytes = self._extract_screenshot_bytes(result)
+
+        # Unwrap ToolResult for metadata access
+        raw = result.result if isinstance(result, ToolResult) else result
+
+        # Build the text response dict (URL, status, etc.) without the raw
+        # screenshot bytes (which go into the blob instead).
+        if isinstance(raw, dict):
+            text_fields = {k: v for k, v in raw.items() if k != "screenshot_bytes"}
+        else:
+            text_fields = {"result": str(raw) if raw is not None else "ok"}
+
+        if screenshot_bytes is not None:
+            # Send screenshot as a FunctionResponseBlob so Gemini can see it.
+            blob = types.FunctionResponseBlob(
+                mime_type="image/png",
+                data=screenshot_bytes,
+            )
+            return Part(
+                function_response=types.FunctionResponse(
+                    id=tool_id,
+                    name=tool_name,
+                    response=text_fields if text_fields else {"ok": True},
+                    parts=[
+                        types.FunctionResponsePart(inline_data=blob)
+                    ],
+                )
+            )
+        else:
+            # No screenshot — fall back to the standard JSON response.
+            response_content = self._process_tool_result_for_api(result)
+            return Part(
+                function_response=types.FunctionResponse(
+                    id=tool_id,
+                    name=tool_name,
+                    response=response_content,
+                )
+            )
+
     def _process_tool_result_for_api(self, result) -> dict:
         """Process tool result for Google Function Calling API compatibility.
 
@@ -1520,6 +1608,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
                 fcc.mode = types.FunctionCallingConfigMode.AUTO
 
+            is_computer_use = self._is_computer_use_model(model)
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
@@ -1527,24 +1616,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
 
                 try:
-                    # Debug log first 20 cahrs of result
+                    # Debug log first 20 chars of result
                     result_preview = str(result)[:20]
                     self.logger.notice(f"Tool {fc.name} output preview: {result_preview}...")
 
-                    response_content = self._process_tool_result_for_api(result)
-                    # self.logger.info(
-                    #     f"📦 Processed for API: {response_content}"
-                    # )
-
-                    function_response_parts.append(
-                        Part(
+                    if is_computer_use:
+                        # Computer-use tools may return screenshot bytes that
+                        # must be wrapped in FunctionResponseBlob so Gemini
+                        # can process the screenshot visually.
+                        part = self._build_computer_use_function_response_part(
+                            tool_id, fc.name, result
+                        )
+                    else:
+                        response_content = self._process_tool_result_for_api(result)
+                        part = Part(
                             function_response=types.FunctionResponse(
                                 id=tool_id,
                                 name=fc.name,
-                                response=response_content
+                                response=response_content,
                             )
                         )
-                    )
+
+                    function_response_parts.append(part)
 
                 except Exception as e:
                     self.logger.error(f"Error processing result for tool {fc.name}: {e}")

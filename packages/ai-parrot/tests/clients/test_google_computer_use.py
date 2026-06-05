@@ -114,3 +114,96 @@ class TestBuildToolsComputerUse:
         client.logger = MagicMock()
         result = client._build_tools("nonexistent_type")
         assert result is None
+
+
+class TestFunctionResponseBlobWrapping:
+    """Tests for FunctionResponseBlob wrapping of computer-use screenshot results."""
+
+    def _make_client(self):
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        client.logger = MagicMock()
+        return client
+
+    def test_extract_screenshot_bytes_from_dict(self):
+        """_extract_screenshot_bytes returns bytes when screenshot_bytes key present."""
+        client = self._make_client()
+        result = {"url": "https://example.com", "screenshot_bytes": b"\x89PNG\r\n"}
+        extracted = client._extract_screenshot_bytes(result)
+        assert extracted == b"\x89PNG\r\n"
+
+    def test_extract_screenshot_bytes_missing_key(self):
+        """_extract_screenshot_bytes returns None when screenshot_bytes not in dict."""
+        client = self._make_client()
+        result = {"url": "https://example.com", "screenshot_taken": True}
+        assert client._extract_screenshot_bytes(result) is None
+
+    def test_extract_screenshot_bytes_non_dict(self):
+        """_extract_screenshot_bytes returns None for non-dict results."""
+        client = self._make_client()
+        assert client._extract_screenshot_bytes("plain string result") is None
+        assert client._extract_screenshot_bytes(42) is None
+        assert client._extract_screenshot_bytes(None) is None
+
+    def test_extract_screenshot_bytes_non_bytes_value(self):
+        """_extract_screenshot_bytes returns None when screenshot_bytes is not bytes."""
+        client = self._make_client()
+        result = {"screenshot_bytes": "base64encodedstring"}
+        assert client._extract_screenshot_bytes(result) is None
+
+    def test_build_computer_use_function_response_part_with_screenshot(self):
+        """Part contains FunctionResponseBlob (inline_data) when screenshot bytes present."""
+        client = self._make_client()
+        png_bytes = b"\x89PNG\r\nfake_png_data"
+        result = {
+            "url": "https://example.com",
+            "screenshot_taken": True,
+            "screenshot_bytes": png_bytes,
+        }
+        part = client._build_computer_use_function_response_part(
+            "call_123", "click_at", result
+        )
+        assert part is not None
+        assert part.function_response is not None
+        assert part.function_response.name == "click_at"
+        assert part.function_response.id == "call_123"
+        # The screenshot should be in the parts as a blob, not in response dict
+        blob_parts = part.function_response.parts
+        assert blob_parts is not None and len(blob_parts) == 1
+        blob = blob_parts[0].inline_data
+        assert blob is not None
+        assert blob.mime_type == "image/png"
+        assert blob.data == png_bytes
+        # The text response dict should NOT contain screenshot_bytes
+        text_response = part.function_response.response or {}
+        assert "screenshot_bytes" not in text_response
+
+    def test_build_computer_use_function_response_part_without_screenshot(self):
+        """Part uses plain response dict when no screenshot bytes present."""
+        client = self._make_client()
+        result = {"url": "https://example.com", "screenshot_taken": False}
+        part = client._build_computer_use_function_response_part(
+            "call_456", "navigate", result
+        )
+        assert part is not None
+        assert part.function_response is not None
+        assert part.function_response.name == "navigate"
+        # No blob parts when there is no screenshot
+        assert (
+            part.function_response.parts is None
+            or len(part.function_response.parts) == 0
+        )
+        # Result should be a plain dict
+        assert part.function_response.response is not None
+
+    def test_build_computer_use_function_response_part_string_result(self):
+        """Fallback path handles plain string results (non-dict)."""
+        client = self._make_client()
+        # Make _process_tool_result_for_api available (it's a real method)
+        import pandas as pd
+        client._json = __import__("json")
+
+        part = client._build_computer_use_function_response_part(
+            "call_789", "go_back", "navigation complete"
+        )
+        assert part is not None
+        assert part.function_response is not None

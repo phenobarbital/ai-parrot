@@ -217,13 +217,13 @@ class TestHybridAgentToolComposition:
         agent._include_scraping = True
         agent._safety_mode = "auto"
         agent._max_screenshot_turns = 3
+        # Simulate failed toolkit init (as happens when import fails at __init__ time)
+        agent._scraping_toolkit = None
 
-        # Patch WebScrapingToolkit import to raise ImportError
-        with patch.dict("sys.modules", {"parrot_tools.scraping.toolkit": None}):
-            tools = agent.agent_tools()
-            # Should still return computer tools without raising
-            assert isinstance(tools, list)
-            assert len(tools) > 0
+        tools = agent.agent_tools()
+        # Should still return computer tools without raising
+        assert isinstance(tools, list)
+        assert len(tools) > 0
 
     def test_computer_agent_prune_screenshots_keeps_recent(self):
         """prune_screenshots keeps the last max_screenshot_turns screenshot turns."""
