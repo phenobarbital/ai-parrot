@@ -1,0 +1,109 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source is a forward-looking brainstorm proposing a NEW IntentRouterMixin + IntentRouter engine, not a bug report. It self-declares an unverified 'Codebase Contract' (ask/configure/RenderPhase/RequestContext/encoder). The plan verifies each anchor and locates where output_mode should live.",
+  "queries": [
+    {
+      "id": "Q001",
+      "intent": "Confirm BasicAgent.ask() exists and capture its real signature + where a hook could be inserted (REQUEST phase).",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "async def ask\\(", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 50 }
+    },
+    {
+      "id": "Q002",
+      "intent": "Confirm BasicAgent.configure() exists as the CONFIGURE-phase setup point for one-time encoder/route loading.",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "async def configure\\(|def configure\\(", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 50 }
+    },
+    {
+      "id": "Q003",
+      "intent": "Confirm whether a RenderPhase (CONFIGURE vs REQUEST) enum actually exists — the brainstorm's two-phase principle depends on it.",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "RenderPhase|CONFIGURE|REQUEST", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 60 }
+    },
+    {
+      "id": "Q004",
+      "intent": "Resolve the BLOCKING question: does a named RequestContext carrier exist, or is per-ask state kwargs/dict/attrs on self? Determines hook signature and where output_mode lives.",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "RequestContext|request_context|RequestState", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 80 }
+    },
+    {
+      "id": "Q005",
+      "intent": "Find the existing encoder/embeddings abstraction (SentenceTransformer or HF wrapper) to reuse so the mixin adds no new runtime dependency (Axis B1).",
+      "type": "grep",
+      "priority": 1,
+      "params": { "pattern": "SentenceTransformer|class .*Embedding|HuggingFace", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 60 }
+    },
+    {
+      "id": "Q006",
+      "intent": "Confirm the mixins directory location — brainstorm assumed parrot/agents/mixins/ but mixins appear to live at parrot/bots/mixins/.",
+      "type": "tree",
+      "priority": 1,
+      "params": { "path": "packages/ai-parrot/src/parrot/bots/mixins", "max_depth": 1 }
+    },
+    {
+      "id": "Q007",
+      "intent": "Read BasicAgent (bots/basic.py) to ground the ask()/configure() signatures, MRO, and an insertion point for _resolve_output_mode.",
+      "type": "read",
+      "priority": 1,
+      "params": { "path": "packages/ai-parrot/src/parrot/bots/basic.py" }
+    },
+    {
+      "id": "Q008",
+      "intent": "Check whether an output_mode / intent_score field or any output-mode concept already exists anywhere (avoid duplicating a contract).",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "output_mode|intent_score|output_format", "path": "packages/ai-parrot/src/parrot", "include": "*.py", "max_results": 60 }
+    },
+    {
+      "id": "Q009",
+      "intent": "Check for a prior intent-router design/implementation (there is an intent-router.brainstorm.md sibling) and any semantic-router usage already present.",
+      "type": "grep",
+      "priority": 2,
+      "params": { "pattern": "IntentRouter|intent_router|semantic.router|semantic_router", "path": "packages/ai-parrot", "max_results": 60 }
+    },
+    {
+      "id": "Q010",
+      "intent": "Inspect an existing mixin in bots/mixins to learn the established mixin pattern (super() chaining, configure() override conventions).",
+      "type": "tree",
+      "priority": 2,
+      "params": { "path": "packages/ai-parrot/src/parrot/bots/mixins", "max_depth": 2 }
+    },
+    {
+      "id": "Q011",
+      "intent": "Recent activity on bots/basic.py — is ask()/configure() under active churn that would conflict with adding a hook?",
+      "type": "git_log",
+      "priority": 3,
+      "params": { "path": "packages/ai-parrot/src/parrot/bots/basic.py", "since": "90.days.ago", "max_results": 15 }
+    },
+    {
+      "id": "Q012",
+      "intent": "Read the embeddings base/registry to decide whether to reuse the abstraction or instantiate SentenceTransformer directly in the engine.",
+      "type": "read",
+      "priority": 2,
+      "params": { "path": "packages/ai-parrot/src/parrot/embeddings/base.py" }
+    }
+  ],
+  "expected_findings": [
+    "BasicAgent.ask() real signature and the place a pre-LLM hook fits",
+    "Whether configure() is the right CONFIGURE-phase hook",
+    "Whether RenderPhase exists or is aspirational",
+    "Definitive answer on the RequestContext carrier (the blocking question)",
+    "An existing encoder abstraction to reuse",
+    "Correct mixins directory (bots/mixins vs agents/mixins)",
+    "Whether output_mode already exists as a field/contract",
+    "Whether a prior intent-router design already landed"
+  ],
+  "meta": {
+    "source_signals": {
+      "named_entities": ["IntentRouterMixin", "IntentRouter", "BasicAgent", "RequestContext", "RenderPhase", "SentenceTransformer", "output_mode"],
+      "verbs": ["route", "encode", "resolve", "configure", "abstain"],
+      "polarity": "neutral"
+    },
+    "estimated_budget_use": { "files_read": 6, "grep_calls": 7, "git_calls": 1 }
+  }
+}
