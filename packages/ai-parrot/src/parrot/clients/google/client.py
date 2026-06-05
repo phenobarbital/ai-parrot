@@ -3841,7 +3841,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     for path_str in file_paths:
                         src_path = Path(path_str)
                         if src_path.exists() and src_path.is_file():
-                            dest_path = media_dir.joinpath(src_path.name)
+                            timestamp = int(time.time() * 1000)
+                            unique_name = f"{src_path.stem}_{timestamp}{src_path.suffix}"
+                            dest_path = media_dir.joinpath(unique_name)
                             shutil.copy2(src_path, dest_path)
                             new_paths.append(str(dest_path))
                         else:

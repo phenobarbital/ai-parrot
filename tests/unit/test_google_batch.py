@@ -283,12 +283,14 @@ class TestGoogleBatch:
         assert dest_dir.joinpath("result_0_structured.json").exists()
         assert dest_dir.joinpath("result_0_response.txt").exists()
         
-        # Check files were copied
-        assert dest_dir.joinpath("images", "dummy_image.png").exists()
-        assert dest_dir.joinpath("files", "dummy_video.mp4").exists()
+        # Check files were copied with timestamps in their names
+        copied_images = list(dest_dir.joinpath("images").glob("dummy_image_*.png"))
+        copied_videos = list(dest_dir.joinpath("files").glob("dummy_video_*.mp4"))
+        assert len(copied_images) == 1
+        assert len(copied_videos) == 1
 
         # Read JSON file and verify copied path updates
         with open(dest_dir.joinpath("result_0_message.json"), "r") as f:
             data = json_decoder(f.read())
-            assert dest_dir.joinpath("images", "dummy_image.png").name in data["images"][0]
-            assert dest_dir.joinpath("files", "dummy_video.mp4").name in data["files"][0]
+            assert copied_images[0].name in data["images"][0]
+            assert copied_videos[0].name in data["files"][0]
