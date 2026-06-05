@@ -452,7 +452,7 @@ $backstory
             A ``TraceContext`` for the current call span.
         """
         tc = parent_trace.child() if parent_trace else TraceContext.new_root()
-        self.events.emit_nowait(BeforeClientCallEvent(
+        event = BeforeClientCallEvent(
             trace_context=tc,
             client_name=client_name,
             model=model or "",
@@ -461,7 +461,13 @@ $backstory
             has_tools=has_tools,
             source_type="client",
             source_name=client_name,
-        ))
+        )
+        self.events.emit_nowait(event)
+        # Client registries are isolated (forward_to_global=False). Forward the
+        # LLM-call lifecycle events explicitly so global observers (cost/token
+        # recorders, OTel subscribers) receive them. The guard inside
+        # forward_to_global skips the work when nobody is listening globally.
+        self.events.forward_to_global(event)
         return tc
 
     async def _emit_after_call(
@@ -488,7 +494,7 @@ $backstory
             output_tokens: Output token count (provider-dependent; may be ``None``).
             finish_reason: Stop reason from the provider.
         """
-        await self.events.emit(AfterClientCallEvent(
+        event = AfterClientCallEvent(
             trace_context=tc,
             client_name=client_name,
             model=model or "",
@@ -498,7 +504,12 @@ $backstory
             finish_reason=finish_reason,
             source_type="client",
             source_name=client_name,
-        ))
+        )
+        await self.events.emit(event)
+        # Forward to global so cost/token recorders and OTel subscribers
+        # registered on the global registry observe this call (see
+        # _emit_before_call for the rationale).
+        self.events.forward_to_global(event)
 
     async def _emit_failed_call(
         self,
@@ -520,7 +531,7 @@ $backstory
             duration_ms: Wall-clock time in milliseconds until failure.
             exc: The exception that was raised.
         """
-        await self.events.emit(ClientCallFailedEvent(
+        event = ClientCallFailedEvent(
             trace_context=tc,
             client_name=client_name,
             model=model or "",
@@ -529,7 +540,11 @@ $backstory
             error_message=str(exc),
             source_type="client",
             source_name=client_name,
-        ))
+        )
+        await self.events.emit(event)
+        # Forward to global so error counters on the global registry observe
+        # the failure (see _emit_before_call for the rationale).
+        self.events.forward_to_global(event)
 
     @property
     def tool_manager(self) -> ToolManager:
