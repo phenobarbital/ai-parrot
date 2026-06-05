@@ -50,6 +50,7 @@ from .advisory_engine import (
     AdvisoryReport,
     FindingDelta,
     SecurityAdvisoryEngine,
+    parse_findings,
 )
 from .reports import ComplianceMapper, ReportGenerator
 from .secrets_iac_toolkit import SecretsIaCToolkit
@@ -98,4 +99,5 @@ __all__ = [
     "AdvisoryReport",
     "FindingDelta",
     "AdvisoryRecommendation",
+    "parse_findings",
 ]

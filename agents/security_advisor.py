@@ -100,6 +100,7 @@ class SecurityAdvisor(Agent):
     _report_toolkit: SecurityReportToolkit | None = None
     _s3_toolkit: S3ReportReaderToolkit | None = None
     _soc2_toolkit: SOC2AdvisoryToolkit | None = None
+    _jira_toolkit: JiraToolkit | None = None
 
     # Catalog store — populated by agent_tools()
     _report_store: PostgresS3SecurityReportStore | None = None
@@ -110,7 +111,8 @@ class SecurityAdvisor(Agent):
             backstory=BACKSTORY,
             **kwargs,
         )
-        self.logger = logging.getLogger("SecurityAdvisor")
+        self.logger = logging.getLogger(__name__)
+        self._jira_toolkit = None
 
     # ------------------------------------------------------------------
     # Tool registration
@@ -130,8 +132,8 @@ class SecurityAdvisor(Agent):
             jira = self._build_jira()
             return [
                 *self._report_toolkit.get_tools(),
-                *self._s3_toolkit.get_tools(),
-                *self._soc2_toolkit.get_tools(),
+                *self._s3_toolkit.get_tools(),  # type: ignore[union-attr]
+                *self._soc2_toolkit.get_tools(),  # type: ignore[union-attr]
                 *jira.get_tools(),
             ]
 
@@ -169,18 +171,22 @@ class SecurityAdvisor(Agent):
         ]
 
     def _build_jira(self) -> JiraToolkit:
-        """Build a JiraToolkit from environment configuration.
+        """Build (or return cached) JiraToolkit from environment configuration.
 
         Returns:
             Configured JiraToolkit with basic_auth and default project NAV.
+            The instance is cached after first construction.
         """
-        return JiraToolkit(
+        if self._jira_toolkit is not None:
+            return self._jira_toolkit
+        self._jira_toolkit = JiraToolkit(
             server_url=config.get("JIRA_INSTANCE"),
             auth_type="basic_auth",
             username=config.get("JIRA_USERNAME"),
             password=config.get("JIRA_API_TOKEN"),
             default_project=config.get("JIRA_PROJECT", fallback="NAV"),
         )
+        return self._jira_toolkit
 
     # ------------------------------------------------------------------
     # Scheduled Tasks
@@ -282,7 +288,7 @@ class SecurityAdvisor(Agent):
         material = [r for r in recommendations if r.get("is_material")]
 
         if material:
-            jira = self._build_jira()
+            jira = self._build_jira()  # cached — called once before the loop
             jira_tools = {t.name: t for t in jira.get_tools()}
             create_fn = jira_tools.get("jira_create_issue")
 
@@ -290,7 +296,7 @@ class SecurityAdvisor(Agent):
                 try:
                     if create_fn is None:
                         raise RuntimeError("jira_create_issue tool not found")
-                    issue_key = await create_fn(
+                    result = await create_fn(
                         project="NAV",
                         summary=f"[SecurityAdvisor] {rec['title']} ({rec['severity']})",
                         description=(
@@ -303,6 +309,7 @@ class SecurityAdvisor(Agent):
                         ),
                         issuetype="Task",
                     )
+                    issue_key = result.get("key") or result.get("id", "unknown")
                     jira_tickets.append(str(issue_key))
                     self.logger.info("Created Jira ticket %s for material recommendation", issue_key)
                 except Exception as exc:
@@ -332,7 +339,8 @@ class SecurityAdvisor(Agent):
             "email_sent": email_sent,
         }
 
-    def _build_narration_prompt(self, advisory_dict: dict, framework: str) -> str:
+    @staticmethod
+    def _build_narration_prompt(advisory_dict: dict, framework: str) -> str:
         """Build the LLM narration prompt from the structured advisory.
 
         Args:
@@ -369,7 +377,8 @@ class SecurityAdvisor(Agent):
             "Be specific and actionable. Do not add speculative context."
         )
 
-    def _build_fallback_narrative(self, advisory_dict: dict, framework: str) -> str:
+    @staticmethod
+    def _build_fallback_narrative(advisory_dict: dict, framework: str) -> str:
         """Build a plain text narrative without LLM when ask() fails.
 
         Args:
@@ -400,7 +409,8 @@ class SecurityAdvisor(Agent):
             )
         return "\n".join(lines)
 
-    def _extract_severity_summary(self, advisory_dict: dict) -> SeverityBreakdown:
+    @staticmethod
+    def _extract_severity_summary(advisory_dict: dict) -> SeverityBreakdown:
         """Extract severity summary from the advisory dict.
 
         Args:

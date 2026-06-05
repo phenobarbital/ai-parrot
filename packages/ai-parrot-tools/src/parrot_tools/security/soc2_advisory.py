@@ -122,8 +122,8 @@ class SOC2AdvisoryToolkit(AbstractToolkit):
                 "hint": "The report may not have stored content.",
             }
 
-        from parrot_tools.security.advisory_engine import _parse_findings  # local import
-        findings = _parse_findings(ref, content)
+        from parrot_tools.security.advisory_engine import parse_findings  # local import
+        findings = parse_findings(ref, content)
 
         if not findings:
             return {
@@ -207,8 +207,8 @@ class SOC2AdvisoryToolkit(AbstractToolkit):
                 "framework": framework,
             }
 
-        from parrot_tools.security.advisory_engine import _parse_findings
-        findings = _parse_findings(ref, content)
+        from parrot_tools.security.advisory_engine import parse_findings
+        findings = parse_findings(ref, content)
 
         cf = ComplianceFramework.SOC2
         coverage = self._mapper.get_framework_coverage(findings, cf)

@@ -4,114 +4,22 @@ Uses an in-memory store double; no Postgres or S3 required.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
-from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from parrot.storage.security_reports import (
-    ReportFilter,
-    ReportKind,
-    ReportRef,
     SeverityBreakdown,
 )
 from parrot_tools.security.advisory_engine import (
     AdvisoryReport,
-    FindingDelta,
     SecurityAdvisoryEngine,
-)
-from parrot_tools.security.models import (
-    ComplianceFramework,
-    FindingSource,
-    SecurityFinding,
-    SeverityLevel,
 )
 from parrot_tools.security.reports import ComplianceMapper
 
-
-# ---------------------------------------------------------------------------
-# In-memory store double
-# ---------------------------------------------------------------------------
-
-
-class _FakeStore:
-    """Minimal SecurityReportStore double for unit tests."""
-
-    def __init__(
-        self,
-        refs: list[ReportRef],
-        contents: dict[UUID, bytes],
-    ) -> None:
-        self._refs = refs
-        self._contents = contents
-
-    async def query(self, filter: ReportFilter) -> list[ReportRef]:
-        """Return refs matching filter, sorted and limited."""
-        results = [
-            r for r in self._refs
-            if (filter.framework is None or r.framework == filter.framework)
-            and (filter.report_kind is None or r.report_kind == filter.report_kind)
-        ]
-        reverse = (filter.order_by or "produced_at_desc") == "produced_at_desc"
-        results.sort(key=lambda r: r.produced_at, reverse=reverse)
-        limit = filter.limit or 50
-        return results[:limit]
-
-    async def fetch_content(self, report_id: UUID) -> bytes:
-        """Return raw bytes for a report, or raise if missing."""
-        if report_id not in self._contents:
-            raise KeyError(f"No content for report {report_id}")
-        return self._contents[report_id]
-
-
-# ---------------------------------------------------------------------------
-# Helpers for building fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_ref(
-    report_id: UUID | None = None,
-    framework: str = "soc2",
-    scanner: str = "prowler",
-    produced_at: datetime | None = None,
-    severity_summary: SeverityBreakdown | None = None,
-) -> ReportRef:
-    return ReportRef(
-        report_id=report_id or uuid4(),
-        report_kind=ReportKind.SCAN,
-        scanner=scanner,
-        framework=framework,
-        provider="aws",
-        scope={"account_id": "123456789012"},
-        severity_summary=severity_summary or SeverityBreakdown(),
-        uri="s3://test-bucket/test-key.json",
-        produced_at=produced_at or datetime.now(timezone.utc),
-        produced_by="test",
-        parser_version="1.0.0",
-    )
-
-
-def _prowler_finding(
-    check_id: str,
-    severity: str,
-    resource: str,
-    region: str = "us-east-1",
-) -> dict:
-    """Build a minimal Prowler OCSF finding dict."""
-    finding_info = {"uid": check_id, "title": f"Check: {check_id}"}
-    return {
-        "severity": severity,
-        "finding_info": finding_info,
-        "resources": [{"uid": resource, "region": region}],
-        "check_id": check_id,
-    }
-
-
-def _prowler_content(findings: list[dict]) -> bytes:
-    """Serialise a list of prowler finding dicts to JSON bytes."""
-    return json.dumps(findings).encode()
+# Import shared store double and helpers from conftest (auto-discovered by pytest)
+from .conftest import FakeStore as _FakeStore, _make_ref, _prowler_finding, _prowler_content
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +118,7 @@ class TestSecurityAdvisoryEngine:
         """First run must not raise even if only one report exists."""
         # Should return a valid AdvisoryReport
         report = await engine_single.build_daily_advisory(framework="soc2")
-        assert report.current_report_id != "none"
+        assert report.current_report_id is not None
 
     @pytest.mark.asyncio
     async def test_day_over_day_delta_has_new_and_resolved(self, engine_two):
@@ -228,13 +136,50 @@ class TestSecurityAdvisoryEngine:
         assert report.severity_delta.critical == 1
 
     @pytest.mark.asyncio
-    async def test_reuses_compliance_mapper(self, engine_single):
-        """SOC2 control IDs on deltas come from ComplianceMapper (not a new catalog)."""
-        report = await engine_single.build_daily_advisory(framework="soc2")
-        # The mapper may or may not resolve controls depending on YAML mappings;
-        # the key assertion is that soc2_control_ids is a list (never raises).
+    async def test_reuses_compliance_mapper(self):
+        """SOC2 control IDs on deltas come from the injected ComplianceMapper."""
+        from unittest.mock import MagicMock
+
+        mock_mapper = MagicMock(spec=ComplianceMapper)
+        # Return a specific control list so we can verify it was called
+        mock_mapper.map_finding_to_controls.return_value = ["CC6.1", "CC7.2"]
+        mock_mapper.get_framework_coverage.return_value = {
+            "total_controls": 33,
+            "mapped_controls": 2,
+            "coverage_pct": 6.1,
+        }
+        mock_mapper.get_findings_by_control.return_value = {}
+
+        ref_id = uuid4()
+        findings = [_prowler_finding("s3_bucket_public_access", "CRITICAL", "arn:aws:s3:::my-bucket")]
+        store = _FakeStore(
+            refs=[_make_ref(report_id=ref_id, severity_summary=SeverityBreakdown(critical=1))],
+            contents={ref_id: _prowler_content(findings)},
+        )
+        engine = SecurityAdvisoryEngine(report_store=store, mapper=mock_mapper)
+        report = await engine.build_daily_advisory(framework="soc2")
+
+        # Verify the injected mapper was called (not a freshly-constructed one)
+        assert mock_mapper.map_finding_to_controls.called, (
+            "Expected ComplianceMapper.map_finding_to_controls to be called"
+        )
+        assert mock_mapper.get_framework_coverage.called, (
+            "Expected ComplianceMapper.get_framework_coverage to be called"
+        )
+        # Control IDs from the mock must appear on at least one delta
+        assert any(
+            "CC6.1" in d.soc2_control_ids or "CC7.2" in d.soc2_control_ids
+            for d in report.deltas
+        ), (
+            f"Expected CC6.1 or CC7.2 in delta control IDs, got: "
+            f"{[d.soc2_control_ids for d in report.deltas]}"
+        )
+        # All deltas must have non-empty control lists (mapper returned values)
         for delta in report.deltas:
             assert isinstance(delta.soc2_control_ids, list)
+            assert len(delta.soc2_control_ids) > 0, (
+                f"Delta {delta.finding_id!r} has empty soc2_control_ids despite mock returning values"
+            )
 
     @pytest.mark.asyncio
     async def test_engine_soc2_coverage_present(self, engine_single):
@@ -269,7 +214,7 @@ class TestSecurityAdvisoryEngine:
         engine = SecurityAdvisoryEngine(report_store=store)
         report = await engine.build_daily_advisory(framework="soc2")
         assert report.baseline_report_id is None
-        assert report.current_report_id == "none"
+        assert report.current_report_id is None
         assert report.deltas == []
 
     @pytest.mark.asyncio
@@ -280,6 +225,56 @@ class TestSecurityAdvisoryEngine:
             from parrot_tools.security.advisory_engine import _sev_rank
             ranks = [_sev_rank(d.severity) for d in report.deltas]
             assert ranks == sorted(ranks, reverse=True), "Deltas not sorted by severity desc"
+
+    @pytest.mark.asyncio
+    async def test_all_persisting_no_change(self):
+        """Two identical consecutive reports → all deltas 'persisting', none material."""
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        yesterday = now - timedelta(days=1)
+
+        findings = [
+            _prowler_finding("s3_bucket_public_access", "CRITICAL", "arn:aws:s3:::my-bucket"),
+            _prowler_finding("iam_root_mfa", "HIGH", "arn:aws:iam::123:root"),
+        ]
+        content = _prowler_content(findings)
+
+        baseline_id = uuid4()
+        current_id = uuid4()
+
+        baseline_ref = _make_ref(
+            report_id=baseline_id,
+            produced_at=yesterday,
+            severity_summary=SeverityBreakdown(critical=1, high=1),
+        )
+        current_ref = _make_ref(
+            report_id=current_id,
+            produced_at=now,
+            severity_summary=SeverityBreakdown(critical=1, high=1),
+        )
+
+        store = _FakeStore(
+            refs=[current_ref, baseline_ref],
+            contents={
+                baseline_id: content,
+                current_id: content,
+            },
+        )
+        engine = SecurityAdvisoryEngine(report_store=store)
+        report = await engine.build_daily_advisory(framework="soc2")
+
+        assert len(report.deltas) > 0, "Expected deltas for identical consecutive reports"
+        non_persisting = [d for d in report.deltas if d.status != "persisting"]
+        assert non_persisting == [], (
+            f"Expected all deltas to be 'persisting', but found: "
+            f"{[(d.finding_id, d.status) for d in non_persisting]}"
+        )
+        material_recs = [r for r in report.recommendations if r.is_material]
+        assert material_recs == [], (
+            f"Expected no material recommendations for persisting-only deltas, "
+            f"but got: {[(r.title, r.severity) for r in material_recs]}"
+        )
 
     @pytest.mark.asyncio
     async def test_mapper_injected(self):

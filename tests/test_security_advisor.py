@@ -181,7 +181,7 @@ def _make_advisor_with_mocks(store: _FakeStore) -> Any:
 
 class TestSecurityAdvisorReadOnly:
     def test_advisor_registered(self):
-        """security_advisor must be importable and the class decorated."""
+        """security_advisor must be importable and registered in the agent registry."""
         SecurityAdvisor = _SECURITY_ADVISOR_MOD.SecurityAdvisor
 
         # The @register_agent decorator stores the name on the class.
@@ -189,6 +189,17 @@ class TestSecurityAdvisorReadOnly:
         # Check agent_id is set as a class attribute (Agent subclass convention)
         assert getattr(SecurityAdvisor, "agent_id", None) is not None, (
             "SecurityAdvisor must define agent_id"
+        )
+
+        # Verify the agent is resolvable via the registry
+        from parrot.registry import agent_registry
+        metadata = agent_registry.get_metadata("security_advisor")
+        assert metadata is not None, (
+            "security_advisor not found in agent_registry — "
+            "check @register_agent(name='security_advisor') decorator"
+        )
+        assert metadata.factory is SecurityAdvisor, (
+            f"Registry has {metadata.factory!r}, expected SecurityAdvisor"
         )
 
     def test_advisor_tools_are_read_only(self):
@@ -315,10 +326,10 @@ class TestSecurityAdvisorDailyTask:
         # should have triggered a Jira call
         soc2_result = result.get("results", {}).get("soc2", {})
         material_count = soc2_result.get("material_recommendations", 0)
-        if material_count > 0:
-            assert mock_create.called or len(jira_calls) > 0, (
-                "Material recommendations present but Jira not called"
-            )
+        assert material_count > 0, (
+            "Expected CRITICAL finding to produce at least one material recommendation"
+        )
+        assert mock_create.called, "Material recommendations present but Jira was not called"
 
     async def test_daily_advisory_sends_email(self):
         """run_daily_soc2_advisory must always attempt to send an email."""

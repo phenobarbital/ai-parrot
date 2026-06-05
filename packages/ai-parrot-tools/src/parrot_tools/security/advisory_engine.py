@@ -8,7 +8,7 @@ Implements FEAT-226 spec §3 Module 1.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -20,7 +20,6 @@ from parrot.storage.security_reports import (
     SeverityBreakdown,
 )
 from parrot_tools.security.models import (
-    ComparisonDelta,  # noqa: F401 — imported for caller convenience
     ComplianceFramework,
     FindingSource,
     SecurityFinding,
@@ -103,7 +102,7 @@ class AdvisoryReport(BaseModel):
 
     framework: str
     baseline_report_id: str | None
-    current_report_id: str
+    current_report_id: Optional[str] = None
     severity_delta: SeverityBreakdown
     deltas: list[FindingDelta]
     soc2_coverage: dict
@@ -133,7 +132,7 @@ def _sev_rank(sev: str) -> int:
     return _SEV_ORDER.get(sev.upper(), 0)
 
 
-def _parse_findings(ref: ReportRef, content: bytes) -> list[SecurityFinding]:
+def parse_findings(ref: ReportRef, content: bytes) -> list[SecurityFinding]:
     """Try to parse ``content`` into a list of SecurityFinding objects.
 
     The catalog-level parsers return ``ParsedReport`` with ``EmbeddedFinding``
@@ -397,7 +396,7 @@ class SecurityAdvisoryEngine:
         """
         try:
             content = await self._store.fetch_content(ref.report_id)
-            return _parse_findings(ref, content)
+            return parse_findings(ref, content)
         except Exception as exc:
             self.logger.warning(
                 "Could not load findings from report %s (%s): %s",
@@ -596,8 +595,12 @@ class SecurityAdvisoryEngine:
             seen.add(key)
 
             is_material = (
-                d.status in ("new", "severity_changed")
+                d.status == "new"
                 and d.severity.upper() in {sl.value for sl in _MATERIAL_SEVERITIES}
+            ) or (
+                d.status == "severity_changed"
+                and d.severity.upper() in {sl.value for sl in _MATERIAL_SEVERITIES}
+                and _sev_rank(d.severity) > _sev_rank(d.previous_severity or "UNKNOWN")
             )
 
             recs.append(
@@ -631,7 +634,7 @@ class SecurityAdvisoryEngine:
         return AdvisoryReport(
             framework=framework,
             baseline_report_id=None,
-            current_report_id="none",
+            current_report_id=None,
             severity_delta=SeverityBreakdown(),
             deltas=[],
             soc2_coverage={},

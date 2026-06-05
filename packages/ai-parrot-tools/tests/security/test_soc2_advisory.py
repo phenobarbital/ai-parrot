@@ -4,99 +4,18 @@ Uses the same in-memory store double as test_advisory_engine.py.
 """
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone, timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
 from parrot.storage.security_reports import (
     ReportFilter,
-    ReportKind,
-    ReportRef,
     SeverityBreakdown,
 )
 from parrot_tools.security.soc2_advisory import SOC2AdvisoryToolkit
 
-
-# ---------------------------------------------------------------------------
-# In-memory store double (same as test_advisory_engine.py)
-# ---------------------------------------------------------------------------
-
-
-class _FakeStore:
-    """Minimal SecurityReportStore double for unit tests."""
-
-    def __init__(
-        self,
-        refs: list[ReportRef],
-        contents: dict[UUID, bytes],
-    ) -> None:
-        self._refs = refs
-        self._contents = contents
-
-    async def query(self, filter: ReportFilter) -> list[ReportRef]:
-        results = [
-            r for r in self._refs
-            if (filter.framework is None or r.framework == filter.framework)
-            and (filter.report_kind is None or r.report_kind == filter.report_kind)
-        ]
-        reverse = (filter.order_by or "produced_at_desc") == "produced_at_desc"
-        results.sort(key=lambda r: r.produced_at, reverse=reverse)
-        limit = filter.limit or 50
-        return results[:limit]
-
-    async def get(self, report_id: UUID) -> ReportRef | None:
-        for r in self._refs:
-            if r.report_id == report_id:
-                return r
-        return None
-
-    async def fetch_content(self, report_id: UUID) -> bytes:
-        if report_id not in self._contents:
-            raise KeyError(f"No content for report {report_id}")
-        return self._contents[report_id]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_ref(
-    report_id: UUID | None = None,
-    framework: str = "soc2",
-    scanner: str = "prowler",
-    produced_at: datetime | None = None,
-    severity_summary: SeverityBreakdown | None = None,
-) -> ReportRef:
-    return ReportRef(
-        report_id=report_id or uuid4(),
-        report_kind=ReportKind.SCAN,
-        scanner=scanner,
-        framework=framework,
-        provider="aws",
-        scope={"account_id": "123456789012"},
-        severity_summary=severity_summary or SeverityBreakdown(),
-        uri="s3://test-bucket/test-key.json",
-        produced_at=produced_at or datetime.now(timezone.utc),
-        produced_by="test",
-        parser_version="1.0.0",
-    )
-
-
-def _prowler_finding(check_id: str, severity: str, resource: str) -> dict:
-    fi = {"uid": check_id, "title": f"Check: {check_id}"}
-    return {
-        "severity": severity,
-        "finding_info": fi,
-        "resources": [{"uid": resource, "region": "us-east-1"}],
-        "check_id": check_id,
-    }
-
-
-def _prowler_content(findings: list[dict]) -> bytes:
-    return json.dumps(findings).encode()
+# Import shared store double and helpers from conftest (auto-discovered by pytest)
+from .conftest import FakeStore as _FakeStore, _make_ref, _prowler_finding, _prowler_content
 
 
 # ---------------------------------------------------------------------------
