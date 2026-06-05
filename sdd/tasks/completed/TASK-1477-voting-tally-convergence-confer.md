@@ -242,9 +242,22 @@ move to `sdd/tasks/completed/`, update the per-spec index to `done`, fill the no
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-05
+**Notes**: Added `_collect_votes` (parallel `agent.ask(structured_output=PeerVote)` with
+graceful text-fallback via the new private `_fallback_vote` helper — default confidence
+50, keeps own label, warns), `_tally_weighted_votes` (sum confidence per chosen_label,
+winner = max via `min(key=(-score, label))` so ties break to the lowest label
+deterministically), `_build_conference_result`, and the public `confer()` (init exec
+memory → round-0 broadcast → cross-pollinate/vote/tally loop with per-round
+`ExecutionMemory` persistence (`vectorize=False`) → convergence break when the winning
+agent repeats → `AIMessage(content=final_answer, structured_output=ConferenceResult,
+is_structured=True)`). Extended the test module with 8 tests (tally winner, tie-break,
+self-vote, no-structured fallback, end-to-end, convergence-stops-early, max_rounds cap
+with `until_convergence=False`, and oscillating-winner cap). Full conference suite: 14
+passed; ruff clean. `ask()` ReAct loop untouched.
+**Deviations from spec**: `_build_conference_result` takes an explicit `winner_label`
+(in addition to `winner_agent`) so it can read the winner's aggregated score from
+`vote_breakdown` (which is keyed by label) — a minor internal-signature refinement over
+the illustrative pattern in the task; behavior matches the spec. `ask(mode="conference")`
+exposure remains deferred per this task's explicit out-of-scope note (open question §8).
