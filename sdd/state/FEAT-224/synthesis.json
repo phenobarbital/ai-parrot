@@ -31,9 +31,10 @@
   "scope": {
     "whats_new": [
       "IntentRouter embedding engine (e5-multilingual via sentence-transformers): encode route utterances once, max-cosine score per route, abstain below per-route threshold",
+      "Output-mode phrase bank: OUTPUT_MODE_ROUTES = dict[OutputMode, list[str]] — reference utterances per output mode (e.g. STRUCTURED_CHART <- 'create a pie chart'/'hazme una gráfica de pastel'). The router resolves the OutputMode ONLY (mode-only granularity); chart subtype (pie/bar/line) is decided downstream",
       "A discrepancy/tie-break policy: invoke the existing LLM route ONLY when the embedding decision is ambiguous (top-2 routes within a margin, or below threshold but non-trivial)",
-      "A shared private hook (e.g. _resolve_output_mode / _route_intent) invoked from BOTH ask() and conversation()",
-      "IntentRouterConfig extension: embedding_model (default intfloat/multilingual-e5-small), per-route threshold, discrepancy margin, route utterances for output modes"
+      "A shared private hook (e.g. _resolve_output_mode / _route_intent) invoked from BOTH ask() and conversation(); sets output_mode ONLY when the caller left it None (precedence: explicit kwarg > router > default)",
+      "IntentRouterConfig extension: embedding_model (default intfloat/multilingual-e5-small), per-route threshold, discrepancy margin, and the output-mode phrase bank"
     ],
     "whats_changed": [
       "parrot/bots/mixins/intent_router.py::IntentRouterMixin — add embedding router + demote LLM to tie-breaker; generalize hook to ask()+conversation() (F006, F010)",
@@ -72,7 +73,8 @@
   "unknowns": [
     {"id": "U1", "question": "Should output-mode routing live as a second concern inside the existing IntentRouterMixin, or as a separate OutputModeRouter engine composed by the mixin?", "blocks_claims": ["C1"], "user_answer": "Fix/evolve the existing IntentRouterMixin to use the e5 embedding model; keep the LLM path only for resolving discrepancies; involve both ask() and conversation().", "resolved": true},
     {"id": "U2", "question": "What exactly constitutes a 'discrepancy' that should trigger the LLM tie-breaker — below threshold, or top-2 routes within a margin?", "blocks_claims": ["C9"], "user_answer": null, "resolved": false},
-    {"id": "U3", "question": "Should output_mode/intent_score also be added to RequestContext, or remain only on the response + ask() kwarg as today?", "blocks_claims": ["C4"], "user_answer": null, "resolved": false}
+    {"id": "U3", "question": "Should output_mode/intent_score also be added to RequestContext, or remain only on the response + ask() kwarg as today?", "blocks_claims": ["C4"], "user_answer": null, "resolved": false},
+    {"id": "U4", "question": "Should the output-mode phrase bank route to OutputMode only, or also hint chart subtype (pie/bar/line)?", "blocks_claims": ["C3"], "user_answer": "Mode only — the router sets the OutputMode (e.g. STRUCTURED_CHART); chart subtype (pie/bar/line) is decided downstream by the LLM/chart builder. Avoids route/threshold explosion.", "resolved": true}
   ],
   "recommended_next_command": {
     "command": "sdd-spec",

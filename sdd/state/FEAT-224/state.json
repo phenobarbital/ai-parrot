@@ -55,7 +55,7 @@
       "claims_high_conf": 8,
       "claims_medium_conf": 1,
       "claims_low_conf": 0,
-      "unknowns_count": 3,
+      "unknowns_count": 4,
       "lint_passed": true,
       "lint_iterations": 0
     },

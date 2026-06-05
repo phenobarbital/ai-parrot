@@ -146,6 +146,13 @@ dependency** and only fills `output_mode` when the caller left it unset.
 - **`IntentRouter` embedding engine** — encode route utterances once (e5
   default `intfloat/multilingual-e5-small`), score a query by **max cosine
   similarity per route**, abstain below a per-route threshold. *Evidence*: F005
+- **Output-mode phrase bank** — `OUTPUT_MODE_ROUTES: dict[OutputMode, list[str]]`,
+  a bank of reference utterances per output mode. When a query like
+  `"create a pie chart of Q1 sales"` / `"hazme una gráfica de pastel"` matches
+  the chart bank above threshold, the router sets `output_mode =
+  OutputMode.STRUCTURED_CHART`. **Mode-only granularity** (resolved): the router
+  resolves the *OutputMode*; the chart **subtype** (pie/bar/line) is left to the
+  downstream LLM / chart builder. *Evidence*: F007
 - **Discrepancy / tie-break policy** — invoke the existing LLM route **only**
   when the embedding decision is ambiguous (see U2). The LLM stops being the
   default decision-maker and becomes a disambiguator. *Evidence*: F006
@@ -194,6 +201,11 @@ dependency** and only fills `output_mode` when the caller left it unset.
   *Mitigation*: keep the hook to a few lines + a no-op default. *Evidence*: F003
 - **e5 prefix convention** (`query:` / `passage:`). Wrong prefixing silently
   degrades similarity and invalidates tuned thresholds. *Evidence*: F005
+- **Clause dilution.** Output-mode intent is often a *small clause* inside a
+  larger data question ("…**and show it as a pie chart**"). Encoding the whole
+  long query can dilute the chart signal below threshold. *Mitigation*: phrase
+  the bank as realistic full requests and/or segment the query; the LLM
+  discrepancy fallback covers the ambiguous tail. *Evidence*: F005, F006
 
 ---
 
@@ -227,6 +239,10 @@ Distribution: **8** high, **1** medium, **0** low.
   question)?** — *Resolved by research*: yes, `utils/helpers.py:7`,
   contextvar-bound via `current_context()`, but without `output_mode`/`intent_score`.
   *Resolves claims*: C4
+- [x] **U4 — Phrase bank: OutputMode only, or also chart subtype (pie/bar/line)?**
+  — *Resolved*: **mode only**. The router sets the `OutputMode` (e.g.
+  `STRUCTURED_CHART`); chart subtype is decided downstream by the LLM/chart
+  builder. Avoids route/threshold explosion. *Resolves claims*: C3
 
 ### Unresolved (defer to spec / implementation)
 
