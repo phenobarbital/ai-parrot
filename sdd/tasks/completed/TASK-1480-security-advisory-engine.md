@@ -224,10 +224,8 @@ class TestSecurityAdvisoryEngine:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-06-05
+**Notes**: Created advisory_engine.py with FindingDelta, AdvisoryRecommendation, AdvisoryReport Pydantic models and SecurityAdvisoryEngine. Engine correctly queries 2 most-recent SCAN reports, diffs findings using id-keyed sets, maps to SOC2 controls via ComplianceMapper, signs severity deltas, and classifies materiality. Graceful degradation for unparseable content. 11/11 tests pass, ruff clean.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: The parsers' extract_section("full") returns raw scanner dict format (not SecurityFinding objects) — SecurityFinding objects are reconstructed from raw JSON in _parse_findings(). This is correct per the existing parser architecture.

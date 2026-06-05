@@ -32,7 +32,7 @@
       "feature_id": "FEAT-226",
       "feature": "security-advisor",
       "spec": "sdd/specs/security-advisor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -40,8 +40,8 @@
       "parallelism_notes": "Module 1 — new advisory_engine.py; reuses existing ComplianceMapper (no new catalog). Independent of TASK-1479 (different package). Foundation for TASK-1481/1482.",
       "assigned_to": null,
       "started_at": "2026-06-05T13:32:53+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1480-security-advisory-engine.md"
+      "completed_at": "2026-06-05T13:38:03+00:00",
+      "file": "sdd/tasks/completed/TASK-1480-security-advisory-engine.md"
     },
     {
       "id": "TASK-1481",
