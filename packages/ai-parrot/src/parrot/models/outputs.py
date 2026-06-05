@@ -225,6 +225,8 @@ class ImageGenerationPrompt(BaseModel):
     model: str = Field(description="The image generation model to use.")
     negative_prompt: Optional[str] = Field(None, description="A description of what to avoid in the image.")
     aspect_ratio: str = Field(default="1:1", description="The desired aspect ratio (e.g., '1:1', '16:9', '9:16').")
+    resolution: Optional[str] = Field(default="1K", description="The desired resolution (e.g., '1K', '2K').")
+    auto_upscale: Optional[bool] = Field(default=False, description="Whether to automatically upscale the generated image.")
 
 
 class SpeakerConfig(BaseModel):
@@ -264,6 +266,8 @@ class VideoGenerationPrompt(BaseModel):
         default='',
         description="A description of what to avoid in the video."
     )
+    resolution: Optional[str] = Field(default="1080p", description="The desired resolution (e.g., '1080p', '2K').")
+    smoothing: Optional[bool] = Field(default=False, description="Whether to apply frame rate smoothing to the generated video.")
 
 class SentimentAnalysis(BaseModel):
     """Structured sentiment analysis response."""
