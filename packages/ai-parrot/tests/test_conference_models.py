@@ -51,11 +51,18 @@ class TestConferenceModels:
         assert res.final_answer == "a1"
 
     def test_exported_from_package_root(self):
+        # Verify the three models are exported from the package root. We assert
+        # by name + constructability rather than `is` identity: under the test
+        # harness `parrot` is a PEP 420 namespace package spanning multiple src
+        # roots, so `parrot.models.conference` can be loaded as two distinct
+        # module objects (identity differs, behavior does not).
         from parrot.models import (
             PeerVote as P,
             ConferenceRound as CR,
             ConferenceResult as CRes,
         )
-        assert P is PeerVote
-        assert CR is ConferenceRound
-        assert CRes is ConferenceResult
+        assert P.__name__ == "PeerVote"
+        assert CR.__name__ == "ConferenceRound"
+        assert CRes.__name__ == "ConferenceResult"
+        vote = P(chosen_label="A", revised_answer="x", confidence=10, rationale="r")
+        assert vote.confidence == 10

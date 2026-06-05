@@ -15,6 +15,7 @@ from ...abstract import AbstractBot
 from ....tools.agent import AgentContext, AgentTool
 from ....registry import agent_registry
 from ....models.responses import AIMessage
+from ....models.basic import CompletionUsage
 from ....models.conference import PeerVote, ConferenceRound, ConferenceResult
 from ..core.result import NodeResult
 
@@ -683,8 +684,15 @@ After gathering responses from one or more agents:
         result = self._build_conference_result(
             winner_agent, winner_label, final_answer, breakdown, rounds, converged
         )
+        # ``content`` is a read-only alias of ``output`` on AIMessage, so the
+        # final answer is placed in ``output``; the required provider/model/usage
+        # fields are filled with orchestrator-level defaults.
         return AIMessage(
-            content=result.final_answer,
+            input=question,
+            output=result.final_answer,
+            model=getattr(self, "model", None) or "orchestrator",
+            provider=getattr(self, "provider", None) or "orchestrator",
+            usage=CompletionUsage(),
             structured_output=result,
             is_structured=True,
         )
