@@ -32,7 +32,7 @@
       "feature_id": "FEAT-223",
       "feature": "orchestratoragent-multiparty",
       "spec": "sdd/specs/orchestratoragent-multiparty.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -42,8 +42,8 @@
       "parallelism_notes": "Imports PeerVote (TASK-1475) and edits orchestrator.py (same file as TASK-1477). Must be sequential.",
       "assigned_to": null,
       "started_at": "2026-06-05T00:20:46+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1476-broadcast-and-anonymous-peer-block.md"
+      "completed_at": "2026-06-05T00:42:37+00:00",
+      "file": "sdd/tasks/completed/TASK-1476-broadcast-and-anonymous-peer-block.md"
     },
     {
       "id": "TASK-1477",

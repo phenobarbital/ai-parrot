@@ -196,9 +196,21 @@ move to `sdd/tasks/completed/`, update the per-spec index to `done`, fill the no
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Opus 4.8)
+**Date**: 2026-06-05
+**Notes**: Added `_resolve_agents` (None=all, named subset validated, unknown →
+`ValueError`), `_broadcast_round` (parallel `asyncio.gather` fan-out → `{agent: text}`),
+and `_build_anonymous_peer_block` (labels A/B/C…, `label_to_agent` map, per-answer
+truncation to 2000 chars, NO author names in the text). Two private helpers were
+factored out to serve the task-required behavior: `_invoke_specialist` (prefer `ask`,
+fall back to `conversation`/`invoke` like `AgentTool._execute`, dropping
+`structured_output` for non-`ask` paths) and `_extract_answer_text` (content→output→str
+extraction precedent). New test module `test_orchestrator_conference.py` (6 tests):
+broadcast all/subset, anonymity, truncation, resolve unknown/none. All pass; ruff clean.
+**Deviations from spec**: (1) The task's literal `test_anonymous_block` sample answers
+("answer-from-data") embed the agent name as a substring, making `"data" not in block`
+impossible for any correct block that includes answer text; I used answer text that does
+not embed the agent name so the anonymity assertion is meaningful (intent preserved).
+(2) The bot test conftest stubs the heavy `BasicAgent` base (no `logger`), so the
+fixture sets `o.logger` — production `BasicAgent` provides `self.logger`; this mirrors
+the existing `test_orchestrator_agent.py` pattern.
