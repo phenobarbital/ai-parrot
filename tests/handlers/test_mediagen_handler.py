@@ -46,6 +46,7 @@ def mock_client_methods():
             
             # Setup generation mocks
             self.client_instance.generate_images = AsyncMock()
+            self.client_instance.generate_image = AsyncMock()
             self.client_instance.generate_image_batch = AsyncMock()
             self.client_instance.generate_videos = AsyncMock()
             self.client_instance.generate_video_batch = AsyncMock()
@@ -80,7 +81,7 @@ class TestMediaGenHandler:
         dummy_img.write_text("fake image contents")
 
         with mock_client_methods as ctx:
-            ctx.client_instance.generate_images.return_value = _make_mock_message(
+            ctx.client_instance.generate_image.return_value = _make_mock_message(
                 prompt="a cute parrot",
                 images=[dummy_img]
             )
@@ -98,7 +99,7 @@ class TestMediaGenHandler:
             body = await resp.read()
             assert body == b"fake image contents"
             
-            ctx.client_instance.generate_images.assert_called_once()
+            ctx.client_instance.generate_image.assert_called_once()
 
     async def test_post_image_batch(self, aiohttp_client, mock_client_methods, tmp_path):
         """Verify batch image generation processes concurrently and returns zip archive."""

@@ -365,7 +365,7 @@ class TestGoogleBatch:
         )
         
         # Call generate_images
-        msg = await google_client.generate_images(prompt_data=prompt_data)
+        msg = await google_client.generate_images(prompt=prompt_data)
         
         assert msg is not None
         sdk_client.aio.models.generate_images.assert_called_once()

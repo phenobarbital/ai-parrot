@@ -133,7 +133,10 @@ def _install_navigator_stubs() -> None:
     _FileManagerFactory = type(
         "FileManagerFactory",
         (),
-        {"get": staticmethod(lambda *a, **kw: _LocalFileManager())},
+        {
+            "get": staticmethod(lambda *a, **kw: _LocalFileManager()),
+            "create": staticmethod(lambda *a, **kw: _LocalFileManager()),
+        },
     )
 
     for _attr, _val in [

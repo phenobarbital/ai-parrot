@@ -121,7 +121,22 @@ class MediaGen(BaseView):
                     filtered_inputs["model"] = model
                     
                     prompt_data = ImageGenerationPrompt(**filtered_inputs)
-                    r = await client.generate_images(prompt_data=prompt_data)
+                    
+                    # Route to either Gemini/Nano Banana or Imagen based on model prefix
+                    if str(model).startswith("gemini"):
+                        self.logger.info(f"Routing image generation to Gemini generate_image() for: {model}")
+                        r = await client.generate_image(
+                            prompt=prompt,
+                            model=model,
+                            aspect_ratio=prompt_data.aspect_ratio,
+                            resolution=prompt_data.resolution,
+                            auto_upscale=prompt_data.auto_upscale,
+                            service_tier="flex" if use_flex else None
+                        )
+                    else:
+                        self.logger.info(f"Routing image generation to Imagen generate_images() for: {model}")
+                        r = await client.generate_images(prompt=prompt_data)
+                        
                     results_metadata.append(r.model_dump(mode="json"))
                     if r.images:
                         generated_files.extend([Path(p) for p in r.images])
