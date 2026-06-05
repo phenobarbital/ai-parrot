@@ -50,7 +50,7 @@
       "feature_id": "FEAT-224",
       "feature": "intent-router-mixin-embedding-routing",
       "spec": "sdd/specs/intent-router-mixin-embedding-routing.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -58,8 +58,8 @@
       "parallelism_notes": "Edits only utils/helpers.py (two attributes). No overlap with other tasks' files.",
       "assigned_to": null,
       "started_at": "2026-06-05T14:05:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-1486-requestcontext-output-mode-fields.md"
+      "completed_at": "2026-06-05T16:55:52+00:00",
+      "file": "sdd/tasks/completed/TASK-1486-requestcontext-output-mode-fields.md"
     },
     {
       "id": "TASK-1487",

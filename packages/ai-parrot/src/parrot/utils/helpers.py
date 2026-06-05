@@ -34,6 +34,12 @@ class RequestContext:
         self.user_id = user_id
         self.session_id = session_id
         self.kwargs = kwargs
+        # FEAT-224: output-mode router results. Default None so the absence of
+        # routing is indistinguishable from pre-change behavior. Stored as an
+        # OutputMode (or its value) at write time; no hard import here to avoid
+        # a potential import cycle.
+        self.output_mode = None
+        self.intent_score = None
 
     async def __aenter__(self):
         return self

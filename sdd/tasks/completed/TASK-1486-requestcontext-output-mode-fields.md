@@ -132,7 +132,9 @@ Standard SDD flow. Verify the contract, implement, make tests pass, move file to
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Opus)
+**Date**: 2026-06-05
+**Notes**: Added `self.output_mode = None` and `self.intent_score = None` to
+`RequestContext.__init__` (plain class, no Pydantic migration, no import cycle).
+2 unit tests pass; ruff clean.
+**Deviations from spec**: none
